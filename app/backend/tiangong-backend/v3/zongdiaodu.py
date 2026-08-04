@@ -4219,20 +4219,37 @@ def _simple_chain_is_clarification_question(text: Any) -> bool:
     return any(marker in value for marker in markers)
 
 
-_SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS = frozenset({
-    "run_state",
-    "model_payload_tokens",
-    "model_payload_compacted",
-    "model_payload_instruction",
-    "pre_execution_observations",
-    "guidance",
+_SIMPLE_CHAIN_HISTORY_KEEP_KEYS = frozenset({
+    "ok",
+    "tool_action",
+    "tool_name",
+    "tool_args",
+    "tool_result",
+    "failures",
+    "target",
+    "action",
 })
 
 
 def _simple_chain_history_payload_text(payload: dict) -> str:
-    """历史消息文本：保留模型决策所需的完整字段（含工具结果全文），
-    只剔除平台簿记字段（run_state/压缩统计/观察项），降低每轮缓存增量。"""
-    out = {key: value for key, value in payload.items() if key not in _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS}
+    """历史消息文本：只保留模型决策所需字段，工具结果全文保留；
+    写入类参数里的整段内容截断（模型不需要在历史里重读自己写过的全文）。"""
+    out: dict[str, Any] = {}
+    for key in _SIMPLE_CHAIN_HISTORY_KEEP_KEYS:
+        if key in payload:
+            out[key] = payload[key]
+    args = payload.get("tool_args")
+    if isinstance(args, dict):
+        safe_args: dict[str, Any] = {}
+        for key, value in args.items():
+            if isinstance(value, str) and len(value) > 1000:
+                if key in {"content", "base64", "binary", "text"}:
+                    safe_args[key] = value[:200]
+                else:
+                    safe_args[key] = value[:1000]
+            else:
+                safe_args[key] = value
+        out["tool_args"] = safe_args
     return json.dumps(out, ensure_ascii=False, default=str, sort_keys=True)
 
 
