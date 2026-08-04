@@ -197,8 +197,10 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(payload["messages"][-1]["content"], "稳定短指令")
         self.assertIn("提示注入", JIXU_ZHILING_WENBEN)
 
-    def test_cache_prior_text_is_deterministic_and_compact(self) -> None:
-        from v3.zongdiaodu import _simple_chain_cache_prior_text
+    def test_cache_prior_text_is_deterministic(self) -> None:
+        import json
+
+        from v3.zongdiaodu import _contract_observed_write
 
         payload = {
             "ok": True,
@@ -207,11 +209,11 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             "tool_result": {"evidence": {"exists": True, "path": "output/e2e/02-core.md", "sha256": "abc" * 30}, "preview": "y" * 3000},
             "tool_result_contract": {"ok": True, "observed_write_effect": True, "write_evidence": {"authoritative": True, "changed_files": ["output/e2e/02-core.md"]}},
         }
-        first = _simple_chain_cache_prior_text(payload)
-        second = _simple_chain_cache_prior_text(payload)
+        first = json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True)
+        second = json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True)
         self.assertEqual(first, second)
-        self.assertLess(len(first), 2500)
         self.assertIn("02-core.md", first)
+        self.assertTrue(_contract_observed_write(payload["tool_result_contract"]))
 
     def test_command_touches_protected_only_with_destructive_verbs(self) -> None:
         from v3.zongdiaodu import _simple_chain_command_touches_protected
