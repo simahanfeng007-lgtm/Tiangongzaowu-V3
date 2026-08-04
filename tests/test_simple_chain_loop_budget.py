@@ -178,6 +178,25 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertFalse(any("fake" in item for item in paths))
         self.assertTrue(any("output/e2e/25-cleanup.md" in item for item in paths))
 
+    def test_request_payload_uses_cache_friendly_stable_prefix(self) -> None:
+        from v3.gutong.gutong_ceng import JIXU_ZHILING_WENBEN
+        from v3.jineng.moxing_shipei import MOXING_SHIPEI
+        from v3.shenti_zhuangtai import ShentiZhuangtai
+
+        payload = MOXING_SHIPEI.goujian_qingqiu(
+            "minimax_m3",
+            "系统",
+            "稳定短指令",
+            ShentiZhuangtai(),
+            prior_assistant_messages=["结果1", "结果2"],
+            stable_user_message="原始请求+上下文",
+        )
+        roles = [item["role"] for item in payload["messages"]]
+        self.assertEqual(roles, ["system", "user", "assistant", "assistant", "user"])
+        self.assertEqual(payload["messages"][1]["content"], "原始请求+上下文")
+        self.assertEqual(payload["messages"][-1]["content"], "稳定短指令")
+        self.assertIn("提示注入", JIXU_ZHILING_WENBEN)
+
     def test_command_touches_protected_only_with_destructive_verbs(self) -> None:
         from v3.zongdiaodu import _simple_chain_command_touches_protected
 

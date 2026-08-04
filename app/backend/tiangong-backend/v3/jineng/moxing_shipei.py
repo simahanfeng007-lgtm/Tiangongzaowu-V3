@@ -82,6 +82,8 @@ class MoxingShipei:
         shenti: ShentiZhuangtai,
         gongju_dingyi: list[dict] | None = None,
         model_name: str | None = None,
+        prior_assistant_messages: list[str] | None = None,
+        stable_user_message: str | None = None,
     ) -> dict[str, Any]:
         """构建API请求payload"""
         pid = normalize_provider_id(pid)
@@ -93,11 +95,16 @@ class MoxingShipei:
         caps = qi["capability"]
         mapper = qi["request_mapper"]
         
-        # 基础消息（OpenAI兼容格式）
-        xiaoxi = [
-            {"role": "system", "content": system_tishi},
-            {"role": "user", "content": yonghu_tishi},
-        ]
+        # 基础消息（OpenAI兼容格式）。结构：
+        # [system, user(稳定原始请求), assistant(工具结果1..N), user(稳定短指令)]
+        # 前缀逐轮稳定，提升 MiniMax 前缀缓存命中率；stable_user_message 缺省
+        # 时退化为旧结构 [system, user]。
+        xiaoxi = [{"role": "system", "content": system_tishi}]
+        if stable_user_message:
+            xiaoxi.append({"role": "user", "content": str(stable_user_message)})
+        for item in prior_assistant_messages or []:
+            xiaoxi.append({"role": "assistant", "content": str(item)})
+        xiaoxi.append({"role": "user", "content": yonghu_tishi})
         
         payload = {
             "model": str(model_name or "").strip() or fs.default_model_id,

@@ -396,6 +396,8 @@ class HttpKehuduan:
         provider_id: str | None = None,
         shenti: ShentiZhuangtai | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
+        prior_assistant_messages: list[str] | None = None,
+        stable_user_message: str | None = None,
     ) -> str:
         """流式调用LLM，返回回复文本。on_text_chunk 可选回调用于前端流式展示。"""
         pid = infer_provider_id(provider_id or duqu_moren_provider(self._moren_provider))
@@ -464,6 +466,8 @@ class HttpKehuduan:
                 st,
                 gongju_dingyi=gongju_dingyi,
                 model_name=model_name,
+                prior_assistant_messages=prior_assistant_messages,
+                stable_user_message=stable_user_message,
             )
             if gongju_dingyi:
                 payload["tool_choice"] = "auto"
@@ -595,6 +599,13 @@ class HttpKehuduan:
                                 finish_reason = str(choice["finish_reason"])
                 latency_ms = round((time.perf_counter() - started) * 1000)
                 accumulated_tool_calls = list(tool_call_index.values())
+                usage_details = stream_usage.get("prompt_tokens_details") if isinstance(stream_usage, dict) else {}
+                cached_tokens = int(usage_details.get("cached_tokens") or 0)
+                prompt_tokens = int(stream_usage.get("prompt_tokens") or 0) if isinstance(stream_usage, dict) else 0
+                if isinstance(optimization_trace, dict):
+                    optimization_trace["cached_tokens"] = cached_tokens
+                    optimization_trace["prompt_tokens"] = prompt_tokens
+                    optimization_trace["cache_hit_rate"] = round(cached_tokens / prompt_tokens, 4) if prompt_tokens else 0.0
                 # Build a synthetic response for the existing parsing pipeline
                 visible_content = "".join(accumulated_content)
                 data = {
@@ -831,8 +842,16 @@ class HttpKehuduan:
         """返回 (system, user, on_text_chunk=None) -> str 回调函数，供 GutongCeng 使用"""
         if provider_id:
             pid = infer_provider_id(provider_id)
-            return lambda system, user, on_text_chunk=None: self.llm_diaoyong(system, user, pid, on_text_chunk=on_text_chunk)
-        return lambda system, user, on_text_chunk=None: self.llm_diaoyong(system, user, on_text_chunk=on_text_chunk)
+            return lambda system, user, on_text_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+                system, user, pid, on_text_chunk=on_text_chunk,
+                prior_assistant_messages=prior_assistant_messages,
+                stable_user_message=stable_user_message,
+            )
+        return lambda system, user, on_text_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+            system, user, on_text_chunk=on_text_chunk,
+            prior_assistant_messages=prior_assistant_messages,
+            stable_user_message=stable_user_message,
+        )
 
     def guanbi(self):
         """关闭HTTP客户端"""

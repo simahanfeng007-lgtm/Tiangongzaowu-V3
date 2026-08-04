@@ -5123,6 +5123,14 @@ class Zongdiaodu:
             # therefore stay after the stable system prefix for every provider.
             yonghu_tishi = _user_prompt_with_context(yonghu_tishi, dynamic_context)
 
+        # 前缀缓存友好结构：首条 user 消息（含指令）保持不变，
+        # 工具结果逐轮作为 assistant 消息追加，末条 user 为稳定短指令。
+        from .gutong.gutong_ceng import JIXU_ZHILING_WENBEN
+
+        cache_stable_user_message = yonghu_tishi
+        if not response_only_without_tools:
+            cache_stable_user_message = yonghu_tishi.rstrip() + "\n\n" + JIXU_ZHILING_WENBEN
+
         # ── 系统提示词压缩 ──
         sys_tok = estimate_tokens(system_tishi)
         sys_budget = int(DEFAULT_WINDOW_TOKENS * SYSTEM_BUDGET_PCT)
@@ -5165,26 +5173,62 @@ class Zongdiaodu:
                     allowed_tool_names=allowed_tool_names,
                     disable_tools=response_only_without_tools,
                 ):
-                    return self.gutong.huanxing(system_tishi, yonghu_tishi, shenti, on_text_chunk=on_chunk)
-            return self.gutong.huanxing(system_tishi, yonghu_tishi, shenti, on_text_chunk=on_chunk)
+                    return self.gutong.huanxing(system_tishi, cache_stable_user_message, shenti, on_text_chunk=on_chunk)
+            return self.gutong.huanxing(system_tishi, cache_stable_user_message, shenti, on_text_chunk=on_chunk)
 
         def _llm_jixu_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
+            prior_texts: list[str] = []
+            for item in quality_history:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str))
+                except Exception:
+                    continue
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
                     disable_tools=response_only_without_tools,
                 ):
-                    return self.gutong.jixu(system_tishi, payload, shenti, xiaoxi, on_text_chunk=on_chunk)
-            return self.gutong.jixu(system_tishi, payload, shenti, xiaoxi, on_text_chunk=on_chunk)
+                    return self.gutong.jixu(
+                        system_tishi, payload, shenti, xiaoxi,
+                        on_text_chunk=on_chunk,
+                        assistant_messages=prior_texts,
+                        stable_user_message=cache_stable_user_message,
+                    )
+            return self.gutong.jixu(
+                system_tishi, payload, shenti, xiaoxi,
+                on_text_chunk=on_chunk,
+                assistant_messages=prior_texts,
+                stable_user_message=cache_stable_user_message,
+            )
 
         def _llm_closeout_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
+            prior_texts: list[str] = []
+            for item in quality_history:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str))
+                except Exception:
+                    continue
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
                     disable_tools=True,
                 ):
-                    return self.gutong.jixu(system_tishi, payload, shenti, xiaoxi, on_text_chunk=on_chunk)
-            return self.gutong.jixu(system_tishi, payload, shenti, xiaoxi, on_text_chunk=on_chunk)
+                    return self.gutong.jixu(
+                        system_tishi, payload, shenti, xiaoxi,
+                        on_text_chunk=on_chunk,
+                        assistant_messages=prior_texts,
+                        stable_user_message=cache_stable_user_message,
+                    )
+            return self.gutong.jixu(
+                system_tishi, payload, shenti, xiaoxi,
+                on_text_chunk=on_chunk,
+                assistant_messages=prior_texts,
+                stable_user_message=cache_stable_user_message,
+            )
 
         gongju_cishu = 0
         tool_call_counts: dict[str, int] = {}
