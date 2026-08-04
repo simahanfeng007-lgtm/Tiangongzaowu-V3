@@ -4219,6 +4219,23 @@ def _simple_chain_is_clarification_question(text: Any) -> bool:
     return any(marker in value for marker in markers)
 
 
+_SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS = frozenset({
+    "run_state",
+    "model_payload_tokens",
+    "model_payload_compacted",
+    "model_payload_instruction",
+    "pre_execution_observations",
+    "guidance",
+})
+
+
+def _simple_chain_history_payload_text(payload: dict) -> str:
+    """历史消息文本：保留模型决策所需的完整字段（含工具结果全文），
+    只剔除平台簿记字段（run_state/压缩统计/观察项），降低每轮缓存增量。"""
+    out = {key: value for key, value in payload.items() if key not in _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS}
+    return json.dumps(out, ensure_ascii=False, default=str, sort_keys=True)
+
+
 def _simple_chain_final_hard_gate(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -5181,10 +5198,7 @@ class Zongdiaodu:
             for item in quality_history:
                 if not isinstance(item, dict):
                     continue
-                try:
-                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str, sort_keys=True))
-                except Exception:
-                    continue
+                prior_texts.append(_simple_chain_history_payload_text(item))
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
@@ -5208,10 +5222,7 @@ class Zongdiaodu:
             for item in quality_history:
                 if not isinstance(item, dict):
                     continue
-                try:
-                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str, sort_keys=True))
-                except Exception:
-                    continue
+                prior_texts.append(_simple_chain_history_payload_text(item))
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
