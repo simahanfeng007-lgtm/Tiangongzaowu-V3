@@ -3260,6 +3260,48 @@ _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS = int(
 )
 
 
+def _simple_chain_cache_prior_text(payload: dict) -> str:
+    """Deterministic compact text of one tool round for cache-stable history.
+
+    只保留关键字段并定长截断，保证：(1) 同一结果逐轮字节一致；
+    (2) 每轮增量很小，让 MiniMax 前缀缓存的命中率逼近 99%。
+    """
+    out: dict[str, Any] = {}
+    try:
+        out["action"] = str(payload.get("tool_action") or "").strip()
+        out["ok"] = bool(payload.get("ok"))
+        args = payload.get("tool_args")
+        if isinstance(args, dict):
+            out["args"] = {
+                str(key): str(value)[:240]
+                for key, value in list(args.items())[:8]
+            }
+        result = payload.get("tool_result")
+        if isinstance(result, dict):
+            evidence = result.get("evidence")
+            if isinstance(evidence, dict):
+                out["evidence"] = {
+                    str(key): str(evidence.get(key) or "")[:240]
+                    for key in ("path", "rel_path", "exists", "size_bytes", "sha256")
+                    if evidence.get(key)
+                }
+            preview = result.get("preview") or result.get("content_preview") or ""
+            if isinstance(preview, str) and preview:
+                out["preview"] = preview[:800]
+            elif isinstance(preview, dict):
+                out["preview"] = str(preview)[:800]
+        contract = payload.get("tool_result_contract")
+        if isinstance(contract, dict):
+            out["write_effect"] = bool(_contract_observed_write(contract))
+        failures = payload.get("failures")
+        if failures:
+            items = failures if isinstance(failures, list) else [failures]
+            out["failures"] = [str(item)[:240] for item in items[:5]]
+    except Exception:
+        pass
+    return json.dumps(out, ensure_ascii=False, sort_keys=True)
+
+
 def _simple_chain_remaining_deadline_seconds() -> float:
     """Remaining seconds until the gateway effect deadline (inf when unbound).
 
@@ -5181,10 +5223,7 @@ class Zongdiaodu:
             for item in quality_history:
                 if not isinstance(item, dict):
                     continue
-                try:
-                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str))
-                except Exception:
-                    continue
+                prior_texts.append(_simple_chain_cache_prior_text(item))
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
@@ -5208,10 +5247,7 @@ class Zongdiaodu:
             for item in quality_history:
                 if not isinstance(item, dict):
                     continue
-                try:
-                    prior_texts.append(json.dumps(item, ensure_ascii=False, default=str))
-                except Exception:
-                    continue
+                prior_texts.append(_simple_chain_cache_prior_text(item))
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,

@@ -197,6 +197,22 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(payload["messages"][-1]["content"], "稳定短指令")
         self.assertIn("提示注入", JIXU_ZHILING_WENBEN)
 
+    def test_cache_prior_text_is_deterministic_and_compact(self) -> None:
+        from v3.zongdiaodu import _simple_chain_cache_prior_text
+
+        payload = {
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"action": "file.write", "target": "output/e2e/02-core.md", "args": {"content": "x" * 5000}},
+            "tool_result": {"evidence": {"exists": True, "path": "output/e2e/02-core.md", "sha256": "abc" * 30}, "preview": "y" * 3000},
+            "tool_result_contract": {"ok": True, "observed_write_effect": True, "write_evidence": {"authoritative": True, "changed_files": ["output/e2e/02-core.md"]}},
+        }
+        first = _simple_chain_cache_prior_text(payload)
+        second = _simple_chain_cache_prior_text(payload)
+        self.assertEqual(first, second)
+        self.assertLess(len(first), 2500)
+        self.assertIn("02-core.md", first)
+
     def test_command_touches_protected_only_with_destructive_verbs(self) -> None:
         from v3.zongdiaodu import _simple_chain_command_touches_protected
 
