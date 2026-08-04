@@ -123,6 +123,8 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         orchestration = _Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "orchestration.py"
         text = orchestration.read_text(encoding="utf-8")
         self.assertIn("TIANGONG_EFFECT_DEADLINE_MS", text)
+        self.assertIn("previous_deadline_env", text)
+        self.assertIn('os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)', text)
 
     def test_budget_close_reply_is_terminal_and_honest(self) -> None:
         from v3.zongdiaodu import _simple_chain_budget_close_reply

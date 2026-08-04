@@ -1882,6 +1882,10 @@ class GatewayOrchestrationWorker:
             # Publish the absolute deadline as a process env var as well as a
             # ContextVar: the packaged backend may execute the chain on a
             # different thread, and only the env var survives that boundary.
+            # Save the previous value so it can be restored after the effect:
+            # a stale env deadline would otherwise poison unrelated background
+            # calls (heartbeat/autonomous) with a 5-second LLM cap.
+            previous_deadline_env = os.environ.get("TIANGONG_EFFECT_DEADLINE_MS")
             os.environ["TIANGONG_EFFECT_DEADLINE_MS"] = str(deadline_at_ms)
 
             def _execute_compat_with_deadline() -> Any:
@@ -1906,6 +1910,11 @@ class GatewayOrchestrationWorker:
                         or effect_record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
                     ),
                 ) from None
+            finally:
+                if previous_deadline_env is None:
+                    os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)
+                else:
+                    os.environ["TIANGONG_EFFECT_DEADLINE_MS"] = previous_deadline_env
         except BackendClientError as exc:
             effect_record = self._store.get_effect(effect.effect_id)
             status = "AMBIGUOUS" if exc.ambiguous or (effect_record and effect_record.state == "SIDE_EFFECT_STARTED") else "FAILED_FINAL"
