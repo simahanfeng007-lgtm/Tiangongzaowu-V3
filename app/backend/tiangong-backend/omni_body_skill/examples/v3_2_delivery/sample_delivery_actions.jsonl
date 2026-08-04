@@ -1,0 +1,5 @@
+{"action":"delivery.kernel.info"}
+{"action":"template.apply","target":"proposal.md","args":{"template_id":"business_proposal","variables":{"title":"AI转型试点方案","audience":"总经理","objective":"批准首期试点"}}}
+{"action":"qc.docx.delivery_check","target":"proposal.md"}
+{"action":"repair.plan","target":"repair_plan.md","args":{"source_action":"qc.docx.delivery_check","issues":[]}}
+{"action":"deliverable.package","target":"delivery.zip","args":{"items":["proposal.md","repair_plan.md"],"notes":"v3.2 delivery sample"}}

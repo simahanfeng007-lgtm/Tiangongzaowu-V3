@@ -1,0 +1,1986 @@
+{
+  "schema": "tiangong.v3.omni_body.skill_router_index.v1",
+  "version": "3.5.2",
+  "principle": "omni_body routes to model-visible skills; model executes the skill loop by calling atomic actions and qc gates. The tool never runs the skill as an agent.",
+  "skill_count": 34,
+  "skills": [
+    {
+      "id": "skill_learning_card_ingest_v1",
+      "mingcheng": "显式学习请求建卡",
+      "file": "deliverable_skills/57_learning_card_ingest.md",
+      "category": "learning",
+      "deliverables": [
+        "learning_card"
+      ],
+      "keywords": [
+        "学一下",
+        "学习这个",
+        "学习这段",
+        "做成能力",
+        "沉淀成skill",
+        "沉淀成技能",
+        "学习卡",
+        "以后遇到",
+        "按这个流程"
+      ],
+      "taskIntents": [
+        "显式学习",
+        "生成学习卡",
+        "能力沉淀"
+      ],
+      "starter_actions": [
+        "learning.ingest"
+      ],
+      "production_actions": [
+        "learning.ingest"
+      ],
+      "quality_gates": [],
+      "repair_actions": [],
+      "final_actions": [],
+      "acceptance": {
+        "minimum_score": 1,
+        "world_class_score": 1,
+        "must_pass": [
+          "only creates pending learning card"
+        ]
+      },
+      "max_chars": 2200
+    },
+    {
+      "id": "skill_core_actions_reference_v1",
+      "mingcheng": "Omni Body 核心动作参数手册",
+      "file": "deliverable_skills/00_core_actions_reference.md",
+      "category": "core",
+      "deliverables": [
+        "all"
+      ],
+      "keywords": [
+        "文件",
+        "文档",
+        "word",
+        "docx",
+        "ppt",
+        "pptx",
+        "excel",
+        "xlsx",
+        "pdf",
+        "表格",
+        "脑图",
+        "搜索",
+        "写入",
+        "读取",
+        "创建",
+        "生成",
+        "写",
+        "file",
+        "write",
+        "read",
+        "create",
+        "代码",
+        "命令",
+        "运行",
+        "方案",
+        "销售",
+        "话术",
+        "汇报",
+        "报告",
+        "提案",
+        "笔记"
+      ],
+      "taskIntents": [
+        "文件操作",
+        "文档生成",
+        "数据处理"
+      ],
+      "starter_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create",
+        "pptx.create",
+        "sheet.create"
+      ],
+      "quality_gates": [],
+      "repair_actions": [],
+      "final_actions": [],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_core_actions_reference_v1"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_managed_long_document_worldclass_v1",
+      "mingcheng": "世界顶尖级受管超长文档工程",
+      "file": "deliverable_skills/60_skill_managed_long_document_worldclass.md",
+      "category": "managed_long_document",
+      "deliverables": [
+        "project_folder",
+        "docx",
+        "md",
+        "json",
+        "zip"
+      ],
+      "keywords": [
+        "超长文档",
+        "长文档工程",
+        "大型文档",
+        "多章文档",
+        "分章续写",
+        "持续编写文档",
+        "20万字文档",
+        "十万字文档",
+        "文档工程文件夹",
+        "长篇报告工程",
+        "断点续写文档"
+      ],
+      "taskIntents": [
+        "超长文档设计",
+        "受管长文档",
+        "多章文档工程",
+        "可恢复文档续写"
+      ],
+      "starter_actions": [
+        "file.list",
+        "file.mkdir",
+        "file.read"
+      ],
+      "production_actions": [
+        "file.write",
+        "file.append",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "file.hash",
+        "qc.docx.delivery_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "code.patch_replace",
+        "file.write",
+        "docx.create"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "project_manifest_valid",
+          "checkpoint_current",
+          "source_sections_complete",
+          "qc.docx.delivery_check",
+          "project_folder_delivered"
+        ]
+      },
+      "max_chars": 6000
+    },
+    {
+      "id": "skill_word_business_proposal_worldclass_v1",
+      "mingcheng": "世界顶尖级商业 Word 方案交付",
+      "file": "deliverable_skills/29_skill_word_business_proposal_worldclass.md",
+      "category": "business_document",
+      "deliverables": [
+        "docx",
+        "md",
+        "zip"
+      ],
+      "keywords": [
+        "word",
+        "docx",
+        "方案",
+        "建议书",
+        "投标",
+        "提案",
+        "商业方案",
+        "客户方案",
+        "培训方案",
+        "市场调研",
+        "可成交",
+        "汇报材料"
+      ],
+      "taskIntents": [
+        "商业方案",
+        "Word文档",
+        "客户交付",
+        "项目建议书"
+      ],
+      "template_id": "business_proposal",
+      "starter_actions": [
+        "template.apply",
+        "writing.outline.create"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "qc.docx.delivery_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "docx.create"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.docx.delivery_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_ppt_executive_report_worldclass_v1",
+      "mingcheng": "世界顶尖级商业汇报 PPT 交付",
+      "file": "deliverable_skills/30_skill_ppt_executive_report_worldclass.md",
+      "category": "executive_presentation",
+      "deliverables": [
+        "pptx",
+        "md",
+        "zip"
+      ],
+      "keywords": [
+        "ppt",
+        "pptx",
+        "幻灯片",
+        "汇报",
+        "路演",
+        "演示",
+        "高管",
+        "董事会",
+        "提报",
+        "商业汇报",
+        "展示",
+        "页"
+      ],
+      "taskIntents": [
+        "商业汇报",
+        "PPT",
+        "决策汇报",
+        "演示文稿"
+      ],
+      "template_id": "executive_ppt",
+      "starter_actions": [
+        "template.apply",
+        "writing.outline.create"
+      ],
+      "production_actions": [
+        "pptx.create"
+      ],
+      "inspection_actions": [
+        "pptx.read"
+      ],
+      "quality_gates": [
+        "qc.ppt.delivery_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "pptx.create"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.ppt.delivery_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_code_project_delivery_worldclass_v1",
+      "mingcheng": "世界顶尖级代码工程交付",
+      "file": "deliverable_skills/31_skill_code_project_delivery_worldclass.md",
+      "category": "code_engineering",
+      "deliverables": [
+        "source",
+        "README",
+        "tests",
+        "zip"
+      ],
+      "keywords": [
+        "代码",
+        "编程",
+        "python",
+        "程序",
+        "项目",
+        "工程",
+        "开发",
+        "bug",
+        "测试",
+        "脚本",
+        "api",
+        "仓库",
+        "打包",
+        "修复",
+        "code_engineering",
+        "小程序",
+        "微信小程序",
+        "wxml",
+        "wxss",
+        "mini program",
+        "wechat miniapp"
+      ],
+      "taskIntents": [
+        "代码工程",
+        "程序开发",
+        "测试",
+        "工程交付",
+        "小程序工程",
+        "微信小程序离线工程"
+      ],
+      "template_id": "code_project",
+      "starter_actions": [
+        "writing.outline.create",
+        "file.mkdir"
+      ],
+      "production_actions": [
+        "code.write",
+        "file.write"
+      ],
+      "quality_gates": [
+        "quality.python_syntax",
+        "quality.run_tests",
+        "qc.code.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "code.patch_replace",
+        "code.write"
+      ],
+      "final_actions": [
+        "deliverable.package",
+        "zip.create"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.code.delivery_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_research_literature_review_worldclass_v1",
+      "mingcheng": "世界顶尖级资料/论文综述交付",
+      "file": "deliverable_skills/32_skill_research_literature_review_worldclass.md",
+      "category": "research_review",
+      "deliverables": [
+        "evidence_table",
+        "review_doc",
+        "zip"
+      ],
+      "keywords": [
+        "论文",
+        "综述",
+        "研究",
+        "资料",
+        "文献",
+        "调研",
+        "搜索",
+        "引用",
+        "pdf",
+        "证据",
+        "系统综述",
+        "最新资料"
+      ],
+      "taskIntents": [
+        "资料搜索",
+        "论文综述",
+        "研究报告",
+        "证据表"
+      ],
+      "template_id": "research_review",
+      "starter_actions": [
+        "template.apply",
+        "research.evidence_table.create"
+      ],
+      "production_actions": [
+        "pdf.extract_text",
+        "file.write",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "qc.research.evidence_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "research.evidence_table.create",
+        "file.write"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.research.evidence_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_short_video_delivery_worldclass_v1",
+      "mingcheng": "世界顶尖级短视频交付",
+      "file": "deliverable_skills/33_skill_short_video_delivery_worldclass.md",
+      "category": "short_video",
+      "deliverables": [
+        "mp4",
+        "script",
+        "cover",
+        "zip"
+      ],
+      "keywords": [
+        "短视频",
+        "剪辑",
+        "视频",
+        "抖音",
+        "快手",
+        "剪映",
+        "字幕",
+        "配乐",
+        "封面",
+        "竖屏",
+        "口播",
+        "宣传片"
+      ],
+      "taskIntents": [
+        "短视频",
+        "剪辑",
+        "内容生产",
+        "视频交付"
+      ],
+      "template_id": "short_video",
+      "starter_actions": [
+        "template.apply",
+        "writing.outline.create"
+      ],
+      "production_actions": [
+        "video.cut",
+        "video.slideshow",
+        "video.add_audio",
+        "jianying.export.mp4"
+      ],
+      "quality_gates": [
+        "qc.video.delivery_check",
+        "qc.image.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "video.cut",
+        "video.add_audio",
+        "jianying.export.mp4"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.video.delivery_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_managed_longform_novel_worldclass_v1",
+      "mingcheng": "世界顶尖级受管长篇小说工程",
+      "file": "deliverable_skills/58_skill_managed_longform_novel_worldclass.md",
+      "category": "managed_longform_fiction",
+      "deliverables": [
+        "project_folder",
+        "md",
+        "json"
+      ],
+      "keywords": [
+        "受管长篇",
+        "长篇小说工程",
+        "超长小说工程",
+        "小说工程",
+        "持续续写",
+        "长期续写",
+        "完整蓝图",
+        "完整规划",
+        "全书规划",
+        "多章连载",
+        "整本小说",
+        "小说文件夹",
+        ".novel-system",
+        "断点续写"
+      ],
+      "taskIntents": [
+        "受管长篇小说",
+        "长篇小说工程",
+        "持续续写小说",
+        "全书规划与章节事务"
+      ],
+      "starter_actions": [
+        "novel.project.status",
+        "novel.project.create",
+        "novel.project.recover"
+      ],
+      "production_actions": [
+        "novel.blueprint.update",
+        "novel.blueprint.patch",
+        "novel.blueprint.upsert_many",
+        "novel.blueprint.assist",
+        "novel.reference.resolve",
+        "novel.timeline.calculate",
+        "novel.timeline.shift_suffix",
+        "novel.timeline.normalize",
+        "novel.mobility.align_initial_many",
+        "novel.blueprint.compile",
+        "novel.plan.rebase",
+        "novel.chapter.checkout",
+        "novel.scene.design",
+        "novel.context.query",
+        "novel.chapter.submit"
+      ],
+      "quality_gates": [
+        "novel.project.audit"
+      ],
+      "repair_actions": [
+        "novel.blueprint.assist",
+        "novel.blueprint.patch",
+        "novel.blueprint.upsert_many",
+        "novel.timeline.normalize",
+        "novel.mobility.align_initial_many",
+        "novel.plan.rebase"
+      ],
+      "final_actions": [
+        "novel.project.status",
+        "novel.project.audit"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "planning_complete",
+          "chapter_transaction_committed",
+          "project_folder_delivered"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_webnovel_chapter_delivery_worldclass_v1",
+      "mingcheng": "世界顶尖级网文章节交付",
+      "file": "deliverable_skills/34_skill_webnovel_chapter_delivery_worldclass.md",
+      "category": "creative_writing",
+      "keywords": [
+        "网文",
+        "小说",
+        "章节",
+        "爽点",
+        "悬念",
+        "剧情",
+        "人物",
+        "故事",
+        "连载",
+        "番茄",
+        "起点"
+      ],
+      "taskIntents": [
+        "网文写作",
+        "小说章节",
+        "创意写作"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_webnovel_chapter_delivery_worldclass_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_poster_visual_delivery_worldclass_v1",
+      "mingcheng": "世界顶尖级海报/修图视觉交付",
+      "file": "deliverable_skills/35_skill_poster_visual_delivery_worldclass.md",
+      "category": "visual_design",
+      "deliverables": [
+        "png",
+        "brief",
+        "zip"
+      ],
+      "keywords": [
+        "海报",
+        "修图",
+        "图片",
+        "视觉",
+        "设计",
+        "封面",
+        "宣传图",
+        "banner",
+        "做图",
+        "ps",
+        "photoshop"
+      ],
+      "taskIntents": [
+        "海报设计",
+        "修图",
+        "视觉交付"
+      ],
+      "template_id": "poster_campaign",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "image.create_canvas",
+        "image.add_text",
+        "image.compose",
+        "adobe.photoshop.layer.create"
+      ],
+      "quality_gates": [
+        "qc.poster.commercial_check",
+        "qc.image.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "image.add_text",
+        "image.compose"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.poster.commercial_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_spreadsheet_analysis_report_worldclass_v1",
+      "mingcheng": "世界顶尖级表格分析报告交付",
+      "file": "deliverable_skills/36_skill_spreadsheet_analysis_report_worldclass.md",
+      "category": "data_analysis",
+      "deliverables": [
+        "xlsx",
+        "analysis_md",
+        "zip"
+      ],
+      "keywords": [
+        "表格",
+        "excel",
+        "xlsx",
+        "数据",
+        "分析",
+        "清洗",
+        "报表",
+        "透视",
+        "图表",
+        "统计",
+        "汇总"
+      ],
+      "taskIntents": [
+        "表格分析",
+        "数据报告",
+        "Excel"
+      ],
+      "template_id": "spreadsheet_analysis",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "sheet.read",
+        "sheet.create",
+        "file.write"
+      ],
+      "quality_gates": [
+        "qc.sheet.analysis_report_check",
+        "qc.sheet.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "sheet.create",
+        "file.write"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.sheet.analysis_report_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_meeting_minutes_action_followup_worldclass_v1",
+      "mingcheng": "世界顶尖级会议纪要与行动跟进交付",
+      "file": "deliverable_skills/37_skill_meeting_minutes_action_followup_worldclass.md",
+      "category": "meeting_ops",
+      "deliverables": [
+        "md",
+        "docx",
+        "zip"
+      ],
+      "keywords": [
+        "会议",
+        "纪要",
+        "录音",
+        "行动项",
+        "待办",
+        "跟进",
+        "决策",
+        "会议记录",
+        "访谈",
+        "沟通"
+      ],
+      "taskIntents": [
+        "会议纪要",
+        "行动跟进",
+        "访谈整理"
+      ],
+      "template_id": "meeting_minutes",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "qc.meeting.minutes_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "docx.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.meeting.minutes_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_sales_script_delivery_worldclass_v1",
+      "mingcheng": "世界顶尖级B2B销售话术交付",
+      "file": "deliverable_skills/38_skill_sales_script_delivery_worldclass.md",
+      "category": "sales_enablement",
+      "deliverables": [
+        "md",
+        "docx",
+        "zip"
+      ],
+      "keywords": [
+        "销售",
+        "话术",
+        "电话",
+        "开场",
+        "异议",
+        "成交",
+        "客户",
+        "b2b",
+        "转化",
+        "线索",
+        "跟进"
+      ],
+      "taskIntents": [
+        "销售话术",
+        "B2B转化",
+        "客户沟通"
+      ],
+      "template_id": "sales_script",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "qc.sales.script_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "docx.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.sales.script_check"
+        ]
+      },
+      "max_chars": 0
+    },
+    {
+      "id": "skill_course_lesson_plan_worldclass_v1",
+      "mingcheng": "世界顶尖级课程/教案交付",
+      "file": "deliverable_skills/39_skill_course_lesson_plan_worldclass.md",
+      "category": "education",
+      "deliverables": [
+        "md",
+        "docx",
+        "zip"
+      ],
+      "keywords": [
+        "课程",
+        "教案",
+        "培训",
+        "教学",
+        "课时",
+        "学习目标",
+        "作业",
+        "课堂",
+        "讲义",
+        "教学设计"
+      ],
+      "taskIntents": [
+        "课程设计",
+        "教案",
+        "培训交付"
+      ],
+      "template_id": "course_plan",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create",
+        "pptx.create"
+      ],
+      "quality_gates": [
+        "qc.course.plan_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "docx.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.course.plan_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_knowledge_base_ingestion_worldclass_v1",
+      "mingcheng": "世界顶尖级知识库入库交付",
+      "file": "deliverable_skills/40_skill_knowledge_base_ingestion_worldclass.md",
+      "category": "knowledge_base",
+      "deliverables": [
+        "manifest",
+        "qa",
+        "zip"
+      ],
+      "keywords": [
+        "知识库",
+        "入库",
+        "切片",
+        "chunk",
+        "qa",
+        "问答",
+        "文档整理",
+        "向量",
+        "检索",
+        "知识"
+      ],
+      "taskIntents": [
+        "知识库入库",
+        "文档结构化",
+        "检索增强"
+      ],
+      "template_id": "kb_ingestion",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.read",
+        "file.write",
+        "pdf.extract_text"
+      ],
+      "quality_gates": [
+        "qc.kb.ingestion_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.kb.ingestion_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_authorized_voice_audio_worldclass_v1",
+      "mingcheng": "世界顶尖级授权声音/音频交付",
+      "file": "deliverable_skills/41_skill_authorized_voice_audio_worldclass.md",
+      "category": "authorized_audio",
+      "deliverables": [
+        "consent_pack",
+        "audio",
+        "zip"
+      ],
+      "keywords": [
+        "声音",
+        "配音",
+        "tts",
+        "音频",
+        "克隆",
+        "授权",
+        "旁白",
+        "语音",
+        "录音",
+        "voice"
+      ],
+      "taskIntents": [
+        "授权声音",
+        "音频交付",
+        "TTS"
+      ],
+      "template_id": "authorized_voice_audio",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "audio.tts",
+        "audio.trim",
+        "audio.concat"
+      ],
+      "quality_gates": [
+        "qc.voice_authorized.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "audio.trim"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.voice_authorized.delivery_check"
+        ]
+      },
+      "safety": "voice.clone_authorized remains A5 unless external consent backend is mounted. Prefer audio.tts for non-impersonating narration.",
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_seo_people_first_content_worldclass_v1",
+      "mingcheng": "世界顶尖级SEO/网页内容交付",
+      "file": "deliverable_skills/42_skill_seo_people_first_content_worldclass.md",
+      "category": "web_content",
+      "deliverables": [
+        "md",
+        "html",
+        "zip"
+      ],
+      "keywords": [
+        "seo",
+        "网页",
+        "文章",
+        "内容",
+        "官网",
+        "落地页",
+        "搜索排名",
+        "people-first",
+        "博客",
+        "页面"
+      ],
+      "taskIntents": [
+        "SEO内容",
+        "网页内容",
+        "落地页"
+      ],
+      "template_id": "seo_people_first",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "docx.create"
+      ],
+      "quality_gates": [
+        "qc.seo.people_first_check",
+        "qc.writing.ai_tone_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write"
+      ],
+      "final_actions": [
+        "preview.generate",
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.seo.people_first_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_content_calendar_worldclass_v1",
+      "mingcheng": "世界顶尖级内容日历交付",
+      "file": "deliverable_skills/43_skill_content_calendar_worldclass.md",
+      "category": "content_ops",
+      "deliverables": [
+        "csv",
+        "xlsx",
+        "zip"
+      ],
+      "keywords": [
+        "内容日历",
+        "排期",
+        "选题",
+        "小红书",
+        "抖音",
+        "公众号",
+        "运营",
+        "内容计划",
+        "发布计划",
+        "日历"
+      ],
+      "taskIntents": [
+        "内容运营",
+        "内容日历",
+        "选题排期"
+      ],
+      "template_id": "content_calendar",
+      "starter_actions": [
+        "template.apply"
+      ],
+      "production_actions": [
+        "file.write",
+        "sheet.create"
+      ],
+      "quality_gates": [
+        "qc.content.calendar_check",
+        "qc.sheet.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "file.write",
+        "sheet.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.content.calendar_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_professional_application_bridge_worldclass_v1",
+      "mingcheng": "世界顶尖级专业应用桥接交付",
+      "file": "deliverable_skills/44_skill_professional_application_bridge_worldclass.md",
+      "category": "professional_app_bridge",
+      "deliverables": [
+        "bridge_pack",
+        "script",
+        "manifest",
+        "zip"
+      ],
+      "keywords": [
+        "专业应用",
+        "应用桥接",
+        "app adapter",
+        "原生应用",
+        "插件",
+        "脚本桥接",
+        "native adapter",
+        "自动化后端",
+        "能力探测",
+        "桥接包"
+      ],
+      "taskIntents": [
+        "专业应用桥接",
+        "应用适配器",
+        "工具挂载",
+        "能力探测"
+      ],
+      "template_id": "professional_app_bridge",
+      "starter_actions": [
+        "app.adapter.health",
+        "app.adapter.matrix"
+      ],
+      "production_actions": [
+        "app.native.capability_probe",
+        "app.bridge.script.create",
+        "app.bridge.pack.create"
+      ],
+      "quality_gates": [
+        "preview.generate"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "app.bridge.script.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "app.adapter.health"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_browser_playwright_automation_worldclass_v1",
+      "mingcheng": "世界顶尖级浏览器自动化交付",
+      "file": "deliverable_skills/45_skill_browser_playwright_automation_worldclass.md",
+      "category": "browser_automation",
+      "deliverables": [
+        "html",
+        "txt",
+        "png",
+        "pdf",
+        "bridge_pack",
+        "zip"
+      ],
+      "keywords": [
+        "浏览器",
+        "网页",
+        "网站",
+        "chrome",
+        "playwright",
+        "截图",
+        "爬取",
+        "下载",
+        "网页转pdf",
+        "自动填写",
+        "抓取",
+        "页面"
+      ],
+      "taskIntents": [
+        "浏览器自动化",
+        "网页抓取",
+        "网页截图",
+        "页面导出"
+      ],
+      "template_id": "browser_playwright_automation",
+      "starter_actions": [
+        "app.native.capability_probe",
+        "browser.playwright.script.create"
+      ],
+      "production_actions": [
+        "browser.playwright.goto",
+        "browser.playwright.screenshot",
+        "browser.playwright.extract_text",
+        "browser.playwright.pdf"
+      ],
+      "quality_gates": [
+        "preview.generate",
+        "qc.research.evidence_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "browser.playwright.script.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "preview.generate"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_office_native_bridge_worldclass_v1",
+      "mingcheng": "世界顶尖级 Office / WPS 原生桥接交付",
+      "file": "deliverable_skills/46_skill_office_native_bridge_worldclass.md",
+      "category": "office_native_bridge",
+      "deliverables": [
+        "docx",
+        "xlsx",
+        "pptx",
+        "pdf",
+        "script",
+        "bridge_pack",
+        "zip"
+      ],
+      "keywords": [
+        "office",
+        "wps",
+        "word原生",
+        "excel原生",
+        "powerpoint原生",
+        "com",
+        "graph",
+        "onedrive",
+        "sharepoint",
+        "导出pdf",
+        "vba",
+        "office脚本"
+      ],
+      "taskIntents": [
+        "Office原生桥接",
+        "WPS桥接",
+        "PDF导出",
+        "Office自动化"
+      ],
+      "template_id": "office_native_bridge",
+      "starter_actions": [
+        "app.native.capability_probe",
+        "microsoft.office.com.script.create"
+      ],
+      "production_actions": [
+        "docx.create",
+        "sheet.create",
+        "pptx.create",
+        "microsoft.graph.request_pack.create",
+        "microsoft.word.native.export_pdf",
+        "microsoft.powerpoint.native.export_pdf",
+        "wps.native.script.create"
+      ],
+      "quality_gates": [
+        "qc.docx.delivery_check",
+        "qc.ppt.delivery_check",
+        "qc.sheet.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "docx.create",
+        "pptx.create",
+        "sheet.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.docx.delivery_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_adobe_blender_design_bridge_worldclass_v1",
+      "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
+      "file": "deliverable_skills/47_skill_adobe_blender_design_bridge_worldclass.md",
+      "category": "design_native_bridge",
+      "deliverables": [
+        "psjs",
+        "jsx",
+        "py",
+        "png",
+        "mp4",
+        "blend",
+        "zip"
+      ],
+      "keywords": [
+        "photoshop",
+        "ps",
+        "adobe",
+        "premiere",
+        "pr",
+        "after effects",
+        "ae",
+        "blender",
+        "3d",
+        "建模",
+        "渲染",
+        "uxp",
+        "jsx",
+        "psjs",
+        "图层",
+        "时间线"
+      ],
+      "taskIntents": [
+        "Adobe桥接",
+        "Photoshop脚本",
+        "Premiere脚本",
+        "Blender建模",
+        "专业设计应用"
+      ],
+      "template_id": "adobe_blender_design_bridge",
+      "starter_actions": [
+        "app.adapter.health",
+        "app.native.capability_probe"
+      ],
+      "production_actions": [
+        "adobe.photoshop.uxp.script.create",
+        "adobe.premiere.jsx.script.create",
+        "adobe.aftereffects.jsx.script.create",
+        "blender.python.script.create",
+        "blender.python.run"
+      ],
+      "quality_gates": [
+        "qc.image.delivery_check",
+        "qc.video.delivery_check"
+      ],
+      "repair_actions": [
+        "repair.plan",
+        "adobe.photoshop.uxp.script.create",
+        "blender.python.script.create"
+      ],
+      "final_actions": [
+        "deliverable.package"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.image.delivery_check"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_computer_operation_v1",
+      "mingcheng": "电脑操作",
+      "file": "deliverable_skills/49_skill_computer_operation.md",
+      "category": "system",
+      "keywords": [
+        "shell",
+        "命令",
+        "终端",
+        "命令行",
+        "cmd",
+        "powershell",
+        "bash",
+        "执行",
+        "运行",
+        "操作电脑",
+        "系统",
+        "进程",
+        "磁盘",
+        "内存",
+        "安装",
+        "pip",
+        "npm",
+        "git",
+        "网络",
+        "ping",
+        "ipconfig",
+        "tasklist",
+        "任务管理器",
+        "查找文件",
+        "搜索文件"
+      ],
+      "taskIntents": [
+        "执行命令",
+        "系统操作",
+        "电脑操作"
+      ],
+      "production_actions": [
+        "shell.run",
+        "python.run",
+        "file.read",
+        "file.write"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_computer_operation_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_desktop_cleanup_v1",
+      "mingcheng": "桌面清理与文件整理",
+      "file": "deliverable_skills/50_skill_desktop_cleanup.md",
+      "category": "system",
+      "keywords": [
+        "整理桌面",
+        "桌面好乱",
+        "清理",
+        "磁盘空间",
+        "C盘",
+        "重复文件",
+        "整理文件夹",
+        "整理下载",
+        "释放空间",
+        "磁盘不足"
+      ],
+      "taskIntents": [
+        "桌面清理",
+        "文件整理",
+        "磁盘清理"
+      ],
+      "production_actions": [
+        "shell.run",
+        "python.run",
+        "file.list",
+        "file.write"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_desktop_cleanup_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_utility_toolbox_v1",
+      "mingcheng": "实用工具箱",
+      "file": "deliverable_skills/51_skill_utility_toolbox.md",
+      "category": "utility",
+      "keywords": [
+        "批量改名",
+        "重命名",
+        "改名",
+        "合并PDF",
+        "拆分PDF",
+        "PDF合并",
+        "压缩图片",
+        "图片压缩",
+        "图片转换",
+        "改大小",
+        "图片改大小",
+        "转换格式",
+        "PNG转JPG",
+        "批量处理"
+      ],
+      "taskIntents": [
+        "批量重命名",
+        "PDF处理",
+        "图片处理"
+      ],
+      "production_actions": [
+        "python.run",
+        "shell.run",
+        "file.list",
+        "file.write"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_utility_toolbox_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_format_converter_v1",
+      "mingcheng": "万能格式转换",
+      "file": "deliverable_skills/52_skill_format_converter.md",
+      "category": "utility",
+      "keywords": [
+        "转格式",
+        "格式转换",
+        "转换格式",
+        "音频转换",
+        "视频转换",
+        "图片转换",
+        "文档转换",
+        "电子书转换",
+        "转MP3",
+        "转WAV",
+        "转FLAC",
+        "转AAC",
+        "转OGG",
+        "转M4A",
+        "提取音频",
+        "转MP4",
+        "转MKV",
+        "转AVI",
+        "转MOV",
+        "转WEBM",
+        "转GIF",
+        "视频压缩",
+        "视频转GIF",
+        "转PNG",
+        "转JPG",
+        "转JPEG",
+        "转WebP",
+        "转AVIF",
+        "转BMP",
+        "转TIFF",
+        "转DOCX",
+        "转PDF",
+        "转EPUB",
+        "转MOBI",
+        "转MD",
+        "转HTML",
+        "转TXT",
+        "Markdown转Word",
+        "Word转Markdown",
+        "PDF转Word",
+        "压缩视频",
+        "压缩图片",
+        "提取音频"
+      ],
+      "taskIntents": [
+        "格式转换",
+        "音频转换",
+        "视频转换",
+        "图片转换",
+        "文档转换",
+        "电子书转换"
+      ],
+      "production_actions": [
+        "shell.run",
+        "python.run",
+        "file.list",
+        "file.write"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_format_converter_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_search_v2",
+      "mingcheng": "网络搜索与图搜",
+      "file": "deliverable_skills/48_skill_web_search_research_worldclass.md",
+      "category": "search",
+      "keywords": [
+        "搜索",
+        "搜一下",
+        "查一下",
+        "查找",
+        "帮我搜",
+        "在线搜",
+        "上网搜",
+        "百度",
+        "搜狗",
+        "谷歌",
+        "Google",
+        "搜图",
+        "找图",
+        "图片搜索",
+        "图搜",
+        "找图片",
+        "新闻",
+        "最新",
+        "快讯",
+        "热点",
+        "论文",
+        "学术",
+        "研究",
+        "代码",
+        "报错",
+        "debug",
+        "stackoverflow",
+        "github"
+      ],
+      "taskIntents": [
+        "搜索",
+        "图片搜索",
+        "新闻搜索",
+        "学术搜索"
+      ],
+      "production_actions": [
+        "web.search",
+        "web.image_search",
+        "http.get",
+        "file.write"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "web.image_search.structured_result",
+          "web.search.current_sources"
+        ],
+        "image_result_required_fields": [
+          "image_url",
+          "source_url",
+          "thumbnail_url"
+        ]
+      }
+    },
+    {
+      "id": "skill_production_packaging_v1",
+      "mingcheng": "产品级EXE打包",
+      "file": "deliverable_skills/53_skill_production_packaging.md",
+      "category": "devops",
+      "keywords": [
+        "打包",
+        "exe",
+        "安装包",
+        "NSIS",
+        "electron-builder",
+        "便携版",
+        "发布",
+        "分发",
+        "构建",
+        "build",
+        "package",
+        "installer",
+        "setup"
+      ],
+      "taskIntents": [
+        "打包",
+        "构建安装包",
+        "发布应用"
+      ],
+      "production_actions": [
+        "shell.run",
+        "file.write",
+        "file.read"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_production_packaging_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_frontend_optimization_v1",
+      "mingcheng": "前端性能优化",
+      "file": "deliverable_skills/54_skill_frontend_optimization.md",
+      "category": "frontend",
+      "keywords": [
+        "前端优化",
+        "性能优化",
+        "压缩",
+        "minify",
+        "lighthouse",
+        "WebP",
+        "懒加载",
+        "lazy load",
+        "PurgeCSS",
+        "Terser",
+        "图片优化",
+        "加速",
+        "加载慢"
+      ],
+      "taskIntents": [
+        "前端优化",
+        "性能优化",
+        "压缩资源"
+      ],
+      "production_actions": [
+        "shell.run",
+        "file.write",
+        "file.read"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_frontend_optimization_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_frontend_design_v1",
+      "mingcheng": "前端美化",
+      "file": "deliverable_skills/55_skill_frontend_design.md",
+      "category": "frontend",
+      "keywords": [
+        "美化",
+        "设计",
+        "UI",
+        "样式",
+        "主题",
+        "颜色",
+        "图标",
+        "动画",
+        "CSS",
+        "深色模式",
+        "美化界面",
+        "界面美化",
+        "好看",
+        "漂亮",
+        "DESIGN.md",
+        "设计令牌",
+        "design token"
+      ],
+      "taskIntents": [
+        "前端美化",
+        "设计令牌",
+        "UI美化"
+      ],
+      "production_actions": [
+        "shell.run",
+        "file.write",
+        "file.read"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_frontend_design_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_vrm_optimization_v1",
+      "mingcheng": "VRM身体展示优化",
+      "file": "deliverable_skills/56_skill_vrm_optimization.md",
+      "category": "frontend",
+      "keywords": [
+        "VRM",
+        "3D",
+        "身体",
+        "模型",
+        "表情",
+        "动画",
+        "blendShape",
+        "SpringBone",
+        "MToon",
+        "镜头",
+        "灯光",
+        "虚拟形象",
+        "vrm优化"
+      ],
+      "taskIntents": [
+        "VRM优化",
+        "3D调整",
+        "表情修复"
+      ],
+      "production_actions": [
+        "shell.run",
+        "file.write",
+        "file.read"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_vrm_optimization_v1"
+        ]
+      }
+    },
+    {
+      "id": "skill_mindmap_knowledge_architecture_worldclass_v1",
+      "mingcheng": "世界顶尖级脑图与知识结构交付",
+      "file": "deliverable_skills/59_skill_mindmap_knowledge_architecture_worldclass.md",
+      "category": "knowledge_architecture",
+      "deliverables": [
+        "mindmap",
+        "md",
+        "opml",
+        "source_outline"
+      ],
+      "keywords": [
+        "脑图",
+        "思维导图",
+        "知识图谱",
+        "知识结构",
+        "概念图",
+        "主题拆解",
+        "mermaid mindmap",
+        "opml",
+        "mind map"
+      ],
+      "taskIntents": [
+        "脑图设计",
+        "思维导图",
+        "知识结构设计",
+        "OPML交付"
+      ],
+      "starter_actions": [
+        "file.mkdir",
+        "file.read"
+      ],
+      "production_actions": [
+        "file.write",
+        "mindmap.create"
+      ],
+      "quality_gates": [
+        "file.read",
+        "file.list"
+      ],
+      "repair_actions": [
+        "code.patch_replace",
+        "mindmap.create"
+      ],
+      "final_actions": [
+        "file.list"
+      ],
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "mermaid_parseable",
+          "opml_parseable",
+          "source_preserved"
+        ]
+      },
+      "max_chars": 4000
+    },
+    {
+      "id": "skill_omni_body_reference_v1",
+      "mingcheng": "Omni Body 万能工具参考",
+      "file": "deliverable_skills/51_skill_omni_body_reference.md",
+      "category": "core",
+      "keywords": [
+        "文件",
+        "文档",
+        "代码",
+        "命令",
+        "图片",
+        "视频",
+        "音频",
+        "word",
+        "excel",
+        "ppt",
+        "pdf",
+        "zip",
+        "读取",
+        "写入",
+        "创建",
+        "删除",
+        "移动",
+        "复制",
+        "重命名",
+        "搜索",
+        "下载",
+        "网络",
+        "网页",
+        "运行",
+        "执行",
+        "python",
+        "shell",
+        "cmd",
+        "整理",
+        "归类",
+        "打包",
+        "压缩",
+        "解压",
+        "file",
+        "write",
+        "read",
+        "create",
+        "move",
+        "copy",
+        "delete",
+        "shell.run",
+        "python.run",
+        "file.list"
+      ],
+      "taskIntents": [
+        "文件操作",
+        "文档生成",
+        "代码编写",
+        "数据处理",
+        "桌面清理",
+        "文件整理",
+        "搜索",
+        "下载",
+        "图片处理",
+        "视频处理",
+        "音频处理",
+        "命令执行",
+        "脚本运行"
+      ],
+      "production_actions": [
+        "file.list",
+        "file.read",
+        "file.write",
+        "file.move",
+        "file.copy",
+        "file.mkdir",
+        "shell.run",
+        "python.run",
+        "docx.create",
+        "pptx.create",
+        "sheet.create",
+        "web.search",
+        "http.get",
+        "web.download"
+      ],
+      "max_chars": 0,
+      "acceptance": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "acceptance.skill_omni_body_reference_v1"
+        ]
+      }
+    }
+  ],
+  "actions": [
+    "skill.route",
+    "skill.get",
+    "skill.read",
+    "skill.list",
+    "skill.step.check",
+    "skill.progress.report"
+  ],
+  "tool_boundary": "skill router only returns skill cards; model executes flow"
+}

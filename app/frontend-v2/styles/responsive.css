@@ -1,0 +1,108 @@
+.execution-observation-toggle {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .app-shell:not([data-page="lifecycle"]) {
+    grid-template-columns: 56px 250px minmax(0, 1fr);
+    grid-template-areas: "nav context main";
+  }
+
+  .app-shell:not([data-page="lifecycle"]) .inspector {
+    display: none;
+  }
+
+  /*
+   * The life panel keeps its own stable taxonomy and card grids, but the
+   * surrounding desktop chrome must still yield space at high Windows/page
+   * zoom.  Otherwise the fixed 56 + 260 + 316 px side columns can reduce the
+   * main track to zero before any life-field layout is considered.
+   */
+  .app-shell[data-page="lifecycle"] {
+    grid-template-columns: 56px 250px minmax(0, 1fr);
+    grid-template-areas: "nav context main";
+  }
+
+  .app-shell[data-page="lifecycle"] .inspector {
+    display: none;
+  }
+
+  .execution-observation-toggle {
+    display: inline-flex;
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    z-index: 60;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--accent, #2f6fed);
+    color: #fff;
+    border: 0;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .app-shell[data-inspector-open="true"] .inspector {
+    display: flex !important;
+    position: fixed;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 92vw);
+    z-index: 55;
+    background: var(--surface, #141821);
+    border-left: 1px solid var(--line, #2a3040);
+    overflow-y: auto;
+  }
+
+  .dashboard-grid,
+  .settings-body,
+  .body-creator {
+    grid-template-columns: 1fr;
+  }
+
+  .body-preview-card {
+    position: static;
+    grid-row: auto;
+    min-height: auto;
+  }
+
+  .body-voice-card,
+  .body-role-card,
+  .body-soul-card {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .learning-candidate-row {
+    grid-template-columns: 1fr;
+  }
+
+  .learning-candidate-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .app-shell:not([data-page="lifecycle"]) {
+    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-areas: "nav main";
+  }
+
+  .app-shell:not([data-page="lifecycle"]) .context-pane {
+    display: none;
+  }
+
+  .app-shell[data-page="lifecycle"] {
+    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-areas: "nav main";
+  }
+
+  .app-shell[data-page="lifecycle"] .context-pane {
+    display: none;
+  }
+}

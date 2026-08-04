@@ -1,0 +1,1578 @@
+[
+  {
+    "action": "v34.professional_apps.info",
+    "target": null,
+    "args": {},
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.professional_apps.v1",
+        "version": "3.4.0",
+        "tool_boundary": "omni_body remains a tool: app adapters execute explicit actions or generate native bridge packs; no hidden skill workflow.",
+        "execution_modes": [
+          "native_cli_or_api",
+          "native_desktop_bridge",
+          "generated_bridge_script",
+          "request_pack",
+          "portable_fallback",
+          "adapter_required"
+        ],
+        "profile_count": 13,
+        "action_count": 35,
+        "profiles": [
+          "browser.playwright",
+          "microsoft.office",
+          "wps",
+          "adobe.photoshop",
+          "adobe.video",
+          "blender",
+          "figma",
+          "canva",
+          "feishu",
+          "wechat_work",
+          "git",
+          "docker",
+          "sqlite"
+        ],
+        "required_model_loop": "skill.route -> skill.get -> model chooses app action -> app.adapter.health/probe -> execute native action or generate bridge pack -> qc/repair/package"
+      },
+      "evidence": {
+        "path": "v34_professional_apps",
+        "exists": true,
+        "bytes": 35
+      },
+      "op_id": "20260705_041933_083_v34.professional_apps.info",
+      "action": "v34.professional_apps.info",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "app.adapter.health",
+    "target": null,
+    "args": {},
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.professional_app_health.v1",
+        "platform": "Linux-4.4.0-x86_64-with-glibc2.41",
+        "python": "3.13.5",
+        "profiles": [
+          {
+            "profile_id": "adobe.photoshop",
+            "label": "Adobe Photoshop",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": true,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {
+              "Photoshop": null,
+              "photoshop": null
+            },
+            "env": {},
+            "native_actions": [
+              "adobe.photoshop.document.create",
+              "adobe.photoshop.layer.create",
+              "adobe.photoshop.text.add",
+              "adobe.photoshop.export.png"
+            ],
+            "bridge_actions": [
+              "adobe.photoshop.uxp.script.create"
+            ],
+            "official_path": "Photoshop UXP/PSJS scripting bridge for native layer/document/export control; portable PNG/layer-json fallback remains available.",
+            "gaps": [
+              "missing_executable:Photoshop/photoshop"
+            ]
+          },
+          {
+            "profile_id": "adobe.video",
+            "label": "Adobe Premiere / After Effects",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": true,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {
+              "Premiere Pro": null,
+              "After Effects": null,
+              "Adobe Premiere Pro": null
+            },
+            "env": {},
+            "native_actions": [],
+            "bridge_actions": [
+              "adobe.premiere.jsx.script.create",
+              "adobe.aftereffects.jsx.script.create"
+            ],
+            "official_path": "ExtendScript JSX bridge for Adobe video applications; actual render requires installed app and manual/host execution.",
+            "gaps": [
+              "missing_executable:Premiere Pro/After Effects/Adobe Premiere Pro"
+            ]
+          },
+          {
+            "profile_id": "blender",
+            "label": "Blender",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": true,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {
+              "blender": null
+            },
+            "env": {},
+            "native_actions": [
+              "blender.python.run"
+            ],
+            "bridge_actions": [
+              "blender.python.script.create"
+            ],
+            "official_path": "Blender Python API through blender --background for modeling/render automation.",
+            "gaps": [
+              "missing_executable:blender"
+            ]
+          },
+          {
+            "profile_id": "browser.playwright",
+            "label": "Playwright Browser",
+            "status": "native_ready",
+            "native_ready": true,
+            "credential_ready": true,
+            "bridge_ready": true,
+            "modules": {
+              "playwright": true
+            },
+            "executables": {},
+            "env": {},
+            "native_actions": [
+              "browser.playwright.goto",
+              "browser.playwright.screenshot",
+              "browser.playwright.extract_text",
+              "browser.playwright.pdf"
+            ],
+            "bridge_actions": [
+              "browser.playwright.script.create",
+              "app.bridge.pack.create"
+            ],
+            "official_path": "Playwright drives Chromium/Firefox/WebKit through a browser automation API; use for browser apps and UI flows.",
+            "gaps": []
+          },
+          {
+            "profile_id": "canva",
+            "label": "Canva",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": false,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {},
+            "env": {
+              "CANVA_TOKEN": false
+            },
+            "native_actions": [],
+            "bridge_actions": [
+              "canva.api.request_pack.create"
+            ],
+            "official_path": "Canva integration bridge/request payload; execution requires configured Canva integration.",
+            "gaps": [
+              "missing_env:CANVA_TOKEN"
+            ]
+          },
+          {
+            "profile_id": "docker",
+            "label": "Docker CLI",
+            "status": "not_ready",
+            "native_ready": false,
+            "credential_ready": true,
+            "bridge_ready": false,
+            "modules": {},
+            "executables": {
+              "docker": null
+            },
+            "env": {},
+            "native_actions": [
+              "docker.health",
+              "docker.ps",
+              "docker.compose.config"
+            ],
+            "bridge_actions": [],
+            "official_path": "Docker CLI probe/read-only actions in v3.4; mutating container lifecycle remains future A4/A5 expansion.",
+            "gaps": [
+              "missing_executable:docker"
+            ]
+          },
+          {
+            "profile_id": "feishu",
+            "label": "Feishu / Lark",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": false,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {},
+            "env": {
+              "FEISHU_APP_ID": false,
+              "FEISHU_APP_SECRET": false,
+              "FEISHU_ACCESS_TOKEN": false
+            },
+            "native_actions": [],
+            "bridge_actions": [
+              "feishu.api.request_pack.create"
+            ],
+            "official_path": "Feishu OpenAPI request pack; execution requires app credentials/tenant token.",
+            "gaps": [
+              "missing_env:FEISHU_APP_ID",
+              "missing_env:FEISHU_APP_SECRET",
+              "missing_env:FEISHU_ACCESS_TOKEN"
+            ]
+          },
+          {
+            "profile_id": "figma",
+            "label": "Figma",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": false,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {},
+            "env": {
+              "FIGMA_TOKEN": false
+            },
+            "native_actions": [],
+            "bridge_actions": [
+              "figma.api.request_pack.create"
+            ],
+            "official_path": "Figma REST/API request pack; execution requires token and network access.",
+            "gaps": [
+              "missing_env:FIGMA_TOKEN"
+            ]
+          },
+          {
+            "profile_id": "git",
+            "label": "Git CLI",
+            "status": "native_ready",
+            "native_ready": true,
+            "credential_ready": true,
+            "bridge_ready": false,
+            "modules": {},
+            "executables": {
+              "git": "/usr/bin/git"
+            },
+            "env": {},
+            "native_actions": [
+              "git.status",
+              "git.diff",
+              "git.log",
+              "git.add",
+              "git.commit"
+            ],
+            "bridge_actions": [],
+            "official_path": "Direct git CLI with explicit arguments and workspace cwd.",
+            "gaps": []
+          },
+          {
+            "profile_id": "microsoft.office",
+            "label": "Microsoft Office",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": false,
+            "bridge_ready": true,
+            "modules": {
+              "win32com": false
+            },
+            "executables": {},
+            "env": {
+              "MS_GRAPH_TOKEN": false
+            },
+            "native_actions": [
+              "microsoft.word.native.export_pdf",
+              "microsoft.powerpoint.native.export_pdf",
+              "microsoft.excel.native.chart.create"
+            ],
+            "bridge_actions": [
+              "microsoft.office.com.script.create",
+              "microsoft.graph.request_pack.create"
+            ],
+            "official_path": "Local Office COM on Windows for desktop automation; Microsoft Graph for OneDrive/SharePoint/Excel resources.",
+            "gaps": [
+              "missing_python_module:win32com",
+              "missing_env:MS_GRAPH_TOKEN"
+            ]
+          },
+          {
+            "profile_id": "sqlite",
+            "label": "SQLite",
+            "status": "native_ready",
+            "native_ready": true,
+            "credential_ready": true,
+            "bridge_ready": false,
+            "modules": {
+              "sqlite3": true
+            },
+            "executables": {},
+            "env": {},
+            "native_actions": [
+              "sqlite.query"
+            ],
+            "bridge_actions": [],
+            "official_path": "stdlib sqlite3 local database query/limited update executor.",
+            "gaps": []
+          },
+          {
+            "profile_id": "wechat_work",
+            "label": "Enterprise WeChat",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": false,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {},
+            "env": {
+              "WECHAT_WORK_WEBHOOK": false
+            },
+            "native_actions": [],
+            "bridge_actions": [
+              "wechat_work.webhook.request_pack.create"
+            ],
+            "official_path": "Webhook/request pack only; sending must be confirmed by host.",
+            "gaps": [
+              "missing_env:WECHAT_WORK_WEBHOOK"
+            ]
+          },
+          {
+            "profile_id": "wps",
+            "label": "WPS Office",
+            "status": "bridge_ready",
+            "native_ready": false,
+            "credential_ready": true,
+            "bridge_ready": true,
+            "modules": {},
+            "executables": {
+              "wps": null,
+              "et": null,
+              "wpp": null
+            },
+            "env": {},
+            "native_actions": [],
+            "bridge_actions": [
+              "wps.native.script.create"
+            ],
+            "official_path": "WPS automation varies by installation; use local macro/automation bridge where available, otherwise file-level docx/xlsx/pptx fallback.",
+            "gaps": [
+              "missing_executable:wps/et/wpp"
+            ]
+          }
+        ],
+        "summary": {
+          "native_ready": 3,
+          "bridge_ready": 9,
+          "not_ready": 1
+        }
+      },
+      "evidence": {
+        "path": "adapter_health",
+        "exists": true,
+        "bytes": 13
+      },
+      "op_id": "20260705_041933_083_app.adapter.health",
+      "action": "app.adapter.health",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.009
+    }
+  },
+  {
+    "action": "app.adapter.matrix",
+    "target": null,
+    "args": {},
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.app_matrix.v1",
+        "apps": [
+          {
+            "app": "browser.playwright",
+            "label": "Playwright Browser",
+            "status": "native_ready",
+            "native_actions": [
+              "browser.playwright.goto",
+              "browser.playwright.screenshot",
+              "browser.playwright.extract_text",
+              "browser.playwright.pdf"
+            ],
+            "bridge_actions": [
+              "browser.playwright.script.create",
+              "app.bridge.pack.create"
+            ],
+            "recommended_first_action": "browser.playwright.goto",
+            "gaps": []
+          },
+          {
+            "app": "microsoft.office",
+            "label": "Microsoft Office",
+            "status": "bridge_ready",
+            "native_actions": [
+              "microsoft.word.native.export_pdf",
+              "microsoft.powerpoint.native.export_pdf",
+              "microsoft.excel.native.chart.create"
+            ],
+            "bridge_actions": [
+              "microsoft.office.com.script.create",
+              "microsoft.graph.request_pack.create"
+            ],
+            "recommended_first_action": "microsoft.word.native.export_pdf",
+            "gaps": [
+              "missing_python_module:win32com",
+              "missing_env:MS_GRAPH_TOKEN"
+            ]
+          },
+          {
+            "app": "wps",
+            "label": "WPS Office",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "wps.native.script.create"
+            ],
+            "recommended_first_action": "wps.native.script.create",
+            "gaps": [
+              "missing_executable:wps/et/wpp"
+            ]
+          },
+          {
+            "app": "adobe.photoshop",
+            "label": "Adobe Photoshop",
+            "status": "bridge_ready",
+            "native_actions": [
+              "adobe.photoshop.document.create",
+              "adobe.photoshop.layer.create",
+              "adobe.photoshop.text.add",
+              "adobe.photoshop.export.png"
+            ],
+            "bridge_actions": [
+              "adobe.photoshop.uxp.script.create"
+            ],
+            "recommended_first_action": "adobe.photoshop.document.create",
+            "gaps": [
+              "missing_executable:Photoshop/photoshop"
+            ]
+          },
+          {
+            "app": "adobe.video",
+            "label": "Adobe Premiere / After Effects",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "adobe.premiere.jsx.script.create",
+              "adobe.aftereffects.jsx.script.create"
+            ],
+            "recommended_first_action": "adobe.premiere.jsx.script.create",
+            "gaps": [
+              "missing_executable:Premiere Pro/After Effects/Adobe Premiere Pro"
+            ]
+          },
+          {
+            "app": "blender",
+            "label": "Blender",
+            "status": "bridge_ready",
+            "native_actions": [
+              "blender.python.run"
+            ],
+            "bridge_actions": [
+              "blender.python.script.create"
+            ],
+            "recommended_first_action": "blender.python.run",
+            "gaps": [
+              "missing_executable:blender"
+            ]
+          },
+          {
+            "app": "figma",
+            "label": "Figma",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "figma.api.request_pack.create"
+            ],
+            "recommended_first_action": "figma.api.request_pack.create",
+            "gaps": [
+              "missing_env:FIGMA_TOKEN"
+            ]
+          },
+          {
+            "app": "canva",
+            "label": "Canva",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "canva.api.request_pack.create"
+            ],
+            "recommended_first_action": "canva.api.request_pack.create",
+            "gaps": [
+              "missing_env:CANVA_TOKEN"
+            ]
+          },
+          {
+            "app": "feishu",
+            "label": "Feishu / Lark",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "feishu.api.request_pack.create"
+            ],
+            "recommended_first_action": "feishu.api.request_pack.create",
+            "gaps": [
+              "missing_env:FEISHU_APP_ID",
+              "missing_env:FEISHU_APP_SECRET",
+              "missing_env:FEISHU_ACCESS_TOKEN"
+            ]
+          },
+          {
+            "app": "wechat_work",
+            "label": "Enterprise WeChat",
+            "status": "bridge_ready",
+            "native_actions": [],
+            "bridge_actions": [
+              "wechat_work.webhook.request_pack.create"
+            ],
+            "recommended_first_action": "wechat_work.webhook.request_pack.create",
+            "gaps": [
+              "missing_env:WECHAT_WORK_WEBHOOK"
+            ]
+          },
+          {
+            "app": "git",
+            "label": "Git CLI",
+            "status": "native_ready",
+            "native_actions": [
+              "git.status",
+              "git.diff",
+              "git.log",
+              "git.add",
+              "git.commit"
+            ],
+            "bridge_actions": [],
+            "recommended_first_action": "git.status",
+            "gaps": []
+          },
+          {
+            "app": "docker",
+            "label": "Docker CLI",
+            "status": "not_ready",
+            "native_actions": [
+              "docker.health",
+              "docker.ps",
+              "docker.compose.config"
+            ],
+            "bridge_actions": [],
+            "recommended_first_action": "docker.health",
+            "gaps": [
+              "missing_executable:docker"
+            ]
+          },
+          {
+            "app": "sqlite",
+            "label": "SQLite",
+            "status": "native_ready",
+            "native_actions": [
+              "sqlite.query"
+            ],
+            "bridge_actions": [],
+            "recommended_first_action": "sqlite.query",
+            "gaps": []
+          }
+        ]
+      },
+      "evidence": {
+        "path": "adapter_matrix",
+        "exists": true,
+        "bytes": 13
+      },
+      "op_id": "20260705_041933_093_app.adapter.matrix",
+      "action": "app.adapter.matrix",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "skill.route",
+    "target": null,
+    "args": {
+      "job": "我需要用Playwright打开网页截图并导出PDF",
+      "context": {
+        "intent": "浏览器自动化"
+      }
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.skill_router.v1",
+        "router_version": "3.3.1",
+        "recommended_skill": {
+          "id": "skill_browser_playwright_automation_worldclass_v1",
+          "mingcheng": "世界顶尖级浏览器自动化交付",
+          "confidence": 0.52,
+          "reason": "关键词命中:浏览器; 关键词命中:网页; 关键词命中:playwright; 关键词命中:截图; 意图匹配:浏览器自动化"
+        },
+        "skill_card": {
+          "id": "skill_browser_playwright_automation_worldclass_v1",
+          "mingcheng": "世界顶尖级浏览器自动化交付",
+          "category": "browser_automation",
+          "deliverables": [
+            "html",
+            "txt",
+            "png",
+            "pdf",
+            "bridge_pack",
+            "zip"
+          ],
+          "taskIntents": [
+            "浏览器自动化",
+            "网页抓取",
+            "网页截图",
+            "页面导出"
+          ],
+          "template_id": "browser_playwright_automation",
+          "starter_actions": [
+            "app.native.capability_probe",
+            "browser.playwright.script.create"
+          ],
+          "production_actions": [
+            "browser.playwright.goto",
+            "browser.playwright.screenshot",
+            "browser.playwright.extract_text",
+            "browser.playwright.pdf"
+          ],
+          "quality_gates": [
+            "preview.generate",
+            "qc.research.evidence_check"
+          ],
+          "repair_actions": [
+            "repair.plan",
+            "browser.playwright.script.create"
+          ],
+          "final_actions": [
+            "deliverable.package"
+          ],
+          "acceptance": {
+            "minimum_score": 80,
+            "world_class_score": 90,
+            "must_pass": [
+              "preview.generate"
+            ]
+          },
+          "confidence": 0.52,
+          "reason": "关键词命中:浏览器; 关键词命中:网页; 关键词命中:playwright; 关键词命中:截图; 意图匹配:浏览器自动化",
+          "execution_contract": {
+            "tool_role": "skill_router_and_atomic_executor",
+            "model_role": "read_skill_then_execute_loop",
+            "auto_execute": false,
+            "must_not": [
+              "不要把 skill.route 当成交付完成。",
+              "不要让 omni_body 代替模型完成业务判断。",
+              "不要在 qc 未通过时宣称最终完成。"
+            ],
+            "required_loop": "skill.get -> template/outline -> produce -> qc -> repair if needed -> qc again -> deliverable.package"
+          },
+          "workflow": [
+            {
+              "stage": "route",
+              "owner": "model",
+              "description": "模型先调用 skill.route 获取匹配 Skill；工具只返回 Skill，不执行交付。",
+              "allowed_actions": [
+                "skill.route",
+                "skill.get"
+              ],
+              "exit_evidence": [
+                "recommended_skill.id",
+                "skill_card.workflow"
+              ]
+            },
+            {
+              "stage": "intake",
+              "owner": "model",
+              "description": "模型读取 Skill 输入契约，抽取目标、受众、素材、约束、格式和质量阈值。",
+              "allowed_actions": [
+                "file.read",
+                "template.list",
+                "skill.get"
+              ],
+              "exit_evidence": [
+                "structured_intake"
+              ]
+            },
+            {
+              "stage": "skeleton",
+              "owner": "model+tool",
+              "description": "模型选择合适模板，调用 template.apply 或 writing.outline.create 生成骨架。骨架不是最终交付。",
+              "allowed_actions": [
+                "template.apply",
+                "writing.outline.create",
+                "research.evidence_table.create"
+              ],
+              "exit_evidence": [
+                "draft_skeleton_path"
+              ]
+            },
+            {
+              "stage": "produce",
+              "owner": "model+tool",
+              "description": "模型基于用户素材生成实际内容，再调用原子工具落盘/生成正式文件。",
+              "allowed_actions": [
+                "file.write",
+                "docx.create",
+                "pptx.create",
+                "sheet.create",
+                "image.*",
+                "video.*",
+                "audio.*",
+                "code.write"
+              ],
+              "exit_evidence": [
+                "deliverable_path"
+              ]
+            },
+            {
+              "stage": "quality_gate",
+              "owner": "tool",
+              "description": "模型调用对应 qc.* 质量门；工具只返回 score/issues/evidence，不自行返工。",
+              "allowed_actions": [
+                "qc.*",
+                "preview.generate"
+              ],
+              "exit_evidence": [
+                "qc_score",
+                "qc_issues",
+                "qc_acceptance"
+              ]
+            },
+            {
+              "stage": "repair_loop",
+              "owner": "model+tool",
+              "description": "若 QC 未通过，模型调用 repair.plan，按 issues 修改内容，再回到 quality_gate。",
+              "allowed_actions": [
+                "repair.plan",
+                "file.write",
+                "docx.create",
+                "pptx.create",
+                "sheet.create",
+                "code.patch_replace",
+                "image.*",
+                "video.*"
+              ],
+              "exit_evidence": [
+                "repair_plan_path",
+                "updated_deliverable_path",
+                "new_qc_score"
+              ]
+            },
+            {
+              "stage": "package",
+              "owner": "tool",
+              "description": "QC 达标后，模型调用 deliverable.package 打包最终交付物、QC报告、源素材和说明。",
+              "allowed_actions": [
+                "deliverable.package",
+                "zip.create"
+              ],
+              "exit_evidence": [
+                "package_path",
+                "manifest"
+              ]
+            }
+          ]
+        },
+        "top_matches": [
+          {
+            "id": "skill_browser_playwright_automation_worldclass_v1",
+            "mingcheng": "世界顶尖级浏览器自动化交付",
+            "score": 52,
+            "reasons": [
+              "关键词命中:浏览器",
+              "关键词命中:网页",
+              "关键词命中:playwright"
+            ]
+          },
+          {
+            "id": "skill_research_literature_review_worldclass_v1",
+            "mingcheng": "世界顶尖级资料/论文综述交付",
+            "score": 12,
+            "reasons": [
+              "关键词命中:pdf"
+            ]
+          },
+          {
+            "id": "skill_office_native_bridge_worldclass_v1",
+            "mingcheng": "世界顶尖级 Office / WPS 原生桥接交付",
+            "score": 12,
+            "reasons": [
+              "关键词命中:导出pdf"
+            ]
+          },
+          {
+            "id": "skill_ppt_executive_report_worldclass_v1",
+            "mingcheng": "世界顶尖级商业汇报 PPT 交付",
+            "score": 6,
+            "reasons": [
+              "关键词命中:页"
+            ]
+          },
+          {
+            "id": "skill_seo_people_first_content_worldclass_v1",
+            "mingcheng": "世界顶尖级SEO/网页内容交付",
+            "score": 6,
+            "reasons": [
+              "关键词命中:网页"
+            ]
+          }
+        ],
+        "next_model_action": {
+          "call": "skill.get",
+          "target": "skill_browser_playwright_automation_worldclass_v1",
+          "then": "按返回的 workflow 分步骤调用 omni_body 原子动作和 qc 质量门。"
+        },
+        "important": "skill.route 只返回 Skill，不执行交付；模型必须读取 Skill 后自行循环执行。"
+      },
+      "evidence": {
+        "path": "skill_browser_playwright_automation_worldclass_v1",
+        "exists": true,
+        "bytes": 3007,
+        "score": 52
+      },
+      "op_id": "20260705_041933_094_skill.route",
+      "action": "skill.route",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "skill.route",
+    "target": null,
+    "args": {
+      "job": "帮我生成Photoshop UXP脚本和Blender建模桥接脚本",
+      "context": {
+        "intent": "专业设计应用"
+      }
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.skill_router.v1",
+        "router_version": "3.3.1",
+        "recommended_skill": {
+          "id": "skill_adobe_blender_design_bridge_worldclass_v1",
+          "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
+          "confidence": 0.58,
+          "reason": "关键词命中:photoshop; 关键词命中:blender; 关键词命中:建模; 关键词命中:uxp; 意图匹配:专业设计应用"
+        },
+        "skill_card": {
+          "id": "skill_adobe_blender_design_bridge_worldclass_v1",
+          "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
+          "category": "design_native_bridge",
+          "deliverables": [
+            "psjs",
+            "jsx",
+            "py",
+            "png",
+            "mp4",
+            "blend",
+            "zip"
+          ],
+          "taskIntents": [
+            "Adobe桥接",
+            "Photoshop脚本",
+            "Premiere脚本",
+            "Blender建模",
+            "专业设计应用"
+          ],
+          "template_id": "adobe_blender_design_bridge",
+          "starter_actions": [
+            "app.adapter.health",
+            "app.native.capability_probe"
+          ],
+          "production_actions": [
+            "adobe.photoshop.uxp.script.create",
+            "adobe.premiere.jsx.script.create",
+            "adobe.aftereffects.jsx.script.create",
+            "blender.python.script.create",
+            "blender.python.run"
+          ],
+          "quality_gates": [
+            "qc.image.delivery_check",
+            "qc.video.delivery_check"
+          ],
+          "repair_actions": [
+            "repair.plan",
+            "adobe.photoshop.uxp.script.create",
+            "blender.python.script.create"
+          ],
+          "final_actions": [
+            "deliverable.package"
+          ],
+          "acceptance": {
+            "minimum_score": 80,
+            "world_class_score": 90,
+            "must_pass": [
+              "qc.image.delivery_check"
+            ]
+          },
+          "confidence": 0.58,
+          "reason": "关键词命中:photoshop; 关键词命中:blender; 关键词命中:建模; 关键词命中:uxp; 意图匹配:专业设计应用",
+          "execution_contract": {
+            "tool_role": "skill_router_and_atomic_executor",
+            "model_role": "read_skill_then_execute_loop",
+            "auto_execute": false,
+            "must_not": [
+              "不要把 skill.route 当成交付完成。",
+              "不要让 omni_body 代替模型完成业务判断。",
+              "不要在 qc 未通过时宣称最终完成。"
+            ],
+            "required_loop": "skill.get -> template/outline -> produce -> qc -> repair if needed -> qc again -> deliverable.package"
+          },
+          "workflow": [
+            {
+              "stage": "route",
+              "owner": "model",
+              "description": "模型先调用 skill.route 获取匹配 Skill；工具只返回 Skill，不执行交付。",
+              "allowed_actions": [
+                "skill.route",
+                "skill.get"
+              ],
+              "exit_evidence": [
+                "recommended_skill.id",
+                "skill_card.workflow"
+              ]
+            },
+            {
+              "stage": "intake",
+              "owner": "model",
+              "description": "模型读取 Skill 输入契约，抽取目标、受众、素材、约束、格式和质量阈值。",
+              "allowed_actions": [
+                "file.read",
+                "template.list",
+                "skill.get"
+              ],
+              "exit_evidence": [
+                "structured_intake"
+              ]
+            },
+            {
+              "stage": "skeleton",
+              "owner": "model+tool",
+              "description": "模型选择合适模板，调用 template.apply 或 writing.outline.create 生成骨架。骨架不是最终交付。",
+              "allowed_actions": [
+                "template.apply",
+                "writing.outline.create",
+                "research.evidence_table.create"
+              ],
+              "exit_evidence": [
+                "draft_skeleton_path"
+              ]
+            },
+            {
+              "stage": "produce",
+              "owner": "model+tool",
+              "description": "模型基于用户素材生成实际内容，再调用原子工具落盘/生成正式文件。",
+              "allowed_actions": [
+                "file.write",
+                "docx.create",
+                "pptx.create",
+                "sheet.create",
+                "image.*",
+                "video.*",
+                "audio.*",
+                "code.write"
+              ],
+              "exit_evidence": [
+                "deliverable_path"
+              ]
+            },
+            {
+              "stage": "quality_gate",
+              "owner": "tool",
+              "description": "模型调用对应 qc.* 质量门；工具只返回 score/issues/evidence，不自行返工。",
+              "allowed_actions": [
+                "qc.*",
+                "preview.generate"
+              ],
+              "exit_evidence": [
+                "qc_score",
+                "qc_issues",
+                "qc_acceptance"
+              ]
+            },
+            {
+              "stage": "repair_loop",
+              "owner": "model+tool",
+              "description": "若 QC 未通过，模型调用 repair.plan，按 issues 修改内容，再回到 quality_gate。",
+              "allowed_actions": [
+                "repair.plan",
+                "file.write",
+                "docx.create",
+                "pptx.create",
+                "sheet.create",
+                "code.patch_replace",
+                "image.*",
+                "video.*"
+              ],
+              "exit_evidence": [
+                "repair_plan_path",
+                "updated_deliverable_path",
+                "new_qc_score"
+              ]
+            },
+            {
+              "stage": "package",
+              "owner": "tool",
+              "description": "QC 达标后，模型调用 deliverable.package 打包最终交付物、QC报告、源素材和说明。",
+              "allowed_actions": [
+                "deliverable.package",
+                "zip.create"
+              ],
+              "exit_evidence": [
+                "package_path",
+                "manifest"
+              ]
+            }
+          ]
+        },
+        "top_matches": [
+          {
+            "id": "skill_adobe_blender_design_bridge_worldclass_v1",
+            "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
+            "score": 58,
+            "reasons": [
+              "关键词命中:photoshop",
+              "关键词命中:blender",
+              "关键词命中:建模"
+            ]
+          },
+          {
+            "id": "skill_poster_visual_delivery_worldclass_v1",
+            "mingcheng": "世界顶尖级海报/修图视觉交付",
+            "score": 18,
+            "reasons": [
+              "关键词命中:设计",
+              "关键词命中:photoshop"
+            ]
+          },
+          {
+            "id": "skill_code_project_delivery_worldclass_v1",
+            "mingcheng": "世界顶尖级代码工程交付",
+            "score": 6,
+            "reasons": [
+              "关键词命中:脚本"
+            ]
+          },
+          {
+            "id": "skill_word_business_proposal_worldclass_v1",
+            "mingcheng": "世界顶尖级商业 Word 方案交付",
+            "score": 0,
+            "reasons": []
+          },
+          {
+            "id": "skill_ppt_executive_report_worldclass_v1",
+            "mingcheng": "世界顶尖级商业汇报 PPT 交付",
+            "score": 0,
+            "reasons": []
+          }
+        ],
+        "next_model_action": {
+          "call": "skill.get",
+          "target": "skill_adobe_blender_design_bridge_worldclass_v1",
+          "then": "按返回的 workflow 分步骤调用 omni_body 原子动作和 qc 质量门。"
+        },
+        "important": "skill.route 只返回 Skill，不执行交付；模型必须读取 Skill 后自行循环执行。"
+      },
+      "evidence": {
+        "path": "skill_adobe_blender_design_bridge_worldclass_v1",
+        "exists": true,
+        "bytes": 3131,
+        "score": 58
+      },
+      "op_id": "20260705_041933_095_skill.route",
+      "action": "skill.route",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "browser.playwright.script.create",
+    "target": "bridges/browser.py",
+    "args": {
+      "url": "https://example.com",
+      "screenshot": "example.png"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "execution_mode": "bridge_script_generated",
+        "script_path": "bridges/browser.py",
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/bridges/browser.py",
+        "rel_path": "bridges/browser.py",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 639,
+        "sha256": "648c9151325660e14c5a13810bc96f8629e7c09126f8af154a841bbcf1e35afd"
+      },
+      "op_id": "20260705_041933_096_browser.playwright.script.create",
+      "action": "browser.playwright.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "microsoft.office.com.script.create",
+    "target": "bridges/office_word_pdf.py",
+    "args": {
+      "app": "word",
+      "input": "proposal.docx",
+      "output": "proposal.pdf"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "execution_mode": "bridge_script_generated",
+        "script_path": "bridges/office_word_pdf.py",
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/bridges/office_word_pdf.py",
+        "rel_path": "bridges/office_word_pdf.py",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 766,
+        "sha256": "cfd7152c81cf9344961b5f149d57e12e82608ba00caf27ef371c31fbe824cdb7"
+      },
+      "op_id": "20260705_041933_097_microsoft.office.com.script.create",
+      "action": "microsoft.office.com.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "microsoft.graph.request_pack.create",
+    "target": "packs/graph",
+    "args": {
+      "endpoint": "/me/drive/root"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "provider": "microsoft_graph",
+        "request_dir": "packs/graph",
+        "zip_result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/v34_professional_workspace/packs/graph.zip",
+              "rel_path": "packs/graph.zip",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "output": {
+            "path": "/mnt/data/v34_professional_workspace/packs/graph.zip",
+            "rel_path": "packs/graph.zip",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 869,
+            "sha256": "e680e1df30c3cc1494e84f414e05105a5514301a3d3430bad91db8cf39f2264f"
+          },
+          "success": true,
+          "op_id": "20260705_041933_098_zip.create",
+          "action": "zip.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.002
+        },
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/packs/graph.zip",
+        "rel_path": "packs/graph.zip",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 869,
+        "sha256": "e680e1df30c3cc1494e84f414e05105a5514301a3d3430bad91db8cf39f2264f"
+      },
+      "op_id": "20260705_041933_097_microsoft.graph.request_pack.create",
+      "action": "microsoft.graph.request_pack.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "adobe.photoshop.uxp.script.create",
+    "target": "bridges/photoshop.psjs",
+    "args": {
+      "text": "AI Training",
+      "width": 1080,
+      "height": 1920
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "execution_mode": "photoshop_uxp_script_generated",
+        "script_path": "bridges/photoshop.psjs",
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/bridges/photoshop.psjs",
+        "rel_path": "bridges/photoshop.psjs",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 886,
+        "sha256": "e68a065afa0b69bfdc798cf0982b8ce6ef8865992a51a864f85298e6ae609676"
+      },
+      "op_id": "20260705_041933_100_adobe.photoshop.uxp.script.create",
+      "action": "adobe.photoshop.uxp.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "adobe.premiere.jsx.script.create",
+    "target": "bridges/premiere.jsx",
+    "args": {
+      "media": [
+        "input.mp4"
+      ]
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "execution_mode": "premiere_jsx_script_generated",
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/bridges/premiere.jsx",
+        "rel_path": "bridges/premiere.jsx",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 395,
+        "sha256": "fa50ece6e377fbc73295d634e8203a689d708a6e6657e2dc91d66a1721c05235"
+      },
+      "op_id": "20260705_041933_100_adobe.premiere.jsx.script.create",
+      "action": "adobe.premiere.jsx.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "blender.python.script.create",
+    "target": "bridges/blender_scene.py",
+    "args": {
+      "title": "Tiangong Cube",
+      "output_image": "render.png"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "execution_mode": "blender_python_script_generated",
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/bridges/blender_scene.py",
+        "rel_path": "bridges/blender_scene.py",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 906,
+        "sha256": "142af79cc275d5babc4c83bd9ee79c9b40d99fcb6323c846341361b98f4b2ce3"
+      },
+      "op_id": "20260705_041933_101_blender.python.script.create",
+      "action": "blender.python.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "figma.api.request_pack.create",
+    "target": "packs/figma",
+    "args": {
+      "file_key": "<FIGMA_FILE_KEY>"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "provider": "figma",
+        "request_dir": "packs/figma",
+        "zip_result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/v34_professional_workspace/packs/figma.zip",
+              "rel_path": "packs/figma.zip",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "output": {
+            "path": "/mnt/data/v34_professional_workspace/packs/figma.zip",
+            "rel_path": "packs/figma.zip",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 804,
+            "sha256": "7fbafbf461db5774b2efd05f83beb4a0f2895ca358ac98a681f3978f67c01bc2"
+          },
+          "success": true,
+          "op_id": "20260705_041933_102_zip.create",
+          "action": "zip.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.001
+        },
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/packs/figma.zip",
+        "rel_path": "packs/figma.zip",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 804,
+        "sha256": "7fbafbf461db5774b2efd05f83beb4a0f2895ca358ac98a681f3978f67c01bc2"
+      },
+      "op_id": "20260705_041933_101_figma.api.request_pack.create",
+      "action": "figma.api.request_pack.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "feishu.api.request_pack.create",
+    "target": "packs/feishu",
+    "args": {
+      "title": "AI培训方案"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "provider": "feishu",
+        "request_dir": "packs/feishu",
+        "zip_result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/v34_professional_workspace/packs/feishu.zip",
+              "rel_path": "packs/feishu.zip",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "output": {
+            "path": "/mnt/data/v34_professional_workspace/packs/feishu.zip",
+            "rel_path": "packs/feishu.zip",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 1033,
+            "sha256": "8f368786edaecc1cb96324370e06c2679c1cac00ddbe69d882827ac24ca8b47a"
+          },
+          "success": true,
+          "op_id": "20260705_041933_104_zip.create",
+          "action": "zip.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.001
+        },
+        "not_executed": true
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/packs/feishu.zip",
+        "rel_path": "packs/feishu.zip",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 1033,
+        "sha256": "8f368786edaecc1cb96324370e06c2679c1cac00ddbe69d882827ac24ca8b47a"
+      },
+      "op_id": "20260705_041933_103_feishu.api.request_pack.create",
+      "action": "feishu.api.request_pack.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "sqlite.query",
+    "target": "data/demo.sqlite",
+    "args": {
+      "query": "create table leads(id integer, name text)"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "headers": [],
+        "rows": [],
+        "row_count": 0,
+        "changed": 0,
+        "csv": null
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/data/demo.sqlite",
+        "rel_path": "data/demo.sqlite",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 8192,
+        "sha256": "ab0d7a5fac2b4d3312ec36b840ab3e44e382b2c4a58b8e04a550a140461b8099"
+      },
+      "op_id": "20260705_041933_105_sqlite.query",
+      "action": "sqlite.query",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.004
+    }
+  },
+  {
+    "action": "sqlite.query",
+    "target": "data/demo.sqlite",
+    "args": {
+      "query": "insert into leads values(1, \"前哨科技\")"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "headers": [],
+        "rows": [],
+        "row_count": 0,
+        "changed": 1,
+        "csv": null
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/data/demo.sqlite",
+        "rel_path": "data/demo.sqlite",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 8192,
+        "sha256": "9856ea824b0e24717f55af297e2931ccf6b97260c40dd85eeb9a178cd6595e83"
+      },
+      "op_id": "20260705_041933_109_sqlite.query",
+      "action": "sqlite.query",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "sqlite.query",
+    "target": "data/demo.sqlite",
+    "args": {
+      "query": "select * from leads",
+      "output_csv": "data/leads.csv"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "headers": [
+          "id",
+          "name"
+        ],
+        "rows": [
+          [
+            1,
+            "前哨科技"
+          ]
+        ],
+        "row_count": 1,
+        "changed": 0,
+        "csv": {
+          "path": "/mnt/data/v34_professional_workspace/data/leads.csv",
+          "rel_path": "data/leads.csv",
+          "exists": true,
+          "is_file": true,
+          "is_dir": false,
+          "size_bytes": 25,
+          "sha256": "9903d32f1364d88ff9a33a2f541a0ea554e117b2ac2fec31bef7e608ee7224d9"
+        }
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace/data/leads.csv",
+        "rel_path": "data/leads.csv",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 25,
+        "sha256": "9903d32f1364d88ff9a33a2f541a0ea554e117b2ac2fec31bef7e608ee7224d9"
+      },
+      "op_id": "20260705_041933_111_sqlite.query",
+      "action": "sqlite.query",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "git.status",
+    "target": ".",
+    "args": {},
+    "success": true,
+    "result": {
+      "success": true,
+      "result": {
+        "cmd": [
+          "status",
+          "--porcelain=v1"
+        ],
+        "returncode": 0,
+        "stdout": "?? .omni_audit/\n?? .omni_backups/\n?? bridges/\n?? data/\n?? git_sample.txt\n?? packs/\n",
+        "stderr": ""
+      },
+      "evidence": {
+        "path": "/mnt/data/v34_professional_workspace",
+        "exists": true,
+        "bytes": 83
+      },
+      "op_id": "20260705_041933_134_git.status",
+      "action": "git.status",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.011
+    }
+  },
+  {
+    "action": "deliverable.package",
+    "target": "v34_professional_app_sample_package.zip",
+    "args": {
+      "items": [
+        "bridges",
+        "packs",
+        "data"
+      ],
+      "notes": "v3.4 professional app bridge simulation outputs"
+    },
+    "success": true,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "v34_professional_app_sample_package.zip",
+        "exists": true,
+        "bytes": 8543,
+        "item_count": 3
+      },
+      "op_id": "20260705_041933_145_deliverable.package",
+      "action": "deliverable.package",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.005
+    }
+  }
+]

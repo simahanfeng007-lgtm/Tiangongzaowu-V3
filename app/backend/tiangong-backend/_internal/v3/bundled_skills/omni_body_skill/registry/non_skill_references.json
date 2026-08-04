@@ -1,0 +1,6 @@
+{
+  "schema": "tiangong.v21.non_skill_references.v1",
+  "references": [
+    "deliverable_skills/28_delivery_kernel_global.md"
+  ]
+}

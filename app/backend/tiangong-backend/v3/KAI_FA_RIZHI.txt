@@ -1,0 +1,6 @@
+
+
+[2026-06-20] L4内核模型适配器 GLM 5.1→5.2 更新
+  model_provider_adapter.py: PROVIDER_IDS+factsheet+所有Mapper类(11个)+DisabledStub+LiveAdapterSkeleton
+  __init__.py: 导出符号全部更新(17处)
+  来源: 智谱API官方文档 confirmed model="glm-5.2", endpoint不变, 协议不变

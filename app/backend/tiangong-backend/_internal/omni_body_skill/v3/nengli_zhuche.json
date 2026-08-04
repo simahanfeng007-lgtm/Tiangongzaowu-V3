@@ -1,0 +1,58 @@
+{
+  "id": "nengli_omni_body_appbus_v1",
+  "mingcheng": "Omni Body App Bus 通用身体工具",
+  "leixing": "gongju",
+  "miaoshu": "通过唯一 omni_body 工具执行原子动作，并通过 skill.route/skill.get 把复杂任务匹配到模型可执行 Skill；大模型按 Skill 流程调用原子工具、QC质量门和打包动作。工具不是智能体，不隐藏执行完整 Skill。",
+  "laiyuan": "manual_import",
+  "banben": "3.3.1",
+  "zhuangtai": "jihuo",
+  "schema": "tiangong.v3.learning_ability_draft.v1",
+  "promotion_stage": "active",
+  "risk_level": "A4",
+  "risk_label": "工具/代码/安装/应用控制",
+  "review_required": true,
+  "activation_allowed": true,
+  "candidate_only": false,
+  "taskIntents": [
+    "文件处理",
+    "办公文档",
+    "图片处理",
+    "音视频处理",
+    "代码工程",
+    "应用自动化",
+    "浏览器自动化",
+    "桌面自动化",
+    "交付打包",
+    "应用能力挂载",
+    "Skill路由",
+    "质量门返工",
+    "高质量交付流程"
+  ],
+  "primary_tools": [
+    "omni_body"
+  ],
+  "fallback_tools": [
+    "omni_body"
+  ],
+  "required_tools": [
+    "omni_body"
+  ],
+  "missing_tools": [],
+  "tool_callable": true,
+  "registers_tool": true,
+  "tool_name": "omni_body",
+  "tool_names": [
+    "omni_body"
+  ],
+  "tool_kind": "executable",
+  "tool_effect": "execute",
+  "tool_risk_level": "A4",
+  "tool_release_state": "released",
+  "model_visible_skill": true,
+  "model_visible_tool": true,
+  "planOnly": false,
+  "notes": [
+    "只注册一个真实工具 omni_body；应用动作通过 registry/app_actions.json 挂载。adapter-only 动作未接后端时返回 ok=false。",
+    "v3.3.1新增skill.route/skill.get/skill.step.check；复杂交付任务先路由Skill，再由模型执行流程。"
+  ]
+}

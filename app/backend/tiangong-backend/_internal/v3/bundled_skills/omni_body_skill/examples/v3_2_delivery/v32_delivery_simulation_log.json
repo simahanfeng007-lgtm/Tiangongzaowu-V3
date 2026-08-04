@@ -1,0 +1,622 @@
+[
+  {
+    "action": "delivery.kernel.info",
+    "target": null,
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.delivery_kernel.v1",
+        "version": "3.2.0",
+        "principle": "tool-only: deterministic actions, evidence, quality gates, repair plans; no autonomous planning.",
+        "rubrics": [
+          "business_proposal",
+          "code_project",
+          "executive_ppt",
+          "research_review",
+          "short_video"
+        ],
+        "quality_gates": [
+          "qc.code.delivery_check",
+          "qc.docx.delivery_check",
+          "qc.image.delivery_check",
+          "qc.ppt.delivery_check",
+          "qc.research.evidence_check",
+          "qc.sheet.delivery_check",
+          "qc.video.delivery_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "root": "/mnt/data/tiangong_omni_body_v3_2_delivery"
+      },
+      "evidence": {
+        "path": "delivery_kernel",
+        "exists": true,
+        "bytes": 0
+      },
+      "op_id": "20260705_013613_277_delivery.kernel.info",
+      "action": "delivery.kernel.info",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "template.list",
+    "target": null,
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.delivery_templates.v1",
+        "version": "3.2.0",
+        "templates": [
+          {
+            "id": "business_proposal",
+            "name": "商业级 Word 方案模板",
+            "rubric": "business_proposal",
+            "file": "templates/business_proposal.md"
+          },
+          {
+            "id": "executive_ppt",
+            "name": "商业汇报 PPT 故事线模板",
+            "rubric": "executive_ppt",
+            "file": "templates/executive_ppt.md"
+          },
+          {
+            "id": "code_project",
+            "name": "代码工程交付模板",
+            "rubric": "code_project",
+            "file": "templates/code_project.md"
+          },
+          {
+            "id": "research_review",
+            "name": "资料/论文综述模板",
+            "rubric": "research_review",
+            "file": "templates/research_review.md"
+          },
+          {
+            "id": "short_video",
+            "name": "短视频交付模板",
+            "rubric": "short_video",
+            "file": "templates/short_video.md"
+          }
+        ]
+      },
+      "evidence": {
+        "path": "/mnt/data/tiangong_omni_body_v3_2_delivery/templates/manifest.json",
+        "exists": true,
+        "bytes": 912
+      },
+      "op_id": "20260705_013613_278_template.list",
+      "action": "template.list",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "docx.create",
+    "target": "deliverables/ai_proposal.docx",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/ai_proposal.docx",
+          "rel_path": "deliverables/ai_proposal.docx",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "output": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/ai_proposal.docx",
+        "rel_path": "deliverables/ai_proposal.docx",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 37752,
+        "sha256": "f30481446b04aa9c5ef1e1c8ff09b1cefec66f5b0798e15bd46a73e03c48aa4b"
+      },
+      "sections_count": 8,
+      "success": true,
+      "op_id": "20260705_013613_279_docx.create",
+      "action": "docx.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.166
+    }
+  },
+  {
+    "action": "qc.docx.delivery_check",
+    "target": "deliverables/ai_proposal.docx",
+    "ok": true,
+    "score": 88,
+    "grade": "delivery_ready",
+    "result": {
+      "success": true,
+      "result": {
+        "type": "docx_business_delivery",
+        "score": 88,
+        "grade": "delivery_ready",
+        "stats": {
+          "sentences": 17,
+          "avg_sentence_chars": 34.1,
+          "long_sentence_count": 0
+        },
+        "issues": [
+          {
+            "code": "too_short",
+            "severity": "high",
+            "message": "方案正文过短，难以达到可交付级。",
+            "repair": "补充背景、分析、路径、风险、收益与证据。"
+          }
+        ],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "deliverables/ai_proposal.docx",
+        "exists": true,
+        "bytes": 37752,
+        "score": 88,
+        "grade": "delivery_ready"
+      },
+      "op_id": "20260705_013613_446_qc.docx.delivery_check",
+      "action": "qc.docx.delivery_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.021
+    }
+  },
+  {
+    "action": "pptx.create",
+    "target": "deliverables/ai_pilot_deck.pptx",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/ai_pilot_deck.pptx",
+          "rel_path": "deliverables/ai_pilot_deck.pptx",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "output": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/ai_pilot_deck.pptx",
+        "rel_path": "deliverables/ai_pilot_deck.pptx",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 34485,
+        "sha256": "c8002e346e5cd5f3211547665c4ca0d7b56a90f6646275c791c4f7471dd568c0"
+      },
+      "slides_count": 7,
+      "success": true,
+      "op_id": "20260705_013613_467_pptx.create",
+      "action": "pptx.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.234
+    }
+  },
+  {
+    "action": "qc.ppt.delivery_check",
+    "target": "deliverables/ai_pilot_deck.pptx",
+    "ok": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "result": {
+      "success": true,
+      "result": {
+        "type": "executive_ppt_delivery",
+        "score": 100,
+        "grade": "world_class_ready",
+        "slides": 7,
+        "conclusion_title_count": 6,
+        "dense_slide_count": 0,
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "deliverables/ai_pilot_deck.pptx",
+        "exists": true,
+        "bytes": 34485,
+        "score": 100,
+        "grade": "world_class_ready"
+      },
+      "op_id": "20260705_013613_702_qc.ppt.delivery_check",
+      "action": "qc.ppt.delivery_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.012
+    }
+  },
+  {
+    "action": "code.write",
+    "target": "code_project/calc.py",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/code_project/calc.py",
+          "rel_path": "code_project/calc.py",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "evidence": {
+        "path": "/mnt/data/v32_delivery_workspace/code_project/calc.py",
+        "rel_path": "code_project/calc.py",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 170,
+        "sha256": "3c6661115503f86e82ef258f6cecbf10aea34173e9050cb541f088d786e8532a"
+      },
+      "language": "python",
+      "quality_checks": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/code_project/calc.py",
+          "ok": true,
+          "type": "python_syntax"
+        }
+      ],
+      "success": true,
+      "op_id": "20260705_013613_715_code.write",
+      "action": "code.write",
+      "risk_level": "A3",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "code.write",
+    "target": "code_project/test_calc.py",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/code_project/test_calc.py",
+          "rel_path": "code_project/test_calc.py",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "evidence": {
+        "path": "/mnt/data/v32_delivery_workspace/code_project/test_calc.py",
+        "rel_path": "code_project/test_calc.py",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 121,
+        "sha256": "1dfa400d33299f73b4cea2ffa8745c6dbad215e7c07b9a530687037a2902a1e2"
+      },
+      "language": "python",
+      "quality_checks": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/code_project/test_calc.py",
+          "ok": true,
+          "type": "python_syntax"
+        }
+      ],
+      "success": true,
+      "op_id": "20260705_013613_717_code.write",
+      "action": "code.write",
+      "risk_level": "A3",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "file.write",
+    "target": "code_project/README.md",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/code_project/README.md",
+          "rel_path": "code_project/README.md",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "evidence": {
+        "path": "/mnt/data/v32_delivery_workspace/code_project/README.md",
+        "rel_path": "code_project/README.md",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 181,
+        "sha256": "7d66ab90e11f285ac3effc595e1b1dd8b6ba3fb4fcd58bc2532ea11bd71bb224"
+      },
+      "success": true,
+      "op_id": "20260705_013613_720_file.write",
+      "action": "file.write",
+      "risk_level": "A3",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.code.delivery_check",
+    "target": "code_project",
+    "ok": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "result": {
+      "success": true,
+      "result": {
+        "type": "code_project_delivery",
+        "score": 100,
+        "grade": "world_class_ready",
+        "files_checked": 2,
+        "total_lines": 16,
+        "syntax_errors": [],
+        "security_smells": [],
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "code_project",
+        "exists": true,
+        "bytes": 0,
+        "score": 100
+      },
+      "op_id": "20260705_013613_722_qc.code.delivery_check",
+      "action": "qc.code.delivery_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.002
+    }
+  },
+  {
+    "action": "file.write",
+    "target": "deliverables/research_review.md",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/research_review.md",
+          "rel_path": "deliverables/research_review.md",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "evidence": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/research_review.md",
+        "rel_path": "deliverables/research_review.md",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 1548,
+        "sha256": "159678d631ec3583f4da6137e8a90a64165a43f463e3a666199408a8bbf4ac5b"
+      },
+      "success": true,
+      "op_id": "20260705_013613_724_file.write",
+      "action": "file.write",
+      "risk_level": "A3",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.research.evidence_check",
+    "target": "deliverables/research_review.md",
+    "ok": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "result": {
+      "success": true,
+      "result": {
+        "type": "research_review_delivery",
+        "score": 100,
+        "grade": "world_class_ready",
+        "citation_like_count": 3,
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "deliverables/research_review.md",
+        "exists": true,
+        "bytes": 1547,
+        "score": 100
+      },
+      "op_id": "20260705_013613_726_qc.research.evidence_check",
+      "action": "qc.research.evidence_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "image.create_canvas",
+    "target": "deliverables/frame.png",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/frame.png",
+          "rel_path": "deliverables/frame.png",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "output": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/frame.png",
+        "rel_path": "deliverables/frame.png",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 10410,
+        "sha256": "222dfdf6eeaf6ce7c6c6a8533dc16ac0a847d299fa879718e2d6cf98e6860ca8"
+      },
+      "size": [
+        1080,
+        1920
+      ],
+      "success": true,
+      "op_id": "20260705_013613_727_image.create_canvas",
+      "action": "image.create_canvas",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.071
+    }
+  },
+  {
+    "action": "image.add_text",
+    "target": "deliverables/frame.png",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/frame_text.png",
+          "rel_path": "deliverables/frame_text.png",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "output": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/frame_text.png",
+        "rel_path": "deliverables/frame_text.png",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 16114,
+        "sha256": "63671f8d5201a986c2580e244763a164e74d7ff671fee7ddb48babc39116f6ee"
+      },
+      "success": true,
+      "op_id": "20260705_013613_799_image.add_text",
+      "action": "image.add_text",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.111
+    }
+  },
+  {
+    "action": "video.slideshow",
+    "target": "deliverables/frame_text.png",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "snapshots": [
+        {
+          "path": "/mnt/data/v32_delivery_workspace/deliverables/short_demo.mp4",
+          "rel_path": "deliverables/short_demo.mp4",
+          "existed": false,
+          "kind": "other",
+          "backup_path": null
+        }
+      ],
+      "ffmpeg": {
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version 7.1.3-0+deb13u1 Copyright (c) 2000-2025 the FFmpeg developers\n  built with gcc 14 (Debian 14.2.0-19)\n  configuration: --prefix=/usr --extra-version=0+deb13u1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-libmfx --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.101 / 61. 19.101\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n  libpostproc    58.  3.100 / 58.  3.100\nInput #0, image2, from '/mnt/data/v32_delivery_workspace/.20260705_013613_911_video.slideshow_slides/*.png':\n  Duration: 00:00:03.00, start: 0.000000, bitrate: N/A\n  Stream #0:0: Video: png, rgb24(pc, gbr/unknown/unknown), 1080x1920, 0.33 fps, 0.33 tbr, 0.33 tbn\nStream mapping:\n  Stream #0:0 -> #0:0 (png (native) -> h264 (libx264))\nPress [q] to stop, [?] for help\n[libx264 @ 0x5612d7c42040] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512\n[libx264 @ 0x5612d7c42040] profile High, level 4.0, 4:2:0, 8-bit\n[libx264 @ 0x5612d7c42040] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=60 lookahead_threads=10 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=1 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00\nOutput #0, mp4, to '/mnt/data/v32_delivery_workspace/deliverables/short_demo.mp4':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 1080x1920, q=2-31, 0.33 fps, 16384 tbn\n      Metadata:\n        encoder         : Lavc61.19.101 libx264\n      Side data:\n        cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A\n[out#0/mp4 @ 0x5612d7c45340] video:6KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 13.528156%\nframe=    1 fps=0.0 q=17.0 Lsize=       7KiB time=00:00:03.00 bitrate=  18.4kbits/s speed=12.7x    \n[libx264 @ 0x5612d7c42040] frame I:1     Avg QP: 2.71  size:  5401\n[libx264 @ 0x5612d7c42040] mb I  I16..4: 97.9%  0.0%  2.1%\n[libx264 @ 0x5612d7c42040] 8x8 transform intra:0.0%\n[libx264 @ 0x5612d7c42040] coded y,uvDC,uvAC intra: 1.1% 2.1% 1.0%\n[libx264 @ 0x5612d7c42040] i16 v,h,dc,p: 98%  1%  1%  0%\n[libx264 @ 0x5612d7c42040] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 75% 12% 12%  0%  0%  0%  0%  0%  0%\n[libx264 @ 0x5612d7c42040] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 52% 23% 15%  1%  1%  3%  1%  2%  1%\n[libx264 @ 0x5612d7c42040] i8c dc,h,v,p: 95%  3%  2%  0%\n[libx264 @ 0x5612d7c42040] kb/s:14.40\n",
+        "ok": true
+      },
+      "output": {
+        "path": "/mnt/data/v32_delivery_workspace/deliverables/short_demo.mp4",
+        "rel_path": "deliverables/short_demo.mp4",
+        "exists": true,
+        "is_file": true,
+        "is_dir": false,
+        "size_bytes": 6915,
+        "sha256": "b25e7ffd22d6d05934876ef11cbf8c51a90de4eecc6b7a8e070214ac4b39de92"
+      },
+      "success": true,
+      "op_id": "20260705_013613_911_video.slideshow",
+      "action": "video.slideshow",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.786
+    }
+  },
+  {
+    "action": "qc.video.delivery_check",
+    "target": "deliverables/short_demo.mp4",
+    "ok": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "result": {
+      "success": true,
+      "result": {
+        "type": "short_video_delivery",
+        "score": 100,
+        "grade": "world_class_ready",
+        "video_info": {
+          "duration": 3.0,
+          "width": 1080,
+          "height": 1920
+        },
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "deliverables/short_demo.mp4",
+        "exists": true,
+        "bytes": 6915,
+        "score": 100
+      },
+      "op_id": "20260705_013614_698_qc.video.delivery_check",
+      "action": "qc.video.delivery_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.277
+    }
+  },
+  {
+    "action": "repair.plan",
+    "target": "deliverables/repair_plan.md",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "deliverables/repair_plan.md",
+        "exists": true,
+        "bytes": 244,
+        "issue_count": 0
+      },
+      "op_id": "20260705_013614_976_repair.plan",
+      "action": "repair.plan",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "deliverable.package",
+    "target": "v32_delivery_sample_package.zip",
+    "ok": true,
+    "score": null,
+    "grade": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "v32_delivery_sample_package.zip",
+        "exists": true,
+        "bytes": 77306,
+        "item_count": 2
+      },
+      "op_id": "20260705_013614_977_deliverable.package",
+      "action": "deliverable.package",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.009
+    }
+  }
+]

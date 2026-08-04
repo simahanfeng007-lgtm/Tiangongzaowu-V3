@@ -1,0 +1,1807 @@
+{
+  "schema": "tiangong.v21.gate-cases.v1",
+  "frozen_spec_sha256": "84EB745308C051FCC3679F8A83253C7E0FAE1CF256BE8502B0672B36142BE7EA",
+  "gates": {
+    "G0": [
+      "T00_import_baseline",
+      "T19a_fixture_matrix",
+      "T26a_auth_golden"
+    ],
+    "G1": [
+      "T01_root_child",
+      "T02_candidate_shape",
+      "T03a_identity_state",
+      "T04_true_CAS",
+      "T05a_ingress_saga",
+      "T19b_contract_runtime",
+      "T28_root_continuation"
+    ],
+    "G2": [
+      "T03b_identity_runtime",
+      "T17_no_IO_lock",
+      "T24_performance"
+    ],
+    "G3": [
+      "T05b_response_saga",
+      "T10_pure_chat",
+      "T11_assistant_status",
+      "T12_all_models_down",
+      "T13_stream_fallback",
+      "T18_replay",
+      "T20_frontend_truth",
+      "T27_model_plan_recovery",
+      "T31_terminal_model_reply_matrix",
+      "T19b_contract_runtime"
+    ],
+    "G4": [
+      "T05c_effect_delivery_saga",
+      "T06_commitment_coverage",
+      "T07_commitment_monotonic",
+      "T08_result_layers",
+      "T09_ambiguous",
+      "T14_internal_action",
+      "T15_effect_identity",
+      "T16_cancel_dispatch",
+      "T19b_contract_runtime",
+      "T26b_auth_equivalence"
+    ],
+    "G5": [
+      "T23_artifact_current",
+      "T25_vitality",
+      "T19b_contract_runtime"
+    ],
+    "G6A": [
+      "T21_skill_selection",
+      "T22_skill_all",
+      "T29_skill_registry",
+      "T30_issue_ledger"
+    ],
+    "G6B": [
+      "T19c_gate_cutover",
+      "T22_skill_all",
+      "T24_performance",
+      "T25_vitality",
+      "T30_issue_ledger"
+    ]
+  },
+  "case_policy": {
+    "allow_historical_results": false,
+    "require_build_and_source_manifest_binding": true,
+    "unknown_case_status": "NOT_TESTED",
+    "human_case": "T25_vitality"
+  },
+  "skill_cases": [
+    {
+      "case_id": "SKILL_skill_learning_card_ingest_v1",
+      "skill_id": "skill_learning_card_ingest_v1",
+      "success_fixture": {
+        "fixture_id": "skill_learning_card_ingest_v1:success",
+        "input_nonce": "v21-skill_learning_card_ingest_v1-success",
+        "required_action_candidates": [
+          "learning.ingest"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_learning_card_ingest_v1:relevant-failure",
+        "input_nonce": "v21-skill_learning_card_ingest_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 1,
+        "world_class_score": 1,
+        "must_pass": [
+          "only creates pending learning card"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_core_actions_reference_v1",
+      "skill_id": "skill_core_actions_reference_v1",
+      "success_fixture": {
+        "fixture_id": "skill_core_actions_reference_v1:success",
+        "input_nonce": "v21-skill_core_actions_reference_v1-success",
+        "required_action_candidates": [
+          "file.write",
+          "docx.create",
+          "pptx.create",
+          "sheet.create"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_core_actions_reference_v1:relevant-failure",
+        "input_nonce": "v21-skill_core_actions_reference_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 0,
+        "world_class_score": 0,
+        "must_pass": []
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_managed_long_document_worldclass_v1",
+      "skill_id": "skill_managed_long_document_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_managed_long_document_worldclass_v1:success",
+        "input_nonce": "v21-skill_managed_long_document_worldclass_v1-success",
+        "required_action_candidates": [
+          "file.list",
+          "file.mkdir",
+          "file.read",
+          "file.write",
+          "file.append",
+          "docx.create",
+          "file.hash",
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "code.patch_replace",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_managed_long_document_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_managed_long_document_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "project_manifest_valid",
+          "checkpoint_current",
+          "source_sections_complete",
+          "qc.docx.delivery_check",
+          "project_folder_delivered"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_word_business_proposal_worldclass_v1",
+      "skill_id": "skill_word_business_proposal_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_word_business_proposal_worldclass_v1:success",
+        "input_nonce": "v21-skill_word_business_proposal_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "writing.outline.create",
+          "file.write",
+          "docx.create",
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_word_business_proposal_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_word_business_proposal_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.docx.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_ppt_executive_report_worldclass_v1",
+      "skill_id": "skill_ppt_executive_report_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_ppt_executive_report_worldclass_v1:success",
+        "input_nonce": "v21-skill_ppt_executive_report_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "writing.outline.create",
+          "pptx.create",
+          "qc.ppt.delivery_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_ppt_executive_report_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_ppt_executive_report_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.ppt.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_code_project_delivery_worldclass_v1",
+      "skill_id": "skill_code_project_delivery_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_code_project_delivery_worldclass_v1:success",
+        "input_nonce": "v21-skill_code_project_delivery_worldclass_v1-success",
+        "required_action_candidates": [
+          "writing.outline.create",
+          "file.mkdir",
+          "code.write",
+          "file.write",
+          "quality.python_syntax",
+          "quality.run_tests",
+          "qc.code.delivery_check",
+          "repair.plan",
+          "code.patch_replace",
+          "deliverable.package",
+          "zip.create"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_code_project_delivery_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_code_project_delivery_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.code.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_research_literature_review_worldclass_v1",
+      "skill_id": "skill_research_literature_review_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_research_literature_review_worldclass_v1:success",
+        "input_nonce": "v21-skill_research_literature_review_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "research.evidence_table.create",
+          "pdf.extract_text",
+          "file.write",
+          "docx.create",
+          "qc.research.evidence_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_research_literature_review_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_research_literature_review_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.research.evidence_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_short_video_delivery_worldclass_v1",
+      "skill_id": "skill_short_video_delivery_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_short_video_delivery_worldclass_v1:success",
+        "input_nonce": "v21-skill_short_video_delivery_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "writing.outline.create",
+          "video.cut",
+          "video.slideshow",
+          "video.add_audio",
+          "jianying.export.mp4",
+          "qc.video.delivery_check",
+          "qc.image.delivery_check",
+          "repair.plan",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_short_video_delivery_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_short_video_delivery_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.video.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_managed_longform_novel_worldclass_v1",
+      "skill_id": "skill_managed_longform_novel_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_managed_longform_novel_worldclass_v1:success",
+        "input_nonce": "v21-skill_managed_longform_novel_worldclass_v1-success",
+        "required_action_candidates": [
+          "novel.project.status",
+          "novel.project.create",
+          "novel.project.recover",
+          "novel.blueprint.update",
+          "novel.blueprint.patch",
+          "novel.blueprint.upsert_many",
+          "novel.blueprint.assist",
+          "novel.reference.resolve",
+          "novel.timeline.calculate",
+          "novel.timeline.shift_suffix",
+          "novel.timeline.normalize",
+          "novel.mobility.align_initial_many",
+          "novel.blueprint.compile",
+          "novel.plan.rebase",
+          "novel.chapter.checkout",
+          "novel.scene.design",
+          "novel.context.query",
+          "novel.chapter.submit",
+          "novel.project.audit"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_managed_longform_novel_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_managed_longform_novel_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "planning_complete",
+          "chapter_transaction_committed",
+          "project_folder_delivered"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_webnovel_chapter_delivery_worldclass_v1",
+      "skill_id": "skill_webnovel_chapter_delivery_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_webnovel_chapter_delivery_worldclass_v1:success",
+        "input_nonce": "v21-skill_webnovel_chapter_delivery_worldclass_v1-success",
+        "required_action_candidates": [
+          "file.write",
+          "docx.create"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_webnovel_chapter_delivery_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_webnovel_chapter_delivery_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_poster_visual_delivery_worldclass_v1",
+      "skill_id": "skill_poster_visual_delivery_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_poster_visual_delivery_worldclass_v1:success",
+        "input_nonce": "v21-skill_poster_visual_delivery_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "image.create_canvas",
+          "image.add_text",
+          "image.compose",
+          "adobe.photoshop.layer.create",
+          "qc.poster.commercial_check",
+          "qc.image.delivery_check",
+          "repair.plan",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_poster_visual_delivery_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_poster_visual_delivery_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.poster.commercial_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_spreadsheet_analysis_report_worldclass_v1",
+      "skill_id": "skill_spreadsheet_analysis_report_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_spreadsheet_analysis_report_worldclass_v1:success",
+        "input_nonce": "v21-skill_spreadsheet_analysis_report_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "sheet.read",
+          "sheet.create",
+          "file.write",
+          "qc.sheet.analysis_report_check",
+          "qc.sheet.delivery_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_spreadsheet_analysis_report_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_spreadsheet_analysis_report_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.sheet.analysis_report_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_meeting_minutes_action_followup_worldclass_v1",
+      "skill_id": "skill_meeting_minutes_action_followup_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_meeting_minutes_action_followup_worldclass_v1:success",
+        "input_nonce": "v21-skill_meeting_minutes_action_followup_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "qc.meeting.minutes_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_meeting_minutes_action_followup_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_meeting_minutes_action_followup_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.meeting.minutes_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_sales_script_delivery_worldclass_v1",
+      "skill_id": "skill_sales_script_delivery_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_sales_script_delivery_worldclass_v1:success",
+        "input_nonce": "v21-skill_sales_script_delivery_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "qc.sales.script_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_sales_script_delivery_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_sales_script_delivery_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.sales.script_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_course_lesson_plan_worldclass_v1",
+      "skill_id": "skill_course_lesson_plan_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_course_lesson_plan_worldclass_v1:success",
+        "input_nonce": "v21-skill_course_lesson_plan_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "pptx.create",
+          "qc.course.plan_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_course_lesson_plan_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_course_lesson_plan_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.course.plan_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_knowledge_base_ingestion_worldclass_v1",
+      "skill_id": "skill_knowledge_base_ingestion_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_knowledge_base_ingestion_worldclass_v1:success",
+        "input_nonce": "v21-skill_knowledge_base_ingestion_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.read",
+          "file.write",
+          "pdf.extract_text",
+          "qc.kb.ingestion_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_knowledge_base_ingestion_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_knowledge_base_ingestion_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.kb.ingestion_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_authorized_voice_audio_worldclass_v1",
+      "skill_id": "skill_authorized_voice_audio_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_authorized_voice_audio_worldclass_v1:success",
+        "input_nonce": "v21-skill_authorized_voice_audio_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "audio.tts",
+          "audio.trim",
+          "audio.concat",
+          "qc.voice_authorized.delivery_check",
+          "qc.audio.delivery_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_authorized_voice_audio_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_authorized_voice_audio_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.voice_authorized.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_seo_people_first_content_worldclass_v1",
+      "skill_id": "skill_seo_people_first_content_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_seo_people_first_content_worldclass_v1:success",
+        "input_nonce": "v21-skill_seo_people_first_content_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "qc.seo.people_first_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "preview.generate",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_seo_people_first_content_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_seo_people_first_content_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.seo.people_first_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_content_calendar_worldclass_v1",
+      "skill_id": "skill_content_calendar_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_content_calendar_worldclass_v1:success",
+        "input_nonce": "v21-skill_content_calendar_worldclass_v1-success",
+        "required_action_candidates": [
+          "template.apply",
+          "file.write",
+          "sheet.create",
+          "qc.content.calendar_check",
+          "qc.sheet.delivery_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_content_calendar_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_content_calendar_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.content.calendar_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_professional_application_bridge_worldclass_v1",
+      "skill_id": "skill_professional_application_bridge_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_professional_application_bridge_worldclass_v1:success",
+        "input_nonce": "v21-skill_professional_application_bridge_worldclass_v1-success",
+        "required_action_candidates": [
+          "app.adapter.health",
+          "app.adapter.matrix",
+          "app.native.capability_probe",
+          "app.bridge.script.create",
+          "app.bridge.pack.create",
+          "preview.generate",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_professional_application_bridge_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_professional_application_bridge_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "app.adapter.health"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_browser_playwright_automation_worldclass_v1",
+      "skill_id": "skill_browser_playwright_automation_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_browser_playwright_automation_worldclass_v1:success",
+        "input_nonce": "v21-skill_browser_playwright_automation_worldclass_v1-success",
+        "required_action_candidates": [
+          "app.native.capability_probe",
+          "browser.playwright.script.create",
+          "browser.playwright.goto",
+          "browser.playwright.screenshot",
+          "browser.playwright.extract_text",
+          "browser.playwright.pdf",
+          "preview.generate",
+          "qc.research.evidence_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_browser_playwright_automation_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_browser_playwright_automation_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "preview.generate"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_office_native_bridge_worldclass_v1",
+      "skill_id": "skill_office_native_bridge_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_office_native_bridge_worldclass_v1:success",
+        "input_nonce": "v21-skill_office_native_bridge_worldclass_v1-success",
+        "required_action_candidates": [
+          "app.native.capability_probe",
+          "microsoft.office.com.script.create",
+          "docx.create",
+          "sheet.create",
+          "pptx.create",
+          "microsoft.graph.request_pack.create",
+          "microsoft.word.native.export_pdf",
+          "microsoft.powerpoint.native.export_pdf",
+          "wps.native.script.create",
+          "qc.docx.delivery_check",
+          "qc.ppt.delivery_check",
+          "qc.sheet.delivery_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_office_native_bridge_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_office_native_bridge_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.docx.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_adobe_blender_design_bridge_worldclass_v1",
+      "skill_id": "skill_adobe_blender_design_bridge_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_adobe_blender_design_bridge_worldclass_v1:success",
+        "input_nonce": "v21-skill_adobe_blender_design_bridge_worldclass_v1-success",
+        "required_action_candidates": [
+          "app.adapter.health",
+          "app.native.capability_probe",
+          "adobe.photoshop.uxp.script.create",
+          "adobe.premiere.jsx.script.create",
+          "adobe.aftereffects.jsx.script.create",
+          "blender.python.script.create",
+          "blender.python.run",
+          "qc.image.delivery_check",
+          "qc.video.delivery_check",
+          "repair.plan",
+          "deliverable.package"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_adobe_blender_design_bridge_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_adobe_blender_design_bridge_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "qc.image.delivery_check"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_computer_operation_v1",
+      "skill_id": "skill_computer_operation_v1",
+      "success_fixture": {
+        "fixture_id": "skill_computer_operation_v1:success",
+        "input_nonce": "v21-skill_computer_operation_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "python.run",
+          "file.read",
+          "file.write"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_computer_operation_v1:relevant-failure",
+        "input_nonce": "v21-skill_computer_operation_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_desktop_cleanup_v1",
+      "skill_id": "skill_desktop_cleanup_v1",
+      "success_fixture": {
+        "fixture_id": "skill_desktop_cleanup_v1:success",
+        "input_nonce": "v21-skill_desktop_cleanup_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "python.run",
+          "file.list",
+          "file.write"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_desktop_cleanup_v1:relevant-failure",
+        "input_nonce": "v21-skill_desktop_cleanup_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_utility_toolbox_v1",
+      "skill_id": "skill_utility_toolbox_v1",
+      "success_fixture": {
+        "fixture_id": "skill_utility_toolbox_v1:success",
+        "input_nonce": "v21-skill_utility_toolbox_v1-success",
+        "required_action_candidates": [
+          "python.run",
+          "shell.run",
+          "file.list",
+          "file.write"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_utility_toolbox_v1:relevant-failure",
+        "input_nonce": "v21-skill_utility_toolbox_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_format_converter_v1",
+      "skill_id": "skill_format_converter_v1",
+      "success_fixture": {
+        "fixture_id": "skill_format_converter_v1:success",
+        "input_nonce": "v21-skill_format_converter_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "python.run",
+          "file.list",
+          "file.write"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_format_converter_v1:relevant-failure",
+        "input_nonce": "v21-skill_format_converter_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_search_v2",
+      "skill_id": "skill_search_v2",
+      "success_fixture": {
+        "fixture_id": "skill_search_v2:success",
+        "input_nonce": "v21-skill_search_v2-success",
+        "required_action_candidates": [
+          "web.search",
+          "web.image_search",
+          "http.get",
+          "file.write"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_search_v2:relevant-failure",
+        "input_nonce": "v21-skill_search_v2-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_production_packaging_v1",
+      "skill_id": "skill_production_packaging_v1",
+      "success_fixture": {
+        "fixture_id": "skill_production_packaging_v1:success",
+        "input_nonce": "v21-skill_production_packaging_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_production_packaging_v1:relevant-failure",
+        "input_nonce": "v21-skill_production_packaging_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_frontend_optimization_v1",
+      "skill_id": "skill_frontend_optimization_v1",
+      "success_fixture": {
+        "fixture_id": "skill_frontend_optimization_v1:success",
+        "input_nonce": "v21-skill_frontend_optimization_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_frontend_optimization_v1:relevant-failure",
+        "input_nonce": "v21-skill_frontend_optimization_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_frontend_design_v1",
+      "skill_id": "skill_frontend_design_v1",
+      "success_fixture": {
+        "fixture_id": "skill_frontend_design_v1:success",
+        "input_nonce": "v21-skill_frontend_design_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_frontend_design_v1:relevant-failure",
+        "input_nonce": "v21-skill_frontend_design_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_vrm_optimization_v1",
+      "skill_id": "skill_vrm_optimization_v1",
+      "success_fixture": {
+        "fixture_id": "skill_vrm_optimization_v1:success",
+        "input_nonce": "v21-skill_vrm_optimization_v1-success",
+        "required_action_candidates": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_vrm_optimization_v1:relevant-failure",
+        "input_nonce": "v21-skill_vrm_optimization_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_mindmap_knowledge_architecture_worldclass_v1",
+      "skill_id": "skill_mindmap_knowledge_architecture_worldclass_v1",
+      "success_fixture": {
+        "fixture_id": "skill_mindmap_knowledge_architecture_worldclass_v1:success",
+        "input_nonce": "v21-skill_mindmap_knowledge_architecture_worldclass_v1-success",
+        "required_action_candidates": [
+          "file.mkdir",
+          "file.read",
+          "file.write",
+          "mindmap.create",
+          "file.list",
+          "code.patch_replace"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_mindmap_knowledge_architecture_worldclass_v1:relevant-failure",
+        "input_nonce": "v21-skill_mindmap_knowledge_architecture_worldclass_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": 80,
+        "world_class_score": 90,
+        "must_pass": [
+          "mermaid_parseable",
+          "opml_parseable",
+          "source_preserved"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    },
+    {
+      "case_id": "SKILL_skill_omni_body_reference_v1",
+      "skill_id": "skill_omni_body_reference_v1",
+      "success_fixture": {
+        "fixture_id": "skill_omni_body_reference_v1:success",
+        "input_nonce": "v21-skill_omni_body_reference_v1-success",
+        "required_action_candidates": [
+          "file.list",
+          "file.read",
+          "file.write",
+          "file.move",
+          "file.copy",
+          "file.mkdir",
+          "shell.run",
+          "python.run",
+          "docx.create",
+          "pptx.create",
+          "sheet.create",
+          "web.search",
+          "http.get",
+          "web.download"
+        ]
+      },
+      "relevant_failure_fixture": {
+        "fixture_id": "skill_omni_body_reference_v1:relevant-failure",
+        "input_nonce": "v21-skill_omni_body_reference_v1-relevant-failure",
+        "expected_terminal_fact": "BLOCKED_EXTERNAL_or_typed_failure"
+      },
+      "deterministic_oracle": {
+        "success": "requested_outcome+current_artifact+oracle_PASS",
+        "failure": "typed_failure_fact_and_model_assistant_when_available"
+      },
+      "acceptance_profile": {
+        "minimum_score": null,
+        "world_class_score": null,
+        "must_pass": [
+          "requested_outcome",
+          "artifact_or_typed_unavailable_fact"
+        ]
+      },
+      "environment_requirements": [
+        "final_Electron_frontend",
+        "same_build_id",
+        "same_source_manifest"
+      ],
+      "artifact_checks": [
+        "path",
+        "bytes",
+        "sha256",
+        "openability",
+        "format_specific_qc"
+      ],
+      "aesthetic_profile": "applicable_artifacts_require_rendered_visual_review",
+      "expected_model_response_contract": {
+        "when_model_available": "AssistantCommit+SUCCEEDED_PlanOutcome+exact_text_hash",
+        "when_all_models_unavailable": "EXHAUSTED+no_assistant+typed_system_status"
+      }
+    }
+  ]
+}

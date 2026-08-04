@@ -1,0 +1,29 @@
+{
+  "name": "omni_body",
+  "description": "统一身体工具入口 / 应用能力总线 / Skill分发器 / 专业应用桥接层 / 模型协议适配层。必须传 action；target 与 args 按动作需要提供，宿主会规范化缺失值；可执行文件、文档、表格、图片、音视频、质量门、专业应用桥接，也支持 model.adapter.* 将 DeepSeek/MiniMax/GLM/MiMo/GPT/Kimi/豆包等模型原生工具协议转译为统一内部指令。它是工具，不是智能体；不跑隐藏工作流。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "明确动作名，如 skill.route / model.adapter.render_tool_schema / model.adapter.parse_tool_call / file.read / docx.create / qc.ppt.delivery_check / app.adapter.health / deliverable.package"
+      },
+      "target": {
+        "type": "string",
+        "description": "主操作对象路径、资源ID、应用对象或输出路径"
+      },
+      "args": {
+        "type": "object",
+        "description": "动作专用参数；不得用 goal 代替 action"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "risk": "A4",
+  "toolKind": "executable",
+  "effect": "execute",
+  "planOnly": false
+}

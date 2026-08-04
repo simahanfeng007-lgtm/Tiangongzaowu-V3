@@ -1,0 +1,120 @@
+/*
+ * Interaction and geometry contract
+ * ---------------------------------
+ * Theme files own material, colour and depth.  This final layer owns the
+ * invariants that must not change with a theme: content clearance, clipping,
+ * scroll ownership and wheel chaining.
+ */
+
+:root {
+  --content-edge-clearance: 10px;
+  --scrollbar-hit-width: 8px;
+}
+
+/*
+ * Composite settings are sections inside one panel, not independent material
+ * cards.  Keeping their separators flat prevents a theme shadow/radius from
+ * crossing the subgroup title and restores a predictable inner clearance.
+ */
+.settings-card-composite {
+  overflow: hidden;
+}
+
+.settings-composite-item {
+  padding: 14px 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-composite-item:first-child {
+  padding-top: 10px;
+}
+
+.settings-composite-item:last-child {
+  padding-bottom: 10px;
+}
+
+/*
+ * Dynamic backend strings can be much longer than design-time labels.  Cards
+ * remain the clipping authority so an error, path or category description can
+ * never paint through a neighbouring border.
+ */
+.dash-metric,
+.skills-category-item,
+.skill-summary-item,
+.skill-capability-line,
+.knowledge-item,
+.knowledge-search-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dash-metric > *,
+.skills-category-item > *,
+.skill-summary-item > *,
+.skill-capability-line > *,
+.knowledge-item > *,
+.knowledge-search-card > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/*
+ * Every vertical viewport participates in one wheel chain.  Inner fixed
+ * windows scroll first and, at either boundary, pass the wheel to their outer
+ * page instead of trapping it.  min-height:0 is required for grid/flex items
+ * to become real scrollports rather than silently expanding under overflow.
+ */
+:where(
+  .page-body,
+  .messages,
+  .settings-dashboard,
+  .dashboard-panel,
+  .history-list,
+  .lifecycle-side-panel,
+  .persona-side-panel,
+  .skills-side-panel,
+  .skills-list,
+  .knowledge-search-cards,
+  .knowledge-list,
+  .knowledge-result,
+  .knowledge-extracted-card,
+  .vrm-scroll-area,
+  .life-tab-content,
+  .life-card,
+  .life-boundary-card,
+  .life-summary-scroll,
+  .compact-pre,
+  .link-action-output,
+  .field-textarea,
+  .persona-textarea,
+  .step pre,
+  .raw-output,
+  .recent-log-preview
+) {
+  min-height: 0;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+}
+
+/* life.css historically used the overscroll shorthand with higher selector
+   specificity; restate these two nested windows explicitly so wheel chaining
+   is not accidentally disabled by that legacy rule. */
+.life-card,
+.life-boundary-card {
+  overscroll-behavior-y: auto;
+}
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-hit-width);
+  height: var(--scrollbar-hit-width);
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}

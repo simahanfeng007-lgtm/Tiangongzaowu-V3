@@ -1,0 +1,14 @@
+{
+  "schema": "tiangong.backend.release.v1",
+  "component_id": "tiangong-backend",
+  "version": "3.0.3",
+  "build_id": "tiangong-v3.0.3-source-complete-20260722",
+  "api_contract_id": "tiangong.desktop.backend.v3",
+  "entry_point": "v3.desktop_daemon",
+  "source_mode": true,
+  "reconstructed_from": [
+    "TiangongV3-core-source(1).zip",
+    "天工造物v3_后端核心代码_20260710.zip"
+  ],
+  "generated_at": "2026-07-22T00:00:00+00:00"
+}

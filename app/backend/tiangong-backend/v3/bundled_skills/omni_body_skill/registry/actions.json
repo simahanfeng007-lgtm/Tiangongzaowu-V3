@@ -1,0 +1,304 @@
+{
+  "life.body.state.query": {
+    "risk": "A0",
+    "implemented": true,
+    "effect": "read",
+    "summary": "Read this Life's current authoritative Life projection and live runtime body state with a gateway audit receipt."
+  },
+  "life.activity.query": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Read the authoritative Life activity ledger for today, yesterday, or a specified date."
+  },
+  "system.capabilities": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "List supported actions, schemas, risk levels, and adapter-only capabilities."
+  },
+  "system.health": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Inspect workspace, dependencies, ffmpeg availability, and runtime configuration."
+  },
+  "learning.ingest": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a pending learning card from a host-verified explicit user learning request; never compiles, activates, registers, or releases tools.",
+    "allowed_effect": "create_pending_learning_card_only",
+    "requires_explicit_user_learning_intent": true,
+    "requires_host_verified_intent_token": true
+  },
+  "file.list": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "List files/directories under a target directory."
+  },
+  "file.read": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Read text or base64-encoded binary file preview."
+  },
+  "file.write": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Write text/base64 file with rollback snapshot."
+  },
+  "file.append": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Append text to a file with rollback snapshot."
+  },
+  "file.copy": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Copy a file or directory with overwrite protection and rollback snapshot."
+  },
+  "file.move": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Move a file or directory with rollback snapshot."
+  },
+  "file.rename": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Rename a file or directory in place with rollback snapshot."
+  },
+  "file.mkdir": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a directory."
+  },
+  "file.delete_to_trash": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Move file/directory into workspace trash; never permanent delete."
+  },
+  "file.search": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Search filenames and/or text content within workspace."
+  },
+  "file.hash": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Calculate SHA-256 for a file."
+  },
+  "zip.create": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a zip archive from files/directories."
+  },
+  "zip.extract": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Safely extract zip archive under destination with zip-slip checks."
+  },
+  "code.read": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Read source code file with metadata."
+  },
+  "code.write": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Write source code and optionally run syntax checks."
+  },
+  "code.patch_replace": {
+    "risk": "A3",
+    "implemented": true,
+    "summary": "Patch file by replacing literal or regex text with rollback snapshot."
+  },
+  "quality.python_syntax": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Compile Python files to detect syntax errors."
+  },
+  "quality.run_tests": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Run a test command inside workspace; requires allow_shell=True."
+  },
+  "python.run": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Run Python code or a Python script in workspace; requires allow_python=True."
+  },
+  "shell.run": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Run shell command in workspace; requires allow_shell=True."
+  },
+  "docx.create": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a Word .docx document from structured sections/tables."
+  },
+  "pptx.create": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a PowerPoint .pptx deck from structured slide specs."
+  },
+  "sheet.create": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create an .xlsx workbook from structured sheets."
+  },
+  "sheet.read": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Read preview rows from .xlsx or .csv."
+  },
+  "mindmap.create": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create Mermaid mindmap markdown and optional OPML."
+  },
+  "pdf.extract_text": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Extract text from a PDF via pypdf."
+  },
+  "pdf.create_from_text": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a simple PDF from text via reportlab."
+  },
+  "image.info": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Inspect image size/mode/format."
+  },
+  "image.create_canvas": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a blank image canvas."
+  },
+  "image.resize": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Resize image with Pillow."
+  },
+  "image.crop": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Crop image with Pillow."
+  },
+  "image.rotate": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Rotate image with Pillow."
+  },
+  "image.add_text": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Add simple text overlay to image."
+  },
+  "image.compose": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Overlay one image on another."
+  },
+  "image.convert": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Convert image format."
+  },
+  "audio.tone": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create a simple WAV tone/beep/music bed placeholder."
+  },
+  "audio.trim": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Trim audio using ffmpeg."
+  },
+  "audio.concat": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Concatenate audio files using ffmpeg concat demuxer."
+  },
+  "audio.tts": {
+    "risk": "A2",
+    "implemented": false,
+    "adapter": "tts_backend",
+    "summary": "Text-to-speech through configured TTS backend adapter."
+  },
+  "voice.clone_authorized": {
+    "risk": "A5",
+    "implemented": false,
+    "adapter": "voice_backend_with_consent",
+    "summary": "Only for owned/consented voices; disabled by default and requires explicit external consent gate."
+  },
+  "video.info": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "Inspect video metadata using ffprobe."
+  },
+  "video.cut": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Cut a video segment using ffmpeg."
+  },
+  "video.extract_audio": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Extract audio track using ffmpeg."
+  },
+  "video.add_audio": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Mux/replace audio track using ffmpeg."
+  },
+  "video.slideshow": {
+    "risk": "A2",
+    "implemented": true,
+    "summary": "Create simple slideshow video from images using ffmpeg."
+  },
+  "rollback.list": {
+    "risk": "A0",
+    "implemented": true,
+    "summary": "List rollback-capable operations."
+  },
+  "rollback.apply": {
+    "risk": "A4",
+    "implemented": true,
+    "summary": "Restore snapshots for a previous mutating operation."
+  },
+  "browser.open": {
+    "risk": "A3",
+    "implemented": false,
+    "adapter": "browser_driver",
+    "summary": "Open or operate browser through Playwright/Selenium/GUI adapter."
+  },
+  "browser.search_web": {
+    "risk": "A0",
+    "implemented": false,
+    "adapter": "web_search",
+    "summary": "Use host model/web-search tool; this portable package has no bundled web access."
+  },
+  "desktop.screenshot": {
+    "risk": "A0",
+    "implemented": false,
+    "adapter": "desktop_automation",
+    "summary": "Screenshot through pyautogui/accessibility adapter."
+  },
+  "desktop.click": {
+    "risk": "A3",
+    "implemented": false,
+    "adapter": "desktop_automation",
+    "summary": "Click through GUI adapter."
+  },
+  "desktop.type": {
+    "risk": "A3",
+    "implemented": false,
+    "adapter": "desktop_automation",
+    "summary": "Type through GUI adapter."
+  },
+  "desktop.hotkey": {
+    "risk": "A3",
+    "implemented": false,
+    "adapter": "desktop_automation",
+    "summary": "Keyboard shortcut through GUI adapter."
+  }
+}

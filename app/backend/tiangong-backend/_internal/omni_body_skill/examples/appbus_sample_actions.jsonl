@@ -1,0 +1,5 @@
+{"action": "system.app_registry"}
+{"action": "system.action_schema", "target": "jianying.export.mp4"}
+{"action": "core.filesystem.file.write", "target": "hello.txt", "args": {"content": "你好，App Bus"}}
+{"action": "microsoft.word.docx.create", "target": "demo.docx", "args": {"title": "Demo", "sections": [{"heading": "概述", "paragraphs": ["这是通过应用别名路由到 docx.create 的文档。"]}]}}
+{"action": "adobe.photoshop.layer.create", "target": "design.psd", "args": {"name": "title"}}

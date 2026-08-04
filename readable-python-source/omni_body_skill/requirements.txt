@@ -1,0 +1,2 @@
+# Minimal runtime has no mandatory third-party dependency.
+# Existing frozen backends may already include python-docx / python-pptx; omni_body degrades where optional libs are absent.

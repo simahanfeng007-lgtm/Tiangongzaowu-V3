@@ -1,0 +1,81 @@
+═══════════════════════════════════════════════════════
+天工造物 v3：起源 — 落地日志
+日期：2026-06-20
+═══════════════════════════════════════════════════════
+
+总览：35个文件，6,191行代码。全部通过语法检查。
+
+[2026-06-20]
+
+基础设施 (5文件)
+─────────────────────────────
+shenti_zhuangtai.py    162行  统一身体状态。7个子状态类。对接L0 identity/health/autonomy/lifecycle/time
+peizhi.py               65行  全局配置。心跳间隔/Soul路径/记忆路径/引擎开关/资源限制
+quanzhuixian.py         74行  全追踪链。因果链回溯。每个唤醒一个TraceId
+shengming/xintiao.py   103行  心跳引擎。30秒tick。纯公式(情感衰减×0.95/驱动重算/健康恢复)
+shengming/zhouqi.py     96行  生命周期。五阶段(沉睡→复活→辅助→半自主→完全自治)。每tick推进
+
+沟通层 (3文件)
+─────────────────────────────
+gutong/soul_jiazai.py   48行  Soul加载。原文直达。CJK不检测。Style Only不加
+gutong/shangxiawen.py   76行  上下文桥接。身体状态→自然语言感受。不编译政策卡
+gutong/gutong_ceng.py   69行  沟通层。一次LLM调用。支持工具循环。解析JSON/XML tool_call
+
+机能系统 (2文件)
+─────────────────────────────
+jineng/guge_ceng.py    119行  骨骼层。工具注册表+名字映射+参数校验。7种工具。L4对接
+jineng/jirou_ceng.py   135行  肌肉层。执行适配器。6种工具实现。read_file/write_file/terminal/search_files/web_search/memory_search
+
+总调度 (1文件)
+─────────────────────────────
+zongdiaodu.py          187行  总调度。唤醒入口。编排全部引擎。函数式管道。含工具循环
+
+记忆系统 (5文件)
+─────────────────────────────
+jiyi/shengming_qiaojie.py 180行  记忆-生命桥接。身体状态→记忆策略参数
+jiyi/celve.py          199行  记忆策略。保留分计算/衰减率/5种遗忘策略选择
+jiyi/jiansuo.py        184行  记忆检索。加权评分。词重叠相似度。top-10
+jiyi/yinqing.py        382行  记忆引擎。写入/检索/遗忘/晋升。五层L1-L5。JSONL
+jiyi/__init__.py         4行  包初始化
+
+观察与评估 (3文件)
+─────────────────────────────
+guancha_pinggu/guancha.py 134行  观察引擎。5项指标。L0 ObservationQuality对齐
+guancha_pinggu/pinggu.py  107行  评估引擎。4项评分。DecisionKind映射(allow/warn/block)
+guancha_pinggu/__init__.py 13行  包初始化
+
+经验与学习 (3文件)
+─────────────────────────────
+jingyan_xuexi/jingyan_chi.py 420行  经验池。提取/去重/优先级/清理。JSONL持久化
+jingyan_xuexi/xuexi_lian.py  280行  学习链。选材→搜索→提炼→注册。对接NengliZhuche
+jingyan_xuexi/__init__.py      4行  包初始化
+
+进化系统 (4文件)
+─────────────────────────────
+jinhua/shuxue_qiaojie.py 167行  数学桥接。五维评分。L0 MetricValue/ObservationRef映射
+jinhua/pinggu.py        324行  缺口评估。8能力维度。失败模式分析。L3 scoring_flow
+jinhua/zhixing.py       349行  改进执行。五步流(快照→方案→学习→验证→提交/回滚)
+jinhua/yinqing.py       239行  进化引擎。编排评估→筛选→改进。频率控制+重复避免
+
+自愈 (2文件)
+─────────────────────────────
+ziyu/yinqing.py         556行  自愈引擎。自检/诊断/修复/验证。6种修复策略。频控
+ziyu/__init__.py          9行  包初始化
+
+免疫与代谢 (4文件)
+─────────────────────────────
+mianyi_daixie/mianyi.py 300行  免疫层。自主权判定/沙箱路由/事务保护/审计/内容安全
+mianyi_daixie/daixie.py 215行  代谢层。资源预算/凭证管理/环境感知
+mianyi_daixie/shiyan.py 239行  实验框架。沙箱隔离/实验评估/产物迁移
+mianyi_daixie/__init__.py 9行  包初始化
+
+治理 (3文件)
+─────────────────────────────
+zhili/anquan.py         231行  安全边界。隐私检测(15模式)/越权检测(20模式)/脱敏
+zhili/nengli_zhuche.py  240行  能力注册。注册/注销/查询/类型管理。JSON持久化。L5对齐
+zhili/banben_qianyi.py  272行  版本迁移。3种迁移策略。SchemaVersion。备份
+
+═══════════════════════════════════════════════════════
+语法检查：全部35文件通过 ✅
+总行数：6,191行
+═══════════════════════════════════════════════════════

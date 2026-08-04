@@ -1,0 +1,298 @@
+[
+  {
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "deepseek_openai"
+  },
+  {
+    "provider": "deepseek",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_deepseek",
+      "provider": "deepseek",
+      "profile": "deepseek_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "deepseek",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "minimax",
+    "model": "MiniMax-M2.5",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "minimax_openai"
+  },
+  {
+    "provider": "minimax",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_minimax",
+      "provider": "minimax",
+      "profile": "minimax_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "minimax",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "glm",
+    "model": "glm-4.6",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "glm_openai"
+  },
+  {
+    "provider": "glm",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_glm",
+      "provider": "glm",
+      "profile": "glm_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "glm",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "mimo",
+    "model": "mimo-v2.5-pro",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "mimo_openai"
+  },
+  {
+    "provider": "mimo",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_mimo",
+      "provider": "mimo",
+      "profile": "mimo_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "mimo",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "gpt",
+    "model": "gpt-5.5",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "gpt_openai_chat"
+  },
+  {
+    "provider": "gpt",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_gpt",
+      "provider": "gpt",
+      "profile": "gpt_openai_chat",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "gpt",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "kimi",
+    "model": "kimi-k2",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "kimi_openai"
+  },
+  {
+    "provider": "kimi",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_kimi",
+      "provider": "kimi",
+      "profile": "kimi_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "kimi",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "doubao",
+    "model": "doubao-seed-1.6",
+    "action": "render_tool_schema",
+    "success": true,
+    "profile": "doubao_openai"
+  },
+  {
+    "provider": "doubao",
+    "action": "parse_tool_call",
+    "success": true,
+    "count": 1,
+    "call": {
+      "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+      "tool": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "args": {
+        "job": "做一份企业AI培训方案Word"
+      },
+      "call_id": "call_doubao",
+      "provider": "doubao",
+      "profile": "doubao_openai",
+      "raw_function_name": "omni_body",
+      "valid": true
+    }
+  },
+  {
+    "provider": "doubao",
+    "action": "render_tool_result",
+    "success": true,
+    "style": "openai_role_tool"
+  },
+  {
+    "provider": "minimax_raw",
+    "action": "parse_xml",
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.omni_body.model_adapter.parse_result.v1",
+        "profile": {
+          "display_name": "MiniMax Raw XML/Tag Tool Calls",
+          "provider": "minimax",
+          "aliases": [
+            "minimax-raw",
+            "minimax-xml",
+            "MiniMax-M2.5-raw"
+          ],
+          "model_patterns": [
+            "MiniMax-M2.5*",
+            "MiniMax-M2*"
+          ],
+          "schema_style": "xml_prompt_contract",
+          "call_style": "xml_or_tag_tool_call",
+          "result_style": "xml_tool_result",
+          "argument_encoding": "json_inside_tags",
+          "supports_parallel_tool_calls": true,
+          "supports_tool_choice": false,
+          "supports_strict_schema": false,
+          "verified_level": "open_source_guide_plus_heuristic",
+          "profile_id": "minimax_raw_xml",
+          "detect_reason": "explicit preferred_profile",
+          "confidence": 1.0
+        },
+        "count": 1,
+        "calls": [
+          {
+            "schema": "tiangong.v3.omni_body.canonical_tool_call.v1",
+            "tool": "omni_body",
+            "action": "skill.route",
+            "target": "",
+            "args": {
+              "job": "写会议纪要"
+            },
+            "call_id": "mm_raw",
+            "provider": "minimax",
+            "profile": "minimax_raw_xml",
+            "raw_function_name": "omni_body",
+            "valid": true
+          }
+        ],
+        "all_valid": true
+      },
+      "evidence": {
+        "count": 1,
+        "all_valid": true
+      },
+      "op_id": "20260705_044756_670_model.adapter.parse_tool_call",
+      "action": "model.adapter.parse_tool_call",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "roundtrip_test",
+    "success": true,
+    "profiles_tested": 9
+  }
+]

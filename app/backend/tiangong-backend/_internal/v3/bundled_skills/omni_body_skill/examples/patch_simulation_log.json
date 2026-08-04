@@ -1,0 +1,1028 @@
+{
+  "summary": {
+    "workspace": "/mnt/data/omni_body_patch_workspace",
+    "total": 11,
+    "ok": 10,
+    "failed": 1,
+    "files": [
+      "design.psd.omni_ps.json",
+      "design.psd.omni_ps.png",
+      "project01.omni_jy.json",
+      "jianying_title_card.png",
+      ".omni_audit/20260705_004434_881_browser.chrome.goto.json",
+      ".omni_audit/audit.jsonl",
+      ".omni_audit/20260705_004434_890_browser.chrome.extract_text.json",
+      ".omni_audit/20260705_004434_893_adobe.photoshop.document.create.json",
+      ".omni_audit/20260705_004434_941_adobe.photoshop.layer.create.json",
+      ".omni_audit/20260705_004434_968_jianying.project.create.json",
+      ".omni_audit/20260705_004434_975_jianying.subtitle.add.json",
+      ".omni_audit/20260705_004434_987_jianying.export.mp4.json",
+      ".omni_audit/20260705_004436_064_feishu.docs.doc.create.json",
+      ".omni_audit/20260705_004436_192_audio.tts.json",
+      ".omni_audit/20260705_004436_234_elevenlabs.tts.create.json",
+      "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+      "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.txt",
+      "media/jianying_output.mp4",
+      "media/tts.wav",
+      "media/elevenlabs_fallback.wav",
+      "feishu_docs/测试文档.md",
+      "feishu_docs/测试文档.docx",
+      ".omni_backups/20260705_004434_881_browser.chrome.goto/snapshots.json",
+      ".omni_backups/20260705_004434_893_adobe.photoshop.document.create/snapshots.json",
+      ".omni_backups/20260705_004434_941_adobe.photoshop.layer.create/design.psd.omni_ps.json",
+      ".omni_backups/20260705_004434_941_adobe.photoshop.layer.create/design.psd.omni_ps.png",
+      ".omni_backups/20260705_004434_941_adobe.photoshop.layer.create/snapshots.json",
+      ".omni_backups/20260705_004434_968_jianying.project.create/snapshots.json",
+      ".omni_backups/20260705_004434_975_jianying.subtitle.add/project01.omni_jy.json",
+      ".omni_backups/20260705_004434_975_jianying.subtitle.add/snapshots.json",
+      ".omni_backups/20260705_004434_987_jianying.export.mp4/snapshots.json",
+      ".omni_backups/20260705_004434_987_jianying.export.mp4/jianying_title_card.png",
+      ".omni_backups/20260705_004436_064_feishu.docs.doc.create/snapshots.json",
+      ".omni_backups/20260705_004436_192_audio.tts/snapshots.json",
+      ".omni_backups/20260705_004436_234_elevenlabs.tts.create/snapshots.json"
+    ]
+  },
+  "calls": [
+    {
+      "label": "browser_goto_data",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "browser.chrome.goto",
+        "target": "data:text/html,<title>测试页</title><h1>你好</h1><p>Omni Body browser fallback</p>",
+        "args": {}
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "browser.chrome.goto",
+        "target": "data:text/html,<title>测试页</title><h1>你好</h1><p>Omni Body browser fallback</p>",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+              "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            },
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.txt",
+              "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.txt",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "url": "data:text/html,<title>测试页</title><h1>你好</h1><p>Omni Body browser fallback</p>",
+          "final_url": "data:text/html,<title>测试页</title><h1>你好</h1><p>Omni Body browser fallback</p>",
+          "status": 200,
+          "content_type": "text/html",
+          "title": "测试页",
+          "html_snapshot": {
+            "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 72,
+            "sha256": "9e9634284c0a6fd86bf475cf6d128b956cc00f9ec1035206e8e0070ab129ae5d"
+          },
+          "text_snapshot": {
+            "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.txt",
+            "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.txt",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 43,
+            "sha256": "6a30d22ddb6b6414ff7c7ccbde458d5bb8f4a59c29a43e23cf47bec876e0e9e5"
+          },
+          "text_preview": "测试页\n你好\nOmni Body browser fallback",
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 72,
+            "sha256": "9e9634284c0a6fd86bf475cf6d128b956cc00f9ec1035206e8e0070ab129ae5d"
+          },
+          "success": true,
+          "op_id": "20260705_004434_881_browser.chrome.goto",
+          "action": "browser.chrome.goto",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.006
+        },
+        "llm_brief": "omni_body browser.chrome.goto completed for data:text/html,<title>测试页</title><h1>你好</h1><p>Omni Body browser fallback</p>",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+          "exists": true,
+          "sha256": "9e9634284c0a6fd86bf475cf6d128b956cc00f9ec1035206e8e0070ab129ae5d",
+          "bytes": 72,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "rel_path": "browser_snapshots/20260705_004434_881_browser.chrome.goto_text_html_title_测试页__title_h1_你好__h1_p_Omni_Body_browser_fallback__p.html",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 72,
+            "sha256": "9e9634284c0a6fd86bf475cf6d128b956cc00f9ec1035206e8e0070ab129ae5d"
+          },
+          "op_id": "20260705_004434_881_browser.chrome.goto",
+          "action": "browser.chrome.goto",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.006,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "browser_extract_text",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "browser.chrome.extract_text",
+        "target": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+        "args": {}
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "browser.chrome.extract_text",
+        "target": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+        "result": {
+          "title": "提取",
+          "text": "提取\n文本提取成功",
+          "source": {
+            "url": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+            "status": 200,
+            "bytes": 46
+          },
+          "evidence": {
+            "url": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+            "status": 200,
+            "bytes": 46
+          },
+          "success": true,
+          "op_id": "20260705_004434_890_browser.chrome.extract_text",
+          "action": "browser.chrome.extract_text",
+          "risk_level": "A0",
+          "elapsed_seconds": 0.001
+        },
+        "llm_brief": "omni_body browser.chrome.extract_text completed for data:text/html,<title>提取</title><p>文本提取成功</p>",
+        "evidence": {
+          "path": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+          "exists": false,
+          "sha256": "",
+          "bytes": 46,
+          "raw": {
+            "url": "data:text/html,<title>提取</title><p>文本提取成功</p>",
+            "status": 200,
+            "bytes": 46
+          },
+          "op_id": "20260705_004434_890_browser.chrome.extract_text",
+          "action": "browser.chrome.extract_text",
+          "risk_level": "A0",
+          "elapsed_seconds": 0.001
+        }
+      }
+    },
+    {
+      "label": "photoshop_document",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "adobe.photoshop.document.create",
+        "target": "design.psd",
+        "args": {
+          "width": 800,
+          "height": 600,
+          "background": "white",
+          "title": "海报"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "adobe.photoshop.document.create",
+        "target": "design.psd",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.json",
+              "rel_path": "design.psd.omni_ps.json",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            },
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+              "rel_path": "design.psd.omni_ps.png",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "project": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.json",
+            "rel_path": "design.psd.omni_ps.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 319,
+            "sha256": "3d6b812353f6adcc229145ed07c7ffded7300d8b3110a0f423cbd270475648b7"
+          },
+          "preview": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 2963,
+            "sha256": "b80e23e07ed21f5562e20e33ee332163ff6496569d12200152474edb7a239a48"
+          },
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 2963,
+            "sha256": "b80e23e07ed21f5562e20e33ee332163ff6496569d12200152474edb7a239a48"
+          },
+          "portable_fallback": true,
+          "success": true,
+          "op_id": "20260705_004434_893_adobe.photoshop.document.create",
+          "action": "adobe.photoshop.document.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.045
+        },
+        "llm_brief": "omni_body adobe.photoshop.document.create completed for design.psd",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+          "exists": true,
+          "sha256": "b80e23e07ed21f5562e20e33ee332163ff6496569d12200152474edb7a239a48",
+          "bytes": 2963,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 2963,
+            "sha256": "b80e23e07ed21f5562e20e33ee332163ff6496569d12200152474edb7a239a48"
+          },
+          "op_id": "20260705_004434_893_adobe.photoshop.document.create",
+          "action": "adobe.photoshop.document.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.045,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "photoshop_layer",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "adobe.photoshop.layer.create",
+        "target": "design.psd",
+        "args": {
+          "name": "标题层",
+          "kind": "text",
+          "text": "AI培训海报",
+          "x": 80,
+          "y": 120,
+          "fill": "black"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "adobe.photoshop.layer.create",
+        "target": "design.psd",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.json",
+              "rel_path": "design.psd.omni_ps.json",
+              "existed": true,
+              "kind": "file",
+              "backup_path": "/mnt/data/omni_body_patch_workspace/.omni_backups/20260705_004434_941_adobe.photoshop.layer.create/design.psd.omni_ps.json"
+            },
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+              "rel_path": "design.psd.omni_ps.png",
+              "existed": true,
+              "kind": "file",
+              "backup_path": "/mnt/data/omni_body_patch_workspace/.omni_backups/20260705_004434_941_adobe.photoshop.layer.create/design.psd.omni_ps.png"
+            }
+          ],
+          "project": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.json",
+            "rel_path": "design.psd.omni_ps.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 514,
+            "sha256": "cff28b80d08de43e31148574209e9a88d51f519d3a69dc9d48a818cf54c8c059"
+          },
+          "preview": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3334,
+            "sha256": "7dff6b0cc27de08fcd2ddfa2e02e5812a34c07342e6ad155e7849decc6fbbc17"
+          },
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3334,
+            "sha256": "7dff6b0cc27de08fcd2ddfa2e02e5812a34c07342e6ad155e7849decc6fbbc17"
+          },
+          "portable_fallback": true,
+          "success": true,
+          "op_id": "20260705_004434_941_adobe.photoshop.layer.create",
+          "action": "adobe.photoshop.layer.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.025
+        },
+        "llm_brief": "omni_body adobe.photoshop.layer.create completed for design.psd",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+          "exists": true,
+          "sha256": "7dff6b0cc27de08fcd2ddfa2e02e5812a34c07342e6ad155e7849decc6fbbc17",
+          "bytes": 3334,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/design.psd.omni_ps.png",
+            "rel_path": "design.psd.omni_ps.png",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3334,
+            "sha256": "7dff6b0cc27de08fcd2ddfa2e02e5812a34c07342e6ad155e7849decc6fbbc17"
+          },
+          "op_id": "20260705_004434_941_adobe.photoshop.layer.create",
+          "action": "adobe.photoshop.layer.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.025,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "jianying_project",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "jianying.project.create",
+        "target": "project01",
+        "args": {
+          "title": "宣传片"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "jianying.project.create",
+        "target": "project01",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+              "rel_path": "project01.omni_jy.json",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "project": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 219,
+            "sha256": "35e7c3ef91ba3313f9b242389898b0cc3a362104f34690fbb28de85f45b06c07"
+          },
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 219,
+            "sha256": "35e7c3ef91ba3313f9b242389898b0cc3a362104f34690fbb28de85f45b06c07"
+          },
+          "portable_fallback": true,
+          "success": true,
+          "op_id": "20260705_004434_968_jianying.project.create",
+          "action": "jianying.project.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.004
+        },
+        "llm_brief": "omni_body jianying.project.create completed for project01",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+          "exists": true,
+          "sha256": "35e7c3ef91ba3313f9b242389898b0cc3a362104f34690fbb28de85f45b06c07",
+          "bytes": 219,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 219,
+            "sha256": "35e7c3ef91ba3313f9b242389898b0cc3a362104f34690fbb28de85f45b06c07"
+          },
+          "op_id": "20260705_004434_968_jianying.project.create",
+          "action": "jianying.project.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.004,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "jianying_subtitle",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "jianying.subtitle.add",
+        "target": "project01",
+        "args": {
+          "text": "企业AI转型",
+          "start": 0,
+          "end": 3
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "jianying.subtitle.add",
+        "target": "project01",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+              "rel_path": "project01.omni_jy.json",
+              "existed": true,
+              "kind": "file",
+              "backup_path": "/mnt/data/omni_body_patch_workspace/.omni_backups/20260705_004434_975_jianying.subtitle.add/project01.omni_jy.json"
+            }
+          ],
+          "project": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 301,
+            "sha256": "dda9984d40373ee914050547a7e1d84ed4a4112386dbc2eda9fa4e66839baac7"
+          },
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 301,
+            "sha256": "dda9984d40373ee914050547a7e1d84ed4a4112386dbc2eda9fa4e66839baac7"
+          },
+          "portable_fallback": true,
+          "success": true,
+          "op_id": "20260705_004434_975_jianying.subtitle.add",
+          "action": "jianying.subtitle.add",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.01
+        },
+        "llm_brief": "omni_body jianying.subtitle.add completed for project01",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+          "exists": true,
+          "sha256": "dda9984d40373ee914050547a7e1d84ed4a4112386dbc2eda9fa4e66839baac7",
+          "bytes": 301,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/project01.omni_jy.json",
+            "rel_path": "project01.omni_jy.json",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 301,
+            "sha256": "dda9984d40373ee914050547a7e1d84ed4a4112386dbc2eda9fa4e66839baac7"
+          },
+          "op_id": "20260705_004434_975_jianying.subtitle.add",
+          "action": "jianying.subtitle.add",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.01,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "jianying_export",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "jianying.export.mp4",
+        "target": "project01",
+        "args": {
+          "output": "media/jianying_output.mp4",
+          "duration": 2,
+          "title": "企业AI转型"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "jianying.export.mp4",
+        "target": "project01",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+              "rel_path": "media/jianying_output.mp4",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "render": {
+            "snapshots": [
+              {
+                "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+                "rel_path": "media/jianying_output.mp4",
+                "existed": false,
+                "kind": "other",
+                "backup_path": null
+              }
+            ],
+            "ffmpeg": {
+              "returncode": 0,
+              "stdout": "",
+              "stderr": "ffmpeg version 7.1.3-0+deb13u1 Copyright (c) 2000-2025 the FFmpeg developers\n  built with gcc 14 (Debian 14.2.0-19)\n  configuration: --prefix=/usr --extra-version=0+deb13u1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-libmfx --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.101 / 61. 19.101\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n  libpostproc    58.  3.100 / 58.  3.100\nInput #0, image2, from '/mnt/data/omni_body_patch_workspace/.20260705_004434_987_jianying.export.mp4_slides/*.png':\n  Duration: 00:00:02.00, start: 0.000000, bitrate: N/A\n  Stream #0:0: Video: png, rgb24(pc, gbr/unknown/unknown), 1080x1920, 0.50 fps, 0.50 tbr, 0.50 tbn\nStream mapping:\n  Stream #0:0 -> #0:0 (png (native) -> h264 (libx264))\nPress [q] to stop, [?] for help\n[libx264 @ 0x56435dba5000] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512\n[libx264 @ 0x56435dba5000] profile High, level 4.0, 4:2:0, 8-bit\n[libx264 @ 0x56435dba5000] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=60 lookahead_threads=10 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=1 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00\nOutput #0, mp4, to '/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 1080x1920, q=2-31, 0.50 fps, 16384 tbn\n      Metadata:\n        encoder         : Lavc61.19.101 libx264\n      Side data:\n        cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A\n[out#0/mp4 @ 0x56435dba8300] video:3KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 29.876722%\nframe=    1 fps=0.0 q=17.0 Lsize=       3KiB time=00:00:02.00 bitrate=  14.3kbits/s speed= 8.2x    \n[libx264 @ 0x56435dba5000] frame I:1     Avg QP: 2.17  size:  2068\n[libx264 @ 0x56435dba5000] mb I  I16..4: 99.4%  0.0%  0.6%\n[libx264 @ 0x56435dba5000] 8x8 transform intra:0.0%\n[libx264 @ 0x56435dba5000] coded y,uvDC,uvAC intra: 0.3% 0.0% 0.0%\n[libx264 @ 0x56435dba5000] i16 v,h,dc,p: 99%  0%  1%  0%\n[libx264 @ 0x56435dba5000] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 54% 28%  7%  1%  1%  5%  1%  3%  0%\n[libx264 @ 0x56435dba5000] i8c dc,h,v,p: 100%  0%  0%  0%\n[libx264 @ 0x56435dba5000] kb/s:8.27\n",
+              "ok": true
+            },
+            "output": {
+              "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+              "rel_path": "media/jianying_output.mp4",
+              "exists": true,
+              "is_file": true,
+              "is_dir": false,
+              "size_bytes": 3582,
+              "sha256": "b62488414222bd17c9ef9392adb96158dde349ceb3aee2cfac43b053c0938573"
+            },
+            "success": true
+          },
+          "audio_mux": null,
+          "output": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+            "rel_path": "media/jianying_output.mp4",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3582,
+            "sha256": "b62488414222bd17c9ef9392adb96158dde349ceb3aee2cfac43b053c0938573"
+          },
+          "video_info": {
+            "streams": [
+              {
+                "index": 0,
+                "codec_name": "h264",
+                "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+                "profile": "High",
+                "codec_type": "video",
+                "codec_tag_string": "avc1",
+                "codec_tag": "0x31637661",
+                "width": 1080,
+                "height": 1920,
+                "coded_width": 1080,
+                "coded_height": 1920,
+                "closed_captions": 0,
+                "film_grain": 0,
+                "has_b_frames": 2,
+                "pix_fmt": "yuv420p",
+                "level": 40,
+                "chroma_location": "left",
+                "field_order": "progressive",
+                "refs": 1,
+                "is_avc": "true",
+                "nal_length_size": "4",
+                "id": "0x1",
+                "r_frame_rate": "1/2",
+                "avg_frame_rate": "1/2",
+                "time_base": "1/16384",
+                "start_pts": 0,
+                "start_time": "0.000000",
+                "duration_ts": 32768,
+                "duration": "2.000000",
+                "bit_rate": "11036",
+                "bits_per_raw_sample": "8",
+                "nb_frames": "1",
+                "extradata_size": 47,
+                "disposition": {
+                  "default": 1,
+                  "dub": 0,
+                  "original": 0,
+                  "comment": 0,
+                  "lyrics": 0,
+                  "karaoke": 0,
+                  "forced": 0,
+                  "hearing_impaired": 0,
+                  "visual_impaired": 0,
+                  "clean_effects": 0,
+                  "attached_pic": 0,
+                  "timed_thumbnails": 0,
+                  "non_diegetic": 0,
+                  "captions": 0,
+                  "descriptions": 0,
+                  "metadata": 0,
+                  "dependent": 0,
+                  "still_image": 0,
+                  "multilayer": 0
+                },
+                "tags": {
+                  "language": "und",
+                  "handler_name": "VideoHandler",
+                  "vendor_id": "[0][0][0][0]",
+                  "encoder": "Lavc61.19.101 libx264"
+                }
+              }
+            ],
+            "format": {
+              "filename": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+              "nb_streams": 1,
+              "nb_programs": 0,
+              "nb_stream_groups": 0,
+              "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+              "format_long_name": "QuickTime / MOV",
+              "start_time": "0.000000",
+              "duration": "2.000000",
+              "size": "3582",
+              "bit_rate": "14328",
+              "probe_score": 100,
+              "tags": {
+                "major_brand": "isom",
+                "minor_version": "512",
+                "compatible_brands": "isomiso2avc1mp41",
+                "encoder": "Lavf61.7.100"
+              }
+            }
+          },
+          "portable_fallback": true,
+          "success": true,
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+            "rel_path": "media/jianying_output.mp4",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3582,
+            "sha256": "b62488414222bd17c9ef9392adb96158dde349ceb3aee2cfac43b053c0938573"
+          },
+          "op_id": "20260705_004434_987_jianying.export.mp4",
+          "action": "jianying.export.mp4",
+          "risk_level": "A2",
+          "elapsed_seconds": 1.074
+        },
+        "llm_brief": "omni_body jianying.export.mp4 completed for project01",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+          "exists": true,
+          "sha256": "b62488414222bd17c9ef9392adb96158dde349ceb3aee2cfac43b053c0938573",
+          "bytes": 3582,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/jianying_output.mp4",
+            "rel_path": "media/jianying_output.mp4",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 3582,
+            "sha256": "b62488414222bd17c9ef9392adb96158dde349ceb3aee2cfac43b053c0938573"
+          },
+          "op_id": "20260705_004434_987_jianying.export.mp4",
+          "action": "jianying.export.mp4",
+          "risk_level": "A2",
+          "elapsed_seconds": 1.074,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "feishu_doc_create",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "feishu.docs.doc.create",
+        "target": "",
+        "args": {
+          "title": "测试文档",
+          "content": "这是飞书本地fallback文档。"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "feishu.docs.doc.create",
+        "target": "",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.md",
+              "rel_path": "feishu_docs/测试文档.md",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            },
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.docx",
+              "rel_path": "feishu_docs/测试文档.docx",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "remote_created": false,
+          "mode": "local_feishu_fallback",
+          "markdown": {
+            "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.md",
+            "rel_path": "feishu_docs/测试文档.md",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 52,
+            "sha256": "742fcbd99316fa541c2d27763bd13f735da9d6cf117473b728e8ee0a12a0364d"
+          },
+          "docx": {
+            "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.docx",
+            "rel_path": "feishu_docs/测试文档.docx",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 36691,
+            "sha256": "8ac54f1469bf0abcf17535ac69bad8b60922588d5392ed4d98f5998471e9b52b"
+          },
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.docx",
+            "rel_path": "feishu_docs/测试文档.docx",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 36691,
+            "sha256": "8ac54f1469bf0abcf17535ac69bad8b60922588d5392ed4d98f5998471e9b52b"
+          },
+          "warning": "No Feishu credentials/API adapter in portable core; created local Feishu-compatible deliverables.",
+          "success": true,
+          "op_id": "20260705_004436_064_feishu.docs.doc.create",
+          "action": "feishu.docs.doc.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.126
+        },
+        "llm_brief": "omni_body feishu.docs.doc.create completed for [no target]",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.docx",
+          "exists": true,
+          "sha256": "8ac54f1469bf0abcf17535ac69bad8b60922588d5392ed4d98f5998471e9b52b",
+          "bytes": 36691,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/feishu_docs/测试文档.docx",
+            "rel_path": "feishu_docs/测试文档.docx",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 36691,
+            "sha256": "8ac54f1469bf0abcf17535ac69bad8b60922588d5392ed4d98f5998471e9b52b"
+          },
+          "op_id": "20260705_004436_064_feishu.docs.doc.create",
+          "action": "feishu.docs.doc.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.126,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "audio_tts",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "audio.tts",
+        "target": "",
+        "args": {
+          "text": "Omni Body test",
+          "output": "media/tts.wav",
+          "voice": "en"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "audio.tts",
+        "target": "",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/media/tts.wav",
+              "rel_path": "media/tts.wav",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "engine": "espeak",
+          "subprocess": {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "ok": true
+          },
+          "output": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/tts.wav",
+            "rel_path": "media/tts.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 62000,
+            "sha256": "734b5bfb71a77e5c59057cde78e444fdea567fae952c66c4d2cba320d6f52b59"
+          },
+          "success": true,
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/tts.wav",
+            "rel_path": "media/tts.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 62000,
+            "sha256": "734b5bfb71a77e5c59057cde78e444fdea567fae952c66c4d2cba320d6f52b59"
+          },
+          "op_id": "20260705_004436_192_audio.tts",
+          "action": "audio.tts",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.04
+        },
+        "llm_brief": "omni_body audio.tts completed for [no target]",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/media/tts.wav",
+          "exists": true,
+          "sha256": "734b5bfb71a77e5c59057cde78e444fdea567fae952c66c4d2cba320d6f52b59",
+          "bytes": 62000,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/tts.wav",
+            "rel_path": "media/tts.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 62000,
+            "sha256": "734b5bfb71a77e5c59057cde78e444fdea567fae952c66c4d2cba320d6f52b59"
+          },
+          "op_id": "20260705_004436_192_audio.tts",
+          "action": "audio.tts",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.04,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "elevenlabs_tts",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "elevenlabs.tts.create",
+        "target": "",
+        "args": {
+          "text": "ElevenLabs portable fallback",
+          "output": "media/elevenlabs_fallback.wav",
+          "voice": "en"
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": true,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": "elevenlabs.tts.create",
+        "target": "",
+        "result": {
+          "snapshots": [
+            {
+              "path": "/mnt/data/omni_body_patch_workspace/media/elevenlabs_fallback.wav",
+              "rel_path": "media/elevenlabs_fallback.wav",
+              "existed": false,
+              "kind": "other",
+              "backup_path": null
+            }
+          ],
+          "engine": "espeak",
+          "subprocess": {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "ok": true
+          },
+          "output": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/elevenlabs_fallback.wav",
+            "rel_path": "media/elevenlabs_fallback.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 106954,
+            "sha256": "321df46f4abab9ba9bf5dbde553e5a3ccc19c5a492414c366efa4284b442450c"
+          },
+          "success": true,
+          "evidence": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/elevenlabs_fallback.wav",
+            "rel_path": "media/elevenlabs_fallback.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 106954,
+            "sha256": "321df46f4abab9ba9bf5dbde553e5a3ccc19c5a492414c366efa4284b442450c"
+          },
+          "provider": "portable_local_tts_fallback_not_elevenlabs",
+          "op_id": "20260705_004436_234_elevenlabs.tts.create",
+          "action": "elevenlabs.tts.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.048
+        },
+        "llm_brief": "omni_body elevenlabs.tts.create completed for [no target]",
+        "evidence": {
+          "path": "/mnt/data/omni_body_patch_workspace/media/elevenlabs_fallback.wav",
+          "exists": true,
+          "sha256": "321df46f4abab9ba9bf5dbde553e5a3ccc19c5a492414c366efa4284b442450c",
+          "bytes": 106954,
+          "raw": {
+            "path": "/mnt/data/omni_body_patch_workspace/media/elevenlabs_fallback.wav",
+            "rel_path": "media/elevenlabs_fallback.wav",
+            "exists": true,
+            "is_file": true,
+            "is_dir": false,
+            "size_bytes": 106954,
+            "sha256": "321df46f4abab9ba9bf5dbde553e5a3ccc19c5a492414c366efa4284b442450c"
+          },
+          "op_id": "20260705_004436_234_elevenlabs.tts.create",
+          "action": "elevenlabs.tts.create",
+          "risk_level": "A2",
+          "elapsed_seconds": 0.048,
+          "rollback_available": true
+        }
+      }
+    },
+    {
+      "label": "voice_clone_authorized",
+      "payload": {
+        "workspace": "/mnt/data/omni_body_patch_workspace",
+        "action": "voice.clone_authorized",
+        "target": "voice_sample.wav",
+        "args": {
+          "text": "测试",
+          "consent_confirmed": true
+        }
+      },
+      "response": {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": false,
+        "zhuangtai": "cuowu",
+        "gongju": "omni_body",
+        "action": "voice.clone_authorized",
+        "target": "voice_sample.wav",
+        "result": {
+          "success": false,
+          "action": "voice.clone_authorized",
+          "target": "voice_sample.wav",
+          "risk_level": "A5",
+          "implemented": false,
+          "requires_adapter": "voice_backend_with_consent",
+          "reason": "A5 hard-gate: blocked by default",
+          "message": "Only for owned/consented voices; disabled by default and requires explicit external consent gate.",
+          "evidence": {}
+        },
+        "llm_brief": "omni_body voice.clone_authorized failed for voice_sample.wav: [ADAPTER_REQUIRED] voice_backend_with_consent: Only for owned/consented voices; disabled by default and requires explicit external consent gate.",
+        "evidence": {
+          "path": "voice_sample.wav",
+          "exists": false,
+          "sha256": "",
+          "bytes": 0,
+          "action": "voice.clone_authorized",
+          "risk_level": "A5",
+          "requires_adapter": "voice_backend_with_consent"
+        },
+        "cuowu": "[ADAPTER_REQUIRED] voice_backend_with_consent: Only for owned/consented voices; disabled by default and requires explicit external consent gate."
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools==81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiangong-v3-gateway"
+version = "3.0.3"
+description = "Authoritative orchestration and communication gateways for Tiangong v3"
+requires-python = ">=3.12"
+dependencies = [
+  "cryptography==48.0.1",
+  "edge-tts==7.2.8",
+  "lark-oapi==1.7.1",
+  "pydantic==2.13.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["contracts*", "total_gateway*", "communication_service*", "runtime_security*", "life_service*"]

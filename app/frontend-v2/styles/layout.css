@@ -1,0 +1,135 @@
+.app-shell {
+  --nav-rail-width: 56px;
+  --side-pane-width: 260px;
+  --side-total-width: calc(var(--nav-rail-width) + var(--side-pane-width));
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--nav-rail-width) var(--side-pane-width) minmax(0, 1fr) var(--side-total-width);
+  grid-template-areas: "nav context main inspector";
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.nav-rail {
+  grid-area: nav;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 0;
+  overflow: hidden;
+  background: var(--rail);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-right: 1px solid var(--rail-border);
+  z-index: 10;
+}
+
+.nav-spacer {
+  flex: 1;
+}
+
+.rail-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: transparent;
+  transition: transform var(--transition), filter var(--transition);
+}
+
+.rail-mark:hover {
+  filter: drop-shadow(0 0 10px rgba(20, 184, 166, 0.42));
+  transform: translateY(-1px);
+}
+
+.rail-mark img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: all var(--transition);
+}
+
+.rail-item svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rail-item .rail-label {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rail-item:hover {
+  background: var(--rail-hover);
+  color: var(--text-2);
+}
+
+.rail-item.active {
+  background: var(--rail-active);
+  color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.rail-item.active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.context-pane {
+  grid-area: context;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+
+.conversation {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.inspector {
+  grid-area: inspector;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+}

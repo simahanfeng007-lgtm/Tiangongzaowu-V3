@@ -1,0 +1,13 @@
+{
+  "proposal_score": 88,
+  "ppt_score": 100,
+  "code_score": 100,
+  "research_score": 100,
+  "video_score": 100,
+  "package": {
+    "path": "v32_delivery_sample_package.zip",
+    "exists": true,
+    "bytes": 77306,
+    "item_count": 2
+  }
+}

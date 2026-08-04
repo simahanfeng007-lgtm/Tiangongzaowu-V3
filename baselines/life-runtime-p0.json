@@ -1,0 +1,82 @@
+{
+  "schema": "tiangong.life.runtime-baseline.v1",
+  "captured_at": "2026-07-16T11:20:00+08:00",
+  "source_state": "frozen-runtime-with-readable-bootstrap-only",
+  "original_life_core_source_available": false,
+  "ports": {
+    "7174": "frozen execution backend",
+    "7175": "frozen life authority",
+    "7176": "source-owned communication service",
+    "7184": "source-owned total gateway"
+  },
+  "runtime_files": {
+    "app/life-service/tiangong-life-service.exe": {
+      "size_bytes": 20452189,
+      "sha256": "575df6aac4200bbfa9695bf6062808cd00a79971aba15b3596b04c05f03f5bb0"
+    },
+    "app/life-service/runtime314/python.exe": {
+      "size_bytes": 106328,
+      "sha256": "cce21c0e8710e304273e98ac4b2b0f5aceb639acbcd2343cbaa5c4e81619c45b"
+    },
+    "app/life-service/runtime314/tiangong-life-service-runtime.exe": {
+      "size_bytes": 106328,
+      "sha256": "cce21c0e8710e304273e98ac4b2b0f5aceb639acbcd2343cbaa5c4e81619c45b"
+    }
+  },
+  "bootstrap_files": {
+    "tiangong_life_bootstrap.py": {
+      "size_bytes": 4333,
+      "sha256": "57fc3fc64ae289348785230d4151c625de318b3c645c7a68c1aae16ad5208abd"
+    },
+    "tiangong_life_runtime_fixes.py": {
+      "size_bytes": 57724,
+      "sha256": "8c62df05b63982b4703d34cc56d15a210956bee3114ee2adbab510d70d6b1c01"
+    }
+  },
+  "frozen_modules": {
+    "life_affect.pyc": {
+      "size_bytes": 18692,
+      "sha256": "b1c9be684054ee8e8bb02c3a73b51593c190a7f588e395f995154e5d1eb51cc7"
+    },
+    "life_api.pyc": {
+      "size_bytes": 56336,
+      "sha256": "2f3ef3d04414cbb1bc90fcb8ebbc0bedc77f8f694169691b08b5b5c85358ca49"
+    },
+    "life_capability.pyc": {
+      "size_bytes": 21308,
+      "sha256": "ca58c4f3280573308a9875d1dffc1545f26f39ea54cc6f497d945070105ae672"
+    },
+    "life_context.pyc": {
+      "size_bytes": 36279,
+      "sha256": "9ef0f710829ee2cf87999bfccdfef7b46f7414652fc1dbc5b52f6be1682a07d1"
+    },
+    "life_contracts.pyc": {
+      "size_bytes": 44815,
+      "sha256": "205dce3576d590f86da5e1f5168a4777dbd15a6261b4e47d1c1242f7e2d69072"
+    },
+    "life_core.pyc": {
+      "size_bytes": 278719,
+      "sha256": "5646444ce89090f89b3642d2266d8153ca063384cf4f8811ca2bb52a78d6961e"
+    },
+    "life_execution.pyc": {
+      "size_bytes": 20789,
+      "sha256": "0b9b6ecd89d1fa0ba138e2171537d8739b82c8abd731fdb7975d56e2d0dcdc64"
+    },
+    "life_memory.pyc": {
+      "size_bytes": 34866,
+      "sha256": "9b18df17daaa39a3058293a919bb873e7eb851c9b90f44717ebd1e7bf6931efa"
+    },
+    "life_projection.pyc": {
+      "size_bytes": 54859,
+      "sha256": "8599279cf7b5f2f022f04528922e50516af1b7fc1131656dd3bad430a5cb931e"
+    },
+    "life_scheduler.pyc": {
+      "size_bytes": 59510,
+      "sha256": "7da2a987b9298cbc2ba17dbd587384ba365c193077cde93fcb82301944375a5e"
+    },
+    "life_server.pyc": {
+      "size_bytes": 18860,
+      "sha256": "77e42054276725c79f29c82f333163647aefdbe4d072609a0978add6647b3906"
+    }
+  }
+}

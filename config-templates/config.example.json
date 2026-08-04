@@ -1,0 +1,7 @@
+{
+  "provider": "",
+  "model": "",
+  "base_url": "",
+  "request_timeout_seconds": 120,
+  "life_root": "AUTO"
+}

@@ -1,0 +1,1847 @@
+{
+  "schema": "tiangong.v3.omni_body.app_registry.v1",
+  "description": "应用即工具包注册表。所有应用动作均通过唯一 v3 工具 omni_body 调用；不注册为独立 v3 tool。implemented=false 的动作为挂载协议，需要对应 adapter 后端后才可执行。",
+  "total_apps": 100,
+  "total_actions": 614,
+  "apps": [
+    {
+      "app_id": "core.filesystem",
+      "name": "Core Filesystem",
+      "category": "core",
+      "adapter": "core_builtin",
+      "status": "mixed_core_executable",
+      "implemented_actions": 11,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.filesystem.file.list",
+        "core.filesystem.file.read",
+        "core.filesystem.file.write",
+        "core.filesystem.file.append",
+        "core.filesystem.file.copy",
+        "core.filesystem.file.move",
+        "core.filesystem.file.rename",
+        "core.filesystem.file.mkdir",
+        "core.filesystem.file.delete_to_trash",
+        "core.filesystem.file.search",
+        "core.filesystem.file.hash"
+      ],
+      "total_actions": 11,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.archive",
+      "name": "Core Archive",
+      "category": "core",
+      "adapter": "core_builtin",
+      "status": "core_executable",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.archive.zip.create",
+        "core.archive.zip.extract"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.code",
+      "name": "Core Code & Python",
+      "category": "developer",
+      "adapter": "core_builtin",
+      "status": "mixed_core_executable",
+      "implemented_actions": 7,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.code.code.read",
+        "core.code.code.write",
+        "core.code.code.patch_replace",
+        "core.code.python.run",
+        "core.code.quality.python_syntax",
+        "core.code.quality.run_tests",
+        "core.code.shell.run"
+      ],
+      "total_actions": 7,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.office",
+      "name": "Portable Office Generators",
+      "category": "office",
+      "adapter": "core_builtin",
+      "status": "mixed_core_executable",
+      "implemented_actions": 7,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.office.docx.create",
+        "core.office.pptx.create",
+        "core.office.sheet.create",
+        "core.office.sheet.read",
+        "core.office.pdf.extract_text",
+        "core.office.pdf.create_from_text",
+        "core.office.mindmap.create"
+      ],
+      "total_actions": 7,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.image",
+      "name": "Portable Image Core",
+      "category": "image",
+      "adapter": "core_builtin",
+      "status": "core_executable",
+      "implemented_actions": 8,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.image.image.info",
+        "core.image.image.create_canvas",
+        "core.image.image.resize",
+        "core.image.image.crop",
+        "core.image.image.rotate",
+        "core.image.image.add_text",
+        "core.image.image.compose",
+        "core.image.image.convert"
+      ],
+      "total_actions": 8,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.audio",
+      "name": "Portable Audio Core",
+      "category": "audio",
+      "adapter": "core_builtin",
+      "status": "mixed_core_executable",
+      "implemented_actions": 3,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.audio.audio.tone",
+        "core.audio.audio.trim",
+        "core.audio.audio.concat"
+      ],
+      "total_actions": 3,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.video",
+      "name": "Portable Video Core",
+      "category": "video",
+      "adapter": "core_builtin",
+      "status": "mixed_core_executable",
+      "implemented_actions": 5,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.video.video.info",
+        "core.video.video.cut",
+        "core.video.video.extract_audio",
+        "core.video.video.add_audio",
+        "core.video.video.slideshow"
+      ],
+      "total_actions": 5,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "core.rollback",
+      "name": "Rollback Core",
+      "category": "system",
+      "adapter": "core_builtin",
+      "status": "core_executable",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "core.rollback.rollback.list",
+        "core.rollback.rollback.apply"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "microsoft.word",
+      "name": "Microsoft Word",
+      "category": "office",
+      "adapter": "office_com_or_docx",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "microsoft.word.docx.create",
+        "microsoft.word.pdf.create_from_text"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "microsoft.excel",
+      "name": "Microsoft Excel",
+      "category": "office",
+      "adapter": "office_com_or_openpyxl",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "microsoft.excel.sheet.create",
+        "microsoft.excel.sheet.read"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "microsoft.powerpoint",
+      "name": "Microsoft PowerPoint",
+      "category": "office",
+      "adapter": "office_com_or_pptx",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 1,
+      "adapter_required_actions": 0,
+      "actions": [
+        "microsoft.powerpoint.pptx.create"
+      ],
+      "total_actions": 1,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "wps.writer",
+      "name": "WPS Writer",
+      "category": "office",
+      "adapter": "wps_automation_or_docx",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "wps.writer.docx.create",
+        "wps.writer.pdf.create_from_text"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "wps.spreadsheet",
+      "name": "WPS Spreadsheets",
+      "category": "office",
+      "adapter": "wps_automation_or_openpyxl",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 2,
+      "adapter_required_actions": 0,
+      "actions": [
+        "wps.spreadsheet.sheet.create",
+        "wps.spreadsheet.sheet.read"
+      ],
+      "total_actions": 2,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "wps.presentation",
+      "name": "WPS Presentation",
+      "category": "office",
+      "adapter": "wps_automation_or_pptx",
+      "status": "mixed_core_alias_and_adapter",
+      "implemented_actions": 1,
+      "adapter_required_actions": 0,
+      "actions": [
+        "wps.presentation.pptx.create"
+      ],
+      "total_actions": 1,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "ffmpeg",
+      "name": "FFmpeg",
+      "category": "video_audio",
+      "adapter": "ffmpeg_cli",
+      "status": "core_executable_if_installed",
+      "implemented_actions": 7,
+      "adapter_required_actions": 0,
+      "actions": [
+        "ffmpeg.video.info",
+        "ffmpeg.video.cut",
+        "ffmpeg.video.extract_audio",
+        "ffmpeg.video.add_audio",
+        "ffmpeg.video.slideshow",
+        "ffmpeg.audio.trim",
+        "ffmpeg.audio.concat"
+      ],
+      "total_actions": 7,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "pillow",
+      "name": "Pillow",
+      "category": "image",
+      "adapter": "pillow",
+      "status": "core_executable_if_installed",
+      "implemented_actions": 8,
+      "adapter_required_actions": 0,
+      "actions": [
+        "pillow.image.info",
+        "pillow.image.create_canvas",
+        "pillow.image.resize",
+        "pillow.image.crop",
+        "pillow.image.rotate",
+        "pillow.image.add_text",
+        "pillow.image.compose",
+        "pillow.image.convert"
+      ],
+      "total_actions": 8,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "browser.chrome",
+      "name": "Google Chrome",
+      "category": "browser",
+      "adapter": "browser_driver",
+      "status": "adapter_required",
+      "implemented_actions": 7,
+      "adapter_required_actions": 18,
+      "actions": [
+        "browser.chrome.open",
+        "browser.chrome.goto",
+        "browser.chrome.reload",
+        "browser.chrome.back",
+        "browser.chrome.forward",
+        "browser.chrome.extract_dom",
+        "browser.chrome.extract_text",
+        "browser.chrome.click",
+        "browser.chrome.fill",
+        "browser.chrome.select",
+        "browser.chrome.upload_file",
+        "browser.chrome.download",
+        "browser.chrome.screenshot",
+        "browser.chrome.run_js",
+        "browser.chrome.cookies.read",
+        "browser.chrome.cookies.write",
+        "browser.chrome.network.capture",
+        "browser.chrome.pdf.print"
+      ],
+      "total_actions": 18,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "browser.edge",
+      "name": "Microsoft Edge",
+      "category": "browser",
+      "adapter": "browser_driver",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 10,
+      "actions": [
+        "browser.edge.open",
+        "browser.edge.goto",
+        "browser.edge.extract_dom",
+        "browser.edge.extract_text",
+        "browser.edge.click",
+        "browser.edge.fill",
+        "browser.edge.download",
+        "browser.edge.screenshot",
+        "browser.edge.run_js",
+        "browser.edge.pdf.print"
+      ],
+      "total_actions": 10
+    },
+    {
+      "app_id": "browser.firefox",
+      "name": "Mozilla Firefox",
+      "category": "browser",
+      "adapter": "browser_driver",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 10,
+      "actions": [
+        "browser.firefox.open",
+        "browser.firefox.goto",
+        "browser.firefox.extract_dom",
+        "browser.firefox.extract_text",
+        "browser.firefox.click",
+        "browser.firefox.fill",
+        "browser.firefox.download",
+        "browser.firefox.screenshot",
+        "browser.firefox.run_js",
+        "browser.firefox.pdf.print"
+      ],
+      "total_actions": 10
+    },
+    {
+      "app_id": "google.docs",
+      "name": "Google Docs",
+      "category": "office_cloud",
+      "adapter": "google_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "google.docs.document.create",
+        "google.docs.document.read",
+        "google.docs.document.update",
+        "google.docs.comment.add",
+        "google.docs.export.docx",
+        "google.docs.export.pdf",
+        "google.docs.share.set_permission"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "google.sheets",
+      "name": "Google Sheets",
+      "category": "office_cloud",
+      "adapter": "google_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "google.sheets.sheet.create",
+        "google.sheets.sheet.read",
+        "google.sheets.sheet.update_cells",
+        "google.sheets.formula.set",
+        "google.sheets.chart.create",
+        "google.sheets.export.xlsx",
+        "google.sheets.share.set_permission"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "google.slides",
+      "name": "Google Slides",
+      "category": "office_cloud",
+      "adapter": "google_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "google.slides.deck.create",
+        "google.slides.slide.add",
+        "google.slides.slide.update",
+        "google.slides.export.pptx",
+        "google.slides.export.pdf",
+        "google.slides.share.set_permission"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "google.drive",
+      "name": "Google Drive",
+      "category": "storage",
+      "adapter": "google_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 8,
+      "actions": [
+        "google.drive.file.list",
+        "google.drive.file.upload",
+        "google.drive.file.download",
+        "google.drive.file.move",
+        "google.drive.file.copy",
+        "google.drive.file.delete_to_trash",
+        "google.drive.permission.set",
+        "google.drive.folder.create"
+      ],
+      "total_actions": 8
+    },
+    {
+      "app_id": "gmail",
+      "name": "Gmail",
+      "category": "mail",
+      "adapter": "gmail_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "gmail.mail.search",
+        "gmail.mail.read",
+        "gmail.mail.create_draft",
+        "gmail.mail.send_confirmed",
+        "gmail.attachment.download",
+        "gmail.label.apply",
+        "gmail.thread.read"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "microsoft.outlook",
+      "name": "Microsoft Outlook",
+      "category": "mail_calendar",
+      "adapter": "graph_api_or_com",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "microsoft.outlook.mail.search",
+        "microsoft.outlook.mail.read",
+        "microsoft.outlook.mail.create_draft",
+        "microsoft.outlook.mail.send_confirmed",
+        "microsoft.outlook.calendar.create_event",
+        "microsoft.outlook.calendar.search",
+        "microsoft.outlook.attachment.download"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "microsoft.onedrive",
+      "name": "OneDrive",
+      "category": "storage",
+      "adapter": "graph_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "microsoft.onedrive.file.list",
+        "microsoft.onedrive.file.upload",
+        "microsoft.onedrive.file.download",
+        "microsoft.onedrive.file.move",
+        "microsoft.onedrive.file.copy",
+        "microsoft.onedrive.file.delete_to_trash",
+        "microsoft.onedrive.permission.set"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "microsoft.sharepoint",
+      "name": "SharePoint",
+      "category": "storage_docs",
+      "adapter": "graph_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "microsoft.sharepoint.site.search",
+        "microsoft.sharepoint.file.list",
+        "microsoft.sharepoint.file.upload",
+        "microsoft.sharepoint.file.download",
+        "microsoft.sharepoint.page.create",
+        "microsoft.sharepoint.list.read",
+        "microsoft.sharepoint.list.update_item"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "microsoft.teams",
+      "name": "Microsoft Teams",
+      "category": "collaboration",
+      "adapter": "graph_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "microsoft.teams.chat.read",
+        "microsoft.teams.message.create_draft",
+        "microsoft.teams.message.send_confirmed",
+        "microsoft.teams.meeting.create",
+        "microsoft.teams.file.upload",
+        "microsoft.teams.channel.list"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "microsoft.onenote",
+      "name": "OneNote",
+      "category": "notes",
+      "adapter": "graph_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "microsoft.onenote.notebook.list",
+        "microsoft.onenote.page.create",
+        "microsoft.onenote.page.read",
+        "microsoft.onenote.page.update",
+        "microsoft.onenote.export.pdf"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "microsoft.visio",
+      "name": "Visio",
+      "category": "diagram",
+      "adapter": "office_com",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "microsoft.visio.diagram.create",
+        "microsoft.visio.shape.add",
+        "microsoft.visio.connector.add",
+        "microsoft.visio.export.pdf",
+        "microsoft.visio.export.svg"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "feishu.docs",
+      "name": "飞书文档",
+      "category": "office_cloud",
+      "adapter": "feishu_api",
+      "status": "adapter_required",
+      "implemented_actions": 5,
+      "adapter_required_actions": 7,
+      "actions": [
+        "feishu.docs.doc.create",
+        "feishu.docs.doc.read",
+        "feishu.docs.doc.update",
+        "feishu.docs.comment.add",
+        "feishu.docs.export.docx",
+        "feishu.docs.export.pdf",
+        "feishu.docs.permission.set"
+      ],
+      "total_actions": 7,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "feishu.sheets",
+      "name": "飞书表格",
+      "category": "office_cloud",
+      "adapter": "feishu_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "feishu.sheets.sheet.create",
+        "feishu.sheets.sheet.read",
+        "feishu.sheets.sheet.update_cells",
+        "feishu.sheets.formula.set",
+        "feishu.sheets.export.xlsx",
+        "feishu.sheets.permission.set"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "feishu.wiki",
+      "name": "飞书知识库",
+      "category": "knowledge",
+      "adapter": "feishu_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "feishu.wiki.space.list",
+        "feishu.wiki.page.create",
+        "feishu.wiki.page.read",
+        "feishu.wiki.page.update",
+        "feishu.wiki.search",
+        "feishu.wiki.permission.set"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "feishu.im",
+      "name": "飞书消息",
+      "category": "collaboration",
+      "adapter": "feishu_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "feishu.im.message.read",
+        "feishu.im.message.create_draft",
+        "feishu.im.message.send_confirmed",
+        "feishu.im.file.upload",
+        "feishu.im.group.list"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "dingtalk.docs",
+      "name": "钉钉文档",
+      "category": "office_cloud",
+      "adapter": "dingtalk_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "dingtalk.docs.doc.create",
+        "dingtalk.docs.doc.read",
+        "dingtalk.docs.doc.update",
+        "dingtalk.docs.sheet.create",
+        "dingtalk.docs.sheet.read",
+        "dingtalk.docs.export.pdf",
+        "dingtalk.docs.permission.set"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "dingtalk.im",
+      "name": "钉钉消息",
+      "category": "collaboration",
+      "adapter": "dingtalk_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "dingtalk.im.message.read",
+        "dingtalk.im.message.create_draft",
+        "dingtalk.im.message.send_confirmed",
+        "dingtalk.im.file.upload",
+        "dingtalk.im.group.list"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "wechat_work",
+      "name": "企业微信",
+      "category": "collaboration",
+      "adapter": "wecom_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "wechat_work.contact.search",
+        "wechat_work.message.read",
+        "wechat_work.message.create_draft",
+        "wechat_work.message.send_confirmed",
+        "wechat_work.file.upload",
+        "wechat_work.calendar.create_event"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "wechat.desktop",
+      "name": "微信桌面端",
+      "category": "collaboration_gui",
+      "adapter": "desktop_automation",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "wechat.desktop.message.read_visible",
+        "wechat.desktop.message.create_draft",
+        "wechat.desktop.message.send_confirmed",
+        "wechat.desktop.file.send_confirmed",
+        "wechat.desktop.contact.search_visible"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "yuque",
+      "name": "语雀",
+      "category": "knowledge",
+      "adapter": "yuque_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "yuque.doc.create",
+        "yuque.doc.read",
+        "yuque.doc.update",
+        "yuque.repo.search",
+        "yuque.export.markdown",
+        "yuque.permission.set"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "notion",
+      "name": "Notion",
+      "category": "knowledge_project",
+      "adapter": "notion_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "notion.page.create",
+        "notion.page.read",
+        "notion.page.update",
+        "notion.database.query",
+        "notion.database.insert",
+        "notion.export.markdown",
+        "notion.search"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "obsidian",
+      "name": "Obsidian",
+      "category": "notes",
+      "adapter": "filesystem_or_plugin",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "obsidian.vault.list",
+        "obsidian.note.create",
+        "obsidian.note.read",
+        "obsidian.note.update",
+        "obsidian.link.create",
+        "obsidian.graph.export",
+        "obsidian.search"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "adobe.photoshop",
+      "name": "Adobe Photoshop",
+      "category": "image_design",
+      "adapter": "photoshop_uxp_or_jsx",
+      "status": "adapter_required",
+      "implemented_actions": 8,
+      "adapter_required_actions": 12,
+      "actions": [
+        "adobe.photoshop.document.open",
+        "adobe.photoshop.document.create",
+        "adobe.photoshop.layer.create",
+        "adobe.photoshop.layer.update",
+        "adobe.photoshop.selection.make",
+        "adobe.photoshop.mask.create",
+        "adobe.photoshop.image.resize",
+        "adobe.photoshop.image.crop",
+        "adobe.photoshop.filter.apply",
+        "adobe.photoshop.text.add",
+        "adobe.photoshop.export.png",
+        "adobe.photoshop.export.psd"
+      ],
+      "total_actions": 12,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "adobe.illustrator",
+      "name": "Adobe Illustrator",
+      "category": "vector_design",
+      "adapter": "illustrator_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 9,
+      "actions": [
+        "adobe.illustrator.document.create",
+        "adobe.illustrator.artboard.create",
+        "adobe.illustrator.vector.import",
+        "adobe.illustrator.path.create",
+        "adobe.illustrator.text.add",
+        "adobe.illustrator.style.apply",
+        "adobe.illustrator.export.svg",
+        "adobe.illustrator.export.pdf",
+        "adobe.illustrator.export.png"
+      ],
+      "total_actions": 9
+    },
+    {
+      "app_id": "adobe.indesign",
+      "name": "Adobe InDesign",
+      "category": "layout_design",
+      "adapter": "indesign_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "adobe.indesign.document.create",
+        "adobe.indesign.page.add",
+        "adobe.indesign.textframe.add",
+        "adobe.indesign.image.place",
+        "adobe.indesign.style.apply",
+        "adobe.indesign.export.pdf",
+        "adobe.indesign.package.create"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "adobe.lightroom",
+      "name": "Adobe Lightroom",
+      "category": "photo",
+      "adapter": "lightroom_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "adobe.lightroom.photo.import",
+        "adobe.lightroom.photo.rate",
+        "adobe.lightroom.preset.apply",
+        "adobe.lightroom.crop.set",
+        "adobe.lightroom.export.jpg",
+        "adobe.lightroom.batch.export"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "figma",
+      "name": "Figma",
+      "category": "design_collab",
+      "adapter": "figma_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 8,
+      "actions": [
+        "figma.file.read",
+        "figma.frame.create",
+        "figma.component.create",
+        "figma.text.update",
+        "figma.image.place",
+        "figma.export.png",
+        "figma.export.svg",
+        "figma.comment.add"
+      ],
+      "total_actions": 8
+    },
+    {
+      "app_id": "canva",
+      "name": "Canva",
+      "category": "design_cloud",
+      "adapter": "canva_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "canva.design.create",
+        "canva.template.apply",
+        "canva.text.update",
+        "canva.asset.upload",
+        "canva.export.png",
+        "canva.export.pdf",
+        "canva.brandkit.apply"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "sketch",
+      "name": "Sketch",
+      "category": "design",
+      "adapter": "sketch_plugin",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "sketch.document.open",
+        "sketch.artboard.create",
+        "sketch.symbol.create",
+        "sketch.text.update",
+        "sketch.export.png",
+        "sketch.export.svg"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "adobe.premiere",
+      "name": "Adobe Premiere Pro",
+      "category": "video_editing",
+      "adapter": "premiere_extend_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 10,
+      "actions": [
+        "adobe.premiere.project.create",
+        "adobe.premiere.media.import",
+        "adobe.premiere.timeline.create",
+        "adobe.premiere.timeline.cut",
+        "adobe.premiere.clip.move",
+        "adobe.premiere.subtitle.add",
+        "adobe.premiere.transition.add",
+        "adobe.premiere.audio.mix",
+        "adobe.premiere.color.apply",
+        "adobe.premiere.export.mp4"
+      ],
+      "total_actions": 10
+    },
+    {
+      "app_id": "adobe.aftereffects",
+      "name": "Adobe After Effects",
+      "category": "motion_graphics",
+      "adapter": "aftereffects_extend_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 8,
+      "actions": [
+        "adobe.aftereffects.project.create",
+        "adobe.aftereffects.composition.create",
+        "adobe.aftereffects.layer.add",
+        "adobe.aftereffects.keyframe.set",
+        "adobe.aftereffects.effect.apply",
+        "adobe.aftereffects.text.animate",
+        "adobe.aftereffects.render.queue",
+        "adobe.aftereffects.export.mov"
+      ],
+      "total_actions": 8
+    },
+    {
+      "app_id": "adobe.audition",
+      "name": "Adobe Audition",
+      "category": "audio_editing",
+      "adapter": "audition_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "adobe.audition.audio.open",
+        "adobe.audition.noise.reduce",
+        "adobe.audition.clip.trim",
+        "adobe.audition.clip.concat",
+        "adobe.audition.mixdown.export",
+        "adobe.audition.effect.apply"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "capcut",
+      "name": "CapCut",
+      "category": "video_editing",
+      "adapter": "capcut_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 10,
+      "actions": [
+        "capcut.project.create",
+        "capcut.media.import",
+        "capcut.timeline.cut",
+        "capcut.subtitle.auto",
+        "capcut.subtitle.add",
+        "capcut.template.apply",
+        "capcut.music.add",
+        "capcut.effect.apply",
+        "capcut.cover.create",
+        "capcut.export.mp4"
+      ],
+      "total_actions": 10
+    },
+    {
+      "app_id": "jianying",
+      "name": "剪映",
+      "category": "video_editing",
+      "adapter": "jianying_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 7,
+      "adapter_required_actions": 10,
+      "actions": [
+        "jianying.project.create",
+        "jianying.media.import",
+        "jianying.timeline.cut",
+        "jianying.subtitle.auto",
+        "jianying.subtitle.add",
+        "jianying.template.apply",
+        "jianying.music.add",
+        "jianying.effect.apply",
+        "jianying.cover.create",
+        "jianying.export.mp4"
+      ],
+      "total_actions": 10,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "davinci.resolve",
+      "name": "DaVinci Resolve",
+      "category": "video_editing",
+      "adapter": "resolve_python_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 8,
+      "actions": [
+        "davinci.resolve.project.create",
+        "davinci.resolve.media.import",
+        "davinci.resolve.timeline.create",
+        "davinci.resolve.timeline.cut",
+        "davinci.resolve.color.grade",
+        "davinci.resolve.subtitle.add",
+        "davinci.resolve.fusion.apply",
+        "davinci.resolve.deliver.render"
+      ],
+      "total_actions": 8
+    },
+    {
+      "app_id": "finalcut",
+      "name": "Final Cut Pro",
+      "category": "video_editing",
+      "adapter": "fcp_xml_or_automation",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "finalcut.library.open",
+        "finalcut.event.create",
+        "finalcut.media.import",
+        "finalcut.timeline.cut",
+        "finalcut.title.add",
+        "finalcut.music.add",
+        "finalcut.export.mp4"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "audacity",
+      "name": "Audacity",
+      "category": "audio_editing",
+      "adapter": "audacity_macro",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "audacity.audio.open",
+        "audacity.audio.trim",
+        "audacity.noise.reduce",
+        "audacity.track.mix",
+        "audacity.effect.apply",
+        "audacity.export.wav",
+        "audacity.export.mp3"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "reaper",
+      "name": "REAPER",
+      "category": "audio_editing",
+      "adapter": "reaper_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "reaper.project.create",
+        "reaper.track.add",
+        "reaper.media.import",
+        "reaper.item.trim",
+        "reaper.fx.apply",
+        "reaper.render.wav",
+        "reaper.render.mp3"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "ableton.live",
+      "name": "Ableton Live",
+      "category": "music",
+      "adapter": "ableton_remote_script",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "ableton.live.set.create",
+        "ableton.live.track.add",
+        "ableton.live.clip.import",
+        "ableton.live.midi.create",
+        "ableton.live.device.add",
+        "ableton.live.arrangement.render"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "flstudio",
+      "name": "FL Studio",
+      "category": "music",
+      "adapter": "flstudio_midi_or_bridge",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "flstudio.project.create",
+        "flstudio.channel.add",
+        "flstudio.midi.import",
+        "flstudio.pattern.create",
+        "flstudio.mixdown.export"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "vscode",
+      "name": "Visual Studio Code",
+      "category": "developer",
+      "adapter": "vscode_extension_or_cli",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "vscode.workspace.open",
+        "vscode.file.open",
+        "vscode.file.search",
+        "vscode.edit.apply",
+        "vscode.terminal.run",
+        "vscode.extension.install",
+        "vscode.diagnostics.read"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "jetbrains.idea",
+      "name": "JetBrains IDE",
+      "category": "developer",
+      "adapter": "jetbrains_plugin",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "jetbrains.idea.project.open",
+        "jetbrains.idea.file.search",
+        "jetbrains.idea.edit.apply",
+        "jetbrains.idea.run.config",
+        "jetbrains.idea.test.run",
+        "jetbrains.idea.inspection.read"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "git",
+      "name": "Git",
+      "category": "developer",
+      "adapter": "git_cli",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 10,
+      "actions": [
+        "git.status",
+        "git.diff",
+        "git.add",
+        "git.commit",
+        "git.branch.create",
+        "git.checkout",
+        "git.merge",
+        "git.log",
+        "git.stash",
+        "git.tag"
+      ],
+      "total_actions": 10
+    },
+    {
+      "app_id": "github",
+      "name": "GitHub",
+      "category": "developer_cloud",
+      "adapter": "github_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "github.repo.search",
+        "github.issue.create",
+        "github.issue.update",
+        "github.pull_request.create",
+        "github.pull_request.review",
+        "github.workflow.run",
+        "github.release.create"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "gitlab",
+      "name": "GitLab",
+      "category": "developer_cloud",
+      "adapter": "gitlab_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "gitlab.project.search",
+        "gitlab.issue.create",
+        "gitlab.merge_request.create",
+        "gitlab.pipeline.run",
+        "gitlab.release.create"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "docker",
+      "name": "Docker",
+      "category": "devops",
+      "adapter": "docker_cli",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 7,
+      "actions": [
+        "docker.image.build",
+        "docker.container.run",
+        "docker.container.stop",
+        "docker.container.logs",
+        "docker.compose.up",
+        "docker.compose.down",
+        "docker.volume.list"
+      ],
+      "total_actions": 7
+    },
+    {
+      "app_id": "kubernetes",
+      "name": "Kubernetes",
+      "category": "devops",
+      "adapter": "kubectl",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "kubernetes.pod.list",
+        "kubernetes.deployment.apply",
+        "kubernetes.service.apply",
+        "kubernetes.logs.read",
+        "kubernetes.rollout.status",
+        "kubernetes.namespace.create"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "jupyter",
+      "name": "Jupyter Notebook",
+      "category": "developer_data",
+      "adapter": "jupyter_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "jupyter.notebook.create",
+        "jupyter.cell.add",
+        "jupyter.cell.run",
+        "jupyter.kernel.restart",
+        "jupyter.export.html",
+        "jupyter.export.ipynb"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "sqlite",
+      "name": "SQLite",
+      "category": "database",
+      "adapter": "sqlite3",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "sqlite.query.run",
+        "sqlite.schema.read",
+        "sqlite.table.export_csv",
+        "sqlite.table.import_csv",
+        "sqlite.backup.create"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "postgresql",
+      "name": "PostgreSQL",
+      "category": "database",
+      "adapter": "postgres_driver",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "postgresql.query.run",
+        "postgresql.schema.read",
+        "postgresql.table.export_csv",
+        "postgresql.table.import_csv",
+        "postgresql.backup.create"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "mysql",
+      "name": "MySQL",
+      "category": "database",
+      "adapter": "mysql_driver",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "mysql.query.run",
+        "mysql.schema.read",
+        "mysql.table.export_csv",
+        "mysql.table.import_csv",
+        "mysql.backup.create"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "redis",
+      "name": "Redis",
+      "category": "database_cache",
+      "adapter": "redis_driver",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "redis.key.get",
+        "redis.key.set",
+        "redis.key.delete",
+        "redis.scan",
+        "redis.info.read"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "powerbi",
+      "name": "Power BI",
+      "category": "bi",
+      "adapter": "powerbi_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 4,
+      "actions": [
+        "powerbi.dataset.refresh",
+        "powerbi.report.export",
+        "powerbi.dashboard.read",
+        "powerbi.query.execute"
+      ],
+      "total_actions": 4
+    },
+    {
+      "app_id": "tableau",
+      "name": "Tableau",
+      "category": "bi",
+      "adapter": "tableau_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 4,
+      "actions": [
+        "tableau.workbook.publish",
+        "tableau.view.export",
+        "tableau.extract.refresh",
+        "tableau.dashboard.read"
+      ],
+      "total_actions": 4
+    },
+    {
+      "app_id": "airtable",
+      "name": "Airtable",
+      "category": "database_cloud",
+      "adapter": "airtable_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "airtable.base.list",
+        "airtable.table.read",
+        "airtable.record.create",
+        "airtable.record.update",
+        "airtable.record.delete",
+        "airtable.view.read"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "trello",
+      "name": "Trello",
+      "category": "project",
+      "adapter": "trello_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "trello.board.list",
+        "trello.card.create",
+        "trello.card.move",
+        "trello.checklist.add",
+        "trello.comment.add"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "jira",
+      "name": "Jira",
+      "category": "project",
+      "adapter": "jira_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "jira.issue.search",
+        "jira.issue.create",
+        "jira.issue.update",
+        "jira.issue.transition",
+        "jira.comment.add"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "linear",
+      "name": "Linear",
+      "category": "project",
+      "adapter": "linear_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "linear.issue.search",
+        "linear.issue.create",
+        "linear.issue.update",
+        "linear.cycle.read",
+        "linear.comment.add"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "asana",
+      "name": "Asana",
+      "category": "project",
+      "adapter": "asana_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "asana.task.search",
+        "asana.task.create",
+        "asana.task.update",
+        "asana.project.read",
+        "asana.comment.add"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "clickup",
+      "name": "ClickUp",
+      "category": "project",
+      "adapter": "clickup_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "clickup.task.search",
+        "clickup.task.create",
+        "clickup.task.update",
+        "clickup.space.read",
+        "clickup.comment.add"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "salesforce",
+      "name": "Salesforce",
+      "category": "crm",
+      "adapter": "salesforce_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "salesforce.lead.search",
+        "salesforce.lead.create",
+        "salesforce.account.update",
+        "salesforce.opportunity.create",
+        "salesforce.report.run",
+        "salesforce.task.create"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "hubspot",
+      "name": "HubSpot",
+      "category": "crm",
+      "adapter": "hubspot_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "hubspot.contact.search",
+        "hubspot.contact.create",
+        "hubspot.deal.create",
+        "hubspot.deal.update",
+        "hubspot.task.create",
+        "hubspot.email.create_draft"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "zoho.crm",
+      "name": "Zoho CRM",
+      "category": "crm",
+      "adapter": "zoho_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "zoho.crm.lead.search",
+        "zoho.crm.lead.create",
+        "zoho.crm.deal.create",
+        "zoho.crm.deal.update",
+        "zoho.crm.task.create",
+        "zoho.crm.report.run"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "sap",
+      "name": "SAP",
+      "category": "erp",
+      "adapter": "sap_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "sap.record.search",
+        "sap.record.read",
+        "sap.report.run",
+        "sap.workflow.create_draft",
+        "sap.export.xlsx"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "kingdee",
+      "name": "金蝶",
+      "category": "erp",
+      "adapter": "kingdee_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "kingdee.voucher.create_draft",
+        "kingdee.report.run",
+        "kingdee.customer.search",
+        "kingdee.inventory.read",
+        "kingdee.export.xlsx"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "yonyou",
+      "name": "用友",
+      "category": "erp",
+      "adapter": "yonyou_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "yonyou.voucher.create_draft",
+        "yonyou.report.run",
+        "yonyou.customer.search",
+        "yonyou.inventory.read",
+        "yonyou.export.xlsx"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "shopify",
+      "name": "Shopify",
+      "category": "ecommerce",
+      "adapter": "shopify_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "shopify.product.search",
+        "shopify.product.create",
+        "shopify.order.search",
+        "shopify.order.fulfillment_update",
+        "shopify.inventory.update"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "wordpress",
+      "name": "WordPress",
+      "category": "cms",
+      "adapter": "wordpress_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "wordpress.post.create",
+        "wordpress.post.update",
+        "wordpress.media.upload",
+        "wordpress.page.create",
+        "wordpress.comment.moderate"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "openai_api",
+      "name": "OpenAI API",
+      "category": "ai_model",
+      "adapter": "openai_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "openai_api.text.generate",
+        "openai_api.image.generate",
+        "openai_api.image.edit",
+        "openai_api.audio.transcribe",
+        "openai_api.tts.create",
+        "openai_api.embedding.create"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "deepseek_api",
+      "name": "DeepSeek API",
+      "category": "ai_model",
+      "adapter": "deepseek_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 4,
+      "actions": [
+        "deepseek_api.text.generate",
+        "deepseek_api.code.generate",
+        "deepseek_api.reasoning.run",
+        "deepseek_api.embedding.create"
+      ],
+      "total_actions": 4
+    },
+    {
+      "app_id": "anthropic_api",
+      "name": "Anthropic API",
+      "category": "ai_model",
+      "adapter": "anthropic_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 3,
+      "actions": [
+        "anthropic_api.text.generate",
+        "anthropic_api.vision.analyze",
+        "anthropic_api.tool_use.run"
+      ],
+      "total_actions": 3
+    },
+    {
+      "app_id": "gemini_api",
+      "name": "Gemini API",
+      "category": "ai_model",
+      "adapter": "gemini_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 4,
+      "actions": [
+        "gemini_api.text.generate",
+        "gemini_api.vision.analyze",
+        "gemini_api.video.analyze",
+        "gemini_api.embedding.create"
+      ],
+      "total_actions": 4
+    },
+    {
+      "app_id": "comfyui",
+      "name": "ComfyUI",
+      "category": "image_ai",
+      "adapter": "comfyui_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 6,
+      "actions": [
+        "comfyui.workflow.run",
+        "comfyui.image.generate",
+        "comfyui.image.upscale",
+        "comfyui.image.inpaint",
+        "comfyui.image.outpaint",
+        "comfyui.queue.status"
+      ],
+      "total_actions": 6
+    },
+    {
+      "app_id": "stable_diffusion_webui",
+      "name": "Stable Diffusion WebUI",
+      "category": "image_ai",
+      "adapter": "sd_webui_api",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "stable_diffusion_webui.image.generate",
+        "stable_diffusion_webui.image.img2img",
+        "stable_diffusion_webui.image.inpaint",
+        "stable_diffusion_webui.image.upscale",
+        "stable_diffusion_webui.model.switch"
+      ],
+      "total_actions": 5
+    },
+    {
+      "app_id": "whisper",
+      "name": "Whisper ASR",
+      "category": "audio_ai",
+      "adapter": "whisper_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 4,
+      "actions": [
+        "whisper.audio.transcribe",
+        "whisper.audio.translate",
+        "whisper.segments.export_srt",
+        "whisper.segments.export_txt"
+      ],
+      "total_actions": 4
+    },
+    {
+      "app_id": "tts.edge",
+      "name": "Edge TTS",
+      "category": "tts",
+      "adapter": "edge_tts_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 2,
+      "actions": [
+        "tts.edge.tts.create",
+        "tts.edge.voice.list"
+      ],
+      "total_actions": 2
+    },
+    {
+      "app_id": "elevenlabs",
+      "name": "ElevenLabs",
+      "category": "tts_voice",
+      "adapter": "elevenlabs_adapter",
+      "status": "adapter_required",
+      "implemented_actions": 1,
+      "adapter_required_actions": 3,
+      "actions": [
+        "elevenlabs.tts.create",
+        "elevenlabs.voice.list",
+        "elevenlabs.voice.clone_authorized"
+      ],
+      "total_actions": 3,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "windows.desktop",
+      "name": "Windows Desktop",
+      "category": "desktop",
+      "adapter": "windows_ui_automation",
+      "status": "adapter_required",
+      "implemented_actions": 4,
+      "adapter_required_actions": 10,
+      "actions": [
+        "windows.desktop.window.list",
+        "windows.desktop.window.focus",
+        "windows.desktop.screenshot",
+        "windows.desktop.click",
+        "windows.desktop.type",
+        "windows.desktop.hotkey",
+        "windows.desktop.drag",
+        "windows.desktop.ocr",
+        "windows.desktop.clipboard.read",
+        "windows.desktop.clipboard.write"
+      ],
+      "total_actions": 10,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "macos.desktop",
+      "name": "macOS Desktop",
+      "category": "desktop",
+      "adapter": "apple_script_or_accessibility",
+      "status": "adapter_required",
+      "implemented_actions": 4,
+      "adapter_required_actions": 10,
+      "actions": [
+        "macos.desktop.window.list",
+        "macos.desktop.window.focus",
+        "macos.desktop.screenshot",
+        "macos.desktop.click",
+        "macos.desktop.type",
+        "macos.desktop.hotkey",
+        "macos.desktop.drag",
+        "macos.desktop.ocr",
+        "macos.desktop.clipboard.read",
+        "macos.desktop.clipboard.write"
+      ],
+      "total_actions": 10,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "linux.desktop",
+      "name": "Linux Desktop",
+      "category": "desktop",
+      "adapter": "xdotool_or_pyautogui",
+      "status": "adapter_required",
+      "implemented_actions": 4,
+      "adapter_required_actions": 10,
+      "actions": [
+        "linux.desktop.window.list",
+        "linux.desktop.window.focus",
+        "linux.desktop.screenshot",
+        "linux.desktop.click",
+        "linux.desktop.type",
+        "linux.desktop.hotkey",
+        "linux.desktop.drag",
+        "linux.desktop.ocr",
+        "linux.desktop.clipboard.read",
+        "linux.desktop.clipboard.write"
+      ],
+      "total_actions": 10,
+      "portable_fallback": true
+    },
+    {
+      "app_id": "windows.powershell",
+      "name": "PowerShell",
+      "category": "shell",
+      "adapter": "powershell_cli",
+      "status": "adapter_required",
+      "implemented_actions": 0,
+      "adapter_required_actions": 5,
+      "actions": [
+        "windows.powershell.command.run",
+        "windows.powershell.script.run",
+        "windows.powershell.registry.read",
+        "windows.powershell.service.list",
+        "windows.powershell.process.list"
+      ],
+      "total_actions": 5
+    }
+  ],
+  "implemented_actions_total": 110
+}

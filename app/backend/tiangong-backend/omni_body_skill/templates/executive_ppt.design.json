@@ -1,0 +1,37 @@
+{
+  "schema": "tiangong.v3.ppt_design.v1",
+  "template_id": "executive_ppt",
+  "style_name": "executive_blue",
+  "aspect_ratio": "16:9",
+  "brand": "TIANGONG",
+  "fonts": {
+    "heading": "Microsoft YaHei",
+    "body": "Microsoft YaHei",
+    "latin": "Aptos"
+  },
+  "colors": {
+    "background": "#F4F7FB",
+    "surface": "#FFFFFF",
+    "ink": "#10233F",
+    "muted": "#5E6F86",
+    "primary": "#1261FF",
+    "accent": "#00A9B8",
+    "dark": "#0A1733",
+    "line": "#DCE4EF",
+    "success": "#16A36A",
+    "warning": "#F59E0B"
+  },
+  "layout": {
+    "margin_x": 0.72,
+    "title_y": 0.5,
+    "content_y": 1.62,
+    "footer_y": 7.12,
+    "max_items_per_slide": 6
+  },
+  "quality_contract": {
+    "requires_widescreen": true,
+    "forbid_default_placeholders": true,
+    "minimum_meaningful_visual_coverage": 0.4,
+    "require_explicit_fonts": true
+  }
+}

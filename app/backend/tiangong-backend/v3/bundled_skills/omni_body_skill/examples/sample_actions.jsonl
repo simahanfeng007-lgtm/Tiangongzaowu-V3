@@ -1,0 +1,9 @@
+{"action":"file.write","target":"hello.txt","args":{"content":"hello omni body"}}
+{"action":"file.read","target":"hello.txt","args":{"max_chars":1000}}
+{"action":"code.write","target":"src/demo.py","args":{"content":"def add(a,b):\n    return a+b\n","language":"python","syntax_check":true}}
+{"action":"quality.python_syntax","target":"src","args":{}}
+{"action":"docx.create","target":"output/demo.docx","args":{"title":"示例文档","sections":[{"heading":"背景","paragraphs":["这是由 Omni Body Tool 生成的文档。"]}]}}
+{"action":"pptx.create","target":"output/demo.pptx","args":{"title":"示例PPT","slides":[{"title":"第一页","bullets":["统一入口","明确动作","证据回流"]}]}}
+{"action":"sheet.create","target":"output/demo.xlsx","args":{"sheets":[{"name":"数据","headers":["字段","值"],"rows":[["版本","0.1.0"]]}]}}
+{"action":"mindmap.create","target":"output/demo_mindmap.md","args":{"title":"Omni Body","tree":{"核心":["动作协议","回滚","质检"],"能力":["文件","代码","多媒体"]}}}
+{"action":"zip.create","target":"deliverable.zip","args":{"sources":["output"]}}

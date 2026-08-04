@@ -1,0 +1,119 @@
+{
+  "schema": "tiangong.source-ownership.v1",
+  "principle": "Only the source paths are human-editable. Targets are deterministic generated mirrors checked before release.",
+  "mappings": [
+    {
+      "id": "shared-contracts",
+      "source": "src/contracts",
+      "targets": [
+        "app/life-service/runtime314/contracts",
+        "app/runtime/python312/Lib/site-packages/contracts"
+      ]
+    },
+    {
+      "id": "life-service-runtime",
+      "source": "src/life_service",
+      "targets": [
+        "app/life-service/runtime314/life_service",
+        "app/runtime/python312/Lib/site-packages/life_service"
+      ]
+    },
+    {
+      "id": "life-bootstrap-runtime",
+      "source": "readable-python-source/life-bootstrap/tiangong_life_bootstrap.py",
+      "targets": [
+        "app/life-service/runtime314/tiangong_life_bootstrap.py"
+      ]
+    },
+    {
+      "id": "life-runtime-fixes",
+      "source": "readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py",
+      "targets": [
+        "app/life-service/runtime314/tiangong_life_runtime_fixes.py"
+      ]
+    },
+    {
+      "id": "total-gateway-embedded-python",
+      "source": "src/total_gateway",
+      "targets": [
+        "app/runtime/python312/Lib/site-packages/total_gateway"
+      ]
+    },
+    {
+      "id": "communication-service-embedded-python",
+      "source": "src/communication_service",
+      "targets": [
+        "app/runtime/python312/Lib/site-packages/communication_service"
+      ]
+    },
+    {
+      "id": "omni-body-runtime",
+      "source": "readable-python-source/omni_body_skill",
+      "targets": [
+        "app/backend/tiangong-backend/omni_body_skill",
+        "app/backend/tiangong-backend/_internal/omni_body_skill",
+        "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill",
+        "app/backend/tiangong-backend/_internal/v3/bundled_skills/omni_body_skill"
+      ]
+    },
+    {
+      "id": "managed-novel-skill-runtime",
+      "source": "readable-python-source/bundled-skills/novel-creation",
+      "targets": [
+        "app/backend/tiangong-backend/_internal/v3/bundled_skills/novel-creation"
+      ]
+    },
+    {
+      "id": "legacy-execution-confirmation-bridge",
+      "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/confirmation_bridge.py",
+      "targets": [
+        "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/confirmation_bridge.py"
+      ]
+    },
+    {
+      "id": "legacy-execution-orchestrator",
+      "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/orchestrator.py",
+      "targets": [
+        "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/orchestrator.py"
+      ]
+    },
+    {
+      "id": "legacy-execution-tool-scheduler",
+      "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/tool_scheduler.py",
+      "targets": [
+        "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/tool_scheduler.py"
+      ]
+    },
+    {
+      "id": "legacy-life-permissions",
+      "source": "app/backend/tiangong-backend/_internal/frozen_modules/tiangong_life/permissions.py",
+      "targets": [
+        "app/backend/tiangong-backend/_internal/legacy_pyz_modules/tiangong_life/permissions.py"
+      ]
+    },
+    {
+      "id": "model-endpoint-security",
+      "source": "src/runtime_security/model_endpoint.py",
+      "targets": [
+        "app/backend/tiangong-backend/v3/endpoint_security.py"
+      ]
+    },
+    {
+      "id": "v3-backend-main",
+      "source": "app/backend/tiangong-backend/v3",
+      "targets": [],
+      "note": "事实 single-source（无生成器）。例外：v3/bundled_skills/omni_body_skill 与 v3/endpoint_security.py 已由 omni-body-runtime / model-endpoint-security 两条 mapping 覆盖（generated-owned）。含 zongdiaodu.py、context_compactor.py、confirmation_store.py、duihua_qiaojie.py、permission_settings.py、path_resolver.py、peizhi.py、gutong/、jineng/ 等 v3 主树。"
+    },
+    {
+      "id": "backend-context-compactor",
+      "source": "app/backend/tiangong-backend/v3/context_compactor.py",
+      "targets": []
+    },
+    {
+      "id": "tiangong-kernel",
+      "source": "app/backend/tiangong-backend/tiangong_kernel",
+      "targets": [],
+      "note": "事实 single-source（l0_primitives、l4_action_grounding 等）。"
+    }
+  ]
+}

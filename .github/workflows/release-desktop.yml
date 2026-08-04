@@ -1,0 +1,111 @@
+name: Release desktop packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platform to build
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - macos
+          - both
+      architecture:
+        description: macOS architecture
+        required: true
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - x64
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    if: inputs.platform == 'windows' || inputs.platform == 'both'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      TIANGONG_RELEASE_REQUIRE_SIGNING: "1"
+      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-release.lock
+      - name: Install frozen-runtime build dependencies
+        run: python -m pip install -r requirements-release.lock
+      - name: Build signed Windows installer
+        working-directory: app
+        run: npm run release:win
+      - name: Upload Windows release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiangong-v3-windows-x64-signed
+          path: release-artifacts/*/win32-x64/*
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    if: inputs.platform == 'macos' || inputs.platform == 'both'
+    runs-on: ${{ inputs.architecture == 'arm64' && 'macos-14' || 'macos-13' }}
+    timeout-minutes: 90
+    env:
+      TIANGONG_RELEASE_ARCH: ${{ inputs.architecture }}
+      TIANGONG_RELEASE_REQUIRE_SIGNING: "1"
+      CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-release.lock
+      - name: Install frozen-runtime build dependencies
+        run: python -m pip install -r requirements-release.lock
+      - name: Materialize App Store Connect API key
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_API_KEY_P8_BASE64"
+          mkdir -p "$RUNNER_TEMP/apple-keys"
+          echo "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/apple-keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/apple-keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
+      - name: Build signed and notarized macOS package
+        working-directory: app
+        run: npm run release:mac
+      - name: Upload macOS release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiangong-v3-macos-${{ inputs.architecture }}-signed
+          path: release-artifacts/*/darwin-${{ inputs.architecture }}/*
+          if-no-files-found: error
+          retention-days: 30

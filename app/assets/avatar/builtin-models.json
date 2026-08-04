@@ -1,0 +1,22 @@
+{
+  "schema": "tiangong.avatar.builtin-models.v1",
+  "generatedUtc": "2026-07-28T00:00:00Z",
+  "models": [
+    {
+      "id": "tiangong-z1",
+      "displayName": "天工造物 z1",
+      "relativePath": "assets/avatars/imported/天工造物z1.vrm",
+      "contentHash": "72533af14b56ffb0323fa669f390d5aefdae6999de9ba892b881090190b31cff",
+      "byteLength": 55636048,
+      "vrmSpecVersion": "0.x"
+    },
+    {
+      "id": "zaowu-v2",
+      "displayName": "造物 v2",
+      "relativePath": "assets/avatars/imported/造物v2.vrm",
+      "contentHash": "8896ed76316b7cf58143b28cc6d7d3e0230e1facc7d9e4864402e29b9959c929",
+      "byteLength": 70312472,
+      "vrmSpecVersion": "0.x"
+    }
+  ]
+}

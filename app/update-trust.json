@@ -1,0 +1,9 @@
+{
+  "schema": "tiangong.update.trust-root.v1",
+  "enabled": false,
+  "manifest_url": "",
+  "allowed_origins": [],
+  "key_id": "",
+  "public_key_pem": "",
+  "expected_publisher": ""
+}

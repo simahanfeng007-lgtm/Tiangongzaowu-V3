@@ -1,0 +1,4 @@
+VRMA samples downloaded from tk256ailab/vrm-viewer.
+Source: https://github.com/tk256ailab/vrm-viewer
+License: MIT. See LICENSE-tk256ailab-vrm-viewer.txt.
+Files used: Thinking, Relax, Sad, Surprised, LookAround, Angry, Clapping.

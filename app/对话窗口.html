@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>起源</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a12;color:#8ab0d0;font-family:'Microsoft YaHei','PingFang SC',sans-serif;display:flex;flex-direction:column;height:100vh}
+#msgs{flex:1;overflow-y:auto;padding:20px}
+.msg{margin-bottom:14px;animation:fadein 0.3s}
+.msg.user{text-align:right}
+.msg.user .b{background:rgba(30,50,80,0.6);color:#a0c0e0;border:1px solid #1a3a5a}
+.msg.her .b{background:rgba(15,25,40,0.6);color:#8ab0d0;border:1px solid #1a2a3a}
+.b{display:inline-block;max-width:80%;padding:10px 16px;border-radius:12px;font-size:0.95em;line-height:1.6;word-break:break-word;text-align:left}
+.name{font-size:0.7em;margin-bottom:4px;opacity:0.5}
+#input-area{display:flex;gap:10px;padding:14px 20px;background:rgba(5,5,15,0.95);border-top:1px solid #1a2a3a}
+#input-area input{flex:1;min-width:120px;padding:12px 16px;font-size:1em;background:#0a0a18;color:#7ab0d0;border:1px solid #2a4a6a;border-radius:8px;font-family:inherit;outline:none}
+#input-area input:focus{border-color:#4a8aba}
+#input-area button{padding:12px 28px;font-size:1em;background:#1a2a3a;color:#7ab0d0;border:1px solid #2a4a6a;border-radius:8px;cursor:pointer;font-family:inherit;letter-spacing:3px}
+#input-area button:hover{background:#2a4a6a}
+#status{position:fixed;top:10px;right:16px;font-size:0.7em;color:#4a6a7a;letter-spacing:1px}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#1a2a4a;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="status">等待连接...</div>
+<div id="msgs">
+  <div class="msg her"><div class="name">起源</div><div class="b">我在。说吧。</div></div>
+</div>
+<div id="input-area">
+  <input id="inp" placeholder="说点什么...">
+  <button id="send-btn">发送</button>
+</div>
+<script>
+const inp=document.getElementById('inp'),btn=document.getElementById('send-btn'),msgs=document.getElementById('msgs'),status=document.getElementById('status');
+const gatewayUrl=window.tiangongDesktop?.getGatewayUrl?.()||'http://127.0.0.1:7184';
+const gatewayHeaders=window.tiangongDesktop?.getGatewayHeaders?.()||{};
+function send(){
+  const t=inp.value.trim();if(!t)return;
+  addMsg('user','你',t);inp.value='';
+  // P2-19: the legacy window's inbound route is closed in the current
+  // gateway; keep the window display-only instead of calling a dead route.
+  addMsg('her','起源','旧版发送通道已关闭：请使用主界面输入。');
+  return;
+  /* eslint-disable no-unreachable */
+  fetch(gatewayUrl+'/api/v1/gateway/internal/inbound',{method:'POST',headers:{...gatewayHeaders,'Content-Type':'application/json'},body:JSON.stringify({tenant_id:'desktop',channel:'legacy_window',conversation_id:'legacy-window',message_id:'legacy-'+Date.now(),text:t})})
+    .then(r=>r.json()).then(d=>{if(d.huifu)addMsg('her','起源',d.huifu);else addMsg('her','起源','[错误] '+(d.cuowu||'无回复'))})
+    .catch(()=>addMsg('her','起源','总网关未连接'));
+  /* eslint-enable no-unreachable */
+}
+inp.addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+btn.addEventListener('click',send);
+inp.focus();document.addEventListener('click',()=>inp.focus());
+function addMsg(cls,name,text){
+  const d=document.createElement('div');d.className='msg '+cls;
+  d.innerHTML=`<div class="name">${name}</div><div class="b">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+  msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;
+}
+// 健康检查
+setInterval(()=>{fetch(gatewayUrl+'/health').then(()=>status.textContent='已连接').catch(()=>status.textContent='未连接')},10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "长篇小说系统"
+  short_description: "以权威状态管理长篇小说规划、连续性、章节事务与恢复"
+  default_prompt: "Use $novel-creation to plan and write a long-form novel through the authoritative chapter transaction system."

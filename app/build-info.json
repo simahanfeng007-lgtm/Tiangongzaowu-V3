@@ -1,0 +1,13 @@
+{
+  "product_version": "3.0.3",
+  "product_label": "天工造物 v3.0.3 完整版",
+  "architecture_version": "engineering-organism-v3.0-complete",
+  "build_id": "tiangong-v3.0.3-source-complete-20260722",
+  "backend_build_id": "tiangong-v3.0.3-source-complete-20260722",
+  "api_contract_version": "tiangong.desktop.backend.v3",
+  "frontend_kernel_version": "3.0.3",
+  "frontend_contract_id": "tiangong.frontend.kernel.v3.0-complete",
+  "contract_digest": "58d2ff45e91598b07c96c5f7cf29bbd2df8e483e2046f3d4d4c7c055a5f94570",
+  "source_baseline": "2026-07-22-single-process-continuity-portability-50-final",
+  "verification_profile": "continuity-portability-50-final"
+}

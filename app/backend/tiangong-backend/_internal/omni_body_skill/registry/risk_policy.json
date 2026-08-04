@@ -1,0 +1,8 @@
+{
+  "A0": "read-only / observation",
+  "A1": "local temporary creation",
+  "A2": "create durable local output",
+  "A3": "modify or move user files with rollback snapshot",
+  "A4": "delete-to-trash, shell, extraction overwrite, external write; automatic in sandbox; A5 is hard rejected",
+  "A5": "hard blocked: payment, credential theft, bypass, destructive permanent delete, unauthorized voice cloning"
+}

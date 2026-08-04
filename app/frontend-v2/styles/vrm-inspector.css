@@ -1,0 +1,387 @@
+.app-shell[data-page="chat"] .inspector > :not(.vrm-home-panel):not(.chat-inspector):not(.life-summary-panel) {
+  display: none !important;
+}
+
+body .app-shell[data-page="chat"] .inspector > section[data-life-summary].life-summary-panel {
+  display: grid !important;
+}
+
+.app-shell[data-page="body"] .inspector > :not(.vrm-body-panel) {
+  display: none !important;
+}
+
+.app-shell:not([data-page="chat"]) .vrm-home-panel,
+.app-shell:not([data-page="body"]) .vrm-body-panel,
+.vrm-inspector-panel[hidden] {
+  display: none !important;
+}
+
+.vrm-inspector-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* 上半：标题+视口，固定不滚动 */
+.vrm-top-fixed {
+  flex: 0 0 auto;
+}
+.vrm-top-fixed .vrm-panel-header {
+  margin-bottom: 10px;
+}
+
+/* 分割线 */
+.vrm-scroll-divider {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 12px 0;
+  background: var(--line);
+}
+
+/* 下半：设置区，可滚动 */
+.vrm-scroll-area {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.vrm-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.vrm-panel-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.vrm-panel-title span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vrm-panel-title h2 {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vrm-live-pill {
+  flex: 0 0 auto;
+  min-width: 58px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid rgba(20, 184, 166, 0.34);
+  border-radius: var(--radius-sm);
+  color: var(--accent-line);
+  background: rgba(20, 184, 166, 0.10);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vrm-viewport-card {
+  position: relative;
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1.08;
+  max-height: min(338px, 42vh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--vrm-stage-bg);
+  transition: max-height var(--transition-slow), aspect-ratio var(--transition-slow);
+}
+
+/* 空态：没有可渲染模型时收成一个紧凑占位条，不再撑一个巨大的空白舞台 */
+.vrm-viewport-card.is-empty {
+  aspect-ratio: auto;
+  max-height: 132px;
+  min-height: 132px;
+}
+
+.vrm-home-panel .vrm-viewport-card {
+  max-height: min(380px, 40vh);
+}
+
+.vrm-home-panel .vrm-viewport-card.is-empty {
+  max-height: 132px;
+}
+
+/*
+ * 聊天页右上角是常驻身体舞台，不再使用“侧栏留白 + 标题卡 + 视口卡”的
+ * 三层套框。视口直接贴合 inspector 顶部和左右边界，标题浮在画面之上；
+ * 下沿沿用主题的大圆角，与下面的生命链摘要形成清晰层级。
+ *
+ * body 前缀用于稳定覆盖 life.css 中较晚加载的聊天页 padding 规则，
+ * 同时把影响严格限定在聊天页首页，不改变身体设置页的独立卡片布局。
+ */
+body .app-shell[data-page="chat"] .inspector {
+  scrollbar-gutter: auto;
+}
+
+body .app-shell[data-page="chat"] .inspector > .vrm-home-panel {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: var(--vrm-stage-bg);
+  border-radius: 0 0 var(--material-panel-radius) var(--material-panel-radius);
+  box-shadow: inset 0 -1px 0 var(--material-divider);
+}
+
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-panel-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3;
+  margin: 0;
+  padding: 12px 14px 30px;
+  border: 0;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vrm-stage-bg) 96%, transparent) 0%,
+      color-mix(in srgb, var(--vrm-stage-bg) 76%, transparent) 58%,
+      transparent 100%
+    );
+  box-shadow: none;
+  pointer-events: none;
+}
+
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-live-pill {
+  pointer-events: auto;
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+}
+
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-viewport-card,
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-viewport-card.is-empty {
+  width: 100%;
+  height: clamp(300px, 44vh, 420px);
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0 0 var(--material-panel-radius) var(--material-panel-radius);
+  background: var(--vrm-stage-bg);
+  box-shadow: none;
+}
+
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-empty-state {
+  padding: 76px 18px 20px;
+}
+
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-viewport-card > canvas,
+body .app-shell[data-page="chat"] .vrm-home-panel .vrm-viewport-card > iframe {
+  border-radius: inherit;
+}
+
+.vrm-body-panel .vrm-viewport-card {
+  height: clamp(300px, 44vh, 420px);
+  max-height: none;
+}
+
+.vrm-body-panel .vrm-viewport-card.is-empty {
+  max-height: 132px;
+}
+
+.vrm-viewport-card iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.vrm-viewport-card > canvas {
+  position: relative;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.vrm-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+  /* 主题化微光：跟随当前主题主色，不再写死青绿 */
+  background:
+    radial-gradient(circle at 50% 42%, var(--accent-soft), transparent 42%);
+}
+
+.vrm-empty-state[hidden] {
+  display: none;
+}
+
+.vrm-empty-state strong {
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.vrm-empty-state span {
+  max-width: 220px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.vrm-side-section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.vrm-side-section h3 {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.vrm-control-list {
+  display: grid;
+  gap: 7px;
+}
+
+.vrm-control-row {
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.vrm-control-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent-line);
+}
+
+.vrm-control-row strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vrm-meta-list {
+  display: grid;
+  gap: 6px;
+}
+
+.vrm-meta-row {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vrm-meta-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vrm-meta-row strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vrm-command-row {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 2px 0;
+  background: var(--bg);
+}
+
+.vrm-command-row button {
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.vrm-command-row button:hover {
+  color: var(--text);
+  border-color: rgba(20, 184, 166, 0.42);
+  background: var(--surface-hover);
+}
+
+.vrm-command-row button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.vrm-import-status {
+  min-height: 16px;
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.vrm-import-status:empty {
+  display: none;
+}
+
+.vrm-import-status[data-state="success"] {
+  color: var(--accent-line);
+}
+
+.vrm-import-status[data-state="error"] {
+  color: #f0a59b;
+}

@@ -1,0 +1,3 @@
+# The release toolchain extends the source runtime with the frozen-runtime builder.
+-r requirements-source.lock
+pyinstaller==6.19.0

@@ -1,0 +1,97 @@
+{
+  "schema": "tiangong.v3.delivery_templates.v1",
+  "version": "3.3.0",
+  "templates": [
+    {
+      "id": "business_proposal",
+      "name": "商业级 Word 方案模板",
+      "rubric": "business_proposal",
+      "file": "templates/business_proposal.md"
+    },
+    {
+      "id": "executive_ppt",
+      "name": "商业汇报 PPT 故事线模板",
+      "rubric": "executive_ppt",
+      "file": "templates/executive_ppt.md",
+      "design_file": "templates/executive_ppt.design.json"
+    },
+    {
+      "id": "code_project",
+      "name": "代码工程交付模板",
+      "rubric": "code_project",
+      "file": "templates/code_project.md"
+    },
+    {
+      "id": "research_review",
+      "name": "资料/论文综述模板",
+      "rubric": "research_review",
+      "file": "templates/research_review.md"
+    },
+    {
+      "id": "short_video",
+      "name": "短视频交付模板",
+      "rubric": "short_video",
+      "file": "templates/short_video.md"
+    },
+    {
+      "id": "webnovel_chapter",
+      "name": "网文章节交付模板",
+      "rubric": "webnovel_chapter",
+      "file": "templates/webnovel_chapter.md"
+    },
+    {
+      "id": "poster_campaign",
+      "name": "商业海报/视觉交付模板",
+      "rubric": "poster_campaign",
+      "file": "templates/poster_campaign.md"
+    },
+    {
+      "id": "spreadsheet_analysis",
+      "name": "表格分析报告交付模板",
+      "rubric": "spreadsheet_analysis",
+      "file": "templates/spreadsheet_analysis.md"
+    },
+    {
+      "id": "meeting_minutes",
+      "name": "会议纪要与行动跟进模板",
+      "rubric": "meeting_minutes",
+      "file": "templates/meeting_minutes.md"
+    },
+    {
+      "id": "sales_script",
+      "name": "B2B销售话术交付模板",
+      "rubric": "sales_script",
+      "file": "templates/sales_script.md"
+    },
+    {
+      "id": "course_plan",
+      "name": "课程/教案交付模板",
+      "rubric": "course_plan",
+      "file": "templates/course_plan.md"
+    },
+    {
+      "id": "kb_ingestion",
+      "name": "知识库入库交付模板",
+      "rubric": "kb_ingestion",
+      "file": "templates/kb_ingestion.md"
+    },
+    {
+      "id": "authorized_voice_audio",
+      "name": "授权声音/音频交付模板",
+      "rubric": "authorized_voice_audio",
+      "file": "templates/authorized_voice_audio.md"
+    },
+    {
+      "id": "seo_people_first",
+      "name": "People-first SEO内容模板",
+      "rubric": "seo_people_first",
+      "file": "templates/seo_people_first.md"
+    },
+    {
+      "id": "content_calendar",
+      "name": "内容日历交付模板",
+      "rubric": "content_calendar",
+      "file": "templates/content_calendar.md"
+    }
+  ]
+}

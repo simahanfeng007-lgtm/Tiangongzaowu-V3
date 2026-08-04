@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-5p8obP8pgK+3niirpoAuGEd2a2bkBtCn47BIYtEWUXM='; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob: http://127.0.0.1:7184 tiangong-asset:; img-src 'self' data: file: blob:; media-src 'self' data: file: blob:; object-src 'none'; base-uri 'none'; frame-src 'self' file:; form-action 'none';" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>天工造物 v3.0 完整版 · 起源</title>
+    <link rel="icon" href="../assets/tiangong-logo-icon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="desktop-titlebar" aria-label="窗口标题栏">
+      <div class="desktop-titlebar-brand">
+        <img src="../assets/tiangong-logo-icon.png" alt="" />
+        <span>天工造物 v3.0 完整版 · 起源</span>
+      </div>
+      <div class="desktop-titlebar-controls">
+        <button type="button" data-window-action="minimize" title="最小化" aria-label="最小化">−</button>
+        <button type="button" data-window-action="maximize" title="最大化" aria-label="最大化">□</button>
+        <button type="button" data-window-action="close" class="close" title="关闭" aria-label="关闭">×</button>
+      </div>
+    </header>
+    <div class="app-shell" data-plugin-host data-page="chat">
+      <nav class="nav-rail" data-slot="nav" aria-label="主导航"></nav>
+      <aside class="context-pane" data-slot="context" aria-label="运行上下文"></aside>
+      <main class="conversation" data-slot="conversation" aria-label="对话区"></main>
+      <aside class="inspector" data-slot="inspector" aria-label="执行观察"></aside>
+    </div>
+
+    <!-- P6b：three-vrm-engine 的 bare specifier（three/three/addons//@pixiv/*）解析映射。
+         inline importmap 的 CSP 授权见上方 script-src 的 sha256 白名单；修改本行内容必须同步重算哈希。 -->
+    <script type="importmap">{"imports":{"three":"../node_modules/three/build/three.module.js","three/addons/":"../node_modules/three/examples/jsm/","@pixiv/three-vrm":"../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js","@pixiv/three-vrm-animation":"../node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"}}</script>
+    <script type="module" src="./renderer/bootstrap.mjs"></script>
+    <script type="module" src="./renderer/app.mjs"></script>
+  </body>
+</html>

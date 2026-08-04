@@ -1,0 +1,1281 @@
+[
+  {
+    "call": {
+      "action": "skill.route",
+      "args": {
+        "job": "帮我做一份给客户看的企业AI培训方案Word，要求专业、可成交、可以直接发给客户。",
+        "context": {
+          "deliverable": "docx",
+          "intent": "商业方案"
+        }
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.route",
+      "target": "",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_router.v1",
+          "router_version": "3.3.1",
+          "recommended_skill": {
+            "id": "skill_word_business_proposal_worldclass_v1",
+            "mingcheng": "世界顶尖级商业 Word 方案交付",
+            "confidence": 1.0,
+            "reason": "关键词命中:word; 关键词命中:docx; 关键词命中:方案; 关键词命中:商业方案; 关键词命中:培训方案; 关键词命中:可成交; 交付格式匹配:docx; 意图匹配:商业方案"
+          },
+          "skill_card": {
+            "id": "skill_word_business_proposal_worldclass_v1",
+            "mingcheng": "世界顶尖级商业 Word 方案交付",
+            "category": "business_document",
+            "deliverables": [
+              "docx",
+              "md",
+              "zip"
+            ],
+            "taskIntents": [
+              "商业方案",
+              "Word文档",
+              "客户交付",
+              "项目建议书"
+            ],
+            "template_id": "business_proposal",
+            "starter_actions": [
+              "template.apply",
+              "writing.outline.create"
+            ],
+            "production_actions": [
+              "file.write",
+              "docx.create"
+            ],
+            "quality_gates": [
+              "qc.docx.delivery_check",
+              "qc.writing.ai_tone_check"
+            ],
+            "repair_actions": [
+              "repair.plan",
+              "file.write",
+              "docx.create"
+            ],
+            "final_actions": [
+              "preview.generate",
+              "deliverable.package"
+            ],
+            "acceptance": {
+              "minimum_score": 80,
+              "world_class_score": 90,
+              "must_pass": [
+                "qc.docx.delivery_check"
+              ]
+            },
+            "confidence": 1.0,
+            "reason": "关键词命中:word; 关键词命中:docx; 关键词命中:方案; 关键词命中:商业方案; 关键词命中:培训方案; 关键词命中:可成交; 交付格式匹配:docx; 意图匹配:商业方案",
+            "execution_contract": {
+              "tool_role": "skill_router_and_atomic_executor",
+              "model_role": "read_skill_then_execute_loop",
+              "auto_execute": false,
+              "must_not": [
+                "不要把 skill.route 当成交付完成。",
+                "不要让 omni_body 代替模型完成业务判断。",
+                "不要在 qc 未通过时宣称最终完成。"
+              ],
+              "required_loop": "skill.get -> template/outline -> produce -> qc -> repair if needed -> qc again -> deliverable.package"
+            },
+            "workflow": [
+              {
+                "stage": "route",
+                "owner": "model",
+                "description": "模型先调用 skill.route 获取匹配 Skill；工具只返回 Skill，不执行交付。",
+                "allowed_actions": [
+                  "skill.route",
+                  "skill.get"
+                ],
+                "exit_evidence": [
+                  "recommended_skill.id",
+                  "skill_card.workflow"
+                ]
+              },
+              {
+                "stage": "intake",
+                "owner": "model",
+                "description": "模型读取 Skill 输入契约，抽取目标、受众、素材、约束、格式和质量阈值。",
+                "allowed_actions": [
+                  "file.read",
+                  "template.list",
+                  "skill.get"
+                ],
+                "exit_evidence": [
+                  "structured_intake"
+                ]
+              },
+              {
+                "stage": "skeleton",
+                "owner": "model+tool",
+                "description": "模型选择合适模板，调用 template.apply 或 writing.outline.create 生成骨架。骨架不是最终交付。",
+                "allowed_actions": [
+                  "template.apply",
+                  "writing.outline.create",
+                  "research.evidence_table.create"
+                ],
+                "exit_evidence": [
+                  "draft_skeleton_path"
+                ]
+              },
+              {
+                "stage": "produce",
+                "owner": "model+tool",
+                "description": "模型基于用户素材生成实际内容，再调用原子工具落盘/生成正式文件。",
+                "allowed_actions": [
+                  "file.write",
+                  "docx.create",
+                  "pptx.create",
+                  "sheet.create",
+                  "image.*",
+                  "video.*",
+                  "audio.*",
+                  "code.write"
+                ],
+                "exit_evidence": [
+                  "deliverable_path"
+                ]
+              },
+              {
+                "stage": "quality_gate",
+                "owner": "tool",
+                "description": "模型调用对应 qc.* 质量门；工具只返回 score/issues/evidence，不自行返工。",
+                "allowed_actions": [
+                  "qc.*",
+                  "preview.generate"
+                ],
+                "exit_evidence": [
+                  "qc_score",
+                  "qc_issues",
+                  "qc_acceptance"
+                ]
+              },
+              {
+                "stage": "repair_loop",
+                "owner": "model+tool",
+                "description": "若 QC 未通过，模型调用 repair.plan，按 issues 修改内容，再回到 quality_gate。",
+                "allowed_actions": [
+                  "repair.plan",
+                  "file.write",
+                  "docx.create",
+                  "pptx.create",
+                  "sheet.create",
+                  "code.patch_replace",
+                  "image.*",
+                  "video.*"
+                ],
+                "exit_evidence": [
+                  "repair_plan_path",
+                  "updated_deliverable_path",
+                  "new_qc_score"
+                ]
+              },
+              {
+                "stage": "package",
+                "owner": "tool",
+                "description": "QC 达标后，模型调用 deliverable.package 打包最终交付物、QC报告、源素材和说明。",
+                "allowed_actions": [
+                  "deliverable.package",
+                  "zip.create"
+                ],
+                "exit_evidence": [
+                  "package_path",
+                  "manifest"
+                ]
+              }
+            ]
+          },
+          "top_matches": [
+            {
+              "id": "skill_word_business_proposal_worldclass_v1",
+              "mingcheng": "世界顶尖级商业 Word 方案交付",
+              "score": 100,
+              "reasons": [
+                "关键词命中:word",
+                "关键词命中:docx",
+                "关键词命中:方案"
+              ]
+            },
+            {
+              "id": "skill_sales_script_delivery_worldclass_v1",
+              "mingcheng": "世界顶尖级B2B销售话术交付",
+              "score": 32,
+              "reasons": [
+                "关键词命中:成交",
+                "关键词命中:客户",
+                "交付格式匹配:docx"
+              ]
+            },
+            {
+              "id": "skill_course_lesson_plan_worldclass_v1",
+              "mingcheng": "世界顶尖级课程/教案交付",
+              "score": 26,
+              "reasons": [
+                "关键词命中:培训",
+                "交付格式匹配:docx"
+              ]
+            },
+            {
+              "id": "skill_webnovel_chapter_delivery_worldclass_v1",
+              "mingcheng": "世界顶尖级网文章节交付",
+              "score": 20,
+              "reasons": [
+                "交付格式匹配:docx"
+              ]
+            },
+            {
+              "id": "skill_meeting_minutes_action_followup_worldclass_v1",
+              "mingcheng": "世界顶尖级会议纪要与行动跟进交付",
+              "score": 20,
+              "reasons": [
+                "交付格式匹配:docx"
+              ]
+            }
+          ],
+          "next_model_action": {
+            "call": "skill.get",
+            "target": "skill_word_business_proposal_worldclass_v1",
+            "then": "按返回的 workflow 分步骤调用 omni_body 原子动作和 qc 质量门。"
+          },
+          "important": "skill.route 只返回 Skill，不执行交付；模型必须读取 Skill 后自行循环执行。"
+        },
+        "evidence": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 2900,
+          "score": 100
+        },
+        "op_id": "20260705_023722_123_skill.route",
+        "action": "skill.route",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.001
+      },
+      "llm_brief": "omni_body skill.route completed for [no target]",
+      "evidence": {
+        "path": "skill_word_business_proposal_worldclass_v1",
+        "exists": true,
+        "sha256": "",
+        "bytes": 2900,
+        "raw": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 2900,
+          "score": 100
+        },
+        "op_id": "20260705_023722_123_skill.route",
+        "action": "skill.route",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.001
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "skill.get",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.get",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_card.v1",
+          "skill": {
+            "id": "skill_word_business_proposal_worldclass_v1",
+            "mingcheng": "世界顶尖级商业 Word 方案交付",
+            "category": "business_document",
+            "deliverables": [
+              "docx",
+              "md",
+              "zip"
+            ],
+            "taskIntents": [
+              "商业方案",
+              "Word文档",
+              "客户交付",
+              "项目建议书"
+            ],
+            "template_id": "business_proposal",
+            "starter_actions": [
+              "template.apply",
+              "writing.outline.create"
+            ],
+            "production_actions": [
+              "file.write",
+              "docx.create"
+            ],
+            "quality_gates": [
+              "qc.docx.delivery_check",
+              "qc.writing.ai_tone_check"
+            ],
+            "repair_actions": [
+              "repair.plan",
+              "file.write",
+              "docx.create"
+            ],
+            "final_actions": [
+              "preview.generate",
+              "deliverable.package"
+            ],
+            "acceptance": {
+              "minimum_score": 80,
+              "world_class_score": 90,
+              "must_pass": [
+                "qc.docx.delivery_check"
+              ]
+            },
+            "confidence": 1.0,
+            "reason": "skill.get exact match",
+            "execution_contract": {
+              "tool_role": "skill_router_and_atomic_executor",
+              "model_role": "read_skill_then_execute_loop",
+              "auto_execute": false,
+              "must_not": [
+                "不要把 skill.route 当成交付完成。",
+                "不要让 omni_body 代替模型完成业务判断。",
+                "不要在 qc 未通过时宣称最终完成。"
+              ],
+              "required_loop": "skill.get -> template/outline -> produce -> qc -> repair if needed -> qc again -> deliverable.package"
+            },
+            "workflow": [
+              {
+                "stage": "route",
+                "owner": "model",
+                "description": "模型先调用 skill.route 获取匹配 Skill；工具只返回 Skill，不执行交付。",
+                "allowed_actions": [
+                  "skill.route",
+                  "skill.get"
+                ],
+                "exit_evidence": [
+                  "recommended_skill.id",
+                  "skill_card.workflow"
+                ]
+              },
+              {
+                "stage": "intake",
+                "owner": "model",
+                "description": "模型读取 Skill 输入契约，抽取目标、受众、素材、约束、格式和质量阈值。",
+                "allowed_actions": [
+                  "file.read",
+                  "template.list",
+                  "skill.get"
+                ],
+                "exit_evidence": [
+                  "structured_intake"
+                ]
+              },
+              {
+                "stage": "skeleton",
+                "owner": "model+tool",
+                "description": "模型选择合适模板，调用 template.apply 或 writing.outline.create 生成骨架。骨架不是最终交付。",
+                "allowed_actions": [
+                  "template.apply",
+                  "writing.outline.create",
+                  "research.evidence_table.create"
+                ],
+                "exit_evidence": [
+                  "draft_skeleton_path"
+                ]
+              },
+              {
+                "stage": "produce",
+                "owner": "model+tool",
+                "description": "模型基于用户素材生成实际内容，再调用原子工具落盘/生成正式文件。",
+                "allowed_actions": [
+                  "file.write",
+                  "docx.create",
+                  "pptx.create",
+                  "sheet.create",
+                  "image.*",
+                  "video.*",
+                  "audio.*",
+                  "code.write"
+                ],
+                "exit_evidence": [
+                  "deliverable_path"
+                ]
+              },
+              {
+                "stage": "quality_gate",
+                "owner": "tool",
+                "description": "模型调用对应 qc.* 质量门；工具只返回 score/issues/evidence，不自行返工。",
+                "allowed_actions": [
+                  "qc.*",
+                  "preview.generate"
+                ],
+                "exit_evidence": [
+                  "qc_score",
+                  "qc_issues",
+                  "qc_acceptance"
+                ]
+              },
+              {
+                "stage": "repair_loop",
+                "owner": "model+tool",
+                "description": "若 QC 未通过，模型调用 repair.plan，按 issues 修改内容，再回到 quality_gate。",
+                "allowed_actions": [
+                  "repair.plan",
+                  "file.write",
+                  "docx.create",
+                  "pptx.create",
+                  "sheet.create",
+                  "code.patch_replace",
+                  "image.*",
+                  "video.*"
+                ],
+                "exit_evidence": [
+                  "repair_plan_path",
+                  "updated_deliverable_path",
+                  "new_qc_score"
+                ]
+              },
+              {
+                "stage": "package",
+                "owner": "tool",
+                "description": "QC 达标后，模型调用 deliverable.package 打包最终交付物、QC报告、源素材和说明。",
+                "allowed_actions": [
+                  "deliverable.package",
+                  "zip.create"
+                ],
+                "exit_evidence": [
+                  "package_path",
+                  "manifest"
+                ]
+              }
+            ]
+          },
+          "markdown": "# 世界顶尖级商业 Word 方案 Skill\n\n## 设计依据\n参考 APMP 的提案管理最佳实践、Plain Language 清晰写作原则，以及咨询式商业文档的“先结论、后证据、再行动”结构。\n\n## 适用\n客户方案、AI转型方案、项目建议书、市场调研方案、培训落地方案。\n\n## 输入契约\n- 受众/决策人\n- 业务目标\n- 当前问题\n- 已知证据/素材\n- 预算/周期/边界\n- 期望行动\n\n## 工具流程\n1. `template.apply`，template_id=`business_proposal`，生成方案骨架。\n2. 模型补充执行摘要、问题、方案、实施、收益、风险、行动建议。\n3. `docx.create` 生成 Word。\n4. `qc.docx.delivery_check` 检查结构、清晰度、证据、行动性、AI腔。\n5. `qc.writing.ai_tone_check` 进一步查泛化表达。\n6. 分数低于80：调用 `repair.plan`，模型按问题返工。\n7. `deliverable.package` 打包 docx、md大纲、QC报告。\n\n## 顶尖交付标准\n- 第一屏能让决策人知道“要不要做、为什么现在做、需要批准什么”。\n- 章节必须有：执行摘要、现状问题、解决方案、实施路径、收益证据、风险假设、行动建议。\n- 每个重大判断必须有事实、数据、案例或明确假设支撑。\n- 不写空话；所有“提升/优化/赋能”必须可量化或可验证。\n\n## 验收\n- `qc.docx.delivery_check.score >= 80` 才能交付。\n- `score >= 90` 可标记 world_class_ready。\n",
+          "model_instructions": [
+            "先抽取输入契约，不足时在当前上下文中做保守假设或向用户确认。",
+            "所有内容生成由大模型完成；工具只负责落盘、格式化、质检、打包。",
+            "每次 QC 未通过时，必须根据 issues 调用 repair.plan 或直接返工后再 QC。",
+            "最终必须 deliverable.package，除非用户明确只要文本。"
+          ]
+        },
+        "evidence": {
+          "path": "deliverable_skills/29_skill_word_business_proposal_worldclass.md",
+          "exists": true,
+          "bytes": 1453
+        },
+        "op_id": "20260705_023722_128_skill.get",
+        "action": "skill.get",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.002
+      },
+      "llm_brief": "omni_body skill.get completed for skill_word_business_proposal_worldclass_v1",
+      "evidence": {
+        "path": "deliverable_skills/29_skill_word_business_proposal_worldclass.md",
+        "exists": true,
+        "sha256": "",
+        "bytes": 1453,
+        "raw": {
+          "path": "deliverable_skills/29_skill_word_business_proposal_worldclass.md",
+          "exists": true,
+          "bytes": 1453
+        },
+        "op_id": "20260705_023722_128_skill.get",
+        "action": "skill.get",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.002
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "args": {
+        "completed_actions": []
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_step_check.v1",
+          "skill_id": "skill_word_business_proposal_worldclass_v1",
+          "current_stage": "skeleton",
+          "allowed_next_actions": [
+            "template.apply",
+            "writing.outline.create"
+          ],
+          "rationale": "尚未看到模板/大纲骨架证据。",
+          "quality_status": {
+            "last_qc_score": null,
+            "passed": false,
+            "required_minimum": 80
+          },
+          "guardrails": [
+            "allowed_next_actions 不是自动计划，只是防止模型跳过必要阶段。",
+            "若用户要求跳过打包或只要文本，可以在最终响应说明未打包。"
+          ]
+        },
+        "evidence": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 0,
+          "stage": "skeleton"
+        },
+        "op_id": "20260705_023722_135_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      },
+      "llm_brief": "omni_body skill.step.check completed for skill_word_business_proposal_worldclass_v1",
+      "evidence": {
+        "path": "skill_word_business_proposal_worldclass_v1",
+        "exists": true,
+        "sha256": "",
+        "bytes": 0,
+        "raw": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 0,
+          "stage": "skeleton"
+        },
+        "op_id": "20260705_023722_135_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "template.apply",
+      "target": "ai_training_proposal_skeleton.md",
+      "args": {
+        "template_id": "business_proposal",
+        "variables": {
+          "title": "企业AI培训与落地陪跑方案",
+          "audience": "企业负责人/人力资源负责人",
+          "objective": "批准试点项目"
+        }
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "template.apply",
+      "target": "ai_training_proposal_skeleton.md",
+      "result": {
+        "success": true,
+        "output": {
+          "path": "ai_training_proposal_skeleton.md",
+          "exists": true,
+          "bytes": 426,
+          "template_id": "business_proposal"
+        },
+        "op_id": "20260705_023722_136_template.apply",
+        "action": "template.apply",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.001
+      },
+      "llm_brief": "omni_body template.apply completed for ai_training_proposal_skeleton.md",
+      "evidence": {
+        "path": "ai_training_proposal_skeleton.md",
+        "exists": true,
+        "sha256": "",
+        "bytes": 426,
+        "raw": {
+          "path": "ai_training_proposal_skeleton.md",
+          "exists": true,
+          "bytes": 426,
+          "template_id": "business_proposal"
+        },
+        "op_id": "20260705_023722_136_template.apply",
+        "action": "template.apply",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.001
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "args": {
+        "completed_actions": [
+          "template.apply"
+        ]
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_step_check.v1",
+          "skill_id": "skill_word_business_proposal_worldclass_v1",
+          "current_stage": "produce",
+          "allowed_next_actions": [
+            "file.write",
+            "docx.create"
+          ],
+          "rationale": "已有骨架，但尚未看到正式交付物。",
+          "quality_status": {
+            "last_qc_score": null,
+            "passed": false,
+            "required_minimum": 80
+          },
+          "guardrails": [
+            "allowed_next_actions 不是自动计划，只是防止模型跳过必要阶段。",
+            "若用户要求跳过打包或只要文本，可以在最终响应说明未打包。"
+          ]
+        },
+        "evidence": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 1,
+          "stage": "produce"
+        },
+        "op_id": "20260705_023722_139_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      },
+      "llm_brief": "omni_body skill.step.check completed for skill_word_business_proposal_worldclass_v1",
+      "evidence": {
+        "path": "skill_word_business_proposal_worldclass_v1",
+        "exists": true,
+        "sha256": "",
+        "bytes": 1,
+        "raw": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 1,
+          "stage": "produce"
+        },
+        "op_id": "20260705_023722_139_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "file.write",
+      "target": "ai_training_proposal.md",
+      "args": {
+        "content": "# 企业AI培训与落地陪跑方案\n\n## 执行摘要\n本方案面向企业负责人和人力资源负责人，目标是在4周内完成AI办公、销售、客服和知识库场景的试点培训与落地陪跑。建议先批准一个低风险试点：20-40名核心岗位参加，交付可复用提示词库、岗位流程清单、样板文档、试点复盘报告和下一阶段推广建议。\n\n## 当前问题\n1. 员工已经接触AI工具，但缺少统一流程、质量标准和安全边界。\n2. 培训容易停留在演示层，无法转化成岗位产出。\n3. 企业知识、销售话术、客服FAQ和办公模板分散，无法沉淀为可复用资产。\n4. 管理层需要看到可验证结果，而不是泛泛的工具介绍。\n\n## 解决方案\n采用“培训 + 场景共创 + 交付物验收 + 复盘推广”的方法。第一阶段完成AI基础与安全边界，第二阶段按岗位拆解真实任务，第三阶段生成可复用模板和流程，第四阶段通过质量门检查与复盘形成企业内部推广路径。\n\n## 实施路径\n第1周：访谈与场景筛选，确定3-5个高频岗位任务。\n第2周：集中训练，覆盖提示词、资料整理、文档生成、表格分析、销售话术和客服知识库。\n第3周：陪跑共创，每个岗位产出不少于2个可复用模板。\n第4周：验收复盘，提交成果包、问题清单、风险边界和二期建议。\n\n## 交付成果\n- 岗位AI使用SOP\n- 企业常用提示词库\n- Word/PPT/Excel样板交付物\n- 销售与客服知识库结构草案\n- 培训签到、作业、评分与复盘报告\n- 二期落地路线图\n\n## 价值与证据口径\n建议以节省时间、减少返工、提升文档一致性、提高销售跟进质量四类指标验收。试点期至少记录基线耗时、AI辅助后耗时、产出质量评分、员工反馈和管理者验收意见。\n\n## 风险与假设\n不处理敏感个人信息，不绕过企业权限，不默认使用未授权数据训练模型。所有对外发送内容保留人工确认。试点效果依赖管理层推动、岗位素材开放程度和课后执行频次。\n\n## 行动建议\n建议批准4周试点，先从办公文档、销售跟进、客服知识库三个场景启动。试点通过后，再推广到培训体系、流程制度和部门级智能体建设。\n"
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "file.write",
+      "target": "ai_training_proposal.md",
+      "result": {
+        "snapshots": [
+          {
+            "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.md",
+            "rel_path": "ai_training_proposal.md",
+            "existed": false,
+            "kind": "other",
+            "backup_path": null
+          }
+        ],
+        "evidence": {
+          "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.md",
+          "rel_path": "ai_training_proposal.md",
+          "exists": true,
+          "is_file": true,
+          "is_dir": false,
+          "size_bytes": 2326,
+          "sha256": "921c90b3cc017d3f4ca3a3ceddc1a84360ee9471a27d3feceecee770ccfc1f11"
+        },
+        "success": true,
+        "op_id": "20260705_023722_141_file.write",
+        "action": "file.write",
+        "risk_level": "A3",
+        "elapsed_seconds": 0.001
+      },
+      "llm_brief": "omni_body file.write completed for ai_training_proposal.md",
+      "evidence": {
+        "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.md",
+        "exists": true,
+        "sha256": "921c90b3cc017d3f4ca3a3ceddc1a84360ee9471a27d3feceecee770ccfc1f11",
+        "bytes": 2326,
+        "raw": {
+          "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.md",
+          "rel_path": "ai_training_proposal.md",
+          "exists": true,
+          "is_file": true,
+          "is_dir": false,
+          "size_bytes": 2326,
+          "sha256": "921c90b3cc017d3f4ca3a3ceddc1a84360ee9471a27d3feceecee770ccfc1f11"
+        },
+        "op_id": "20260705_023722_141_file.write",
+        "action": "file.write",
+        "risk_level": "A3",
+        "elapsed_seconds": 0.001,
+        "rollback_available": true
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "docx.create",
+      "target": "ai_training_proposal.docx",
+      "args": {
+        "title": "企业AI培训与落地陪跑方案",
+        "sections": [
+          {
+            "heading": "执行摘要",
+            "paragraphs": [
+              "本方案面向企业负责人和人力资源负责人，目标是在4周内完成AI办公、销售、客服和知识库场景的试点培训与落地陪跑。建议先批准一个低风险试点：20-40名核心岗位参加，交付可复用提示词库、岗位流程清单、样板文档、试点复盘报告和下一阶段推广建议。"
+            ]
+          },
+          {
+            "heading": "当前问题",
+            "paragraphs": [
+              "1. 员工已经接触AI工具，但缺少统一流程、质量标准和安全边界。",
+              "2. 培训容易停留在演示层，无法转化成岗位产出。",
+              "3. 企业知识、销售话术、客服FAQ和办公模板分散，无法沉淀为可复用资产。",
+              "4. 管理层需要看到可验证结果，而不是泛泛的工具介绍。"
+            ]
+          },
+          {
+            "heading": "解决方案",
+            "paragraphs": [
+              "采用“培训 + 场景共创 + 交付物验收 + 复盘推广”的方法。第一阶段完成AI基础与安全边界，第二阶段按岗位拆解真实任务，第三阶段生成可复用模板和流程，第四阶段通过质量门检查与复盘形成企业内部推广路径。"
+            ]
+          },
+          {
+            "heading": "实施路径",
+            "paragraphs": [
+              "第1周：访谈与场景筛选，确定3-5个高频岗位任务。",
+              "第2周：集中训练，覆盖提示词、资料整理、文档生成、表格分析、销售话术和客服知识库。",
+              "第3周：陪跑共创，每个岗位产出不少于2个可复用模板。",
+              "第4周：验收复盘，提交成果包、问题清单、风险边界和二期建议。"
+            ]
+          },
+          {
+            "heading": "交付成果",
+            "paragraphs": [
+              "- 岗位AI使用SOP",
+              "- 企业常用提示词库",
+              "- Word/PPT/Excel样板交付物",
+              "- 销售与客服知识库结构草案",
+              "- 培训签到、作业、评分与复盘报告",
+              "- 二期落地路线图"
+            ]
+          },
+          {
+            "heading": "价值与证据口径",
+            "paragraphs": [
+              "建议以节省时间、减少返工、提升文档一致性、提高销售跟进质量四类指标验收。试点期至少记录基线耗时、AI辅助后耗时、产出质量评分、员工反馈和管理者验收意见。"
+            ]
+          },
+          {
+            "heading": "风险与假设",
+            "paragraphs": [
+              "不处理敏感个人信息，不绕过企业权限，不默认使用未授权数据训练模型。所有对外发送内容保留人工确认。试点效果依赖管理层推动、岗位素材开放程度和课后执行频次。"
+            ]
+          },
+          {
+            "heading": "行动建议",
+            "paragraphs": [
+              "建议批准4周试点，先从办公文档、销售跟进、客服知识库三个场景启动。试点通过后，再推广到培训体系、流程制度和部门级智能体建设。"
+            ]
+          }
+        ]
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "docx.create",
+      "target": "ai_training_proposal.docx",
+      "result": {
+        "snapshots": [
+          {
+            "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.docx",
+            "rel_path": "ai_training_proposal.docx",
+            "existed": false,
+            "kind": "other",
+            "backup_path": null
+          }
+        ],
+        "output": {
+          "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.docx",
+          "rel_path": "ai_training_proposal.docx",
+          "exists": true,
+          "is_file": true,
+          "is_dir": false,
+          "size_bytes": 38095,
+          "sha256": "68d6636c0c09d7208ecb6873192944af22aa7bfc4e9785bc1e22258fbbb88e8e"
+        },
+        "sections_count": 8,
+        "success": true,
+        "op_id": "20260705_023722_151_docx.create",
+        "action": "docx.create",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.13
+      },
+      "llm_brief": "omni_body docx.create completed for ai_training_proposal.docx",
+      "evidence": {
+        "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.docx",
+        "exists": true,
+        "sha256": "68d6636c0c09d7208ecb6873192944af22aa7bfc4e9785bc1e22258fbbb88e8e",
+        "bytes": 38095,
+        "raw": {
+          "path": "/mnt/data/v331_skill_router_workspace/ai_training_proposal.docx",
+          "rel_path": "ai_training_proposal.docx",
+          "exists": true,
+          "is_file": true,
+          "is_dir": false,
+          "size_bytes": 38095,
+          "sha256": "68d6636c0c09d7208ecb6873192944af22aa7bfc4e9785bc1e22258fbbb88e8e"
+        },
+        "op_id": "20260705_023722_151_docx.create",
+        "action": "docx.create",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.13,
+        "rollback_available": true
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "qc.docx.delivery_check",
+      "target": "ai_training_proposal.docx",
+      "args": {
+        "threshold": 80
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "qc.docx.delivery_check",
+      "target": "ai_training_proposal.docx",
+      "result": {
+        "success": true,
+        "result": {
+          "type": "docx_business_delivery",
+          "score": 88,
+          "grade": "delivery_ready",
+          "stats": {
+            "sentences": 23,
+            "avg_sentence_chars": 34.6,
+            "long_sentence_count": 1
+          },
+          "issues": [
+            {
+              "code": "too_short",
+              "severity": "high",
+              "message": "方案正文过短，难以达到可交付级。",
+              "repair": "补充背景、分析、路径、风险、收益与证据。"
+            }
+          ],
+          "warnings": [],
+          "acceptance": true
+        },
+        "evidence": {
+          "path": "ai_training_proposal.docx",
+          "exists": true,
+          "bytes": 38095,
+          "score": 88,
+          "grade": "delivery_ready"
+        },
+        "op_id": "20260705_023722_284_qc.docx.delivery_check",
+        "action": "qc.docx.delivery_check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.022
+      },
+      "llm_brief": "omni_body qc.docx.delivery_check completed for ai_training_proposal.docx",
+      "evidence": {
+        "path": "ai_training_proposal.docx",
+        "exists": true,
+        "sha256": "",
+        "bytes": 38095,
+        "raw": {
+          "path": "ai_training_proposal.docx",
+          "exists": true,
+          "bytes": 38095,
+          "score": 88,
+          "grade": "delivery_ready"
+        },
+        "op_id": "20260705_023722_284_qc.docx.delivery_check",
+        "action": "qc.docx.delivery_check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.022
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "args": {
+        "completed_actions": [
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "qc.docx.delivery_check"
+        ],
+        "artifacts": [
+          "ai_training_proposal.docx"
+        ],
+        "last_qc": {
+          "type": "docx_business_delivery",
+          "score": 88,
+          "grade": "delivery_ready",
+          "stats": {
+            "sentences": 23,
+            "avg_sentence_chars": 34.6,
+            "long_sentence_count": 1
+          },
+          "issues": [
+            {
+              "code": "too_short",
+              "severity": "high",
+              "message": "方案正文过短，难以达到可交付级。",
+              "repair": "补充背景、分析、路径、风险、收益与证据。"
+            }
+          ],
+          "warnings": [],
+          "acceptance": true
+        }
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.step.check",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_step_check.v1",
+          "skill_id": "skill_word_business_proposal_worldclass_v1",
+          "current_stage": "package",
+          "allowed_next_actions": [
+            "preview.generate",
+            "deliverable.package"
+          ],
+          "rationale": "质量门已通过，应生成预览/打包。",
+          "quality_status": {
+            "last_qc_score": 88,
+            "passed": true,
+            "required_minimum": 80
+          },
+          "guardrails": [
+            "allowed_next_actions 不是自动计划，只是防止模型跳过必要阶段。",
+            "若用户要求跳过打包或只要文本，可以在最终响应说明未打包。"
+          ]
+        },
+        "evidence": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 4,
+          "stage": "package"
+        },
+        "op_id": "20260705_023722_308_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      },
+      "llm_brief": "omni_body skill.step.check completed for skill_word_business_proposal_worldclass_v1",
+      "evidence": {
+        "path": "skill_word_business_proposal_worldclass_v1",
+        "exists": true,
+        "sha256": "",
+        "bytes": 4,
+        "raw": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 4,
+          "stage": "package"
+        },
+        "op_id": "20260705_023722_308_skill.step.check",
+        "action": "skill.step.check",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "repair.plan",
+      "target": "repair_plan.md",
+      "args": {
+        "qc_result": {
+          "type": "docx_business_delivery",
+          "score": 88,
+          "grade": "delivery_ready",
+          "stats": {
+            "sentences": 23,
+            "avg_sentence_chars": 34.6,
+            "long_sentence_count": 1
+          },
+          "issues": [
+            {
+              "code": "too_short",
+              "severity": "high",
+              "message": "方案正文过短，难以达到可交付级。",
+              "repair": "补充背景、分析、路径、风险、收益与证据。"
+            }
+          ],
+          "warnings": [],
+          "acceptance": true
+        },
+        "notes": "按质量门问题返工"
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "repair.plan",
+      "target": "repair_plan.md",
+      "result": {
+        "success": true,
+        "output": {
+          "path": "repair_plan.md",
+          "exists": true,
+          "bytes": 240,
+          "issue_count": 0
+        },
+        "op_id": "20260705_023722_310_repair.plan",
+        "action": "repair.plan",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.001
+      },
+      "llm_brief": "omni_body repair.plan completed for repair_plan.md",
+      "evidence": {
+        "path": "repair_plan.md",
+        "exists": true,
+        "sha256": "",
+        "bytes": 240,
+        "raw": {
+          "path": "repair_plan.md",
+          "exists": true,
+          "bytes": 240,
+          "issue_count": 0
+        },
+        "op_id": "20260705_023722_310_repair.plan",
+        "action": "repair.plan",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.001
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "deliverable.package",
+      "target": "v331_skill_router_sample_package.zip",
+      "args": {
+        "items": [
+          "ai_training_proposal_skeleton.md",
+          "ai_training_proposal.md",
+          "ai_training_proposal.docx",
+          "repair_plan.md"
+        ],
+        "notes": "v3.3.1 skill router sample flow"
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "deliverable.package",
+      "target": "v331_skill_router_sample_package.zip",
+      "result": {
+        "success": true,
+        "output": {
+          "path": "v331_skill_router_sample_package.zip",
+          "exists": true,
+          "bytes": 38364,
+          "item_count": 4
+        },
+        "op_id": "20260705_023722_313_deliverable.package",
+        "action": "deliverable.package",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.005
+      },
+      "llm_brief": "omni_body deliverable.package completed for v331_skill_router_sample_package.zip",
+      "evidence": {
+        "path": "v331_skill_router_sample_package.zip",
+        "exists": true,
+        "sha256": "",
+        "bytes": 38364,
+        "raw": {
+          "path": "v331_skill_router_sample_package.zip",
+          "exists": true,
+          "bytes": 38364,
+          "item_count": 4
+        },
+        "op_id": "20260705_023722_313_deliverable.package",
+        "action": "deliverable.package",
+        "risk_level": "A2",
+        "elapsed_seconds": 0.005
+      }
+    }
+  },
+  {
+    "call": {
+      "action": "skill.progress.report",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "args": {
+        "completed_actions": [
+          "skill.route",
+          "skill.get",
+          "template.apply",
+          "file.write",
+          "docx.create",
+          "qc.docx.delivery_check",
+          "deliverable.package"
+        ],
+        "artifacts": [
+          "ai_training_proposal.docx",
+          "v331_skill_router_sample_package.zip"
+        ],
+        "qc_history": [
+          {
+            "type": "docx_business_delivery",
+            "score": 88,
+            "grade": "delivery_ready",
+            "stats": {
+              "sentences": 23,
+              "avg_sentence_chars": 34.6,
+              "long_sentence_count": 1
+            },
+            "issues": [
+              {
+                "code": "too_short",
+                "severity": "high",
+                "message": "方案正文过短，难以达到可交付级。",
+                "repair": "补充背景、分析、路径、风险、收益与证据。"
+              }
+            ],
+            "warnings": [],
+            "acceptance": true
+          }
+        ]
+      },
+      "workspace": "/mnt/data/v331_skill_router_workspace"
+    },
+    "response": {
+      "schema": "tiangong.v3.omni_body.v1",
+      "ok": true,
+      "zhuangtai": "wancheng",
+      "gongju": "omni_body",
+      "action": "skill.progress.report",
+      "target": "skill_word_business_proposal_worldclass_v1",
+      "result": {
+        "success": true,
+        "result": {
+          "schema": "tiangong.v3.omni_body.skill_progress.v1",
+          "skill_id": "skill_word_business_proposal_worldclass_v1",
+          "status": "complete",
+          "completed_actions": [
+            "skill.route",
+            "skill.get",
+            "template.apply",
+            "file.write",
+            "docx.create",
+            "qc.docx.delivery_check",
+            "deliverable.package"
+          ],
+          "artifact_count": 2,
+          "qc_scores": [
+            88
+          ],
+          "best_qc_score": 88,
+          "next": {
+            "schema": "tiangong.v3.omni_body.skill_step_check.v1",
+            "skill_id": "skill_word_business_proposal_worldclass_v1",
+            "current_stage": "complete",
+            "allowed_next_actions": [],
+            "rationale": "已看到打包动作，流程可收口。",
+            "quality_status": {
+              "last_qc_score": 88,
+              "passed": true,
+              "required_minimum": 80
+            },
+            "guardrails": [
+              "allowed_next_actions 不是自动计划，只是防止模型跳过必要阶段。",
+              "若用户要求跳过打包或只要文本，可以在最终响应说明未打包。"
+            ]
+          },
+          "ready_to_deliver": true
+        },
+        "evidence": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 124,
+          "stage": "complete"
+        },
+        "op_id": "20260705_023722_319_skill.progress.report",
+        "action": "skill.progress.report",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      },
+      "llm_brief": "omni_body skill.progress.report completed for skill_word_business_proposal_worldclass_v1",
+      "evidence": {
+        "path": "skill_word_business_proposal_worldclass_v1",
+        "exists": true,
+        "sha256": "",
+        "bytes": 124,
+        "raw": {
+          "path": "skill_word_business_proposal_worldclass_v1",
+          "exists": true,
+          "bytes": 124,
+          "stage": "complete"
+        },
+        "op_id": "20260705_023722_319_skill.progress.report",
+        "action": "skill.progress.report",
+        "risk_level": "A0",
+        "elapsed_seconds": 0.0
+      }
+    }
+  }
+]

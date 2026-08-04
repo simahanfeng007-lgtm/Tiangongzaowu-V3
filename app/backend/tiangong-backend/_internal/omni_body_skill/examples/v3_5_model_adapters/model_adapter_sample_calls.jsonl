@@ -1,0 +1,3 @@
+{"action": "model.adapter.render_tool_schema", "args": {"provider": "deepseek", "model": "deepseek-chat"}}
+{"action": "model.adapter.parse_tool_call", "args": {"provider": "kimi", "payload": {"choices": [{"message": {"tool_calls": [{"id": "call_kimi", "type": "function", "function": {"name": "omni_body", "arguments": "{\\\"action\\\":\\\"skill.route\\\",\\\"args\\\":{\\\"job\\\":\\\"做一份商业PPT\\\"}}"}}]}}]}}}
+{"action": "model.adapter.roundtrip_test"}

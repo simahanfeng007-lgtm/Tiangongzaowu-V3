@@ -1,0 +1,75 @@
+:root {
+  --desktop-titlebar-height: 36px;
+}
+
+.desktop-titlebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1000;
+  height: var(--desktop-titlebar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--titlebar-border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.desktop-titlebar-brand {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.desktop-titlebar-brand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.desktop-titlebar-controls {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-titlebar-controls button {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  background: transparent;
+  border-left: 1px solid var(--titlebar-button-border);
+  border-radius: 0;
+  font-size: 15px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.desktop-titlebar-controls button:hover {
+  color: var(--text);
+  background: var(--titlebar-button-hover);
+}
+
+.desktop-titlebar-controls button.close:hover {
+  color: #fff;
+  background: #b94a3a;
+}
+
+.app-shell {
+  inset: var(--desktop-titlebar-height) 0 0 0;
+  height: auto;
+}

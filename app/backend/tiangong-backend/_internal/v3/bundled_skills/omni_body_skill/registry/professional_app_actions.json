@@ -1,0 +1,386 @@
+{
+  "schema": "tiangong.v3.omni_body.professional_app_actions.v1",
+  "version": "3.4.0",
+  "actions": {
+    "v34.professional_apps.info": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Inspect v3.4 professional app adapter layer and native/fallback execution modes."
+    },
+    "app.adapter.health": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Probe professional application adapters, executables, Python modules, environment credentials, and bridge readiness."
+    },
+    "app.adapter.matrix": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Return professional application action matrix: native, script bridge, API pack, portable fallback, or unavailable."
+    },
+    "app.native.capability_probe": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Probe one named app adapter and return concrete installation/credential gaps."
+    },
+    "app.bridge.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate a native bridge script for Playwright, Office, WPS, Adobe, Blender, Figma, Feishu, GitHub, Docker, or desktop automation."
+    },
+    "app.bridge.pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create a zip bridge pack containing native script, runbook, manifest, and adapter contract."
+    },
+    "browser.playwright.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate Playwright Python automation script; does not require browser runtime to be installed."
+    },
+    "browser.playwright.goto": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Use Playwright to open a URL and save HTML/screenshot when available; fails honestly if Playwright/browser missing."
+    },
+    "browser.playwright.screenshot": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Use Playwright to capture screenshot when available; can generate bridge script otherwise."
+    },
+    "browser.playwright.extract_text": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Use Playwright to extract visible text when available; can use static fetch fallback for simple pages."
+    },
+    "browser.playwright.pdf": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Use Playwright Chromium PDF export when available; generate bridge script otherwise."
+    },
+    "microsoft.graph.request_pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create Microsoft Graph request pack for OneDrive/SharePoint/Excel/DriveItem workflows; does not execute without token."
+    },
+    "microsoft.office.com.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate Windows Office COM Python bridge script for Word/Excel/PowerPoint automation."
+    },
+    "microsoft.word.native.export_pdf": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Export DOCX to PDF via Word COM when available; otherwise returns bridge script package."
+    },
+    "microsoft.excel.native.chart.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create chart instruction bridge for Excel COM/openpyxl fallback."
+    },
+    "microsoft.powerpoint.native.export_pdf": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Export PPTX to PDF via PowerPoint COM when available; otherwise returns bridge script package."
+    },
+    "wps.native.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate WPS automation bridge notes/scripts for Writer/Spreadsheets/Presentation."
+    },
+    "adobe.photoshop.uxp.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate Photoshop UXP/PSJS script for layer/text/export operations."
+    },
+    "adobe.premiere.jsx.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate Premiere ExtendScript JSX bridge script for import/sequence/export operations."
+    },
+    "adobe.aftereffects.jsx.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate After Effects JSX bridge script for comp/text/render-queue operations."
+    },
+    "blender.python.script.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Generate Blender Python script for scene/model/material/camera/render operations."
+    },
+    "blender.python.run": {
+      "risk": "A4",
+      "implemented": true,
+      "summary": "Run Blender Python script through blender --background when blender is installed and confirmed."
+    },
+    "figma.api.request_pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create Figma REST API request pack for file/nodes/images/components; does not execute without token."
+    },
+    "canva.api.request_pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create Canva integration/request pack or design brief payload; does not execute without adapter credentials."
+    },
+    "feishu.api.request_pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create Feishu OpenAPI request pack for docs/sheets/messages; does not execute without app credentials."
+    },
+    "wechat_work.webhook.request_pack.create": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Create Enterprise WeChat webhook request pack; sending requires explicit webhook and confirmation in host."
+    },
+    "git.status": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Run git status --porcelain safely in workspace if git is installed."
+    },
+    "git.diff": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Run git diff safely in workspace if git is installed."
+    },
+    "git.log": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Run git log safely in workspace if git is installed."
+    },
+    "git.add": {
+      "risk": "A3",
+      "implemented": true,
+      "summary": "Run git add on explicit paths if git is installed."
+    },
+    "git.commit": {
+      "risk": "A4",
+      "implemented": true,
+      "summary": "Run git commit after explicit confirmation if git is installed."
+    },
+    "docker.health": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Check Docker CLI/daemon availability without mutating containers."
+    },
+    "docker.ps": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Run docker ps if Docker is available."
+    },
+    "docker.compose.config": {
+      "risk": "A0",
+      "implemented": true,
+      "summary": "Validate/print docker compose config for a compose file."
+    },
+    "sqlite.query": {
+      "risk": "A2",
+      "implemented": true,
+      "summary": "Run a SQLite query against a workspace database; SELECT by default, writes require confirmed=true."
+    }
+  },
+  "profiles": {
+    "browser.playwright": {
+      "label": "Playwright Browser",
+      "modules": [
+        "playwright"
+      ],
+      "executables": [],
+      "env": [],
+      "native_actions": [
+        "browser.playwright.goto",
+        "browser.playwright.screenshot",
+        "browser.playwright.extract_text",
+        "browser.playwright.pdf"
+      ],
+      "bridge_actions": [
+        "browser.playwright.script.create",
+        "app.bridge.pack.create"
+      ],
+      "official_path": "Playwright drives Chromium/Firefox/WebKit through a browser automation API; use for browser apps and UI flows."
+    },
+    "microsoft.office": {
+      "label": "Microsoft Office",
+      "modules": [
+        "win32com"
+      ],
+      "executables": [],
+      "env": [
+        "MS_GRAPH_TOKEN"
+      ],
+      "native_actions": [
+        "microsoft.word.native.export_pdf",
+        "microsoft.powerpoint.native.export_pdf",
+        "microsoft.excel.native.chart.create"
+      ],
+      "bridge_actions": [
+        "microsoft.office.com.script.create",
+        "microsoft.graph.request_pack.create"
+      ],
+      "official_path": "Local Office COM on Windows for desktop automation; Microsoft Graph for OneDrive/SharePoint/Excel resources."
+    },
+    "wps": {
+      "label": "WPS Office",
+      "modules": [],
+      "executables": [
+        "wps",
+        "et",
+        "wpp"
+      ],
+      "env": [],
+      "native_actions": [],
+      "bridge_actions": [
+        "wps.native.script.create"
+      ],
+      "official_path": "WPS automation varies by installation; use local macro/automation bridge where available, otherwise file-level docx/xlsx/pptx fallback."
+    },
+    "adobe.photoshop": {
+      "label": "Adobe Photoshop",
+      "modules": [],
+      "executables": [
+        "Photoshop",
+        "photoshop"
+      ],
+      "env": [],
+      "native_actions": [
+        "adobe.photoshop.document.create",
+        "adobe.photoshop.layer.create",
+        "adobe.photoshop.text.add",
+        "adobe.photoshop.export.png"
+      ],
+      "bridge_actions": [
+        "adobe.photoshop.uxp.script.create"
+      ],
+      "official_path": "Photoshop UXP/PSJS scripting bridge for native layer/document/export control; portable PNG/layer-json fallback remains available."
+    },
+    "adobe.video": {
+      "label": "Adobe Premiere / After Effects",
+      "modules": [],
+      "executables": [
+        "Premiere Pro",
+        "After Effects",
+        "Adobe Premiere Pro"
+      ],
+      "env": [],
+      "native_actions": [],
+      "bridge_actions": [
+        "adobe.premiere.jsx.script.create",
+        "adobe.aftereffects.jsx.script.create"
+      ],
+      "official_path": "ExtendScript JSX bridge for Adobe video applications; actual render requires installed app and manual/host execution."
+    },
+    "blender": {
+      "label": "Blender",
+      "modules": [],
+      "executables": [
+        "blender"
+      ],
+      "env": [],
+      "native_actions": [
+        "blender.python.run"
+      ],
+      "bridge_actions": [
+        "blender.python.script.create"
+      ],
+      "official_path": "Blender Python API through blender --background for modeling/render automation."
+    },
+    "figma": {
+      "label": "Figma",
+      "modules": [],
+      "executables": [],
+      "env": [
+        "FIGMA_TOKEN"
+      ],
+      "native_actions": [],
+      "bridge_actions": [
+        "figma.api.request_pack.create"
+      ],
+      "official_path": "Figma REST/API request pack; execution requires token and network access."
+    },
+    "canva": {
+      "label": "Canva",
+      "modules": [],
+      "executables": [],
+      "env": [
+        "CANVA_TOKEN"
+      ],
+      "native_actions": [],
+      "bridge_actions": [
+        "canva.api.request_pack.create"
+      ],
+      "official_path": "Canva integration bridge/request payload; execution requires configured Canva integration."
+    },
+    "feishu": {
+      "label": "Feishu / Lark",
+      "modules": [],
+      "executables": [],
+      "env": [
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET",
+        "FEISHU_ACCESS_TOKEN"
+      ],
+      "native_actions": [],
+      "bridge_actions": [
+        "feishu.api.request_pack.create"
+      ],
+      "official_path": "Feishu OpenAPI request pack; execution requires app credentials/tenant token."
+    },
+    "wechat_work": {
+      "label": "Enterprise WeChat",
+      "modules": [],
+      "executables": [],
+      "env": [
+        "WECHAT_WORK_WEBHOOK"
+      ],
+      "native_actions": [],
+      "bridge_actions": [
+        "wechat_work.webhook.request_pack.create"
+      ],
+      "official_path": "Webhook/request pack only; sending must be confirmed by host."
+    },
+    "git": {
+      "label": "Git CLI",
+      "modules": [],
+      "executables": [
+        "git"
+      ],
+      "env": [],
+      "native_actions": [
+        "git.status",
+        "git.diff",
+        "git.log",
+        "git.add",
+        "git.commit"
+      ],
+      "bridge_actions": [],
+      "official_path": "Direct git CLI with explicit arguments and workspace cwd."
+    },
+    "docker": {
+      "label": "Docker CLI",
+      "modules": [],
+      "executables": [
+        "docker"
+      ],
+      "env": [],
+      "native_actions": [
+        "docker.health",
+        "docker.ps",
+        "docker.compose.config"
+      ],
+      "bridge_actions": [],
+      "official_path": "Docker CLI probe/read-only actions in v3.4; mutating container lifecycle remains future A4/A5 expansion."
+    },
+    "sqlite": {
+      "label": "SQLite",
+      "modules": [
+        "sqlite3"
+      ],
+      "executables": [],
+      "env": [],
+      "native_actions": [
+        "sqlite.query"
+      ],
+      "bridge_actions": [],
+      "official_path": "stdlib sqlite3 local database query/limited update executor."
+    }
+  }
+}

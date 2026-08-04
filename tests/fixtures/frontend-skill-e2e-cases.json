@@ -1,0 +1,209 @@
+{
+  "schema": "tiangong.frontend-skill-e2e-cases.v1",
+  "cases": [
+    {
+      "id": "learning-card-ingest",
+      "skillId": "skill_learning_card_ingest_v1",
+      "prompt": "这是第01/34项隔离技能回归。先用 omni_body 的 skill.get 读取 skill_learning_card_ingest_v1，再把“所有 skill E2E 产物只能写入 skill-e2e-all 下的本项目录”作为显式内容调用一次 learning.ingest。只创建 awaiting_user 学习卡，绝不确认、激活、注册或发布；工具成功后立即报告真实 card_id、status 和 registered，不再调用任何工具，禁止模拟完成。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "core-actions-reference",
+      "skillId": "skill_core_actions_reference_v1",
+      "prompt": "这是第02/34项隔离技能回归。先调用 skill.get 读取 skill_core_actions_reference_v1；然后在 skill-e2e-all/02-core 创建 hello.txt，内容严格为 CORE_ACTIONS_REFERENCE_OK，实际执行 file.write、file.read、file.hash，确认读回完全一致。只操作该目录，最终报告真实 action 和 SHA256。",
+      "timeoutMs": 240000
+    },
+    {
+      "id": "managed-long-document",
+      "skillId": "skill_managed_long_document_worldclass_v1",
+      "prompt": "这是第03/34项隔离技能回归。先调用 skill.get 读取 skill_managed_long_document_worldclass_v1；在 skill-e2e-all/03-longdoc 建立一个真实可恢复的两章长文档工程，包含 project_manifest.json、checkpoint.json、sections/01.md、sections/02.md、assembled.md 和 assembled.docx。project_manifest.json 的 target_words 必须为 5000，两章正文合计至少 5000 个有效字符（每章约 2500），并包含执行摘要、问题、解决方案、实施、风险、行动等可验收结构；实际运行 docx.create、qc.docx.delivery_check（args.document_type=long_document 且 args.project_manifest 指向该 manifest）与 file.hash，并读回清单。工程字段、章节和检查点必须真实，只操作该目录，禁止假称长文档已完成。",
+      "timeoutMs": 900000
+    },
+    {
+      "id": "word-business-proposal",
+      "skillId": "skill_word_business_proposal_worldclass_v1",
+      "prompt": "这是第04/34项隔离技能回归。先调用 skill.get 读取 skill_word_business_proposal_worldclass_v1；在 skill-e2e-all/04-word 创建一份简短但完整的《AI客服试点方案》proposal.md 与 proposal.docx，包含目标、范围、里程碑、预算、风险、验收；实际执行 docx.create、word.read、qc.docx.delivery_check 和 file.hash。只操作该目录，最终给出QC与哈希证据。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "ppt-executive-report",
+      "skillId": "skill_ppt_executive_report_worldclass_v1",
+      "prompt": "这是第05/34项隔离技能回归。先调用 skill.get 读取 skill_ppt_executive_report_worldclass_v1；在 skill-e2e-all/05-ppt 创建一份3页《季度经营回顾》PPTX（封面、关键指标、下一步），实际执行 pptx.create、pptx.read、qc.ppt.delivery_check 和 file.hash。只操作该目录，最终列出页数、QC和哈希。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "code-project-delivery",
+      "skillId": "skill_code_project_delivery_worldclass_v1",
+      "prompt": "这是第06/34项隔离技能回归。先调用 skill.get 读取 skill_code_project_delivery_worldclass_v1；在 skill-e2e-all/06-code 创建最小Python工程，含 calculator.py、test_calculator.py、README.md，实现 add(a,b) 并有通过测试；实际执行 code.write、quality.python_syntax、quality.run_tests、qc.code.delivery_check、zip.create 和 file.hash。只操作该目录，最终报告测试、QC与ZIP哈希。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "research-review",
+      "skillId": "skill_research_literature_review_worldclass_v1",
+      "prompt": "这是第07/34项隔离技能回归。先调用 skill.get 读取 skill_research_literature_review_worldclass_v1；基于两条明确标注为“合成测试证据”的资料，在 skill-e2e-all/07-research 创建 evidence_table.md 和 review.md，结论必须区分证据与推断；实际执行 research.evidence_table.create 或等价生产动作、qc.research.evidence_check、file.read、file.hash。只操作该目录，不得把合成资料冒充真实论文。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "short-video",
+      "skillId": "skill_short_video_delivery_worldclass_v1",
+      "prompt": "这是第08/34项隔离技能回归。先调用 skill.get 读取 skill_short_video_delivery_worldclass_v1；在 skill-e2e-all/08-video 实际创建一张320x180封面图、1秒MP4短视频和脚本.md，使用 image.create_canvas、image.add_text、video.slideshow、video.info、qc.video.delivery_check、file.hash。只操作该目录，必须验证MP4存在、可探测、时长大于0，禁止仅生成方案或桥接脚本。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "managed-longform-novel",
+      "skillId": "skill_managed_longform_novel_worldclass_v1",
+      "prompt": "这是第09/34项隔离技能回归。先调用 skill.get 读取 skill_managed_longform_novel_worldclass_v1；在 skill-e2e-all/09-novel 使用 novel.project.create 建立最小受管长篇工程，完成最小蓝图、第一章checkout/scene设计/submit事务，再执行 novel.project.status 与 novel.project.audit。文本可短但事务必须真实提交；只操作该目录，最终报告project_id、章节状态和审计结果。",
+      "timeoutMs": 480000
+    },
+    {
+      "id": "webnovel-chapter",
+      "skillId": "skill_webnovel_chapter_delivery_worldclass_v1",
+      "prompt": "这是第10/34项隔离技能回归。先调用 skill.get 读取 skill_webnovel_chapter_delivery_worldclass_v1；在 skill-e2e-all/10-webnovel 写一个约500字的测试网文章节，包含冲突、转折与结尾悬念，生成 chapter.md 和 chapter.docx；实际执行 file.write、docx.create、word.read、file.hash。只操作该目录，最终报告字数与哈希。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "poster-visual",
+      "skillId": "skill_poster_visual_delivery_worldclass_v1",
+      "prompt": "这是第11/34项隔离技能回归。先调用 skill.get 读取 skill_poster_visual_delivery_worldclass_v1；在 skill-e2e-all/11-poster 实际创建720x960深蓝背景PNG海报，添加标题“SKILL E2E”与副标题“真实交付验证”，并写brief.md；执行 image.create_canvas、image.add_text、qc.poster.commercial_check、qc.image.delivery_check、file.hash。只操作该目录，最终报告尺寸、QC和哈希。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "spreadsheet-analysis",
+      "skillId": "skill_spreadsheet_analysis_report_worldclass_v1",
+      "prompt": "这是第12/34项隔离技能回归。先调用 skill.get 读取 skill_spreadsheet_analysis_report_worldclass_v1；在 skill-e2e-all/12-sheet 创建包含月份、收入、成本、利润三行样例数据的 analysis.xlsx 与 analysis.md，利润必须有公式或可复核计算；执行 sheet.create、sheet.read、qc.sheet.analysis_report_check、qc.sheet.delivery_check、file.hash。只操作该目录。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "meeting-minutes",
+      "skillId": "skill_meeting_minutes_action_followup_worldclass_v1",
+      "prompt": "这是第13/34项隔离技能回归。先调用 skill.get 读取 skill_meeting_minutes_action_followup_worldclass_v1；根据测试会议素材“决定周五上线；张三负责测试；李四负责文档；风险是回滚脚本未演练”，在 skill-e2e-all/13-meeting 创建 minutes.md 和 minutes.docx，明确决策、负责人、截止时间、风险；执行 qc.meeting.minutes_check、word.read、file.hash。只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "sales-script",
+      "skillId": "skill_sales_script_delivery_worldclass_v1",
+      "prompt": "这是第14/34项隔离技能回归。先调用 skill.get 读取 skill_sales_script_delivery_worldclass_v1；为“中小企业AI客服”在 skill-e2e-all/14-sales 创建B2B销售话术 sales.md 和 sales.docx，包含开场、诊断问题、价值、三类异议、下一步；执行 qc.sales.script_check、word.read、file.hash。只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "course-plan",
+      "skillId": "skill_course_lesson_plan_worldclass_v1",
+      "prompt": "这是第15/34项隔离技能回归。先调用 skill.get 读取 skill_course_lesson_plan_worldclass_v1；在 skill-e2e-all/15-course 创建45分钟《提示词基础》教案 course.md 与 course.docx，包含可测学习目标、时间分配、活动、形成性评价、作业；执行 qc.course.plan_check、word.read、file.hash。只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "knowledge-base-ingestion",
+      "skillId": "skill_knowledge_base_ingestion_worldclass_v1",
+      "prompt": "这是第16/34项隔离技能回归。先调用 skill.get 读取 skill_knowledge_base_ingestion_worldclass_v1；在 skill-e2e-all/16-kb 创建 source.md（含三段产品FAQ），再真实生成 manifest.json、chunks.jsonl、qa.json，保留来源定位；执行 qc.kb.ingestion_check、file.read、file.hash。只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "authorized-audio",
+      "skillId": "skill_authorized_voice_audio_worldclass_v1",
+      "prompt": "这是第17/34项隔离技能回归。先调用 skill.get 读取 skill_authorized_voice_audio_worldclass_v1；本测试不克隆任何真人声音。在 skill-e2e-all/17-audio 写 consent.md 明确仅允许合成提示音，然后用 audio.tone 创建1秒440Hz tone.wav，执行 audio.info 或可用音频检查、qc.voice_authorized.delivery_check、qc.audio.delivery_check、file.hash。只操作该目录，禁止声纹模仿。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "seo-content",
+      "skillId": "skill_seo_people_first_content_worldclass_v1",
+      "prompt": "这是第18/34项隔离技能回归。先调用 skill.get 读取 skill_seo_people_first_content_worldclass_v1；在 skill-e2e-all/18-seo 创建面向读者的《如何选择AI客服》article.md 与 article.html，包含标题、摘要、分层结构、FAQ、描述信息，不堆砌关键词；执行 qc.seo.people_first_check、file.read、file.hash。只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "content-calendar",
+      "skillId": "skill_content_calendar_worldclass_v1",
+      "prompt": "这是第19/34项隔离技能回归。先调用 skill.get 读取 skill_content_calendar_worldclass_v1；在 skill-e2e-all/19-calendar 创建未来一周3条内容排期的 calendar.csv 与 calendar.xlsx，字段含日期、渠道、主题、受众、CTA、负责人、状态；执行 sheet.create、sheet.read、qc.content.calendar_check、qc.sheet.delivery_check、file.hash。只操作该目录。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "professional-app-bridge",
+      "skillId": "skill_professional_application_bridge_worldclass_v1",
+      "prompt": "这是第20/34项隔离技能回归。先调用 skill.get 读取 skill_professional_application_bridge_worldclass_v1；执行 app.adapter.health、app.adapter.matrix 与 app.native.capability_probe(target=browser.playwright)，随后在 skill-e2e-all/20-appbridge 生成一个Playwright专业应用 bridge pack（脚本、manifest、runbook、zip），读回manifest并计算ZIP哈希。只操作该目录，必须如实区分native与bridge模式。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "browser-playwright",
+      "skillId": "skill_browser_playwright_automation_worldclass_v1",
+      "prompt": "这是第21/34项隔离技能回归。先调用 skill.get 读取 skill_browser_playwright_automation_worldclass_v1；用 browser.playwright.goto 真实打开 data:text/html,<title>Skill E2E</title><h1>PLAYWRIGHT_SKILL_OK</h1>，输出到 skill-e2e-all/21-browser，保存HTML、可见文本和截图，再读回文本并哈希截图。只操作该目录，必须实际启动浏览器，禁止只生成脚本。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "office-native-bridge",
+      "skillId": "skill_office_native_bridge_worldclass_v1",
+      "prompt": "这是第22/34项隔离技能回归。先调用 skill.get 读取 skill_office_native_bridge_worldclass_v1；在 skill-e2e-all/22-office 创建 office.md 与 office.docx，执行 qc.docx.delivery_check；再执行 app.native.capability_probe(target=microsoft.office) 并生成 microsoft.office.com.script.create 桥接脚本，读回并哈希。只操作该目录；若本机无Office原生会话必须如实标记bridge，不得冒充原生执行。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "adobe-blender-bridge",
+      "skillId": "skill_adobe_blender_design_bridge_worldclass_v1",
+      "prompt": "这是第23/34项隔离技能回归。先调用 skill.get 读取 skill_adobe_blender_design_bridge_worldclass_v1；执行 app.native.capability_probe(target=blender)，在 skill-e2e-all/23-designbridge 真实生成一个Blender Python脚本和一个Photoshop UXP脚本，并打成bridge pack ZIP，读回脚本、计算ZIP哈希。只操作该目录；无Blender/Adobe时必须标记桥接可用但原生条件缺失。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "computer-operation",
+      "skillId": "skill_computer_operation_v1",
+      "prompt": "这是第24/34项隔离技能回归。先调用 skill.get 读取 skill_computer_operation_v1；使用 shell.run 执行只读命令输出 TIANGONG_COMPUTER_OPERATION_OK 和当前Python版本，再把结果写入 skill-e2e-all/24-computer/result.txt，读回并计算哈希。只操作该目录，不安装软件、不修改系统设置。",
+      "timeoutMs": 300000
+    },
+    {
+      "id": "desktop-cleanup",
+      "skillId": "skill_desktop_cleanup_v1",
+      "prompt": "这是第25/34项隔离技能回归。先调用 skill.get 读取 skill_desktop_cleanup_v1；绝不操作真实桌面。在 skill-e2e-all/25-cleanup/fake-desktop 创建 a.txt、b.png、c.pdf 三个测试文件，按类型移动到 documents/images/pdfs 子目录，生成 cleanup-report.md，再 file.list 验证原目录无散落文件并哈希报告。只操作该隔离目录，不删除文件。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "utility-toolbox",
+      "skillId": "skill_utility_toolbox_v1",
+      "prompt": "这是第26/34项隔离技能回归。先调用 skill.get 读取 skill_utility_toolbox_v1；在 skill-e2e-all/26-utility 创建一张200x100 PNG，将其实际转换为JPG并缩放为100x50，随后读取图片信息、计算两个输出哈希并写 result.json。使用真实 image 动作，只操作该目录。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "format-converter",
+      "skillId": "skill_format_converter_v1",
+      "prompt": "这是第27/34项隔离技能回归。先调用 skill.get 读取 skill_format_converter_v1；在 skill-e2e-all/27-convert 创建 source.md，然后真实转换为 output.docx，执行 word.read 验证文本保留并计算DOCX哈希。只操作该目录，禁止只写转换说明。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "web-search",
+      "skillId": "skill_search_v2",
+      "prompt": "这是第28/34项隔离技能回归。先调用 skill.get 读取 skill_search_v2；使用 web.search 真实搜索“Python official documentation pathlib”，从结果中保留至少一个python.org来源标题与URL，写入 skill-e2e-all/28-search/results.md，读回并计算哈希。只操作该目录；若网络失败必须报告真实错误，不得编造结果。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "production-packaging",
+      "skillId": "skill_production_packaging_v1",
+      "prompt": "这是第29/34项隔离技能回归。先调用 skill.get 读取 skill_production_packaging_v1；在 skill-e2e-all/29-package 创建最小可运行Python命令行程序 app.py、README.md、VERSION、test_app.py，运行语法和测试检查，生成 release-manifest.json 与可分发ZIP并计算哈希。只做隔离烟测包，不修改主项目、不伪称生成了EXE。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "frontend-optimization",
+      "skillId": "skill_frontend_optimization_v1",
+      "prompt": "这是第30/34项隔离技能回归。先调用 skill.get 读取 skill_frontend_optimization_v1；在 skill-e2e-all/30-frontopt 创建一个含重复CSS和阻塞脚本的微型网页fixture，再生成优化后的 index.optimized.html 与 optimization-report.md，落实defer、精简CSS、尺寸对比，并用 browser.playwright.goto 打开优化页验证标题。只操作该目录。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "frontend-design",
+      "skillId": "skill_frontend_design_v1",
+      "prompt": "这是第31/34项隔离技能回归。先调用 skill.get 读取 skill_frontend_design_v1；在 skill-e2e-all/31-design 创建 DESIGN.md、tokens.css 和 index.html，实现可访问的深色卡片界面、焦点态和响应式规则；用 browser.playwright.goto 实际渲染并截图，读回DESIGN.md、哈希截图。只操作该目录。",
+      "timeoutMs": 420000
+    },
+    {
+      "id": "vrm-optimization",
+      "skillId": "skill_vrm_optimization_v1",
+      "prompt": "这是第32/34项隔离技能回归。先调用 skill.get 读取 skill_vrm_optimization_v1；没有用户VRM资产，不得假装优化真人模型。在 skill-e2e-all/32-vrm 创建一个明确标注 synthetic 的 vrm-config.before.json，再真实生成 vrm-config.optimized.json 与 optimization-report.md，完成灯光、镜头、表情平滑、SpringBone安全参数的可复核差异，读回两份JSON并哈希。只操作该目录，并把“需要真实VRM才能做几何/材质验收”列为条件边界。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "mindmap",
+      "skillId": "skill_mindmap_knowledge_architecture_worldclass_v1",
+      "prompt": "这是第33/34项隔离技能回归。先调用 skill.get 读取 skill_mindmap_knowledge_architecture_worldclass_v1；在 skill-e2e-all/33-mindmap 创建 source.md，主题为“技能验证”，含准备、执行、证据、修复四分支；实际执行 mindmap.create 生成可解析Mermaid脑图和OPML，读回两者并计算哈希。只操作该目录，最终报告解析证据。",
+      "timeoutMs": 360000
+    },
+    {
+      "id": "omni-body-reference",
+      "skillId": "skill_omni_body_reference_v1",
+      "prompt": "这是第34/34项隔离技能回归。先调用 skill.get 读取 skill_omni_body_reference_v1；在 skill-e2e-all/34-omni 创建 reference-ok.txt，内容严格为 OMNI_BODY_REFERENCE_OK，然后复制为 copy.txt、列目录、读回两个文件并分别计算哈希。只操作该目录，最终列出每个真实action和两份一致哈希。",
+      "timeoutMs": 300000
+    }
+  ]
+}

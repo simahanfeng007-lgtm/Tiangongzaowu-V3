@@ -1,0 +1,52 @@
+{
+  "id": "nengli_omni_body_appbus_v1",
+  "mingcheng": "Omni Body App Bus 通用身体工具",
+  "leixing": "gongju",
+  "miaoshu": "通过唯一 omni_body 工具执行本地文件、代码、文档、表格、图片、音视频与已挂载应用工具组动作。该能力是工具总线，不是智能体；模型必须传明确 action/target/args。",
+  "laiyuan": "manual_import",
+  "banben": "0.2.0",
+  "zhuangtai": "jihuo",
+  "schema": "tiangong.v3.learning_ability_draft.v1",
+  "promotion_stage": "active",
+  "risk_level": "A4",
+  "risk_label": "工具/代码/安装/应用控制",
+  "review_required": true,
+  "activation_allowed": true,
+  "candidate_only": false,
+  "taskIntents": [
+    "文件处理",
+    "办公文档",
+    "图片处理",
+    "音视频处理",
+    "代码工程",
+    "应用自动化",
+    "浏览器自动化",
+    "桌面自动化",
+    "交付打包",
+    "应用能力挂载"
+  ],
+  "primary_tools": [
+    "omni_body"
+  ],
+  "fallback_tools": [
+    "omni_body"
+  ],
+  "required_tools": [
+    "omni_body"
+  ],
+  "missing_tools": [],
+  "tool_callable": true,
+  "registers_tool": true,
+  "tool_name": "omni_body",
+  "tool_names": [
+    "omni_body"
+  ],
+  "tool_kind": "executable",
+  "tool_effect": "execute",
+  "tool_risk_level": "A4",
+  "tool_release_state": "released",
+  "model_visible_skill": true,
+  "model_visible_tool": true,
+  "planOnly": false,
+  "notes": "只注册一个真实工具 omni_body；应用动作通过 registry/app_actions.json 挂载。adapter-only 动作未接后端时返回 ok=false。"
+}
