@@ -21,6 +21,7 @@ import {
   createLegacyPerformanceDriver,
   VRMA_GESTURE_KEYS,
 } from "./legacy-performance-driver.mjs";
+import { calibrateVrm0FemaleShoulderWidth } from "./shoulder-calibrator.mjs";
 
 import {
   AVATAR_ENGINE_CONTRACT_VERSION,
@@ -754,7 +755,11 @@ export function createThreeVrmEngine(options = {}) {
       }
       // 加载前一模型完整释放（§11.4）；普通切换不销毁共享 Renderer/Scene/Camera。
       engine.disposeModel();
-      const arrayBuffer = toArrayBuffer(modelBytes);
+      let arrayBuffer = toArrayBuffer(modelBytes);
+      // 肩宽标定：VRM 0.x 窄肩模型（世界跨距 < 0.19m）在解析前重建为
+      // VRoid 标准女性体型的关节间距（肩骨 ±0.0224 / 上臂骨 ±0.0862），
+      // 蒙皮跟随新关节，避免手臂像从胸口长出（2026-08-05 女性人体测量标定）。
+      arrayBuffer = calibrateVrm0FemaleShoulderWidth(arrayBuffer);
       // 结构级路由：读 extensions.VRM / VRMC_vrm（§12.2），先验版本再全量解析。
       const sniffed = sniffGltfJsonBytes(arrayBuffer);
       const specVersion = detectVrmSpecVersion(sniffed.json);
