@@ -1,5 +1,7 @@
 /.agents/
-/.codex/
+/.codex/*
+!/.codex/skills/
+!/.codex/skills/vrm-alignment/
 /.codex-remote-attachments/
 /.venv/
 /app/node_modules/

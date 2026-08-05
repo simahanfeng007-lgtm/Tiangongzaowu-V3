@@ -1,0 +1,7 @@
+interface:
+  display_name: "VRM 对齐"
+  short_description: "VRM 自然站姿与手型生物学对齐标定、实测验证与数据保存"
+  default_prompt: "使用 $vrm-alignment 对当前 VRM 角色做自然站姿/手型生物学对齐与实测验证"
+
+policy:
+  allow_implicit_invocation: true
