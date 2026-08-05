@@ -14,6 +14,10 @@ import {
   VRMLookAtQuaternionProxy,
   createVRMAnimationClip,
 } from "@pixiv/three-vrm-animation";
+import {
+  createLegacyPerformanceDriver,
+  VRMA_GESTURE_KEYS,
+} from "./legacy-performance-driver.mjs";
 
 import {
   AVATAR_ENGINE_CONTRACT_VERSION,
@@ -517,6 +521,7 @@ export function createThreeVrmEngine(options = {}) {
     record.sourceBytes = null;
     record.vrm = null;
     record.lookAtProxy = null;
+    record.performanceDriver = null;
   }
 
   const engine = {
@@ -696,6 +701,11 @@ export function createThreeVrmEngine(options = {}) {
         renderTargets: [],
         sourceBytes: arrayBuffer,
         lookAtProxy: null,
+        performanceDriver: createLegacyPerformanceDriver({
+          vrm,
+          applyExpression: (name, value) => engine.applyExpression(name, value),
+          mapViseme: mapVisemeChar,
+        }),
         firstFrameEmitted: false,
         disposed: false,
       };
@@ -859,6 +869,7 @@ export function createThreeVrmEngine(options = {}) {
 
     setSpeaking(speaking) {
       state.speaking = !!speaking;
+      state.model?.performanceDriver?.setSpeaking(state.speaking);
       if (!state.speaking) engine.applyVisemeTarget({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 });
     },
 
@@ -867,6 +878,39 @@ export function createThreeVrmEngine(options = {}) {
     },
 
     mapViseme: mapVisemeChar,
+
+    // ── Legacy 表现驱动（自 桌面宠物.html 移植：自然站姿/手势/表情/口型/尾巴）──
+    applyBodyPerformance(data) {
+      const model = state.model;
+      const driver = model && !model.disposed ? model.performanceDriver : null;
+      if (!driver) return false;
+      driver.applyBodyPerformance(data);
+      const gesture = typeof data?.gesture === "string"
+        ? data.gesture
+        : data?.gesture?.semanticId ?? null;
+      // VRMA 语义键 → 动作播放；程序化手势（nod/挥手等）→ 自然站姿驱动接管。
+      if (gesture !== null && VRMA_GESTURE_KEYS.includes(gesture) && model.gestureActions?.[gesture]) {
+        engine.playGesture(gesture);
+      } else {
+        engine.playGesture(null);
+      }
+      return true;
+    },
+
+    setQinggan(qinggan) {
+      const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
+      return driver ? driver.setQinggan(qinggan) : false;
+    },
+
+    beginSpeech(text) {
+      const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
+      return driver ? driver.markTalking(text) : false;
+    },
+
+    setSpeechEnergy(energy) {
+      const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
+      return driver ? driver.setSpeechEnergy(energy) : false;
+    },
 
     // ── 视线（§13.1.4）──
     applyGaze({ target } = {}) {
@@ -1001,6 +1045,8 @@ export function createThreeVrmEngine(options = {}) {
     update(dt) {
       const model = state.model;
       if (model && !model.disposed && model.vrm && typeof model.vrm.update === "function") {
+        // Legacy 表现驱动：VRMA 动作播放时由动作驱动全身，否则自然站姿接管。
+        model.performanceDriver?.update(dt, { gestureActive: model.currentGesture !== "" });
         model.vrm.update(dt);
       }
     },

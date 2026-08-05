@@ -1006,6 +1006,12 @@ export function createAvatarRuntime({
           bodyWriter.setActiveAnimation(null);
           continue;
         }
+        // Legacy 表现驱动（§15 聊天互动）：带 biaoxian 语义的动作整包交给驱动，
+        // 驱动负责自然站姿/程序化手势/表情/口型；引擎 semantic 命令继续处理
+        // gaze 与 VRMA 手势，两者在引擎侧按语义去重。
+        if (wire.posture || wire.gesture || wire.expression) {
+          engineAdapter.applyBodyPerformance?.(wire);
+        }
         if (typeof wire.posture === "string" && wire.posture.length > 0) {
           bodyWriter.setPosture({ name: wire.posture });
           engineAdapter.applyPosture?.({ name: wire.posture });
@@ -1022,7 +1028,10 @@ export function createAvatarRuntime({
           bodyWriter.setSpeaking(wire.speaking);
           engineAdapter.setSpeaking?.(wire.speaking);
         }
-        if (Number.isFinite(wire.speechEnergy)) bodyWriter.setSpeechEnergy(wire.speechEnergy);
+        if (Number.isFinite(wire.speechEnergy)) {
+          bodyWriter.setSpeechEnergy(wire.speechEnergy);
+          engineAdapter.setSpeechEnergy?.(wire.speechEnergy);
+        }
         if (typeof wire.viseme === "string") bodyWriter.setViseme(wire.viseme);
         if (wire.gesture !== undefined && wire.gesture !== null) {
           const semanticId = typeof wire.gesture === "string" ? wire.gesture : wire.gesture?.semanticId;

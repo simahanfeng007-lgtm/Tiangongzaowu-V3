@@ -334,6 +334,38 @@ export function createThreeVrmRuntimeAdapter({
       return engine.applyVisemeTarget(targets);
     },
 
+    // ── Legacy 表现驱动透传（§15 聊天互动：biaoxian wire → 驱动语义）──
+    applyBodyPerformance(wire) {
+      const gesture = typeof wire?.gesture === "string" ? wire.gesture : wire?.gesture?.semanticId ?? null;
+      const data = {
+        expression: typeof wire?.expression?.name === "string" ? wire.expression.name : null,
+        gaze: typeof wire?.gaze?.target === "string" ? wire.gaze.target : null,
+        posture: typeof wire?.posture === "string" ? wire.posture : null,
+        gesture,
+        tail: typeof wire?.extras?.tail === "string" ? wire.extras.tail : null,
+        intensity: wire?.intensity,
+        duration: Number.isFinite(wire?.durationMs) ? wire.durationMs / 1000 : undefined,
+        source: typeof wire?.extras?.source === "string" ? wire.extras.source : "client",
+      };
+      return engine.applyBodyPerformance?.(data) ?? false;
+    },
+
+    loadGestures(gestureBytesByKey, options) {
+      return engine.loadGesturesFromBytes?.(gestureBytesByKey, options);
+    },
+
+    setQinggan(qinggan) {
+      return engine.setQinggan?.(qinggan) ?? false;
+    },
+
+    beginSpeech(text) {
+      return engine.beginSpeech?.(text) ?? false;
+    },
+
+    setSpeechEnergy(energy) {
+      return engine.setSpeechEnergy?.(energy) ?? false;
+    },
+
     applyPerformanceSemantics(semantics) {
       return engine.applyPerformanceSemantics(semantics);
     },

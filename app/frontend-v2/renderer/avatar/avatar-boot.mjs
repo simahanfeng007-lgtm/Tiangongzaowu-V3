@@ -40,6 +40,7 @@ import { createSuspensionGuard } from "./suspension-guard.mjs";
 import { createRenderSurfaceController } from "./render-surface-controller.mjs";
 import { createDiagnostics } from "./diagnostics.mjs";
 import { createThreeVrmRuntimeAdapter } from "./three-vrm-runtime-adapter.mjs";
+import { EngineEvent } from "./engines/avatar-engine-contract.mjs";
 import { createBodyCommandScheduler } from "./body-command-scheduler.mjs";
 import { createBiaoxianAdapter } from "./body-performance-adapter.mjs";
 import { createAvatarStore } from "./avatar-store.mjs";
@@ -233,6 +234,53 @@ export async function bootstrapAvatar({
       viewport: { ...DEFAULT_ENGINE_VIEWPORT },
     });
     adapter = createThreeVrmRuntimeAdapter({ engine });
+    // VRMA 动作资产（§15 聊天互动）：主进程资产通道读取 7 个内置动作字节，
+    // 每次模型加载后喂给引擎（mixer 绑定当前模型；回滚重建会再次触发加载）。
+    const VRMA_ASSET_PATHS = Object.freeze({
+      thinking: "assets/animations/vrma/Thinking.vrma",
+      relax: "assets/animations/vrma/Relax.vrma",
+      sad: "assets/animations/vrma/Sad.vrma",
+      surprised: "assets/animations/vrma/Surprised.vrma",
+      lookAround: "assets/animations/vrma/LookAround.vrma",
+      angry: "assets/animations/vrma/Angry.vrma",
+      clapping: "assets/animations/vrma/Clapping.vrma",
+    });
+    let gestureBytesPromise = null;
+    const readGestureAssets = () => {
+      if (gestureBytesPromise !== null) return gestureBytesPromise;
+      const readProjectAsset = window?.tiangongDesktop?.readProjectAsset ?? null;
+      if (typeof readProjectAsset !== "function") {
+        gestureBytesPromise = Promise.resolve(null);
+        return gestureBytesPromise;
+      }
+      gestureBytesPromise = (async () => {
+        const entries = await Promise.all(
+          Object.entries(VRMA_ASSET_PATHS).map(async ([key, relPath]) => {
+            const data = await readProjectAsset(relPath);
+            const bytes = data instanceof ArrayBuffer
+              ? data
+              : data && ArrayBuffer.isView(data)
+                ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+                : null;
+            return [key, bytes];
+          }),
+        );
+        const map = {};
+        for (const [key, bytes] of entries) {
+          if (bytes !== null) map[key] = bytes;
+        }
+        return Object.keys(map).length > 0 ? map : null;
+      })().catch(() => null);
+      return gestureBytesPromise;
+    };
+    adapter.on?.(EngineEvent.MODEL_LOADED, () => {
+      void readGestureAssets()
+        .then((bytes) => {
+          if (bytes !== null) return adapter.loadGestures?.(bytes);
+          return null;
+        })
+        .catch(() => { /* 动作资产加载失败不阻断模型渲染 */ });
+    });
     // E2E/诊断逃生口（只读引用；不参与公共接口，§7.2 不放宽）：
     // 面板/调试不得经此操作引擎对象，仅用于诊断采样与材质核验。
     window.__avatarDebugEngine = engine;
