@@ -483,9 +483,11 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       }
       const fingerPulse = Math.sin(state.idleTime * 0.72 + state.idleShiftSeed) * 0.006 + Math.sin(state.idleTime * 4.4) * 0.008 * coSpeech;
       // 手指休息位（Lee & Jung 2014）：MCP≈30°/PIP≈30°/DIP≈10°，小指侧自然梯度加深。
-      // 2026-08-05 轴实测修正：该模型手指骨骼 本地 +X=长轴、rotation.z 负值=卷向掌心、
+      // 2026-08-05 轴实测修正：该模型手指骨骼 本地 +X=长轴、rotation.z=屈曲轴、
       // rotation.y=分指、rotation.x=扭转。旧代码误把 rotation.x 当屈曲，实际只产生微扭，
       // 手指一直是直的——这就是“手型不自然”的根因。
+      // 左右手本地系镜像：右手 rotation.z 负值=卷向掌心；左手手指骨本地 +X 指向手腕，
+      // 需再乘 sign（右 +1 / 左 -1）镜像屈曲方向（蒙皮顶点实测验证）。
       const fingerCurl = (side, finger, base, mid, tip, spread = 0) => {
         const sign = side === "right" ? 1 : -1;
         const proximal = humanoid.getNormalizedBoneNode(`${side}${finger}Proximal`);
@@ -494,17 +496,17 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         if (proximal) {
           proximal.rotation.x = 0;
           proximal.rotation.y = spread * sign;
-          proximal.rotation.z = -(base + fingerPulse);
+          proximal.rotation.z = -(base + fingerPulse) * sign;
         }
         if (intermediate) {
           intermediate.rotation.x = 0;
           intermediate.rotation.y = 0;
-          intermediate.rotation.z = -(mid + fingerPulse * 0.8);
+          intermediate.rotation.z = -(mid + fingerPulse * 0.8) * sign;
         }
         if (distal) {
           distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = -(tip + fingerPulse * 0.55);
+          distal.rotation.z = -(tip + fingerPulse * 0.55) * sign;
         }
       };
       const thumbCurl = (side) => {
@@ -515,17 +517,17 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         if (metacarpal) {
           metacarpal.rotation.x = 0;
           metacarpal.rotation.y = 0.09 * sign;
-          metacarpal.rotation.z = -(0.42 + fingerPulse * 0.35);
+          metacarpal.rotation.z = -(0.42 + fingerPulse * 0.35) * sign;
         }
         if (proximal) {
           proximal.rotation.x = 0;
           proximal.rotation.y = 0.030 * sign;
-          proximal.rotation.z = -(0.30 + fingerPulse * 0.45);
+          proximal.rotation.z = -(0.30 + fingerPulse * 0.45) * sign;
         }
         if (distal) {
           distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = -(0.18 + fingerPulse * 0.35);
+          distal.rotation.z = -(0.18 + fingerPulse * 0.35) * sign;
         }
       };
       for (const side of ["right", "left"]) {
