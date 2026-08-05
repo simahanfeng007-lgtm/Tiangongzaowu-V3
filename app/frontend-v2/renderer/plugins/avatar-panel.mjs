@@ -273,6 +273,7 @@ export const avatarPanelPlugin = {
         <div class="vrm-command-row">
           <select data-avatar-model-select aria-label="选择身体模型"></select>
           <button type="button" data-avatar-action="import">导入模型</button>
+          <button type="button" data-avatar-action="delete" disabled>删除模型</button>
         </div>
         <div class="vrm-import-status" data-avatar-import-status role="status" aria-live="polite"></div>
         ${presentationControlsMarkup(initialPresentation)}
@@ -285,8 +286,10 @@ export const avatarPanelPlugin = {
     const chatHost = slot.querySelector('[data-avatar-surface-host="chat"]');
     const bodyHost = slot.querySelector('[data-avatar-surface-host="body"]');
     const modelSelect = bodyPanel?.querySelector("[data-avatar-model-select]");
+    const deleteButton = bodyPanel?.querySelector('[data-avatar-action="delete"]');
     const importStatus = bodyPanel?.querySelector("[data-avatar-import-status]");
     const presentationStatus = bodyPanel?.querySelector("[data-avatar-presentation-status]");
+    let customModelIds = new Set();
 
     if (!hasService("avatar-service")) {
       if (importStatus) importStatus.textContent = "AvatarService 未启动（direct 模式需要服务注册）";
@@ -505,6 +508,11 @@ export const avatarPanelPlugin = {
           ? Promise.resolve(bridge.listRegisteredModels()).catch(() => [])
           : Promise.resolve([]),
       ]);
+      customModelIds = new Set(
+        (Array.isArray(customModels) ? customModels : [])
+          .map((model) => model?.id ?? model?.modelId ?? null)
+          .filter((id) => typeof id === "string" && id.length > 0),
+      );
       const models = mergeAvatarCatalog(builtinModels, customModels);
       if (!modelSelect) return;
       const placeholder = models.length > 0 ? "请选择身体模型" : "尚未导入模型";
@@ -520,12 +528,20 @@ export const avatarPanelPlugin = {
       modelSelect.value = models.some((model) => model.id === selectedModelId)
         ? selectedModelId
         : "";
+      updateDeleteButtonState();
     }
     await refreshCatalog();
+
+    function updateDeleteButtonState() {
+      if (!deleteButton) return;
+      const modelId = modelSelect?.value ?? "";
+      deleteButton.disabled = !customModelIds.has(modelId);
+    }
 
     if (modelSelect) {
       lifecycle.trackDomListener(modelSelect, "change", () => {
         const modelId = modelSelect.value;
+        updateDeleteButtonState();
         if (!modelId) return;
         try {
           avatarService.getRuntime()?.selectModel(modelId);
@@ -572,6 +588,58 @@ export const avatarPanelPlugin = {
       });
     }
 
+    if (deleteButton) {
+      lifecycle.trackDomListener(deleteButton, "click", async () => {
+        const bridge = window.tiangongAvatarImport;
+        const modelId = modelSelect?.value ?? "";
+        if (!modelId || !bridge || typeof bridge.deleteModel !== "function") {
+          setImportStatus("删除通道未就绪", "error");
+          return;
+        }
+        const label = modelSelect?.selectedOptions?.[0]?.textContent || modelId;
+        if (!window.confirm(`确定删除模型“${label}”？其本地文件将一并移除且不可恢复。`)) {
+          return;
+        }
+        setImportStatus("正在删除…", "pending");
+        try {
+          const result = await bridge.deleteModel(modelId);
+          if (!result?.ok) {
+            setImportStatus(result?.code || "删除失败", "error");
+            return;
+          }
+          const wasSelected =
+            describeAvatarProjection(store.projection()).selectedModelId === modelId;
+          await refreshCatalog();
+          if (wasSelected) {
+            const first = [...(modelSelect?.options || [])]
+              .find((option) => option.value && !option.disabled);
+            if (first) {
+              modelSelect.value = first.value;
+              updateDeleteButtonState();
+              try {
+                avatarService.getRuntime()?.selectModel(first.value);
+              } catch (error) {
+                setImportStatus(error.message || "模型切换失败", "error");
+              }
+            } else {
+              modelSelect.value = "";
+              updateDeleteButtonState();
+              try {
+                avatarService.getRuntime()?.releaseModel?.({ reason: "user-delete" });
+              } catch (_error) { /* 无模型可释放时忽略 */ }
+            }
+          }
+          const warning = result.fileError ? `（文件清理失败：${result.fileError}）` : "";
+          setImportStatus(
+            `已删除 ${result.modelId || modelId}${warning}`,
+            result.fileError ? "error" : "success",
+          );
+        } catch (error) {
+          setImportStatus(error?.message || "删除失败", "error");
+        }
+      });
+    }
+
     // ── 状态渲染：AvatarStore 投影 → DOM ────────────────────────────
     function renderProjection(projection) {
       const presentation = describeAvatarProjection(projection);
@@ -609,6 +677,7 @@ export const avatarPanelPlugin = {
       } else if (modelSelect && !presentation.selectedModelId) {
         modelSelect.value = "";
       }
+      updateDeleteButtonState();
     }
     lifecycle.trackSubscription(store.subscribe(renderProjection));
     renderProjection(store.projection());

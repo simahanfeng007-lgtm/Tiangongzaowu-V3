@@ -776,6 +776,7 @@ async function chooseAvatarImportFile({
   dialogModule,
   browserWindow = null,
   candidateRoot,
+  defaultPath = null,
   maxBytes = MAX_VRM_IMPORT_BYTES,
   fsModule = fs,
   fspModule = fsp,
@@ -785,11 +786,22 @@ async function chooseAvatarImportFile({
   if (typeof candidateRoot !== "string" || candidateRoot.length === 0) {
     throw new AssetHostError("registry_paths_invalid", "chooseAvatarImportFile 需要 candidateRoot");
   }
-  const picked = await dialog.showOpenDialog(browserWindow, {
+  const dialogOptions = {
     title: "选择 VRM 身体模型",
     properties: ["openFile"],
     filters: [{ name: "VRM 模型", extensions: ["vrm"] }],
-  });
+  };
+  // 源码工作版会把 HOME/USERPROFILE 重定向到隔离目录，导致对话框默认打开
+  // “假桌面”；有真实桌面目录时优先作为 defaultPath，避免用户找不到本机文件。
+  if (typeof defaultPath === "string" && defaultPath.length > 0) {
+    try {
+      const stat = await fspModule.stat(defaultPath);
+      if (stat.isDirectory()) dialogOptions.defaultPath = defaultPath;
+    } catch (_error) {
+      // defaultPath 无效（不存在/不可访问）时回退系统默认目录
+    }
+  }
+  const picked = await dialog.showOpenDialog(browserWindow, dialogOptions);
   if (picked?.canceled || !Array.isArray(picked?.filePaths) || !picked.filePaths[0]) {
     return deepFreeze({ canceled: true });
   }
@@ -871,6 +883,30 @@ async function commitCandidate(
   });
 }
 
+// §8.5 用户删除：按 contentHash 删除正式模型文件（<modelRoot>/<hash>.vrm）。
+// 只接受 64 位小写 hex 并限制在 modelRoot 内；文件不存在视为幂等成功。
+// 调用方（渲染侧）必须先完成 AssetRegistry admitted→deleted tombstone，
+// 再调用本函数删文件：tombstone 后文件不可发现/不可加载，删文件失败只留孤儿字节。
+async function deleteModelFile(
+  { contentHash } = {},
+  { modelRoot, fspModule = fsp } = {},
+) {
+  if (!HEX64.test(String(contentHash ?? ""))) {
+    throw new AssetHostError("content_hash_invalid", "deleteModelFile 需要 64 位小写 hex contentHash");
+  }
+  if (typeof modelRoot !== "string" || modelRoot.length === 0) {
+    throw new AssetHostError("registry_paths_invalid", "deleteModelFile 需要 modelRoot");
+  }
+  const modelDir = path.resolve(String(modelRoot));
+  const modelPath = assertInsideRoot(modelDir, path.join(modelDir, `${contentHash}.vrm`));
+  const stat = await fspModule.stat(modelPath).catch(() => null);
+  if (stat === null || !stat.isFile()) {
+    return deepFreeze({ contentHash, deleted: false, missing: true });
+  }
+  await fspModule.unlink(modelPath);
+  return deepFreeze({ contentHash, deleted: true, missing: false });
+}
+
 module.exports = {
   ASSET_SCHEME,
   AVATAR_PROTOCOL_PRIVILEGES,
@@ -896,4 +932,5 @@ module.exports = {
   stageCandidateSnapshot,
   chooseAvatarImportFile,
   commitCandidate,
+  deleteModelFile,
 };

@@ -50,6 +50,7 @@ export function createAvatarImportController({
   issueCandidateGrant,
   readCandidateBytes,
   commitCandidate,
+  deleteModelFile = null,
   registry,
   tokenIssuer,
   runtime,
@@ -357,8 +358,62 @@ export function createAvatarImportController({
     return commitAdmittedCandidate({ grantView, receipt, displayName, licenseSummary });
   }
 
+  // §8.5 删除已导入模型：只允许 scope=model 且仍 admitted 的自定义模型。
+  // 先原子 tombstone（deleted 终态，registryEntryVersion +1），再删正式文件；
+  // 文件清理失败不撤销 tombstone（模型已不可发现/不可加载，仅留孤儿字节）。
+  async function deleteCustomModel(modelId) {
+    if (typeof modelId !== "string" || modelId.length === 0) {
+      return fail("failed", "model_id_invalid", { detail: "deleteModel 需要非空 modelId" });
+    }
+    const record = registry.getRecord(modelId);
+    if (record === null) {
+      return fail("failed", "model_not_found", { detail: `modelId=${modelId} 不存在` });
+    }
+    if (record.scope !== AssetScope.MODEL) {
+      return fail("failed", "delete_forbidden_scope", {
+        detail: "仅允许删除自定义导入模型（内置模型不可删除）",
+      });
+    }
+    if (record.admissionState === AdmissionState.DELETED) {
+      return fail("failed", "already_deleted", { detail: `modelId=${modelId} 已是删除终态` });
+    }
+    if (record.admissionState !== AdmissionState.ADMITTED) {
+      return fail("failed", "delete_state_invalid", {
+        detail: `modelId=${modelId} 当前状态 ${record.admissionState} 不可删除`,
+      });
+    }
+    if (typeof deleteModelFile !== "function") {
+      return fail("failed", "delete_channel_unavailable", { detail: "主进程删除通道未接线" });
+    }
+
+    // 1) 先 tombstone：原子持久化；提交失败由调用方捕获，文件保持不动。
+    await registry.transitionAdmissionState(modelId, AdmissionState.DELETED, { reason: "user-delete" });
+
+    // 2) 再删正式文件；失败不撤销 tombstone（孤儿文件不可发现）。
+    let fileDeleted = null;
+    let fileError = null;
+    try {
+      fileDeleted = await deleteModelFile({ contentHash: record.contentHash });
+    } catch (error) {
+      fileError = String(error?.message ?? error);
+    }
+    return deepFreeze({
+      status: fileError === null ? "deleted" : "deleted-registry-only",
+      ok: true,
+      code: null,
+      assetId: record.assetId,
+      modelId: record.assetId,
+      contentHash: record.contentHash,
+      fileDeleted: fileDeleted?.deleted === true,
+      fileMissing: fileDeleted?.missing === true,
+      fileError,
+      reason: "user-delete",
+    });
+  }
+
   return deepFreeze({
     importCustomModel,
+    deleteCustomModel,
     cancelPending,
     listRegisteredModels,
     getPendingCount: () => {
@@ -369,11 +424,11 @@ export function createAvatarImportController({
   });
 }
 
-// ── P6a §8.5 真实桥：chooseFile→grant→commit 的 preload IPC 接线 ────────────
-// desktop 形 { avatarImport: { chooseFile, commitCandidate },
+// ── P6a §8.5 真实桥：chooseFile→grant→commit / delete 的 preload IPC 接线 ────
+// desktop 形 { avatarImport: { chooseFile, commitCandidate, deleteModelFile },
 //              avatarAsset: { issueCandidateGrant, openChannel } }（preload 窄桥；
 // 全程只传 opaque 字段，绝对路径不出主进程，§8.5/§21）。
-// 产物形态与 window.tiangongAvatarImport 约定一致：{ importCustomModel(options) }。
+// 产物形态与 window.tiangongAvatarImport 约定一致：{ importCustomModel, deleteModel }。
 export function createAvatarImportBridge({
   desktop,
   registry,
@@ -386,11 +441,12 @@ export function createAvatarImportBridge({
   if (desktop === null || typeof desktop !== "object" ||
       typeof desktop.avatarImport?.chooseFile !== "function" ||
       typeof desktop.avatarImport?.commitCandidate !== "function" ||
+      typeof desktop.avatarImport?.deleteModelFile !== "function" ||
       typeof desktop.avatarAsset?.issueCandidateGrant !== "function" ||
       typeof desktop.avatarAsset?.openChannel !== "function") {
     throw new AvatarImportError(
       "desktop_bridge_invalid",
-      "AvatarImportBridge 需要 desktop.{avatarImport.chooseFile/commitCandidate, avatarAsset.issueCandidateGrant/openChannel}",
+      "AvatarImportBridge 需要 desktop.{avatarImport.chooseFile/commitCandidate/deleteModelFile, avatarAsset.issueCandidateGrant/openChannel}",
     );
   }
   const resolveRuntime = () => {
@@ -425,6 +481,7 @@ export function createAvatarImportBridge({
         contentHash: grantView.contentHash,
         byteLength: grantView.byteLength,
       }),
+    deleteModelFile: (payload) => desktop.avatarImport.deleteModelFile(payload),
     registry,
     tokenIssuer,
     runtime: { selectModel: (modelId) => resolveRuntime().selectModel(modelId) },
@@ -432,6 +489,7 @@ export function createAvatarImportBridge({
   });
   return deepFreeze({
     importCustomModel: (options = {}) => controller.importCustomModel(options),
+    deleteModel: (modelId) => controller.deleteCustomModel(modelId),
     cancelPending: (resumeToken) => controller.cancelPending(resumeToken),
     listRegisteredModels: () => controller.listRegisteredModels(),
     controller,

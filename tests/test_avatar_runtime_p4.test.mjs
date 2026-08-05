@@ -339,6 +339,49 @@ test("switch 事务：renderability-probe→provisional-present→committed；�
   ctx.runtime.dispose();
 });
 
+// ── 1b. 用户清空：releaseModel 释放 current/pending，回无模型 degraded，可再加载 ──
+
+test("releaseModel：释放 current + 取消 pending → degraded/无模型；可再次 selectModel", async () => {
+  const ctx = setup({
+    // model-a 给像素证据可 committed；model-b 永不到达，作为未完成 pending。
+    evidenceSource: ({ attemptId, modelId }) =>
+      modelId === "model-a"
+        ? Promise.resolve({ attemptId, nonBackgroundPixels: 1 })
+        : new Promise(() => {}),
+  });
+  await selectAndSettle(ctx, "model-a");
+  const engineA = ctx.adapter.engines[0];
+  assert.equal(ctx.runtime.snapshot().current.modelId, "model-a");
+
+  // 发起一个停在 visibility-probe 的 pending 切换，releaseModel 应取消它并清空当前。
+  ctx.runtime.selectModel("model-b");
+  const reachedProbe = await drive(
+    ctx,
+    () => ctx.runtime.snapshot().pending?.state === LoadAttemptState.VISIBILITY_PROBE,
+  );
+  assert.equal(reachedProbe, true);
+  assert.equal(ctx.adapter.engines.length, 2, "model-b 候选已解析（staging）");
+
+  const released = ctx.runtime.releaseModel({ reason: "user-delete" });
+  assert.equal(released, true);
+  const snap = ctx.runtime.snapshot();
+  assert.equal(snap.state, RuntimeState.DEGRADED);
+  assert.equal(snap.current, null);
+  assert.equal(snap.pending, null);
+  assert.equal(snap.lastRequestedModelId, null);
+  assert.equal(snap.lastCommittedModelId, null);
+  // 当前模型与未完成候选都释放（幂等 disposeModel）。
+  assert.equal(engineA.disposed, 1);
+  assert.equal(ctx.adapter.engines[1].disposed, 1);
+
+  // 清空后可再次加载。
+  const again = await selectAndSettle(ctx, "model-a");
+  assert.equal(again.outcome, "committed");
+  assert.equal(ctx.runtime.snapshot().state, RuntimeState.RUNNING);
+  assert.equal(ctx.runtime.snapshot().current.modelId, "model-a");
+  ctx.runtime.dispose();
+});
+
 // ── 2. provisional 失败回滚 rollbackTarget ──────────────────
 
 test("候选解析失败：FAILED + 回滚 rollbackTarget，旧 current 保留且重新呈现", async () => {

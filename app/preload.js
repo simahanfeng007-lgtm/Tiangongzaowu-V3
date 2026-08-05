@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld("tiangongDesktop", {
   avatarImport: Object.freeze({
     chooseFile: () => ipcRenderer.invoke("avatar:chooseImportFile"),
     commitCandidate: (payload) => ipcRenderer.invoke("avatar:commitCandidate", payload || {}),
+    deleteModelFile: (payload) => ipcRenderer.invoke("avatar:deleteModelFile", payload || {}),
   }),
   // P2 §22.2/§22.3 持久化状态窄桥。key 由 renderer adapter 限定为三个枚举，
   // 主进程再次校验并固定映射到 userData；不暴露路径、目录枚举或 ipcRenderer。

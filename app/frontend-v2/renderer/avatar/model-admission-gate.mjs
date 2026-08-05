@@ -16,7 +16,7 @@ export const DEFAULT_ADMISSION_LIMITS = Object.freeze({
   schemaVersion: ADMISSION_LIMITS_SCHEMA_VERSION,
   maxFileBytes: 256 * 1024 * 1024,
   maxTextureDimension: 4096,
-  maxTotalTexturePixels: 64_000_000,
+  maxTotalTexturePixels: 96_000_000,
   maxTextures: 64,
   maxNodes: 2048,
   maxMeshes: 256,

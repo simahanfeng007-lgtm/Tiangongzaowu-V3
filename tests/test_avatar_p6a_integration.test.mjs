@@ -313,8 +313,15 @@ test("P6a-C2 chooseAvatarImportFile：.vrm 选择+限额+不可变候选快照+o
   const bytes = makeModelBytes();
   const src = path.join(dir, "我的模型.vrm");
   writeFileSync(src, bytes);
-  const dialogModule = { showOpenDialog: async () => ({ canceled: false, filePaths: [src] }) };
-  const picked = await host.chooseAvatarImportFile({ dialogModule, candidateRoot });
+  const dialogOptions = [];
+  const dialogModule = {
+    showOpenDialog: async (_window, options) => {
+      dialogOptions.push(options);
+      return { canceled: false, filePaths: [src] };
+    },
+  };
+  const picked = await host.chooseAvatarImportFile({ dialogModule, candidateRoot, defaultPath: dir });
+  assert.equal(dialogOptions[0].defaultPath, dir, "存在的目录应作为对话框默认路径");
   assert.equal(picked.canceled, false);
   assert.equal(picked.name, "我的模型.vrm");
   assert.equal(picked.contentHash, sha256HexSync(bytes));
@@ -345,6 +352,13 @@ test("P6a-C2 chooseAvatarImportFile：.vrm 选择+限额+不可变候选快照+o
     host.chooseAvatarImportFile({ dialogModule, candidateRoot, maxBytes: 10 }),
     "import_too_large",
   );
+  // 无效 defaultPath（不存在）回退系统默认目录，不传入对话框。
+  await host.chooseAvatarImportFile({
+    dialogModule,
+    candidateRoot,
+    defaultPath: path.join(dir, "no-such-desktop"),
+  });
+  assert.equal(dialogOptions[dialogOptions.length - 1].defaultPath, undefined);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -386,6 +400,29 @@ test("P6a-C3 commitCandidate：复核 sha256+原子 rename 到 models/<hash>.vrm
   // 非法入参。
   await rejectsCode(host.commitCandidate({ attemptId: "", contentHash, byteLength: 1 }, { candidateRoot, modelRoot }), "grant_identity_invalid");
   await rejectsCode(host.commitCandidate({ attemptId: "a", contentHash: "zz", byteLength: 1 }, { candidateRoot, modelRoot }), "content_hash_invalid");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("P6a-C3b deleteModelFile：按 contentHash 删正式文件；缺失幂等；非法 hash/路径拒绝", async () => {
+  const dir = makeTmpDir("delete");
+  const modelRoot = path.join(dir, "models");
+  const bytes = makeModelBytes();
+  const contentHash = sha256HexSync(bytes);
+  mkdirSync(modelRoot, { recursive: true });
+  writeFileSync(path.join(modelRoot, `${contentHash}.vrm`), bytes);
+
+  const removed = await host.deleteModelFile({ contentHash }, { modelRoot });
+  assert.deepEqual(removed, { contentHash, deleted: true, missing: false });
+  assert.equal(existsSync(path.join(modelRoot, `${contentHash}.vrm`)), false);
+
+  // 缺失文件幂等成功（missing=true）。
+  const again = await host.deleteModelFile({ contentHash }, { modelRoot });
+  assert.deepEqual(again, { contentHash, deleted: false, missing: true });
+
+  // 非法 hash / 越界路径拒绝。
+  await rejectsCode(host.deleteModelFile({ contentHash: "zz" }, { modelRoot }), "content_hash_invalid");
+  await rejectsCode(host.deleteModelFile({ contentHash: contentHash.toUpperCase() }, { modelRoot }), "content_hash_invalid");
+  await rejectsCode(host.deleteModelFile({ contentHash }, { modelRoot: "" }), "registry_paths_invalid");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -458,6 +495,7 @@ test("P6a-C4 真实桥全链：chooseFile→grant→受控读取→预检→comm
         ipc.commitPayloads.push(payload);
         return { assetId: `model:${sha256HexSync(bytes)}`, modelId: `model:${sha256HexSync(bytes)}` };
       },
+      deleteModelFile: async (payload) => ({ deleted: true, missing: false, contentHash: payload.contentHash }),
     },
     avatarAsset: {
       issueCandidateGrant: async (payload) => {
@@ -532,6 +570,7 @@ test("P6a-C4b 许可确认续接同一候选：choose/grant/read 各一次，opa
         calls.commit += 1;
         return { assetId: `model:${contentHash}`, modelId: `model:${contentHash}` };
       },
+      deleteModelFile: async (payload) => ({ deleted: true, missing: false, contentHash: payload.contentHash }),
     },
     avatarAsset: {
       issueCandidateGrant: async () => {
@@ -574,6 +613,57 @@ test("P6a-C4b 许可确认续接同一候选：choose/grant/read 各一次，opa
   assert.equal(calls.commit, 1);
 });
 
+test("P6a-C4c 删除：deleteModel → registry tombstone + IPC 只传 contentHash + 列表排除", async () => {
+  const bytes = makeModelBytes();
+  const contentHash = sha256HexSync(bytes);
+  const ipc = { deletePayloads: [] };
+  const desktop = {
+    avatarImport: {
+      chooseFile: async () => ({
+        canceled: false,
+        name: "删除测试.vrm",
+        attemptId: "import-del-1",
+        candidateId: "candidate-del-1",
+        contentHash,
+        byteLength: bytes.byteLength,
+      }),
+      commitCandidate: async () => ({ assetId: `model:${contentHash}`, modelId: `model:${contentHash}` }),
+      deleteModelFile: async (payload) => {
+        ipc.deletePayloads.push(payload);
+        return { deleted: true, missing: false, contentHash: payload.contentHash };
+      },
+    },
+    avatarAsset: {
+      issueCandidateGrant: async () => makeGrantView(bytes, { attemptId: "import-del-1", candidateId: "candidate-del-1" }),
+      openChannel: () => createFakeChannel(bytes),
+    },
+  };
+  const registry = await createAssetRegistry({ storage: createMemoryStorageBackend(), issuerEpoch: 0 });
+  const bridge = createAvatarImportBridge({
+    desktop,
+    registry,
+    tokenIssuer: createTokenIssuer({ registry, issuerEpoch: 0 }),
+    runtime: { selectModel: () => Object.freeze({ attemptId: "a", done: Promise.resolve({}) }) },
+  });
+  const imported = await bridge.importCustomModel();
+  assert.equal(imported.status, "committed");
+  assert.equal(bridge.listRegisteredModels().length, 1);
+
+  const deleted = await bridge.deleteModel(`model:${contentHash}`);
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.status, "deleted");
+  assert.equal(deleted.fileDeleted, true);
+  // IPC 载荷只有 opaque contentHash（无 assetId/路径）。
+  assert.deepEqual(ipc.deletePayloads, [{ contentHash }]);
+  for (const payload of ipc.deletePayloads) {
+    for (const text of collectStrings(payload)) {
+      assert.equal(ABS_PATH_PATTERN.test(text), false, `删除 IPC 载荷不得携带路径: ${text}`);
+    }
+  }
+  assert.equal(registry.getRecord(`model:${contentHash}`).admissionState, "deleted");
+  assert.equal(bridge.listRegisteredModels().length, 0);
+});
+
 test("P6a-C5 orphan：commit 成功但登记失败 → 不签发 Token、orphan 不可发现（§8.5.5）", async () => {
   const bytes = makeModelBytes();
   const assetId = `model:${sha256HexSync(bytes)}`;
@@ -592,6 +682,7 @@ test("P6a-C5 orphan：commit 成功但登记失败 → 不签发 Token、orphan 
         commitCalled += 1;
         return { assetId, modelId: assetId }; // 原子移动已成功（文件保留在模型区）
       },
+      deleteModelFile: async (payload) => ({ deleted: true, missing: false, contentHash: payload.contentHash }),
     },
     avatarAsset: {
       issueCandidateGrant: async () => makeGrantView(bytes, { attemptId: "import-orphan-1", candidateId: "candidate-orphan-1" }),

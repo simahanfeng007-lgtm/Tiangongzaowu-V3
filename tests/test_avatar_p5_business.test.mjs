@@ -27,7 +27,7 @@ import { createRenderSurfaceController } from "../app/frontend-v2/renderer/avata
 import { createDiagnostics } from "../app/frontend-v2/renderer/avatar/diagnostics.mjs";
 import { createAvatarRuntime } from "../app/frontend-v2/renderer/avatar/avatar-runtime.mjs";
 import { EngineEvent, createEngineEventSink } from "../app/frontend-v2/renderer/avatar/engines/avatar-engine-contract.mjs";
-import { createAssetRegistry } from "../app/frontend-v2/renderer/avatar/asset-registry.mjs";
+import { AssetScope, AdmissionState, createAssetRegistry } from "../app/frontend-v2/renderer/avatar/asset-registry.mjs";
 import { createTokenIssuer } from "../app/frontend-v2/renderer/avatar/validated-asset-token.mjs";
 import { createMemoryStorageBackend } from "../app/frontend-v2/renderer/avatar/storage-adapter.mjs";
 import { canonicalSha256, sha256HexSync } from "../app/frontend-v2/renderer/avatar/canonical-hash.mjs";
@@ -630,7 +630,7 @@ function makeGrantView(bytes, overrides = {}) {
   };
 }
 
-async function setupImport({ bytes, chooseFileImpl = null, commitImpl = null } = {}) {
+async function setupImport({ bytes, chooseFileImpl = null, commitImpl = null, deleteModelFileImpl = null } = {}) {
   const orderLog = [];
   const calls = { chooseFile: 0, readCandidate: [], commit: [], selectModel: [] };
   const storage = createMemoryStorageBackend();
@@ -653,6 +653,7 @@ async function setupImport({ bytes, chooseFileImpl = null, commitImpl = null } =
     issueCandidateGrant: async () => makeGrantView(bytes),
     readCandidateBytes: async (grantView) => { calls.readCandidate.push(grantView); return bytes.slice(); },
     commitCandidate: async (input) => { calls.commit.push(input); return commit(input); },
+    deleteModelFile: deleteModelFileImpl ?? null,
     registry,
     tokenIssuer,
     runtime,
@@ -848,6 +849,113 @@ test("P5-G6 import: 许可拒绝取消会释放 pending；续接表有界且旧 
   assert.equal(cancelledResume.code, "resume_token_invalid");
   assert.equal(commitCalls, 0);
   assert.equal(chooseCalls, 2);
+});
+
+test("P5-G7 delete: 导入后删除 → tombstone + 文件删除载荷只含 contentHash；列表排除；二次删除/未知拒绝", async () => {
+  const bytes = makeModelBytes();
+  const deletedPayloads = [];
+  const { controller, registry, importedModelId } = await setupImport({
+    bytes,
+    deleteModelFileImpl: async (payload) => {
+      deletedPayloads.push(payload);
+      return { deleted: true, missing: false, contentHash: payload.contentHash };
+    },
+  });
+  const imported = await controller.importCustomModel();
+  assert.equal(imported.status, "committed");
+  assert.equal(controller.listRegisteredModels().length, 1);
+
+  const result = await controller.deleteCustomModel(importedModelId);
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "deleted");
+  assert.equal(result.fileDeleted, true);
+  // 删除 IPC 载荷只有 opaque contentHash，不携带 assetId/路径（§8.5/§21）。
+  assert.deepEqual(deletedPayloads, [{ contentHash: sha256HexSync(bytes) }]);
+  // registry 终态 tombstone：列表排除、记录保留 deleted 审计。
+  const record = registry.getRecord(importedModelId);
+  assert.equal(record.admissionState, AdmissionState.DELETED);
+  assert.equal(record.registryEntryVersion, 2);
+  assert.equal(controller.listRegisteredModels().length, 0);
+
+  // 终态不可重复删除；未知模型拒绝。
+  const again = await controller.deleteCustomModel(importedModelId);
+  assert.equal(again.ok, false);
+  assert.equal(again.code, "already_deleted");
+  const missing = await controller.deleteCustomModel("model:missing");
+  assert.equal(missing.code, "model_not_found");
+});
+
+test("P5-G8 delete: 内置模型不可删除；文件清理失败仍保留 tombstone；删除通道缺失拒绝", async () => {
+  const storage = createMemoryStorageBackend();
+  const registry = await createAssetRegistry({ storage, issuerEpoch: 0 });
+  await registry.registerAsset({
+    assetId: "builtin-z1",
+    scope: AssetScope.BUILTIN,
+    contentHash: "b".repeat(64),
+    byteLength: 1,
+    validationReceiptId: "arec_builtin_v1",
+    validatorVersion: "vrm-admission-gate-1.0.0",
+    authorizationFingerprint: "afp_builtin_z1",
+    displayName: "内置 z1",
+  });
+  const commonDeps = {
+    chooseFile: async () => ({ canceled: true }),
+    issueCandidateGrant: async () => { throw new Error("不应到达"); },
+    readCandidateBytes: async () => { throw new Error("不应到达"); },
+    commitCandidate: async () => { throw new Error("不应到达"); },
+    registry,
+    tokenIssuer: createTokenIssuer({ registry, issuerEpoch: 0 }),
+    runtime: { selectModel: () => Object.freeze({ attemptId: "x", done: Promise.resolve({}) }) },
+  };
+  const withChannel = createAvatarImportController({
+    ...commonDeps,
+    deleteModelFile: async () => ({ deleted: true, missing: false }),
+  });
+  const builtinDelete = await withChannel.deleteCustomModel("builtin-z1");
+  assert.equal(builtinDelete.ok, false);
+  assert.equal(builtinDelete.code, "delete_forbidden_scope");
+
+  // 文件删除失败：tombstone 已提交，结果带 fileError（孤儿文件不可发现）。
+  const bytes = makeModelBytes();
+  const importedModelId = `model:${sha256HexSync(bytes)}`;
+  await registry.registerAsset({
+    assetId: importedModelId,
+    scope: AssetScope.MODEL,
+    contentHash: sha256HexSync(bytes),
+    byteLength: bytes.byteLength,
+    validationReceiptId: "recv_delete_fail",
+    validatorVersion: "vrm-admission-gate-1.0.0",
+    authorizationFingerprint: "afp_delete_fail",
+    displayName: "删除失败模型",
+  });
+  const failing = createAvatarImportController({
+    ...commonDeps,
+    deleteModelFile: async () => { throw new Error("disk error"); },
+  });
+  const deleteResult = await failing.deleteCustomModel(importedModelId);
+  assert.equal(deleteResult.ok, true);
+  assert.equal(deleteResult.status, "deleted-registry-only");
+  assert.equal(deleteResult.fileError, "disk error");
+  assert.equal(registry.getRecord(importedModelId).admissionState, AdmissionState.DELETED);
+
+  // 未接线删除通道：明确拒绝，不动 registry。
+  const bytesB = makeModelBytes({ title: "b", author: "y", licenseName: "CC0" });
+  const modelIdB = `model:${sha256HexSync(bytesB)}`;
+  await registry.registerAsset({
+    assetId: modelIdB,
+    scope: AssetScope.MODEL,
+    contentHash: sha256HexSync(bytesB),
+    byteLength: bytesB.byteLength,
+    validationReceiptId: "recv_no_channel",
+    validatorVersion: "vrm-admission-gate-1.0.0",
+    authorizationFingerprint: "afp_no_channel",
+    displayName: "无通道模型",
+  });
+  const noChannel = createAvatarImportController(commonDeps);
+  const noChannelResult = await noChannel.deleteCustomModel(modelIdB);
+  assert.equal(noChannelResult.ok, false);
+  assert.equal(noChannelResult.code, "delete_channel_unavailable");
+  assert.equal(registry.getRecord(modelIdB).admissionState, AdmissionState.ADMITTED);
 });
 
 // ═══ H. avatar-store / theme（辅助状态链）════════════════════

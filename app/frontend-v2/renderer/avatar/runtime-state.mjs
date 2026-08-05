@@ -122,6 +122,31 @@ export class AvatarRuntimeSlots {
     return this.state;
   }
 
+  // §18.6 用户清空/删除当前模型：释放 current/pending/失效对象并回到无模型
+  // （degraded）态；disposing/disposed 禁止；context-lost/recovering 禁止（走恢复链）。
+  clearCurrent({ nowMonotonic } = {}) {
+    if (this.state === RuntimeState.DISPOSING || this.state === RuntimeState.DISPOSED) {
+      throw new RuntimeStateError("runtime_disposing", "disposing/disposed 状态禁止清空模型");
+    }
+    if (this.state === RuntimeState.CONTEXT_LOST || this.state === RuntimeState.RECOVERING) {
+      throw new RuntimeStateError(
+        "runtime_state_blocked",
+        `${this.state} 状态禁止清空模型（走恢复链）`,
+      );
+    }
+    if (this.pending && !this.pending.isTerminal) {
+      this.pending.cancelSuperseded?.(nowMonotonic);
+    }
+    releaseAvatar(this.pending?.candidate ?? null);
+    this.pending = null;
+    releaseAvatar(this.current);
+    this.current = null;
+    releaseAvatar(this._lostCurrent ?? null);
+    this._lostCurrent = null;
+    if (this.state !== RuntimeState.DEGRADED) this._transitionRuntime(RuntimeState.DEGRADED);
+    return this.state;
+  }
+
   // §20.3：context lost。保存模型无关状态，标记并移除失效 current。
   contextLost({ recoverySnapshot = null } = {}) {
     if (this.state !== RuntimeState.RUNNING && this.state !== RuntimeState.DEGRADED) {

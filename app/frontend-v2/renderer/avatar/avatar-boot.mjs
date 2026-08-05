@@ -351,6 +351,7 @@ export async function bootstrapAvatar({
     const importBridgeReady =
       typeof desktop?.avatarImport?.chooseFile === "function" &&
       typeof desktop?.avatarImport?.commitCandidate === "function" &&
+      typeof desktop?.avatarImport?.deleteModelFile === "function" &&
       typeof desktop?.avatarAsset?.issueCandidateGrant === "function" &&
       typeof desktop?.avatarAsset?.openChannel === "function";
     if (importBridgeReady && window !== null && typeof window === "object") {

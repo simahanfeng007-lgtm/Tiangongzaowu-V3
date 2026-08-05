@@ -1133,6 +1133,47 @@ export function createAvatarRuntime({
       return runtime.selectModel(safeModelId);
     },
 
+    // §18.6 用户删除/清空模型：取消活动 pending、释放 current 与失效对象，
+    // 回到无模型（degraded）态；context-lost/recovering 走恢复链，禁止清空。
+    releaseModel(options = {}) {
+      if (disposed) throw new AvatarRuntimeError("runtime_disposed", "AvatarRuntime 已 dispose");
+      if (slots.state === RuntimeState.CONTEXT_LOST || slots.state === RuntimeState.RECOVERING) {
+        throw new AvatarRuntimeError("runtime_state_blocked", `当前 ${slots.state} 不接受 releaseModel（走恢复链）`);
+      }
+      const reason =
+        typeof options?.reason === "string" && options.reason.length > 0
+          ? options.reason
+          : "user-release";
+      const pending = slots.pending;
+      const pendingRecord = pending ? attemptRecords.get(pending.attemptId) : null;
+      if (pendingRecord && !pendingRecord.attempt.isTerminal) {
+        try {
+          pendingRecord.attempt.transition(LoadAttemptState.CANCELLED, { nowMonotonic: nowMonotonic(), reason });
+        } catch (_error) {
+          // 已进入终态/非法迁移按已释放处理，不再回滚
+        }
+        settleSuperseded(pendingRecord);
+      }
+      slots.clearCurrent({ nowMonotonic: nowMonotonic() });
+      lastRequestedModelId = null;
+      lastCommittedModelId = null;
+      lastMigrationSnapshot = null;
+      lostAvatar = null;
+      safeMode = null;
+      transitionBuffer.stop();
+      bodyWriter.setActiveAnimation(null);
+      engineAdapter.playGesture?.(null);
+      emitDiag(DiagnosticEvent.MODEL_DISPOSED, {
+        correlationId: pendingRecord?.attempt?.attemptId ?? null,
+        modelId: null,
+        phase: "user-release",
+        result: "released",
+        detail: { reason },
+      });
+      notify();
+      return true;
+    },
+
     subscribe(listener) {
       if (typeof listener !== "function") throw new AvatarRuntimeError("listener_invalid", "subscribe 需要函数");
       listeners.add(listener);

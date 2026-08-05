@@ -13,7 +13,7 @@ const { resolveWritableRuntimeRoot } = require("./runtime-root");
 const { discoverVerifiedReleaseBindings } = require("./lib/release-binding");
 const { SecureUpdater } = require("./secure-updater");
 const { preflightVrcAvatarSource } = require("./vrc-import");
-const { createCandidateGrantIssuer, installAvatarAssetProtocol, registerAvatarAssetScheme, chooseAvatarImportFile, commitCandidate } = require("./avatar-asset-host.cjs");
+const { createCandidateGrantIssuer, installAvatarAssetProtocol, registerAvatarAssetScheme, chooseAvatarImportFile, commitCandidate, deleteModelFile } = require("./avatar-asset-host.cjs");
 const { createAvatarStorageHost } = require("./avatar-storage-host.cjs");
 
 // HOTFIX-20260728: VRM 等打包资产在 webSecurity+sandbox 下无法经 file:// fetch
@@ -4318,7 +4318,16 @@ handleTrusted("avatar:issueCandidateGrant", async (_event, payload = {}) => {
 // 返回任何绝对路径（opaque 结果：name/attemptId/candidateId/contentHash/byteLength）。
 handleTrusted("avatar:chooseImportFile", async () => {
   const candidateRoot = path.resolve(app.getPath("userData"), "avatar-models", "temp");
-  return chooseAvatarImportFile({ dialogModule: dialog, browserWindow: mainWindow, candidateRoot });
+  // 源码工作版重定向 HOME/USERPROFILE：优先用启动器注入的真实桌面目录作为
+  // 对话框默认路径，避免用户看到隔离的“假桌面”而找不到本机 VRM。
+  const defaultPath =
+    process.env.TIANGONG_DESKTOP_PATH || app.getPath("desktop");
+  return chooseAvatarImportFile({
+    dialogModule: dialog,
+    browserWindow: mainWindow,
+    candidateRoot,
+    defaultPath,
+  });
 });
 
 // P6b 内置清单桥（§8.3）：webSecurity 下渲染端 fetch(file://) 被禁，内置模型清单
@@ -4354,6 +4363,13 @@ handleTrusted("avatar:commitCandidate", async (_event, payload = {}) => {
   const candidateRoot = path.resolve(app.getPath("userData"), "avatar-models", "temp");
   const modelRoot = path.resolve(app.getPath("userData"), "avatar-models", "models");
   return commitCandidate(payload, { candidateRoot, modelRoot });
+});
+
+// §8.5 用户删除：渲染侧先完成 registry tombstone，再按 contentHash 删正式模型文件；
+// 本通道不接收路径，只接收 64 位 hex 并由主进程限定在 modelRoot 内。
+handleTrusted("avatar:deleteModelFile", async (_event, payload = {}) => {
+  const modelRoot = path.resolve(app.getPath("userData"), "avatar-models", "models");
+  return deleteModelFile(payload, { modelRoot });
 });
 
 // P2 §22.2/§22.3 renderer 状态持久化。renderer 只能传三个固定枚举 key；

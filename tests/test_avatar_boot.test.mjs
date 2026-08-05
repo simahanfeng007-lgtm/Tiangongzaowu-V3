@@ -388,6 +388,7 @@ test("avatar-boot：空 builtin 清单保持 direct/import-only；真实导入�
       commitCalls += 1;
       return { assetId: `model:${contentHash}`, modelId: `model:${contentHash}` };
     },
+    deleteModelFile: async (payload) => ({ deleted: true, missing: false, contentHash: payload.contentHash }),
   };
   windowStub.tiangongDesktop.avatarAsset.issueCandidateGrant = async () => {
     grantCalls += 1;
