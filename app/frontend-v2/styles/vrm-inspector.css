@@ -197,6 +197,11 @@ body .app-shell[data-page="chat"] .vrm-home-panel .vrm-viewport-card > iframe {
 }
 
 .vrm-body-panel .vrm-viewport-card {
+  /* 与聊天页舞台同宽：抵消面板 14px 左右内边距，避免 aspect-ratio 把
+     画布撑出容器/窗口（实测 right 超窗口 40px，人物被挤偏、右侧被裁）。 */
+  width: calc(100% + 28px);
+  margin: 0 -14px;
+  aspect-ratio: auto;
   height: clamp(300px, 44vh, 420px);
   max-height: none;
 }
