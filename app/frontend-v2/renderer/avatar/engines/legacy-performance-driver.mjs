@@ -358,24 +358,27 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       let headZ = Math.sin(state.idleTime * 0.21) * 0.006 + microSettle * 0.004;
       if (gesture === "nod") headX += Math.sin(pNorm * Math.PI * 2.0) * 0.18 * pWave * Math.max(0.55, pInt);
       if (gesture === "tilt" || perf?.posture === "bashful") headZ += 0.14 * pWave * Math.max(0.50, pInt);
-      let rUpperZ = -1.185 + armEase * 0.05 + sway * 0.006;
-      let lUpperZ = 1.160 - armEase * 0.05 + sway * 0.005;
-      let rLowerZ = -0.205 + armEase * 0.018;
-      let lLowerZ = 0.225 - armEase * 0.018;
-      let rUpperX = 0.085 + armEase * 0.035;
-      let lUpperX = 0.120 - armEase * 0.030;
-      let rUpperY = -0.165 + shift * 0.004;
-      let lUpperY = 0.085 + shift * 0.004;
-      let rLowerX = 0.285 + softTalk * 0.008 + speechPulse * 0.006 * coSpeech;
-      let lLowerX = 0.245 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
-      let rLowerY = 0.085;
-      let lLowerY = -0.050;
-      let rHandX = 0.070 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.004;
-      let lHandX = 0.095 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.004;
-      let rHandY = 0.135 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.004;
-      let lHandY = -0.125 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.004;
-      let rHandZ = -0.205 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.004;
-      let lHandZ = 0.230 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.004;
+      // 基础站姿按 VRM 归一化 T-pose 第一性原理：上臂 ±π/2 才真正下垂
+      //（旧值 -1.185 是给旧模型调的，对标准 T-pose 只转到半举，经几何诊断确认）。
+      // 前臂/手腕取“下 + 微前 + 微内”组合（几何扫描 cfg2/3 之间），并加呼吸微动。
+      let rUpperZ = -Math.PI / 2 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
+      let lUpperZ = Math.PI / 2 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
+      let rLowerZ = -0.180 + armEase * 0.018;
+      let lLowerZ = 0.180 - armEase * 0.018;
+      let rUpperX = 0.045 + armEase * 0.035;
+      let lUpperX = 0.045 - armEase * 0.030;
+      let rUpperY = -0.030 + shift * 0.004;
+      let lUpperY = 0.030 + shift * 0.004;
+      let rLowerX = 0.100 + softTalk * 0.008 + speechPulse * 0.006 * coSpeech;
+      let lLowerX = 0.100 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
+      let rLowerY = 0.040;
+      let lLowerY = -0.040;
+      let rHandX = 0.050 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = 0.050 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rHandY = 0.055 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
+      let lHandY = -0.055 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
+      let rHandZ = -0.110 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
+      let lHandZ = 0.110 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
       if (coSpeech) {
         rUpperX += speechPulse * 0.010 * coSpeech;
         lUpperX += Math.sin(state.idleTime * 4.1 + 1.1) * 0.006 * coSpeech;
@@ -413,17 +416,17 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         lUpperZ += Math.sin(state.idleTime * 0.9 + 0.8) * 0.026 * pInt;
       }
       if (hips) {
-        hips.rotation.x = breath * 0.002 + postureLean * 0.25;
+        hips.rotation.x = breath * 0.002 + postureLean * 0.25 + Math.sin(state.idleTime * 0.47 + 1.0) * 0.004;
         hips.rotation.y = shift * 0.006;
-        hips.rotation.z = shift * 0.012 + sway * 0.006;
+        hips.rotation.z = shift * 0.012 + sway * 0.010;
       }
       if (spine) {
-        spine.rotation.x = -0.006 + breath * 0.003 + postureLean;
+        spine.rotation.x = -0.006 + breath * 0.003 + postureLean + Math.sin(state.idleTime * 0.53 + 2.0) * 0.003;
         spine.rotation.y = -shift * 0.008;
         spine.rotation.z = -shift * 0.008 + microSettle * 0.003;
       }
       if (chest) {
-        chest.rotation.x = 0.012 + breath * 0.005 + breath2 * 0.002 + softTalk * 0.005 + postureLean * 0.55;
+        chest.rotation.x = 0.012 + breath * 0.007 + breath2 * 0.002 + softTalk * 0.005 + postureLean * 0.55;
         chest.rotation.y = shift * 0.010;
         chest.rotation.z = Math.sin(state.idleTime * 0.32) * 0.005 + shift * 0.007;
       }

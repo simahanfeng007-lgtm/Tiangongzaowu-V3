@@ -55,11 +55,11 @@ function makeDriver() {
   return { driver, bones, captured };
 }
 
-test("legacy driver: 自然站姿把 T-pose 手臂放下（rightUpperArm.z≈-1.185 / left≈1.160）", () => {
+test("legacy driver: 自然站姿把 T-pose 手臂真正下垂（rightUpperArm.z≈-π/2 / left≈+π/2）", () => {
   const { driver, bones } = makeDriver();
   driver.update(0.1, { gestureActive: false });
-  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + 1.185) < 0.02, "右手臂应下垂");
-  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - 1.160) < 0.02, "左手臂应下垂");
+  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + Math.PI / 2) < 0.03, `右手臂应下垂，实际 ${bones.get("rightUpperArm").rotation.z}`);
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - Math.PI / 2) < 0.03, `左手臂应下垂，实际 ${bones.get("leftUpperArm").rotation.z}`);
   assert.equal(typeof bones.get("head").rotation.x, "number");
   assert.equal(typeof bones.get("hips").rotation.x, "number");
 });
