@@ -509,10 +509,10 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
           distal.rotation.z = -(tip + fingerPulse * 0.55) * sign;
         }
       };
-      // 拇指休息位（2026-08-05 蒙皮顶点扫描）：自然放松时拇指应沿食指下垂，
-      // 关键在 CMC 内收（y≈-0.70）而非深屈；右拇指 eulers：
-      //   meta=(0, -0.70, -0.10) / prox=(0, 0.03, 0) / dist=(0, 0, 0.10)
-      // 实测左右指尖距食指 PIP→指尖线均 4.2mm，方向完全镜像对称。
+      // 拇指休息位（2026-08-05 蒙皮顶点扫描）：自然放松时拇指在食指旁下垂、
+      // 保持一指宽间隔、不插入食指。右拇指 eulers：
+      //   meta=(0, -0.45, -0.25) / prox=(0, 0.03, -0.40) / dist=(0, 0, -0.15)
+      // 实测左右指尖距食指 PIP→指尖线均 33mm、低于拇指根 40mm，完全镜像对称。
       const thumbCurl = (side) => {
         const sign = side === "right" ? 1 : -1;
         const metacarpal = humanoid.getNormalizedBoneNode(`${side}ThumbMetacarpal`);
@@ -520,18 +520,18 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         const distal = humanoid.getNormalizedBoneNode(`${side}ThumbDistal`);
         if (metacarpal) {
           metacarpal.rotation.x = 0;
-          metacarpal.rotation.y = (-0.70 + fingerPulse * 0.05) * sign;
-          metacarpal.rotation.z = (-0.10 + fingerPulse * 0.15) * sign;
+          metacarpal.rotation.y = (-0.45 + fingerPulse * 0.05) * sign;
+          metacarpal.rotation.z = (-0.25 + fingerPulse * 0.15) * sign;
         }
         if (proximal) {
           proximal.rotation.x = 0;
           proximal.rotation.y = 0.030 * sign;
-          proximal.rotation.z = fingerPulse * 0.30 * sign;
+          proximal.rotation.z = (-0.40 + fingerPulse * 0.30) * sign;
         }
         if (distal) {
           distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = (0.10 + fingerPulse * 0.20) * sign;
+          distal.rotation.z = (-0.15 + fingerPulse * 0.20) * sign;
         }
       };
       for (const side of ["right", "left"]) {
