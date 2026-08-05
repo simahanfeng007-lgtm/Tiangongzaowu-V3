@@ -365,28 +365,27 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       // 在真实模型上按中位数扫描实测反推（手不悬空、贴近大腿）：
       // 角色面朝方向以头部网格几何实测确认 = world +Z（chest 骨骼本地 +Z 是背面）。
       //   rightUpperArm = (0.0129, -0.1526, -1.4828)  → 外展 ~5° + 内旋 ~8.7°
-      //   rightLowerArm = (0.3000,  0.2600, -0.0200)  → 肘前屈 15.2° + 外翻 10.4°
-      //   leftLowerArm  = (0.3000, -0.2600,  0.0300)  → 同目标（模型左右不对称，独立标定）
-      //     （2026-08-05 方向修正：该模型前臂 ly 正值=前屈。上一版 ly=-0.20 在
-      //       真实面朝方向下实测后屈 -13.8°，用户目视确认“小臂向后屈”；
-      //       现按 world +Z 重标定，实景：右 15.6°/11.2°，左 15.7°/9.6°）
-      //   rightHand     = (-0.4103, 0, 0)              → 掌心朝身体（0.98），手指沿前臂（0°）
-      //   leftHand      = (-0.4245, 0, 0)              → 同上（左臂独立求解）
+      //   rightLowerArm = (0.3000,  0.1800,  0.0000)  → 肘前屈 ~10° + 外翻 10.3°
+      //   leftLowerArm  = (0.3000, -0.2000, -0.0200)  → 肘前屈 ~10.2° + 外翻 10.4°
+      //     （2026-08-05 幅度收小：用户反馈前屈 15° 偏大，按实景微调至 ~10°；
+      //       方向以头部几何实测=world +Z，前臂 ly 正值=前屈）
+      //   rightHand     = (-0.4233, 0, 0)              → 掌心朝身体（0.98），手指沿前臂（0°）
+      //   leftHand      = (-0.4404, 0, 0)              → 同上（左臂独立求解）
       // 左臂 X 同号、Y/Z 反号（含左右不对称微调）。
       let rUpperZ = -1.4828 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
       let lUpperZ = 1.4828 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
-      let rLowerZ = -0.020 + armEase * 0.018;
-      let lLowerZ = 0.030 - armEase * 0.018;
+      let rLowerZ = armEase * 0.018;
+      let lLowerZ = -0.020 - armEase * 0.018;
       let rUpperX = 0.0129 + armEase * 0.035;
       let lUpperX = 0.0129 - armEase * 0.030;
       let rUpperY = -0.1526 + shift * 0.004;
       let lUpperY = 0.1526 + shift * 0.004;
       let rLowerX = 0.300 + softTalk * 0.008 + speechPulse * 0.006 * coSpeech;
       let lLowerX = 0.300 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
-      let rLowerY = 0.260;
-      let lLowerY = -0.260;
-      let rHandX = -0.4103 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
-      let lHandX = -0.4245 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rLowerY = 0.180;
+      let lLowerY = -0.200;
+      let rHandX = -0.4233 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = -0.4404 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
       let rHandY = 0 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
       let lHandY = 0 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
       let rHandZ = 0 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
@@ -483,25 +482,29 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         lha.rotation.z = lHandZ;
       }
       const fingerPulse = Math.sin(state.idleTime * 0.72 + state.idleShiftSeed) * 0.006 + Math.sin(state.idleTime * 4.4) * 0.008 * coSpeech;
+      // 手指休息位（Lee & Jung 2014）：MCP≈30°/PIP≈30°/DIP≈10°，小指侧自然梯度加深。
+      // 2026-08-05 轴实测修正：该模型手指骨骼 本地 +X=长轴、rotation.z 负值=卷向掌心、
+      // rotation.y=分指、rotation.x=扭转。旧代码误把 rotation.x 当屈曲，实际只产生微扭，
+      // 手指一直是直的——这就是“手型不自然”的根因。
       const fingerCurl = (side, finger, base, mid, tip, spread = 0) => {
         const sign = side === "right" ? 1 : -1;
         const proximal = humanoid.getNormalizedBoneNode(`${side}${finger}Proximal`);
         const intermediate = humanoid.getNormalizedBoneNode(`${side}${finger}Intermediate`);
         const distal = humanoid.getNormalizedBoneNode(`${side}${finger}Distal`);
         if (proximal) {
-          proximal.rotation.x = base + fingerPulse;
+          proximal.rotation.x = 0;
           proximal.rotation.y = spread * sign;
-          proximal.rotation.z = 0;
+          proximal.rotation.z = -(base + fingerPulse);
         }
         if (intermediate) {
-          intermediate.rotation.x = mid + fingerPulse * 0.8;
+          intermediate.rotation.x = 0;
           intermediate.rotation.y = 0;
-          intermediate.rotation.z = 0;
+          intermediate.rotation.z = -(mid + fingerPulse * 0.8);
         }
         if (distal) {
-          distal.rotation.x = tip + fingerPulse * 0.55;
+          distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = 0;
+          distal.rotation.z = -(tip + fingerPulse * 0.55);
         }
       };
       const thumbCurl = (side) => {
@@ -510,27 +513,27 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
         const proximal = humanoid.getNormalizedBoneNode(`${side}ThumbProximal`);
         const distal = humanoid.getNormalizedBoneNode(`${side}ThumbDistal`);
         if (metacarpal) {
-          metacarpal.rotation.x = 0.060 + fingerPulse * 0.35;
-          metacarpal.rotation.y = 0.055 * sign;
-          metacarpal.rotation.z = -0.045 * sign;
+          metacarpal.rotation.x = 0;
+          metacarpal.rotation.y = 0.09 * sign;
+          metacarpal.rotation.z = -(0.42 + fingerPulse * 0.35);
         }
         if (proximal) {
-          proximal.rotation.x = 0.105 + fingerPulse * 0.45;
+          proximal.rotation.x = 0;
           proximal.rotation.y = 0.030 * sign;
-          proximal.rotation.z = 0;
+          proximal.rotation.z = -(0.30 + fingerPulse * 0.45);
         }
         if (distal) {
-          distal.rotation.x = 0.070 + fingerPulse * 0.35;
+          distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = 0;
+          distal.rotation.z = -(0.18 + fingerPulse * 0.35);
         }
       };
       for (const side of ["right", "left"]) {
         thumbCurl(side);
-        fingerCurl(side, "Index", 0.090, 0.145, 0.075, 0.018);
-        fingerCurl(side, "Middle", 0.115, 0.170, 0.095, 0.000);
-        fingerCurl(side, "Ring", 0.130, 0.165, 0.095, -0.010);
-        fingerCurl(side, "Little", 0.115, 0.145, 0.085, -0.020);
+        fingerCurl(side, "Index", 0.4363, 0.4189, 0.1745, 0.030);
+        fingerCurl(side, "Middle", 0.5236, 0.4712, 0.1745, 0.000);
+        fingerCurl(side, "Ring", 0.5760, 0.4887, 0.1920, -0.020);
+        fingerCurl(side, "Little", 0.6632, 0.5236, 0.2094, -0.035);
       }
     } catch (_error) {
       // 单帧姿态失败不阻断驱动
