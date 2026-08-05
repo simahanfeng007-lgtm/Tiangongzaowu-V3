@@ -88,6 +88,11 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
     || payload?.zhuangtai
     || ""
   ).trim().toLowerCase();
+  // FE-07 regression: normal terminal states (casual chat reply or successful
+  // task completion) are "done", not "continuation forbidden".  They must never
+  // surface the stop notice; that notice is only meaningful when a work run
+  // ended without a normal terminal (failed/stuck/stopped).
+  const normalSuccessStatus = ["chat_reply", "complete", "wancheng", "success", "finished", "done", "ok"].includes(status);
   const text = String(displayText || "");
   const lowerText = text.toLowerCase();
   const state = runOptions?.autoContinueState && typeof runOptions.autoContinueState === "object"
@@ -210,7 +215,7 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
         ? verificationDebtAttempts + 1
         : verificationDebtAttempts
     },
-    stopReason: requiresUser ? "requires_user" : (!recoverable ? "not_recoverable" : "")
+    stopReason: requiresUser ? "requires_user" : (normalSuccessStatus ? "" : (!recoverable ? "not_recoverable" : ""))
   };
 }
 

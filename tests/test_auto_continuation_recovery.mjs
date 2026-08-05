@@ -176,4 +176,61 @@ assert.equal(
   "C:\\work\\alpha",
 );
 
+// FE-07 regression: normal terminal states never carry the stop notice.
+const casualChat = autoContinuationDecision({
+  result: { simple_chain_status: "chat_reply" },
+  displayText: "午安呀～",
+  sendMode: "chat",
+  runOptions: {},
+});
+assert.equal(casualChat.shouldContinue, false);
+assert.equal(casualChat.stopReason, "");
+assert.equal(autoContinuationStopNotice(casualChat), "");
+
+const casualChatInWorkMode = autoContinuationDecision({
+  result: { simple_chain_status: "chat_reply" },
+  displayText: "午安呀～",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(casualChatInWorkMode.stopReason, "");
+assert.equal(autoContinuationStopNotice(casualChatInWorkMode), "");
+
+const completedTask = autoContinuationDecision({
+  result: { simple_chain_status: "complete" },
+  displayText: "任务已完成。",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(completedTask.stopReason, "");
+assert.equal(autoContinuationStopNotice(completedTask), "");
+
+const completedTaskZh = autoContinuationDecision({
+  result: { stdout: JSON.stringify({ zhuangtai: "wancheng" }) },
+  displayText: "任务已完成。",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(completedTaskZh.stopReason, "");
+assert.equal(autoContinuationStopNotice(completedTaskZh), "");
+
+// FE-07 preserved: a genuinely failed work run still explains why it stops.
+const failedWorkRun = autoContinuationDecision({
+  result: { simple_chain_status: "failed" },
+  displayText: "服务暂时不可用，本轮没有继续。",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(failedWorkRun.stopReason, "not_recoverable");
+assert.match(autoContinuationStopNotice(failedWorkRun), /任务已停止/);
+
+const awaitingUserRun = autoContinuationDecision({
+  result: { simple_chain_status: "awaiting_user" },
+  displayText: "需要你决定后才能继续。",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(awaitingUserRun.stopReason, "requires_user");
+assert.match(autoContinuationStopNotice(awaitingUserRun), /任务已暂停/);
+
 console.log("auto-continuation-recovery: PASS");
