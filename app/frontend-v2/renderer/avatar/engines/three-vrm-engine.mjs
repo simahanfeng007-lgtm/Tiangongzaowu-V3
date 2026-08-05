@@ -8,6 +8,9 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// OrbitControls 用相对路径（不经 importmap 的 three/addons 别名），
+// 保证预览调试页（appdeps 无 controls 目录）与桌面端都能解析。
+import { OrbitControls } from "../../../../node_modules/three/examples/jsm/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import {
   VRMAnimationLoaderPlugin,
@@ -239,6 +242,9 @@ export function createThreeVrmEngine(options = {}) {
   const cameraPreset = { ...DEFAULT_CAMERA_PRESET, ...(options.cameraPreset ?? {}) };
   const fogPreset = options.fog === undefined ? DEFAULT_FOG : options.fog;
   const initialExposure = Number.isFinite(options.exposure) ? options.exposure : DEFAULT_EXPOSURE;
+  // 镜像显示（照镜子/自拍约定）：画面水平翻转，角色右手显示在观众右侧；
+  // 拖拽方向同步反转，保证“往右拖 = 往右转”的直觉。
+  const mirrorView = Boolean(options.mirrorView);
 
   const events = createEngineEventSink();
   const state = {
@@ -262,7 +268,12 @@ export function createThreeVrmEngine(options = {}) {
     // 相机最终位姿 = 基线 + 偏移，语义与旧面板四项控件逐值一致。
     cameraFraming: null,
     cameraPresentation: { focus: 0, height: 0, distance: 0, side: 0 },
+    // 交互（旧 桌面宠物.html 的 OrbitControls parity）：鼠标拖拽旋转/缩放视角。
+    controls: null,
+    cameraManual: false, // 用户拖拽后进入手动视角；设置/恢复默认时退出
+    prevControlsTarget: null, // 镜头惯性联动 SpringBone 的上帧目标
   };
+  applyMirrorView();
 
   function applyRendererBaseline(renderer) {
     const ratio = Number.isFinite(options.pixelRatio)
@@ -289,6 +300,78 @@ export function createThreeVrmEngine(options = {}) {
     camera.position.copy(focus).add(new THREE.Vector3(cameraPreset.side, cameraPreset.lift, cameraPreset.distance));
     camera.lookAt(focus);
     return camera;
+  }
+
+  // ── 鼠标交互（旧 桌面宠物.html OrbitControls parity）────────────
+  // 左键拖拽旋转视角、滚轮缩放、右键平移；阻尼与距离/极角限制逐值沿用旧版。
+  function createOrbitControls() {
+    try {
+      if (typeof globalThis.window === "undefined") return null;
+      const element = state.canvas;
+      if (!element || typeof element.addEventListener !== "function" || typeof element.style !== "object") {
+        return null; // Node/stub 环境不创建真实交互
+      }
+      const controls = new OrbitControls(state.camera, element);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.07;
+      controls.minDistance = 0.45;
+      controls.maxDistance = 5.8;
+      controls.maxPolarAngle = Math.PI * 0.64;
+      if (mirrorView) {
+        // 画面已镜像：拖拽方向取反，保持“右拖=右转”的直觉。
+        controls.rotateSpeed = -1;
+        controls.panSpeed = -1;
+      }
+      const focus = state.cameraFraming?.focus ?? new THREE.Vector3(...cameraPreset.focus);
+      controls.target.copy(focus);
+      controls.addEventListener("start", () => {
+        state.cameraManual = true;
+      });
+      controls.update();
+      return controls;
+    } catch (_error) {
+      return null; // 交互不可用不阻断渲染
+    }
+  }
+
+  function ensureOrbitControls() {
+    applyMirrorView();
+    if (state.controls) {
+      if (state.controls.domElement === state.canvas) return;
+      try { state.controls.dispose(); } catch (_error) { /* 幂等 */ }
+      state.controls = null;
+    }
+    state.controls = createOrbitControls();
+  }
+
+  function applyMirrorView() {
+    if (!mirrorView || !state.canvas || typeof state.canvas.style !== "object") return;
+    state.canvas.style.transform = "scaleX(-1)";
+  }
+
+  function syncOrbitTarget(focus) {
+    if (!state.controls || !focus) return;
+    state.controls.target.copy(focus);
+    if (state.prevControlsTarget) state.prevControlsTarget.copy(focus);
+    state.controls.update();
+  }
+
+  // 镜头惯性联动 SpringBone：拖拽时给模型施加反向微旋转并缓回 0，
+  // 让头发/衣服动态在视角转动时可见（旧 loop 的逐值 parity）。
+  function updateCameraInertia(dt) {
+    const model = state.model;
+    if (!state.controls || !model || model.disposed || !model.vrm?.scene) return;
+    if (!state.prevControlsTarget) state.prevControlsTarget = state.controls.target.clone();
+    const target = state.controls.target;
+    const camDeltaX = target.x - state.prevControlsTarget.x;
+    const camDeltaY = target.y - state.prevControlsTarget.y;
+    state.prevControlsTarget.copy(target);
+    const rotX = THREE.MathUtils.clamp(camDeltaX * 1.8, -0.04, 0.04);
+    const rotZ = THREE.MathUtils.clamp(-camDeltaY * 1.5, -0.04, 0.04);
+    model.vrm.scene.rotation.x += rotZ * 0.6;
+    model.vrm.scene.rotation.z += rotX * 0.6;
+    model.vrm.scene.rotation.x += (0 - model.vrm.scene.rotation.x) * dt * 3.5;
+    model.vrm.scene.rotation.z += (0 - model.vrm.scene.rotation.z) * dt * 3.5;
   }
 
   function buildLights(scene) {
@@ -403,6 +486,9 @@ export function createThreeVrmEngine(options = {}) {
     );
     state.camera.lookAt(focus);
     state.camera.updateProjectionMatrix();
+    // 展示设置/重新取景时退出手动拖拽视角（与旧面板滑块=恢复主镜头一致）。
+    state.cameraManual = false;
+    syncOrbitTarget(focus);
     return true;
   }
 
@@ -564,6 +650,7 @@ export function createThreeVrmEngine(options = {}) {
           unbindContextListeners = bindContextListeners(state.canvas);
         }
         if (nextViewport) engine.setViewport(nextViewport.width, nextViewport.height);
+        ensureOrbitControls();
         return Object.freeze({ moved, fallback: moved ? null : "detach-attach", rendererRebuilt: false });
       }
       if (nextCanvas !== null && nextCanvas !== undefined && nextCanvas !== state.canvas) {
@@ -578,10 +665,12 @@ export function createThreeVrmEngine(options = {}) {
         state.renderer = rendererFactory({ canvas: nextCanvas });
         applyRendererBaseline(state.renderer);
         if (nextViewport) engine.setViewport(nextViewport.width, nextViewport.height);
+        ensureOrbitControls();
         return Object.freeze({ moved: false, fallback: "canvas-rebuild", rendererRebuilt: true });
       }
       // 同一 canvas/无新宿主：幂等，仅按需更新视口。
       if (nextViewport) engine.setViewport(nextViewport.width, nextViewport.height);
+      ensureOrbitControls();
       return Object.freeze({ moved: false, fallback: null, rendererRebuilt: false });
     },
 
@@ -622,6 +711,28 @@ export function createThreeVrmEngine(options = {}) {
         side: clamp(side, -1, 1),
       };
       return composeFramedCamera();
+    },
+
+    // 恢复主镜头：按当前模型包围盒重新取景，并退出用户拖拽的手动视角。
+    // 与旧面板“主镜头/恢复默认”按钮 parity（restoreMainCamera）。
+    restoreMainCamera() {
+      assertEngineAlive();
+      state.cameraManual = false;
+      const model = state.model;
+      if (model && !model.disposed && model.vrm) {
+        frameCameraToModel(model.vrm);
+      } else {
+        state.cameraFraming = {
+          focus: new THREE.Vector3(...cameraPreset.focus),
+          distance: cameraPreset.distance,
+        };
+        composeFramedCamera();
+      }
+      return true;
+    },
+
+    isCameraManual() {
+      return Boolean(state.cameraManual);
     },
 
     // ── relighting（§13.1/§7.3）：与提取前 applyLightingRig 相同的强度/位置数学 ──
@@ -1046,6 +1157,7 @@ export function createThreeVrmEngine(options = {}) {
       const model = state.model;
       if (model && !model.disposed && model.vrm && typeof model.vrm.update === "function") {
         // Legacy 表现驱动：VRMA 动作播放时由动作驱动全身，否则自然站姿接管。
+        updateCameraInertia(Number(dt) || 0);
         model.performanceDriver?.update(dt, { gestureActive: model.currentGesture !== "" });
         model.vrm.update(dt);
       }
@@ -1053,6 +1165,7 @@ export function createThreeVrmEngine(options = {}) {
 
     renderFrame() {
       if (state.disposed || state.contextLost) return false; // §20.3.4 context lost 期间禁止提交 GPU 命令
+      if (state.controls) state.controls.update(); // 阻尼/惯性每帧推进
       state.renderer.render(state.scene, state.camera);
       const model = state.model;
       if (model && !model.disposed && !model.firstFrameEmitted) {
@@ -1124,6 +1237,7 @@ export function createThreeVrmEngine(options = {}) {
         scene: state.scene,
         camera: state.camera,
         lights: state.lights,
+        controls: state.controls,
         LIGHTING_BASE,
       });
     },
