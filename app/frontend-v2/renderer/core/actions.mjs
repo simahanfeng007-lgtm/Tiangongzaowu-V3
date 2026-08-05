@@ -84,6 +84,7 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
     : {};
   const status = String(
     result?.simple_chain_status
+    || result?.zhuangtai
     || payload?.simple_chain_status
     || payload?.zhuangtai
     || ""
@@ -91,8 +92,10 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
   // FE-07 regression: normal terminal states (casual chat reply or successful
   // task completion) are "done", not "continuation forbidden".  They must never
   // surface the stop notice; that notice is only meaningful when a work run
-  // ended without a normal terminal (failed/stuck/stopped).
-  const normalSuccessStatus = ["chat_reply", "complete", "wancheng", "success", "finished", "done", "ok"].includes(status);
+  // ended without a normal terminal (failed/stuck/stopped).  An empty status is
+  // the backend's "direct_reply_no_simple_chain_status" terminal: a successful
+  // plain chat that did not enter the simple chain at all.
+  const normalSuccessStatus = ["", "chat_reply", "complete", "wancheng", "success", "finished", "done", "ok"].includes(status);
   const text = String(displayText || "");
   const lowerText = text.toLowerCase();
   const state = runOptions?.autoContinueState && typeof runOptions.autoContinueState === "object"

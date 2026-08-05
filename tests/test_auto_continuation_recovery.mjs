@@ -214,6 +214,26 @@ const completedTaskZh = autoContinuationDecision({
 assert.equal(completedTaskZh.stopReason, "");
 assert.equal(autoContinuationStopNotice(completedTaskZh), "");
 
+// Direct plain chat: backend returns empty simple_chain_status with no tool
+// chain, which is a normal terminal and must never carry the stop notice.
+const directChatNoStatus = autoContinuationDecision({
+  result: { simple_chain_status: "" },
+  displayText: "午安呀～",
+  sendMode: "chat",
+  runOptions: {},
+});
+assert.equal(directChatNoStatus.stopReason, "");
+assert.equal(autoContinuationStopNotice(directChatNoStatus), "");
+
+const directChatNoStatusWork = autoContinuationDecision({
+  result: { simple_chain_status: "" },
+  displayText: "好的，直接回复。",
+  sendMode: "work",
+  runOptions: {},
+});
+assert.equal(directChatNoStatusWork.stopReason, "");
+assert.equal(autoContinuationStopNotice(directChatNoStatusWork), "");
+
 // FE-07 preserved: a genuinely failed work run still explains why it stops.
 const failedWorkRun = autoContinuationDecision({
   result: { simple_chain_status: "failed" },
