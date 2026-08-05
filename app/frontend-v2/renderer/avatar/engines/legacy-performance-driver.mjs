@@ -365,7 +365,8 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       // 导致前臂后弯、整条胳膊看起来反了）：
       //   rightUpperArm = (0.000, 0.000, -1.4399)    → 外展 7.5°
       //   rightLowerArm = (0.400, 0.300, 0.100)      → 前臂向前屈 ~18°（手在肩平面前 7cm）
-      //   rightHand     = (-0.200, -3.000, 3.100)    → 真实指尖对齐前臂（弯曲 0.39°），掌心朝内、拇指朝前
+      //   rightHand     = (0.550, 0.050, -0.050)     → 按“指尖卷曲方向=手背”实测标定：
+      //                                                  手背朝外、掌心朝内贴大腿（弯曲 1.8°）
       // 左臂按镜像约定取反（X 同号、Y/Z 反号）。
       let rUpperZ = -1.4399 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
       let lUpperZ = 1.4399 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
@@ -379,12 +380,12 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       let lLowerX = 0.400 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
       let rLowerY = 0.300;
       let lLowerY = -0.300;
-      let rHandX = -0.200 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
-      let lHandX = -0.200 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
-      let rHandY = -3.000 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
-      let lHandY = 3.000 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
-      let rHandZ = 3.100 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
-      let lHandZ = -3.100 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
+      let rHandX = 0.550 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = 0.550 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rHandY = 0.050 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
+      let lHandY = -0.050 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
+      let rHandZ = -0.050 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
+      let lHandZ = 0.050 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
       if (coSpeech) {
         rUpperX += speechPulse * 0.010 * coSpeech;
         lUpperX += Math.sin(state.idleTime * 4.1 + 1.1) * 0.006 * coSpeech;
