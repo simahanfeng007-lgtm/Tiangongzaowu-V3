@@ -364,7 +364,8 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       // VRM 骨骼轴序与解剖轴不一致，故在真实模型上反推（bio-scan4 最优组合）：
       //   rightUpperArm = (-0.0375, 0.1526, -1.3288)  → 外展 13.7° + 内旋 -9°
       //   rightLowerArm = (0.400, -0.450, 0.250)      → 肘屈/外翻/旋前映射到本模型轴序
-      //   rightHand     = (1.000, -0.200, 1.000)      → 旋前补足：手掌贴大腿、手指朝下
+      //   rightHand     = (-1.880, 3.120, -1.650)     → 手腕中立标定：手指对齐前臂轴线
+      //                                                  （实测手腕弯曲 0.09°），手掌朝内贴大腿
       // 左臂按镜像约定取反（X 同号、Y/Z 反号），leftcheck 实测左右完全对称。
       let rUpperZ = -1.328820 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
       let lUpperZ = 1.328820 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
@@ -378,12 +379,12 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       let lLowerX = 0.400 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
       let rLowerY = -0.450;
       let lLowerY = 0.450;
-      let rHandX = 1.000 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
-      let lHandX = 1.000 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
-      let rHandY = -0.200 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
-      let lHandY = 0.200 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
-      let rHandZ = 1.000 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
-      let lHandZ = -1.000 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
+      let rHandX = -1.880 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = -1.880 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rHandY = 3.120 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
+      let lHandY = -3.120 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
+      let rHandZ = -1.650 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
+      let lHandZ = 1.650 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
       if (coSpeech) {
         rUpperX += speechPulse * 0.010 * coSpeech;
         lUpperX += Math.sin(state.idleTime * 4.1 + 1.1) * 0.006 * coSpeech;
