@@ -363,29 +363,31 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       //   盂肱外展 4.5°（IQR 0.9–7.8）、内旋 9.0°（2.2–19）、
       //   肘屈 15.5°（13.2–18.1）、外翻 9.8°、旋前 90.2°。
       // 在真实模型上按中位数扫描实测反推（手不悬空、贴近大腿）：
-      //   rightUpperArm = (0.0124, -0.1566, -1.4913)  → 外展 4.5° + 内旋 9°
-      //   rightLowerArm = (0.3000,  0.3000,  0.2000)  → 肘屈 15.5°
-      //     （实测：手在肩外 0.104、肘下 0.206、肩前 0.061；前倾角 -15.5°）
-      //   rightHand     = (-0.4121, 0.0765, 0.0311)   → 掌心朝身体（0.91），手指沿前臂（弯曲 3.6°）
+      //   rightUpperArm = (0.0129, -0.1526, -1.4828)  → 外展 4.98° + 内旋 ~8.7°
+      //   rightLowerArm = (0.3000, -0.2000,  0.1850)  → 肘前屈 15.07° + 外翻 9.72°
+      //     （2026-08-05 修正：原 ly=+0.300 在模型本地系是“后屈 17°”，导致前臂
+      //       向后-向外别、肘屈轴偏离额状面 60.6°——即用户看到的“大臂内扣”；
+      //       现 ly=-0.200/lz=+0.185，实测前倾 +15.07°、外翻 +9.72°、屈轴偏差 18°）
+      //   rightHand     = (-0.4676, 0, 0)              → 掌心朝身体（0.987），手指沿前臂（0°）
       // 左臂按镜像约定取反（X 同号、Y/Z 反号）。
-      let rUpperZ = -1.4913 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
-      let lUpperZ = 1.4913 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
-      let rLowerZ = 0.200 + armEase * 0.018;
-      let lLowerZ = -0.200 - armEase * 0.018;
-      let rUpperX = 0.0124 + armEase * 0.035;
-      let lUpperX = 0.0124 - armEase * 0.030;
-      let rUpperY = -0.1566 + shift * 0.004;
-      let lUpperY = 0.1566 + shift * 0.004;
+      let rUpperZ = -1.4828 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
+      let lUpperZ = 1.4828 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
+      let rLowerZ = 0.185 + armEase * 0.018;
+      let lLowerZ = -0.185 - armEase * 0.018;
+      let rUpperX = 0.0129 + armEase * 0.035;
+      let lUpperX = 0.0129 - armEase * 0.030;
+      let rUpperY = -0.1526 + shift * 0.004;
+      let lUpperY = 0.1526 + shift * 0.004;
       let rLowerX = 0.300 + softTalk * 0.008 + speechPulse * 0.006 * coSpeech;
       let lLowerX = 0.300 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
-      let rLowerY = 0.300;
-      let lLowerY = -0.300;
-      let rHandX = -0.4121 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
-      let lHandX = -0.4118 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
-      let rHandY = 0.0765 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
-      let lHandY = -0.0764 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
-      let rHandZ = 0.0311 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
-      let lHandZ = -0.0309 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
+      let rLowerY = -0.200;
+      let lLowerY = 0.200;
+      let rHandX = -0.4676 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = -0.4676 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rHandY = 0 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
+      let lHandY = 0 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
+      let rHandZ = 0 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
+      let lHandZ = 0 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
       if (coSpeech) {
         rUpperX += speechPulse * 0.010 * coSpeech;
         lUpperX += Math.sin(state.idleTime * 4.1 + 1.1) * 0.006 * coSpeech;
