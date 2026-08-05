@@ -55,11 +55,24 @@ function makeDriver() {
   return { driver, bones, captured };
 }
 
-test("legacy driver: 自然站姿把 T-pose 手臂真正下垂（rightUpperArm.z≈-π/2 / left≈+π/2）", () => {
+test("legacy driver: 自然站姿为生物学中立位（JOSR 2022 标定：外展13.7°/肘屈15.5°/旋前90.2°映射）", () => {
   const { driver, bones } = makeDriver();
   driver.update(0.1, { gestureActive: false });
-  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + Math.PI / 2) < 0.03, `右手臂应下垂，实际 ${bones.get("rightUpperArm").rotation.z}`);
-  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - Math.PI / 2) < 0.03, `左手臂应下垂，实际 ${bones.get("leftUpperArm").rotation.z}`);
+  // 上臂：外展 13.7°（z 基准 -1.32882），左臂按镜像取反
+  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + 1.32882) < 0.03, `右上臂应处于外展中立位，实际 ${bones.get("rightUpperArm").rotation.z}`);
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - 1.32882) < 0.03, `左上臂应镜像外展中立位，实际 ${bones.get("leftUpperArm").rotation.z}`);
+  // 前臂：肘屈/外翻/旋前映射（0.400, -0.450, 0.250）
+  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.x - 0.400) < 0.05, `右前臂 x 应 ≈0.40，实际 ${bones.get("rightLowerArm").rotation.x}`);
+  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.y + 0.450) < 0.05, `右前臂 y 应 ≈-0.45，实际 ${bones.get("rightLowerArm").rotation.y}`);
+  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.z - 0.250) < 0.05, `右前臂 z 应 ≈0.25，实际 ${bones.get("rightLowerArm").rotation.z}`);
+  // 手腕：旋前补足（1.000, -0.200, 1.000），手掌贴大腿、手指朝下
+  assert.ok(Math.abs(bones.get("rightHand").rotation.x - 1.000) < 0.05, `右手腕 x 应 ≈1.00，实际 ${bones.get("rightHand").rotation.x}`);
+  assert.ok(Math.abs(bones.get("rightHand").rotation.y + 0.200) < 0.05, `右手腕 y 应 ≈-0.20，实际 ${bones.get("rightHand").rotation.y}`);
+  assert.ok(Math.abs(bones.get("rightHand").rotation.z - 1.000) < 0.05, `右手腕 z 应 ≈1.00，实际 ${bones.get("rightHand").rotation.z}`);
+  // 左右镜像约定：X 同号、Y/Z 反号（leftcheck 实测左右手外侧位移 0.13、手掌/手指朝向对称）
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.x - bones.get("rightUpperArm").rotation.x) < 0.01, "左右上臂 X 应同号");
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.y + bones.get("rightUpperArm").rotation.y) < 0.02, "左右上臂 Y 应反号");
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z + bones.get("rightUpperArm").rotation.z) < 0.02, "左右上臂 Z 应反号");
   assert.equal(typeof bones.get("head").rotation.x, "number");
   assert.equal(typeof bones.get("hips").rotation.x, "number");
 });
@@ -115,7 +128,7 @@ test("legacy driver: qinggan 情绪驱动表情（joy→happy）", () => {
 });
 
 test("legacy driver: 版本与常量导出稳定", () => {
-  assert.equal(LEGACY_PERFORMANCE_DRIVER_VERSION, "legacy-performance-driver-1.0.0");
+  assert.equal(LEGACY_PERFORMANCE_DRIVER_VERSION, "legacy-performance-driver-1.1.0");
   assert.equal(EMOTION_KEYS.length, 7);
   assert.equal(VRMA_GESTURE_KEYS.length, 7);
 });
