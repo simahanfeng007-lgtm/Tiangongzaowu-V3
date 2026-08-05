@@ -509,29 +509,31 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
           distal.rotation.z = -(tip + fingerPulse * 0.55) * sign;
         }
       };
-      // 拇指休息位（2026-08-05 蒙皮顶点扫描）：自然放松时拇指在食指旁下垂、
-      // 保持一指宽间隔、不插入食指。右拇指 eulers：
-      //   meta=(0, -0.45, -0.25) / prox=(0, 0.03, -0.40) / dist=(0, 0, -0.15)
-      // 实测左右指尖距食指 PIP→指尖线均 33mm、低于拇指根 40mm，完全镜像对称。
+      // 拇指休息位（2026-08-05 蒙皮顶点扫描 + 解剖标定）：
+      // 自然放松时拇指沿食指下垂，CMC 关键参数是旋前角（metaX）——旧版指腹
+      // 上倾 27° 导致指根“向外拧”；现右 metaX=-0.45 / 左 metaX=-0.40，
+      // 实测指腹上倾 0°、完全平贴掌心，掌骨方向归中不外撇
+      // （右 +0.004 / 左 +0.001），指尖距食指线 ~29mm、低于指根 22mm。
+      // 注意：模型拇指本地系左右非纯镜像（metaX 同号），左右独立标定。
       const thumbCurl = (side) => {
-        const sign = side === "right" ? 1 : -1;
+        const right = side === "right";
         const metacarpal = humanoid.getNormalizedBoneNode(`${side}ThumbMetacarpal`);
         const proximal = humanoid.getNormalizedBoneNode(`${side}ThumbProximal`);
         const distal = humanoid.getNormalizedBoneNode(`${side}ThumbDistal`);
         if (metacarpal) {
-          metacarpal.rotation.x = 0;
-          metacarpal.rotation.y = (-0.45 + fingerPulse * 0.05) * sign;
-          metacarpal.rotation.z = (-0.25 + fingerPulse * 0.15) * sign;
+          metacarpal.rotation.x = (right ? -0.45 : -0.40) + fingerPulse * 0.03;
+          metacarpal.rotation.y = (right ? -0.35 : 0.35) + fingerPulse * 0.05;
+          metacarpal.rotation.z = (right ? -0.20 : 0.25) + fingerPulse * 0.10;
         }
         if (proximal) {
           proximal.rotation.x = 0;
-          proximal.rotation.y = 0.030 * sign;
-          proximal.rotation.z = (-0.40 + fingerPulse * 0.30) * sign;
+          proximal.rotation.y = right ? 0.03 : -0.03;
+          proximal.rotation.z = (right ? -0.025 : 0.00) + fingerPulse * 0.10;
         }
         if (distal) {
           distal.rotation.x = 0;
           distal.rotation.y = 0;
-          distal.rotation.z = (-0.15 + fingerPulse * 0.20) * sign;
+          distal.rotation.z = (right ? -0.25 : 0.20) + fingerPulse * 0.10;
         }
       };
       for (const side of ["right", "left"]) {
