@@ -232,7 +232,6 @@ export async function bootstrapAvatar({
       navigator,
       canvas: document.createElement("canvas"),
       viewport: { ...DEFAULT_ENGINE_VIEWPORT },
-      mirrorView: true, // 照镜子/自拍约定：角色右手显示在屏幕右侧
     });
     adapter = createThreeVrmRuntimeAdapter({ engine });
     // VRMA 动作资产（§15 聊天互动）：主进程资产通道读取 7 个内置动作字节，

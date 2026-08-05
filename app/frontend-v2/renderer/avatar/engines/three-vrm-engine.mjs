@@ -242,9 +242,6 @@ export function createThreeVrmEngine(options = {}) {
   const cameraPreset = { ...DEFAULT_CAMERA_PRESET, ...(options.cameraPreset ?? {}) };
   const fogPreset = options.fog === undefined ? DEFAULT_FOG : options.fog;
   const initialExposure = Number.isFinite(options.exposure) ? options.exposure : DEFAULT_EXPOSURE;
-  // 镜像显示（照镜子/自拍约定）：画面水平翻转，角色右手显示在观众右侧；
-  // 拖拽方向同步反转，保证“往右拖 = 往右转”的直觉。
-  const mirrorView = Boolean(options.mirrorView);
 
   const events = createEngineEventSink();
   const state = {
@@ -273,8 +270,6 @@ export function createThreeVrmEngine(options = {}) {
     cameraManual: false, // 用户拖拽后进入手动视角；设置/恢复默认时退出
     prevControlsTarget: null, // 镜头惯性联动 SpringBone 的上帧目标
   };
-  applyMirrorView();
-
   function applyRendererBaseline(renderer) {
     const ratio = Number.isFinite(options.pixelRatio)
       ? options.pixelRatio
@@ -317,11 +312,6 @@ export function createThreeVrmEngine(options = {}) {
       controls.minDistance = 0.45;
       controls.maxDistance = 5.8;
       controls.maxPolarAngle = Math.PI * 0.64;
-      if (mirrorView) {
-        // 画面已镜像：拖拽方向取反，保持“右拖=右转”的直觉。
-        controls.rotateSpeed = -1;
-        controls.panSpeed = -1;
-      }
       const focus = state.cameraFraming?.focus ?? new THREE.Vector3(...cameraPreset.focus);
       controls.target.copy(focus);
       controls.addEventListener("start", () => {
@@ -335,18 +325,12 @@ export function createThreeVrmEngine(options = {}) {
   }
 
   function ensureOrbitControls() {
-    applyMirrorView();
     if (state.controls) {
       if (state.controls.domElement === state.canvas) return;
       try { state.controls.dispose(); } catch (_error) { /* 幂等 */ }
       state.controls = null;
     }
     state.controls = createOrbitControls();
-  }
-
-  function applyMirrorView() {
-    if (!mirrorView || !state.canvas || typeof state.canvas.style !== "object") return;
-    state.canvas.style.transform = "scaleX(-1)";
   }
 
   function syncOrbitTarget(focus) {

@@ -58,17 +58,17 @@ function makeDriver() {
 test("legacy driver: 自然站姿为生物学中立位（JOSR 2022 标定：外展13.7°/肘屈15.5°/旋前90.2°映射）", () => {
   const { driver, bones } = makeDriver();
   driver.update(0.1, { gestureActive: false });
-  // 上臂：外展 13.7°（z 基准 -1.32882），左臂按镜像取反
-  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + 1.32882) < 0.03, `右上臂应处于外展中立位，实际 ${bones.get("rightUpperArm").rotation.z}`);
-  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - 1.32882) < 0.03, `左上臂应镜像外展中立位，实际 ${bones.get("leftUpperArm").rotation.z}`);
-  // 前臂：肘屈/外翻/旋前映射（0.400, -0.450, 0.250）
+  // 上臂：外展 7.5°（z 基准 -1.4399），左臂按镜像取反
+  assert.ok(Math.abs(bones.get("rightUpperArm").rotation.z + 1.4399) < 0.03, `右上臂应处于外展中立位，实际 ${bones.get("rightUpperArm").rotation.z}`);
+  assert.ok(Math.abs(bones.get("leftUpperArm").rotation.z - 1.4399) < 0.03, `左上臂应镜像外展中立位，实际 ${bones.get("leftUpperArm").rotation.z}`);
+  // 前臂：前屈映射（0.400, 0.300, 0.100），手在肩平面前方
   assert.ok(Math.abs(bones.get("rightLowerArm").rotation.x - 0.400) < 0.05, `右前臂 x 应 ≈0.40，实际 ${bones.get("rightLowerArm").rotation.x}`);
-  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.y + 0.450) < 0.05, `右前臂 y 应 ≈-0.45，实际 ${bones.get("rightLowerArm").rotation.y}`);
-  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.z - 0.250) < 0.05, `右前臂 z 应 ≈0.25，实际 ${bones.get("rightLowerArm").rotation.z}`);
-  // 手腕：中立位标定（2.980, -0.130, -0.040），真实指尖对齐前臂轴线（弯曲 <1°）、掌心朝内、拇指朝前
-  assert.ok(Math.abs(bones.get("rightHand").rotation.x - 2.980) < 0.05, `右手腕 x 应 ≈2.98，实际 ${bones.get("rightHand").rotation.x}`);
-  assert.ok(Math.abs(bones.get("rightHand").rotation.y + 0.130) < 0.05, `右手腕 y 应 ≈-0.13，实际 ${bones.get("rightHand").rotation.y}`);
-  assert.ok(Math.abs(bones.get("rightHand").rotation.z + 0.040) < 0.05, `右手腕 z 应 ≈-0.04，实际 ${bones.get("rightHand").rotation.z}`);
+  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.y - 0.300) < 0.05, `右前臂 y 应 ≈0.30，实际 ${bones.get("rightLowerArm").rotation.y}`);
+  assert.ok(Math.abs(bones.get("rightLowerArm").rotation.z - 0.100) < 0.05, `右前臂 z 应 ≈0.10，实际 ${bones.get("rightLowerArm").rotation.z}`);
+  // 手腕：中立位标定（-0.200, -3.000, 3.100），真实指尖对齐前臂轴线（弯曲 0.39°）、掌心朝内、拇指朝前
+  assert.ok(Math.abs(bones.get("rightHand").rotation.x + 0.200) < 0.05, `右手腕 x 应 ≈-0.20，实际 ${bones.get("rightHand").rotation.x}`);
+  assert.ok(Math.abs(bones.get("rightHand").rotation.y + 3.000) < 0.05, `右手腕 y 应 ≈-3.00，实际 ${bones.get("rightHand").rotation.y}`);
+  assert.ok(Math.abs(bones.get("rightHand").rotation.z - 3.100) < 0.05, `右手腕 z 应 ≈3.10，实际 ${bones.get("rightHand").rotation.z}`);
   // 左右镜像约定：X 同号、Y/Z 反号（leftcheck 实测左右手外侧位移 0.13、手掌/手指朝向对称）
   assert.ok(Math.abs(bones.get("leftUpperArm").rotation.x - bones.get("rightUpperArm").rotation.x) < 0.01, "左右上臂 X 应同号");
   assert.ok(Math.abs(bones.get("leftUpperArm").rotation.y + bones.get("rightUpperArm").rotation.y) < 0.02, "左右上臂 Y 应反号");

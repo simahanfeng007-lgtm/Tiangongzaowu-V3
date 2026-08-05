@@ -358,33 +358,33 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       let headZ = Math.sin(state.idleTime * 0.21) * 0.006 + microSettle * 0.004;
       if (gesture === "nod") headX += Math.sin(pNorm * Math.PI * 2.0) * 0.18 * pWave * Math.max(0.55, pInt);
       if (gesture === "tilt" || perf?.posture === "bashful") headZ += 0.14 * pWave * Math.max(0.50, pInt);
-      // 自然站姿基准（2026-08-05 生物学标定，替代早期手工 -1.185/±π/2）。
+      // 自然站姿基准（2026-08-05 整臂重标定，修复前臂反向）。
       // 来源 JOSR 2022 上肢中立位（doi:10.1186/s13018-022-03113-5）：
-      //   盂肱外展 4.5-13.7°、内旋 9°、肘屈 15.5°、外翻 9.8°、旋前 90.2°。
-      // VRM 骨骼轴序与解剖轴不一致，故在真实模型上反推（bio-scan4 最优组合）：
-      //   rightUpperArm = (-0.0375, 0.1526, -1.3288)  → 外展 13.7° + 内旋 -9°
-      //   rightLowerArm = (0.400, -0.450, 0.250)      → 肘屈/外翻/旋前映射到本模型轴序
-      //   rightHand     = (2.980, -0.130, -0.040)    → 手腕中立标定：真实指尖对齐前臂轴线
-      //                                                  （实测手腕弯曲 <1°），掌心朝内贴大腿、拇指朝前
-      // 左臂按镜像约定取反（X 同号、Y/Z 反号），leftcheck 实测左右完全对称。
-      let rUpperZ = -1.328820 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
-      let lUpperZ = 1.328820 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
-      let rLowerZ = 0.250 + armEase * 0.018;
-      let lLowerZ = -0.250 - armEase * 0.018;
-      let rUpperX = -0.0375 + armEase * 0.035;
-      let lUpperX = -0.0375 - armEase * 0.030;
-      let rUpperY = 0.1526 + shift * 0.004;
-      let lUpperY = -0.1526 + shift * 0.004;
+      //   盂肱外展 4.5-10°、肘屈 15.5°、外翻 9.8°。
+      // 在真实模型上以“前进方向”逐关节实测反推（前一次标定把前进方向取反，
+      // 导致前臂后弯、整条胳膊看起来反了）：
+      //   rightUpperArm = (0.000, 0.000, -1.4399)    → 外展 7.5°
+      //   rightLowerArm = (0.400, 0.300, 0.100)      → 前臂向前屈 ~18°（手在肩平面前 7cm）
+      //   rightHand     = (-0.200, -3.000, 3.100)    → 真实指尖对齐前臂（弯曲 0.39°），掌心朝内、拇指朝前
+      // 左臂按镜像约定取反（X 同号、Y/Z 反号）。
+      let rUpperZ = -1.4399 + breath * 0.004 + armEase * 0.05 + sway * 0.006;
+      let lUpperZ = 1.4399 - breath * 0.004 - armEase * 0.05 + sway * 0.005;
+      let rLowerZ = 0.100 + armEase * 0.018;
+      let lLowerZ = -0.100 - armEase * 0.018;
+      let rUpperX = 0 + armEase * 0.035;
+      let lUpperX = 0 - armEase * 0.030;
+      let rUpperY = 0 + shift * 0.004;
+      let lUpperY = 0 + shift * 0.004;
       let rLowerX = 0.400 + softTalk * 0.008 + speechPulse * 0.006 * coSpeech;
       let lLowerX = 0.400 + softTalk * 0.007 + Math.sin(state.idleTime * 3.0 + 0.9) * 0.003 * coSpeech;
-      let rLowerY = -0.450;
-      let lLowerY = 0.450;
-      let rHandX = 2.980 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
-      let lHandX = 2.980 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
-      let rHandY = -0.130 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
-      let lHandY = 0.130 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
-      let rHandZ = -0.040 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
-      let lHandZ = 0.040 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
+      let rLowerY = 0.300;
+      let lLowerY = -0.300;
+      let rHandX = -0.200 + Math.sin(state.idleTime * 0.82 + 0.4) * 0.005;
+      let lHandX = -0.200 + Math.sin(state.idleTime * 0.76 + 1.1) * 0.005;
+      let rHandY = -3.000 + Math.sin(state.idleTime * 0.53 + 0.2) * 0.005;
+      let lHandY = 3.000 + Math.sin(state.idleTime * 0.49 + 1.0) * 0.005;
+      let rHandZ = 3.100 + armEase * 0.024 + Math.sin(state.idleTime * 0.9) * 0.005;
+      let lHandZ = -3.100 - armEase * 0.024 + Math.sin(state.idleTime * 0.78 + 1) * 0.005;
       if (coSpeech) {
         rUpperX += speechPulse * 0.010 * coSpeech;
         lUpperX += Math.sin(state.idleTime * 4.1 + 1.1) * 0.006 * coSpeech;
