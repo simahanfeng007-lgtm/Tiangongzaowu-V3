@@ -193,10 +193,10 @@ def test_b6_continue_decision_hints_content_shortage_is_fixable() -> None:
         ["written content cjk_chars=983 < required 2500"],
         {},
     )
-    assert "fixable gap" in payload["instruction"]
+    assert "REQUIRED deliverable threshold" in payload["instruction"]
     assert "file.append" in payload["instruction"]
     payload_plain = _simple_chain_continue_decision_payload("req_y", ["some other gap"], {})
-    assert "fixable gap" not in payload_plain["instruction"]
+    assert "REQUIRED deliverable threshold" not in payload_plain["instruction"]
 
 
 def test_b1_delivery_guard_payload_demands_write_tool() -> None:
@@ -213,3 +213,36 @@ def test_b1_delivery_guard_payload_demands_write_tool() -> None:
     assert payload["expected_deliverables"] == ["设计桥可用性.md"]
     assert "file.write" in payload["instruction"]
     assert "Stop read-only probing now" in payload["instruction"]
+
+
+def test_b4_disk_existence_fallback_for_write_without_contract_flag(tmp_path: Path) -> None:
+    from v3.zongdiaodu import (
+        _simple_chain_mutation_payload_satisfies_request,
+        _tool_write_verified,
+    )
+
+    target = tmp_path / "设计桥可用性.md"
+    target.write_text("Blender 不可用。", encoding="utf-8")
+    payload = {
+        "ok": True,
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": str(target), "args": {"content": "Blender 不可用。"}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [str(target)],
+            "observed_write_effect": False,
+            "write_effect": False,
+            "write_evidence": None,
+        },
+    }
+    ok, issues = _simple_chain_mutation_payload_satisfies_request(
+        f"生成《设计桥可用性.md》到工作区",
+        payload,
+    )
+    assert ok is True, issues
+    assert _tool_write_verified("omni_body", {
+        "action": "file.write",
+        "ok": True,
+        "path": str(target),
+        "readback": {"ok": True, "path": str(target), "size_bytes": target.stat().st_size},
+    }) is True

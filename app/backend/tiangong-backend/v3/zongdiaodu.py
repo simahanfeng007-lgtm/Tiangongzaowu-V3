@@ -2702,27 +2702,37 @@ def _contract_observed_write(contract: dict[str, Any] | None) -> bool:
 
 def _tool_write_verified(tool_name: str, result: Any) -> bool:
     contract = normalize_tool_result(tool_name, result)
+    if not contract.get("ok"):
+        return False
     evidence = contract.get("write_evidence")
-    if not contract.get("ok") or not _contract_observed_write(contract):
-        return False
-    if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
-        return False
-    if not evidence.get("changed_files") and not evidence.get("deleted_files") and not evidence.get("verified_unchanged_files"):
-        return False
-    if not isinstance(result, dict):
+    if _contract_observed_write(contract):
+        if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
+            return False
+        if not evidence.get("changed_files") and not evidence.get("deleted_files") and not evidence.get("verified_unchanged_files"):
+            return False
+        if not isinstance(result, dict):
+            return True
+        readback = result.get("readback")
+        if isinstance(readback, dict):
+            return readback.get("ok") is True
+        if isinstance(readback, list):
+            return bool(readback) and all(isinstance(item, dict) and item.get("ok") is True for item in readback)
+        result_evidence = result.get("evidence")
+        if isinstance(result_evidence, dict) and result_evidence.get("exists") is True:
+            return True
+        # The pre/post or sandbox-broker evidence above is already authoritative.
+        # A separate readback is desirable but is enforced by the final
+        # post-mutation verification gate, not by inventing a write here.
         return True
-    readback = result.get("readback")
-    if isinstance(readback, dict):
-        return readback.get("ok") is True
-    if isinstance(readback, list):
-        return bool(readback) and all(isinstance(item, dict) and item.get("ok") is True for item in readback)
-    result_evidence = result.get("evidence")
-    if isinstance(result_evidence, dict) and result_evidence.get("exists") is True:
-        return True
-    # The pre/post or sandbox-broker evidence above is already authoritative.
-    # A separate readback is desirable but is enforced by the final
-    # post-mutation verification gate, not by inventing a write here.
-    return True
+    # B4 磁盘兜底：契约缺 write_effect，但写工具返回的目标路径在磁盘上真实存在。
+    # 仅对写类动作生效（本函数只被写类质量载荷调用），读动作不会走到这里。
+    try:
+        paths = [str(path) for path in (contract.get("paths") or []) if str(path or "").strip()]
+        if paths and all(Path(path).is_file() for path in paths):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _simple_chain_payload_paths(payload: dict[str, Any]) -> list[str]:
@@ -3132,9 +3142,21 @@ def _simple_chain_mutation_payload_satisfies_request(
     if not isinstance(payload, dict) or not payload.get("ok"):
         return False, ["no successful quality payload"]
     contract = payload.get("tool_result_contract") if isinstance(payload.get("tool_result_contract"), dict) else {}
-    if not _contract_observed_write(contract):
-        return False, ["tool result has no write_effect"]
     action = str(payload.get("tool_action") or "").lower()
+    if not _contract_observed_write(contract):
+        actual_paths = _simple_chain_payload_paths(payload)
+        # B4 磁盘兜底：写类工具契约缺 write_effect，但目标路径在磁盘上真实存在。
+        if action in _SIMPLE_CHAIN_WRITE_ACTIONS and actual_paths:
+            try:
+                disk_ok = all(Path(path).is_file() for path in actual_paths)
+            except Exception:
+                disk_ok = False
+            if disk_ok:
+                contract = {**contract, "observed_write_effect": True, "write_effect": True}
+            else:
+                return False, ["tool result has no write_effect"]
+        else:
+            return False, ["tool result has no write_effect"]
     if action in {"skill.route", "skill.get", "skill.read"}:
         return False, ["skill handoff is not a deliverable mutation"]
 
@@ -5398,9 +5420,12 @@ def _simple_chain_continue_decision_payload(
         for reason in clean_reasons
     ):
         fixable_content_hint = (
-            " Content-shortage is a fixable gap: if the written file already exists but is below the "
-            "required length, continue with file.append/file.write to extend it to the required size; "
-            "do not abandon the task merely because the current draft is short."
+            " Content-shortage is a REQUIRED deliverable threshold, not an optional preference: the "
+            "written file exists but is below the required length, so the task is NOT complete. You "
+            "MUST continue with file.append/file.write to extend the existing file to the required "
+            "size. Stopping here is only acceptable if the environment physically cannot write more "
+            "content (e.g. quota/permission failure); otherwise return exactly one concrete tool call "
+            "that extends the file."
         )
     return {
         "schema": "tiangong.v3.simple_chain.continue_decision.v1",
