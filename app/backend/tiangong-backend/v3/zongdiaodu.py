@@ -4874,6 +4874,7 @@ def _simple_chain_requires_command_verification(user_message: str) -> bool:
     """用户明确要求“运行测试/确保测试通过”时，写回读证据不能冒充验证。"""
     text = str(user_message or "")
     return bool(re.search(
+        r"运行\s+(?:python|py)\s+[A-Za-z0-9_./\\-]+\.py|"
         r"运行\s*(?:python\s*-m\s*)?pytest|unittest|pytest\s+tests|"
         r"确保.{0,12}测试.{0,8}通过|测试.{0,8}全部通过|运行测试|跑测试",
         text,
