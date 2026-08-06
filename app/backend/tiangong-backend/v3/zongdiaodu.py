@@ -5523,8 +5523,9 @@ def _simple_chain_delivery_guard_payload(
             "attachment yet. Stop read-only probing now. Call exactly one concrete write tool "
             "(file.write, docx.create, pptx.create, sheet.create, zip.create, mindmap.create, or the "
             "equivalent for the expected format) that creates the expected deliverable path(s). If the "
-            "environment genuinely cannot produce it, reply in natural language with the blocking reason "
-            "instead of calling another inspection tool."
+            "environment genuinely cannot produce the real deliverable, still call file.write to create "
+            "the requested report file (e.g. the named .md path) containing the availability conclusion "
+            "and the blocking reason; do not merely reply in chat and do not call another inspection tool."
         ),
     }
 
