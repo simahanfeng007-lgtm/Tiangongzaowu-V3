@@ -5658,11 +5658,22 @@ def _simple_chain_fallback_write_deliverable(
             # 已有文件时只保留模型/真实写入内容；旧版平台兜底文件允许重写，
             # 避免模板级报告长期停留在磁盘上。
             try:
-                existing_text = path.read_text(encoding="utf-8", errors="replace")[:120]
+                existing_full = path.read_text(encoding="utf-8", errors="replace")
             except Exception:
-                existing_text = ""
+                existing_full = ""
+            existing_text = existing_full[:120]
             if "平台兜底生成" not in existing_text:
-                return [{"kind": "document", "path": str(path), "suffix": path.suffix.lower()}]
+                # 内容不足场景（字数未达要求）：兜底覆盖为证据版，否则保留。
+                min_chars, metric = _simple_chain_content_requirement_for(name, user_message)
+                if not min_chars:
+                    return [{"kind": "document", "path": str(path), "suffix": path.suffix.lower()}]
+                count = (
+                    _count_chinese_chars(existing_full)
+                    if metric == "cjk"
+                    else _count_nonspace_chars(existing_full)
+                )
+                if count >= min_chars:
+                    return [{"kind": "document", "path": str(path), "suffix": path.suffix.lower()}]
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
             f"# {Path(name).name}",
@@ -5670,7 +5681,7 @@ def _simple_chain_fallback_write_deliverable(
             "> 本文件由平台兜底生成：模型在交付门内未完成写入，平台基于已收集证据补齐。",
             "",
             "## 任务目标",
-            str(user_message or "").splitlines()[0][:300] if str(user_message or "").strip() else "",
+            str(user_message or "").strip()[:1000] if str(user_message or "").strip() else "",
             "",
             "## 已执行观察",
         ]
