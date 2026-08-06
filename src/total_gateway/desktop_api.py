@@ -744,6 +744,12 @@ class DesktopApiRouter:
         if reply:
             run["reply"] = reply
             run["final_response"] = reply
+        # 透传后端结构化终态（如 force_stopped/incomplete/complete），
+        # 供前端状态展示与后续排查使用；续作决策已不再依赖文本猜测。
+        for structured_key in ("simple_chain_status", "zhuangtai"):
+            structured_value = result_payload.get(structured_key)
+            if structured_value not in (None, ""):
+                run[structured_key] = structured_value
         if state == "FAILED":
             error_detail = self._desktop_error_detail(request_id, snapshots)
             run["error"] = error_detail["code"]

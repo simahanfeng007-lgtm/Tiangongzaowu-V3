@@ -1193,6 +1193,8 @@ class DuihuaQiaojie:
                     completion_ok, completion_reason = False, "simple_chain_failed"
                 elif simple_chain_status == "incomplete":
                     completion_ok, completion_reason = False, "simple_chain_incomplete"
+                elif simple_chain_status == "force_stopped":
+                    completion_ok, completion_reason = False, "simple_chain_force_stopped"
                 else:
                     completion_ok, completion_reason = True, "direct_reply_no_simple_chain_status"
                 run_control.finish(run_control.request_id, completion_ok, "" if completion_ok else completion_reason)

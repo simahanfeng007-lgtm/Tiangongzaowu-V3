@@ -21,7 +21,7 @@ const first = autoContinuationDecision({
   runOptions: {},
 });
 
-assert.equal(first.shouldContinue, true);
+assert.equal(first.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(first.reason, "verification_debt");
 assert.equal(first.nextState.verificationDebtAttempts, 1);
 const prompt = autoContinuationPrompt(first);
@@ -36,7 +36,7 @@ const repeated = autoContinuationDecision({
   runOptions: { autoContinueState: first.nextState },
 });
 
-assert.equal(repeated.shouldContinue, true);
+assert.equal(repeated.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(repeated.reason, "verification_debt");
 assert.equal(repeated.nextState.verificationDebtAttempts, 2);
 assert.equal(autoContinuationStopNotice(repeated), "");
@@ -48,7 +48,7 @@ const ordinaryCheckpoint = autoContinuationDecision({
   runOptions: {},
 });
 
-assert.equal(ordinaryCheckpoint.shouldContinue, true);
+assert.equal(ordinaryCheckpoint.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(ordinaryCheckpoint.reason, "checkpoint");
 assert.equal(ordinaryCheckpoint.nextState.consecutiveNoProgressFailures, 1);
 
@@ -58,7 +58,7 @@ const secondNoProgressFailure = autoContinuationDecision({
   sendMode: "work",
   runOptions: { autoContinueState: ordinaryCheckpoint.nextState },
 });
-assert.equal(secondNoProgressFailure.shouldContinue, true);
+assert.equal(secondNoProgressFailure.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(secondNoProgressFailure.reason, "checkpoint");
 assert.equal(secondNoProgressFailure.nextState.consecutiveNoProgressFailures, 2);
 assert.equal(autoContinuationStopNotice(secondNoProgressFailure), "");
@@ -76,7 +76,7 @@ const structuredProgressResetsFailureCount = autoContinuationDecision({
   sendMode: "work",
   runOptions: { autoContinueState: ordinaryCheckpoint.nextState },
 });
-assert.equal(structuredProgressResetsFailureCount.shouldContinue, true);
+assert.equal(structuredProgressResetsFailureCount.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(structuredProgressResetsFailureCount.nextState.consecutiveNoProgressFailures, 0);
 
 const narratedToolCountIsNotEvidence = autoContinuationDecision({
@@ -97,7 +97,7 @@ const repeatGuardCheckpoint = autoContinuationDecision({
   sendMode: "work",
   runOptions: {},
 });
-assert.equal(repeatGuardCheckpoint.shouldContinue, true);
+assert.equal(repeatGuardCheckpoint.shouldContinue, false); // 前端自动续作已全部停用
 assert.equal(repeatGuardCheckpoint.reason, "explicit_checkpoint");
 
 const structuredQcBehindRepeatGuard = autoContinuationDecision({
@@ -121,7 +121,7 @@ const structuredQcBehindRepeatGuard = autoContinuationDecision({
   sendMode: "work",
   runOptions: {},
 });
-assert.equal(structuredQcBehindRepeatGuard.shouldContinue, true);
+assert.equal(structuredQcBehindRepeatGuard.shouldContinue, false); // 前端自动续作已全部停用
 assert.match(autoContinuationPrompt(structuredQcBehindRepeatGuard), /quality acceptance failed: score=59/);
 assert.match(autoContinuationPrompt(structuredQcBehindRepeatGuard), /missing_hook_spec/);
 assert.doesNotMatch(autoContinuationPrompt(structuredQcBehindRepeatGuard), /mutation suffix does not match/);
@@ -137,7 +137,7 @@ const qcCheckpoint = autoContinuationDecision({
   sendMode: "work",
   runOptions: {},
 });
-assert.equal(qcCheckpoint.shouldContinue, true);
+assert.equal(qcCheckpoint.shouldContinue, false); // 前端自动续作已全部停用
 assert.match(
   autoContinuationPrompt(qcCheckpoint),
   /qc\.docx\.delivery_check did not meet its acceptance gate \(score=59\)/,

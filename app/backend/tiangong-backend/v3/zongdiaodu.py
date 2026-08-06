@@ -3307,6 +3307,11 @@ _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS = int(
 _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_DUPLICATE_INTENT_STREAK", "3")
 )
+# 强制停止时“自然语言收尾”的最小剩余墙钟：余量不足就不再调模型，
+# 直接回退模板，避免收尾调用拖过网关 watchdog 把 effect 判成 AMBIGUOUS。
+_SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS", "20")
+)
 
 
 def _simple_chain_natural_reply_text(text: Any) -> str:
@@ -4782,6 +4787,35 @@ def _simple_chain_final_gap_retry_payload(
     }
 
 
+def _simple_chain_continue_decision_payload(
+    request_id: str,
+    reasons: list[str],
+    run_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """普通未完成的“继续决策”载荷：让模型自主判断能否换一种方式继续。
+
+    模型返回一个具体 omni_body 调用 → 继续执行；返回纯文本 → 视为模型判断
+    无法继续，自然收尾并交由用户决定。平台不再强制重试，也不自动续作。
+    """
+    clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
+    return {
+        "schema": "tiangong.v3.simple_chain.continue_decision.v1",
+        "request_id": str(request_id or ""),
+        "ok": True,
+        "stage": "continue_decision",
+        "blocking_reasons": clean_reasons,
+        "run_state": _simple_chain_run_state_view(run_state),
+        "instruction": (
+            "You may continue this task only if a genuinely different approach can close a blocking reason. "
+            "If you continue, return exactly one concrete omni_body tool call: do not repeat an identical "
+            "failed call, and reuse existing successful evidence. If you cannot continue productively or need "
+            "the user to decide, stop now and reply in natural language explaining why, without claiming "
+            "completion and without implying you will continue automatically. Do not output a plan-only or "
+            "prose-only 'I will continue'."
+        ),
+    }
+
+
 def _simple_chain_completion_fallback_reply(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -4810,21 +4844,34 @@ def _simple_chain_natural_closeout_payload(
 ) -> dict[str, Any]:
     """Ask the model for a persona-consistent closeout bound to verified facts."""
 
-    return {
-        "schema": "tiangong.v3.simple_chain.natural_closeout.v1",
-        "authoritative_status": str(status or "incomplete"),
-        "verified_paths": _simple_chain_collect_paths(
-            quality_history, generated_attachments
-        )[:12],
-        "blocking_reasons": [str(item).strip() for item in reasons if str(item).strip()][:8],
-        "tool_steps": max(0, int(tool_count)),
-        "instruction": (
+    if status == "force_stopped":
+        instruction = (
+            "Write the final user-facing reply now in the active Soul/persona voice. "
+            "This must be a natural concise summary, never a system card, policy report, raw diagnostic dump, "
+            "or machine template. The platform forcibly stopped this run for the reason(s) listed in "
+            "blocking_reasons. Explain honestly what was completed, what remains, and that the run will not "
+            "continue automatically: the user must re-initiate if they want it resumed. Never claim success "
+            "beyond verified facts. Do not emit a tool call."
+        )
+    else:
+        instruction = (
             "Write the final user-facing reply now in the active Soul/persona voice. "
             "This must be a natural concise summary, never a system card, policy report, raw diagnostic dump, "
             "or machine template. State what was actually completed and where the verified artifacts are. "
             "If authoritative_status is not complete, naturally explain what remains and what will happen next. "
             "Never claim success beyond these verified facts. Do not emit a tool call."
-        ),
+        )
+
+    return {
+        "schema": "tiangong.v3.simple_chain.natural_closeout.v1",
+        "authoritative_status": str(status or "incomplete"),
+        "terminal_kind": str(status or "incomplete"),
+        "verified_paths": _simple_chain_collect_paths(
+            quality_history, generated_attachments
+        )[:12],
+        "blocking_reasons": [str(item).strip() for item in reasons if str(item).strip()][:8],
+        "tool_steps": max(0, int(tool_count)),
+        "instruction": instruction,
     }
 
 
@@ -5554,6 +5601,14 @@ class Zongdiaodu:
                 if status == "complete"
                 else _simple_chain_incomplete_reply(list(reasons or []), gongju_cishu, status=status)
             )
+            # 强制停止场景剩余墙钟可能极少：余量不足时不再调模型，
+            # 直接回退模板，避免收尾调用拖过网关 watchdog。
+            try:
+                remaining_seconds = _simple_chain_remaining_deadline_seconds()
+                if remaining_seconds < _SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS:
+                    return shenti, fallback
+            except Exception:
+                pass
             try:
                 next_body, reply = _llm_closeout_scoped(
                     _simple_chain_model_payload(payload),
@@ -5586,8 +5641,8 @@ class Zongdiaodu:
             )
             if stuck:
                 final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_stuck_close_reply([stuck_reason], gongju_cishu)
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout("force_stopped", [stuck_reason])
                 if run_control:
                     run_control.step(
                         "simple_chain_stuck",
@@ -5613,8 +5668,8 @@ class Zongdiaodu:
                 if loop_elapsed > effective_wall_clock_seconds:
                     budget_reasons.append("[loop_budget_exhausted] wall-clock budget exhausted")
                 final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_budget_close_reply(budget_reasons, gongju_cishu)
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
                 if run_control:
                     run_control.step(
                         "simple_chain_budget",
@@ -5895,10 +5950,10 @@ class Zongdiaodu:
                         )
                     if guard_count > _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS:
                         final_guard_exhausted = True
-                        final_chain_status = "incomplete"
-                        huifu = _simple_chain_budget_close_reply(
+                        final_chain_status = "force_stopped"
+                        shenti, huifu = _natural_closeout(
+                            "force_stopped",
                             ["[protected artifact] model repeated attempts to delete or overwrite a verified artifact"],
-                            gongju_cishu,
                         )
                         break
                     shenti, huifu = _llm_jixu_scoped(
@@ -6029,10 +6084,10 @@ class Zongdiaodu:
                 ]
                 if gongju_cishu + len(tools) > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
                     final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_budget_close_reply(
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout(
+                        "force_stopped",
                         ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                        gongju_cishu,
                     )
                     if run_control:
                         run_control.step(
@@ -6207,10 +6262,10 @@ class Zongdiaodu:
                 parallel_results.sort(key=lambda item: item[4])
                 if deadline_reached:
                     final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_budget_close_reply(
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout(
+                        "force_stopped",
                         ["[effect_deadline_exhausted] tool batch exceeded the gateway effect deadline"],
-                        gongju_cishu,
                     )
                     if run_control:
                         run_control.step(
@@ -6406,23 +6461,20 @@ class Zongdiaodu:
                     )
                     if can_retry_final_gap:
                         if final_gap_retry_count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
-                            # CC semantics: a pure-text model reply ends the turn.
-                            # The platform may ask for evidence repair at most K
-                            # times; after that it terminates fail-closed instead
-                            # of looping forever.
+                            # 决策回合超限：平台按强制停止收尾（fail-closed）。
                             final_guard_exhausted = True
-                            final_chain_status = "incomplete"
-                            huifu = _simple_chain_budget_close_reply(
+                            final_chain_status = "force_stopped"
+                            shenti, huifu = _natural_closeout(
+                                "force_stopped",
                                 final_reasons_now
-                                or ["[final_gap_retry_budget_exhausted] completion evidence repair budget exhausted"],
-                                gongju_cishu,
+                                or ["[continue_decision_budget_exhausted] model failed to close the completion gate"],
                             )
                             if run_control:
                                 run_control.step(
-                                    "simple_chain_final_gate_feedback",
-                                    "Completion evidence repair",
-                                    "incomplete",
-                                    "Completion evidence repair budget exhausted; run terminated fail-closed.",
+                                    "simple_chain_continue_decision",
+                                    "Continue decision budget",
+                                    "force_stopped",
+                                    "Continue decision budget exhausted; run terminated fail-closed.",
                                     meta={
                                         "attempt": final_gap_retry_count,
                                         "max_retries": _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
@@ -6431,15 +6483,15 @@ class Zongdiaodu:
                                 )
                             break
                         final_gap_retry_count += 1
-                        feedback = _simple_chain_final_gap_retry_payload(
+                        decision_payload = _simple_chain_continue_decision_payload(
                             request_id,
                             final_reasons_now,
                             run_state,
                         )
                         if run_control:
                             run_control.step(
-                                "simple_chain_final_gate_feedback",
-                                "Completion evidence repair",
+                                "simple_chain_continue_decision",
+                                "模型自主判断是否继续",
                                 "running",
                                 "; ".join(final_reasons_now)[:500],
                                 meta={
@@ -6448,20 +6500,36 @@ class Zongdiaodu:
                                 },
                             )
                         shenti, huifu = _llm_jixu_scoped(
-                            _simple_chain_model_payload(feedback),
+                            _simple_chain_model_payload(decision_payload),
                             on_chunk=_on_text_chunk,
+                        )
+                        decision_tools = (
+                            []
+                            if response_only_without_tools
+                            else self.gutong.jiexi_duogongju(huifu)
                         )
                         if run_control:
                             run_control.step(
-                                "simple_chain_final_gate_feedback",
-                                "Completion evidence repair",
+                                "simple_chain_continue_decision",
+                                "模型自主判断是否继续",
                                 "done",
-                                _llm_reply_progress_summary(huifu),
+                                "模型选择继续（返回工具调用）" if decision_tools else "模型判断无法继续，自然收尾",
                                 meta={
                                     "attempt": final_gap_retry_count,
+                                    "decided_to_continue": bool(decision_tools),
                                 },
                             )
-                        continue
+                        if decision_tools:
+                            # 模型选择换一种方式继续：本轮循环执行该工具。
+                            continue
+                        # 模型判断无法继续 → 普通未完成自然收尾，交由用户决定。
+                        final_guard_exhausted = True
+                        final_chain_status = "incomplete"
+                        shenti, huifu = _natural_closeout(
+                            "incomplete",
+                            final_reasons_now or ["模型判断无法继续"],
+                        )
+                        break
                     break
                 # 无工具调用，直接对话回复
                 huifu = _safe_visible_chat_reply(str(huifu or ""), str(huifu or ""))
@@ -6714,10 +6782,10 @@ class Zongdiaodu:
                     )
                 if guard_count > _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS:
                     final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_budget_close_reply(
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout(
+                        "force_stopped",
                         ["[protected artifact] model repeated attempts to delete or overwrite a verified artifact"],
-                        gongju_cishu,
                     )
                     break
                 shenti, huifu = _llm_jixu_scoped(
@@ -6858,10 +6926,10 @@ class Zongdiaodu:
                 continue
             if gongju_cishu >= _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
                 final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_budget_close_reply(
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout(
+                    "force_stopped",
                     ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                    gongju_cishu,
                 )
                 if run_control:
                     run_control.step(
@@ -6904,10 +6972,10 @@ class Zongdiaodu:
                 })
             if _simple_chain_remaining_deadline_seconds() <= 0:
                 final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_budget_close_reply(
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout(
+                    "force_stopped",
                     ["[effect_deadline_exhausted] gateway effect deadline reached before tool execution"],
-                    gongju_cishu,
                 )
                 if run_control:
                     run_control.step(
@@ -6941,10 +7009,10 @@ class Zongdiaodu:
                         "timeout_seconds": round(_tool_timeout_seconds, 1),
                     }
                     final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_budget_close_reply(
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout(
+                        "force_stopped",
                         ["[effect_deadline_exhausted] tool exceeded the platform tool-execution deadline"],
-                        gongju_cishu,
                     )
                     if run_control:
                         run_control.step(

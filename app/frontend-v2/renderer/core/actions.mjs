@@ -189,10 +189,9 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
     .join("\n")
     .slice(0, 2000);
   return {
-    // A1-A4 work continues from its durable checkpoint until the completion
-    // gate passes.  Counts, elapsed time and repeated diagnostics are useful
-    // telemetry, but are not authorization to stop the user's task.
-    shouldContinue: sendMode === "work" && recoverable && !requiresUser,
+    // 前端自动续作全部停用：是否继续由后端模型自主判断（继续决策回合），
+    // 或由用户重新发起；前端不再代替模型或用户决定续作。
+    shouldContinue: false,
     requiresUser,
     recoverable,
     thinCompletion,
@@ -1488,10 +1487,8 @@ export function createActions({ runtime, state, kernel = null }) {
             }
           );
         }
-        const stopNotice = autoContinuationStopNotice(continuation);
-        if (stopNotice) {
-          displayText = `${displayText}\n\n${stopNotice}`;
-        }
+        // 系统停止提示不再追加进聊天文本（用户不希望在对话里看到系统模板）；
+        // 停止原因与下一步由后端自然语言收尾回复承载。
         state.replaceMessageById({
           sessionId: targetSessionId,
           messageId: targetMessageId,
@@ -1584,10 +1581,8 @@ export function createActions({ runtime, state, kernel = null }) {
           }
         );
       }
-      const stopNotice = autoContinuationStopNotice(continuation);
-      if (stopNotice) {
-        displayText = `${displayText}\n\n${stopNotice}`;
-      }
+      // 系统停止提示不再追加进聊天文本（用户不希望在对话里看到系统模板）；
+      // 停止原因与下一步由后端自然语言收尾回复承载。
       // 派发 biaoxian 到 VRM 面板
       if (reply.biaoxian && typeof reply.biaoxian === "object") {
         console.log("[biaoxian] dispatching", reply.biaoxian.expression, reply.biaoxian.gesture);

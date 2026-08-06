@@ -3357,7 +3357,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
             Array.isArray(parsed.generated_attachments) ? parsed.generated_attachments : (Array.isArray(finalDonePayload?.generated_attachments) ? finalDonePayload.generated_attachments : []),
             artifactCards,
           ),
-          simple_chain_status: parsed.simple_chain_status || "",
+          simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
           recovered_from_status: recoveredFromStatus
         };
       }
@@ -3382,7 +3382,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
           Array.isArray(parsed.generated_attachments) ? parsed.generated_attachments : (Array.isArray(finalDonePayload?.generated_attachments) ? finalDonePayload.generated_attachments : []),
           artifactCards,
         ),
-        simple_chain_status: parsed.simple_chain_status || "",
+        simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
         recovered_from_status: recoveredFromStatus
       };
     }

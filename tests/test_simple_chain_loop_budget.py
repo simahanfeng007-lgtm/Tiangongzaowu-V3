@@ -302,6 +302,49 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         )
         self.assertEqual(natural.strip(), "先看一下")
 
+    def test_natural_closeout_payload_asks_for_persona_voice(self) -> None:
+        from v3.zongdiaodu import _simple_chain_natural_closeout_payload
+
+        payload = _simple_chain_natural_closeout_payload(
+            status="incomplete",
+            reasons=["[stuck] no effective progress for 4 consecutive steps"],
+            quality_history=[self._ok_payload()],
+            generated_attachments=[],
+            tool_count=2,
+        )
+        self.assertEqual(payload["authoritative_status"], "incomplete")
+        self.assertIn("natural", payload["instruction"].lower())
+        self.assertIn("Never claim success", payload["instruction"])
+        self.assertEqual(payload["blocking_reasons"][0], "[stuck] no effective progress for 4 consecutive steps")
+
+    def test_force_stopped_closeout_payload_explains_forced_stop(self) -> None:
+        from v3.zongdiaodu import _simple_chain_natural_closeout_payload
+
+        payload = _simple_chain_natural_closeout_payload(
+            status="force_stopped",
+            reasons=["[stuck] no effective progress for 4 consecutive steps"],
+            quality_history=[],
+            generated_attachments=[],
+            tool_count=0,
+        )
+        self.assertEqual(payload["authoritative_status"], "force_stopped")
+        self.assertEqual(payload["terminal_kind"], "force_stopped")
+        self.assertIn("forcibly stopped", payload["instruction"])
+        self.assertIn("re-initiate", payload["instruction"])
+        self.assertEqual(payload["blocking_reasons"][0], "[stuck] no effective progress for 4 consecutive steps")
+
+    def test_continue_decision_payload_allows_model_choice(self) -> None:
+        from v3.zongdiaodu import _simple_chain_continue_decision_payload
+
+        payload = _simple_chain_continue_decision_payload("req_x", ["no_write_effect"], None)
+        self.assertEqual(payload["schema"], "tiangong.v3.simple_chain.continue_decision.v1")
+        self.assertIn(
+            "If you continue, return exactly one concrete omni_body tool call",
+            payload["instruction"],
+        )
+        self.assertIn("cannot continue productively", payload["instruction"])
+        self.assertEqual(payload["blocking_reasons"], ["no_write_effect"])
+
     def test_budget_close_reply_is_terminal_and_honest(self) -> None:
         from v3.zongdiaodu import _simple_chain_budget_close_reply
 
