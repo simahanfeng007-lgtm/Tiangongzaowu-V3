@@ -3858,7 +3858,7 @@ def _simple_chain_progress_blocking_reasons(
             reasons.append("no_write_effect")
     if (
         _simple_chain_requires_verification(user_message)
-        and not _simple_chain_has_post_mutation_verification(quality_history)
+        and not _simple_chain_has_post_mutation_verification(quality_history, user_message)
     ):
         reasons.append("missing_verification")
     return reasons
@@ -4857,7 +4857,21 @@ def _simple_chain_requires_verification(user_message: str) -> bool:
     return any(marker in compact for marker in markers)
 
 
-def _simple_chain_has_post_mutation_verification(quality_history: list[dict[str, Any]]) -> bool:
+def _simple_chain_requires_command_verification(user_message: str) -> bool:
+    """用户明确要求“运行测试/确保测试通过”时，写回读证据不能冒充验证。"""
+    text = str(user_message or "")
+    return bool(re.search(
+        r"运行\s*(?:python\s*-m\s*)?pytest|unittest|pytest\s+tests|"
+        r"确保.{0,12}测试.{0,8}通过|测试.{0,8}全部通过|运行测试|跑测试",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+def _simple_chain_has_post_mutation_verification(
+    quality_history: list[dict[str, Any]],
+    user_message: str = "",
+) -> bool:
     verification_actions = {"run", "python.run", "quality.run_tests", "shell.run", "command.run"}
     test_markers = (
         "pytest", "unittest", "npm test", "npm run test", "pnpm test", "yarn test",
@@ -4922,7 +4936,12 @@ def _simple_chain_has_post_mutation_verification(quality_history: list[dict[str,
                 return True
     # B4 延伸：最后一次写工具的权威回读证据（exists + sha256/size，来自沙箱
     # broker 的确定性 post 状态）本身就是机器验证，不应要求模型再多读一次。
-    if last_mutation_index >= 0 and last_mutation_index < len(quality_history or []):
+    # 但用户明确要求“运行测试/确保通过”时，必须真实执行验证命令（自修复链）。
+    if (
+        last_mutation_index >= 0
+        and last_mutation_index < len(quality_history or [])
+        and not _simple_chain_requires_command_verification(user_message)
+    ):
         last_payload = quality_history[last_mutation_index]
         contract = last_payload.get("tool_result_contract") if isinstance(last_payload.get("tool_result_contract"), dict) else {}
         evidence = contract.get("write_evidence")
@@ -5308,7 +5327,7 @@ def _simple_chain_final_hard_gate(
             reasons.append("final reply is not a substantive answer: final_reply_empty")
         elif _simple_chain_reply_restates_tool_error(reply_text):
             reasons.append("final reply is not a substantive answer: final_reply_restates_tool_error")
-    if _simple_chain_requires_verification(user_message) and not _simple_chain_has_post_mutation_verification(quality_history):
+    if _simple_chain_requires_verification(user_message) and not _simple_chain_has_post_mutation_verification(quality_history, user_message):
         reasons.append("requested verification/test step is missing after the latest mutation")
     reasons.extend(_simple_chain_read_coverage_issues(user_message, quality_history, required_paths=required_read_paths))
     if _has_delivery_intent(user_message):
@@ -8231,7 +8250,7 @@ class Zongdiaodu:
                     else _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS
                 )
                 if repeat_count > repeat_limit:
-                    has_verified_mutation = _simple_chain_has_post_mutation_verification(quality_history) and any(
+                    has_verified_mutation = _simple_chain_has_post_mutation_verification(quality_history, xiaoxi) and any(
                         isinstance(payload, dict)
                         and _contract_observed_write(
                             payload.get("tool_result_contract")

@@ -273,7 +273,10 @@ def test_b4_omni_body_tuple_result_is_unwrapped() -> None:
 
 
 def test_b4_write_evidence_post_counts_as_verification() -> None:
-    from v3.zongdiaodu import _simple_chain_has_post_mutation_verification
+    from v3.zongdiaodu import (
+        _simple_chain_has_post_mutation_verification,
+        _simple_chain_requires_command_verification,
+    )
 
     payload = {
         "ok": True,
@@ -300,6 +303,9 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
         },
     }
     assert _simple_chain_has_post_mutation_verification([payload]) is True
+    assert _simple_chain_has_post_mutation_verification(
+        [payload], "用办公原生桥生成一个《办公桥测试.docx》测试文件"
+    ) is True
     no_post = {
         **payload,
         "tool_result_contract": {
@@ -314,6 +320,13 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
         },
     }
     assert _simple_chain_has_post_mutation_verification([no_post]) is False
+    # 明确要求运行测试时，写回读不能冒充验证命令。
+    assert _simple_chain_requires_command_verification("确保全部测试通过") is True
+    assert _simple_chain_requires_command_verification("运行 python -m pytest tests -q") is True
+    assert _simple_chain_has_post_mutation_verification(
+        [payload],
+        "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
+    ) is False
 
 
 def test_b6_novel_honors_explicit_user_word_count() -> None:
