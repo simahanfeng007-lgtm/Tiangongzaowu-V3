@@ -3314,6 +3314,19 @@ export function createHttpRuntime({ kernel = null } = {}) {
             // GF 门：网关投影随终态载荷传递，成功判定只信权威事实
             gateway_projection: recovered.status?.gateway_projection || null,
           };
+          if (recovered.run && (recovered.run.terminal || recovered.run.simple_chain_status)) {
+            try {
+              window.dispatchEvent(new CustomEvent("tiangong-terminal-run", {
+                detail: {
+                  run: recovered.run,
+                  requestId: gatewayRequestId,
+                  sessionId: String(recovered.run.session_id || recovered.run.sessionId || ""),
+                },
+              }));
+            } catch (_error) {
+              // 事件派发失败不影响主流程。
+            }
+          }
           if (recovered.phase !== "finished") {
             // GF 门：区分待对账/部分完成/矛盾/未知，文案明确非成功；待对账禁止重试
             terminalPhase = ["reconcile_required", "partial", "incident", "unknown"].includes(recovered.phase)
