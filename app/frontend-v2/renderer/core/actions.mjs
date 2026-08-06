@@ -503,6 +503,15 @@ export function createActions({ runtime, state, kernel = null }) {
     });
   }
 
+  function mergeTerminalIntoLastRun(next) {
+    const previous = state.snapshot().lastRun || {};
+    return {
+      ...(next || {}),
+      terminal: (next?.terminal) || previous.terminal || null,
+      simple_chain_status: String(next?.simple_chain_status || previous.simple_chain_status || ""),
+    };
+  }
+
   if (!terminalRunListenerInstalled && typeof window !== "undefined") {
     terminalRunListenerInstalled = true;
     window.addEventListener("tiangong-terminal-run", (event) => {
@@ -1572,7 +1581,7 @@ export function createActions({ runtime, state, kernel = null }) {
         if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, Boolean(streamResult.ok));
         // GF 门：透传网关终态相位（reconcile_required/partial/incident/unknown），
         // 供顶部状态聚合与会话卡片使用；无相位信息时保持原 finished 语义
-        state.setLastRun(targetSessionId, { ...streamResult, requestId, sessionId: activeSessionId, phase: streamResult.phase || "finished", finishedAt: Date.now() });
+        state.setLastRun(targetSessionId, mergeTerminalIntoLastRun({ ...streamResult, requestId, sessionId: activeSessionId, phase: streamResult.phase || "finished", finishedAt: Date.now() }));
         // 延迟清进度，让工具结果短暂可见。新消息发出后不再清除旧进度
         const _rid = requestId;
         setTimeout(() => {
@@ -1594,7 +1603,7 @@ export function createActions({ runtime, state, kernel = null }) {
       }
       if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, Boolean(result.ok));
       // GF 门：非流式路径同样透传网关终态相位
-      state.setLastRun(targetSessionId, { ...result, requestId, sessionId: activeSessionId, phase: result.phase || "finished", finishedAt: Date.now() });
+      state.setLastRun(targetSessionId, mergeTerminalIntoLastRun({ ...result, requestId, sessionId: activeSessionId, phase: result.phase || "finished", finishedAt: Date.now() }));
       const reply = backendReply(result);
       let displayText = spokenBackendText(reply.text) || (reply.error ? reply.text : "已完成。");
       let productVerification = null;
