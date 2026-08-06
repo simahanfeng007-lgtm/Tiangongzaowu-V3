@@ -408,7 +408,23 @@ def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch
     assert items and (tmp_path / "浏览器测试.md").is_file()
     assert (tmp_path / "浏览器测试.md").read_text(encoding="utf-8").startswith("# 浏览器测试.md")
 
-    quality_history = [{
+    model_write = {
+        "ok": True,
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": str(tmp_path / "browser_snapshot.txt"), "args": {"content": "snapshot"}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [str(tmp_path / "browser_snapshot.txt")],
+            "observed_write_effect": True,
+            "write_evidence": {
+                "authoritative": True,
+                "source": "tool_post_readback",
+                "changed_files": [str(tmp_path / "browser_snapshot.txt")],
+                "post": [{"path": str(tmp_path / "browser_snapshot.txt"), "exists": True, "is_file": True, "size_bytes": 8, "sha256": "abc"}],
+            },
+        },
+    }
+    fallback_write = {
         "ok": True,
         "tool_action": "file.write",
         "tool_args": {"action": "file.write", "target": str(tmp_path / "浏览器测试.md"), "args": {"content": ""}},
@@ -418,10 +434,11 @@ def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch
             "observed_write_effect": True,
             "write_evidence": {"authoritative": True, "source": "platform_fallback", "changed_files": [str(tmp_path / "浏览器测试.md")]},
         },
-    }]
+        "summary": "platform fallback write",
+    }
     allowed, status, reasons = _simple_chain_final_hard_gate(
         "用浏览器自动化打开 example.com 并截图保存，输出《浏览器测试.md》",
-        quality_history,
+        [model_write, fallback_write],
         items,
         final_reply="已生成报告。",
     )
