@@ -5596,8 +5596,22 @@ def _simple_chain_fallback_write_deliverable(
             for index, payload in enumerate(quality_history[-12:], 1):
                 action = str(payload.get("tool_action") or "未知动作")
                 ok_text = "成功" if bool(payload.get("ok")) else "失败"
-                summary = str(payload.get("summary") or "").strip()[:140]
-                lines.append(f"{index}. {action}（{ok_text}）{summary}".rstrip())
+                detail_lines: list[str] = []
+                source_map = payload.get("source_text_map")
+                if isinstance(source_map, dict):
+                    entries = source_map.get("entries") if isinstance(source_map.get("entries"), list) else []
+                    for entry in entries[:4]:
+                        if not isinstance(entry, dict):
+                            continue
+                        entry_text = str(entry.get("text") or "").strip()
+                        if entry_text:
+                            detail_lines.append("    " + entry_text.replace("\r", " ").replace("\n", " ")[:220])
+                if not detail_lines:
+                    summary = str(payload.get("summary") or "").strip()[:140]
+                    if summary:
+                        detail_lines.append("    " + summary)
+                lines.append(f"{index}. {action}（{ok_text}）")
+                lines.extend(detail_lines)
         else:
             lines.append("（无工具观察）")
         lines.extend([
