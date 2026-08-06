@@ -5641,6 +5641,7 @@ def _simple_chain_fallback_write_deliverable(
     quality_history: list[dict[str, Any]],
     gap_reasons: list[str],
     request_id: str,
+    generated_attachments: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     """B1 极端兜底：模型拒绝写交付物时，平台用已收集证据合成报告文件。
 
@@ -5656,7 +5657,7 @@ def _simple_chain_fallback_write_deliverable(
     missing = _simple_chain_missing_deliverable_paths(
         user_message,
         quality_history,
-        generated_attachments,
+        generated_attachments or [],
     )
     if missing:
         target_name = str(missing[0]).strip().strip('"').strip("'")
@@ -5778,6 +5779,7 @@ def _simple_chain_try_fallback_delivery(
         quality_history,
         gap_reasons,
         request_id,
+        generated_attachments,
     )
     if not items:
         return False, []
