@@ -3277,7 +3277,10 @@ export function createHttpRuntime({ kernel = null } = {}) {
       try {
         const acceptance = await apiJson("/api/v1/gateway/desktop/inbound", {
           method: "POST",
-          timeoutMs: 10000,
+          // 本地网关在就绪探针/后台批处理瞬时繁忙时，请求可能排队数秒；
+          // 入站是任务生命线的第一跳，超时必须宽于常规轮询（30s，仍远小于
+          // 900s 活动预算），避免偶发连接池竞争直接杀死任务。
+          timeoutMs: 30000,
           body: JSON.stringify({
           presentation_request_id: requestId,
           session_id: sessionId,

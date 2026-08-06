@@ -460,6 +460,106 @@ def _observed_write_evidence(
     deleted_files = _unique(deleted_files)
     verified_unchanged_files = _unique(verified_unchanged_files)
     if not changed_files and not deleted_files and not verified_unchanged_files:
+        # B4：无 broker 快照的简单写入结果，只要带回读/哈希事实（目标路径 +
+        # 存在性 + sha256/大小），就应认定为真实落盘，不能因为契约缺
+        # observed_write_effect 就把已完成产物判成“无写效应”。
+        readback = data.get("readback")
+        readback_items: list[dict[str, Any]] = []
+        if isinstance(readback, dict):
+            readback_items.append(readback)
+        elif isinstance(readback, list):
+            readback_items.extend(item for item in readback if isinstance(item, dict))
+        readback_ok = (
+            (isinstance(readback, dict) and readback.get("ok") is True)
+            or (
+                isinstance(readback, list)
+                and bool(readback)
+                and all(isinstance(item, dict) and item.get("ok") is True for item in readback)
+            )
+        )
+        fact_sources = list(candidates) + readback_items
+        direct_rows: dict[str, dict[str, Any]] = {}
+        for candidate in fact_sources:
+            path = str(
+                candidate.get("path")
+                or candidate.get("absolute_path")
+                or candidate.get("target")
+                or candidate.get("output_path")
+                or ""
+            ).strip()
+            if not path:
+                continue
+            has_post_fact = any(
+                key in candidate
+                for key in ("exists", "is_file", "is_dir", "sha256", "size_bytes")
+            )
+            if not has_post_fact:
+                continue
+            direct_rows[_path_key(path)] = {
+                "path": path,
+                "exists": candidate.get("exists"),
+                "is_file": candidate.get("is_file"),
+                "is_dir": candidate.get("is_dir"),
+                "size_bytes": candidate.get("size_bytes"),
+                "sha256": str(candidate.get("sha256") or ""),
+            }
+        if not direct_rows:
+            # 路径在 A 对象、事实在 B 对象（evidence 只带 exists/sha256）时按路径配对。
+            evidence_items = [
+                item
+                for item in list(candidates) + readback_items
+                if isinstance(item, dict)
+                and not str(
+                    item.get("path")
+                    or item.get("absolute_path")
+                    or item.get("target")
+                    or item.get("output_path")
+                    or ""
+                ).strip()
+                and any(key in item for key in ("exists", "is_file", "is_dir", "sha256", "size_bytes"))
+            ]
+            if evidence_items:
+                for candidate in fact_sources:
+                    path = str(
+                        candidate.get("path")
+                        or candidate.get("absolute_path")
+                        or candidate.get("target")
+                        or candidate.get("output_path")
+                        or ""
+                    ).strip()
+                    if not path or _path_key(path) in direct_rows:
+                        continue
+                    for item in evidence_items:
+                        if any(key in item for key in ("exists", "is_file", "is_dir", "sha256", "size_bytes")):
+                            direct_rows[_path_key(path)] = {
+                                "path": path,
+                                "exists": item.get("exists"),
+                                "is_file": item.get("is_file"),
+                                "is_dir": item.get("is_dir"),
+                                "size_bytes": item.get("size_bytes"),
+                                "sha256": str(item.get("sha256") or ""),
+                            }
+                            break
+        if direct_rows and readback_ok:
+            post_rows: list[dict[str, Any]] = []
+            for row in direct_rows.values():
+                if (
+                    isinstance(row.get("exists"), bool)
+                    or row.get("is_file") is not None
+                    or row.get("sha256")
+                    or row.get("size_bytes") is not None
+                ):
+                    post_rows.append(row)
+            if post_rows:
+                return {
+                    "schema": "tiangong.v3.write_evidence.v1",
+                    "authoritative": True,
+                    "source": "tool_post_readback",
+                    "action": action or name,
+                    "changed_files": _unique([row["path"] for row in post_rows]),
+                    "deleted_files": [],
+                    "post": post_rows,
+                }
         return None
     unique_post: list[dict[str, Any]] = []
     seen_post: set[str] = set()

@@ -971,6 +971,18 @@ class SemanticJournal:
         except Exception as exc:
             raise LifeCoreError("journal_head_invalid", str(exc), status=409) from exc
 
+    def read_verified_head(self, life_id: str) -> dict[str, Any] | None:
+        """Read the signed journal head without re-verifying the full chain.
+
+        Readiness polling uses this cheap fingerprint to decide whether the
+        full journal verification result is still valid; the full chain walk
+        (event read + hash) only reruns when the signed head actually changed.
+        """
+        try:
+            return self._read_verified_head(life_id)
+        except Exception:
+            return None
+
     def verify(self, life_id: str) -> dict[str, Any]:
         with self._lock:
             try:

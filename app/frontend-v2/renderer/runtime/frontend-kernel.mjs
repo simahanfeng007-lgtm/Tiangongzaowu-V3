@@ -243,8 +243,10 @@ export function createFrontendKernel({
     try {
       const health = await request("/health", { timeoutMs: 5000 });
       const [v3State, lifePanel] = await Promise.all([
-        optional(LIFE_API_ROUTES.state.path, { timeoutMs: 8000 }),
-        optional(LIFE_API_ROUTES.panel.path, { timeoutMs: 8000 }),
+        // 本地生命内核的 panel/state 在调度器写入时会偶发数秒响应；
+        // UI 就绪探测超时必须宽于接口实际耗时，否则发送门被误锁。
+        optional(LIFE_API_ROUTES.state.path, { timeoutMs: 20000 }),
+        optional(LIFE_API_ROUTES.panel.path, { timeoutMs: 20000 }),
       ]);
       const apiContract = String(health?.api_contract || "");
       const compatible = health?.component_id === "tiangong-total-gateway"

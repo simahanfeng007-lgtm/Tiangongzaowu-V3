@@ -76,7 +76,7 @@ class GatewayConfig(BaseModel):
     state_root: Path
     min_free_bytes: int = Field(default=67_108_864, ge=1_048_576, le=1_099_511_627_776)
     disk_probe_bytes: int = Field(default=4_096, ge=32, le=1_048_576)
-    disk_probe_interval_ms: int = Field(default=1_000, ge=100, le=60_000)
+    disk_probe_interval_ms: int = Field(default=20_000, ge=100, le=60_000)
     max_evidence_age_ms: int = Field(default=5_000, ge=1, le=60_000)
     shadow_api_token: str = Field(default="", max_length=512, repr=False)
     communication_api_token: str = Field(default="", max_length=512, repr=False)
@@ -226,7 +226,7 @@ class GatewayConfig(BaseModel):
                 disk_probe_interval_ms=_strict_uint(
                     source,
                     "TIANGONG_GATEWAY_DISK_PROBE_INTERVAL_MS",
-                    1_000,
+                    20_000,
                 ),
                 max_evidence_age_ms=_strict_uint(
                     source,

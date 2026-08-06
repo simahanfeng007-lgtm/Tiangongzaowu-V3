@@ -334,6 +334,12 @@ class EmbeddedLifeRuntime:
         self._persist_pending = False
         self._memory_contract_divergences: dict[str, int] = {}
         self._memory_contract_rebuilt: dict[str, int] = {}
+        # 就绪探针增量缓存：journal 全链校验与 autonomy 全量哈希只在
+        # 头/快照指纹变化时重算，避免每次 /ready 轮询付出 7-12s 全量成本。
+        self._journal_verify_cache: dict[str, Any] = {}
+        self._journal_verify_sig: tuple[Any, ...] = ()
+        self._autonomy_health_cache: dict[str, Any] = {}
+        self._autonomy_health_sig: tuple[Any, ...] = ()
         self.scheduler: EmbeddedLifeScheduler | None = None
         self._autonomy_decider: Any = None
         self._learning_decider: Any = None
@@ -3032,6 +3038,18 @@ class EmbeddedLifeRuntime:
     def _autonomy_health_payload(self) -> dict[str, Any]:
         autonomy = self._autonomy_state()
         tasks = autonomy.get("tasks") if isinstance(autonomy.get("tasks"), Mapping) else {}
+        signature = (
+            int(autonomy.get("task_sequence") or 0),
+            int(autonomy.get("generated_total") or 0),
+            int(autonomy.get("completed_total") or 0),
+            int(autonomy.get("failed_total") or 0),
+            len(tasks),
+            bool(autonomy.get("enabled")),
+            int(autonomy.get("pending_limit") or 0),
+            int(autonomy.get("last_tick_at_ms") or 0),
+        )
+        if signature == self._autonomy_health_sig and self._autonomy_health_cache:
+            return dict(self._autonomy_health_cache)
         invalid: list[str] = []
         reason_codes: list[str] = []
         active_count = 0
@@ -3077,7 +3095,7 @@ class EmbeddedLifeRuntime:
         if int(autonomy.get("failed_total") or 0) != failed_count:
             reason_codes.append("life.autonomy.failed_total_mismatch")
         healthy = not invalid and not reason_codes
-        return {
+        result = {
             "healthy": healthy,
             "enabled": bool(autonomy.get("enabled")),
             "task_generation_enabled": bool(autonomy.get("task_generation_enabled")),
@@ -3093,6 +3111,9 @@ class EmbeddedLifeRuntime:
             "last_tick_at_ms": int(autonomy.get("last_tick_at_ms") or 0),
             "last_tick_reason": str(autonomy.get("last_tick_reason") or ""),
         }
+        self._autonomy_health_cache = dict(result)
+        self._autonomy_health_sig = signature
+        return result
 
     def health_payload(self) -> dict[str, Any]:
         active = self._active()
@@ -3141,7 +3162,7 @@ class EmbeddedLifeRuntime:
         try:
             active = self._active()
             panel = self._panel()
-            store_health = self.authority_store.health()
+            store_health = self.authority_store.health_cached()
             journal = self._journal_verify()
             autonomy = self._autonomy_health_payload()
             if not active.get("life_id"):
@@ -3879,7 +3900,24 @@ class EmbeddedLifeRuntime:
 
     def _journal_verify(self) -> dict[str, Any]:
         life_id = str(self._active()["life_id"])
-        return self.system.journal.verify(life_id)
+        signature: tuple[Any, ...] = ()
+        try:
+            head = self.system.journal.read_verified_head(life_id)
+        except Exception:
+            head = None
+        if isinstance(head, dict):
+            signature = (
+                int(head.get("event_count") or 0),
+                str(head.get("head_event_sha256") or ""),
+                str(head.get("journal_sha256") or ""),
+            )
+        if signature and signature == self._journal_verify_sig and self._journal_verify_cache:
+            return dict(self._journal_verify_cache)
+        result = self.system.journal.verify(life_id)
+        if isinstance(result, dict) and signature:
+            self._journal_verify_cache = dict(result)
+            self._journal_verify_sig = signature
+        return result
 
     # ------------------------------------------------------------------
     # Contract-store memory convergence (D-11).

@@ -2349,6 +2349,25 @@ def _simple_chain_conversion_output_clause(user_message: str) -> str | None:
     return text[matches[-1].end():].strip()
 
 
+def _simple_chain_bracketed_deliverable_paths(text: Any) -> list[str]:
+    """提取书名号/引号/括号包裹的产物文件名（支持中文名，B1 根因之一）。
+
+    覆盖《设计桥可用性.md》、“动作参考.md”、“README.md”、（方案.docx）等
+    显式命名形态；只取带交付后缀的路径，避免把普通名词当产物。
+    """
+    value = str(text or "")
+    pattern = re.compile(
+        rf"[《\"“'‘「（(]\s*([^》\"”'’」）)\s，。；;、]+?\.(?:{_DELIVERABLE_EXTENSION_PATTERN}))\s*[》\"”'’」）)]?",
+        re.IGNORECASE,
+    )
+    out: list[str] = []
+    for match in pattern.finditer(value):
+        name = str(match.group(1) or "").strip().strip("。；;，,、")
+        if name and _path_suffix(name) in _DELIVERABLE_SUFFIXES:
+            out.append(name)
+    return _simple_chain_unique_paths(out)
+
+
 def _simple_chain_expected_suffixes(user_message: str) -> set[str]:
     conversion_output = _simple_chain_conversion_output_clause(user_message)
     text = (
@@ -2403,6 +2422,7 @@ def _simple_chain_requested_target_paths(user_message: str) -> list[str]:
             out.append(str(Path(os.environ.get("TIANGONG_DESKTOP_PATH") or Path.home()) / name))
         else:
             out.append(name)
+    out.extend(_simple_chain_bracketed_deliverable_paths(text))
 
     if desktop_mentioned:
         loose_name_pattern = re.compile(
@@ -2452,6 +2472,7 @@ def _simple_chain_explicit_deliverable_paths(user_message: str) -> list[str]:
         rf"(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
         re.IGNORECASE,
     )
+    out.extend(_simple_chain_bracketed_deliverable_paths(text))
     out.extend(match.group(1) for match in token_pattern.finditer(text))
     return _simple_chain_unique_paths(out)
 
@@ -3239,6 +3260,26 @@ def _simple_chain_reply_restates_tool_error(text: Any) -> bool:
     return any(marker in lowered for marker in _SIMPLE_CHAIN_ANSWER_ERROR_MARKERS)
 
 
+def _simple_chain_strip_tool_markup(text: Any) -> str:
+    """去掉模型回复里的工具调用标记，保留自然语言正文。"""
+    value = str(text or "")
+    value = re.sub(r"<tool_call\b[^>]*>.*?</tool_call>", "", value, flags=re.DOTALL | re.IGNORECASE)
+    value = re.sub(
+        r"<function_?calls?\b[^>]*>.*?(?:</function_?calls?>|$)",
+        "",
+        value,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    value = re.sub(r"<invoke\b[^>]*>.*?</invoke>", "", value, flags=re.DOTALL | re.IGNORECASE)
+    value = re.sub(
+        r"```(?:json)?\s*[^`]*(?:tool_calls|tool_call|function_call|omni_body|arguments)[^`]*```",
+        "",
+        value,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return value.strip()
+
+
 def _simple_chain_read_corpus(quality_history: list[dict[str, Any]] | None) -> str:
     """汇总链上读取类调用读到的正文，作为“回复是否引用读取内容”的对照。"""
     chunks: list[str] = []
@@ -3601,6 +3642,13 @@ _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAI
 _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS", "90")
 )
+# B1 干预：交付物缺失时允许的只读探测轮次，超过后强制要求写工具生成产物。
+_SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS", "3")
+)
+_SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS", "2")
+)
 # A single tool execution/batch must never wedge the chain past the gateway
 # watchdog (720s after the 3x budget raise).  This hard cap applies even when
 # the effect-deadline context is not visible on the executing thread.
@@ -3722,6 +3770,8 @@ def _simple_chain_progress_blocking_reasons(
     )
     if missing_deliverables:
         reasons.append("missing_deliverables:" + ",".join(sorted(missing_deliverables)[:8]))
+    if _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments):
+        reasons.append("no_deliverable_gap")
     if (
         _requires_real_mutation(user_message)
         and _simple_chain_task_kind(quality_history, user_message) == "write"
@@ -4257,6 +4307,10 @@ def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
     for match in re.finditer(r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)", text):
         action = match.group(1)
         if action in declared:
+            before = text[max(0, match.start() - 40):match.start()]
+            if re.search(r"(说明|介绍|解释|描述|列出|参数|用法|什么是|如何|是什么)", before):
+                # 说明/介绍语境里的工具名只是名词提及，不是要求执行的动作（B7）。
+                continue
             positioned.append((match.start(), action))
     sequence: list[str] = []
     for _position, action in sorted(positioned):
@@ -4817,6 +4871,14 @@ def _simple_chain_read_coverage_issues(
     expected_paths = _simple_chain_unique_paths(
         _simple_chain_requested_target_paths(user_message) + list(required_paths or [])
     )
+    # 交付产物（显式要求生成/保存、且不是“参考/读取”输入）不能同时被当作
+    # 待读输入：否则“生成《报告.md》”会被误判为必须先读取报告.md（B1 边界）。
+    deliverable_outputs = {
+        path
+        for path in _simple_chain_explicit_deliverable_paths(user_message)
+        if not _simple_chain_path_is_reference_mention(user_message, path)
+    }
+    expected_paths = [path for path in expected_paths if path not in deliverable_outputs]
     if not _simple_chain_requires_read_coverage(user_message, required_paths=expected_paths):
         return []
     if not expected_paths:
@@ -4876,6 +4938,81 @@ def _simple_chain_missing_deliverable_paths(
         for path in expected
         if not _simple_chain_paths_match_expected(observed, [path])
     ]
+
+
+def _simple_chain_no_deliverable_gap(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+) -> list[str]:
+    """B1/B3：请求了可交付产物，但没有成功写动作、也没有附件 → 硬 gap。
+
+    只对“显式命名了产物路径”或“带交付意图（发我/发送/交付/附件/打包）”的
+    任务生效；纯问答/说明任务（B7 语境，例如“说明 file.read 的参数”）不在此列。
+    """
+    if not _runtime_detects_work_intent(user_message):
+        return []
+    # 书名号/引号包裹的路径（《设计桥可用性.md》）是明确的输出契约；
+    # 裸路径（README.md、docs/guide.md）只有在真实变更请求里、且不是
+    # “参考/阅读”输入提及时才算交付物。
+    explicit = list(_simple_chain_bracketed_deliverable_paths(user_message))
+    if _requires_real_mutation(user_message):
+        explicit.extend(
+            path
+            for path in _simple_chain_explicit_deliverable_paths(user_message)
+            if path not in explicit
+            and not _simple_chain_path_is_reference_mention(user_message, path)
+        )
+    explicit = _simple_chain_unique_paths(explicit)
+    format_request = (
+        bool(_simple_chain_expected_suffixes(user_message))
+        and _requires_real_mutation(user_message)
+    )
+    if not explicit and not _has_delivery_intent(user_message) and not format_request:
+        return []
+    if generated_attachments:
+        return []
+    successful_write = any(
+        isinstance(payload, dict)
+        and bool(payload.get("ok"))
+        and _contract_observed_write(
+            payload.get("tool_result_contract")
+            if isinstance(payload.get("tool_result_contract"), dict)
+            else {}
+        )
+        for payload in quality_history or []
+    )
+    if successful_write:
+        return []
+    detail = ":" + ",".join(explicit[:4]) if explicit else ""
+    return [f"no successful write action or generated attachment for requested deliverable{detail}"]
+
+
+def _simple_chain_path_is_reference_mention(user_message: str, path: str) -> bool:
+    """判断路径在任务文本里是否只是“参考/阅读”类输入提及，而非交付产物。"""
+    text = str(user_message or "")
+    position = text.find(path)
+    if position < 0:
+        # 路径可能以目录前缀形式出现在别处；用规范化匹配再试一次。
+        key = _simple_chain_target_stem(path)
+        position = -1
+        for match in re.finditer(re.escape(key), text, re.IGNORECASE):
+            position = match.start()
+            break
+    if position < 0:
+        return False
+    before = text[max(0, position - 12):position]
+    after = text[position + len(path):position + len(path) + 24]
+    reference_markers = (
+        "参考", "参见", "根据", "阅读", "读取", "基于",
+        "refer", "see", "based on", "read",
+    )
+    if re.search("|".join(re.escape(marker) for marker in reference_markers), before, re.IGNORECASE):
+        return True
+    # 紧跟其后是“并总结/并回答/并介绍”等收尾动词时，前面的文件明显是输入。
+    if re.search(r"^\s*(并|然后|再)?\s*(总结|回答|介绍|说明|概括|分析)", after, re.IGNORECASE):
+        return True
+    return False
 
 
 def _simple_chain_is_clarification_question(text: Any) -> bool:
@@ -5017,6 +5154,13 @@ def _simple_chain_final_hard_gate(
             "explicitly named deliverables are missing: "
             + ", ".join(missing_deliverables[:8])
         )
+    no_deliverable_gap = _simple_chain_no_deliverable_gap(
+        user_message,
+        quality_history,
+        generated_attachments,
+    )
+    if no_deliverable_gap:
+        reasons.extend(no_deliverable_gap)
     task_kind = _simple_chain_task_kind(quality_history, user_message)
     if _requires_real_mutation(user_message) and task_kind == "write":
         # 写任务：维持 write_effect 判定——已有成功写调用，必须观察到落盘效应。
@@ -5247,6 +5391,17 @@ def _simple_chain_continue_decision_payload(
     无法继续，自然收尾并交由用户决定。平台不再强制重试，也不自动续作。
     """
     clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
+    fixable_content_hint = ""
+    if any(
+        ("written content" in reason or "cjk_chars=" in reason or "nonspace_chars=" in reason)
+        and "required" in reason
+        for reason in clean_reasons
+    ):
+        fixable_content_hint = (
+            " Content-shortage is a fixable gap: if the written file already exists but is below the "
+            "required length, continue with file.append/file.write to extend it to the required size; "
+            "do not abandon the task merely because the current draft is short."
+        )
     return {
         "schema": "tiangong.v3.simple_chain.continue_decision.v1",
         "request_id": str(request_id or ""),
@@ -5261,6 +5416,36 @@ def _simple_chain_continue_decision_payload(
             "the user to decide, stop now and reply in natural language explaining why, without claiming "
             "completion and without implying you will continue automatically. Do not output a plan-only or "
             "prose-only 'I will continue'."
+            + fixable_content_hint
+        ),
+    }
+
+
+def _simple_chain_delivery_guard_payload(
+    request_id: str,
+    user_message: str,
+    gap_reasons: list[str],
+    attempted_action: str,
+    tool_rounds: int,
+    run_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """B1 干预载荷：交付物缺失且探测轮次超限时，强制要求写工具生成产物。"""
+    return {
+        "schema": "tiangong.v3.simple_chain.delivery_guard.v1",
+        "request_id": str(request_id or ""),
+        "ok": True,
+        "stage": "delivery_guard",
+        "tool_rounds": int(tool_rounds or 0),
+        "attempted_action": str(attempted_action or ""),
+        "blocking_reasons": [str(item).strip() for item in (gap_reasons or []) if str(item).strip()][:8],
+        "expected_deliverables": _simple_chain_explicit_deliverable_paths(user_message)[:8],
+        "instruction": (
+            "The requested deliverable still does not exist: there is no successful write and no "
+            "attachment yet. Stop read-only probing now. Call exactly one concrete write tool "
+            "(file.write, docx.create, pptx.create, sheet.create, zip.create, mindmap.create, or the "
+            "equivalent for the expected format) that creates the expected deliverable path(s). If the "
+            "environment genuinely cannot produce it, reply in natural language with the blocking reason "
+            "instead of calling another inspection tool."
         ),
     }
 
@@ -6118,6 +6303,7 @@ class Zongdiaodu:
         final_chain_status = "complete"
         final_gap_retry_count = 0
         last_decision_fp: str | None = None
+        delivery_guard_active = False
         iteration_count = 0
         loop_started_at = time.monotonic()
         if isinstance(run_state, dict):
@@ -6256,7 +6442,9 @@ class Zongdiaodu:
                 ),
                 _simple_chain_natural_reply_text(huifu),
             )
-            if stuck:
+            # B1：交付物强制写干预已激活时，监视器让路——guard 有界（2 次），
+            # 由 guard 以 incomplete 收尾而非被误判为卡死 force_stopped。
+            if stuck and not delivery_guard_active:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", [stuck_reason])
@@ -7200,6 +7388,45 @@ class Zongdiaodu:
                 return huifu
 
 
+            # B2：交付门已在“上一轮工具观察”后满足，模型仍继续发工具调用 = 空转。
+            # 每次工具执行前复查完成门（每轮观察后的不变量），满足即提前自然收尾；
+            # 显式要求的 QC/验证/未完成交付物仍会使门保持未满足，不会误收尾。
+            if (
+                quality_history
+                and not final_guard_exhausted
+                and not _simple_chain_is_learning_only_request(xiaoxi)
+            ):
+                _early_allowed, _early_status, _early_reasons = _simple_chain_final_hard_gate(
+                    xiaoxi,
+                    quality_history,
+                    generated_attachments,
+                    required_read_paths=required_read_paths,
+                    final_reply=huifu,
+                )
+                if _early_allowed and _early_status == "complete":
+                    final_chain_status = "complete"
+                    _early_text = _simple_chain_strip_tool_markup(str(huifu or "")).strip()
+                    if not _early_text or _simple_chain_reply_restates_tool_error(_early_text):
+                        _early_text = ""
+                    if _early_text:
+                        huifu = _early_text
+                    else:
+                        shenti, huifu = _natural_closeout("complete")
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_delivery_gate_early_close",
+                            "交付门提前收尾",
+                            "done",
+                            "交付物已齐备且无 gap，模型继续调用工具视为空转，已提前自然收尾。",
+                            meta={"tool_rounds": gongju_cishu, "blocking_reasons": _early_reasons},
+                        )
+                    QUANZHUIXIAN.jilu_kuadu(
+                        zhuizong_id,
+                        "delivery_gate_early_close",
+                        "wancheng",
+                        f"status=complete;tools={gongju_cishu}",
+                    )
+                    break
             if run_control:
                 _check_stop("stopped before tool call")
             prepared_name, prepared_args, attempted_action, preflight_issues, block_payload = _simple_chain_prepare_tool_call(
@@ -7351,6 +7578,62 @@ class Zongdiaodu:
                             meta=lifecycle_payload,
                         )
                     break
+            # B1 干预：交付物缺失 + 只读探测轮次超限 → 强制写工具，避免模型
+            # 无限探测（capabilities/shell/python/adapter）而不产出交付物。
+            no_deliverable_now = _simple_chain_no_deliverable_gap(
+                xiaoxi,
+                quality_history,
+                generated_attachments,
+            )
+            if (
+                no_deliverable_now
+                and gongju_cishu >= _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
+                and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
+                and attempted_action not in {"skill.get", "skill.read", "skill.route"}
+            ):
+                guard_key = "no_deliverable_guard:" + candidate_call_key
+                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
+                repeat_observation_counts[guard_key] = guard_count
+                guard_payload = _simple_chain_delivery_guard_payload(
+                    request_id,
+                    xiaoxi,
+                    no_deliverable_now,
+                    attempted_action,
+                    gongju_cishu,
+                    run_state,
+                )
+                if guard_count <= _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS:
+                    delivery_guard_active = True
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_delivery_guard",
+                            "交付物强制写干预",
+                            "done",
+                            f"Blocked {attempted_action}; deliverable still missing after probing.",
+                            meta=guard_payload,
+                        )
+                    shenti, huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(guard_payload),
+                        on_chunk=_on_text_chunk,
+                    )
+                    continue
+                final_guard_exhausted = True
+                final_chain_status = "incomplete"
+                huifu = _simple_chain_incomplete_reply(
+                    no_deliverable_now
+                    or ["model kept probing without producing the requested deliverable"],
+                    gongju_cishu,
+                    status="incomplete",
+                )
+                if run_control:
+                    run_control.step(
+                        "simple_chain_delivery_guard",
+                        "交付物强制写干预",
+                        "incomplete",
+                        "Model exhausted the delivery-guard budget without producing the deliverable.",
+                        meta=guard_payload,
+                    )
+                break
             if (
                 next_explicit_action
                 and attempted_action != next_explicit_action
