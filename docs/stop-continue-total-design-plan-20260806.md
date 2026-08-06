@@ -161,6 +161,15 @@
 
 `tests/test_workspace_full_disk_mode.py`（8 项）：默认 workspace、保存/读取 full、非法值回退、老配置按 workspace、全盘放行桌面、全盘仍拦 Windows/.ssh、网关 blast 判定。
 
+## 10. 简单链事件流（2026-08-06 实施）
+
+- **7 种事件**：`chain_started` / `continue_decision` / `turn.failed` / `force_stopped` / `budget_limited` / `run_interrupted` / `chain_completed`（去掉 state_restored，加 started/completed）。
+- **文件**：`~/.tiangong/v3/simple_chain_events/events-YYYYMMDD.jsonl`，按日轮转、保留 30 天。
+- **位置不写死**：`TIANGONG_SIMPLE_CHAIN_EVENTS_ROOT` > 自动生成指针 `simple_chain_events_location.json` > 自动推导；首次运行生成指针，老安装/不同 HOME 自动适配。
+- **发射点**：run_state 创建（chain_started）、继续决策回合、`_simple_chain_closeout_record` / `_simple_chain_mark_terminal`（终局映射）、启动对账（run_interrupted + 崩溃窗口终局回填）。
+- **零影响**：发射失败仅返回 False；`tests/test_simple_chain_events.py` 7 项全过；全量后端 1614 过 / 3 既有环境失败，前端 213 过。
+- **监控脚本**：优先读事件流，快照兜底。
+
 ## 8. 实现状态与实验记录（2026-08-06 三稿）
 
 ### 8.1 隔离实验结论（实验在 %TEMP% 拷贝副本中完成，未污染源码）

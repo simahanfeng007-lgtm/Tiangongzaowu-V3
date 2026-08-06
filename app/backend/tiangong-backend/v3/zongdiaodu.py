@@ -791,6 +791,12 @@ def _simple_chain_mark_terminal(request_id: str, status: str, reason: str) -> di
         "source": "system",
     }
     _simple_chain_save_run_state(run_state)
+    _simple_chain_emit_event(
+        run_state,
+        _simple_chain_event_type_for(status, [reason]),
+        reason,
+        "system",
+    )
     return run_state
 
 
@@ -818,6 +824,55 @@ def _simple_chain_closeout_record(
         "source": source,
     }
     _simple_chain_save_run_state(run_state)
+    _simple_chain_emit_event(
+        run_state,
+        _simple_chain_event_type_for(status, clean_reasons),
+        "; ".join(clean_reasons),
+        source,
+        extra={"status": str(status or "incomplete")} if _simple_chain_event_type_for(status, clean_reasons) == "chain_completed" else None,
+    )
+
+
+def _simple_chain_event_type_for(status: str, reasons: list[str] | None) -> str:
+    try:
+        from .simple_chain_events import event_type_for
+
+        return event_type_for(status, reasons)
+    except Exception:
+        return "chain_completed"
+
+
+def _simple_chain_emit_event(
+    run_state: dict[str, Any] | None,
+    etype: str,
+    reason: str,
+    source: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """事件流发射（纯增量，失败不影响主流程）。"""
+    if not isinstance(run_state, dict):
+        return
+    try:
+        from .simple_chain_events import append_event
+
+        event: dict[str, Any] = {
+            "type": etype,
+            "run_id": str(run_state.get("run_id") or ""),
+            "request_id": str(run_state.get("request_id") or ""),
+            "session_id": str(run_state.get("session_id") or ""),
+            "round": int(run_state.get("round") or 0),
+            "reason": str(reason or "")[:500],
+            "source": str(source or "system"),
+        }
+        budget = run_state.get("budget") if isinstance(run_state.get("budget"), dict) else {}
+        if budget:
+            event["tool_rounds"] = int(budget.get("tool_rounds") or 0)
+            event["wall_clock_used_s"] = round(float(budget.get("wall_clock_used_s") or 0), 1)
+        if isinstance(extra, dict):
+            event.update(extra)
+        append_event(event)
+    except Exception:
+        pass
 
 
 def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:
@@ -5644,6 +5699,12 @@ class Zongdiaodu:
                             "source": "system",
                         }
                         _simple_chain_save_run_state(run)
+                        _simple_chain_emit_event(
+                            run,
+                            "run_interrupted",
+                            "[process_restart] run interrupted at startup",
+                            "system",
+                        )
                         cleaned += 1
                     # 保留策略：最新 RETAIN_COUNT 个，且不超过 RETAIN_DAYS 天。
                     age_days = (now - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() / 86400
@@ -5655,6 +5716,41 @@ class Zongdiaodu:
                             pass
                 except Exception:
                     continue
+        # 终局事件回填：状态已有 last_transition 但当日事件缺失（崩溃窗口），启动时补写。
+        try:
+            from .simple_chain_events import events_root, list_terminal_run_ids
+
+            events_dir = events_root()
+            terminal_ids = list_terminal_run_ids(events_dir)
+            for root in roots:
+                if not root.exists():
+                    continue
+                for f in root.glob("*.json"):
+                    try:
+                        data = json.loads(f.read_text(encoding="utf-8"))
+                        if not isinstance(data, dict) or isinstance(data.get("run"), dict):
+                            continue
+                        status = str(data.get("status") or "")
+                        lt = data.get("last_transition") if isinstance(data.get("last_transition"), dict) else None
+                        run_id = str(data.get("run_id") or data.get("request_id") or "")
+                        if status not in _SIMPLE_CHAIN_TERMINAL_STATUSES or not lt or not run_id:
+                            continue
+                        if run_id in terminal_ids:
+                            continue
+                        etype = _simple_chain_event_type_for(
+                            str(lt.get("type") or status),
+                            [str(lt.get("reason") or "")],
+                        )
+                        _simple_chain_emit_event(
+                            data,
+                            etype,
+                            str(lt.get("reason") or ""),
+                            str(lt.get("source") or "system"),
+                        )
+                    except Exception:
+                        continue
+        except Exception:
+            pass
         if cleaned or removed:
             _log = __import__("logging").getLogger("tiangong.zongdiaodu")
             _log.info(
@@ -5745,6 +5841,7 @@ class Zongdiaodu:
             run_control.step("build_context", "build context", "done", "Context is ready.")
 
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
+        _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
         requested_actions = [
             action
@@ -6763,6 +6860,7 @@ class Zongdiaodu:
                         not final_allowed_now
                     )
                     if can_retry_final_gap:
+                        decision_fp_changed = False
                         fp_now = _simple_chain_progress_fingerprint(
                             xiaoxi,
                             quality_history,
@@ -6771,6 +6869,7 @@ class Zongdiaodu:
                         if last_decision_fp is not None and fp_now != last_decision_fp:
                             # 上次决策后有实质进展：无进展计数清零，合法长任务不受限。
                             final_gap_retry_count = 0
+                            decision_fp_changed = True
                         last_decision_fp = fp_now
                         if final_gap_retry_count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
                             # 决策回合超限：平台按强制停止收尾（fail-closed）。
@@ -6831,6 +6930,17 @@ class Zongdiaodu:
                                     "decided_to_continue": bool(decision_tools),
                                 },
                             )
+                        _simple_chain_emit_event(
+                            run_state,
+                            "continue_decision",
+                            "; ".join(final_reasons_now)[:500],
+                            "system",
+                            extra={
+                                "attempt": final_gap_retry_count,
+                                "decided_to_continue": bool(decision_tools),
+                                "fingerprint_changed": decision_fp_changed,
+                            },
+                        )
                         if decision_tools:
                             # 模型选择换一种方式继续：本轮循环执行该工具。
                             continue
