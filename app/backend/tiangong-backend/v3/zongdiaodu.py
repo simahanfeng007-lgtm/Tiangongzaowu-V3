@@ -3755,6 +3755,11 @@ _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
 _SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS", "20")
 )
+# 链级 LLM 硬看门狗：SSE 保活/死锁场景下单次续写调用可能无限挂起，
+# 超过该秒数即强制返回终端错误，保证 run 一定收口、不占用执行槽。
+_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS", "180")
+)
 # run_state 保留策略：保留最新 N 个文件，且超过 D 天的旧文件删除（谁更严用谁）。
 # 实验（2026-08-06，隔离目录真实载荷）：314 个文件/19MB、最老 13.6 天；
 # 保留最新 200 个可释放 12.2MB；30 天时间窗当前不删除任何文件，作为长期上限。
@@ -6652,23 +6657,48 @@ class Zongdiaodu:
                 if not isinstance(item, dict):
                     continue
                 prior_texts.append(_simple_chain_history_payload_text(item))
-            if self.http_kehuduan is not None:
-                with self.http_kehuduan.scoped_tools(
-                    allowed_tool_names=allowed_tool_names,
-                    disable_tools=response_only_without_tools,
-                ):
-                    return self.gutong.jixu(
-                        system_tishi, payload, shenti, xiaoxi,
-                        on_text_chunk=on_chunk,
-                        assistant_messages=prior_texts,
-                        stable_user_message=cache_stable_user_message,
-                    )
-            return self.gutong.jixu(
-                system_tishi, payload, shenti, xiaoxi,
-                on_text_chunk=on_chunk,
-                assistant_messages=prior_texts,
-                stable_user_message=cache_stable_user_message,
-            )
+            import contextvars as _contextvars
+            import threading as _threading
+
+            def _call_jixu() -> tuple[ShentiZhuangtai, str]:
+                if self.http_kehuduan is not None:
+                    with self.http_kehuduan.scoped_tools(
+                        allowed_tool_names=allowed_tool_names,
+                        disable_tools=response_only_without_tools,
+                    ):
+                        return self.gutong.jixu(
+                            system_tishi, payload, shenti, xiaoxi,
+                            on_text_chunk=on_chunk,
+                            assistant_messages=prior_texts,
+                            stable_user_message=cache_stable_user_message,
+                        )
+                return self.gutong.jixu(
+                    system_tishi, payload, shenti, xiaoxi,
+                    on_text_chunk=on_chunk,
+                    assistant_messages=prior_texts,
+                    stable_user_message=cache_stable_user_message,
+                )
+
+            holder: dict[str, Any] = {}
+
+            def _runner() -> None:
+                try:
+                    holder["value"] = _call_jixu()
+                except Exception as exc:
+                    holder["error"] = exc
+
+            _ctx = _contextvars.copy_context()
+            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
+            _thread.start()
+            _thread.join(timeout=_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS)
+            if _thread.is_alive():
+                return shenti, (
+                    "[LLM错误: llm_call_hard_timeout 超过 "
+                    f"{_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS}s，已强制收口]"
+                )
+            if "error" in holder:
+                raise holder["error"]
+            return holder["value"]
 
         def _llm_closeout_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 收尾必须是“新的一轮用户指令”，不能走 jixu 的工具结果续写框架，
@@ -6678,21 +6708,46 @@ class Zongdiaodu:
                 f"[原始用户请求]\n{xiaoxi}\n\n"
                 f"[平台收尾指令]\n{closeout_text}"
             )
-            if self.http_kehuduan is not None:
-                with self.http_kehuduan.scoped_tools(
-                    allowed_tool_names=allowed_tool_names,
-                    disable_tools=True,
-                ):
-                    return self.gutong.huanxing(
-                        system_tishi,
-                        closeout_user_text,
-                        shenti,
-                        on_text_chunk=on_chunk,
-                    )
-            return self.gutong.huanxing(
-                system_tishi, closeout_user_text, shenti,
-                on_text_chunk=on_chunk,
-            )
+            import contextvars as _contextvars
+            import threading as _threading
+
+            def _call_closeout() -> tuple[ShentiZhuangtai, str]:
+                if self.http_kehuduan is not None:
+                    with self.http_kehuduan.scoped_tools(
+                        allowed_tool_names=allowed_tool_names,
+                        disable_tools=True,
+                    ):
+                        return self.gutong.huanxing(
+                            system_tishi,
+                            closeout_user_text,
+                            shenti,
+                            on_text_chunk=on_chunk,
+                        )
+                return self.gutong.huanxing(
+                    system_tishi, closeout_user_text, shenti,
+                    on_text_chunk=on_chunk,
+                )
+
+            holder: dict[str, Any] = {}
+
+            def _runner() -> None:
+                try:
+                    holder["value"] = _call_closeout()
+                except Exception as exc:
+                    holder["error"] = exc
+
+            _ctx = _contextvars.copy_context()
+            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
+            _thread.start()
+            _thread.join(timeout=max(20, _SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS // 2))
+            if _thread.is_alive():
+                return shenti, (
+                    "[LLM错误: closeout_hard_timeout 超过 "
+                    f"{max(20, _SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS // 2)}s，已强制收口]"
+                )
+            if "error" in holder:
+                raise holder["error"]
+            return holder["value"]
 
         gongju_cishu = 0
         tool_call_counts: dict[str, int] = {}
