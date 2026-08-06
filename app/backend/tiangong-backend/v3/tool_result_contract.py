@@ -208,7 +208,15 @@ def _extend_paths(out: list[str], value: Any) -> None:
 
 
 def _contract_source(result: Any) -> dict[str, Any]:
-    return result if isinstance(result, dict) else {"value": result}
+    if isinstance(result, dict):
+        return result
+    # omni_body 部分工具（file.list 等）返回 [工具名, 参数, 载荷] 元组形态；
+    # 不解包会把真实成功结果误判为未知/失败（B4 延伸根因）。
+    if isinstance(result, (list, tuple)) and len(result) >= 3:
+        payload = result[-1]
+        if isinstance(payload, dict):
+            return payload
+    return {"value": result}
 
 
 def _status_from_result(data: dict[str, Any]) -> str:
@@ -634,7 +642,7 @@ def normalize_tool_result(tool_name: str, result: Any) -> dict[str, Any]:
     status = _status_from_result(data)
     error = _error_from_result(data)
     readback_failed = _readback_failed(data)
-    ok = isinstance(result, dict)
+    ok = isinstance(data, dict)
     if data.get("plan_only") is True or data.get("satisfies_intent") is False:
         ok = False
     if data.get("ok") is False or data.get("success") is False:

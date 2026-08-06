@@ -246,3 +246,27 @@ def test_b4_disk_existence_fallback_for_write_without_contract_flag(tmp_path: Pa
         "path": str(target),
         "readback": {"ok": True, "path": str(target), "size_bytes": target.stat().st_size},
     }) is True
+
+
+def test_b4_omni_body_tuple_result_is_unwrapped() -> None:
+    from v3.tool_result_contract import normalize_tool_result
+
+    tuple_result = [
+        "omni_body",
+        {"action": "file.list", "target": "output", "args": {}},
+        {
+            "schema": "tiangong.v3.omni_body.v1",
+            "ok": True,
+            "zhuangtai": "wancheng",
+            "action": "file.list",
+            "result": {
+                "action": "file.list",
+                "count": 1,
+                "entries": [{"name": "e2e", "path": r"C:\ws\output\e2e", "type": "dir"}],
+                "success": True,
+            },
+        },
+    ]
+    contract = normalize_tool_result("omni_body", tuple_result)
+    assert contract["ok"] is True
+    assert contract["status"] == "wancheng"

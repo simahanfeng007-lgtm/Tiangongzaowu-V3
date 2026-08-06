@@ -5475,6 +5475,54 @@ def _simple_chain_delivery_guard_payload(
     }
 
 
+def _simple_chain_content_shortage_gap(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+) -> list[str]:
+    """B6：最新一次写类载荷是否因“内容长度不足”未达交付标准。"""
+    for payload in reversed(quality_history or []):
+        if not isinstance(payload, dict) or not bool(payload.get("ok")):
+            continue
+        action = str(payload.get("tool_action") or "").lower()
+        if action not in _SIMPLE_CHAIN_WRITE_ACTIONS:
+            continue
+        _ok, issues = _simple_chain_mutation_payload_satisfies_request(user_message, payload)
+        return [
+            str(item)
+            for item in issues
+            if "written content" in str(item) and "required" in str(item)
+        ]
+    return []
+
+
+def _simple_chain_content_guard_payload(
+    request_id: str,
+    gap_reasons: list[str],
+    target_paths: list[str],
+    attempted_action: str,
+    tool_rounds: int,
+) -> dict[str, Any]:
+    """B6 干预载荷：文件已存在但长度不足时，强制要求追加到同一路径。"""
+    return {
+        "schema": "tiangong.v3.simple_chain.content_guard.v1",
+        "request_id": str(request_id or ""),
+        "ok": True,
+        "stage": "content_guard",
+        "tool_rounds": int(tool_rounds or 0),
+        "attempted_action": str(attempted_action or ""),
+        "blocking_reasons": [str(item).strip() for item in (gap_reasons or []) if str(item).strip()][:8],
+        "existing_target_paths": target_paths[:8],
+        "instruction": (
+            "The deliverable file already exists on disk but is below the required length. This is a "
+            "content-shortage gap, not a verification problem. Do NOT call file.read, file.list, "
+            "file.hash, or any other inspection tool. Call exactly one write tool that EXTENDS the "
+            "existing file at one of the target paths above: use file.append (or file.write with the "
+            "full existing content plus new content) until the required length is met. Stopping is only "
+            "acceptable if the environment physically cannot extend the file."
+        ),
+    }
+
+
 def _simple_chain_completion_fallback_reply(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -6329,6 +6377,7 @@ class Zongdiaodu:
         final_gap_retry_count = 0
         last_decision_fp: str | None = None
         delivery_guard_active = False
+        content_guard_active = False
         iteration_count = 0
         loop_started_at = time.monotonic()
         if isinstance(run_state, dict):
@@ -6469,7 +6518,7 @@ class Zongdiaodu:
             )
             # B1：交付物强制写干预已激活时，监视器让路——guard 有界（2 次），
             # 由 guard 以 incomplete 收尾而非被误判为卡死 force_stopped。
-            if stuck and not delivery_guard_active:
+            if stuck and not delivery_guard_active and not content_guard_active:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", [stuck_reason])
@@ -7616,7 +7665,8 @@ class Zongdiaodu:
                 and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
                 and attempted_action not in {"skill.get", "skill.read", "skill.route"}
             ):
-                guard_key = "no_deliverable_guard:" + candidate_call_key
+                # 按 run 全局计数：模型换参数反复探测时不能重置 guard 预算。
+                guard_key = "no_deliverable_guard"
                 guard_count = repeat_observation_counts.get(guard_key, 0) + 1
                 repeat_observation_counts[guard_key] = guard_count
                 guard_payload = _simple_chain_delivery_guard_payload(
@@ -7657,6 +7707,60 @@ class Zongdiaodu:
                         "incomplete",
                         "Model exhausted the delivery-guard budget without producing the deliverable.",
                         meta=guard_payload,
+                    )
+                break
+            # B6 干预：文件已存在但长度不足时，禁止只读验证/探测，强制追加到同一路径。
+            content_gap_now = _simple_chain_content_shortage_gap(xiaoxi, quality_history)
+            if (
+                content_gap_now
+                and gongju_cishu >= 1
+                and attempted_action not in {"file.append", "file.write", "code.write", "file.replace"}
+            ):
+                guard_key = "content_guard"
+                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
+                repeat_observation_counts[guard_key] = guard_count
+                latest_write_paths: list[str] = []
+                for payload in reversed(quality_history or []):
+                    if isinstance(payload, dict) and str(payload.get("tool_action") or "").lower() in _SIMPLE_CHAIN_WRITE_ACTIONS:
+                        latest_write_paths = _simple_chain_payload_paths(payload)
+                        break
+                content_payload = _simple_chain_content_guard_payload(
+                    request_id,
+                    content_gap_now,
+                    latest_write_paths,
+                    attempted_action,
+                    gongju_cishu,
+                )
+                if guard_count <= _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS:
+                    content_guard_active = True
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_content_guard",
+                            "内容不足强制续写",
+                            "done",
+                            f"Blocked {attempted_action}; file exists but is below the required length.",
+                            meta=content_payload,
+                        )
+                    shenti, huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(content_payload),
+                        on_chunk=_on_text_chunk,
+                    )
+                    continue
+                final_guard_exhausted = True
+                final_chain_status = "incomplete"
+                huifu = _simple_chain_incomplete_reply(
+                    content_gap_now
+                    or ["model kept verifying instead of extending the deliverable to the required length"],
+                    gongju_cishu,
+                    status="incomplete",
+                )
+                if run_control:
+                    run_control.step(
+                        "simple_chain_content_guard",
+                        "内容不足强制续写",
+                        "incomplete",
+                        "Model exhausted the content-guard budget without extending the deliverable.",
+                        meta=content_payload,
                     )
                 break
             if (
