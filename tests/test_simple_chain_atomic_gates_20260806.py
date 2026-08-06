@@ -350,3 +350,40 @@ def test_b1_monitor_yields_to_delivery_guard_budget() -> None:
     assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
     assert _simple_chain_monitor_yields_to_guard(msg, [], [], 9) is False
     assert _simple_chain_monitor_yields_to_guard("参考 README.md 总结一下", [], [], 0) is False
+
+
+def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from v3.zongdiaodu import (
+        _simple_chain_fallback_write_deliverable,
+        _simple_chain_final_hard_gate,
+    )
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    items = _simple_chain_fallback_write_deliverable(
+        "用浏览器自动化打开 example.com 并截图保存，输出《浏览器测试.md》",
+        [{"ok": True, "tool_action": "shell.run", "summary": "probe"}],
+        ["no successful write action or generated attachment for requested deliverable:浏览器测试.md"],
+        "req_fb",
+    )
+    assert items and (tmp_path / "浏览器测试.md").is_file()
+    assert (tmp_path / "浏览器测试.md").read_text(encoding="utf-8").startswith("# 浏览器测试.md")
+
+    quality_history = [{
+        "ok": True,
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": str(tmp_path / "浏览器测试.md"), "args": {"content": ""}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [str(tmp_path / "浏览器测试.md")],
+            "observed_write_effect": True,
+            "write_evidence": {"authoritative": True, "source": "platform_fallback", "changed_files": [str(tmp_path / "浏览器测试.md")]},
+        },
+    }]
+    allowed, status, reasons = _simple_chain_final_hard_gate(
+        "用浏览器自动化打开 example.com 并截图保存，输出《浏览器测试.md》",
+        quality_history,
+        items,
+        final_reply="已生成报告。",
+    )
+    assert allowed is True, reasons
+    assert status == "complete"
