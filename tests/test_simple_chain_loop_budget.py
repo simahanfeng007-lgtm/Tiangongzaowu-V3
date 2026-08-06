@@ -125,6 +125,78 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertIn("TIANGONG_EFFECT_DEADLINE_MS", text)
         self.assertIn("previous_deadline_env", text)
         self.assertIn('os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)', text)
+        # 执行预算 3 倍放宽：网关默认效果截止 720s（12 分钟），单次动作上限 1800s。
+        self.assertIn("watchdog_ms = 720_000", text)
+        self.assertIn("1_800_000", text)
+
+    def test_budget_defaults_tripled(self) -> None:
+        from v3.zongdiaodu import (
+            _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
+            _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+            _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS,
+            _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS,
+            _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+            _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
+        )
+
+        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 75)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, 180)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 5400)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 90)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS, 90)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES, 9)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 540)
+
+    def test_work_status_question_is_not_mutation(self) -> None:
+        from v3.zongdiaodu import _requires_real_mutation, _runtime_detects_work_intent
+
+        # 纯询问/汇报：不进入写操作，也不会被“无工具观察”按预算上限收尾。
+        for question in (
+            "整理什么内容了",
+            "现在到哪了",
+            "你刚才做了什么",
+            "整理得怎么样了",
+            "上次的进度如何",
+        ):
+            self.assertFalse(_requires_real_mutation(question), question)
+            self.assertFalse(_runtime_detects_work_intent(question), question)
+        # 真命令仍然识别为 mutation。
+        for command in (
+            "帮我整理一下这些文件",
+            "把 output/e2e 整理成表格",
+            "生成打包发布清单，保存为 output/e2e/29-packaging.md。",
+        ):
+            self.assertTrue(_requires_real_mutation(command), command)
+
+    def test_no_observation_query_reply_passes_gate(self) -> None:
+        from v3.zongdiaodu import _simple_chain_final_hard_gate
+
+        ok, status, reasons = _simple_chain_final_hard_gate(
+            "整理什么内容了",
+            [],
+            [],
+            None,
+            final_reply="上一轮我在整理知识笔记，草稿还没落盘。",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(status, "complete")
+        self.assertEqual(reasons, [])
+
+        # 真写任务零观察仍然 fail-closed，不允许无证据谎报完成。
+        ok_write, status_write, reasons_write = _simple_chain_final_hard_gate(
+            "生成打包发布清单，保存为 output/e2e/29-packaging.md。",
+            [],
+            [],
+            None,
+            final_reply="已完成。",
+        )
+        self.assertFalse(ok_write)
+        self.assertEqual(status_write, "incomplete")
+        self.assertTrue(
+            any("no omni_body observation exists" in reason for reason in reasons_write),
+            reasons_write,
+        )
 
     def test_budget_close_reply_is_terminal_and_honest(self) -> None:
         from v3.zongdiaodu import _simple_chain_budget_close_reply

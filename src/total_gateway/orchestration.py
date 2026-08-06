@@ -1859,14 +1859,15 @@ class GatewayOrchestrationWorker:
                 minimum_generation=generation.generation,
             )
 
-        watchdog_ms = 240_000
+        # 执行预算按 3 倍放宽：默认效果截止 12 分钟（720s），单次动作最多 30 分钟。
+        watchdog_ms = 720_000
         try:
             watchdog_ms = max(
                 60_000,
-                min(int(action.max_runtime_ms or 0) or 240_000, 600_000),
+                min(int(action.max_runtime_ms or 0) or 720_000, 1_800_000),
             )
         except Exception:
-            watchdog_ms = 240_000
+            watchdog_ms = 720_000
         try:
             # The frozen backend executes in the gateway's watchdog pool.  The
             # v3 simple chain sets per-request ContextVars (e.g.

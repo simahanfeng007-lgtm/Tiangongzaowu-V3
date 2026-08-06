@@ -1782,9 +1782,41 @@ def _is_mutation_status_question(text: str) -> bool:
     return not any(marker in compact for marker in command_markers)
 
 
+def _is_work_status_question(text: str) -> bool:
+    """纯询问/汇报类消息（“整理什么内容了”“现在到哪了”“做了什么”）不是写操作。
+
+    这类消息即使包含“整理/做/完成”等词，也没有命令式动作。若误判为 mutation，
+    简单链会要求 omni_body 观察，导致零工具调用被按“平台执行预算上限”fail-closed。
+    """
+    compact = re.sub(r"\s+", "", str(text or "")).lower()
+    if not compact:
+        return False
+    question_markers = (
+        "什么", "哪些", "哪", "吗", "如何", "怎么样", "怎样", "怎么",
+        "?", "？", "多少", "进度", "状态", "情况",
+    )
+    topic_markers = (
+        "整理", "做", "完成", "进度", "内容", "结果", "状态", "情况",
+        "到哪", "工作", "产物", "活",
+    )
+    command_markers = (
+        "帮我", "请", "把", "将", "执行", "处理", "继续", "开始", "直接", "给我",
+        "保存", "生成", "创建", "新建", "修改", "修复", "删除", "打包", "压缩",
+        "查", "搜", "跑", "发", "放桌面", "做成", "整理成", "整理一下", "整理好",
+        "重命名", "移动", "复制",
+    )
+    if not any(marker in compact for marker in question_markers):
+        return False
+    if not any(marker in compact for marker in topic_markers):
+        return False
+    return not any(marker in compact for marker in command_markers)
+
+
 def _requires_real_mutation(message: str) -> bool:
     text = str(message or "")
     if _is_mutation_status_question(text):
+        return False
+    if _is_work_status_question(text):
         return False
     compact = re.sub(r"\s+", "", text)
     negated_only_markers = (
@@ -3240,23 +3272,23 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # hard limits; beyond them the platform terminates the run fail-closed with
 # the best evidence already produced.  Environment overrides exist for
 # operational tuning; defaults are the shipped contract.
-_SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "25"))
-_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES", "3"))
-_SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "60"))
-_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "1800"))
-_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS", "30"))
+_SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
+_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES", "9"))
+_SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
+_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
+_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS", "90"))
 # Read-only verification repeats (file.read/file.list/file.hash/...) are benign
 # when the deliverable is already written and read back.  They get a larger
 # tolerance than mutating repeats, and after a verified write they close as
 # complete instead of fail-closed.
 _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS", "30")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS", "90")
 )
 # A single tool execution/batch must never wedge the chain past the gateway
-# watchdog (240s).  This hard cap applies even when the effect-deadline
-# context is not visible on the executing thread.
+# watchdog (720s after the 3x budget raise).  This hard cap applies even when
+# the effect-deadline context is not visible on the executing thread.
 _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS", "180")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS", "540")
 )
 
 
@@ -4258,6 +4290,12 @@ def _simple_chain_final_hard_gate(
         # 终态，不是"零观察值"的任务失败；run 以 awaiting_user 泊车，回复保留原问题。
         if _simple_chain_is_clarification_question(final_reply):
             return True, "clarify", []
+        # 零观察但属纯询问/汇报（非写操作）且回复是实质答案：直接放行，
+        # 避免“整理什么内容了/现在到哪了”这类查询被按“平台预算上限”fail-closed。
+        if _simple_chain_task_kind(quality_history, user_message) != "write":
+            reply_text = str(final_reply or "").strip()
+            if reply_text and not _simple_chain_reply_restates_tool_error(reply_text):
+                return True, "complete", []
         reasons.append("no omni_body observation exists for this work request")
         return False, "incomplete", reasons
 
