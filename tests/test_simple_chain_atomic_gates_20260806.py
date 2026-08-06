@@ -341,3 +341,12 @@ def test_b6_hard_continue_payload_demands_write() -> None:
     )
     assert "not optional" in payload["instruction"]
     assert "file.append" in payload["instruction"]
+
+
+def test_b1_monitor_yields_to_delivery_guard_budget() -> None:
+    from v3.zongdiaodu import _simple_chain_monitor_yields_to_guard
+
+    msg = "用工具箱汇总工作区文件并生成《文件清单.md》"
+    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
+    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 9) is False
+    assert _simple_chain_monitor_yields_to_guard("参考 README.md 总结一下", [], [], 0) is False

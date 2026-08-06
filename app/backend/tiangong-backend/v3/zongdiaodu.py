@@ -5041,6 +5041,29 @@ def _simple_chain_no_deliverable_gap(
     return [f"no successful write action or generated attachment for requested deliverable{detail}"]
 
 
+def _simple_chain_monitor_yields_to_guard(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    tool_rounds: int,
+) -> bool:
+    """监视器让路：存在可修复 gap 且 guard 预算未耗尽时，交由有界 guard 收口。
+
+    只读探测轮次不会改变完成门阻塞集，若监视器按“指纹不变”过早 force_stop，
+    交付/内容 guard 将永远没有机会把模型推向写工具。
+    """
+    if _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments):
+        guard_budget = (
+            _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
+            + _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS
+            + 1
+        )
+        return int(tool_rounds or 0) < guard_budget
+    if _simple_chain_content_shortage_gap(user_message, quality_history):
+        return int(tool_rounds or 0) < 10
+    return False
+
+
 def _simple_chain_path_is_reference_mention(user_message: str, path: str) -> bool:
     """判断路径在任务文本里是否只是“参考/阅读”类输入提及，而非交付产物。"""
     text = str(user_message or "")
@@ -6575,7 +6598,17 @@ class Zongdiaodu:
             )
             # B1：交付物强制写干预已激活时，监视器让路——guard 有界（2 次），
             # 由 guard 以 incomplete 收尾而非被误判为卡死 force_stopped。
-            if stuck and not delivery_guard_active and not content_guard_active:
+            if (
+                stuck
+                and not delivery_guard_active
+                and not content_guard_active
+                and not _simple_chain_monitor_yields_to_guard(
+                    xiaoxi,
+                    quality_history,
+                    generated_attachments,
+                    gongju_cishu,
+                )
+            ):
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", [stuck_reason])
@@ -7811,6 +7844,16 @@ class Zongdiaodu:
                         _simple_chain_model_payload(guard_payload),
                         on_chunk=_on_text_chunk,
                     )
+                    if isinstance(run_state, dict):
+                        live = run_state.setdefault("_live", {})
+                        replies = live.setdefault("delivery_guard_replies", [])
+                        replies.append({
+                            "attempt": guard_count,
+                            "parsed_tools": [
+                                str(name or "").strip()
+                                for name, _args in self.gutong.jiexi_duogongju(huifu)
+                            ][:8],
+                        })
                     continue
                 final_guard_exhausted = True
                 final_chain_status = "incomplete"
