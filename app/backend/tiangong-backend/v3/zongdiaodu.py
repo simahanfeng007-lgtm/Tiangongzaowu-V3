@@ -7969,7 +7969,6 @@ class Zongdiaodu:
                         final_reply=huifu,
                     )
                     if fallback_allowed:
-                        final_guard_exhausted = True
                         final_chain_status = "complete"
                         fallback_paths = _simple_chain_collect_paths(quality_history, generated_attachments)[:8]
                         fallback_lines = [
