@@ -6369,7 +6369,10 @@ class Zongdiaodu:
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
         try:
-            run_state.setdefault("work_intent", {})["requirements"] = _simple_chain_parse_requirements(xiaoxi)
+            run_state.setdefault("work_intent", {}).update({
+                "requirements": _simple_chain_parse_requirements(xiaoxi),
+                "message_preview": str(xiaoxi or "")[:400],
+            })
         except Exception:
             pass
         requested_actions = [
@@ -7677,6 +7680,17 @@ class Zongdiaodu:
                         meta=guard_payload,
                     )
                 shenti, huifu = _llm_jixu_scoped(guard_payload, on_chunk=_on_text_chunk)
+                if isinstance(run_state, dict):
+                    live = run_state.setdefault("_live", {})
+                    blocks = live.setdefault("tool_block_diagnostics", [])
+                    blocks.append({
+                        "tool_name": str(tool_name or ""),
+                        "args_preview": json.dumps(tool_args if isinstance(tool_args, dict) else {}, ensure_ascii=False)[:240],
+                        "reply_tools": [
+                            str(name or "").strip()
+                            for name, _args in self.gutong.jiexi_duogongju(huifu)
+                        ][:8],
+                    })
                 continue
 
             tool_name = prepared_name
@@ -8441,6 +8455,8 @@ class Zongdiaodu:
                     _simple_chain_save_run_state(run_state)
             elif not final_allowed:
                 final_guard_exhausted = True
+                if isinstance(run_state, dict):
+                    run_state["final_reasons"] = [str(item) for item in (final_reasons or [])][:8]
                 shenti, huifu = _natural_closeout(final_chain_status, final_reasons)
         elif final_chain_status == "complete":
             final_chain_status = "failed"
