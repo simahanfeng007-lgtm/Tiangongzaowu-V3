@@ -1181,7 +1181,7 @@ export const conversationPanelPlugin = {
         content.appendChild(replyText);
       } else if (item.kind === "confirm") {
         renderConfirmCard(content, decodeConfirmCardContent(item.content));
-      } else if (item.role === "assistant" && item.meta?.origin === "template") {
+      } else if (item.role === "assistant" && ["template", "system"].includes(item.meta?.origin)) {
         // #4：系统模板文本不进消息列表，只保留产物附件；原因由状态条展示。
         renderMessageAttachments(content, item.attachments);
       } else {

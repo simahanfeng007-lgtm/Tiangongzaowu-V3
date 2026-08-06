@@ -1296,8 +1296,14 @@ class DuihuaQiaojie:
         run_control.finish(run_control.request_id, False, last_error or "chat_failed")
         terminal_reason = f"[terminal_model_error] {str(last_error or 'chat_failed')[:480]}"
         try:
-            from .zongdiaodu import _simple_chain_mark_terminal
-            _simple_chain_mark_terminal(run_control.request_id, "force_stopped", terminal_reason)
+            from .zongdiaodu import _simple_chain_load_run_state, _simple_chain_mark_terminal
+            _existing = _simple_chain_load_run_state(run_control.request_id)
+            _existing_status = str((_existing or {}).get("status") or "")
+            if _existing_status not in {
+                "complete", "failed", "incomplete", "force_stopped",
+                "interrupted", "chat_reply", "awaiting_user", "confirm_pending",
+            }:
+                _simple_chain_mark_terminal(run_control.request_id, "force_stopped", terminal_reason)
         except Exception:
             pass
         if last_error_payload:
