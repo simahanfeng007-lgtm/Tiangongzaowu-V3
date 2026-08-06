@@ -1551,14 +1551,21 @@ export function createActions({ runtime, state, kernel = null }) {
         }
         // 系统停止提示不再追加进聊天文本（用户不希望在对话里看到系统模板）；
         // 停止原因与下一步由后端自然语言收尾回复承载。
-        state.replaceMessageById({
-          sessionId: targetSessionId,
-          messageId: targetMessageId,
-          text: displayText,
-          error: !finalText || !streamResult.ok,
-          attachments: mergedAttachments(streamResult),
-          meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
-        });
+        const terminalStatusText = String(streamResult?.simple_chain_status || "").trim();
+        const isExpectedTerminal = ["force_stopped", "interrupted", "incomplete", "complete"].includes(terminalStatusText);
+        const alreadyDeliveredFinal = (state.snapshot().messages || []).some(
+          (item) => item.role === "assistant" && String(item.meta?.runId || "") === requestId,
+        );
+        if (!alreadyDeliveredFinal) {
+          state.replaceMessageById({
+            sessionId: targetSessionId,
+            messageId: targetMessageId,
+            text: displayText,
+            error: !finalText || (!streamResult.ok && !isExpectedTerminal),
+            attachments: mergedAttachments(streamResult),
+            meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
+          });
+        }
         recordCompletedTurn(displayText);
         // 派发最终渲染事件（独立于进度条状态）
         try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
@@ -1663,7 +1670,14 @@ export function createActions({ runtime, state, kernel = null }) {
           finalAttachments.push(item);
         }
       }
-      state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error, attachments: finalAttachments, meta: { origin: String(result?.origin || "model"), runId: requestId } });
+      const nonStreamTerminal = String(result?.simple_chain_status || "").trim();
+      const nonStreamExpected = ["force_stopped", "interrupted", "incomplete", "complete"].includes(nonStreamTerminal);
+      const nonStreamAlready = (state.snapshot().messages || []).some(
+        (item) => item.role === "assistant" && String(item.meta?.runId || "") === requestId,
+      );
+      if (!nonStreamAlready) {
+        state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error && !nonStreamExpected, attachments: finalAttachments, meta: { origin: String(result?.origin || "model"), runId: requestId } });
+      }
       recordCompletedTurn(displayText);
       try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
     } catch (error) {
