@@ -5710,6 +5710,58 @@ def _simple_chain_fallback_write_deliverable(
         return []
 
 
+def _simple_chain_try_fallback_delivery(
+    *,
+    xiaoxi: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    gap_reasons: list[str],
+    request_id: str,
+    required_read_paths: list[str] | None,
+    final_reply: Any,
+) -> tuple[bool, list[dict[str, str]]]:
+    """B1 兜底收口：写交付文件 + 合成平台写载荷 + 重跑终局门。
+
+    返回 (是否放行, 新增附件)。平台兜底写入不计入模型变更顺序，
+    因此其前真实发生的验证（pytest 等）仍然有效。
+    """
+    items = _simple_chain_fallback_write_deliverable(
+        xiaoxi,
+        quality_history,
+        gap_reasons,
+        request_id,
+    )
+    if not items:
+        return False, []
+    generated_attachments.extend(items)
+    fallback_path = str(Path(items[0].get("path") or ""))
+    quality_history.append({
+        "ok": True,
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": fallback_path, "args": {"content": ""}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [fallback_path],
+            "observed_write_effect": True,
+            "write_effect": True,
+            "write_evidence": {
+                "authoritative": True,
+                "source": "platform_fallback",
+                "changed_files": [fallback_path],
+            },
+        },
+        "summary": "platform fallback write",
+    })
+    allowed, _status, _reasons = _simple_chain_final_hard_gate(
+        xiaoxi,
+        quality_history,
+        generated_attachments,
+        required_read_paths=required_read_paths,
+        final_reply=final_reply,
+    )
+    return allowed, items
+
+
 def _simple_chain_content_shortage_gap(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -7111,6 +7163,63 @@ class Zongdiaodu:
                     )
                     repeat_count = repeat_observation_counts.get(repeated_key, 0) + 1
                     repeat_observation_counts[repeated_key] = repeat_count
+                    if (
+                        repeat_count >= 2
+                        and repeated_action not in {"skill.get", "skill.read", "skill.route"}
+                    ):
+                        repeat_gap = _simple_chain_no_deliverable_gap(
+                            xiaoxi,
+                            quality_history,
+                            generated_attachments,
+                        )
+                        if not repeat_gap:
+                            missing = _simple_chain_missing_deliverable_paths(
+                                xiaoxi,
+                                quality_history,
+                                generated_attachments,
+                            )
+                            repeat_gap = (
+                                [f"explicitly named deliverables are missing: {', '.join(missing[:8])}"]
+                                if missing
+                                else ["model repeated the same tool call without progress"]
+                            )
+                        fb_allowed, fb_items = _simple_chain_try_fallback_delivery(
+                            xiaoxi=xiaoxi,
+                            quality_history=quality_history,
+                            generated_attachments=generated_attachments,
+                            gap_reasons=repeat_gap,
+                            request_id=request_id,
+                            required_read_paths=required_read_paths,
+                            final_reply=huifu,
+                        )
+                        if fb_items and fb_allowed:
+                            final_chain_status = "complete"
+                            shenti, huifu = _natural_closeout("complete")
+                            if run_control:
+                                run_control.step(
+                                    "simple_chain_repeat_escalation",
+                                    "重复调用升级兜底交付",
+                                    "done",
+                                    "Repeated parallel call escalated; platform finalized the deliverable.",
+                                    meta={"blocking_reasons": repeat_gap[:8]},
+                                )
+                            break
+                        final_guard_exhausted = True
+                        final_chain_status = "incomplete"
+                        huifu = _simple_chain_incomplete_reply(
+                            repeat_gap,
+                            gongju_cishu,
+                            status="incomplete",
+                        )
+                        if run_control:
+                            run_control.step(
+                                "simple_chain_repeat_escalation",
+                                "重复调用升级收口",
+                                "incomplete",
+                                "Repeated parallel call could not close the delivery gate.",
+                                meta={"blocking_reasons": repeat_gap[:8]},
+                            )
+                        break
                     if repeat_count > _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS:
                         # 单工具重复不再作为卡死判据（误伤合法重跑/校验）；
                         # 只记录诊断，卡死统一由状态级监视器判定。
@@ -7741,39 +7850,16 @@ class Zongdiaodu:
                         # 可修复 gap 且模型放弃时，先用平台兜底补齐交付文件，
                         # 让用户始终拿到产物（真实验证证据仍在 quality_history 中）。
                         if fixable_gap:
-                            fallback_items = _simple_chain_fallback_write_deliverable(
-                                xiaoxi,
-                                quality_history,
-                                final_reasons_now,
-                                request_id,
+                            fb_allowed, fallback_items = _simple_chain_try_fallback_delivery(
+                                xiaoxi=xiaoxi,
+                                quality_history=quality_history,
+                                generated_attachments=generated_attachments,
+                                gap_reasons=final_reasons_now,
+                                request_id=request_id,
+                                required_read_paths=required_read_paths,
+                                final_reply=huifu,
                             )
                             if fallback_items:
-                                generated_attachments.extend(fallback_items)
-                                fallback_path = str(Path(fallback_items[0].get("path") or ""))
-                                quality_history.append({
-                                    "ok": True,
-                                    "tool_action": "file.write",
-                                    "tool_args": {"action": "file.write", "target": fallback_path, "args": {"content": ""}},
-                                    "tool_result_contract": {
-                                        "ok": True,
-                                        "paths": [fallback_path],
-                                        "observed_write_effect": True,
-                                        "write_effect": True,
-                                        "write_evidence": {
-                                            "authoritative": True,
-                                            "source": "platform_fallback",
-                                            "changed_files": [fallback_path],
-                                        },
-                                    },
-                                    "summary": "platform fallback write",
-                                })
-                                fb_allowed, fb_status, fb_reasons = _simple_chain_final_hard_gate(
-                                    xiaoxi,
-                                    quality_history,
-                                    generated_attachments,
-                                    required_read_paths=required_read_paths,
-                                    final_reply=huifu,
-                                )
                                 if fb_allowed:
                                     final_chain_status = "complete"
                                     shenti, huifu = _natural_closeout("complete")
@@ -7783,7 +7869,7 @@ class Zongdiaodu:
                                             "平台兜底交付",
                                             "done",
                                             "Model declined to continue; platform finalized the deliverable from evidence.",
-                                            meta={"fallback_paths": [fallback_path], "blocking_reasons": final_reasons_now[:8]},
+                                            meta={"fallback_paths": [str(Path(item.get("path") or "")) for item in fallback_items], "blocking_reasons": final_reasons_now[:8]},
                                         )
                                     break
                         final_guard_exhausted = True
@@ -8085,43 +8171,16 @@ class Zongdiaodu:
                     continue
                 # B1 极端兜底：平台用已收集证据合成交付文件，避免模型拒绝写文件
                 # 导致用户完全拿不到产物。
-                fallback_items = _simple_chain_fallback_write_deliverable(
-                    xiaoxi,
-                    quality_history,
-                    guard_gap_reasons,
-                    request_id,
+                fallback_allowed, fallback_items = _simple_chain_try_fallback_delivery(
+                    xiaoxi=xiaoxi,
+                    quality_history=quality_history,
+                    generated_attachments=generated_attachments,
+                    gap_reasons=guard_gap_reasons,
+                    request_id=request_id,
+                    required_read_paths=required_read_paths,
+                    final_reply=huifu,
                 )
                 if fallback_items:
-                    generated_attachments.extend(fallback_items)
-                    fallback_path = str(Path(fallback_items[0].get("path") or ""))
-                    quality_history.append({
-                        "ok": True,
-                        "tool_action": "file.write",
-                        "tool_args": {
-                            "action": "file.write",
-                            "target": fallback_path,
-                            "args": {"content": ""},
-                        },
-                        "tool_result_contract": {
-                            "ok": True,
-                            "paths": [fallback_path],
-                            "observed_write_effect": True,
-                            "write_effect": True,
-                            "write_evidence": {
-                                "authoritative": True,
-                                "source": "platform_fallback",
-                                "changed_files": [fallback_path],
-                            },
-                        },
-                        "summary": "platform fallback write",
-                    })
-                    fallback_allowed, fallback_status, fallback_reasons = _simple_chain_final_hard_gate(
-                        xiaoxi,
-                        quality_history,
-                        generated_attachments,
-                        required_read_paths=required_read_paths,
-                        final_reply=huifu,
-                    )
                     if fallback_allowed:
                         final_chain_status = "complete"
                         fallback_paths = _simple_chain_collect_paths(quality_history, generated_attachments)[:8]
@@ -8301,6 +8360,65 @@ class Zongdiaodu:
                 repeat_count = repeat_observation_counts.get(tool_call_key, 0) + 1
                 repeat_observation_counts[tool_call_key] = repeat_count
                 repeat_action = _simple_chain_tool_action(tool_name, tool_args)
+                if (
+                    repeat_count >= 2
+                    and repeat_action not in {"skill.get", "skill.read", "skill.route"}
+                ):
+                    # 同一调用连续重复 ≥2 次：模型陷入复用/重试循环。升级收口到
+                    # 终局门+平台兜底，避免被监视器以“无进展”强停。
+                    repeat_gap = _simple_chain_no_deliverable_gap(
+                        xiaoxi,
+                        quality_history,
+                        generated_attachments,
+                    )
+                    if not repeat_gap:
+                        missing = _simple_chain_missing_deliverable_paths(
+                            xiaoxi,
+                            quality_history,
+                            generated_attachments,
+                        )
+                        repeat_gap = (
+                            [f"explicitly named deliverables are missing: {', '.join(missing[:8])}"]
+                            if missing
+                            else ["model repeated the same tool call without progress"]
+                        )
+                    fb_allowed, fb_items = _simple_chain_try_fallback_delivery(
+                        xiaoxi=xiaoxi,
+                        quality_history=quality_history,
+                        generated_attachments=generated_attachments,
+                        gap_reasons=repeat_gap,
+                        request_id=request_id,
+                        required_read_paths=required_read_paths,
+                        final_reply=huifu,
+                    )
+                    if fb_items and fb_allowed:
+                        final_chain_status = "complete"
+                        shenti, huifu = _natural_closeout("complete")
+                        if run_control:
+                            run_control.step(
+                                "simple_chain_repeat_escalation",
+                                "重复调用升级兜底交付",
+                                "done",
+                                "Repeated call escalated; platform finalized the deliverable from evidence.",
+                                meta={"blocking_reasons": repeat_gap[:8]},
+                            )
+                        break
+                    final_guard_exhausted = True
+                    final_chain_status = "incomplete"
+                    huifu = _simple_chain_incomplete_reply(
+                        repeat_gap,
+                        gongju_cishu,
+                        status="incomplete",
+                    )
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_repeat_escalation",
+                            "重复调用升级收口",
+                            "incomplete",
+                            "Repeated call could not close the delivery gate; run ended incomplete.",
+                            meta={"blocking_reasons": repeat_gap[:8]},
+                        )
+                    break
                 readonly_repeat = (
                     repeat_action in _SIMPLE_CHAIN_READ_ACTIONS
                     or repeat_action.startswith("qc.")

@@ -496,3 +496,20 @@ def test_multi_file_project_allows_empty_scaffold_files() -> None:
     assert _simple_chain_allows_empty_scaffold(
         single_prompt, {"target": "pkg/__init__.py", "args": {}}
     ) is True
+
+
+def test_repeat_escalation_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from v3.zongdiaodu import _simple_chain_try_fallback_delivery
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    allowed, items = _simple_chain_try_fallback_delivery(
+        xiaoxi="完成《智能体工具链分析》项目到工作区 agent-tools/ 目录，输出《verification.md》，并运行验证命令确认结果",
+        quality_history=[],
+        generated_attachments=[],
+        gap_reasons=["explicitly named deliverables are missing: verification.md"],
+        request_id="req_repeat",
+        required_read_paths=None,
+        final_reply="",
+    )
+    assert items and (tmp_path / "verification.md").is_file()
+    assert allowed is False  # 无真实验证时兜底不能伪造通过
