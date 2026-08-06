@@ -322,15 +322,15 @@ def _parse_tool_calls_via_model_adapter(provider_id: str, model_name: str, data:
 
 def _http_status_hint(status: int | None) -> str:
     if status == 400:
-        return "Request payload is not accepted by this provider; check model name and provider-specific options."
+        return "请求参数不被服务商接受（HTTP 400）：请检查模型名与 Base URL 是否匹配该服务商。"
     if status in {401, 403}:
-        return "API Key, permission, billing, or account authorization failed."
+        return "API Key 或权限校验失败（HTTP 401/403）：请检查 API Key 是否正确、账号是否有权限或余额。"
     if status == 404:
-        return "Model or API endpoint was not found; check model name and Base URL."
+        return "模型或接口地址不存在（HTTP 404）：请检查模型名和 Base URL 是否拼写正确。"
     if status == 429:
-        return "Provider rate limit or quota was reached; wait or switch model/provider."
+        return "限流或额度不足（HTTP 429）：账号额度可能已用完、每分钟/每日调用次数超限，或共享 Key 被占满；请到服务商控制台查看用量，稍后重试或切换模型。"
     if status and status >= 500:
-        return "Provider service failed temporarily; retry later or switch provider."
+        return "服务商服务异常（HTTP 5xx）：请稍后重试或切换模型。"
     return ""
 
 

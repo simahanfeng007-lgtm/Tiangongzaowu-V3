@@ -316,19 +316,19 @@ function humanizeModelConnectionError(text) {
     || lower.includes("provider");
   if (!looksLikeModelError) return "";
   if (/请求超时|timed out|timeout/i.test(raw)) {
-    return "模型连接失败：Provider 请求超时，请稍后重试或切换模型。";
+    return "模型连接失败：Provider 请求超时（HTTP 408/超时）。请检查网络或服务商状态，稍后重试或切换模型。";
   }
   if (/服务异常|server error|bad gateway|internal server error|502|5\d\d/i.test(raw)) {
-    return "模型连接失败：Provider 服务异常，请稍后重试或切换模型。";
+    return "模型连接失败：服务商服务异常（HTTP 5xx）。请稍后重试或切换模型。";
   }
   if (/鉴权失败|invalid api key|unauthorized|401|403|api key/i.test(raw)) {
-    return "模型连接失败：Provider 鉴权失败，请检查 API Key、权限、余额或服务商控制台配置。";
+    return "模型连接失败：API Key 或权限校验失败（HTTP 401/403）。请检查 API Key 是否正确、账号是否有权限或余额。";
   }
   if (/模型或地址不存在|model_not_found|not found|404/i.test(raw)) {
-    return "模型连接失败：模型或接口地址不存在，请检查模型名和 Base URL。";
+    return "模型连接失败：模型或接口地址不存在（HTTP 404）。请检查模型名和 Base URL 是否拼写正确。";
   }
   if (/限流|额度不足|rate limit|429/i.test(raw)) {
-    return "模型连接失败：Provider 限流或额度不足，请稍后重试或切换模型。";
+    return "模型连接失败：服务商限流或额度不足（HTTP 429）。常见原因：账号额度已用完、每分钟/每日调用次数超限、共享 Key 被占满。请到服务商控制台查看用量，稍后重试或切换模型。";
   }
   if (raw.startsWith("模型连接失败")) return raw;
   return `模型连接失败：${raw}`;
@@ -350,7 +350,20 @@ function parseStructuredLlmError(raw) {
   if (fields.provider) lines.push(`模型厂家：${fields.provider}`);
   if (fields.model) lines.push(`模型名：${fields.model}`);
   if (fields.base_url) lines.push(`Base URL：${fields.base_url}`);
-  if (fields.http_status) lines.push(`HTTP：${fields.http_status}`);
+  const status = Number(fields.http_status || 0);
+  if (status === 400) {
+    lines.push("处理建议：请检查模型名与 Base URL 是否匹配该服务商。");
+  } else if (status === 401 || status === 403) {
+    lines.push("处理建议：请检查 API Key 是否正确、账号是否有权限或余额。");
+  } else if (status === 404) {
+    lines.push("处理建议：请检查模型名和 Base URL 是否拼写正确。");
+  } else if (status === 429) {
+    lines.push("处理建议：常见原因是账号额度已用完、每分钟/每日调用次数超限、共享 Key 被占满；请到服务商控制台查看用量，稍后重试或切换模型。");
+  } else if (status >= 500) {
+    lines.push("处理建议：服务商服务异常，请稍后重试或切换模型。");
+  } else if (status) {
+    lines.push(`HTTP：${status}`);
+  }
   if (fields.retry) lines.push(`重试：${fields.retry}`);
   if (fields.response) lines.push(`响应摘要：${fields.response}`);
   return lines.join("\n");
