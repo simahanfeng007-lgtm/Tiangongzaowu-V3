@@ -3510,6 +3510,18 @@ def _simple_chain_strict_single_deliverable(user_message: str) -> bool:
     )
 
 
+def _simple_chain_allows_empty_scaffold(user_message: str, tool_args: dict[str, Any]) -> bool:
+    """多文件工程允许空占位文件（__init__.py / 脚手架占位），
+    单交付物任务仍要求非空内容。"""
+    if not _simple_chain_strict_single_deliverable(user_message):
+        return True
+    target = str((tool_args or {}).get("target") or "")
+    try:
+        return Path(target).name.lower() == "__init__.py"
+    except Exception:
+        return False
+
+
 def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: dict[str, Any]) -> list[str]:
     if action in {"skill.route", "skill.get", "skill.read"}:
         return []
@@ -3541,7 +3553,12 @@ def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: di
         args = tool_args.get("args") if isinstance(tool_args, dict) else {}
         binary_write = bool(args.get("binary")) if isinstance(args, dict) else False
         content = _simple_chain_tool_args_content(tool_args)
-        if not binary_write and content == "" and "空文件" not in str(user_message or ""):
+        if (
+            not binary_write
+            and content == ""
+            and "空文件" not in str(user_message or "")
+            and not _simple_chain_allows_empty_scaffold(user_message, tool_args)
+        ):
             issues.append("preflight missing non-empty args.content")
         min_chars, metric = _simple_chain_content_requirement_for(
             str((tool_args or {}).get("target") or args.get("target") or args.get("path") or ""),
@@ -3717,7 +3734,7 @@ _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS = int(
 # 触发即按 fail-closed 终止并给出明确“无有效进展”原因；单工具重复仅保留
 # 为保护性安全网（防止反复尝试删除/覆盖已验证产物），不再作通用判停。
 _SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_NO_PROGRESS_STEPS", "4")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_NO_PROGRESS_STEPS", "10")
 )
 _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_CYCLE_HITS", "2")
@@ -4619,7 +4636,12 @@ def _simple_chain_quality_gate_payload(
         args = tool_args.get("args") if isinstance(tool_args, dict) else {}
         binary_write = bool(args.get("binary")) if isinstance(args, dict) else False
         content = _simple_chain_tool_args_content(tool_args)
-        if not binary_write and content == "" and "空文件" not in str(user_message or ""):
+        if (
+            not binary_write
+            and content == ""
+            and "空文件" not in str(user_message or "")
+            and not _simple_chain_allows_empty_scaffold(user_message, tool_args)
+        ):
             final_requirement_gaps.append("file.write/file.append/code.write missing non-empty args.content")
         _requirements = None
         if isinstance(run_state, dict):

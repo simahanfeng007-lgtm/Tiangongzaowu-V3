@@ -417,3 +417,22 @@ def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
         {"action": "file.write", "target": "elsewhere.txt", "args": {"content": "x"}},
     )
     assert any("target mismatch" in issue for issue in single_issues)
+
+
+def test_multi_file_project_allows_empty_scaffold_files() -> None:
+    from v3.zongdiaodu import _simple_chain_allows_empty_scaffold
+
+    project_prompt = (
+        "创建 Python 项目：pyproject.toml、src/pkg/__init__.py、tests/test_x.py，"
+        "并输出《测试报告.md》。"
+    )
+    single_prompt = "输出《工作区统计.md》"
+    assert _simple_chain_allows_empty_scaffold(
+        project_prompt, {"target": "markdown-wiki/tests/__init__.py", "args": {}}
+    ) is True
+    assert _simple_chain_allows_empty_scaffold(
+        single_prompt, {"target": "工作区统计.md", "args": {}}
+    ) is False
+    assert _simple_chain_allows_empty_scaffold(
+        single_prompt, {"target": "pkg/__init__.py", "args": {}}
+    ) is True
