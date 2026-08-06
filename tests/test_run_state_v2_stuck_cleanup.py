@@ -74,6 +74,21 @@ class FingerprintDenoiseTests(unittest.TestCase):
         self.assertLessEqual(hit[0], 7)
 
 
+class OriginSourceTests(unittest.TestCase):
+    def test_origin_follows_actual_source_not_status(self) -> None:
+        from v3.duihua_qiaojie import _simple_chain_origin
+
+        # 对抗审查 P1-3 回归：incomplete/failed 的模型自然收尾必须标 model，
+        # 否则前端会把它当系统模板过滤，表现为“任务卡住/无回复”。
+        self.assertEqual(_simple_chain_origin("model", "incomplete"), "model")
+        self.assertEqual(_simple_chain_origin("model", "failed"), "model")
+        self.assertEqual(_simple_chain_origin("model", "force_stopped"), "model")
+        self.assertEqual(_simple_chain_origin("template", "force_stopped"), "template")
+        # 无来源信息时保留旧兜底（状态推断）。
+        self.assertEqual(_simple_chain_origin("", "incomplete"), "template")
+        self.assertEqual(_simple_chain_origin("", "complete"), "model")
+
+
 class RunStateV2Tests(unittest.TestCase):
     def test_new_run_state_v2_fields(self) -> None:
         from v3.zongdiaodu import _simple_chain_new_run_state

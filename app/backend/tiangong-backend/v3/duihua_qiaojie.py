@@ -72,6 +72,20 @@ TERMINAL_RUN_PHASES = frozenset({
 RUN_STATE_LOCK_TIMEOUT_SECONDS = 15.0
 
 
+def _simple_chain_origin(closeout_source: str, simple_chain_status: str) -> str:
+    """FE-02 / 对抗审查 P1-3：origin 以实际来源为准。
+
+    已知 v2 run_state.last_transition.source 时按来源判定（model/template）；
+    无来源信息时回退按状态推断（incomplete/failed → template）。
+    """
+    source = str(closeout_source or "").strip()
+    if source == "template":
+        return "template"
+    if source == "model":
+        return "model"
+    return "template" if str(simple_chain_status or "") in {"incomplete", "failed"} else "model"
+
+
 # ── 结构分区来源标记（D-08：外部内容 taint，提示注入防线）────────────────────
 # 五值 provenance（草案 §2.3，与合同 vNext SourceRef.source_type 对齐）：
 #   CURRENT_USER_INSTRUCTION / PREAUTHORIZED_USER_FACT / AUTHENTICATED_DIRECTORY
@@ -1225,11 +1239,11 @@ class DuihuaQiaojie:
                     # FE-02: mark template-origin terminal replies (platform
                     # fallback/incomplete text) so the frontend never presents
                     # them as model-generated assistant text.
-                    "origin": (
-                        "template"
-                        if closeout_source == "template" or simple_chain_status in {"incomplete", "failed"}
-                        else "model"
-                    ),
+                    # FE-02/对抗审查 P1-3：origin 以实际来源为准。
+                    # 已知 closeout_source 时（v2 run_state 有 last_transition.source），
+                    # 不再按状态推断——否则 incomplete/failed 的模型自然收尾会被误标
+                    # template 并在前端被过滤，表现为“任务卡住/无回复”。
+                    "origin": _simple_chain_origin(closeout_source, simple_chain_status),
                     "generated_attachments": generated_attachments,
                     "attachments": generated_attachments,
                     "context_carryover": {
