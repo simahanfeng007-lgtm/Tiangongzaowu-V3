@@ -1,89 +1,136 @@
-# 天工造物 v3.0.3 完整源码基线
+# 天工造物 v3.0.3 完整版
 
-生成日期：2026-07-21  
-源码基线：`2026-07-21-single-process-merge`  
-目标平台：Windows 10/11 x64
+> 一个运行在你电脑上的**工程生命体**：不是简单的聊天助手，而是一个拥有独立身份、记忆、情感、自主意志，会自我反思、自我迭代、主动与你通信的桌面生命系统。
 
-本归档在完整合成源码基线上完成九项基础收口：总网关唯一入口、A5硬拒绝、Python/Shell沙箱、模型端点与密钥绑定、Electron安全、签名更新与回滚、生命日志链、单一源码源、加密Soul Backup。它包含可读的 Electron 前端、单端口应用 Runtime、独立 LifeKernel、通信模块、Omni Body、Skill、契约、测试和 Windows 构建脚本。
+产品代号：`engineering-organism-v3.0-complete` · 目标平台：Windows 10/11 x64 · 架构：Electron 桌面端 + 单进程生命内核
 
-## 运行方式
+---
 
-首次在 Windows PowerShell 中执行：
+## 核心：生命系统
+
+天工造物内置一个常驻的**生命内核（LifeKernel）**。它内嵌在单进程总网关中，随应用一起启动、心跳驱动、持续存活，而不是“被调用时才有反应”的普通后端。
+
+### 生命状态与生命链
+
+- 生命有独立身份（`life_id`）与灵魂（Soul）配置，有“存活 / 成长 / 焦点”等实时状态。
+- 每一次心跳、任务、反思都会写入**生命链（状态时间线）**——一条带哈希签名的防篡改事件链（journal），任何改动都可被检测。
+- 生命面板实时投影状态：今日存活、已完成行动、模型预算、下次心跳、当前焦点等。
+
+### 生命信箱
+
+生命不是单向应答的工具，它会在“想说”的时候主动向用户投递消息：
+
+- 未读提醒与消息列表；
+- 一键“打开信箱并进入聊天”，把生命的消息写入主对话；
+- 主动分享受权限与免打扰设置约束，不绕过消息边界。
+
+### 身份、记忆与上下文
+
+- **身份与迁移**：生命拥有独立身份文件，支持从旧版/冻结运行时安全迁移（`identity_migration`），旧数据可审计、可回放、可切入。
+- **记忆**：分类记忆（`memory_classification`）、记忆生命周期（`memory_lifecycle`）、迁移（`memory_migration`），记忆库加密存储。
+- **上下文**：上下文编译、授权与投影（`context_api` / `context_authority`），生命知道“自己是谁、发生了什么、正在做什么”。
+
+### 自主意志与日程
+
+- 心跳调度器默认每 30 秒驱动一次生命循环（`complete_scheduler`）。
+- 自主任务生成与执行（`autonomous_tasks`）：生命根据自己的状态和已选活动，自己提出候选任务并执行，支持活动范围（`activity_scope`）与模型预算约束。
+- 自主等级可配置，任务失败可恢复、可续跑，不因单次异常而“死亡”。
+
+### 反思、迭代与自产能力
+
+- **反思（`reflection`）**：定期复盘自己的行为与结果。
+- **能力自学习（`capability_learning` / `learning_executor`）**：生命可以学习新能力，并纳入自己的能力生命周期（`capability_lifecycle`），实现“自己长出新的本领”。
+- **产出物（`artifact_executor`）**：行动会产生可追踪的产物。
+
+### 情感与气质
+
+- 情绪系统（`affect` / `transient_affect` / `affect_expression`）与稳定气质（`temperament`），让生命的表达有情绪起伏而非机械应答。
+
+### 边界与安全
+
+- 单写租约（writer lease）：同一时刻只有一个权威写入者，防止“两个生命互相覆盖”。
+- 影子模式（shadow）：默认只读观察（`OBSERVE_ONLY`），不擅自对外产生副作用。
+- 切入（cutover）需要签名握手与完整的旧写者停写证据，回滚前必须校验事件列表完整。
+- Python/Shell 通过私有工作区、净化环境、资源约束与原子回写沙箱执行；A5 类敏感操作由确定性策略硬拒绝，模型不能绕过。
+
+---
+
+## 产品组成
+
+| 组成 | 说明 |
+|---|---|
+| 桌面端 | Electron 应用：对话、知识库、技能、身体/角色、设置、生命面板 |
+| 单进程总网关 | `tiangong-total-gateway.exe`，监听 `127.0.0.1:7184`，内嵌 Runtime（Omni Body 技能执行）、LifeKernel、Communication、Policy |
+| 生命权威实现 | `src/life_service/`（40+ 模块），打包运行时镜像位于 `app/life-service/runtime314/` |
+| VRM 虚拟身体 | 3D 形象（AvatarSample_A 等），自然站姿按人体生物力学标定，支持表情、口型、手势与实时驱动 |
+| 内置运行时 | 随包 CPython 3.12（`app/runtime/python312/`），不依赖系统 Python |
+| 契约 | `tiangong.life.api.v2`、`tiangong.desktop.backend.v3`、`tiangong.communication.api.v1` |
+
+---
+
+## 快速开始（源码版）
+
+首次准备内置 Python 运行时：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\setup-source.ps1
 ```
 
-该命令会自动准备位于 `app/runtime/python312/` 的内置 CPython 3.12 和锁定依赖；源码启动优先使用该运行时，不依赖系统 Python。若仅需重新生成此运行时，可执行 `./scripts/provision-embedded-python.ps1`。
-
-安装完成后双击 `start-tiangong.bat`，或执行：
+启动：
 
 ```powershell
 .\scripts\start-source.ps1
 ```
 
-Electron 默认只启动一个 Python 应用进程并监听 `127.0.0.1:7184`。Runtime、LifeKernel、Communication、Policy、Ticket/Grant 与工具编排均作为同一进程内的独立模块运行；7174、7175、7176 不再作为普通桌面模式的监听端口。
+（或双击 `start-tiangong.bat`）
 
-源码模式下，7184 会验证单实例 epoch、本地状态库、生命写租约、模块就绪状态和源码发布清单，但不会伪装成正式安装包的生产发布证据。可在另一个 PowerShell 中检查：
+验证网关与生命内核就绪：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:7184/ready | ConvertTo-Json -Depth 10
 ```
 
-正常源码启动应返回 `status: READY`、`deployment_mode: embedded`、`topology.physical_python_processes: 1`，同时 `production_release_evidence_complete` 保持 `false`。`topology.listener_ports` 应只包含 7184。
+正常应返回 `status: READY`、`deployment_mode: embedded`，且 `embedded_modules.life.life_ready = true`。
 
-## 验证
-
-快速验证：
-
-```powershell
-.\scripts\verify-source.ps1
-```
-
-完整测试：
+运行测试：
 
 ```powershell
 .\scripts\verify-source.ps1 -Full
 ```
 
-## 目录说明
+---
 
-- `app/`：Electron 桌面端、前端资源、主后端与生命服务源码。
-- `src/`：总网关、通信服务、契约、安全与生命公共模块。
-- `readable-python-source/`：与打包运行树保持字节一致的可读源码镜像。
-- `tests/`：顶层权威回归测试。
-- `app/backend/tiangong-backend/omni_body_skill/tests/`：Omni Body 组件测试。
-- `scripts/`：源码安装、启动、验证和正式发布流水线。
-- `build/`、`installer/`：electron-builder/NSIS 构建资源。
-- `manifest.json`、`checksums.sha256`：源码快照与逐文件校验。
-
-## 发布边界
-
-本包是完整的**源码基线**，不伪装成已经冻结、签名的正式安装包。正式 Windows 安装器仍需在 Windows x64 上执行 `npm run release:win`，由发布流水线生成并绑定一个 `tiangong-total-gateway.exe`；四个逻辑组件共享同一物理 Runtime 摘要。未签名产物只能称为“未签名发布候选包”。
-
-历史原始仓库本身未被提供，因此“最新”指本次基于全部可用归档修复合成的最新可验证基线，不代表未知外部仓库中的官方上游提交。
-
-## 基础收口边界
-
-- 单主Agent路线，不包含多智能体调度。
-- 不引入重型全局并发治理；长任务继续使用现有租约、断点和恢复链。
-- A0—A4由Runtime自动执行；A5由确定性策略硬拒绝，模型不能通过确认字段解除。
-- Python/Shell通过私有工作区、净化环境、资源约束和原子回写沙箱执行。
-- 更新信任根默认关闭；配置真实Ed25519公钥、HTTPS更新源和Windows签名发布者后才可启用线上更新。
-- `src/`与`readable-python-source/`中的权威路径是唯一人工可编辑源码，运行时镜像通过 `scripts/sync-generated-sources.py` 确定性生成。
-
-最终四轮多 Agent 对抗质检与修复证据见 `ADVERSARIAL_FINAL_CLOSEOUT_REPORT_20260721.md`。
-
-## Windows发布候选构建
-
-在Windows x64完成源码验证后执行：
+## 构建 Windows 安装包
 
 ```powershell
 cd app
 npm run release:win
 ```
 
-流水线会从当前源码冻结单进程总 Runtime，将后端源树作为受控资源嵌入同一物理目录，执行 Runtime/Life/Communication/Policy 契约探针，再由 electron-builder/NSIS 生成安装器。未配置签名证书时，产物会明确标记为未签名候选包。
+发布流水线会冻结单进程总网关，执行 Runtime / Life / Communication / Policy 契约探针（生命 API 契约不通过即阻断发布），再由 electron-builder + NSIS 生成安装器。未配置签名证书时产物标记为“未签名候选包”。
 
-历史合成修复记录见 `REPAIR_REPORT_20260720.md`；最终单进程安全、恢复与发布收口见 `ADVERSARIAL_FINAL_CLOSEOUT_REPORT_20260721.md`。
+---
+
+## 目录速览
+
+```
+app/                          Electron 桌面端、前端、主后端、生命服务与打包运行时
+src/life_service/             生命系统权威实现（身份/记忆/上下文/日程/自主意志/反思/学习）
+src/total_gateway/            单进程总网关（内嵌 Runtime/Life/Communication）
+src/communication_service/    通信模块（微信、飞书等接入）
+app/life-service/runtime314/  与权威源码字节一致的打包生命运行时
+app/frontend-v2/              前端（life-panel、life-summary-block、VRM 展示等）
+tests/                        顶层回归测试
+scripts/                      源码安装/启动/验证/发布流水线
+.codex/skills/vrm-alignment/  VRM 生物学对齐技能（站姿/手型标定流程与数据）
+```
+
+---
+
+## 版本信息
+
+- 产品：天工造物 v3.0.3 完整版
+- 架构版本：`engineering-organism-v3.0-complete`
+- 生命 API 契约：`tiangong.life.api.v2`
+- 源码基线：`2026-07-22-single-process-continuity-portability-50-final`
