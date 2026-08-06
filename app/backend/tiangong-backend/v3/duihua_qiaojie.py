@@ -1202,6 +1202,15 @@ class DuihuaQiaojie:
                 xie_duihua_huifu(conversation_context, str(huifu or ""), xujie)
                 run_state_meta = simple_chain_meta.get("run_state") if isinstance(simple_chain_meta.get("run_state"), dict) else {}
                 generated_attachments = list(run_state_meta.get("generated_attachments") or []) if isinstance(run_state_meta, dict) else []
+                closeout_source = "model"
+                try:
+                    from .zongdiaodu import _simple_chain_load_run_state
+                    _rs = _simple_chain_load_run_state(run_control.request_id)
+                    if isinstance(_rs, dict):
+                        _lt = _rs.get("last_transition") if isinstance(_rs.get("last_transition"), dict) else {}
+                        closeout_source = str(_lt.get("source") or "model")
+                except Exception:
+                    pass
                 response_payload = {
                     "huifu": huifu,
                     "biaoxian": biaoxian,
@@ -1216,7 +1225,11 @@ class DuihuaQiaojie:
                     # FE-02: mark template-origin terminal replies (platform
                     # fallback/incomplete text) so the frontend never presents
                     # them as model-generated assistant text.
-                    "origin": "template" if simple_chain_status in {"incomplete", "failed"} else "model",
+                    "origin": (
+                        "template"
+                        if closeout_source == "template" or simple_chain_status in {"incomplete", "failed"}
+                        else "model"
+                    ),
                     "generated_attachments": generated_attachments,
                     "attachments": generated_attachments,
                     "context_carryover": {
@@ -1232,11 +1245,19 @@ class DuihuaQiaojie:
                 return _cache_response(encoded_response)
             except RunStopped as exc:
                 run_control.finish(run_control.request_id, False, str(exc) or "用户停止")
+                try:
+                    from .zongdiaodu import _simple_chain_mark_interrupted
+                    _simple_chain_mark_interrupted(run_control.request_id, "user_cancel")
+                except Exception:
+                    pass
                 return _cache_response(json.dumps({
                     "cuowu": "用户已停止本轮执行",
                     "zhuangtai": "yizhongduan",
                     "interrupted": True,
                     "request_id": run_control.request_id,
+                    "simple_chain_status": "interrupted",
+                    "origin": "system",
+                    "terminal_reason": "user_cancel",
                 }, ensure_ascii=False))
             except Exception as e:
                 last_error = str(e)
@@ -1253,11 +1274,20 @@ class DuihuaQiaojie:
                     continue
         # Ledger recovery not available — fall through to error response
         run_control.finish(run_control.request_id, False, last_error or "chat_failed")
+        terminal_reason = f"[terminal_model_error] {str(last_error or 'chat_failed')[:480]}"
+        try:
+            from .zongdiaodu import _simple_chain_mark_terminal
+            _simple_chain_mark_terminal(run_control.request_id, "force_stopped", terminal_reason)
+        except Exception:
+            pass
         if last_error_payload:
             last_error_payload.update({
                 "retry_count": CHAT_RETRY_LIMIT - 1,
                 "recovered": False,
                 "request_id": run_control.request_id,
+                "simple_chain_status": "force_stopped",
+                "origin": "system",
+                "terminal_reason": terminal_reason,
             })
             return _cache_response(json.dumps(last_error_payload, ensure_ascii=False))
         text_payload = chat_error_text_payload(last_error or "chat_failed", source="chat_runtime")
@@ -1271,6 +1301,9 @@ class DuihuaQiaojie:
             "retry_count": CHAT_RETRY_LIMIT - 1,
             "recovered": False,
             "request_id": run_control.request_id,
+            "simple_chain_status": "force_stopped",
+            "origin": "system",
+            "terminal_reason": terminal_reason,
         }, ensure_ascii=False))
 
     def chuli_yuyin(self, audio_bytes: bytes, content_type: str = "", yonghu_ming: str = "") -> str:

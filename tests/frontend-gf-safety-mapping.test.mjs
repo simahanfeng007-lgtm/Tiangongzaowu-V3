@@ -13,6 +13,11 @@ import {
 import { progressDisplayText } from "../app/frontend-v2/renderer/plugins/conversation-panel.mjs";
 
 // ── 相位映射：安全状态不得落入 running ─────────────────────────────
+// force_stopped：对抗审查 P1-9 修复——强制停止必须独立映射，不得落到 unknown。
+assert.equal(runPhaseFromStatus("FORCE_STOPPED"), "force_stopped");
+assert.equal(runPhaseFromStatus("force_stopped"), "force_stopped");
+assert.notEqual(runPhaseFromStatus("FORCE_STOPPED"), "unknown");
+
 assert.equal(runPhaseFromStatus("AMBIGUOUS"), "reconcile_required");
 assert.equal(runPhaseFromStatus("RECONCILE_REQUIRED"), "reconcile_required");
 assert.equal(runPhaseFromStatus("PARTIAL"), "partial");

@@ -1498,6 +1498,7 @@ export function runPhaseFromStatus(status, signals = {}) {
   // 部分完成：网关裁决只达成一部分，单独成相位，不算成功
   if (value === "PARTIAL") return "partial";
   if (["FAILED_SAFE", "FAILED", "FAILURE", "BLOCKED", "ERROR", "SHIBAI"].includes(value)) return "failed";
+  if (value === "FORCE_STOPPED") return "force_stopped";
   if (value === "WAITING_FOR_USER") return "awaiting_user";
   if (["CANCELLED", "CANCELED", "ABORTED", "INTERRUPTED", "YIZHONGDUAN", "SUPERSEDED"].includes(value)) return "cancelled";
   // 仅这些已知的进行中状态允许映射为 running
@@ -1514,7 +1515,7 @@ export function runPhaseFromStatus(status, signals = {}) {
 
 // GF 门终态相位集合：到达这些相位即停止终态等待与轮询
 const TERMINAL_RUN_PHASES = new Set([
-  "finished", "failed", "cancelled", "reconcile_required", "partial", "incident", "unknown",
+  "finished", "failed", "force_stopped", "cancelled", "reconcile_required", "partial", "incident", "unknown",
 ]);
 
 // 从网关 status 载荷提取对账/矛盾信号；字段缺失一律按 false 处理（不臆造）。

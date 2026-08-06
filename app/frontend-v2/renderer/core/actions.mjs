@@ -1520,7 +1520,7 @@ export function createActions({ runtime, state, kernel = null }) {
       if (result?.interrupted || result?.canceled) {
         if (showRunProgress) state.interruptRunProgress(targetSessionId, requestId, result.stderr || result.summary || "");
         state.setLastRun(targetSessionId, { ...result, phase: "interrupted", ok: null, finishedAt: Date.now() });
-        state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: "已中断。本次进度和上下文已保留，后续输入「继续」即可接着处理。", meta: { origin: "template" } });
+        // 系统中断提示不进聊天框：保留已流式的模型文本，原因由状态条展示。
         return;
       }
       if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, Boolean(result.ok));

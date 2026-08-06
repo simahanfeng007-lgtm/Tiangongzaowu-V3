@@ -12,6 +12,7 @@ import os
 import re
 import time
 import threading
+import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -45,7 +46,12 @@ from .jinhua.bihuan_yinqing import JinhuaBihuanYinqing
 from .jinhua.yinqing import JinhuaYinqing
 from .ziyu.yinqing import ZiyuYinqing
 from .zhuangtai_tongbu import TONGBU
-from .duihua_qiaojie import QIAOJIE
+from .duihua_qiaojie import (
+    QIAOJIE,
+    _exclusive_file_lock,
+    _process_is_alive,
+    _run_state_dir,
+)
 from .json_guards import error_payload
 from .permission_settings import build_runtime_context_prompt, check_tool_permission
 from .reply_sanitizer import extract_biaoxian_payload, strip_internal_reply_markers
@@ -641,10 +647,14 @@ def _simple_chain_run_state_path(run_id: str) -> Path:
 
 def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any = None) -> dict[str, Any]:
     return {
-        "schema": "tiangong.v3.simple_chain.run_state.v1",
+        "schema": "tiangong.v3.simple_chain.run_state.v2",
+        "schema_version": 2,
+        "version": 1,
         "run_id": str(request_id or f"simple_{int(time.time() * 1000)}"),
         "request_id": str(request_id or ""),
         "session_id": str(session_id or ""),
+        "owner_pid": os.getpid(),
+        "owner_started_at": datetime.now().isoformat(timespec="seconds"),
         "status": "running",
         "stage": "direct",
         "round": 0,
@@ -657,6 +667,18 @@ def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any =
         "generated_attachments": [],
         "failures": [],
         "gaps": [],
+        "budget": {
+            "rounds_used": 0,
+            "tool_rounds": 0,
+            "wall_clock_used_s": 0,
+            "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
+            "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+        },
+        "terminal_reason": "",
+        "last_transition": None,
+        "persistence_degraded": False,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -703,14 +725,99 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
     if not isinstance(run_state, dict):
         return
     run_state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    path = _simple_chain_run_state_path(str(run_state.get("run_id") or "run"))
     try:
-        path = _simple_chain_run_state_path(str(run_state.get("run_id") or "run"))
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(run_state, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        lock_path = path.with_suffix(path.suffix + ".lock")
+        with _exclusive_file_lock(lock_path):
+            existing_version = 0
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(existing, dict):
+                    existing_version = int(existing.get("version") or 0)
+            except Exception:
+                existing_version = 0
+            memory_version = int(run_state.get("version") or 0)
+            if existing_version > memory_version:
+                # 另一实例已写入更新的版本：不覆盖，降级标记并保留内存态。
+                run_state["persistence_degraded"] = True
+                run_state["version"] = existing_version
+                return
+            write_version = max(memory_version, existing_version) + 1
+            run_state["version"] = write_version
+            tmp = path.with_name(
+                f".{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp"
+            )
+            try:
+                tmp.write_text(json.dumps(run_state, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp.replace(path)
+            finally:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            run_state["persistence_degraded"] = False
     except Exception:
-        pass
+        run_state["persistence_degraded"] = True
+
+
+def _simple_chain_load_run_state(request_id: str) -> dict[str, Any] | None:
+    """读取指定 request_id 的 run_state 文件（不存在/损坏返回 None）。"""
+    if not str(request_id or "").strip():
+        return None
+    try:
+        path = _simple_chain_run_state_path(str(request_id))
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _simple_chain_mark_terminal(request_id: str, status: str, reason: str) -> dict | None:
+    """外部路径（如 RunStopped/重试耗尽）把 run_state 标为终态并落盘。"""
+    run_state = _simple_chain_load_run_state(request_id)
+    if not isinstance(run_state, dict):
+        return None
+    run_state["status"] = str(status or "interrupted")
+    run_state["stage"] = str(status or "interrupted")
+    run_state["terminal_reason"] = str(reason or "")[:500]
+    run_state["last_transition"] = {
+        "type": str(status or "interrupted"),
+        "reason": str(reason or "")[:500],
+        "round": int(run_state.get("round") or 0),
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "source": "system",
+    }
+    _simple_chain_save_run_state(run_state)
+    return run_state
+
+
+def _simple_chain_mark_interrupted(request_id: str, reason: str) -> dict | None:
+    """用户取消/外部中断时把 run_state 标为 interrupted（保留全部进度）。"""
+    return _simple_chain_mark_terminal(request_id, "interrupted", reason or "user_cancel")
+
+
+def _simple_chain_closeout_record(
+    run_state: dict[str, Any] | None,
+    status: str,
+    reasons: list[str] | None,
+    source: str,
+) -> None:
+    """收尾后记录 last_transition/terminal_reason（source=model|template|system）。"""
+    if not isinstance(run_state, dict):
+        return
+    clean_reasons = [str(item).strip() for item in (reasons or []) if str(item).strip()][:8]
+    run_state["terminal_reason"] = "; ".join(clean_reasons)[:500]
+    run_state["last_transition"] = {
+        "type": str(status or "incomplete"),
+        "reason": "; ".join(clean_reasons)[:500],
+        "round": int(run_state.get("round") or 0),
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "source": source,
+    }
+    _simple_chain_save_run_state(run_state)
 
 
 def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:
@@ -3312,6 +3419,29 @@ _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
 _SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS", "20")
 )
+# run_state 保留策略：保留最新 N 个文件，且超过 D 天的旧文件删除（谁更严用谁）。
+# 实验（2026-08-06，隔离目录真实载荷）：314 个文件/19MB、最老 13.6 天；
+# 保留最新 200 个可释放 12.2MB；30 天时间窗当前不删除任何文件，作为长期上限。
+_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT", "200")
+)
+_SIMPLE_CHAIN_RUN_STATE_RETAIN_DAYS = float(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_RUN_STATE_RETAIN_DAYS", "30")
+)
+# 终态/泊车态白名单：启动对账只把这些视为“已经结束”；其余一律转 interrupted。
+_SIMPLE_CHAIN_TERMINAL_STATUSES = frozenset({
+    "complete",
+    "failed",
+    "incomplete",
+    "force_stopped",
+    "chat_reply",
+    "awaiting_user",
+    "confirm_pending",
+    "interrupted",
+    "orphaned",
+    "canceled",
+    "cancelled",
+})
 
 
 def _simple_chain_natural_reply_text(text: Any) -> str:
@@ -3401,12 +3531,79 @@ def _simple_chain_progress_blocking_reasons(
     return reasons
 
 
+# 进展指纹去噪（实验证据 2026-08-06，隔离目录真实载荷）：
+# 现状对完整载荷哈希，而载荷每轮必含 run_state.round、repeat_count、时间戳，
+# 导致“同一调用单调重复”也被视为进展，卡死监视器与 9 次上限均可被绕过。
+# 采用 evidence_codex 字段集 + 噪声剔除：5/5 场景全对，单调重复第 7 轮触发。
+_SIMPLE_CHAIN_FINGERPRINT_NOISE_KEYS = frozenset({
+    "request_id",
+    "run_state",
+    "repeat_count",
+    "summary",
+    "instruction",
+    "source_text_map",
+    "stage",
+    "zhuangtai",
+    "quality_gate",
+    "model_decides_next_step",
+    "retry_same_step",
+    "same_tool_call_blocked",
+    "final_requirements_satisfied_by_this_step",
+    "schema",
+    "updated_at",
+    "updatedAt",
+    "at",
+    "started_at",
+    "startedAt",
+    "seq",
+    "timestamp",
+    "time",
+    "elapsed_ms",
+    "duration_ms",
+    "token_count",
+    "model_payload_tokens",
+    "raw_preview",
+})
+
+_SIMPLE_CHAIN_FINGERPRINT_EVIDENCE_KEYS = (
+    "tool_name",
+    "tool_action",
+    "tool_args",
+    "tool_result_contract",
+    "failures",
+    "final_requirement_gaps",
+    "generated_attachments",
+    "codex_evidence",
+)
+
+
+def _simple_chain_denoise_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """递归剔除进展指纹中的噪声字段（round/时间戳/计数/请求标识等）。"""
+
+    def _drop(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {
+                key: _drop(value)
+                for key, value in obj.items()
+                if key not in _SIMPLE_CHAIN_FINGERPRINT_NOISE_KEYS and value is not None
+            }
+        if isinstance(obj, list):
+            return [_drop(item) for item in obj]
+        return obj
+
+    return _drop(payload)
+
+
 def _simple_chain_progress_fingerprint(
     user_message: str,
     quality_history: list[dict[str, Any]],
     generated_attachments: list[dict[str, str]],
 ) -> str:
-    """工作区进展指纹：成功观察载荷摘要 + 附件 + 阻塞集 的规范化哈希。"""
+    """工作区进展指纹：成功观察的实质证据 + 附件 + 阻塞集 的规范化哈希。
+
+    只哈希实质证据字段（tool_action/tool_args/tool_result_contract/failures/
+    gaps/generated_attachments/codex_evidence），并剔除每轮必变的噪声字段。
+    """
     import hashlib
 
     completed_digests = []
@@ -3414,8 +3611,18 @@ def _simple_chain_progress_fingerprint(
         if not isinstance(payload, dict) or not bool(payload.get("ok")):
             continue
         try:
+            evidence = {
+                key: payload.get(key)
+                for key in _SIMPLE_CHAIN_FINGERPRINT_EVIDENCE_KEYS
+                if key in payload
+            }
             digest = hashlib.sha256(
-                json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True).encode("utf-8")
+                json.dumps(
+                    _simple_chain_denoise_payload(evidence),
+                    ensure_ascii=False,
+                    default=str,
+                    sort_keys=True,
+                ).encode("utf-8")
             ).hexdigest()
         except Exception:
             digest = ""
@@ -5338,61 +5545,124 @@ class Zongdiaodu:
         QIAOJIE.qidong()
 
     def _cleanup_stale_run_states(self):
-        """启动时清理旧 run_state：把 'running' 等非终态标记为 'interrupted'"""
-        running_statuses = {"running", "skill_loading", "skill_routing", "tool_running", "model_deciding"}
+        """启动对账：终态白名单反转 + owner 存活判定 + 统一根目录 + 保留策略。
 
-        def _clean_dir(root: Path) -> int:
+        对抗测试（2026-08-06）发现：旧实现只清 running/skill_loading/... 白名单，
+        漏掉 observing/skill_loaded/delivery 等真实运行态（磁盘上有跨重启残留）；
+        且桌面端清理扫错目录（源码版状态在 LOCALAPPDATA 下）。此处统一修复。
+        """
+        run_control_terminal_phases = frozenset({
+            "finished",
+            "interrupted",
+            "orphaned",
+            "failed",
+            "canceled",
+            "cancelled",
+            "succeeded",
+        })
+        roots: list[Path] = []
+
+        def _add_root(root: Path) -> None:
+            try:
+                root = root.resolve()
+            except Exception:
+                return
+            if root not in roots:
+                roots.append(root)
+
+        try:
+            _add_root(_simple_chain_run_state_path("__probe__").parent)
+        except Exception:
+            pass
+        try:
+            _add_root(_run_state_dir())
+        except Exception:
+            pass
+        # 旧安装兼容根目录（与现有代码保持一致，不删旧数据）。
+        _add_root(Path.home() / ".tiangong" / "v3" / "simple_chain_run_state")
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            _add_root(Path(appdata) / "tiangong-v3-qiyuan" / "runtime" / "run-state")
+
+        now = datetime.now()
+        cleaned = 0
+        removed = 0
+        for root in roots:
             if not root.exists():
-                return 0
-            cleaned = 0
-            for f in root.glob("*.json"):
+                continue
+            try:
+                files = sorted(
+                    (f for f in root.glob("*.json") if f.name not in {"latest.json"}),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+            except Exception:
+                continue
+            for index, f in enumerate(files):
                 try:
                     data = json.loads(f.read_text(encoding="utf-8"))
-                    status = data.get("status", "")
-                    is_nested = False
-                    # latest.json 用嵌套结构 "run".status
-                    if not status and isinstance(data.get("run"), dict):
-                        status = data["run"].get("status", "")
-                        is_nested = True
-                    if status in running_statuses:
-                        if is_nested:
-                            data["run"]["status"] = "interrupted"
-                            data["run"]["stage"] = "interrupted"
-                        else:
-                            data["status"] = "interrupted"
-                            data["stage"] = "interrupted"
-                        data["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                    if not isinstance(data, dict):
+                        continue
+                    nested = data.get("run") if isinstance(data.get("run"), dict) else None
+                    run = nested if nested is not None else data
+                    status = str(run.get("status") or run.get("phase") or "").strip()
+                    terminal = (
+                        status in run_control_terminal_phases
+                        if nested is not None
+                        else status in _SIMPLE_CHAIN_TERMINAL_STATUSES
+                    )
+                    owner_pid = 0
+                    try:
+                        owner_pid = int(run.get("owner_pid") or 0)
+                    except Exception:
+                        owner_pid = 0
+                    if terminal:
+                        pass
+                    elif owner_pid > 0 and _process_is_alive(owner_pid):
+                        # 另一实例仍存活：不得误杀（对抗测试 P1-4）。
+                        continue
+                    elif nested is not None:
+                        nested["phase"] = "interrupted"
+                        nested["status"] = "interrupted"
+                        nested["stage"] = "interrupted"
+                        nested["updated_at"] = now.timestamp()
+                        nested["updatedAt"] = nested["updated_at"]
+                        data["saved_at"] = now.timestamp()
                         tmp = f.with_suffix(f.suffix + ".tmp")
                         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
                         tmp.replace(f)
                         cleaned += 1
+                    else:
+                        run["status"] = "interrupted"
+                        run["stage"] = "interrupted"
+                        run["terminal_reason"] = "[process_restart] run interrupted at startup"
+                        run["last_transition"] = {
+                            "type": "interrupted",
+                            "reason": "[process_restart] run interrupted at startup",
+                            "round": int(run.get("round") or 0),
+                            "at": now.isoformat(timespec="seconds"),
+                            "source": "system",
+                        }
+                        _simple_chain_save_run_state(run)
+                        cleaned += 1
+                    # 保留策略：最新 RETAIN_COUNT 个，且不超过 RETAIN_DAYS 天。
+                    age_days = (now - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() / 86400
+                    if index >= _SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT or age_days > _SIMPLE_CHAIN_RUN_STATE_RETAIN_DAYS:
+                        try:
+                            f.unlink(missing_ok=True)
+                            removed += 1
+                        except Exception:
+                            pass
                 except Exception:
-                    pass
-            return cleaned
-
-        try:
-            # 网关 run state
-            gw_root = Path.home() / ".tiangong" / "v3" / "simple_chain_run_state"
-            n = _clean_dir(gw_root)
-            if n:
-                _log = __import__("logging").getLogger("tiangong.zongdiaodu")
-                _log.info("cleanup_stale_run_states: gateway cleaned %d", n)
-        except Exception:
-            pass
-
-        try:
-            # 桌面端 run state
-            appdata = os.environ.get("APPDATA", "")
-            if appdata:
-                desktop_root = Path(appdata) / "tiangong-v3-qiyuan" / "runtime" / "run-state"
-            else:
-                desktop_root = Path.home() / ".tiangong" / "v3" / "run-state"
-            n = _clean_dir(desktop_root)
-            if n:
-                _log = __import__("logging").getLogger("tiangong.zongdiaodu")
-                _log.info("cleanup_stale_run_states: desktop cleaned %d", n)
-        except Exception:
-            pass
+                    continue
+        if cleaned or removed:
+            _log = __import__("logging").getLogger("tiangong.zongdiaodu")
+            _log.info(
+                "cleanup_stale_run_states: cleaned=%d removed=%d roots=%d",
+                cleaned,
+                removed,
+                len(roots),
+            )
 
     def tingzhi(self):
         """停止总调度"""
@@ -5559,6 +5829,7 @@ class Zongdiaodu:
         final_guard_exhausted = False
         final_chain_status = "complete"
         final_gap_retry_count = 0
+        last_decision_fp: str | None = None
         iteration_count = 0
         loop_started_at = time.monotonic()
         progress_monitor = _SimpleChainProgressMonitor(
@@ -5594,18 +5865,20 @@ class Zongdiaodu:
                 generated_attachments=generated_attachments,
                 tool_count=gongju_cishu,
             )
+            clean_reasons = list(reasons or [])
             fallback = (
                 _simple_chain_completion_fallback_reply(
                     xiaoxi, quality_history, generated_attachments, gongju_cishu
                 )
                 if status == "complete"
-                else _simple_chain_incomplete_reply(list(reasons or []), gongju_cishu, status=status)
+                else _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status=status)
             )
             # 强制停止场景剩余墙钟可能极少：余量不足时不再调模型，
             # 直接回退模板，避免收尾调用拖过网关 watchdog。
             try:
                 remaining_seconds = _simple_chain_remaining_deadline_seconds()
                 if remaining_seconds < _SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS:
+                    _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
                     return shenti, fallback
             except Exception:
                 pass
@@ -5615,18 +5888,48 @@ class Zongdiaodu:
                     on_chunk=_on_text_chunk,
                 )
             except Exception:
+                _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
                 return shenti, fallback
-            return next_body, str(reply or "").strip() or fallback
+            final_reply = str(reply or "").strip() or fallback
+            _simple_chain_closeout_record(
+                run_state,
+                status,
+                clean_reasons,
+                "model" if final_reply != fallback else "template",
+            )
+            return next_body, final_reply
 
         if run_control:
             run_control.step("llm_call", "model thinking", "running", "First turn with tools enabled.")
             run_control.check_stop("stopped before model call")
-        shenti, huifu = _llm_huanxing_scoped(on_chunk=_on_text_chunk)
-        if run_control:
+        initial_llm_failed = False
+        try:
+            shenti, huifu = _llm_huanxing_scoped(on_chunk=_on_text_chunk)
+        except Exception as exc:
+            # 终局模型失败显式化（对抗测试 P1-1）：初始唤醒失败同样归一 force_stopped。
+            initial_llm_failed = True
+            final_guard_exhausted = True
+            final_chain_status = "force_stopped"
+            shenti, huifu = _natural_closeout(
+                "force_stopped",
+                [f"[terminal_model_error] initial model call failed: {str(exc)[:300]}"],
+            )
+            if run_control:
+                run_control.step(
+                    "llm_call",
+                    "model thinking",
+                    "failed",
+                    str(exc)[:500],
+                    meta={"error_type": "terminal_model_error"},
+                )
+            QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "cuowu", str(exc)[:500])
+        if run_control and not initial_llm_failed:
             run_control.step("llm_call", "model thinking", "done", _llm_reply_progress_summary(huifu))
             run_control.check_stop("stopped after model reply")
 
         while True:
+            if initial_llm_failed:
+                break
             iteration_count += 1
             loop_elapsed = time.monotonic() - loop_started_at
             # 状态级卡死判定：状态指纹连续无变化 / 状态回环 / 意图文本重复。
@@ -6460,6 +6763,15 @@ class Zongdiaodu:
                         not final_allowed_now
                     )
                     if can_retry_final_gap:
+                        fp_now = _simple_chain_progress_fingerprint(
+                            xiaoxi,
+                            quality_history,
+                            generated_attachments,
+                        )
+                        if last_decision_fp is not None and fp_now != last_decision_fp:
+                            # 上次决策后有实质进展：无进展计数清零，合法长任务不受限。
+                            final_gap_retry_count = 0
+                        last_decision_fp = fp_now
                         if final_gap_retry_count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
                             # 决策回合超限：平台按强制停止收尾（fail-closed）。
                             final_guard_exhausted = True
@@ -7151,17 +7463,24 @@ class Zongdiaodu:
                 shenti, next_huifu = _llm_jixu_scoped(model_quality_payload, on_chunk=_on_text_chunk)
             except Exception as exc:
                 final_guard_exhausted = True
-                final_chain_status = "failed"
+                final_chain_status = "force_stopped"
                 tool_error = _gongju_cuowu_text(gongju_jieguo) if isinstance(gongju_jieguo, dict) else str(exc)
-                reasons = [tool_error or str(exc) or "model failed while integrating tool result"]
-                huifu = _simple_chain_incomplete_reply(reasons, gongju_cishu, status="failed")
+                reasons = [
+                    f"[terminal_model_error] {tool_error or str(exc) or 'model failed while integrating tool result'}"
+                ]
+                shenti, huifu = _natural_closeout("force_stopped", reasons)
                 if run_control:
                     run_control.step(
                         "llm_continue",
                         "model integrates tool result",
                         "failed",
                         str(exc)[:500],
-                        meta={"reason": reasons[0], "tool_name": tool_name, "tool_action": attempted_action},
+                        meta={
+                            "reason": reasons[0],
+                            "error_type": "terminal_model_error",
+                            "tool_name": tool_name,
+                            "tool_action": attempted_action,
+                        },
                     )
                 QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_continue_after_tool", "cuowu", str(exc)[:500])
                 break
@@ -7231,7 +7550,29 @@ class Zongdiaodu:
         huifu = _append_delivery_media_tags(huifu, [] if final_guard_exhausted else generated_attachments, xiaoxi)
         if isinstance(run_state, dict) and final_chain_status != "clarify":
             run_state["status"] = final_chain_status
-            run_state["stage"] = "failed_report" if final_chain_status == "failed" else ("needs_continue" if final_chain_status == "incomplete" else "delivery")
+            if final_chain_status == "failed":
+                run_state["stage"] = "failed_report"
+            elif final_chain_status == "incomplete":
+                run_state["stage"] = "needs_continue"
+            elif final_chain_status == "force_stopped":
+                run_state["stage"] = "force_stopped"
+            elif final_chain_status == "interrupted":
+                run_state["stage"] = "interrupted"
+            elif final_chain_status == "awaiting_user":
+                run_state["stage"] = "awaiting_user"
+            elif final_chain_status == "confirm_pending":
+                run_state["stage"] = "confirm_pending"
+            elif final_chain_status == "chat_reply" or run_state.get("status") == "chat_reply":
+                run_state["stage"] = "chat_reply"
+            else:
+                run_state["stage"] = "delivery"
+            budget = run_state.setdefault("budget", {})
+            if isinstance(budget, dict):
+                budget.update({
+                    "rounds_used": iteration_count,
+                    "tool_rounds": gongju_cishu,
+                    "wall_clock_used_s": round(loop_elapsed, 1),
+                })
             _simple_chain_save_run_state(run_state)
         if run_control:
             run_control.step(

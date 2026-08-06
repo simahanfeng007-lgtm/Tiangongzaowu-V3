@@ -1176,6 +1176,9 @@ export const conversationPanelPlugin = {
         content.appendChild(replyText);
       } else if (item.kind === "confirm") {
         renderConfirmCard(content, decodeConfirmCardContent(item.content));
+      } else if (item.role === "assistant" && item.meta?.origin === "template") {
+        // #4：系统模板文本不进消息列表，只保留产物附件；原因由状态条展示。
+        renderMessageAttachments(content, item.attachments);
       } else {
         renderMessageContent(content, item.role === "assistant"
           ? spokenBackendText(item.content) || item.content
@@ -1347,11 +1350,38 @@ export const conversationPanelPlugin = {
         return;
       }
 
+      const snap = state.snapshot();
+      const lastRun = snap.lastRun || {};
+      const statusPhases = {
+        force_stopped: "已强制停止",
+        failed: "执行失败",
+        cancelled: "已中断",
+        reconcile_required: "待对账",
+        partial: "部分完成",
+        incident: "状态矛盾",
+        unknown: "状态未知",
+      };
+      if (statusPhases[String(lastRun.phase || "")]) {
+        const notice = document.createElement("div");
+        notice.className = "chain-status-strip";
+        const label = document.createElement("span");
+        label.className = "chain-status-label";
+        label.textContent = statusPhases[lastRun.phase];
+        notice.appendChild(label);
+        const detailText = String(lastRun.terminal_reason || lastRun.simple_chain_status || "").trim();
+        if (detailText) {
+          const detail = document.createElement("span");
+          detail.className = "chain-status-detail";
+          detail.textContent = detailText.slice(0, 300);
+          notice.appendChild(detail);
+        }
+        messagesEl.prepend(notice);
+      }
+
       for (const item of messages) {
         messagesEl.appendChild(createMessageNode(item));
       }
 
-      const snap = state.snapshot();
       renderProgress(snap.runProgress, snap.activeSessionId);
       if (stick) {
         scrollMessagesToBottomAfterLayout();

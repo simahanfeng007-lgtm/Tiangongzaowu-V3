@@ -1724,3 +1724,27 @@ textarea:focus {
 .work-progress-wrap:not(:empty) + .work-reply-text:not(:empty) {
   padding-top: 12px;
 }
+
+.chain-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  background: var(--color-surface-muted, rgba(128, 128, 128, 0.08));
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.chain-status-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--color-accent, #d97706);
+}
+
+.chain-status-detail {
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary, rgba(128, 128, 128, 0.9));
+}
