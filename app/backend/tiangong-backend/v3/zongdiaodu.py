@@ -5579,8 +5579,14 @@ def _simple_chain_fallback_write_deliverable(
         resolved = _delivery_resolve_path(name, root)
         path = Path(resolved)
         if path.exists() and path.is_file():
-            # 文件已存在（可能是模型先前写入但门未承认）：不再覆盖。
-            return [{"kind": "document", "path": str(path), "suffix": path.suffix.lower()}]
+            # 已有文件时只保留模型/真实写入内容；旧版平台兜底文件允许重写，
+            # 避免模板级报告长期停留在磁盘上。
+            try:
+                existing_text = path.read_text(encoding="utf-8", errors="replace")[:120]
+            except Exception:
+                existing_text = ""
+            if "平台兜底生成" not in existing_text:
+                return [{"kind": "document", "path": str(path), "suffix": path.suffix.lower()}]
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
             f"# {Path(name).name}",
