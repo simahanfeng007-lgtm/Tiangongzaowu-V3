@@ -1859,12 +1859,13 @@ class GatewayOrchestrationWorker:
                 minimum_generation=generation.generation,
             )
 
-        # 执行预算按 3 倍放宽：默认效果截止 12 分钟（720s），单次动作最多 30 分钟。
+        # 执行预算按 3 倍放宽：默认效果截止 12 分钟（720s），单次动作最多 60 分钟
+        # （与执行契约 max_runtime_ms 上限一致），支撑超复杂度/混合超长任务。
         watchdog_ms = 720_000
         try:
             watchdog_ms = max(
                 60_000,
-                min(int(action.max_runtime_ms or 0) or 720_000, 1_800_000),
+                min(int(action.max_runtime_ms or 0) or 720_000, 3_600_000),
             )
         except Exception:
             watchdog_ms = 720_000

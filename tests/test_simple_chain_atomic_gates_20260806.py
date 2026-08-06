@@ -343,13 +343,17 @@ def test_b6_hard_continue_payload_demands_write() -> None:
     assert "file.append" in payload["instruction"]
 
 
-def test_b1_monitor_yields_to_delivery_guard_budget() -> None:
+def test_b1_monitor_yields_to_delivery_guard_budget(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from v3.zongdiaodu import _simple_chain_monitor_yields_to_guard
 
     msg = "用工具箱汇总工作区文件并生成《文件清单.md》"
     assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
     assert _simple_chain_monitor_yields_to_guard(msg, [], [], 9) is False
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "README.md").write_text("# readme", encoding="utf-8")
     assert _simple_chain_monitor_yields_to_guard("参考 README.md 总结一下", [], [], 0) is False
+    # 交付物仍缺失时（即使已有部分写入）监视器继续让路，交给 guard/兜底收口。
+    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
 
 
 def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

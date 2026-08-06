@@ -3840,7 +3840,10 @@ def _simple_chain_progress_blocking_reasons(
     )
     if missing_deliverables:
         reasons.append("missing_deliverables:" + ",".join(sorted(missing_deliverables)[:8]))
-    if _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments):
+    if (
+        _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments)
+        or _simple_chain_missing_deliverable_paths(user_message, quality_history, generated_attachments)
+    ):
         reasons.append("no_deliverable_gap")
     if (
         _requires_real_mutation(user_message)
@@ -7947,8 +7950,18 @@ class Zongdiaodu:
                 quality_history,
                 generated_attachments,
             )
+            missing_now = _simple_chain_missing_deliverable_paths(
+                xiaoxi,
+                quality_history,
+                generated_attachments,
+            )
+            guard_gap_reasons = list(no_deliverable_now)
+            if missing_now:
+                guard_gap_reasons.append(
+                    "explicitly named deliverables are missing: " + ", ".join(missing_now[:8])
+                )
             if (
-                no_deliverable_now
+                guard_gap_reasons
                 and gongju_cishu >= _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
                 and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
                 and attempted_action not in {"skill.get", "skill.read", "skill.route"}
@@ -7960,7 +7973,7 @@ class Zongdiaodu:
                 guard_payload = _simple_chain_delivery_guard_payload(
                     request_id,
                     xiaoxi,
-                    no_deliverable_now,
+                    guard_gap_reasons,
                     attempted_action,
                     gongju_cishu,
                     run_state,
@@ -7995,7 +8008,7 @@ class Zongdiaodu:
                 fallback_items = _simple_chain_fallback_write_deliverable(
                     xiaoxi,
                     quality_history,
-                    no_deliverable_now,
+                    guard_gap_reasons,
                     request_id,
                 )
                 if fallback_items:
@@ -8045,13 +8058,13 @@ class Zongdiaodu:
                                 "平台兜底交付",
                                 "done",
                                 "Model exhausted the delivery-guard budget; platform synthesized the deliverable from evidence.",
-                                meta={"fallback_paths": fallback_paths, "blocking_reasons": no_deliverable_now[:8]},
+                                meta={"fallback_paths": fallback_paths, "blocking_reasons": guard_gap_reasons[:8]},
                             )
                         break
                 final_guard_exhausted = True
                 final_chain_status = "incomplete"
                 huifu = _simple_chain_incomplete_reply(
-                    no_deliverable_now
+                    guard_gap_reasons
                     or ["model kept probing without producing the requested deliverable"],
                     gongju_cishu,
                     status="incomplete",
