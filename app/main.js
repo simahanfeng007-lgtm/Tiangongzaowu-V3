@@ -94,6 +94,25 @@ function configureSourceIsolation() {
 
 configureSourceIsolation();
 
+// 工作区写入模式：workspace（默认，写边界=工作区）/ full（全盘，硬禁区除外）。
+// 由后端保存在 workspace_settings.json，启动时注入子进程；切换模式后重启应用生效。
+(function resolveWorkspaceMode() {
+  try {
+    const settingsHome = process.env.TIANGONG_HOME_PATH || app.getPath("home");
+    const settingsPath = path.join(settingsHome, ".tiangong", "v3", "workspace_settings.json");
+    if (fs.existsSync(settingsPath)) {
+      const raw = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      const mode = String(raw?.workspace_mode || "").trim().toLowerCase();
+      if (mode === "full" || mode === "workspace") {
+        process.env.TIANGONG_WORKSPACE_MODE = mode;
+      }
+    }
+  } catch (_error) {
+    // 设置文件缺失/损坏：按默认工作区模式。
+  }
+  process.env.TIANGONG_WORKSPACE_MODE ||= "workspace";
+})();
+
 /*
  * RELEASE CONTRACT (keep this trace for future upgrades)
  * - One-command Windows release: npm run release:win

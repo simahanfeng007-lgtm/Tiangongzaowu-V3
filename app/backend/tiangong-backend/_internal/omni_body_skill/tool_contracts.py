@@ -427,6 +427,31 @@ def _user_specified_allowed(resolved_text: str, user_roots: Iterable[str | Path]
     return False
 
 
+def _contract_full_disk_mode() -> bool:
+    """全盘写入模式：TIANGONG_WORKSPACE_MODE=full（设置面板切换，重启后生效）。"""
+    return str(os.environ.get("TIANGONG_WORKSPACE_MODE") or "").strip().lower() == "full"
+
+
+def _contract_path_allowed(
+    inside: bool,
+    resolved_text: str,
+    user_roots: Iterable[str | Path],
+) -> bool:
+    """工作区/全盘统一的路径放行判定。
+
+    硬禁区（Windows 核心目录、凭据目录、磁盘根、.env）永不放行；
+    全盘模式下工作区外路径放行；工作区模式下仅工作区内或用户显式指定根放行。
+    """
+    resolved = Path(str(resolved_text))
+    if _contract_hard_deny(resolved):
+        return False
+    if inside:
+        return True
+    if _contract_full_disk_mode():
+        return True
+    return _user_specified_allowed(str(resolved), user_roots)
+
+
 def _managed_novel_prose_path(raw: str, workspace: str | Path) -> bool:
     root = Path(workspace).expanduser().resolve()
     path = Path(raw).expanduser()
@@ -818,14 +843,14 @@ def validate_tool_request(
             )
         else:
             inside, resolved = _inside_workspace(normalized_target, workspace)
-            if not inside and not _user_specified_allowed(resolved, user_roots):
+            if not _contract_path_allowed(inside, resolved, user_roots):
                 issues.append(_issue("target", "outside_workspace", f"target resolves outside workspace: {resolved}"))
 
     for field in ("destination", "output"):
         raw = payload.get(field)
         if normalized in {"file.copy", "file.move"} and field == "destination" and raw:
             inside, resolved = _inside_workspace(str(raw), workspace)
-            if not inside and not _user_specified_allowed(resolved, user_roots):
+            if not _contract_path_allowed(inside, resolved, user_roots):
                 issues.append(_issue(f"args.{field}", "outside_workspace", f"path resolves outside workspace: {resolved}"))
 
     if normalized in {"file.write", "code.write"} and "content" not in payload and "base64" not in payload:
@@ -866,7 +891,7 @@ def validate_tool_request(
         code = payload.get("code")
         if normalized_target:
             inside, resolved = _inside_workspace(normalized_target, workspace)
-            if not inside and not _user_specified_allowed(resolved, user_roots):
+            if not _contract_path_allowed(inside, resolved, user_roots):
                 issues.append(_issue("target", "outside_workspace", f"target resolves outside workspace: {resolved}"))
             elif Path(normalized_target).suffix.lower() != ".py":
                 issues.append(_issue("target", "python_script_required", "python.run target must be a .py script"))
@@ -916,7 +941,7 @@ def validate_tool_request(
                 issues.append(_issue("args.source", "required_non_empty_string", "source must be a workspace .md or .txt path"))
             else:
                 inside, resolved = _inside_workspace(source, workspace)
-                if not inside and not _user_specified_allowed(resolved, user_roots):
+                if not _contract_path_allowed(inside, resolved, user_roots):
                     issues.append(_issue("args.source", "outside_workspace", f"source resolves outside workspace: {resolved}"))
                 elif Path(source).suffix.lower() not in {".md", ".txt"}:
                     issues.append(_issue("args.source", "text_source_required", "source must be a .md or .txt file"))
@@ -942,7 +967,7 @@ def validate_tool_request(
             design_spec = payload.get("design_spec")
             if isinstance(design_spec, str) and design_spec.strip():
                 inside, resolved = _inside_workspace(design_spec, workspace)
-                if not inside and not _user_specified_allowed(resolved, user_roots):
+                if not _contract_path_allowed(inside, resolved, user_roots):
                     issues.append(_issue("args.design_spec", "outside_workspace", f"design_spec resolves outside workspace: {resolved}"))
                 elif Path(design_spec).suffix.lower() != ".json":
                     issues.append(_issue("args.design_spec", "json_design_required", "design_spec path must be a .json file"))
@@ -973,7 +998,7 @@ def validate_tool_request(
                 issues.append(_issue("args.design_output", "non_empty_path", "design_output must be a non-empty workspace .json path"))
             else:
                 inside, resolved = _inside_workspace(design_output, workspace)
-                if not inside and not _user_specified_allowed(resolved, user_roots):
+                if not _contract_path_allowed(inside, resolved, user_roots):
                     issues.append(_issue("args.design_output", "outside_workspace", f"design_output resolves outside workspace: {resolved}"))
                 elif Path(design_output).suffix.lower() != ".json":
                     issues.append(_issue("args.design_output", "json_design_required", "design_output must end with .json"))

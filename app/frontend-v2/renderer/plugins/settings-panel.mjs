@@ -285,6 +285,13 @@ export const settingsPanelPlugin = {
                       <span>路径</span>
                       <input id="settingsWorkspaceRoot" spellcheck="false" placeholder="选择或输入工作区目录" />
                     </label>
+                    <label class="field-row">
+                      <span>写入范围</span>
+                      <select id="settingsWorkspaceMode">
+                        <option value="workspace">工作区（默认）</option>
+                        <option value="full">全盘</option>
+                      </select>
+                    </label>
                     <div class="settings-actions-row">
                       <button id="settingsChooseWorkspace" class="small-command" type="button">选择目录</button>
                       <button id="settingsOpenWorkspace" class="small-command subtle-command" type="button">打开目录</button>
@@ -437,6 +444,7 @@ export const settingsPanelPlugin = {
     const apiKeyInput = panel.querySelector("#settingsModelApiKey");
     const workspaceSaveState = panel.querySelector("#workspaceSaveState");
     const workspaceInput = panel.querySelector("#settingsWorkspaceRoot");
+    const workspaceMode = panel.querySelector("#settingsWorkspaceMode");
     const chooseWorkspaceButton = panel.querySelector("#settingsChooseWorkspace");
     const saveWorkspace = panel.querySelector("#settingsSaveWorkspace");
     const openWorkspaceButton = panel.querySelector("#settingsOpenWorkspace");
@@ -525,7 +533,12 @@ export const settingsPanelPlugin = {
         apiKeyInput.value = isCredentialConfigured(activeRow?.credentialState) ? MASKED_API_KEY : "";
       }
       workspaceInput.value = settings.workspace || "";
-      openWorkspaceButton.disabled = !workspaceInput.value.trim();
+      if (workspaceMode) {
+        workspaceMode.value = settings.workspace_mode === "full" ? "full" : "workspace";
+        syncWorkspaceModeControls();
+      } else {
+        openWorkspaceButton.disabled = !workspaceInput.value.trim();
+      }
       renderPermissionFields(settings.permissionMode, settings.permissionRiskMax);
       permissionModeInput.disabled = false;
       permissionRiskInput.disabled = false;
@@ -725,9 +738,23 @@ export const settingsPanelPlugin = {
       .forEach((input) => input.addEventListener("input", markLinksDirty));
 
     workspaceInput.addEventListener("input", () => {
-      openWorkspaceButton.disabled = !workspaceInput.value.trim();
+      syncWorkspaceModeControls();
       setPill(workspaceSaveState, "待保存", "warn");
     });
+
+    if (workspaceMode) {
+      workspaceMode.addEventListener("change", () => {
+        syncWorkspaceModeControls();
+        setPill(workspaceSaveState, "待保存", "warn");
+      });
+    }
+
+    function syncWorkspaceModeControls() {
+      const full = workspaceMode?.value === "full";
+      if (workspaceInput) workspaceInput.disabled = full;
+      if (chooseWorkspaceButton) chooseWorkspaceButton.disabled = full;
+      if (openWorkspaceButton) openWorkspaceButton.disabled = full || !workspaceInput?.value.trim();
+    }
 
     permissionModeInput.addEventListener("change", () => {
       renderPermissionFields(permissionModeInput.value, permissionRiskInput.value);
@@ -854,7 +881,10 @@ export const settingsPanelPlugin = {
       saveWorkspace.disabled = true;
       chooseWorkspaceButton.disabled = true;
       try {
-        const saved = await actions.saveSettings({ workspace: workspaceInput.value.trim() });
+        const saved = await actions.saveSettings({
+          workspace: workspaceInput.value.trim(),
+          workspace_mode: workspaceMode?.value === "full" ? "full" : "workspace",
+        });
         renderSettings(saved);
         setPill(workspaceSaveState, "已保存", "ok");
         await actions.refreshStatus?.();

@@ -85,6 +85,9 @@ def _path_is_host_root(text: str) -> bool:
 
 
 def _path_outside_workspace(text: str, workspace_root: str) -> bool:
+    if str(os.environ.get("TIANGONG_WORKSPACE_MODE") or "").strip().lower() == "full":
+        # 全盘写入模式：任意用户可写位置不再视为“工作区外”提高 blast 影响。
+        return False
     if not workspace_root or not _looks_like_path(text):
         return False
     try:

@@ -136,6 +136,29 @@
 2. 多窗口同时查看同一 run：只读无冲突，1s 轮询各自去重，无需额外设计。
 3. 续租机制确认不加入；封闭事件集合按需扩展的规则不变。
 
+## 9. 工作区写入模式（2026-08-06 追加需求）
+
+### 已确认规则
+
+1. 设置面板“工作区”改为下拉：`工作区`（默认）/ `全盘`。
+2. 选择全盘时路径输入、选择目录、打开目录全部置灰不可用；已保存的工作区路径保留，切回可恢复。
+3. 全盘 = 除 Windows 核心系统文件（硬禁区）外全部可写；硬禁区沿用 `_CONTRACT_HARD_DENY_*`（SystemRoot/Program Files/ProgramData/.ssh/.aws/.gnupg/.azure/.config/磁盘根/.env）。
+4. 全盘模式不打断（覆盖已有文件不弹确认），仍保留 readback 验证、回滚快照、A5 阻断。
+5. 老配置（无 `workspace_mode` 字段）按 `workspace` 处理。
+6. 模式持久化在 `workspace_settings.json`，启动时 main.js 注入 `TIANGONG_WORKSPACE_MODE` 到后端/网关；切换后重启应用生效。
+
+### 实现落点
+
+- `workspace_settings.py`：读写 `workspace_mode`（env 优先，文件次之，默认 workspace）。
+- `readable-python-source/omni_body_skill/tool_contracts.py`（权威源，sync 到 4 份副本）：`_contract_path_allowed` 统一放行判定；全盘模式跳过工作区相对检查但硬禁区永不放行。
+- `src/total_gateway/impact_evaluator.py`：全盘模式下 `_path_outside_workspace` 不再提高 blast。
+- `app/main.js`：启动时读设置文件注入 `TIANGONG_WORKSPACE_MODE`。
+- `settings-panel.mjs`：下拉 + 置灰联动 + 保存 `workspace_mode`。
+
+### 测试
+
+`tests/test_workspace_full_disk_mode.py`（8 项）：默认 workspace、保存/读取 full、非法值回退、老配置按 workspace、全盘放行桌面、全盘仍拦 Windows/.ssh、网关 blast 判定。
+
 ## 8. 实现状态与实验记录（2026-08-06 三稿）
 
 ### 8.1 隔离实验结论（实验在 %TEMP% 拷贝副本中完成，未污染源码）

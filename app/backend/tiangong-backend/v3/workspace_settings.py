@@ -24,6 +24,11 @@ def _default_workspace_root() -> Path:
     return (Path.home() / ".tiangong" / "v3" / "workspaces").resolve(strict=False)
 
 
+def _normalize_workspace_mode(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    return "full" if raw == "full" else "workspace"
+
+
 def _load_raw() -> dict[str, Any]:
     if not WORKSPACE_SETTINGS_LUJING.exists():
         return {}
@@ -50,22 +55,25 @@ def duqu_workspace_settings() -> dict[str, Any]:
     # That authority must outrank this legacy backend-local preference; if it
     # did not, the tool could request an Omni grant for a different directory
     # from the one bound into the execution ticket.
+    data = _load_raw()
     desktop_authority = _env_workspace_root()
     if desktop_authority:
         configured = ""
         root = _normalize_workspace_path(desktop_authority)
         source = "desktop_authority"
     else:
-        data = _load_raw()
         configured = str(data.get("workspace") or "").strip()
         root = _normalize_workspace_path(configured, fallback=_default_workspace_root())
         source = "configured" if configured else "default"
     root.mkdir(parents=True, exist_ok=True)
+    mode_raw = os.environ.get("TIANGONG_WORKSPACE_MODE") or data.get("workspace_mode") or ""
+    workspace_mode = _normalize_workspace_mode(mode_raw)
     return {
         "ok": True,
         "workspace": str(root),
         "configured_workspace": configured,
         "source": source,
+        "workspace_mode": workspace_mode,
         "exists": root.exists(),
         "writable": os.access(root, os.W_OK),
         "settings_path": str(WORKSPACE_SETTINGS_LUJING),
@@ -89,9 +97,16 @@ def baocun_workspace_settings(payload: dict[str, Any] | None) -> dict[str, Any]:
     workspace.mkdir(parents=True, exist_ok=True)
     data = _load_raw()
     data["workspace"] = str(workspace)
+    workspace_mode = _normalize_workspace_mode(
+        payload.get("workspace_mode")
+        if "workspace_mode" in payload
+        else payload.get("mode")
+    )
+    data["workspace_mode"] = workspace_mode
     data["updated_at"] = int(__import__("time").time())
     WORKSPACE_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
     WORKSPACE_SETTINGS_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.environ["TIANGONG_DESKTOP_WORKSPACE_ROOT"] = str(workspace)
     os.environ["TIANGONG_WORKSPACE_ROOT"] = str(workspace)
+    os.environ["TIANGONG_WORKSPACE_MODE"] = workspace_mode
     return duqu_workspace_settings()
