@@ -3172,12 +3172,13 @@ def _simple_chain_mutation_payload_satisfies_request(
     actual_paths = _simple_chain_payload_paths(payload)
     expected_paths = _simple_chain_requested_target_paths(user_message)
     expected_suffixes = _simple_chain_expected_suffixes(user_message)
-    if not _simple_chain_paths_match_expected(actual_paths, expected_paths):
-        issues.append(f"mutation path does not match requested path: expected={expected_paths[:3]} actual={actual_paths[:3]}")
-    if not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
-        issues.append(f"mutation suffix does not match requested deliverable suffixes: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
-    elif not _simple_chain_paths_match_requested_formats(actual_paths, expected_suffixes):
-        issues.append(f"mutation output format does not match requested deliverable format: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
+    if _simple_chain_strict_single_deliverable(user_message):
+        if not _simple_chain_paths_match_expected(actual_paths, expected_paths):
+            issues.append(f"mutation path does not match requested path: expected={expected_paths[:3]} actual={actual_paths[:3]}")
+        if not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
+            issues.append(f"mutation suffix does not match requested deliverable suffixes: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
+        elif not _simple_chain_paths_match_requested_formats(actual_paths, expected_suffixes):
+            issues.append(f"mutation output format does not match requested deliverable format: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
     if not _simple_chain_paths_match_desktop(actual_paths, user_message):
         issues.append(f"mutation did not produce the requested desktop deliverable: actual={actual_paths[:3]}")
 
@@ -3495,6 +3496,20 @@ def _simple_chain_repair_tool_args_before_execution(user_message: str, action: s
     return updated
 
 
+def _simple_chain_strict_single_deliverable(user_message: str) -> bool:
+    """单交付物任务才启用逐写路径/后缀严格匹配。
+
+    多文件工程任务（项目脚手架、文档站、代码仓库）里 pyproject.toml、
+    tests/*.py 等中间文件不属于任何单一交付物；若把任务级期望路径/后缀
+    套到每一次写操作上，会把合法写入全部标成 gap 并诱发卡死误停。
+    交付物存在性由终局 missing_deliverables 门统一校验。
+    """
+    return (
+        len(_simple_chain_requested_target_paths(user_message)) <= 1
+        and len(_simple_chain_expected_suffixes(user_message)) <= 1
+    )
+
+
 def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: dict[str, Any]) -> list[str]:
     if action in {"skill.route", "skill.get", "skill.read"}:
         return []
@@ -3513,10 +3528,13 @@ def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: di
         if isinstance(args, dict):
             actual_paths.append(str(args.get("output") or ""))
     actual_paths = [path for path in actual_paths if path.strip()]
-    if expected_paths and not _simple_chain_paths_match_expected(actual_paths, expected_paths):
-        issues.append(f"preflight target mismatch: expected={expected_paths[:3]} actual={actual_paths[:3]}")
-    if expected_suffixes and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
-        issues.append(f"preflight suffix mismatch: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
+    # 多交付物/工程任务（项目脚手架、文档站）的中间文件不属于任何单一交付物，
+    # 逐写路径/后缀严格匹配会误伤合法写入；交付物存在性由终局门统一校验。
+    if _simple_chain_strict_single_deliverable(user_message):
+        if expected_paths and not _simple_chain_paths_match_expected(actual_paths, expected_paths):
+            issues.append(f"preflight target mismatch: expected={expected_paths[:3]} actual={actual_paths[:3]}")
+        if expected_suffixes and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
+            issues.append(f"preflight suffix mismatch: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
     if not _simple_chain_paths_match_desktop(actual_paths, user_message, verify_format=False):
         issues.append(f"preflight desktop target mismatch: actual={actual_paths[:3]}")
     if action in {"file.write", "file.append", "code.write"}:
@@ -4588,12 +4606,13 @@ def _simple_chain_quality_gate_payload(
             "tool_args": tool_args if isinstance(tool_args, dict) else {},
             "tool_result_contract": contract,
         })
-        if target_paths and not _simple_chain_paths_match_expected(actual_paths, target_paths):
-            final_requirement_gaps.append(f"mutation path does not match requested target: expected={target_paths[:3]} actual={actual_paths[:3]}")
-        if expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
-            final_requirement_gaps.append(f"mutation suffix does not match requested deliverable suffixes: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
-        elif expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_requested_formats(actual_paths, expected_suffixes):
-            final_requirement_gaps.append(f"mutation output format does not match requested deliverable format: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
+        if _simple_chain_strict_single_deliverable(user_message):
+            if target_paths and not _simple_chain_paths_match_expected(actual_paths, target_paths):
+                final_requirement_gaps.append(f"mutation path does not match requested target: expected={target_paths[:3]} actual={actual_paths[:3]}")
+            if expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
+                final_requirement_gaps.append(f"mutation suffix does not match requested deliverable suffixes: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
+            elif expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_requested_formats(actual_paths, expected_suffixes):
+                final_requirement_gaps.append(f"mutation output format does not match requested deliverable format: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
         if not _simple_chain_paths_match_desktop(actual_paths, user_message):
             final_requirement_gaps.append(f"mutation did not produce requested desktop deliverable: actual={actual_paths[:3]}")
     if action in {"file.write", "file.append", "code.write"}:

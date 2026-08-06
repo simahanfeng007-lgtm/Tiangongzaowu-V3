@@ -387,3 +387,33 @@ def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch
     )
     assert allowed is True, reasons
     assert status == "complete"
+
+
+def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
+    from v3.zongdiaodu import (
+        _simple_chain_preflight_issues,
+        _simple_chain_strict_single_deliverable,
+    )
+
+    project_prompt = (
+        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
+        "1) pyproject.toml；2) src/mdwiki/__init__.py、cli.py（init/build/serve/watch）、"
+        "parser.py（把 Markdown 转 HTML，支持标题/列表/链接/代码块/表格）、server.py；"
+        "3) tests/test_parser.py 与 tests/test_cli.py；4) README.md；5) examples/ 下 3 个示例 .md 页面。"
+        "运行 python -m pytest tests -q 确保通过，并把测试输出写入《测试报告.md》。"
+    )
+    single_prompt = "用计算机操作技能读取当前工作区文件数并报告，输出《工作区统计.md》"
+    assert _simple_chain_strict_single_deliverable(project_prompt) is False
+    assert _simple_chain_strict_single_deliverable(single_prompt) is True
+    issues = _simple_chain_preflight_issues(
+        project_prompt,
+        "file.write",
+        {"action": "file.write", "target": "markdown-wiki/pyproject.toml", "args": {"content": "x"}},
+    )
+    assert not any("target mismatch" in issue or "suffix mismatch" in issue for issue in issues)
+    single_issues = _simple_chain_preflight_issues(
+        single_prompt,
+        "file.write",
+        {"action": "file.write", "target": "elsewhere.txt", "args": {"content": "x"}},
+    )
+    assert any("target mismatch" in issue for issue in single_issues)
