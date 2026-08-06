@@ -780,6 +780,13 @@ def _simple_chain_mark_terminal(request_id: str, status: str, reason: str) -> di
     run_state = _simple_chain_load_run_state(request_id)
     if not isinstance(run_state, dict):
         return None
+    existing_lt = run_state.get("last_transition") if isinstance(run_state.get("last_transition"), dict) else None
+    if (
+        existing_lt
+        and str(existing_lt.get("type") or "") == str(status or "")
+        and str(existing_lt.get("reason") or "") == str(reason or "")
+    ):
+        return run_state
     run_state["status"] = str(status or "interrupted")
     run_state["stage"] = str(status or "interrupted")
     run_state["terminal_reason"] = str(reason or "")[:500]

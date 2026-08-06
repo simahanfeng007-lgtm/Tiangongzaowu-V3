@@ -1607,9 +1607,20 @@ export function createActions({ runtime, state, kernel = null }) {
     } catch (error) {
       const message = error.message || String(error);
       if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, false);
-      state.setLastRun(targetSessionId, { requestId, sessionId: activeSessionId, phase: "finished", ok: false, stderr: message, finishedAt: Date.now() });
+      const isInterrupt = /请求已中断|已中断|aborted|user_cancelled|用户已停止/i.test(message);
+      state.setLastRun(targetSessionId, {
+        requestId,
+        sessionId: activeSessionId,
+        phase: isInterrupt ? "interrupted" : "finished",
+        ok: false,
+        stderr: message,
+        finishedAt: Date.now()
+      });
       if (showRunProgress) state.clearRunProgress(targetSessionId, requestId);
-      state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: humanizeBackendError(message) || "执行失败。", error: true, meta: { origin: "template" } });
+      // 系统中断提示不进聊天框：保留已流式的模型文本，原因由状态条展示。
+      if (!isInterrupt) {
+        state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: humanizeBackendError(message) || "执行失败。", error: true, meta: { origin: "template" } });
+      }
     } finally {
       state.setBusy(targetSessionId, false);
       try {

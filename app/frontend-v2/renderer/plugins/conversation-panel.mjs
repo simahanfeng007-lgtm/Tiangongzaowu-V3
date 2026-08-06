@@ -1355,6 +1355,7 @@ export const conversationPanelPlugin = {
       const statusPhases = {
         force_stopped: "已强制停止",
         failed: "执行失败",
+        interrupted: "已中断",
         cancelled: "已中断",
         reconcile_required: "待对账",
         partial: "部分完成",
