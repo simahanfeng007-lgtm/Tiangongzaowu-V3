@@ -100,6 +100,26 @@ class ToolContractFullDiskTests(unittest.TestCase):
         result = self._validate(r"C:\Users\someone\.ssh\id_rsa", "full")
         self.assertTrue(self._has_outside_workspace(result))
 
+    def test_full_mode_blocks_hard_deny_in_shell_command(self) -> None:
+        from omni_body_skill.tool_contracts import validate_tool_request
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"TIANGONG_WORKSPACE_MODE": "full"},
+            clear=False,
+        ):
+            result = validate_tool_request(
+                "shell.run",
+                "",
+                {
+                    "action": "shell.run",
+                    "command": 'cmd /c copy C:\\Windows\\System32\\drivers\\etc\\hosts D:\\x.txt',
+                },
+                workspace=tmp,
+            )
+            codes = [str(issue.get("code") or "") for issue in (result.get("issues") or [])]
+            self.assertIn("hard_deny_path", codes)
+
 
 class ImpactEvaluatorFullDiskTests(unittest.TestCase):
     def test_full_mode_skips_outside_workspace_blast(self) -> None:

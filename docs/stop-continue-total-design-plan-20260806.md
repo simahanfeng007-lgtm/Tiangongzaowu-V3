@@ -152,8 +152,10 @@
 - `workspace_settings.py`：读写 `workspace_mode`（env 优先，文件次之，默认 workspace）。
 - `readable-python-source/omni_body_skill/tool_contracts.py`（权威源，sync 到 4 份副本）：`_contract_path_allowed` 统一放行判定；全盘模式跳过工作区相对检查但硬禁区永不放行。
 - `src/total_gateway/impact_evaluator.py`：全盘模式下 `_path_outside_workspace` 不再提高 blast。
-- `app/main.js`：启动时读设置文件注入 `TIANGONG_WORKSPACE_MODE`。
+- `app/main.js`：启动时读 workspace-preference.json 注入 `TIANGONG_WORKSPACE_MODE`；`workspace:setRoot` 事务同时提交 workspace 与 workspace_mode，写偏好文件、重启服务。
+- `http-runtime.mjs`：`workspace_mode` 走 main 进程权威事务（不进 localStorage 当唯一来源）；状态载荷回读 `workspace_mode`。
 - `settings-panel.mjs`：下拉 + 置灰联动 + 保存 `workspace_mode`。
+- 安全：shell.run/python.run 命令文本中的绝对路径也扫硬禁区（`hard_deny_path`），全盘模式不可通过命令绕过。
 
 ### 测试
 

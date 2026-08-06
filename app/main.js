@@ -98,6 +98,15 @@ configureSourceIsolation();
 // 由后端保存在 workspace_settings.json，启动时注入子进程；切换模式后重启应用生效。
 (function resolveWorkspaceMode() {
   try {
+    const preferencePath = workspacePreferencePath();
+    if (fs.existsSync(preferencePath)) {
+      const raw = JSON.parse(fs.readFileSync(preferencePath, "utf-8"));
+      const mode = String(raw?.workspace_mode || "").trim().toLowerCase();
+      if (mode === "full" || mode === "workspace") {
+        process.env.TIANGONG_WORKSPACE_MODE = mode;
+        return;
+      }
+    }
     const settingsHome = process.env.TIANGONG_HOME_PATH || app.getPath("home");
     const settingsPath = path.join(settingsHome, ".tiangong", "v3", "workspace_settings.json");
     if (fs.existsSync(settingsPath)) {
@@ -995,13 +1004,14 @@ function readWorkspacePreference() {
   }
 }
 
-function writeWorkspacePreference(workspace) {
+function writeWorkspacePreference(workspace, workspaceMode = "") {
   const filePath = workspacePreferencePath();
   const directory = path.dirname(filePath);
   fs.mkdirSync(directory, { recursive: true });
   const payload = `${JSON.stringify({
     schema: WORKSPACE_PREFERENCE_SCHEMA,
     workspace: validateWorkspaceRoot(workspace),
+    workspace_mode: workspaceMode === "full" ? "full" : "workspace",
   }, null, 2)}\n`;
   const temporary = path.join(
     directory,
@@ -1156,21 +1166,26 @@ async function startServicesForWorkspaceChange() {
   return { backendReady, lifeReady, totalGatewayReady, communicationReady, snapshot };
 }
 
-async function applyWorkspaceRootChange(workspace, expectedRevision) {
+async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMode = "") {
   const previousWorkspace = committedWorkspaceRoot();
+  const previousMode = process.env.TIANGONG_WORKSPACE_MODE || "workspace";
+  const nextMode = workspaceMode === "full" ? "full" : "workspace";
+  const modeChanged = nextMode !== previousMode;
   if (expectedRevision !== workspaceChangeRevision) {
     return {
       ok: false,
       error: "workspace_revision_conflict",
       workspace: previousWorkspace,
+      workspace_mode: previousMode,
       revision: workspaceChangeRevision,
       changing: false,
     };
   }
-  if (sameWindowsPath(previousWorkspace, workspace)) {
+  if (sameWindowsPath(previousWorkspace, workspace) && !modeChanged) {
     return {
       ok: true,
       workspace: previousWorkspace,
+      workspace_mode: previousMode,
       revision: workspaceChangeRevision,
       restarted: false,
       changing: false,
@@ -1180,6 +1195,7 @@ async function applyWorkspaceRootChange(workspace, expectedRevision) {
   await stopServicesForWorkspaceChange("workspace-root-change");
   process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = workspace;
   process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspace;
+  process.env.TIANGONG_WORKSPACE_MODE = nextMode;
   try {
     const services = await startServicesForWorkspaceChange();
     if (
@@ -1188,13 +1204,17 @@ async function applyWorkspaceRootChange(workspace, expectedRevision) {
     ) {
       throw new Error("workspace_service_restart_failed");
     }
-    writeWorkspacePreference(workspace);
+    writeWorkspacePreference(workspace, nextMode);
     workspaceCommittedRoot = workspace;
     workspaceChangeRevision += 1;
-    writeDesktopDiagnostic("workspace-root-changed", workspace);
+    writeDesktopDiagnostic(
+      "workspace-root-changed",
+      JSON.stringify({ workspace, workspace_mode: nextMode, mode_changed: modeChanged }),
+    );
     return {
       ok: true,
       workspace,
+      workspace_mode: nextMode,
       revision: workspaceChangeRevision,
       restarted: true,
       changing: false,
@@ -1204,6 +1224,7 @@ async function applyWorkspaceRootChange(workspace, expectedRevision) {
     await stopServicesForWorkspaceChange("workspace-root-rollback");
     process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = previousWorkspace;
     process.env.TIANGONG_OMNI_BODY_WORKSPACE = previousWorkspace;
+    process.env.TIANGONG_WORKSPACE_MODE = previousMode;
     const rollbackServices = await startServicesForWorkspaceChange();
     const rolledBack = sameWindowsPath(
       process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT || previousWorkspace,
@@ -1217,6 +1238,7 @@ async function applyWorkspaceRootChange(workspace, expectedRevision) {
       ok: false,
       error: error?.message || "workspace_service_restart_failed",
       workspace: previousWorkspace,
+      workspace_mode: previousMode,
       revision: workspaceChangeRevision,
       changing: false,
       rolledBack,
@@ -1235,6 +1257,8 @@ async function setWorkspaceRoot(request) {
   } catch (error) {
     return { ...workspaceRootStatus(), ok: false, error: error?.message || "workspace_path_invalid" };
   }
+  const rawMode = String(payload.workspace_mode || "").trim().toLowerCase();
+  const workspaceMode = rawMode === "full" ? "full" : "workspace";
   const suppliedRevision = Number(payload.expectedRevision);
   // Capture the revision when the request enters the queue. Two overlapping
   // renderer requests therefore cannot both commit against the same workspace.
@@ -1243,8 +1267,8 @@ async function setWorkspaceRoot(request) {
     : workspaceChangeRevision;
   workspaceChangePending += 1;
   const operation = workspaceChangeTail.then(
-    () => applyWorkspaceRootChange(workspace, expectedRevision),
-    () => applyWorkspaceRootChange(workspace, expectedRevision),
+    () => applyWorkspaceRootChange(workspace, expectedRevision, workspaceMode),
+    () => applyWorkspaceRootChange(workspace, expectedRevision, workspaceMode),
   );
   workspaceChangeTail = operation.catch(() => {});
   try {

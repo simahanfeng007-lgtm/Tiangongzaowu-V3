@@ -398,6 +398,9 @@ _CONTRACT_HARD_DENY_PREFIXES = (
     os.path.normcase(os.environ.get("ProgramFiles(x86)") or r"C:\Program Files (x86)"),
     os.path.normcase(os.environ.get("ProgramData") or r"C:\ProgramData"),
 )
+_COMMAND_ABSOLUTE_PATH_RE = re.compile(
+    r"""(?<![A-Za-z0-9])([A-Za-z]:\\(?:[^"\s\\]|\\.)*|\\\\[^"\s\\]+(?:\\[^"\s\\]+)+)"""
+)
 
 
 def _contract_hard_deny(resolved: Path) -> bool:
@@ -450,6 +453,38 @@ def _contract_path_allowed(
     if _contract_full_disk_mode():
         return True
     return _user_specified_allowed(str(resolved), user_roots)
+
+
+def _command_hard_deny_issues(command: Any) -> list[dict]:
+    """扫描 shell/python 命令文本中的绝对路径，命中硬禁区即拒绝。
+
+    全盘模式也只放行结构化路径字段，命令文本里的硬禁区（Windows 核心目录、
+    凭据目录等）同样不放行，防止通过 shell 绕过硬禁区。
+    """
+    text = str(command or "")
+    if not text.strip():
+        return []
+    issues: list[dict] = []
+    seen: set[str] = set()
+    for match in _COMMAND_ABSOLUTE_PATH_RE.finditer(text):
+        token = str(match.group(1) or "").strip().strip('"').strip("'")
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        try:
+            resolved = Path(token).expanduser().resolve(strict=False)
+        except Exception:
+            continue
+        if _contract_hard_deny(resolved):
+            issues.append(
+                _issue(
+                    "args.command",
+                    "hard_deny_path",
+                    f"command references hard-deny path: {token}",
+                )
+            )
+            break
+    return issues
 
 
 def _managed_novel_prose_path(raw: str, workspace: str | Path) -> bool:
@@ -887,6 +922,9 @@ def validate_tool_request(
         if not isinstance(command, (str, list, tuple)) or not command:
             issues.append(_issue("args.command", "required", "shell.run requires a non-empty string or argv array"))
         issues.extend(_windows_shell_issues(command))
+        if isinstance(command, (str, list, tuple)):
+            command_text = command if isinstance(command, str) else " ".join(str(item) for item in command)
+            issues.extend(_command_hard_deny_issues(command_text))
     if normalized == "python.run":
         code = payload.get("code")
         if normalized_target:
@@ -898,6 +936,7 @@ def validate_tool_request(
         elif not isinstance(code, str) or not code.strip():
             issues.append(_issue("args.code", "required_non_empty_string", "python.run requires a target .py script or non-empty args.code"))
         if isinstance(code, str) and code.strip():
+            issues.extend(_command_hard_deny_issues(code))
             try:
                 compile(code, "<python.run>", "exec")
             except SyntaxError as exc:

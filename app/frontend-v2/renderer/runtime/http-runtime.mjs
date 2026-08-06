@@ -33,6 +33,7 @@ let workspaceAuthorityRevision = null;
 
 const defaultSettings = {
   workspace: "",
+  workspace_mode: "workspace",
   mode: "chat",
   personaName: "起源",
   soulPrompt: "",
@@ -1100,6 +1101,7 @@ function statusPayload(health = {}, llmStatus = {}, v3State = {}, policyStatus =
     model,
     base_url: llmStatus?.base_url || "",
     workspace: llmStatus?.workspace || policy.workspace || "",
+    workspace_mode: llmStatus?.workspace_mode || policy.workspace_mode || "workspace",
     permission_mode: policy.permission_mode || "",
     permission_label: policy.mode_label || policy.permission_mode || "",
     policy,
@@ -1223,6 +1225,7 @@ async function desktopDegradedStatus(originalError) {
   const message = originalError?.message || String(originalError || "total_gateway_unavailable");
   const llmStatus = modelSettings && typeof modelSettings === "object" ? { ...modelSettings } : {};
   if (workspaceStatus?.workspace) llmStatus.workspace = workspaceStatus.workspace;
+  if (workspaceStatus?.workspace_mode) llmStatus.workspace_mode = workspaceStatus.workspace_mode;
   const payload = statusPayload(
     {
       component_id: gatewayReady ? "tiangong-total-gateway" : "tiangong-desktop-supervisor",
@@ -1277,10 +1280,14 @@ function sameWorkspacePath(left, right) {
   return Boolean(normalize(left)) && normalize(left) === normalize(right);
 }
 
-async function commitDesktopWorkspace(workspaceRoot) {
-  const workspace = String(workspaceRoot || "").trim();
+async function commitDesktopWorkspace(workspaceRoot, workspaceMode = "") {
+  let workspace = String(workspaceRoot || "").trim();
   const bridge = desktopBridge();
   if (!bridge?.setWorkspaceRoot) throw new Error("desktop_workspace_bridge_unavailable");
+  if (!workspace) {
+    const current = await readDesktopWorkspaceAuthority();
+    workspace = String(current?.workspace || "").trim();
+  }
   let expectedRevision = workspaceAuthorityRevision;
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
     const current = await readDesktopWorkspaceAuthority();
@@ -1289,7 +1296,11 @@ async function commitDesktopWorkspace(workspaceRoot) {
     }
     expectedRevision = current.revision;
   }
-  const saved = rememberWorkspaceAuthority(await bridge.setWorkspaceRoot({ workspace, expectedRevision }));
+  const saved = rememberWorkspaceAuthority(await bridge.setWorkspaceRoot({
+    workspace,
+    expectedRevision,
+    workspace_mode: workspaceMode === "full" ? "full" : "workspace",
+  }));
   if (saved?.error === "workspace_revision_conflict") {
     const current = await readDesktopWorkspaceAuthority();
     if (current?.ok && sameWorkspacePath(current.workspace, workspace)) return current;
@@ -2353,6 +2364,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
 
     async setSettings(next) {
       const hasWorkspace = Object.prototype.hasOwnProperty.call(next || {}, "workspace");
+      const hasWorkspaceMode = Object.prototype.hasOwnProperty.call(next || {}, "workspace_mode");
       const hasPermissionSettings = Object.prototype.hasOwnProperty.call(next || {}, "permissionMode")
         || Object.prototype.hasOwnProperty.call(next || {}, "permission_mode")
         || Object.prototype.hasOwnProperty.call(next || {}, "permissionRiskMax")
@@ -2398,6 +2410,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
         .some((key) => Object.prototype.hasOwnProperty.call(next || {}, key));
       const localNext = { ...(next || {}) };
       if (hasWorkspace) delete localNext.workspace;
+      if (hasWorkspaceMode) delete localNext.workspace_mode;
       if (hasPermissionSettings) {
         delete localNext.permissionMode;
         delete localNext.permission_mode;
@@ -2467,11 +2480,15 @@ export function createHttpRuntime({ kernel = null } = {}) {
           return data;
         }));
       }
-      if (hasWorkspace) {
+      if (hasWorkspace || hasWorkspaceMode) {
         tasks.push(Promise.resolve().then(async () => {
-          const data = await commitDesktopWorkspace(next.workspace ?? saved.workspace);
+          const data = await commitDesktopWorkspace(
+            next.workspace ?? saved.workspace,
+            next.workspace_mode ?? saved.workspace_mode,
+          );
           saved.workspace = data.workspace;
-          writeLocalSettings({ workspace: data.workspace });
+          saved.workspace_mode = data.workspace_mode === "full" ? "full" : "workspace";
+          writeLocalSettings({ workspace: data.workspace, workspace_mode: saved.workspace_mode });
           return data;
         }));
       }
