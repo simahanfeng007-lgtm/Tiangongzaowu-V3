@@ -422,6 +422,9 @@ def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
     single_prompt = "用计算机操作技能读取当前工作区文件数并报告，输出《工作区统计.md》"
     assert _simple_chain_strict_single_deliverable(project_prompt) is False
     assert _simple_chain_strict_single_deliverable(single_prompt) is True
+    assert _simple_chain_strict_single_deliverable(
+        "创建 Python 库项目 textutils：pyproject.toml、src/textutils/*.py、tests/*.py、README.md，输出《测试报告.md》"
+    ) is False
     issues = _simple_chain_preflight_issues(
         project_prompt,
         "file.write",

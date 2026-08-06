@@ -3504,6 +3504,14 @@ def _simple_chain_strict_single_deliverable(user_message: str) -> bool:
     套到每一次写操作上，会把合法写入全部标成 gap 并诱发卡死误停。
     交付物存在性由终局 missing_deliverables 门统一校验。
     """
+    text = str(user_message or "")
+    project_markers = (
+        "项目", "工程", "脚手架", "包", "库", "目录",
+        "src/", "tests/", "__init__.py", "pyproject",
+        "package", "project", "module", "多个文件",
+    )
+    if any(marker in text for marker in project_markers):
+        return False
     return (
         len(_simple_chain_requested_target_paths(user_message)) <= 1
         and len(_simple_chain_expected_suffixes(user_message)) <= 1
