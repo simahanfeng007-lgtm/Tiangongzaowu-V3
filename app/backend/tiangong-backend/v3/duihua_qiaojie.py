@@ -1217,12 +1217,16 @@ class DuihuaQiaojie:
                 run_state_meta = simple_chain_meta.get("run_state") if isinstance(simple_chain_meta.get("run_state"), dict) else {}
                 generated_attachments = list(run_state_meta.get("generated_attachments") or []) if isinstance(run_state_meta, dict) else []
                 closeout_source = "model"
+                terminal_reason = ""
+                last_transition = {}
                 try:
                     from .zongdiaodu import _simple_chain_load_run_state
                     _rs = _simple_chain_load_run_state(run_control.request_id)
                     if isinstance(_rs, dict):
                         _lt = _rs.get("last_transition") if isinstance(_rs.get("last_transition"), dict) else {}
                         closeout_source = str(_lt.get("source") or "model")
+                        terminal_reason = str(_rs.get("terminal_reason") or _lt.get("reason") or "")
+                        last_transition = _lt
                 except Exception:
                     pass
                 response_payload = {
@@ -1235,6 +1239,8 @@ class DuihuaQiaojie:
                     "request_id": run_control.request_id,
                     "session_id": conversation_context.get("session_id"),
                     "simple_chain_status": simple_chain_status,
+                    "terminal_reason": terminal_reason,
+                    "last_transition": last_transition if isinstance(last_transition, dict) else {},
                     "simple_chain_meta": simple_chain_meta,
                     # FE-02: mark template-origin terminal replies (platform
                     # fallback/incomplete text) so the frontend never presents

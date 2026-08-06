@@ -259,3 +259,27 @@
 
 11.1 → 11.2 → 11.3 → 11.4 → 11.5；每项先补回归测试，完成后全量 pytest + Node，
 再重测任务 A/E 做端到端验收；全部通过后提交推送。
+
+### 11.7 v2 定稿（极限推论，2026-08-06）
+
+四条跨项不变量：
+1. 磁盘 run_state 与模型载荷不含 `_live` 等内部字段；
+2. 终局消息按 run_id 幂等；
+3. 终端标签单源 `terminalStatus`，成功裁决只认网关；
+4. 预算只由 `_simple_chain_save_run_state` 单点投影。
+
+最终设计：
+- 11.1：内存 `_live{iteration_count,tool_rounds,loop_started_at}` + save 时实时投影预算 +
+  链内 `_check_stop()` 先投影再检查；旧 run_state 无 budget 时 setdefault。
+- 11.2：链启动解析 `work_intent.requirements`（≤16 条，path_pattern/suffix/min_chars/metric/desktop），
+  预检/质量门/完成门/模型载荷共用；无绑定要求回退全局最小值（最坏不劣于现状）。
+- 11.3：`ensureFinalMessage(run)` 按 meta.runId 幂等 upsert，流式/非流式/刷新后终局三条路径共用；
+  模板来源只补附件不补文本；已对账 runId 记录于内存+localStorage（按会话，上限 50）。
+- 11.4：后端响应与 desktop_api/stream 载荷统一输出 `terminal{status,reason,source,at}`；
+  前端唯一入口 `terminalStatus(result)`，消费方（状态条/卡片/顶部/GF 标签）全部改用它。
+
+不可消除的残余（有界且已文档化）：
+- 外部终态标记（重试耗尽）缺最后一段在途时长（上界一次模型调用）；
+- 自然语言要求绑定极端句式可能解析失败，回退现状；
+- 清空 localStorage 后刷新可能重现一条终局消息（一次性）；
+- 旧响应无 terminal 时回退旧标签逻辑。

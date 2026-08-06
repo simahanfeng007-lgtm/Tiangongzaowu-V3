@@ -1,6 +1,7 @@
 import { spokenBackendText } from "../core/formatters.mjs";
 import { classifyRunInput, decodeConfirmCardContent, CONFIRM_DECISION_LABELS } from "../core/actions.mjs";
 import { renderMediaAttachment, renderMessageContent } from "../core/message-renderer.mjs";
+import { terminalStatusLabel } from "../core/formatters.mjs";
 import { renderUserAvatar as renderSharedUserAvatar } from "../core/user-avatar.mjs";
 import { normalizeUserIdentity } from "../runtime/life-view-model.mjs";
 import { requestVoiceOutput } from "../runtime/http-runtime.mjs";
@@ -142,27 +143,7 @@ function progressStatusText(status) {
 }
 
 export function chainStatusLabel(simpleChainStatus, phase) {
-  const byStatus = {
-    force_stopped: "已强制停止",
-    interrupted: "已中断",
-    incomplete: "未完成",
-    complete: "完成",
-    chat_reply: "完成",
-    failed: "执行失败",
-  };
-  const scs = String(simpleChainStatus || "").trim();
-  if (byStatus[scs]) return byStatus[scs];
-  const byPhase = {
-    force_stopped: "已强制停止",
-    failed: "执行失败",
-    interrupted: "已中断",
-    cancelled: "已中断",
-    reconcile_required: "待对账",
-    partial: "部分完成",
-    incident: "状态矛盾",
-    unknown: "状态未知",
-  };
-  return byPhase[String(phase || "")] || "";
+  return terminalStatusLabel(simpleChainStatus, phase);
 }
 
 function progressClass(status) {
@@ -1376,7 +1357,7 @@ export const conversationPanelPlugin = {
 
       const snap = state.snapshot();
       const lastRun = snap.lastRun || {};
-      const stripLabel = chainStatusLabel(lastRun.simple_chain_status, lastRun.phase);
+      const stripLabel = terminalStatusLabel(lastRun.terminal?.status || lastRun.simple_chain_status, lastRun.phase);
       if (stripLabel) {
         const notice = document.createElement("div");
         notice.className = "chain-status-strip";
@@ -1384,7 +1365,9 @@ export const conversationPanelPlugin = {
         label.className = "chain-status-label";
         label.textContent = stripLabel;
         notice.appendChild(label);
-        const detailText = String(lastRun.terminal_reason || lastRun.simple_chain_status || "").trim();
+        const detailText = String(
+          lastRun.terminal?.reason || lastRun.terminal_reason || lastRun.simple_chain_status || "",
+        ).trim();
         if (detailText) {
           const detail = document.createElement("span");
           detail.className = "chain-status-detail";

@@ -15,6 +15,27 @@ from unittest import mock
 
 
 class SimpleChainLoopBudgetTests(unittest.TestCase):
+    def test_content_requirement_is_bound_to_target_path(self) -> None:
+        from v3.zongdiaodu import (
+            _simple_chain_content_requirement_for,
+            _simple_chain_parse_requirements,
+        )
+
+        message = "创建 README.md（至少 300 字）和 清单.txt（列出 5 项核心功能）"
+        reqs = _simple_chain_parse_requirements(message)
+        self.assertEqual(len(reqs), 1)
+        self.assertEqual(reqs[0]["path_pattern"], "README.md")
+        self.assertEqual(reqs[0]["min_chars"], 300)
+        # 300 字只约束 README，不套到清单.txt。
+        self.assertEqual(_simple_chain_content_requirement_for("清单.txt", message, reqs), (0, ""))
+        self.assertEqual(_simple_chain_content_requirement_for("README.md", message, reqs), (300, "nonspace"))
+
+    def test_unbound_requirement_falls_back_to_global(self) -> None:
+        from v3.zongdiaodu import _simple_chain_content_requirement_for
+
+        message = "写一个至少 500 字的文档"
+        self.assertEqual(_simple_chain_content_requirement_for("out.txt", message), (500, "nonspace"))
+
     def test_force_stopped_reply_explains_system_cutoff(self) -> None:
         from v3.zongdiaodu import _simple_chain_force_stopped_reply
 

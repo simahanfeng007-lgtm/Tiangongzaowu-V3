@@ -369,6 +369,42 @@ function parseStructuredLlmError(raw) {
   return lines.join("\n");
 }
 
+export function terminalStatusLabel(simpleChainStatus, phase) {
+  const byStatus = {
+    force_stopped: "已强制停止",
+    interrupted: "已中断",
+    incomplete: "未完成",
+    complete: "完成",
+    chat_reply: "完成",
+    failed: "执行失败",
+  };
+  const scs = String(simpleChainStatus || "").trim();
+  if (byStatus[scs]) return byStatus[scs];
+  const byPhase = {
+    force_stopped: "已强制停止",
+    failed: "执行失败",
+    interrupted: "已中断",
+    cancelled: "已中断",
+    reconcile_required: "待对账",
+    partial: "部分完成",
+    incident: "状态矛盾",
+    unknown: "状态未知",
+  };
+  return byPhase[String(phase || "")] || "";
+}
+
+export function terminalStatus(result) {
+  const terminal = result && typeof result.terminal === "object" && result.terminal ? result.terminal : null;
+  const status = String(terminal?.status || result?.simple_chain_status || "").trim();
+  return {
+    status,
+    reason: String(terminal?.reason || result?.terminal_reason || ""),
+    source: String(terminal?.source || ""),
+    at: String(terminal?.at || ""),
+    label: terminalStatusLabel(status, result?.phase),
+  };
+}
+
 function compactDisplayText(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")

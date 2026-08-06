@@ -10,6 +10,7 @@ import {
   runPhaseFromStatus,
   terminalSuccessVerdict,
 } from "../app/frontend-v2/renderer/runtime/http-runtime.mjs";
+import { terminalStatusLabel } from "../app/frontend-v2/renderer/core/formatters.mjs";
 import { chainStatusLabel, progressDisplayText } from "../app/frontend-v2/renderer/plugins/conversation-panel.mjs";
 
 // 状态条标签：force_stopped/interrupted 必须优先读 simple_chain_status，
@@ -18,6 +19,7 @@ assert.equal(chainStatusLabel("force_stopped", "failed"), "已强制停止");
 assert.equal(chainStatusLabel("interrupted", "finished"), "已中断");
 assert.equal(chainStatusLabel("incomplete", "failed"), "未完成");
 assert.equal(chainStatusLabel("", "failed"), "执行失败");
+assert.equal(terminalStatusLabel("force_stopped", "failed"), "已强制停止");
 
 // ── 相位映射：安全状态不得落入 running ─────────────────────────────
 // force_stopped：对抗审查 P1-9 修复——强制停止必须独立映射，不得落到 unknown。

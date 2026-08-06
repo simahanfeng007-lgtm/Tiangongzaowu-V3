@@ -449,6 +449,8 @@ export function normalizeBackendDeliveryIntent(value) {
   });
 }
 
+let terminalRunListenerInstalled = false;
+
 export function createActions({ runtime, state, kernel = null }) {
   const pendingUserTurns = [];
   let drainingPendingTurns = false;
@@ -463,6 +465,39 @@ export function createActions({ runtime, state, kernel = null }) {
       removed += 1;
     }
     return removed;
+  }
+
+  function ensureFinalMessage(detail = {}) {
+    const run = detail.run && typeof detail.run === "object" ? detail.run : {};
+    const runId = String(detail.requestId || run.request_id || run.requestId || "");
+    const finalText = String(detail.text || run.final_response || run.reply || "");
+    if (!runId || !finalText) return;
+    const sessionId = detail.sessionId || state.snapshot().activeSessionId;
+    const messages = state.snapshot().messages || [];
+    const exists = messages.some(
+      (item) => item.role === "assistant" && String(item.meta?.runId || "") === runId,
+    );
+    if (exists) return;
+    const origin = String(detail.origin || run.origin || "model");
+    state.addMessage("assistant", finalText, false, {
+      id: `final-${runId}`,
+      requestId: runId,
+      meta: { origin, runId },
+      attachments: Array.isArray(detail.attachments)
+        ? detail.attachments
+        : (Array.isArray(run.generated_attachments) ? run.generated_attachments : []),
+    });
+  }
+
+  if (!terminalRunListenerInstalled && typeof window !== "undefined") {
+    terminalRunListenerInstalled = true;
+    window.addEventListener("tiangong-terminal-run", (event) => {
+      try {
+        ensureFinalMessage(event?.detail || {});
+      } catch (_error) {
+        // 终局消息对账失败不影响主流程。
+      }
+    });
   }
 
   if (runtime?.onRunStep) {
@@ -1495,7 +1530,7 @@ export function createActions({ runtime, state, kernel = null }) {
           text: displayText,
           error: !finalText || !streamResult.ok,
           attachments: mergedAttachments(streamResult),
-          meta: { origin: String(streamResult?.origin || "model") }
+          meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
         });
         recordCompletedTurn(displayText);
         // 派发最终渲染事件（独立于进度条状态）
@@ -1601,7 +1636,7 @@ export function createActions({ runtime, state, kernel = null }) {
           finalAttachments.push(item);
         }
       }
-      state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error, attachments: finalAttachments, meta: { origin: String(result?.origin || "model") } });
+      state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error, attachments: finalAttachments, meta: { origin: String(result?.origin || "model"), runId: requestId } });
       recordCompletedTurn(displayText);
       try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
     } catch (error) {

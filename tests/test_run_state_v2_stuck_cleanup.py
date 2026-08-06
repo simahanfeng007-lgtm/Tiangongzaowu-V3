@@ -139,6 +139,33 @@ class RunStateV2Tests(unittest.TestCase):
             self.assertTrue(final["terminal_reason"].startswith("[terminal_model_error]"))
             self.assertEqual(final["last_transition"]["source"], "system")
 
+    def test_live_budget_projection_and_no_internal_key(self) -> None:
+        import time
+
+        from v3.zongdiaodu import (
+            _simple_chain_load_run_state,
+            _simple_chain_new_run_state,
+            _simple_chain_save_run_state,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT": tmp},
+            clear=False,
+        ):
+            rs = _simple_chain_new_run_state("req-live", "sess")
+            rs["_live"] = {
+                "iteration_count": 7,
+                "tool_rounds": 6,
+                "loop_started_at": time.monotonic() - 100,
+            }
+            _simple_chain_save_run_state(rs)
+            loaded = _simple_chain_load_run_state("req-live")
+            self.assertNotIn("_live", loaded)
+            self.assertEqual(loaded["budget"]["rounds_used"], 7)
+            self.assertEqual(loaded["budget"]["tool_rounds"], 6)
+            self.assertGreaterEqual(loaded["budget"]["wall_clock_used_s"], 99)
+
 
 class CleanupStaleRunStateTests(unittest.TestCase):
     def _isolated_env(self, tmp: str) -> dict:

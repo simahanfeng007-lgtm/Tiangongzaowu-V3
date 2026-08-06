@@ -750,6 +750,15 @@ class DesktopApiRouter:
             structured_value = result_payload.get(structured_key)
             if structured_value not in (None, ""):
                 run[structured_key] = structured_value
+        terminal_status = str(result_payload.get("simple_chain_status") or "").strip()
+        if terminal_status:
+            _lt = result_payload.get("last_transition") if isinstance(result_payload.get("last_transition"), dict) else {}
+            run["terminal"] = {
+                "status": terminal_status,
+                "reason": str(result_payload.get("terminal_reason") or _lt.get("reason") or ""),
+                "source": str(_lt.get("source") or ""),
+                "at": str(_lt.get("at") or ""),
+            }
         if state == "FAILED":
             error_detail = self._desktop_error_detail(request_id, snapshots)
             run["error"] = error_detail["code"]

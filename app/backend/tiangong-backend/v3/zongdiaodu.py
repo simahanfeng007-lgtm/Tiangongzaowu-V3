@@ -725,6 +725,28 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
     if not isinstance(run_state, dict):
         return
     run_state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    # 预算单点投影：内存 `_live` 实时值在写盘前投影到 budget，磁盘不留 `_live`。
+    live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else None
+    if live:
+        budget = run_state.setdefault("budget", {})
+        if isinstance(budget, dict):
+            started_at = float(live.get("loop_started_at") or 0)
+            wall = round(time.monotonic() - started_at, 1) if started_at else float(budget.get("wall_clock_used_s") or 0)
+            budget.update({
+                "rounds_used": int(live.get("iteration_count") or 0),
+                "tool_rounds": int(live.get("tool_rounds") or 0),
+                "wall_clock_used_s": max(0.0, wall),
+            })
+    elif "budget" not in run_state:
+        run_state["budget"] = {
+            "rounds_used": 0,
+            "tool_rounds": 0,
+            "wall_clock_used_s": 0,
+            "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
+            "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+        }
     path = _simple_chain_run_state_path(str(run_state.get("run_id") or "run"))
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -745,11 +767,13 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
                 return
             write_version = max(memory_version, existing_version) + 1
             run_state["version"] = write_version
+            write_payload = dict(run_state)
+            write_payload.pop("_live", None)
             tmp = path.with_name(
                 f".{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp"
             )
             try:
-                tmp.write_text(json.dumps(run_state, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp.write_text(json.dumps(write_payload, ensure_ascii=False, indent=2), encoding="utf-8")
                 tmp.replace(path)
             finally:
                 try:
@@ -2491,6 +2515,115 @@ def _simple_chain_min_required_chars(user_message: str) -> tuple[int, str]:
     return 0, ""
 
 
+def _simple_chain_parse_requirements(user_message: str) -> list[dict]:
+    """把交付要求解析成结构化集合（≤16 条），路径绑定的要求只对匹配目标生效。
+
+    解析一次、全链共用：预检/质量门/完成门/模型载荷都读这份集合，避免
+    “全局最小值套到所有写入”的误判（如 300 字被套到清单.txt）。
+    """
+    text = str(user_message or "")
+    patterns = (
+        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)", "cjk"),
+        (r"(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)\s*(?:以上|起|才)", "cjk"),
+        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*字", "nonspace"),
+        (r"(\d{2,6})\s*字\s*(?:以上|起|才)", "nonspace"),
+    )
+    requirements: list[dict] = []
+    global_req: dict | None = None
+    for segment in re.split(r"[\n，。；、；]+", text):
+        found = None
+        for pattern, metric in patterns:
+            match = re.search(pattern, segment)
+            if match:
+                try:
+                    found = (int(match.group(1)), metric)
+                except Exception:
+                    found = None
+                break
+        if not found:
+            continue
+        min_chars, metric = found
+        path_match = re.search(
+            r"([A-Za-z0-9_\u4e00-\u9fff./\\:\- ]+?\.(?:md|txt|docx|pptx|pdf|xlsx|csv|json|py|html))",
+            segment,
+            re.IGNORECASE,
+        )
+        if not path_match:
+            path_match = re.search(
+                r"([A-Za-z0-9_\u4e00-\u9fff.\-]{1,60}?)(?=\s*[（(]\s*(?:不少于|至少|不低于|超过|大于))",
+                segment,
+            )
+        if not path_match:
+            path_match = re.search(r'"([^"]+)"|\'([^\']+)\'', segment)
+        if path_match:
+            raw = str(path_match.group(1) or path_match.group(2) or "").strip().strip('"').strip("'")
+            parts = re.split(r"\s+", raw)
+            if parts and "." in parts[-1]:
+                raw = parts[-1]
+            if raw:
+                try:
+                    suffix = Path(raw).suffix.lower().lstrip(".")
+                except Exception:
+                    suffix = ""
+                req = {
+                    "path_pattern": raw,
+                    "suffix": suffix,
+                    "min_chars": min_chars,
+                    "metric": metric,
+                }
+                if len(requirements) < 16 and not any(
+                    str(item.get("path_pattern") or "") == raw for item in requirements
+                ):
+                    requirements.append(req)
+                continue
+        if global_req is None:
+            global_req = {
+                "path_pattern": "",
+                "suffix": "",
+                "min_chars": min_chars,
+                "metric": metric,
+            }
+    if global_req is not None and len(requirements) < 16:
+        requirements.append(global_req)
+    return requirements
+
+
+def _simple_chain_target_stem(text: str) -> str:
+    try:
+        return Path(str(text or "").strip().strip('"').strip("'")).stem.lower()
+    except Exception:
+        return str(text or "").lower().strip()
+
+
+def _simple_chain_content_requirement_for(
+    target: str,
+    user_message: str,
+    requirements: list[dict] | None = None,
+) -> tuple[int, str]:
+    """按目标路径解析字数要求；命中绑定要求返回其值，否则回退全局/旧逻辑。"""
+    reqs = requirements if isinstance(requirements, list) else _simple_chain_parse_requirements(user_message)
+    if not reqs:
+        return _simple_chain_min_required_chars(user_message)
+    target_text = str(target or "")
+    target_stem = _simple_chain_target_stem(target_text)
+    try:
+        target_suffix = Path(target_text).suffix.lower().lstrip(".")
+    except Exception:
+        target_suffix = ""
+    for req in reqs:
+        pattern = str(req.get("path_pattern") or "")
+        if not pattern:
+            continue
+        bound_stem = _simple_chain_target_stem(pattern)
+        bound_suffix = str(req.get("suffix") or "")
+        if bound_stem and (bound_stem == target_stem or (bound_suffix and bound_suffix == target_suffix)):
+            return int(req.get("min_chars") or 0), str(req.get("metric") or "nonspace")
+    for req in reqs:
+        if not str(req.get("path_pattern") or ""):
+            return int(req.get("min_chars") or 0), str(req.get("metric") or "nonspace")
+    return 0, ""
+
+
 def _novel_chapter_min_chars(user_message: str, action: str, tool_args: Any) -> int:
     if action not in {"file.write", "file.append", "code.write"}:
         return 0
@@ -2996,8 +3129,13 @@ def _simple_chain_mutation_payload_satisfies_request(
     if not _simple_chain_paths_match_desktop(actual_paths, user_message):
         issues.append(f"mutation did not produce the requested desktop deliverable: actual={actual_paths[:3]}")
 
-    min_chars, metric = _simple_chain_min_required_chars(user_message)
-    novel_min = _novel_chapter_min_chars(user_message, action, payload.get("tool_args") or {})
+    payload_tool_args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
+    payload_args = payload_tool_args.get("args") if isinstance(payload_tool_args.get("args"), dict) else {}
+    min_chars, metric = _simple_chain_content_requirement_for(
+        str(payload_tool_args.get("target") or payload_args.get("target") or payload_args.get("path") or ""),
+        user_message,
+    )
+    novel_min = _novel_chapter_min_chars(user_message, action, payload_tool_args)
     if novel_min > min_chars:
         min_chars, metric = novel_min, "cjk"
     if min_chars and action in {"file.write", "file.append", "code.write"}:
@@ -3315,7 +3453,10 @@ def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: di
         content = _simple_chain_tool_args_content(tool_args)
         if not binary_write and content == "" and "空文件" not in str(user_message or ""):
             issues.append("preflight missing non-empty args.content")
-        min_chars, metric = _simple_chain_min_required_chars(user_message)
+        min_chars, metric = _simple_chain_content_requirement_for(
+            str((tool_args or {}).get("target") or args.get("target") or args.get("path") or ""),
+            user_message,
+        )
         novel_min = _novel_chapter_min_chars(user_message, action, tool_args)
         if novel_min > min_chars:
             min_chars, metric = novel_min, "cjk"
@@ -4372,7 +4513,15 @@ def _simple_chain_quality_gate_payload(
         content = _simple_chain_tool_args_content(tool_args)
         if not binary_write and content == "" and "空文件" not in str(user_message or ""):
             final_requirement_gaps.append("file.write/file.append/code.write missing non-empty args.content")
-        min_chars, metric = _simple_chain_min_required_chars(user_message)
+        _requirements = None
+        if isinstance(run_state, dict):
+            _wi = run_state.get("work_intent") if isinstance(run_state.get("work_intent"), dict) else {}
+            _requirements = _wi.get("requirements") if isinstance(_wi.get("requirements"), list) else None
+        min_chars, metric = _simple_chain_content_requirement_for(
+            str((tool_args or {}).get("target") or args.get("target") or args.get("path") or ""),
+            user_message,
+            _requirements,
+        )
         novel_min = _novel_chapter_min_chars(user_message, action, tool_args)
         if novel_min > min_chars:
             min_chars, metric = novel_min, "cjk"
@@ -5881,6 +6030,10 @@ class Zongdiaodu:
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
+        try:
+            run_state.setdefault("work_intent", {})["requirements"] = _simple_chain_parse_requirements(xiaoxi)
+        except Exception:
+            pass
         requested_actions = [
             action
             for action in _simple_chain_explicit_action_sequence(xiaoxi)
@@ -5967,6 +6120,12 @@ class Zongdiaodu:
         last_decision_fp: str | None = None
         iteration_count = 0
         loop_started_at = time.monotonic()
+        if isinstance(run_state, dict):
+            run_state["_live"] = {
+                "iteration_count": 0,
+                "tool_rounds": 0,
+                "loop_started_at": loop_started_at,
+            }
         progress_monitor = _SimpleChainProgressMonitor(
             max_no_progress_steps=_SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
             max_cycle_hits=_SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
@@ -5993,14 +6152,6 @@ class Zongdiaodu:
             pass
 
         def _natural_closeout(status: str, reasons: list[str] | None = None) -> tuple[ShentiZhuangtai, str]:
-            if isinstance(run_state, dict):
-                budget = run_state.setdefault("budget", {})
-                if isinstance(budget, dict):
-                    budget.update({
-                        "rounds_used": iteration_count,
-                        "tool_rounds": gongju_cishu,
-                        "wall_clock_used_s": round(loop_elapsed, 1),
-                    })
             payload = _simple_chain_natural_closeout_payload(
                 status=status,
                 reasons=list(reasons or []),
@@ -6051,9 +6202,18 @@ class Zongdiaodu:
             )
             return next_body, final_reply
 
+        def _check_stop(summary: str = "") -> None:
+            """停止检查前先投影预算，保证中断点上的时长/轮次精确落盘。"""
+            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
+                run_state["_live"]["iteration_count"] = iteration_count
+                run_state["_live"]["tool_rounds"] = gongju_cishu
+                _simple_chain_save_run_state(run_state)
+            if run_control:
+                run_control.check_stop(summary)
+
         if run_control:
             run_control.step("llm_call", "model thinking", "running", "First turn with tools enabled.")
-            run_control.check_stop("stopped before model call")
+            _check_stop("stopped before model call")
         initial_llm_failed = False
         try:
             shenti, huifu = _llm_huanxing_scoped(on_chunk=_on_text_chunk)
@@ -6077,12 +6237,14 @@ class Zongdiaodu:
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "cuowu", str(exc)[:500])
         if run_control and not initial_llm_failed:
             run_control.step("llm_call", "model thinking", "done", _llm_reply_progress_summary(huifu))
-            run_control.check_stop("stopped after model reply")
+            _check_stop("stopped after model reply")
 
         while True:
             if initial_llm_failed:
                 break
             iteration_count += 1
+            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
+                run_state["_live"]["iteration_count"] = iteration_count
             loop_elapsed = time.monotonic() - loop_started_at
             # 状态级卡死判定：状态指纹连续无变化 / 状态回环 / 意图文本重复。
             # 单工具重复不再作为判据（误伤合法重跑），只保留保护性安全网。
@@ -6815,6 +6977,8 @@ class Zongdiaodu:
                     if media_item:
                         generated_media.append(media_item)
                     generated_attachments.extend(_shengcheng_fujian_from_result(raw))
+                    if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
+                        run_state["_live"]["tool_rounds"] = gongju_cishu
                     _simple_chain_record_observation(run_state, qp)
                     qp["run_state"] = _simple_chain_run_state_view(run_state)
                     tool_results_block.append({
@@ -6985,14 +7149,6 @@ class Zongdiaodu:
                                     "decided_to_continue": bool(decision_tools),
                                 },
                             )
-                        if isinstance(run_state, dict):
-                            decision_budget = run_state.setdefault("budget", {})
-                            if isinstance(decision_budget, dict):
-                                decision_budget.update({
-                                    "rounds_used": iteration_count,
-                                    "tool_rounds": gongju_cishu,
-                                    "wall_clock_used_s": round(loop_elapsed, 1),
-                                })
                         _simple_chain_emit_event(
                             run_state,
                             "continue_decision",
@@ -7045,7 +7201,7 @@ class Zongdiaodu:
 
 
             if run_control:
-                run_control.check_stop("stopped before tool call")
+                _check_stop("stopped before tool call")
             prepared_name, prepared_args, attempted_action, preflight_issues, block_payload = _simple_chain_prepare_tool_call(
                 request_id,
                 xiaoxi,
@@ -7590,6 +7746,8 @@ class Zongdiaodu:
             if media_item:
                 generated_media.append(media_item)
             generated_attachments.extend(_shengcheng_fujian_from_result(gongju_jieguo))
+            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
+                run_state["_live"]["tool_rounds"] = gongju_cishu
             _simple_chain_record_observation(run_state, quality_payload)
             quality_payload["run_state"] = _simple_chain_run_state_view(run_state)
             if run_control:
@@ -7607,7 +7765,7 @@ class Zongdiaodu:
                     "Tool result returned; model decides next step." if tool_ok else "Tool failed; model decides next step.",
                     meta=quality_payload,
                 )
-                run_control.check_stop("stopped after tool call")
+                _check_stop("stopped after tool call")
             QUANZHUIXIAN.jilu_kuadu(
                 zhuizong_id,
                 f"gongju_{gongju_cishu}_{tool_name}_quality_gate",
@@ -7739,13 +7897,6 @@ class Zongdiaodu:
                 run_state["stage"] = "chat_reply"
             else:
                 run_state["stage"] = "delivery"
-            budget = run_state.setdefault("budget", {})
-            if isinstance(budget, dict):
-                budget.update({
-                    "rounds_used": iteration_count,
-                    "tool_rounds": gongju_cishu,
-                    "wall_clock_used_s": round(loop_elapsed, 1),
-                })
             _simple_chain_save_run_state(run_state)
             if run_state.get("last_transition") is None:
                 default_reason = {

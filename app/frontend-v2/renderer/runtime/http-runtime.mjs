@@ -2099,6 +2099,13 @@ export function createHttpRuntime({ kernel = null } = {}) {
         }
         // GF 门：到达任一终态相位（含待对账/部分完成/矛盾/未知）即停止轮询
         if (TERMINAL_RUN_PHASES.has(runPhaseFromStatus(run.status || run.phase, pollSignals))) {
+          try {
+            window.dispatchEvent(new CustomEvent("tiangong-terminal-run", {
+              detail: { run, requestId, sessionId },
+            }));
+          } catch (_error) {
+            // 事件派发失败不影响轮询清理。
+          }
           clearProgressPolling(requestId);
         }
       } catch {
@@ -3376,6 +3383,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
             artifactCards,
           ),
           simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
+          terminal: finalDonePayload?.terminal || parsed.terminal || null,
           recovered_from_status: recoveredFromStatus
         };
       }
@@ -3401,6 +3409,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
           artifactCards,
         ),
         simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
+        terminal: finalDonePayload?.terminal || parsed.terminal || null,
         recovered_from_status: recoveredFromStatus
       };
     }
