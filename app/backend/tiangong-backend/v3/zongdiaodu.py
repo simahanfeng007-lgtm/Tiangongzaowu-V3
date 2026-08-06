@@ -5809,7 +5809,112 @@ def _simple_chain_try_fallback_delivery(
         required_read_paths=required_read_paths,
         final_reply=final_reply,
     )
+    if not allowed:
+        # 平台有界执行验证：模型写了脚本但拒绝运行、且任务明确要求运行验证时，
+        # 平台在工作区内执行脚本并把真实输出写回交付文件，作为机器验证证据。
+        _simple_chain_platform_run_verification(
+            user_message=xiaoxi,
+            quality_history=quality_history,
+            generated_attachments=generated_attachments,
+            request_id=request_id,
+        )
+        allowed, _status, _reasons = _simple_chain_final_hard_gate(
+            xiaoxi,
+            quality_history,
+            generated_attachments,
+            required_read_paths=required_read_paths,
+            final_reply=final_reply,
+        )
     return allowed, items
+
+
+def _simple_chain_platform_run_verification(
+    *,
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    request_id: str,
+) -> bool:
+    """B6/验证兜底：模型拒绝运行验证时，平台有界执行任务指定的 Python 脚本。
+
+    仅当任务明确要求“运行 python <script>”且脚本已写入工作区时触发；
+    执行限时 30 秒、cwd 限定脚本目录，输出作为机器验证证据写入质量历史，
+    并把真实输出写回任务要求的输出文件。
+    """
+    import subprocess
+
+    if not _simple_chain_requires_command_verification(user_message):
+        return False
+    match = re.search(
+        r"python\s+([A-Za-z0-9_./\\-]+\.py)(?:\s+([A-Za-z0-9_./\\-]+))?",
+        str(user_message or ""),
+    )
+    if not match:
+        return False
+    script_rel = match.group(1)
+    arg_rel = match.group(2) or ""
+    root = _delivery_workspace_root()
+    if not root:
+        return False
+    script_path = _delivery_resolve_path(script_rel, root)
+    if not Path(script_path).is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [sys.executable, script_rel, arg_rel] if arg_rel else [sys.executable, script_rel],
+            cwd=str(Path(script_path).parent),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+    except Exception:
+        return False
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0 or not output.strip():
+        return False
+    quality_history.append({
+        "ok": True,
+        "tool_action": "shell.run",
+        "tool_args": {
+            "action": "shell.run",
+            "target": "",
+            "args": {"command": f"python {script_rel}" + (f" {arg_rel}" if arg_rel else "")},
+        },
+        "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
+        "summary": f"platform verification run output: {output[:300]}",
+        "codex_evidence": {"verification_output": output[:2000]},
+    })
+    # 把真实输出写回任务要求的输出文件（优先 summary/output/result，其次不存在的 .md）。
+    out_targets = _simple_chain_explicit_deliverable_paths(user_message)
+    preferred = [
+        candidate
+        for candidate in out_targets
+        if re.search(r"summary|output|result|verification", candidate, re.IGNORECASE)
+    ]
+    candidates = preferred + [
+        candidate
+        for candidate in out_targets
+        if candidate.lower().endswith((".md", ".txt"))
+        and not Path(_delivery_resolve_path(candidate, root)).is_file()
+    ]
+    for candidate in dict.fromkeys(candidates):
+        if not str(candidate).lower().endswith((".md", ".txt")):
+            continue
+        resolved = _delivery_resolve_path(str(candidate).strip().strip('"').strip("'"), root)
+        target_path = Path(resolved)
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(output, encoding="utf-8")
+            generated_attachments.append({
+                "kind": "document",
+                "path": str(target_path),
+                "suffix": target_path.suffix.lower(),
+            })
+            break
+        except Exception:
+            continue
+    return True
 
 
 def _simple_chain_content_shortage_gap(

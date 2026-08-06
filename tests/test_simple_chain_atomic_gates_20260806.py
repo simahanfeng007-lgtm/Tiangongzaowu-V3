@@ -513,3 +513,34 @@ def test_repeat_escalation_fallback_writes_deliverable(monkeypatch: pytest.Monke
     )
     assert items and (tmp_path / "verification.md").is_file()
     assert allowed is False  # 无真实验证时兜底不能伪造通过
+
+
+def test_platform_run_verification_executes_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from v3.zongdiaodu import (
+        _simple_chain_platform_run_verification,
+        _simple_chain_requires_command_verification,
+    )
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    script = tmp_path / "mdsummary.py"
+    script.write_text(
+        "import sys\n"
+        "text = open(sys.argv[1], encoding='utf-8').read()\n"
+        "print('TITLE:', [line for line in text.splitlines() if line.startswith('# ')][0])\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("# 项目简介\n正文\n", encoding="utf-8")
+    history: list[dict] = []
+    attachments: list[dict] = []
+    prompt = "请运行 python mdsummary.py README.md，把真实输出写入 summary.md"
+    assert _simple_chain_requires_command_verification(prompt) is True
+    ok = _simple_chain_platform_run_verification(
+        user_message=prompt,
+        quality_history=history,
+        generated_attachments=attachments,
+        request_id="req_v",
+    )
+    assert ok is True
+    assert any(p.get("tool_action") == "shell.run" for p in history)
+    assert (tmp_path / "summary.md").read_text(encoding="utf-8").startswith("TITLE:")
+    assert attachments
