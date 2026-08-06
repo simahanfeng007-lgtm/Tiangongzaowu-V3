@@ -127,6 +127,25 @@ class EmissionPointTests(unittest.TestCase):
                 lines.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
             self.assertTrue(any(item["type"] == "turn.failed" and item["run_id"] == "req-closeout" for item in lines))
 
+    def test_closeout_record_normalizes_unknown_reason(self) -> None:
+        from v3.zongdiaodu import (
+            _simple_chain_closeout_record,
+            _simple_chain_new_run_state,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, _isolated_env(tmp), clear=False
+        ):
+            rs = _simple_chain_new_run_state("req-unknown", "sess")
+            _simple_chain_closeout_record(rs, "incomplete", ["unknown"], "model")
+            events_dir = Path(tmp) / "simple_chain_events"
+            lines = []
+            for path in events_dir.glob("events-*.jsonl"):
+                lines.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+            event = next(item for item in lines if item["run_id"] == "req-unknown")
+            self.assertEqual(event["type"], "chain_completed")
+            self.assertEqual(event["reason"], "模型判断无法继续")
+
     def test_mark_terminal_emits_interrupted_event(self) -> None:
         from v3.zongdiaodu import (
             _simple_chain_mark_interrupted,

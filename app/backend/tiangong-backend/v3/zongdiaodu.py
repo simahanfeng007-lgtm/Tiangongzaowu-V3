@@ -815,6 +815,13 @@ def _simple_chain_closeout_record(
     if not isinstance(run_state, dict):
         return
     clean_reasons = [str(item).strip() for item in (reasons or []) if str(item).strip()][:8]
+    if clean_reasons and all(str(item).strip().lower() in {"", "unknown", "unbekannt"} for item in clean_reasons):
+        clean_reasons = [{
+            "incomplete": "模型判断无法继续",
+            "force_stopped": "平台强制停止（保护性拦截）",
+            "complete": "任务完成",
+            "failed": "任务执行失败",
+        }.get(str(status or ""), str(status or "incomplete"))]
     run_state["terminal_reason"] = "; ".join(clean_reasons)[:500]
     run_state["last_transition"] = {
         "type": str(status or "incomplete"),
@@ -5955,6 +5962,14 @@ class Zongdiaodu:
             pass
 
         def _natural_closeout(status: str, reasons: list[str] | None = None) -> tuple[ShentiZhuangtai, str]:
+            if isinstance(run_state, dict):
+                budget = run_state.setdefault("budget", {})
+                if isinstance(budget, dict):
+                    budget.update({
+                        "rounds_used": iteration_count,
+                        "tool_rounds": gongju_cishu,
+                        "wall_clock_used_s": round(loop_elapsed, 1),
+                    })
             payload = _simple_chain_natural_closeout_payload(
                 status=status,
                 reasons=list(reasons or []),
@@ -6930,6 +6945,14 @@ class Zongdiaodu:
                                     "decided_to_continue": bool(decision_tools),
                                 },
                             )
+                        if isinstance(run_state, dict):
+                            decision_budget = run_state.setdefault("budget", {})
+                            if isinstance(decision_budget, dict):
+                                decision_budget.update({
+                                    "rounds_used": iteration_count,
+                                    "tool_rounds": gongju_cishu,
+                                    "wall_clock_used_s": round(loop_elapsed, 1),
+                                })
                         _simple_chain_emit_event(
                             run_state,
                             "continue_decision",
@@ -7684,6 +7707,28 @@ class Zongdiaodu:
                     "wall_clock_used_s": round(loop_elapsed, 1),
                 })
             _simple_chain_save_run_state(run_state)
+            if run_state.get("last_transition") is None:
+                default_reason = {
+                    "complete": "任务完成",
+                    "chat_reply": "对话回复",
+                    "failed": "任务执行失败",
+                }.get(final_chain_status, final_chain_status)
+                run_state["terminal_reason"] = default_reason
+                run_state["last_transition"] = {
+                    "type": final_chain_status,
+                    "reason": default_reason,
+                    "round": int(run_state.get("round") or 0),
+                    "at": datetime.now().isoformat(timespec="seconds"),
+                    "source": "system",
+                }
+                _simple_chain_save_run_state(run_state)
+                _simple_chain_emit_event(
+                    run_state,
+                    _simple_chain_event_type_for(final_chain_status, [default_reason]),
+                    default_reason,
+                    "system",
+                    extra={"status": final_chain_status} if _simple_chain_event_type_for(final_chain_status, [default_reason]) == "chain_completed" else None,
+                )
         if run_control:
             run_control.step(
                 "simple_chain_status",
