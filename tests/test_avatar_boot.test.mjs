@@ -25,7 +25,10 @@ import { createThreeVrmEngine } from "../app/frontend-v2/renderer/avatar/engines
 import { EngineEvent } from "../app/frontend-v2/renderer/avatar/engines/avatar-engine-contract.mjs";
 import { VALIDATOR_VERSION } from "../app/frontend-v2/renderer/avatar/model-admission-gate.mjs";
 import { sha256HexSync } from "../app/frontend-v2/renderer/avatar/canonical-hash.mjs";
-import { AvatarRenderMode } from "../app/frontend-v2/renderer/avatar/avatar-service.mjs";
+import {
+  AVATAR_SELECTED_MODEL_FLAG_KEY,
+  AvatarRenderMode,
+} from "../app/frontend-v2/renderer/avatar/avatar-service.mjs";
 import { mergeAvatarCatalog } from "../app/frontend-v2/renderer/plugins/avatar-panel.mjs";
 
 const nodeSha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -450,6 +453,60 @@ test("avatar-boot：空 builtin 清单保持 direct/import-only；真实导入�
   assert.equal(handle.assetSource.listModels().some((model) => model.id === imported.modelId), true);
 
   handle.service.dispose();
+});
+
+test("avatar-boot：保存的上次模型优先于初始模型恢复；失效选择回退初始模型", async () => {
+  clockRef = createClock();
+  const bytesA = makeVrm1Bytes("z1");
+  const bytesB = makeVrm1Bytes("saved");
+  const manifest = makeManifest(bytesA, bytesB); // tiangong-z1 + zaowu-v2
+  const savedId = "zaowu-v2";
+  const bytesByLocator = {
+    "tiangong-z1": new Uint8Array(bytesA),
+    "zaowu-v2": new Uint8Array(bytesB),
+  };
+  const { channelFactory } = createMemoryChannelFactory(bytesByLocator);
+
+  const bootOnce = async (flagStorage) => bootstrapAvatar({
+    document: createStubDocument(),
+    window: createStubWindow({ openChannel: channelFactory }),
+    flagStorage,
+    storageBackend: createMemoryStorageBackend(),
+    channelFactory,
+    manifest,
+    serviceRegistry: createServiceRegistry(),
+    nowMonotonic: clockRef.now,
+    engineModuleLoader: async () => ({ createThreeVrmEngine: createStubEngineFactory() }),
+    autoSelectSafeModel: true,
+  });
+
+  // 1) 保存的选择仍登记且 admitted → 恢复该模型，而不是初始模型。
+  const handle = await bootOnce(createFlagStorage({
+    "tiangong.avatar.renderMode": "direct",
+    [AVATAR_SELECTED_MODEL_FLAG_KEY]: savedId,
+  }));
+  assert.equal(handle.fallback, false, JSON.stringify(handle.bootLog));
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(handle.runtime.snapshot().lastRequestedModelId, savedId);
+  assert.ok(
+    handle.bootLog.some(
+      (line) => line.stage === "auto-select" && String(line.detail).includes(`restore:${savedId}`),
+    ),
+    JSON.stringify(handle.bootLog),
+  );
+  handle.service.dispose();
+
+  // 2) 保存的选择已删除/不存在 → 回退初始模型。
+  const handle2 = await bootOnce(createFlagStorage({
+    "tiangong.avatar.renderMode": "direct",
+    [AVATAR_SELECTED_MODEL_FLAG_KEY]: "model:ghost",
+  }));
+  assert.equal(handle2.fallback, false, JSON.stringify(handle2.bootLog));
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(handle2.runtime.snapshot().lastRequestedModelId, "tiangong-z1");
+  handle2.service.dispose();
 });
 
 test("avatar-boot：已登记记录不重复登记；清单漂移按白名单字段刷新 +1", async () => {

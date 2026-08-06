@@ -16,6 +16,8 @@ import { deepFreeze } from "./canonical-hash.mjs";
 export const AVATAR_SERVICE_SCHEMA_VERSION = 1;
 export const AVATAR_SERVICE_ID = "avatar-service";
 export const AVATAR_MODE_FLAG_KEY = "tiangong.avatar.renderMode";
+// 上次选择的模型（localStorage；boot 启动时优先恢复，失效/删除则回退初始模型）。
+export const AVATAR_SELECTED_MODEL_FLAG_KEY = "tiangong.avatar.selectedModelId";
 
 export const AvatarRenderMode = Object.freeze({
   DIRECT: "direct",

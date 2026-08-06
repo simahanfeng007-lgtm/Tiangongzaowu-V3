@@ -22,7 +22,11 @@
 // legacy-iframe（不阻断前端启动；getBootstrappedAvatarService 仍返回服务外观）。
 
 import { createAvatarRuntime } from "./avatar-runtime.mjs";
-import { createAvatarService, AvatarRenderMode } from "./avatar-service.mjs";
+import {
+  AVATAR_SELECTED_MODEL_FLAG_KEY,
+  createAvatarService,
+  AvatarRenderMode,
+} from "./avatar-service.mjs";
 import {
   registerService as defaultRegisterService,
   getService as defaultGetService,
@@ -94,6 +98,15 @@ async function fetchBuiltinManifest(fetchImpl) {
   const response = await fetchImpl(BUILTIN_MANIFEST_URL);
   if (!response?.ok) throw new Error(`manifest_fetch_failed: HTTP ${response?.status ?? "?"}`);
   return response.json();
+}
+
+function readSelectedModelFlag(flagStorage) {
+  try {
+    const raw = flagStorage?.getItem?.(AVATAR_SELECTED_MODEL_FLAG_KEY);
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function loadDefaultEngineFactory() {
@@ -370,17 +383,34 @@ export async function bootstrapAvatar({
       note("import-bridge", true, "skipped: controlled desktop bridge unavailable");
     }
 
-    // ⑪ direct 激活：仅当安全模型确实存在于当前清单时自动加载。
-    // 空制品保持 import-only；避免 model_unknown 把正常空目录伪装成启动故障。
+    // ⑪ direct 激活：优先恢复上次选择的模型（仍登记且 admitted），
+    // 否则回退初始模型；空制品保持 import-only。
     const safeModelAvailable = builtinModels.some((model) => model.id === AVATAR_SAFE_MODEL_ID);
-    if (startedMode === AvatarRenderMode.DIRECT && autoSelectSafeModel && safeModelAvailable) {
+    const savedModelId = readSelectedModelFlag(flags);
+    const savedModelAvailable =
+      savedModelId !== null &&
+      (() => {
+        const record = registry.getRecord(savedModelId);
+        return record !== null && record.admissionState === AdmissionState.ADMITTED;
+      })();
+    const initialModelId = savedModelAvailable
+      ? savedModelId
+      : autoSelectSafeModel && safeModelAvailable
+        ? AVATAR_SAFE_MODEL_ID
+        : null;
+    if (startedMode === AvatarRenderMode.DIRECT && initialModelId !== null) {
       queueMicrotask(() => {
         try {
-          service.getRuntime()?.selectModel(AVATAR_SAFE_MODEL_ID);
+          service.getRuntime()?.selectModel(initialModelId);
         } catch (error) {
           note("auto-select", false, String(error?.message ?? error));
         }
       });
+      note(
+        "auto-select",
+        true,
+        savedModelAvailable ? `restore:${savedModelId}` : `safe:${AVATAR_SAFE_MODEL_ID}`,
+      );
     } else if (startedMode === AvatarRenderMode.DIRECT && autoSelectSafeModel) {
       note("auto-select", true, `skipped: ${AVATAR_SAFE_MODEL_ID} absent`);
     }

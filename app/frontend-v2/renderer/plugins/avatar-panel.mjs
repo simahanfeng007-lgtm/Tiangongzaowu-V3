@@ -11,7 +11,12 @@
 //   - 主题切换经 theme-presentation 只调 presentation，不重载模型。
 
 import { getService, hasService } from "../avatar/service-registry.mjs";
-import { AVATAR_MODE_FLAG_KEY, AvatarRenderMode, sanitizeRenderMode } from "../avatar/avatar-service.mjs";
+import {
+  AVATAR_MODE_FLAG_KEY,
+  AVATAR_SELECTED_MODEL_FLAG_KEY,
+  AvatarRenderMode,
+  sanitizeRenderMode,
+} from "../avatar/avatar-service.mjs";
 import { createAvatarStore } from "../avatar/avatar-store.mjs";
 import { createThemePresentationSync, sanitizeThemeId } from "../avatar/theme-presentation.mjs";
 import { createSpeechEventForwarder } from "../avatar/speech-event-forwarder.mjs";
@@ -532,6 +537,19 @@ export const avatarPanelPlugin = {
     }
     await refreshCatalog();
 
+    // 记住用户最后选择的模型：刷新/重启后由 avatar-boot 恢复，避免回到初始模型。
+    function persistSelectedModel(modelId) {
+      try {
+        if (typeof modelId === "string" && modelId.length > 0) {
+          localStorage.setItem(AVATAR_SELECTED_MODEL_FLAG_KEY, modelId);
+        } else {
+          localStorage.removeItem(AVATAR_SELECTED_MODEL_FLAG_KEY);
+        }
+      } catch (_error) {
+        // 持久化失败不阻断模型切换
+      }
+    }
+
     function updateDeleteButtonState() {
       if (!deleteButton) return;
       const modelId = modelSelect?.value ?? "";
@@ -545,6 +563,7 @@ export const avatarPanelPlugin = {
         if (!modelId) return;
         try {
           avatarService.getRuntime()?.selectModel(modelId);
+          persistSelectedModel(modelId);
         } catch (error) {
           setImportStatus(error.message || "模型切换失败", "error");
         }
@@ -570,7 +589,10 @@ export const avatarPanelPlugin = {
               acknowledgeLicense: true,
               resumeToken: result.resumeToken,
             });
-            if (retry?.ok) await refreshCatalog();
+            if (retry?.ok) {
+              await refreshCatalog();
+              persistSelectedModel(retry.modelId);
+            }
             const retryStatus = describeAvatarImportResult(retry);
             setImportStatus(retryStatus.message, retryStatus.state);
           } else {
@@ -579,7 +601,10 @@ export const avatarPanelPlugin = {
           }
           return;
         }
-        if (result?.ok) await refreshCatalog();
+        if (result?.ok) {
+          await refreshCatalog();
+          persistSelectedModel(result.modelId);
+        }
         const resultStatus = describeAvatarImportResult(result);
         setImportStatus(resultStatus.message, resultStatus.state);
       } catch (error) {
@@ -618,6 +643,7 @@ export const avatarPanelPlugin = {
               updateDeleteButtonState();
               try {
                 avatarService.getRuntime()?.selectModel(first.value);
+                persistSelectedModel(first.value);
               } catch (error) {
                 setImportStatus(error.message || "模型切换失败", "error");
               }
@@ -626,6 +652,7 @@ export const avatarPanelPlugin = {
               updateDeleteButtonState();
               try {
                 avatarService.getRuntime()?.releaseModel?.({ reason: "user-delete" });
+                persistSelectedModel(null);
               } catch (_error) { /* 无模型可释放时忽略 */ }
             }
           }
