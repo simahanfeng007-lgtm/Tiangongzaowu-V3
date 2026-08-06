@@ -5041,6 +5041,30 @@ def _simple_chain_budget_close_reply(
     )
 
 
+def _simple_chain_force_stopped_reply(
+    reasons: list[str],
+    tool_count: int,
+    status: str = "force_stopped",
+) -> str:
+    """强制停止的专用自然收尾模板：明确“系统切断、不会自动续跑”。"""
+    visible_reasons: list[str] = []
+    for item in reasons or []:
+        human = _simple_chain_reason_renhua(item)
+        if human and human not in visible_reasons:
+            visible_reasons.append(human)
+        if len(visible_reasons) >= 6:
+            break
+    if not visible_reasons:
+        visible_reasons = ["系统检测到本轮没有取得有效进展"]
+    bullets = "\n".join(f"- {item}" for item in visible_reasons)
+    return (
+        "系统检测到我一直重复而没有真正推进，已经强制切断了本轮继续执行，"
+        "所以不会自动接着读或接着做。已经完成的部分都保留着。\n\n"
+        f"系统给出的停止原因是：\n{bullets}\n\n"
+        "如果你还想继续，请重新发起，我会从已有进度接着处理。"
+    )
+
+
 def _simple_chain_final_gap_retry_payload(
     request_id: str,
     reasons: list[str],
@@ -5985,13 +6009,18 @@ class Zongdiaodu:
                 tool_count=gongju_cishu,
             )
             clean_reasons = list(reasons or [])
-            fallback = (
-                _simple_chain_completion_fallback_reply(
+            reason_text = " ".join(str(item) for item in clean_reasons).lower()
+            if status == "complete":
+                fallback = _simple_chain_completion_fallback_reply(
                     xiaoxi, quality_history, generated_attachments, gongju_cishu
                 )
-                if status == "complete"
-                else _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status=status)
-            )
+            elif status == "force_stopped" and "budget" in reason_text:
+                fallback = _simple_chain_budget_close_reply(clean_reasons, gongju_cishu, status=status)
+            elif status == "force_stopped":
+                fallback = _simple_chain_force_stopped_reply(clean_reasons, gongju_cishu, status=status)
+            else:
+                fallback = _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status=status)
+            pre_closeout_reply = str(huifu or "").strip()
             # 强制停止场景剩余墙钟可能极少：余量不足时不再调模型，
             # 直接回退模板，避免收尾调用拖过网关 watchdog。
             try:
@@ -6010,6 +6039,10 @@ class Zongdiaodu:
                 _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
                 return shenti, fallback
             final_reply = str(reply or "").strip() or fallback
+            if final_reply == pre_closeout_reply:
+                # 收尾模型调用返回了上一条消息（未真正收尾）：按模板兜底，避免
+                # 用户看到“好的，我继续读一遍。”这类没有说明停止原因的内容。
+                final_reply = fallback
             _simple_chain_closeout_record(
                 run_state,
                 status,

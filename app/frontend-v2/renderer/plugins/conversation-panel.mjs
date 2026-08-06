@@ -141,6 +141,30 @@ function progressStatusText(status) {
   return "等待";
 }
 
+export function chainStatusLabel(simpleChainStatus, phase) {
+  const byStatus = {
+    force_stopped: "已强制停止",
+    interrupted: "已中断",
+    incomplete: "未完成",
+    complete: "完成",
+    chat_reply: "完成",
+    failed: "执行失败",
+  };
+  const scs = String(simpleChainStatus || "").trim();
+  if (byStatus[scs]) return byStatus[scs];
+  const byPhase = {
+    force_stopped: "已强制停止",
+    failed: "执行失败",
+    interrupted: "已中断",
+    cancelled: "已中断",
+    reconcile_required: "待对账",
+    partial: "部分完成",
+    incident: "状态矛盾",
+    unknown: "状态未知",
+  };
+  return byPhase[String(phase || "")] || "";
+}
+
 function progressClass(status) {
   const value = String(status || "pending");
   if (["done", "ok", "success", "completed"].includes(value)) return "done";
@@ -1352,22 +1376,13 @@ export const conversationPanelPlugin = {
 
       const snap = state.snapshot();
       const lastRun = snap.lastRun || {};
-      const statusPhases = {
-        force_stopped: "已强制停止",
-        failed: "执行失败",
-        interrupted: "已中断",
-        cancelled: "已中断",
-        reconcile_required: "待对账",
-        partial: "部分完成",
-        incident: "状态矛盾",
-        unknown: "状态未知",
-      };
-      if (statusPhases[String(lastRun.phase || "")]) {
+      const stripLabel = chainStatusLabel(lastRun.simple_chain_status, lastRun.phase);
+      if (stripLabel) {
         const notice = document.createElement("div");
         notice.className = "chain-status-strip";
         const label = document.createElement("span");
         label.className = "chain-status-label";
-        label.textContent = statusPhases[lastRun.phase];
+        label.textContent = stripLabel;
         notice.appendChild(label);
         const detailText = String(lastRun.terminal_reason || lastRun.simple_chain_status || "").trim();
         if (detailText) {

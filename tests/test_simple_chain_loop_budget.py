@@ -15,6 +15,14 @@ from unittest import mock
 
 
 class SimpleChainLoopBudgetTests(unittest.TestCase):
+    def test_force_stopped_reply_explains_system_cutoff(self) -> None:
+        from v3.zongdiaodu import _simple_chain_force_stopped_reply
+
+        text = _simple_chain_force_stopped_reply(["no effective progress for 4 consecutive steps"], 1)
+        self.assertIn("强制切断", text)
+        self.assertIn("不会自动", text)
+        self.assertIn("请重新发起", text)
+
     def test_packaging_checklist_is_not_zip_delivery(self) -> None:
         from v3.zongdiaodu import _has_delivery_intent, _requests_zip_delivery
 
