@@ -7235,6 +7235,80 @@ class LifeShadowStore:
             "strict_table_count": len(tables),
         }
 
+    def health_cached(self, *, max_age_ms: int = 10_000) -> dict[str, Any]:
+        """Bound the full shadow-store audit to a per-change cadence.
+
+        ``health()`` replays every life projection and walks every causal pack
+        (seconds on a live store); readiness polling must not pay that cost on
+        every call.  ``PRAGMA data_version`` changes on any write, so the
+        cached audit is invalidated exactly when the store actually changed,
+        and a failing audit is also cached (fail-closed stays visible) instead
+        of being retried in a tight loop.
+        """
+        import threading as _threading
+        import time as _time
+
+        lock = getattr(self, "_health_cache_lock", None)
+        if lock is None:
+            self._health_cache_lock = _threading.Lock()
+            self._health_cache: dict[str, Any] | None = None
+            self._health_cache_version = -1
+            self._health_cache_at_ms = 0
+            lock = self._health_cache_lock
+        try:
+            version = int(self._connection.execute("PRAGMA data_version").fetchone()[0])
+        except Exception:
+            version = -1
+        now_ms = _time.time_ns() // 1_000_000
+        with lock:
+            cached = self._health_cache
+            if (
+                cached is not None
+                and version >= 0
+                and version == self._health_cache_version
+                and now_ms - self._health_cache_at_ms < max_age_ms
+            ):
+                return cached
+        try:
+            result = self._health_on_snapshot()
+        except Exception as exc:
+            result = {
+                "healthy": False,
+                "reason_code": str(exc) or "life.authority_store.health_failed",
+                "cached_failure": True,
+            }
+        with lock:
+            self._health_cache = result
+            self._health_cache_version = version
+            self._health_cache_at_ms = now_ms
+        return result
+
+    def _health_on_snapshot(self) -> dict[str, Any]:
+        """Run the full shadow-store audit on a private read-only connection.
+
+        ``health()`` replays every projection and walks every causal pack while
+        the live connection is also used by concurrent life writers.  Auditing
+        the shared connection produced transient ``sqlite3.InterfaceError`` /
+        mid-write missing-row failures.  A fresh WAL reader sees a consistent
+        snapshot and never interferes with live writes.
+        """
+        import sqlite3 as _sqlite3
+        import threading as _threading
+
+        db_row = self._connection.execute("PRAGMA database_list").fetchone()
+        db_path = str(db_row["file"]) if db_row is not None else ""
+        if not db_path or db_path in {":memory:", ""}:
+            return self.health()
+        snapshot = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        snapshot.row_factory = self._connection.row_factory
+        shim = object.__new__(type(self))
+        shim._connection = snapshot
+        shim._lock = _threading.RLock()
+        try:
+            return shim.health()
+        finally:
+            snapshot.close()
+
 
 __all__ = [
     "AffectIntakeCommit",
