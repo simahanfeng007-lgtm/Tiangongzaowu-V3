@@ -198,3 +198,64 @@
 ### 8.4 事故记录（必须透明）
 
 写清理回归测试时，第一版测试只隔离了 `TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT`，未隔离 `USERPROFILE/HOME/APPDATA`，导致清理函数扫描并删除了真实用户目录 `C:\Users\77571\.tiangong\v3\simple_chain_run_state` 的 313 个运行检查点（314 → 1，约 19MB；`Path.unlink` 不进回收站，不可恢复）。影响范围：仅简单链 run_state 历史检查点；源码、VRM、聊天、RunControl 快照（LOCALAPPDATA）均未受影响。根因已修复：清理测试改为全根目录隔离；该目录现存 1 个文件（已按预期标记 interrupted）。
+
+## 11. 待修复清单（原子级重定范围，2026-08-06）
+
+来源：源码版前端实测任务 A–E 发现的问题；以下按“根因修复”而非“症状修补”重定范围。
+
+### 11.1 预算增量维护（原 #4，最高优先）
+
+- 根因：run_state.budget 只在终局组装时计算，运行中途为空/过期，任何中途终态
+  （用户取消、卡死、模型失败）的事件与消费方都拿不到预算。
+- 原子修法：新增 `_simple_chain_update_budget(run_state, rounds_used, tool_rounds, wall_clock_used_s)`；
+  每轮循环顶部更新内存值（rounds_used=iteration_count、tool_rounds=gongju_cishu、
+  wall_clock_used_s=loop_elapsed）；删除各发射点临时补预算的重复逻辑；终局组装保留。
+- 语义定死：rounds_used=循环轮次、tool_rounds=工具轮次、wall=墙钟；`round`（观察次数）单独保留。
+- 验收：中断/卡死/完成三类终态事件预算字段一致非零；回归测试覆盖中途取消。
+
+### 11.2 交付要求按路径解析（原 #1）
+
+- 根因：`_simple_chain_min_required_chars` 返回全局最小值并套用到所有写入；
+  预检与质量门两套重复逻辑。
+- 原子修法：新增 `_simple_chain_content_requirement_for(target, user_message)`：
+  解析“路径/后缀绑定”的要求（如 README.md（至少 300 字）），目标匹配才生效；
+  无绑定要求时回退全局最小值，仅作用于任务指定交付路径，无指定路径时作用于写入产物。
+  预检与质量门共用该函数，删除重复逻辑。
+- 兜底规则先定死：无路径绑定 → 应用于任务的交付路径集合；仍无 → 应用于第一个写入产物。
+- 验收：任务 A 通过（300 字只约束 README）；“写 300 字文档”无路径仍被约束；
+  多文件不同字数要求各自生效。
+
+### 11.3 消息列表与后端终局对账（原 #2）
+
+- 根因：中途刷新后前端只恢复进度，不恢复最终消息；后端 RunControl 快照已有
+  final_response，但前端不据此重建。
+- 原子修法：定义不变量“消息列表可从后端权威状态重建”。前端加载/刷新后，
+  对活动会话拉取最近终局 run 的 final_response + simple_chain_status + origin，
+  若该 run_id 的最终消息缺失则追加；按 run_id 去重（本地记录已对账 run_id），
+  只对账终局 run，模板来源不追加文本。
+- 验收：中途刷新→完成后再次刷新，最终回复恰好出现一次；不复活旧任务；顺序在中间步骤之后。
+
+### 11.4 simple_chain_status 透传与消费方统一（原 #3）
+
+- 根因：网关把 force_stopped/interrupted 折叠成 FAILED，前端标签按 phase 显示错误；
+  stream 终态载荷未带 simple_chain_status。
+- 原子修法：stream finalDonePayload 透传 simple_chain_status/terminal_reason/last_transition
+  （对齐 desktop_api run 载荷）；`chainStatusLabel(simple_chain_status, phase)` 应用到
+  全部消费方（对话状态条、会话卡片、顶部状态聚合、GF 映射），成功裁决仍以网关为准。
+- 实施前先盘点消费方清单，逐处确认字段来源。
+- 验收：任务 E 状态条=已强制停止、任务 D=已中断，且卡片/顶部一致。
+
+### 11.5 VRM 刷新回退实测（原 #5）
+
+- 验证步骤：源码版导入/选择一个 VRM → 刷新 → 确认 avatar 标签保持；
+  若回退，收集 avatar-boot/flag/registry 证据后再定位。
+
+### 11.6 中断事件延迟（原 #6）
+
+- 决策：保持现状（中断标记即时生效，事件等模型调用返回），不强行打断底层调用；
+  记为已知行为。
+
+### 实施顺序与验证
+
+11.1 → 11.2 → 11.3 → 11.4 → 11.5；每项先补回归测试，完成后全量 pytest + Node，
+再重测任务 A/E 做端到端验收；全部通过后提交推送。
