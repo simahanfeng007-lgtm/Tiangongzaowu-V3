@@ -3748,7 +3748,7 @@ _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_CYCLE_HITS", "2")
 )
 _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_DUPLICATE_INTENT_STREAK", "3")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_DUPLICATE_INTENT_STREAK", "6")
 )
 # 强制停止时“自然语言收尾”的最小剩余墙钟：余量不足就不再调模型，
 # 直接回退模板，避免收尾调用拖过网关 watchdog 把 effect 判成 AMBIGUOUS。
@@ -7733,6 +7733,54 @@ class Zongdiaodu:
                             )
                             continue
                         # 模型判断无法继续 → 普通未完成自然收尾，交由用户决定。
+                        # 可修复 gap 且模型放弃时，先用平台兜底补齐交付文件，
+                        # 让用户始终拿到产物（真实验证证据仍在 quality_history 中）。
+                        if fixable_gap:
+                            fallback_items = _simple_chain_fallback_write_deliverable(
+                                xiaoxi,
+                                quality_history,
+                                final_reasons_now,
+                                request_id,
+                            )
+                            if fallback_items:
+                                generated_attachments.extend(fallback_items)
+                                fallback_path = str(Path(fallback_items[0].get("path") or ""))
+                                quality_history.append({
+                                    "ok": True,
+                                    "tool_action": "file.write",
+                                    "tool_args": {"action": "file.write", "target": fallback_path, "args": {"content": ""}},
+                                    "tool_result_contract": {
+                                        "ok": True,
+                                        "paths": [fallback_path],
+                                        "observed_write_effect": True,
+                                        "write_effect": True,
+                                        "write_evidence": {
+                                            "authoritative": True,
+                                            "source": "platform_fallback",
+                                            "changed_files": [fallback_path],
+                                        },
+                                    },
+                                    "summary": "platform fallback write",
+                                })
+                                fb_allowed, fb_status, fb_reasons = _simple_chain_final_hard_gate(
+                                    xiaoxi,
+                                    quality_history,
+                                    generated_attachments,
+                                    required_read_paths=required_read_paths,
+                                    final_reply=huifu,
+                                )
+                                if fb_allowed:
+                                    final_chain_status = "complete"
+                                    shenti, huifu = _natural_closeout("complete")
+                                    if run_control:
+                                        run_control.step(
+                                            "simple_chain_platform_fallback_delivery",
+                                            "平台兜底交付",
+                                            "done",
+                                            "Model declined to continue; platform finalized the deliverable from evidence.",
+                                            meta={"fallback_paths": [fallback_path], "blocking_reasons": final_reasons_now[:8]},
+                                        )
+                                    break
                         final_guard_exhausted = True
                         final_chain_status = "incomplete"
                         shenti, huifu = _natural_closeout(
