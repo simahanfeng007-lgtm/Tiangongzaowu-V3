@@ -270,3 +270,74 @@ def test_b4_omni_body_tuple_result_is_unwrapped() -> None:
     contract = normalize_tool_result("omni_body", tuple_result)
     assert contract["ok"] is True
     assert contract["status"] == "wancheng"
+
+
+def test_b4_write_evidence_post_counts_as_verification() -> None:
+    from v3.zongdiaodu import _simple_chain_has_post_mutation_verification
+
+    payload = {
+        "ok": True,
+        "tool_action": "docx.create",
+        "tool_args": {"action": "docx.create", "target": r"C:\ws\办公桥测试.docx", "args": {}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [r"C:\ws\办公桥测试.docx"],
+            "observed_write_effect": True,
+            "write_evidence": {
+                "authoritative": True,
+                "source": "tool_post_readback",
+                "changed_files": [r"C:\ws\办公桥测试.docx"],
+                "post": [
+                    {
+                        "path": r"C:\ws\办公桥测试.docx",
+                        "exists": True,
+                        "is_file": True,
+                        "size_bytes": 1234,
+                        "sha256": "abc",
+                    }
+                ],
+            },
+        },
+    }
+    assert _simple_chain_has_post_mutation_verification([payload]) is True
+    no_post = {
+        **payload,
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [r"C:\ws\办公桥测试.docx"],
+            "observed_write_effect": True,
+            "write_evidence": {
+                "authoritative": True,
+                "changed_files": [],
+                "post": [],
+            },
+        },
+    }
+    assert _simple_chain_has_post_mutation_verification([no_post]) is False
+
+
+def test_b6_novel_honors_explicit_user_word_count() -> None:
+    from v3.zongdiaodu import _novel_chapter_min_chars
+
+    assert _novel_chapter_min_chars(
+        "写一篇科幻小说第一章（≥1000 字）《回声年》，保存到工作区",
+        "file.write",
+        {"target": "回声年 第一章.md", "args": {}},
+    ) == 1000
+    assert _novel_chapter_min_chars(
+        "写一篇科幻小说第一章《回声年》，保存到工作区",
+        "file.write",
+        {"target": "回声年 第一章.md", "args": {}},
+    ) == 2500
+
+
+def test_b6_hard_continue_payload_demands_write() -> None:
+    from v3.zongdiaodu import _simple_chain_hard_continue_payload
+
+    payload = _simple_chain_hard_continue_payload(
+        "req_h",
+        ["written content cjk_chars=1274 < required 2500"],
+        {},
+    )
+    assert "not optional" in payload["instruction"]
+    assert "file.append" in payload["instruction"]

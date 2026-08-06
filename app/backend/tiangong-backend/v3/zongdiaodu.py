@@ -2657,6 +2657,15 @@ def _novel_chapter_min_chars(user_message: str, action: str, tool_args: Any) -> 
     short_markers = ("短章", "片段", "梗概", "概要", "摘要", "几百字", "500字", "五百字")
     if any(marker in text for marker in short_markers):
         return 0
+    # 用户显式声明字数（≥1000 字 / 至少 800 字）时尊重用户值；
+    # 只有未声明时才套技能默认 2500，避免把用户可接受门槛抬得过高。
+    explicit = re.search(
+        r"(?:不少于|至少|不低于|超过|大于|≥|>)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字|字)",
+        text,
+        re.IGNORECASE,
+    )
+    if explicit:
+        return max(1, int(explicit.group(1)))
     return 2500
 
 
@@ -3670,6 +3679,10 @@ _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS = int(
 )
 _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS", "2")
+)
+# B6：可修复 gap（字数不足/交付物缺失）下模型返回“不继续”时的硬性追问次数。
+_SIMPLE_CHAIN_HARD_CONTINUE_MAX = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_HARD_CONTINUE_MAX", "2")
 )
 # A single tool execution/batch must never wedge the chain past the gateway
 # watchdog (720s after the 3x budget raise).  This hard cap applies even when
@@ -4863,6 +4876,24 @@ def _simple_chain_has_post_mutation_verification(quality_history: list[dict[str,
                 for mutation_path in mutation_paths
             ):
                 return True
+    # B4 延伸：最后一次写工具的权威回读证据（exists + sha256/size，来自沙箱
+    # broker 的确定性 post 状态）本身就是机器验证，不应要求模型再多读一次。
+    if last_mutation_index >= 0 and last_mutation_index < len(quality_history or []):
+        last_payload = quality_history[last_mutation_index]
+        contract = last_payload.get("tool_result_contract") if isinstance(last_payload.get("tool_result_contract"), dict) else {}
+        evidence = contract.get("write_evidence")
+        if isinstance(evidence, dict) and evidence.get("authoritative") is True:
+            post = evidence.get("post") if isinstance(evidence.get("post"), list) else []
+            if any(
+                isinstance(row, dict)
+                and row.get("exists") is True
+                and (row.get("sha256") or row.get("size_bytes") is not None)
+                for row in post
+            ):
+                return True
+            changed_files = evidence.get("changed_files") if isinstance(evidence.get("changed_files"), list) else []
+            if changed_files:
+                return True
     return False
 
 
@@ -5475,6 +5506,31 @@ def _simple_chain_delivery_guard_payload(
     }
 
 
+def _simple_chain_hard_continue_payload(
+    request_id: str,
+    reasons: list[str],
+    run_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """B6 硬性追问：模型返回“不继续”但 gap 可修复时，明确要求必须收口。"""
+    clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
+    return {
+        "schema": "tiangong.v3.simple_chain.hard_continue.v1",
+        "request_id": str(request_id or ""),
+        "ok": True,
+        "stage": "hard_continue",
+        "blocking_reasons": clean_reasons,
+        "run_state": _simple_chain_run_state_view(run_state),
+        "instruction": (
+            "You returned no tool call, but the deliverable requirement is still unmet and it IS "
+            "fixable with a concrete write action. This is not a user decision point and not optional. "
+            "Return exactly one omni_body write tool call now (file.append/file.write/docx.create/"
+            "pptx.create/sheet.create or the equivalent for the requested format) that closes the gap. "
+            "If you return no tool call again, the run will end incomplete with the file in its current "
+            "state and the user will have to re-request the work."
+        ),
+    }
+
+
 def _simple_chain_content_shortage_gap(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -5515,10 +5571,11 @@ def _simple_chain_content_guard_payload(
         "instruction": (
             "The deliverable file already exists on disk but is below the required length. This is a "
             "content-shortage gap, not a verification problem. Do NOT call file.read, file.list, "
-            "file.hash, or any other inspection tool. Call exactly one write tool that EXTENDS the "
-            "existing file at one of the target paths above: use file.append (or file.write with the "
-            "full existing content plus new content) until the required length is met. Stopping is only "
-            "acceptable if the environment physically cannot extend the file."
+            "file.hash, or any other inspection tool. Call exactly one concrete omni_body tool call "
+            "with action='file.append' and target set to one of the target paths above (args.content = "
+            "the additional text). Do not emit a bare tool name like 'file.append' outside the "
+            "omni_body wrapper: the call must be an omni_body invocation with the action field. "
+            "Stopping is only acceptable if the environment physically cannot extend the file."
         ),
     }
 
@@ -7353,7 +7410,34 @@ class Zongdiaodu:
                             decision_fp_changed = True
                         last_decision_fp = fp_now
                         if final_gap_retry_count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
-                            # 决策回合超限：平台按强制停止收尾（fail-closed）。
+                            # 决策回合超限：可修复 gap 按 incomplete 收尾（保留产物，
+                            # 交用户决定）；真正无进展才 fail-closed force_stopped。
+                            fixable_at_budget = any(
+                                ("written content" in reason and "required" in reason)
+                                or reason.startswith("no successful write action")
+                                or reason.startswith("explicitly named deliverables are missing")
+                                for reason in final_reasons_now
+                            )
+                            if fixable_at_budget:
+                                final_guard_exhausted = True
+                                final_chain_status = "incomplete"
+                                shenti, huifu = _natural_closeout(
+                                    "incomplete",
+                                    final_reasons_now or ["模型判断无法继续"],
+                                )
+                                if run_control:
+                                    run_control.step(
+                                        "simple_chain_continue_decision",
+                                        "Continue decision budget",
+                                        "incomplete",
+                                        "Fixable gap remained open; run ended incomplete with artifacts preserved.",
+                                        meta={
+                                            "attempt": final_gap_retry_count,
+                                            "max_retries": _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
+                                            "blocking_reasons": final_reasons_now[:8],
+                                        },
+                                    )
+                                break
                             final_guard_exhausted = True
                             final_chain_status = "force_stopped"
                             shenti, huifu = _natural_closeout(
@@ -7420,10 +7504,46 @@ class Zongdiaodu:
                                 "attempt": final_gap_retry_count,
                                 "decided_to_continue": bool(decision_tools),
                                 "fingerprint_changed": decision_fp_changed,
+                                "decision_tool_names": [
+                                    str(name or "").strip()
+                                    for name, _args in (decision_tools or [])
+                                ][:8],
                             },
                         )
                         if decision_tools:
                             # 模型选择换一种方式继续：本轮循环执行该工具。
+                            continue
+                        # B6：可修复 gap 下模型仍返回“不继续”→ 有界硬性追问。
+                        hard_retries = repeat_observation_counts.get("hard_continue", 0)
+                        fixable_gap = any(
+                            ("written content" in reason and "required" in reason)
+                            or reason.startswith("no successful write action")
+                            or reason.startswith("explicitly named deliverables are missing")
+                            for reason in final_reasons_now
+                        )
+                        if fixable_gap and hard_retries < _SIMPLE_CHAIN_HARD_CONTINUE_MAX:
+                            repeat_observation_counts["hard_continue"] = hard_retries + 1
+                            hard_payload = _simple_chain_hard_continue_payload(
+                                request_id,
+                                final_reasons_now,
+                                run_state,
+                            )
+                            if run_control:
+                                run_control.step(
+                                    "simple_chain_hard_continue",
+                                    "可修复 gap 硬性追问",
+                                    "running",
+                                    "模型未返回工具调用；已要求必须用写工具收口。",
+                                    meta={
+                                        "attempt": hard_retries + 1,
+                                        "max_retries": _SIMPLE_CHAIN_HARD_CONTINUE_MAX,
+                                        "blocking_reasons": final_reasons_now[:8],
+                                    },
+                                )
+                            shenti, huifu = _llm_jixu_scoped(
+                                _simple_chain_model_payload(hard_payload),
+                                on_chunk=_on_text_chunk,
+                            )
                             continue
                         # 模型判断无法继续 → 普通未完成自然收尾，交由用户决定。
                         final_guard_exhausted = True
