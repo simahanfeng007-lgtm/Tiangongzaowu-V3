@@ -5926,27 +5926,27 @@ class Zongdiaodu:
             )
 
         def _llm_closeout_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
-            prior_texts: list[str] = []
-            for item in quality_history:
-                if not isinstance(item, dict):
-                    continue
-                prior_texts.append(_simple_chain_history_payload_text(item))
+            # 收尾必须是“新的一轮用户指令”，不能走 jixu 的工具结果续写框架，
+            # 否则模型会继续按原循环说话（例如“第 3 遍读取，继续。”）。
+            closeout_text = json.dumps(payload, ensure_ascii=False, default=str)
+            closeout_user_text = (
+                f"[原始用户请求]\n{xiaoxi}\n\n"
+                f"[平台收尾指令]\n{closeout_text}"
+            )
             if self.http_kehuduan is not None:
                 with self.http_kehuduan.scoped_tools(
                     allowed_tool_names=allowed_tool_names,
                     disable_tools=True,
                 ):
-                    return self.gutong.jixu(
-                        system_tishi, payload, shenti, xiaoxi,
+                    return self.gutong.huanxing(
+                        system_tishi,
+                        closeout_user_text,
+                        shenti,
                         on_text_chunk=on_chunk,
-                        assistant_messages=prior_texts,
-                        stable_user_message=cache_stable_user_message,
                     )
-            return self.gutong.jixu(
-                system_tishi, payload, shenti, xiaoxi,
+            return self.gutong.huanxing(
+                system_tishi, closeout_user_text, shenti,
                 on_text_chunk=on_chunk,
-                assistant_messages=prior_texts,
-                stable_user_message=cache_stable_user_message,
             )
 
         gongju_cishu = 0
