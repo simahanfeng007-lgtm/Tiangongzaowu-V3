@@ -470,12 +470,26 @@ export function createActions({ runtime, state, kernel = null }) {
   function ensureFinalMessage(detail = {}) {
     const run = detail.run && typeof detail.run === "object" ? detail.run : {};
     const runId = String(detail.requestId || run.request_id || run.requestId || "");
-    const finalText = String(detail.text || run.final_response || run.reply || "");
+    let finalText = String(detail.text || run.final_response || run.reply || "");
     if (!runId || !finalText) return;
+    try {
+      const parsed = JSON.parse(finalText);
+      if (parsed && typeof parsed === "object" && typeof parsed.huifu === "string") {
+        finalText = parsed.huifu;
+      }
+    } catch (_error) {
+      // final_response 是纯文本时直接使用。
+    }
+    if (!finalText) return;
     const sessionId = detail.sessionId || state.snapshot().activeSessionId;
     const messages = state.snapshot().messages || [];
+    const prefix = finalText.length > 60 ? finalText.slice(0, 60) : "";
     const exists = messages.some(
-      (item) => item.role === "assistant" && String(item.meta?.runId || "") === runId,
+      (item) => item.role === "assistant" && (
+        String(item.meta?.runId || "") === runId
+        || String(item.content || "").trim() === finalText.trim()
+        || (prefix && String(item.content || "").startsWith(prefix))
+      ),
     );
     if (exists) return;
     const origin = String(detail.origin || run.origin || "model");
@@ -493,9 +507,22 @@ export function createActions({ runtime, state, kernel = null }) {
     terminalRunListenerInstalled = true;
     window.addEventListener("tiangong-terminal-run", (event) => {
       try {
-        ensureFinalMessage(event?.detail || {});
+        const detail = event?.detail || {};
+        ensureFinalMessage(detail);
+        const run = detail.run && typeof detail.run === "object" ? detail.run : {};
+        if (run && (run.final_response || run.terminal || run.simple_chain_status)) {
+          state.setLastRun(detail.sessionId || state.snapshot().activeSessionId, {
+            ...run,
+            requestId: detail.requestId || String(run.request_id || run.requestId || ""),
+            sessionId: detail.sessionId,
+            phase: String(run.status || run.phase || "finished"),
+            terminal: run.terminal || null,
+            simple_chain_status: String(run.simple_chain_status || ""),
+            finishedAt: Date.now(),
+          });
+        }
       } catch (_error) {
-        // 终局消息对账失败不影响主流程。
+        // 终局对账/状态合并失败不影响主流程。
       }
     });
   }
