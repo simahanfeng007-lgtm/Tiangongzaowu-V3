@@ -469,7 +469,22 @@ export function createActions({ runtime, state, kernel = null }) {
 
   function ensureFinalMessage(detail = {}) {
     const run = detail.run && typeof detail.run === "object" ? detail.run : {};
-    const runId = String(detail.requestId || run.request_id || run.requestId || "");
+    const presentationId = String(
+      detail.presentationRequestId
+      || detail.requestId
+      || run.presentation_request_id
+      || run.request_id
+      || run.requestId
+      || ""
+    );
+    const gatewayId = String(
+      detail.gatewayRequestId
+      || detail.gateway_request_id
+      || run.gateway_request_id
+      || run.gatewayRequestId
+      || ""
+    );
+    const runId = gatewayId || presentationId;
     let finalText = String(detail.text || run.final_response || run.reply || "");
     if (!runId || !finalText) return;
     try {
@@ -483,24 +498,61 @@ export function createActions({ runtime, state, kernel = null }) {
     if (!finalText) return;
     const sessionId = detail.sessionId || state.snapshot().activeSessionId;
     const messages = state.snapshot().messages || [];
+    const normalized = (value) => String(value || "").trim();
     const prefix = finalText.length > 60 ? finalText.slice(0, 60) : "";
-    const exists = messages.some(
-      (item) => item.role === "assistant" && (
-        String(item.meta?.runId || "") === runId
-        || String(item.content || "").trim() === finalText.trim()
-        || (prefix && String(item.content || "").startsWith(prefix))
-      ),
-    );
+    // 同一轮已经有一条相同自然收尾 → 不再重复新增。
+    const exists = messages.some((item) => item.role === "assistant" && (
+      String(item.meta?.runId || "") === runId
+      || (presentationId && String(item.requestId || "") === presentationId && normalized(item.content || "") === normalized(finalText))
+      || (presentationId && prefix && String(item.requestId || "") === presentationId && String(item.content || "").startsWith(prefix))
+    ));
     if (exists) return;
     const origin = String(detail.origin || run.origin || "model");
+    const attachments = Array.isArray(detail.attachments)
+      ? detail.attachments
+      : (Array.isArray(run.generated_attachments) ? run.generated_attachments : []);
+    // 优先填充本轮占位消息（工作卡），保证“一轮只出一条终局”。
+    const placeholder = presentationId
+      ? messages.find((item) => item.role === "assistant" && String(item.requestId || "") === presentationId)
+      : null;
+    if (placeholder) {
+      state.replaceMessageById({
+        sessionId: placeholder.sessionId || sessionId,
+        messageId: placeholder.id,
+        text: finalText,
+        error: false,
+        attachments,
+        meta: { origin, runId, gatewayRequestId: gatewayId }
+      });
+      return;
+    }
     state.addMessage("assistant", finalText, false, {
       id: `final-${runId}`,
-      requestId: runId,
+      requestId: presentationId || runId,
       meta: { origin, runId },
-      attachments: Array.isArray(detail.attachments)
-        ? detail.attachments
-        : (Array.isArray(run.generated_attachments) ? run.generated_attachments : []),
+      attachments,
     });
+  }
+
+  // 当前轮是否已有一条由终局事件交付的 assistant 收尾消息。
+  // finalText 非空：内容相同即视为已交付；finalText 为空：只有带终局标记且
+  // 有正文的消息才算已交付，避免把“正在写入…”阶段文本误判为最终回复。
+  function findTurnFinalMessage(requestId, finalText) {
+    const messages = state.snapshot().messages || [];
+    const text = String(finalText || "").trim();
+    const prefix = text.length > 60 ? text.slice(0, 60) : "";
+    for (const item of messages) {
+      if (item.role !== "assistant") continue;
+      const sameTurn = String(item.requestId || "") === String(requestId || "");
+      const delivered = Boolean(item.meta?.runId || item.meta?.gatewayRequestId);
+      const content = String(item.content || "").trim();
+      const textMatch = text
+        ? content === text || (prefix && content.startsWith(prefix))
+        : Boolean(content);
+      if (sameTurn && delivered && textMatch) return item;
+      if (text && sameTurn && textMatch) return item;
+    }
+    return null;
   }
 
   function mergeTerminalIntoLastRun(next) {
@@ -1558,19 +1610,27 @@ export function createActions({ runtime, state, kernel = null }) {
             }
           );
         }
-        // 系统停止提示不再追加进聊天文本（用户不希望在对话里看到系统模板）；
-        // 停止原因与下一步由后端自然语言收尾回复承载。
-        const terminalStatusText = String(streamResult?.simple_chain_status || "").trim();
-        const isExpectedTerminal = ["force_stopped", "interrupted", "incomplete", "complete"].includes(terminalStatusText);
-        const alreadyDeliveredFinal = (state.snapshot().messages || []).some(
-          (item) => item.role === "assistant" && String(item.meta?.runId || "") === requestId,
-        );
-        if (!alreadyDeliveredFinal) {
+        // 终局消息不变量：每轮最多一条 assistant 收尾；自然回复一律黑色，
+        // 红色只允许在“完全没有自然回复”的兜底场景出现。
+        const turnFinal = findTurnFinalMessage(requestId, finalText);
+        if (turnFinal) {
+          const attachments = mergedAttachments(streamResult);
+          if (attachments.length && String(turnFinal.content || "") === String(finalText || "")) {
+            state.replaceMessageById({
+              sessionId: targetSessionId,
+              messageId: turnFinal.id,
+              text: turnFinal.content,
+              error: false,
+              attachments,
+              meta: { origin: String(streamResult?.origin || turnFinal.meta?.origin || "model"), runId: turnFinal.meta?.runId || requestId }
+            });
+          }
+        } else {
           state.replaceMessageById({
             sessionId: targetSessionId,
             messageId: targetMessageId,
             text: displayText,
-            error: !finalText || (!streamResult.ok && !isExpectedTerminal),
+            error: !finalText,
             attachments: mergedAttachments(streamResult),
             meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
           });

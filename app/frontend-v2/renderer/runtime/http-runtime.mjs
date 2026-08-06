@@ -2102,7 +2102,12 @@ export function createHttpRuntime({ kernel = null } = {}) {
           if (active) active.terminalRun = run;
           try {
             window.dispatchEvent(new CustomEvent("tiangong-terminal-run", {
-              detail: { run, requestId, sessionId },
+              detail: {
+                run,
+                requestId,
+                gatewayRequestId: String(current?.gatewayRequestId || active?.gatewayRequestId || ""),
+                sessionId,
+              },
             }));
           } catch (_error) {
             // 事件派发失败不影响轮询清理。
@@ -2155,6 +2160,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
           timeoutMs: 0,
           lastActivityAt: 0,
           lastRunUpdatedAt: String(run.updated_at || ""),
+          gatewayRequestId: String(run.gateway_request_id || run.gatewayRequestId || ""),
           seenSteps: new Map(steps.map((step) => [String(step.id || ""), progressStepSignature(step)])),
           eventCursor: Number(status?.event_cursor?.next_seq || 0)
         });
@@ -3319,7 +3325,9 @@ export function createHttpRuntime({ kernel = null } = {}) {
               window.dispatchEvent(new CustomEvent("tiangong-terminal-run", {
                 detail: {
                   run: recovered.run,
-                  requestId: gatewayRequestId,
+                  requestId,
+                  gatewayRequestId,
+                  presentationRequestId: requestId,
                   sessionId: String(recovered.run.session_id || recovered.run.sessionId || ""),
                 },
               }));
