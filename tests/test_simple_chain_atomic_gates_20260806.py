@@ -327,6 +327,29 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
         [payload],
         "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
     ) is False
+    # 平台兜底写入不计入变更顺序：其前的真实验证仍然有效。
+    pytest_payload = {
+        "ok": True,
+        "tool_action": "shell.run",
+        "tool_args": {"action": "shell.run", "target": "", "args": {"command": "python -m pytest tests -q"}},
+        "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
+    }
+    fallback_payload = {
+        "ok": True,
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": "测试报告.md", "args": {"content": ""}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": ["测试报告.md"],
+            "observed_write_effect": True,
+            "write_evidence": {"authoritative": True, "source": "platform_fallback", "changed_files": ["测试报告.md"]},
+        },
+        "summary": "platform fallback write",
+    }
+    assert _simple_chain_has_post_mutation_verification(
+        [payload, pytest_payload, fallback_payload],
+        "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
+    ) is True
 
 
 def test_b6_novel_honors_explicit_user_word_count() -> None:

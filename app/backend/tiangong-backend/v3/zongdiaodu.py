@@ -4922,6 +4922,11 @@ def _simple_chain_has_post_mutation_verification(
             continue
         contract = payload.get("tool_result_contract") if isinstance(payload.get("tool_result_contract"), dict) else {}
         if _contract_observed_write(contract) and not is_command_verification(payload):
+            evidence = contract.get("write_evidence")
+            if isinstance(evidence, dict) and evidence.get("source") == "platform_fallback":
+                # 平台兜底产物不是模型变更，不参与“最后一次模型变更”的顺序判定，
+                # 否则会把它之后才发生的真实验证（pytest）误判为“验证早于变更”。
+                continue
             last_mutation_index = index
             mutation_paths = _simple_chain_payload_paths(payload)
     # With no mutation, a verification-only request is satisfied by a
