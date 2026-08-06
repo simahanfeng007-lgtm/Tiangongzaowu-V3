@@ -71,7 +71,8 @@ class FingerprintDenoiseTests(unittest.TestCase):
                 hit = (i, reason)
                 break
         self.assertIsNotNone(hit, "同一调用单调重复必须在 30 轮内被判卡死")
-        self.assertLessEqual(hit[0], 7)
+        # 长任务保护：无进展阈值已放宽（4→10），单调重复应在放宽后的窗口内被捕获。
+        self.assertLessEqual(hit[0], 14)
 
 
 class OriginSourceTests(unittest.TestCase):
