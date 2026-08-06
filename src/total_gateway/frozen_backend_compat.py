@@ -989,6 +989,11 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 "life_terminal": terminal,
                 "compatibility_boundary": "7184-ticket-gated-frozen-7174",
             }
+            if isinstance(backend_payload, dict):
+                for _structured_key in ("simple_chain_status", "terminal_reason", "last_transition", "origin"):
+                    _structured_value = backend_payload.get(_structured_key)
+                    if _structured_value not in (None, ""):
+                        result_payload[_structured_key] = _structured_value
             fact_id = "fact_" + canonical_sha256(
                 {
                     "domain": "tiangong.gateway.compat-execution-fact.v1",
