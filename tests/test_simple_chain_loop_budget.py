@@ -156,7 +156,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertIn('os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)', text)
         # 执行预算 3 倍放宽：网关默认效果截止 720s（12 分钟），单次动作上限 1800s。
         self.assertIn("watchdog_ms = 720_000", text)
-        self.assertIn("1_800_000", text)
+        self.assertIn("3_600_000", text)
 
     def test_budget_defaults_tripled(self) -> None:
         from v3.zongdiaodu import (
