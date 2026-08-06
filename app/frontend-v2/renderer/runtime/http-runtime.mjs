@@ -2099,6 +2099,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
         }
         // GF 门：到达任一终态相位（含待对账/部分完成/矛盾/未知）即停止轮询
         if (TERMINAL_RUN_PHASES.has(runPhaseFromStatus(run.status || run.phase, pollSignals))) {
+          if (active) active.terminalRun = run;
           try {
             window.dispatchEvent(new CustomEvent("tiangong-terminal-run", {
               detail: { run, requestId, sessionId },
@@ -3263,6 +3264,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
       let streamError = "";
       let recoveredFromStatus = false;
       let gatewayRequestId = "";
+      let streamTerminalRun = null;
       // GF 门：本轮的终态相位（reconcile_required/partial/incident/unknown/failed/finished）
       let terminalPhase = "";
 
@@ -3352,6 +3354,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
       } finally {
         const active = activeRequests.get(requestId);
         if (active?.controller === controller) {
+          streamTerminalRun = active?.terminalRun || null;
           clearProgressPolling(requestId);
           // A status request may already be in flight when the terminal chat
           // response arrives. Let it enqueue its last model/tool snapshots
@@ -3382,8 +3385,8 @@ export function createHttpRuntime({ kernel = null } = {}) {
             Array.isArray(parsed.generated_attachments) ? parsed.generated_attachments : (Array.isArray(finalDonePayload?.generated_attachments) ? finalDonePayload.generated_attachments : []),
             artifactCards,
           ),
-          simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
-          terminal: finalDonePayload?.terminal || parsed.terminal || null,
+          simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || streamTerminalRun?.simple_chain_status || "",
+          terminal: finalDonePayload?.terminal || parsed.terminal || streamTerminalRun?.terminal || null,
           recovered_from_status: recoveredFromStatus
         };
       }
@@ -3408,8 +3411,8 @@ export function createHttpRuntime({ kernel = null } = {}) {
           Array.isArray(parsed.generated_attachments) ? parsed.generated_attachments : (Array.isArray(finalDonePayload?.generated_attachments) ? finalDonePayload.generated_attachments : []),
           artifactCards,
         ),
-        simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || "",
-        terminal: finalDonePayload?.terminal || parsed.terminal || null,
+        simple_chain_status: parsed.simple_chain_status || finalDonePayload?.simple_chain_status || streamTerminalRun?.simple_chain_status || "",
+        terminal: finalDonePayload?.terminal || parsed.terminal || streamTerminalRun?.terminal || null,
         recovered_from_status: recoveredFromStatus
       };
     }
