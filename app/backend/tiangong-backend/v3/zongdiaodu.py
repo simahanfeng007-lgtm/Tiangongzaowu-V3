@@ -5648,7 +5648,39 @@ def _simple_chain_fallback_write_deliverable(
     root = _delivery_workspace_root()
     if not root:
         return []
-    name = str(explicit[0]).strip().strip('"').strip("'")
+    missing = _simple_chain_missing_deliverable_paths(
+        user_message,
+        quality_history,
+        generated_attachments,
+    )
+    if missing:
+        target_name = str(missing[0]).strip().strip('"').strip("'")
+    else:
+        # 无缺失路径时，优先内容字数不足的交付物。
+        target_name = ""
+        for candidate in explicit:
+            min_chars, metric = _simple_chain_content_requirement_for(candidate, user_message)
+            if not min_chars:
+                continue
+            resolved = _delivery_resolve_path(str(candidate).strip().strip('"').strip("'"), root)
+            candidate_path = Path(resolved)
+            if not candidate_path.is_file():
+                continue
+            try:
+                candidate_text = candidate_path.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                candidate_text = ""
+            count = (
+                _count_chinese_chars(candidate_text)
+                if metric == "cjk"
+                else _count_nonspace_chars(candidate_text)
+            )
+            if count < min_chars:
+                target_name = str(candidate).strip().strip('"').strip("'")
+                break
+        if not target_name:
+            target_name = str(explicit[0]).strip().strip('"').strip("'")
+    name = target_name
     if not name:
         return []
     try:
