@@ -3291,6 +3291,224 @@ _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS", "540")
 )
 
+# 状态级卡死判定（替代“单工具重复”作为主判据）：
+# 单工具/同一观察重复太容易误伤合法重跑与校验；卡死只看客观进展——
+#   1) 状态指纹连续无变化（完成动作/附件/阻塞集不变）
+#   2) 工作区状态回环（指纹回到之前出现过的值）
+#   3) 状态无变化且模型意图文本连续语义重复
+# 触发即按 fail-closed 终止并给出明确“无有效进展”原因；单工具重复仅保留
+# 为保护性安全网（防止反复尝试删除/覆盖已验证产物），不再作通用判停。
+_SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_NO_PROGRESS_STEPS", "4")
+)
+_SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_CYCLE_HITS", "2")
+)
+_SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_DUPLICATE_INTENT_STREAK", "3")
+)
+
+
+def _simple_chain_natural_reply_text(text: Any) -> str:
+    """提取模型回复里的自然语言部分（剥掉工具调用 XML，只留“说的”内容）。"""
+    value = str(text or "")
+    value = re.sub(
+        r"<omni[_-]?body\b[^>]*>.*?</omni[_-]?body>",
+        " ",
+        value,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    value = re.sub(r"<invoke\b[^>]*>.*?</invoke>", " ", value, flags=re.IGNORECASE | re.DOTALL)
+    value = re.sub(r"<[^>]+>", " ", value)
+    return value.strip()
+
+
+def _simple_chain_normalize_intent_text(text: Any) -> str:
+    """意图文本归一化：小写、去空白/标点，只保留字母数字与中文。"""
+    value = str(text or "").strip().lower()
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", value)
+
+
+def _simple_chain_intent_is_near_duplicate(
+    a: Any,
+    b: Any,
+    threshold: float = 0.66,
+) -> bool:
+    """意图文本语义近似判定：归一化后的序列相似度（difflib，无额外依赖）。"""
+    na = _simple_chain_normalize_intent_text(a)
+    nb = _simple_chain_normalize_intent_text(b)
+    if not na or not nb:
+        return na == nb
+    from difflib import SequenceMatcher
+
+    return SequenceMatcher(None, na, nb).ratio() >= threshold
+
+
+def _simple_chain_progress_blocking_reasons(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+) -> list[str]:
+    """当前完成门的可观察阻塞集（不含 final_reply 相关判定）。
+
+    与 _simple_chain_final_hard_gate 同源：缺显式动作、缺交付物、写任务无
+    write_effect、缺验证。阻塞集是否收缩是“距离完成是否缩短”的客观标尺。
+    """
+    if not _runtime_detects_work_intent(user_message):
+        return []
+    reasons: list[str] = []
+    completed_actions = {
+        str(payload.get("tool_action") or "").strip().lower()
+        for payload in (quality_history or [])
+        if isinstance(payload, dict) and bool(payload.get("ok"))
+    }
+    missing_actions = [
+        action
+        for action in _simple_chain_explicit_action_sequence(user_message)
+        if action not in {"skill.route", "skill.get", "skill.read"}
+        and action not in completed_actions
+    ]
+    if missing_actions:
+        reasons.append("missing_actions:" + ",".join(sorted(missing_actions)[:8]))
+    missing_deliverables = _simple_chain_missing_deliverable_paths(
+        user_message,
+        quality_history,
+        generated_attachments,
+    )
+    if missing_deliverables:
+        reasons.append("missing_deliverables:" + ",".join(sorted(missing_deliverables)[:8]))
+    if (
+        _requires_real_mutation(user_message)
+        and _simple_chain_task_kind(quality_history, user_message) == "write"
+    ):
+        mutation_ok = any(
+            _simple_chain_mutation_payload_satisfies_request(user_message, payload)[0]
+            for payload in reversed(quality_history or [])
+            if isinstance(payload, dict)
+        )
+        if not mutation_ok:
+            reasons.append("no_write_effect")
+    if (
+        _simple_chain_requires_verification(user_message)
+        and not _simple_chain_has_post_mutation_verification(quality_history)
+    ):
+        reasons.append("missing_verification")
+    return reasons
+
+
+def _simple_chain_progress_fingerprint(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+) -> str:
+    """工作区进展指纹：成功观察载荷摘要 + 附件 + 阻塞集 的规范化哈希。"""
+    import hashlib
+
+    completed_digests = []
+    for payload in (quality_history or []):
+        if not isinstance(payload, dict) or not bool(payload.get("ok")):
+            continue
+        try:
+            digest = hashlib.sha256(
+                json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+        except Exception:
+            digest = ""
+        completed_digests.append(digest)
+    attachments = sorted(
+        str(item.get("path") or item.get("artifact_revision_id") or item.get("name") or "")
+        for item in (generated_attachments or [])
+    )
+    blocking = _simple_chain_progress_blocking_reasons(
+        user_message,
+        quality_history,
+        generated_attachments,
+    )
+    canonical = json.dumps(
+        {
+            "completed": sorted(completed_digests),
+            "attachments": attachments,
+            "blocking": sorted(blocking),
+        },
+        ensure_ascii=False,
+        default=str,
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class _SimpleChainProgressMonitor:
+    """状态级卡死监视器：指纹变化即进展；连续无变化/回环/意图重复即卡死。"""
+
+    def __init__(
+        self,
+        max_no_progress_steps: int = _SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
+        max_cycle_hits: int = _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
+        max_duplicate_intent_streak: int = _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK,
+    ) -> None:
+        self.max_no_progress_steps = max_no_progress_steps
+        self.max_cycle_hits = max_cycle_hits
+        self.max_duplicate_intent_streak = max_duplicate_intent_streak
+        self.seen: set[str] = set()
+        self.last_fingerprint: str | None = None
+        self.last_intent: str | None = None
+        self.no_progress_steps = 0
+        self.cycle_hits = 0
+        self.duplicate_intent_streak = 0
+
+    def update(self, fingerprint: str, intent_text: str) -> tuple[bool, str]:
+        state_changed = fingerprint != self.last_fingerprint
+        if state_changed:
+            self.no_progress_steps = 0
+            self.duplicate_intent_streak = 0
+            if fingerprint in self.seen:
+                self.cycle_hits += 1
+            else:
+                self.seen.add(fingerprint)
+        else:
+            self.no_progress_steps += 1
+            if self.last_intent is not None and _simple_chain_intent_is_near_duplicate(
+                intent_text,
+                self.last_intent,
+            ):
+                self.duplicate_intent_streak += 1
+            else:
+                self.duplicate_intent_streak = 0
+        self.last_fingerprint = fingerprint
+        self.last_intent = intent_text
+        if self.no_progress_steps >= self.max_no_progress_steps:
+            return True, (
+                f"[stuck] no effective progress for {self.no_progress_steps} "
+                "consecutive steps (state fingerprint unchanged)"
+            )
+        if self.cycle_hits >= self.max_cycle_hits:
+            return True, (
+                f"[stuck] workspace state cycled {self.cycle_hits} times "
+                "(returned to a previously seen fingerprint)"
+            )
+        if (
+            self.no_progress_steps >= 2
+            and self.duplicate_intent_streak >= self.max_duplicate_intent_streak
+        ):
+            return True, (
+                f"[stuck] model repeated the same intent for "
+                f"{self.duplicate_intent_streak} rounds without state change"
+            )
+        return False, ""
+
+
+def _simple_chain_stuck_close_reply(reasons: list[str], tool_count: int) -> str:
+    lines = [
+        "本轮执行判定为无有效进展（模型卡死/空转），平台已终止以避免继续消耗预算。",
+        "",
+        "已完成步骤与产物均已保留，未完成项如实列出：",
+    ]
+    for reason in reasons or []:
+        lines.append(f"- {reason}")
+    lines.append("")
+    lines.append("本轮不再继续执行。需要继续时，请重新发起或说明新的要求。")
+    return "\n".join(lines)
+
 
 def _simple_chain_remaining_deadline_seconds() -> float:
     """Remaining seconds until the gateway effect deadline (inf when unbound).
@@ -5296,6 +5514,11 @@ class Zongdiaodu:
         final_gap_retry_count = 0
         iteration_count = 0
         loop_started_at = time.monotonic()
+        progress_monitor = _SimpleChainProgressMonitor(
+            max_no_progress_steps=_SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
+            max_cycle_hits=_SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
+            max_duplicate_intent_streak=_SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK,
+        )
         # CC-loop structure: honor the gateway's absolute effect deadline so
         # the chain returns a terminal reply BEFORE the watchdog marks the
         # effect AMBIGUOUS and wedges the session queue.
@@ -5351,6 +5574,35 @@ class Zongdiaodu:
         while True:
             iteration_count += 1
             loop_elapsed = time.monotonic() - loop_started_at
+            # 状态级卡死判定：状态指纹连续无变化 / 状态回环 / 意图文本重复。
+            # 单工具重复不再作为判据（误伤合法重跑），只保留保护性安全网。
+            stuck, stuck_reason = progress_monitor.update(
+                _simple_chain_progress_fingerprint(
+                    xiaoxi,
+                    quality_history,
+                    generated_attachments,
+                ),
+                _simple_chain_natural_reply_text(huifu),
+            )
+            if stuck:
+                final_guard_exhausted = True
+                final_chain_status = "incomplete"
+                huifu = _simple_chain_stuck_close_reply([stuck_reason], gongju_cishu)
+                if run_control:
+                    run_control.step(
+                        "simple_chain_stuck",
+                        "No effective progress",
+                        "failed",
+                        stuck_reason,
+                        meta={
+                            "iteration_count": iteration_count,
+                            "tool_rounds": gongju_cishu,
+                            "no_progress_steps": progress_monitor.no_progress_steps,
+                            "cycle_hits": progress_monitor.cycle_hits,
+                            "duplicate_intent_streak": progress_monitor.duplicate_intent_streak,
+                        },
+                    )
+                break
             if (
                 iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS
                 or loop_elapsed > effective_wall_clock_seconds
@@ -5677,21 +5929,16 @@ class Zongdiaodu:
                     repeat_count = repeat_observation_counts.get(repeated_key, 0) + 1
                     repeat_observation_counts[repeated_key] = repeat_count
                     if repeat_count > _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS:
-                        final_guard_exhausted = True
-                        final_chain_status = "incomplete"
-                        huifu = _simple_chain_budget_close_reply(
-                            ["[repeated_tool_call] identical tool call repeated beyond the platform limit"],
-                            gongju_cishu,
-                        )
+                        # 单工具重复不再作为卡死判据（误伤合法重跑/校验）；
+                        # 只记录诊断，卡死统一由状态级监视器判定。
                         if run_control:
                             run_control.step(
                                 "simple_chain_repeat_limit",
-                                "Repeat observation budget",
-                                "incomplete",
-                                "Identical tool call repeated beyond the platform limit.",
+                                "Identical call repeated (diagnostic only)",
+                                "done",
+                                "Identical tool call repeated; no longer a stall verdict by itself.",
                                 meta={"repeat_key": repeated_key, "repeat_count": repeat_count},
                             )
-                        break
                     if repeated_action in {
                         "skill.get",
                         "skill.read",
@@ -6520,21 +6767,16 @@ class Zongdiaodu:
                                 },
                             )
                         break
-                    final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_budget_close_reply(
-                        ["[repeated_tool_call] identical tool call repeated beyond the platform limit"],
-                        gongju_cishu,
-                    )
+                    # 单工具重复不再作为卡死判据（误伤合法重跑/校验）；
+                    # 只记录诊断，卡死统一由状态级监视器判定。
                     if run_control:
                         run_control.step(
                             "simple_chain_repeat_limit",
-                            "Repeat observation budget",
-                            "incomplete",
-                            "Identical tool call repeated beyond the platform limit.",
+                            "Identical call repeated (diagnostic only)",
+                            "done",
+                            "Identical tool call repeated; no longer a stall verdict by itself.",
                             meta={"repeat_key": tool_call_key, "repeat_count": repeat_count},
                         )
-                    break
                 if repeat_action in {
                     "skill.get",
                     "skill.read",

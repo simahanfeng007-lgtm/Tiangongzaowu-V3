@@ -198,6 +198,110 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             reasons_write,
         )
 
+    def _ok_payload(self, action: str = "file.read", target: str = "a.txt") -> dict:
+        return {
+            "ok": True,
+            "tool_action": action,
+            "tool_args": {"action": action, "target": target},
+            "tool_result": {"ok": True, "content": "x" * 100},
+            "tool_result_contract": {"ok": True, "paths": [target]},
+        }
+
+    def test_progress_fingerprint_tracks_state_changes(self) -> None:
+        from v3.zongdiaodu import _simple_chain_progress_fingerprint
+
+        fp_empty = _simple_chain_progress_fingerprint("整理什么内容了", [], [])
+        fp_one = _simple_chain_progress_fingerprint("整理什么内容了", [self._ok_payload()], [])
+        fp_one_again = _simple_chain_progress_fingerprint("整理什么内容了", [self._ok_payload()], [])
+        fp_attachment = _simple_chain_progress_fingerprint(
+            "整理什么内容了",
+            [self._ok_payload()],
+            [{"path": "output/out.md"}],
+        )
+        fp_new_observation = _simple_chain_progress_fingerprint(
+            "整理什么内容了",
+            [self._ok_payload(), self._ok_payload(action="web.search", target="query")],
+            [],
+        )
+        self.assertNotEqual(fp_empty, fp_one)
+        self.assertEqual(fp_one, fp_one_again)
+        self.assertNotEqual(fp_one, fp_attachment)
+        self.assertNotEqual(fp_one, fp_new_observation)
+
+    def test_intent_near_duplicate_detection(self) -> None:
+        from v3.zongdiaodu import _simple_chain_intent_is_near_duplicate
+
+        self.assertTrue(_simple_chain_intent_is_near_duplicate("我再看看这个文件", "我再看一下这个文件"))
+        self.assertTrue(_simple_chain_intent_is_near_duplicate("换个方式继续", "换个思路继续"))
+        self.assertTrue(_simple_chain_intent_is_near_duplicate("我再检查一下这个文件", "我再检查一遍这个文件"))
+        self.assertFalse(_simple_chain_intent_is_near_duplicate("我再看看这个文件", "文件已写完，直接交付"))
+        self.assertFalse(_simple_chain_intent_is_near_duplicate("", "随便"))
+
+    def test_progress_monitor_stuck_rules(self) -> None:
+        from v3.zongdiaodu import _SimpleChainProgressMonitor
+
+        # 1) 状态连续无变化 → 卡死（即使措辞每次不同）。
+        monitor = _SimpleChainProgressMonitor(
+            max_no_progress_steps=3,
+            max_cycle_hits=10,
+            max_duplicate_intent_streak=10,
+        )
+        for text in ("第一步", "换个说法", "再试一次", "换一种方式"):
+            stuck, reason = monitor.update("A", text)
+        self.assertTrue(stuck)
+        self.assertIn("no effective progress", reason)
+
+        # 2) 状态变化即重置无进展计数。
+        monitor_reset = _SimpleChainProgressMonitor(
+            max_no_progress_steps=4,
+            max_cycle_hits=10,
+            max_duplicate_intent_streak=10,
+        )
+        for _ in range(3):
+            monitor_reset.update("A", "重复")
+        stuck, _ = monitor_reset.update("B", "新状态")
+        self.assertFalse(stuck)
+
+        # 3) 状态回环 → 卡死。
+        monitor_cycle = _SimpleChainProgressMonitor(
+            max_no_progress_steps=100,
+            max_cycle_hits=2,
+            max_duplicate_intent_streak=100,
+        )
+        monitor_cycle.update("A", "x")
+        monitor_cycle.update("B", "y")
+        monitor_cycle.update("A", "z")
+        stuck, reason = monitor_cycle.update("B", "w")
+        self.assertTrue(stuck)
+        self.assertIn("cycled", reason)
+
+        # 4) 状态不变 + 意图文本连续重复 → 卡死。
+        monitor_intent = _SimpleChainProgressMonitor(
+            max_no_progress_steps=100,
+            max_cycle_hits=100,
+            max_duplicate_intent_streak=3,
+        )
+        monitor_intent.update("A", "我想再看看这个文件")
+        monitor_intent.update("A", "我再看看这个文件")
+        monitor_intent.update("A", "我再检查一遍这个文件")
+        stuck, reason = monitor_intent.update("A", "我再检查一下这个文件")
+        self.assertTrue(stuck)
+        self.assertIn("same intent", reason)
+
+    def test_stuck_close_reply_and_natural_text(self) -> None:
+        from v3.zongdiaodu import (
+            _simple_chain_natural_reply_text,
+            _simple_chain_stuck_close_reply,
+        )
+
+        reply = _simple_chain_stuck_close_reply(["[stuck] no effective progress"], 3)
+        self.assertIn("无有效进展", reply)
+        self.assertIn("本轮不再继续执行", reply)
+        natural = _simple_chain_natural_reply_text(
+            '先看一下\n<invoke name="omni_body"><parameter name="action">file.read</parameter></invoke>'
+        )
+        self.assertEqual(natural.strip(), "先看一下")
+
     def test_budget_close_reply_is_terminal_and_honest(self) -> None:
         from v3.zongdiaodu import _simple_chain_budget_close_reply
 
