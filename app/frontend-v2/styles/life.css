@@ -421,19 +421,6 @@
   min-height: 0;
 }
 
-.life-soul-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  gap: 16px;
-  align-items: stretch;
-}
-
-.life-soul-meta {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
 .life-card,
 .life-boundary-card {
   overflow-y: auto;
