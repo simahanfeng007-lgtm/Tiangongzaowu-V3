@@ -544,3 +544,98 @@ def test_platform_run_verification_executes_script(monkeypatch: pytest.MonkeyPat
     assert any(p.get("tool_action") == "shell.run" for p in history)
     assert (tmp_path / "summary.md").read_text(encoding="utf-8").startswith("TITLE:")
     assert attachments
+
+
+def test_content_prose_tokens_are_not_requested_paths() -> None:
+    """file.write 的正文提到 mdsummary.py/README.md 不得被当成要覆盖的路径。"""
+    from v3.zongdiaodu import _simple_chain_requested_paths
+
+    args = {
+        "action": "file.write",
+        "target": "md-tools/summary.md",
+        "args": {
+            "content": "运行 python mdsummary.py README.md 后把真实输出写入 summary.md。",
+        },
+    }
+    requested = _simple_chain_requested_paths(args)
+    assert requested == ["md-tools/summary.md"]
+    assert not any(
+        str(p).lower().endswith(("mdsummary.py", "readme.md"))
+        for p in requested
+    )
+
+
+def test_python_run_code_tokens_still_extracted() -> None:
+    """python.run 的 code 是真实命令文本，路径 token 仍必须被提取。"""
+    from v3.zongdiaodu import _simple_chain_requested_paths
+
+    args = {
+        "action": "python.run",
+        "target": "",
+        "args": {
+            "code": (
+                "import subprocess, sys\n"
+                "subprocess.run([sys.executable, 'mdsummary.py', 'README.md'])\n"
+            ),
+        },
+    }
+    requested = [str(p).lower() for p in _simple_chain_requested_paths(args)]
+    assert any(p.endswith("mdsummary.py") for p in requested)
+    assert any(p.endswith("readme.md") for p in requested)
+
+
+def test_directory_paths_are_not_protected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """目录是容器不是产物：保护目录会误伤后续写入该目录的新文件。"""
+    from v3.zongdiaodu import (
+        _simple_chain_protect_paths,
+        _simple_chain_protected_key,
+    )
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "md-tools").mkdir()
+    protected: set[str] = set()
+    payload = {
+        "ok": True,
+        "tool_action": "file.list",
+        "tool_args": {"action": "file.list", "target": "md-tools", "args": {}},
+        "tool_result_contract": {
+            "ok": True,
+            "paths": [str(tmp_path / "md-tools"), str(tmp_path / "md-tools" / "research.md")],
+            "write_effect": False,
+        },
+    }
+    _simple_chain_protect_paths(
+        protected,
+        "omni_body",
+        payload["tool_args"],
+        payload,
+        payload,
+    )
+    key_dir = _simple_chain_protected_key(str(tmp_path / "md-tools"))
+    key_file = _simple_chain_protected_key(str(tmp_path / "md-tools" / "research.md"))
+    assert key_dir not in protected
+    assert key_file in protected
+
+
+def test_protected_block_ignores_prose_mentions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """写新文件时正文提到已保护文件不得触发保护拦截。"""
+    from v3.zongdiaodu import (
+        _simple_chain_protected_block,
+        _simple_chain_protected_key,
+    )
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "md-tools").mkdir()
+    (tmp_path / "md-tools" / "research.md").write_text("研究内容", encoding="utf-8")
+    protected = {
+        _simple_chain_protected_key(str(tmp_path / "md-tools" / "research.md")),
+        _simple_chain_protected_key(str(tmp_path / "md-tools" / "README.md")),
+    }
+    args = {
+        "action": "file.write",
+        "target": "md-tools/summary.md",
+        "args": {
+            "content": "运行 python mdsummary.py README.md 后把真实输出写入 summary.md。",
+        },
+    }
+    assert _simple_chain_protected_block("omni_body", args, protected) == []

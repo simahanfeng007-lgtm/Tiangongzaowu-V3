@@ -2817,7 +2817,10 @@ def _simple_chain_requested_paths(tool_args: Any) -> list[str]:
             return
         for key, item in value.items():
             key_lower = str(key).lower()
-            if key_lower in {"command", "script", "code", "content"}:
+            # file.write 的 content 是正文，不是命令；正文里提到
+            # “python mdsummary.py README.md” 只是说明文字，绝不能因此
+            # 把这些文件名当成“本次要覆盖的路径”并误伤后续写入。
+            if key_lower in {"command", "script", "code"}:
                 out.extend(_simple_chain_command_path_tokens(item))
             elif key_lower in _SIMPLE_CHAIN_PATH_ARG_KEYS:
                 _collect(item, depth + 1)
@@ -2860,7 +2863,12 @@ def _simple_chain_protected_block(
     for raw in _simple_chain_requested_paths(tool_args):
         resolved = _delivery_resolve_path(raw, base)
         key = _simple_chain_protected_key(resolved)
-        if key and key in protected_keys and key not in hits:
+        if (
+            key
+            and key in protected_keys
+            and not Path(resolved).is_dir()
+            and key not in hits
+        ):
             hits.append(key)
     return hits[:8]
 
@@ -2891,7 +2899,8 @@ def _simple_chain_protect_paths(
     for raw in paths:
         resolved = _delivery_resolve_path(raw, base)
         key = _simple_chain_protected_key(resolved)
-        if key:
+        # 目录是容器不是产物：保护目录会误伤后续写入该目录的新文件。
+        if key and not Path(resolved).is_dir():
             protected_keys.add(key)
 
 
@@ -7301,7 +7310,29 @@ class Zongdiaodu:
                     else:
                         remaining_parallel.append((_pn, _pa, _paction, _pissues))
                 prepared_parallel = remaining_parallel
-                if protected_parallel:
+                if protected_parallel and prepared_parallel:
+                    # 混合批次：放行新的生产性调用，只抑制会破坏已验证产物的
+                    # 调用。与 parallel explicit-action filter 同一原则，
+                    # 避免“一批里混一个保护路径就整批丢弃”导致模型反复重试。
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_parallel_protected_filter",
+                            "Protected artifact filter",
+                            "done",
+                            f"Suppressed {len(protected_parallel)} protected call(s); executing {len(prepared_parallel)} new call(s).",
+                            meta={
+                                "suppressed_paths": [
+                                    item
+                                    for _pn, _pa, _phits in protected_parallel
+                                    for item in _phits
+                                ][:8],
+                                "new_actions": [
+                                    _simple_chain_tool_action(_pn, _pa)
+                                    for _pn, _pa, _paction, _pissues in prepared_parallel
+                                ][:8],
+                            },
+                        )
+                elif protected_parallel:
                     guard_key = "protected_block:parallel"
                     guard_count = repeat_observation_counts.get(guard_key, 0) + 1
                     repeat_observation_counts[guard_key] = guard_count
