@@ -249,10 +249,6 @@ export const lifecyclePanelPlugin = {
               <div id="learningCandidates" class="learning-candidate-list"></div>
             </section>
 
-            <section class="panel-card lifecycle-primary-card">
-              <div class="panel-title"><span>自由意志</span><span id="freeWillPill" class="mini-pill">未读取</span></div>
-              <div id="freeWillRows" class="kv-list lifecycle-freewill-list"></div>
-            </section>
           </section>
 
           <section class="lifecycle-diagnostics-grid">
@@ -298,8 +294,6 @@ export const lifecyclePanelPlugin = {
     const memoryRows = panel.querySelector("#memoryRows");
     const evolveRows = panel.querySelector("#evolveRows");
     const safetyRows = panel.querySelector("#safetyRows");
-    const freeWillPill = panel.querySelector("#freeWillPill");
-    const freeWillRows = panel.querySelector("#freeWillRows");
     const learningPill = panel.querySelector("#learningPill");
     const learningMetrics = panel.querySelector("#learningMetrics");
     const learningCandidates = panel.querySelector("#learningCandidates");
@@ -442,17 +436,6 @@ export const lifecyclePanelPlugin = {
         row("自主级别", friendly(anquan.zizhu_jibie, AUTONOMY_NAMES, "辅助")),
         row("信任校准", `${pct(anquan.xinren_jiaozhun ?? 0.5)}%`),
         row("连续自主", Number(anquan.lianxu_zizhu_xingdong || 0))
-      ].join("");
-
-      freeWillPill.textContent = hasAction ? "有行动记录" : freeWillRunning ? "正在运行" : "未运行";
-      freeWillPill.className = `mini-pill ${hasAction || freeWillRunning ? "ok" : ""}`;
-      freeWillRows.innerHTML = [
-        row("运行状态", freeWillRunning ? `正在运行 / ${freeWill.heartbeat_interval_seconds || 30}s` : friendly(freeWill.heartbeat_state, STATUS_NAMES, "未运行")),
-        row("自治模式", freeWill.current_mode || "observe_plan_confirm"),
-        row("行动就绪", freeWill.ready_for_action ? "是" : "否"),
-        row("未触发原因", blocked ? (freeWill.skip_detail || friendly(freeWill.skip_reason, SKIP_REASON_NAMES, "未触发")) : "当前满足前置条件"),
-        row("好奇心", `${numberValue(freeWill.curiosity).toFixed(3)} / > ${numberValue(freeWill.curiosity_threshold, 0.5)}`),
-        row("最近行动", hasAction ? `${freeWill.latest_autonomous_action.started_at || ""} ${freeWill.latest_autonomous_action.trace_id || ""}`.trim() : "暂无记录")
       ].join("");
 
       learningPill.textContent = manualReady ? "待确认" : autoLearnable ? "自主学习中" : learning.candidate_only ? "候选模式" : friendly(learning.status, STATUS_NAMES, "已同步");
