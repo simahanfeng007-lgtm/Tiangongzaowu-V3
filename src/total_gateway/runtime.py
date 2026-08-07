@@ -165,6 +165,58 @@ def life_capability_workspace_remover(workspace_root: object) -> Callable[[objec
     return remove_artifact
 
 
+def life_capability_workspace_marker(workspace_root: object) -> Callable[[object, object], dict[str, object]]:
+    """Build the workspace-zone status marker paired with the mapper above.
+
+    When a Life pointer degrades/reactivates, the mirror keeps an explicit
+    front-matter (status, runtime_usable, degraded_reason) so the model can
+    never mistake a stopped capability for an active one.  Only an existing
+    mirror is marked; the mapper remains the creator.
+    """
+
+    def mark_artifact(artifact: object, pointer: object) -> dict[str, object]:
+        if not isinstance(artifact, Mapping) or not isinstance(pointer, Mapping):
+            return {}
+        resolved = _life_capability_zone_target(workspace_root, artifact)
+        if resolved is None:
+            return {}
+        target, relative = resolved
+        if not target.is_file() or target.is_symlink():
+            return {"workspace_path": relative, "marked": False}
+        status = str(pointer.get("status") or "pending")
+        usable = status == "active"
+        reason = str(pointer.get("degraded_reason") or "").strip()
+        try:
+            existing = target.read_text(encoding="utf-8")
+        except OSError:
+            return {"workspace_path": relative, "marked": False}
+        marker_block = (
+            f"<!-- tiangong-life-status: {status}; runtime_usable: {'true' if usable else 'false'}"
+            + (f"; reason: {reason}" if reason else "")
+            + " -->\n"
+        )
+        if marker_block not in existing:
+            existing = marker_block + existing
+        note = ""
+        if status == "degraded" and reason:
+            note = (
+                "\n\n> 状态：该能力已自动降级（"
+                + reason
+                + "）。不再进入工具列表，历史版本保留可回滚；如需使用请手动重新激活。\n"
+            )
+        if status == "degraded" and note not in existing:
+            existing = existing.rstrip() + note
+        try:
+            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+            temporary.write_text(existing, encoding="utf-8", newline="\n")
+            os.replace(temporary, target)
+        except OSError:
+            return {"workspace_path": relative, "marked": False}
+        return {"workspace_path": relative, "marked": True, "status": status}
+
+    return mark_artifact
+
+
 def _gateway_body_state_query(runtime: object, arguments: object) -> dict[str, object]:
     """Compose one self-readable snapshot from both current body authorities."""
     request = dict(arguments) if isinstance(arguments, Mapping) else {}
@@ -666,6 +718,24 @@ class GatewayRuntime:
 
                 runtime.life_service.set_learning_decider(decide_autonomous_learning)
 
+                def decide_capability_patch(material: object) -> dict[str, object]:
+                    scoped = dict(material) if isinstance(material, dict) else {}
+                    scoped["available_actions"] = artifact_action_catalog()
+                    status, payload, _ = runtime.backend_service.request(
+                        "POST",
+                        "/api/v1/internal/capability/patch/decision",
+                        {"material": scoped},
+                        timeout_seconds=240,
+                    )
+                    if status >= 400 or payload.get("ok") is not True:
+                        raise RuntimeError(str(payload.get("error") or "capability patch decision failed"))
+                    decision = payload.get("decision")
+                    if not isinstance(decision, dict):
+                        raise RuntimeError("capability patch decision is invalid")
+                    return decision
+
+                runtime.life_service.set_capability_patch_decider(decide_capability_patch)
+
                 # Learning-share copywriter: the model rephrases a completed
                 # learning into a short user-facing share message.  It reuses
                 # the model-only synthesis lane; Life owns fail-soft fallback,
@@ -873,6 +943,9 @@ class GatewayRuntime:
                 )
                 runtime.life_service.set_capability_workspace_remover(
                     life_capability_workspace_remover(config.workspace_root)
+                )
+                runtime.life_service.set_capability_workspace_marker(
+                    life_capability_workspace_marker(config.workspace_root)
                 )
                 runtime.life_service.set_artifact_invoker(invoke_learning_artifact_action)
                 runtime.life_service.set_learning_materializers(

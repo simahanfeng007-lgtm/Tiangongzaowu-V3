@@ -1831,6 +1831,19 @@
   overflow-wrap: anywhere;
 }
 
+.life-artifact-degraded {
+  flex: none;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8a5a00;
+  background: rgba(240, 173, 32, 0.10);
+  border: 1px solid rgba(240, 173, 32, 0.25);
+  overflow-wrap: anywhere;
+}
+
 .life-artifact-card .life-action-row {
   margin-top: auto;
   padding-top: 8px;

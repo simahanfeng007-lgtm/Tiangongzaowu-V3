@@ -262,6 +262,7 @@ def compile_artifact(
     *,
     action_catalog: Any = None,
     previous_artifact: Mapping[str, Any] | None = None,
+    require_acceptance: bool = False,
 ) -> dict[str, Any]:
     """Compile one normalized learning draft into an immutable build artifact.
 
@@ -368,9 +369,20 @@ def compile_artifact(
                 evidence.append({"check": "risk_promoted", "ok": True, "action_id": action_id, "risk": effective_risk})
             bindings.append(deepcopy(action))
             evidence.append({"check": "action_binding", "ok": True, "action_id": action_id, "risk": action["risk"]})
-        skill_id = _opaque(raw_spec.get("skill_id") or f"life.{artifact_id}_v{version}", "skill_id")
-        if not skill_id.endswith(f"_v{version}"):
-            skill_id = f"{skill_id}_v{version}"
+        prior_spec = prior.get("skill_spec") if isinstance(prior, Mapping) else None
+        prior_skill_id = (
+            str((prior_spec or {}).get("skill_id") or "").strip()
+            if isinstance(prior_spec, Mapping)
+            else ""
+        )
+        if prior_skill_id:
+            # 同一 lineage 的后续版本保持稳定 skill_id：版本变化不代表能力
+            # 身份变化，否则工作区映射路径会随版本漂移，新旧 SKILL.md 分裂。
+            skill_id = _opaque(prior_skill_id, "skill_id")
+        else:
+            skill_id = _opaque(raw_spec.get("skill_id") or f"life.{artifact_id}_v{version}", "skill_id")
+            if not skill_id.endswith(f"_v{version}"):
+                skill_id = f"{skill_id}_v{version}"
         spec = {
             "schema": SKILL_SPEC_SCHEMA,
             "kind": kind,
@@ -381,8 +393,15 @@ def compile_artifact(
             "output_schema": deepcopy(raw_spec.get("output_schema") or {"type": "object"}),
             "required_actions": sorted(required),
             "steps": steps,
-            "acceptance": deepcopy(raw_spec.get("acceptance") or [{"kind": "all_steps_succeeded"}]),
         }
+        raw_acceptance = raw_spec.get("acceptance")
+        if require_acceptance and (not isinstance(raw_acceptance, list) or not raw_acceptance):
+            raise ArtifactExecutorError("artifact.skill_spec.acceptance_required")
+        spec["acceptance"] = deepcopy(
+            raw_acceptance
+            if isinstance(raw_acceptance, list) and raw_acceptance
+            else [{"kind": "all_steps_succeeded"}]
+        )
         payload = {
             **base,
             "risk_level": effective_risk,

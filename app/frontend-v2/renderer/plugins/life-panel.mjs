@@ -72,6 +72,7 @@ const STATUS_TEXT = {
   tested: "沙盘测试通过",
   released: "已发布",
   rolled_back: "已回滚",
+  degraded: "已降级",
   review_ready: "等待复审",
   quarantined: "已隔离",
   duplicate_removed: "重复移除",
@@ -1295,7 +1296,9 @@ function renderCapabilities(payload) {
         ${artifacts.length ? `<div class="life-learning-list life-artifact-grid">${artifacts.map((artifact) => {
           const artifactId = firstText(artifact.artifact_id, artifact.id);
           const usageRow = safeObject(usage[artifactId]);
-          const rollbackAllowed = Boolean(artifact.current && artifact.upgrade_of && ["active", "released"].includes(String(artifact.status || "")));
+          const activationStatus = String(artifact.activation_status || artifact.status || "").toLowerCase();
+          const degraded = activationStatus === "degraded";
+          const rollbackAllowed = Boolean(artifact.current && artifact.upgrade_of && ["active", "released", "degraded"].includes(activationStatus));
           const spec = safeObject(artifact.skill_spec);
           const steps = safeArray(spec.steps);
           const doc = safeObject(artifact.document);
@@ -1303,7 +1306,7 @@ function renderCapabilities(payload) {
           const workspacePath = String(publication.workspace_path || "").trim();
           return `
             <article class="life-learning-card life-artifact-card">
-              <div class="life-reflection-head"><strong>${esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"))}</strong><span>${esc(labelForStatus(artifact.status || "candidate"))}</span></div>
+              <div class="life-reflection-head"><strong>${esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"))}</strong><span>${esc(labelForStatus(activationStatus || artifact.status || "candidate"))}</span></div>
               <p class="life-artifact-summary">${esc(firstText(artifact.summary, artifact.description, artifact.procedure, "暂无能力说明"))}</p>
               <div class="life-tag-row">
                 <span>${esc(String(artifact.kind || "skill").toUpperCase())}</span>
@@ -1312,6 +1315,7 @@ function renderCapabilities(payload) {
                 ${artifact.current ? "<span>当前版本</span>" : ""}
                 ${artifact.updated_at ? `<span>${esc(formatDate(artifact.updated_at))}</span>` : ""}
               </div>
+              ${degraded ? `<p class="life-artifact-degraded">已自动降级：${esc(artifact.degraded_reason || "连续失败且补丁未通过验证")}。不再进入模型工具列表，可手动重新激活。</p>` : ""}
               ${workspacePath ? `<div class="life-artifact-path">工作区文件：${esc(workspacePath)}</div>` : ""}
               ${steps.length ? `<div class="life-artifact-steps">${steps.map((step, stepIndex) => `
                 <div class="life-artifact-step">
@@ -1321,6 +1325,7 @@ function renderCapabilities(payload) {
               `).join("")}</div>` : ""}
               ${doc.content ? `<details class="life-artifact-doc"><summary>完整文档</summary><pre>${esc(doc.content)}</pre></details>` : ""}
               <div class="life-action-row">
+                ${degraded ? `<button type="button" data-life-capability-reactivate="${esc(artifactId)}">重新激活</button>` : ""}
                 ${rollbackAllowed ? `<button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button>` : ""}
                 <button type="button" class="danger" data-life-capability-delete="${esc(artifactId)}">删除能力</button>
               </div>
@@ -2550,6 +2555,13 @@ export const lifePanelPlugin = {
       if (rollbackButton) {
         const artifactId = rollbackButton.dataset.lifeCapabilityRollback || "";
         void runAction("回滚能力中", () => lifeApi.rollbackCapability(artifactId, { reason: "用户在生命面板回滚当前能力版本" }));
+        return;
+      }
+
+      const reactivateButton = event.target.closest("[data-life-capability-reactivate]");
+      if (reactivateButton) {
+        const artifactId = reactivateButton.dataset.lifeCapabilityReactivate || "";
+        void runAction("重新激活能力中", () => lifeApi.reactivateCapability(artifactId, { reason: "用户在生命面板重新激活已降级能力" }));
         return;
       }
 

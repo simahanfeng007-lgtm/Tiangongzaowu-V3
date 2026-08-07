@@ -78,6 +78,17 @@ from .artifact_executor import (
 )
 from .learning_workflow import build_draft, confirm_draft, discard_draft, publish_draft
 from .learning_executor import execute_learning_preview
+from .capability_health import (
+    DEFAULT_MAX_CONSECUTIVE_FAILURES,
+    DEFAULT_MAX_PATCH_ROUNDS,
+    attach_health,
+    degrade_pointer,
+    ingest_outcome,
+    propose_patch,
+    reactivate_pointer,
+    runtime_usable,
+    settle_patch,
+)
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
 from .store import LifeShadowStore, LifeShadowStoreError
@@ -140,6 +151,79 @@ _MAX_SEARCH_FILTER_ITEMS = 256
 _MAX_TASK_RESULT_BYTES = 1024 * 1024
 _MEMORY_SECRET = re.compile(r"\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b|(?i:(?:api[_ -]?key|token|password)\s*[:=]\s*[^\s,;]+)")
 _INPUT_TEMPLATE = re.compile(r"\{\{input\.([A-Za-z0-9_.-]{1,120})\}\}")
+
+
+def _template_syntax_ok(value: Any) -> bool:
+    """静态校验参数模板语法：括号闭合且占位符符合 {{input.x}} 规范。
+
+    不做输入存在性检查：运行时输入是否齐全属于执行期职责，验证门只
+    拦截结构损坏的补丁（未闭合括号、错误占位符命名）。
+    """
+    if isinstance(value, str):
+        if value.count("{{") != value.count("}}"):
+            return False
+        for match in re.finditer(r"\{\{([^{}]*)\}\}", value):
+            token = match.group(1).strip()
+            if not re.fullmatch(r"input\.[A-Za-z0-9_.-]+", token):
+                return False
+        return True
+    if isinstance(value, Mapping):
+        return all(_template_syntax_ok(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return all(_template_syntax_ok(item) for item in value)
+    return True
+
+
+def _capability_panel_projection(scope: Mapping[str, Any], *, today: str) -> dict[str, Any]:
+    """能力面板投影：给每个能力行挂指针状态（激活/降级/禁用）。
+
+    activation_status 优先于 artifact.status：已发布但被自动降级的能力
+    不再计入 active_skills / released_tools，避免前端把降级能力显示为可用。
+    """
+    raw = scope.get("capabilities")
+    if not isinstance(raw, Mapping):
+        return {"by_id": {}, "active_skills": [], "released_tools": [], "history": [], "usage": {}}
+    pointers = scope.get("capability_pointers")
+    if not isinstance(pointers, Mapping):
+        pointers = {}
+
+    def enrich(row: Mapping[str, Any]) -> dict[str, Any]:
+        value = deepcopy(dict(row))
+        lineage_id = str(row.get("lineage_id") or "")
+        pointer = pointers.get(lineage_id)
+        if (
+            isinstance(pointer, Mapping)
+            and pointer.get("current_artifact_id") == row.get("artifact_id")
+        ):
+            value["activation_status"] = str(pointer.get("status") or "pending")
+            value["runtime_usable"] = pointer.get("status") == "active"
+            if pointer.get("status") == "degraded":
+                value["degraded_reason"] = str(pointer.get("degraded_reason") or "")
+        return value
+
+    by_id = {
+        key: enrich(row)
+        for key, row in raw.items()
+        if isinstance(row, Mapping)
+    }
+    rows = list(by_id.values())
+    return {
+        "by_id": by_id,
+        "active_skills": [
+            row for row in rows
+            if row.get("kind") == "skill" and row.get("activation_status") == "active"
+        ],
+        "released_tools": [
+            row for row in rows
+            if row.get("kind") == "tool" and row.get("activation_status") == "active"
+        ],
+        "history": [
+            deepcopy(row)
+            for row in rows
+            if record_day(row) == today
+        ],
+        "usage": {},
+    }
 
 
 def _is_life_generated_capability(artifact: Mapping[str, Any]) -> bool:
@@ -349,6 +433,8 @@ class EmbeddedLifeRuntime:
         self._artifact_publisher: Any = None
         self._capability_workspace_mapper: Any = None
         self._capability_workspace_remover: Any = None
+        self._capability_workspace_marker: Any = None
+        self._capability_patch_decider: Any = None
         self._artifact_invoker: Any = None
         self._learning_researcher: Any = None
         self._learning_synthesizer: Any = None
@@ -1895,6 +1981,7 @@ class EmbeddedLifeRuntime:
             self._schedule_autonomous_learning_decision(life_id=life_id)
             self._recover_approved_learning_cards(life_id=life_id)
             self._sync_life_capability_workspace_zone(life_id=life_id)
+            self._schedule_capability_health_decision(life_id=life_id)
             self._schedule_self_iteration_decision(life_id=life_id)
             self._schedule_greeting(life_id=life_id)
             self._cognition_shadow_tick(life_id=life_id)
@@ -2556,6 +2643,25 @@ class EmbeddedLifeRuntime:
             raise ValueError("capability workspace remover must be callable")
         with self._lock:
             self._capability_workspace_remover = remover
+
+    def set_capability_workspace_marker(self, marker: Any) -> None:
+        """Bind the gateway-owned workspace-zone status marker.
+
+        Called when a pointer transitions to degraded/reactivated/disabled so
+        the workspace mirror keeps an explicit status front-matter instead of
+        silently diverging from the authoritative pointer state.
+        """
+        if marker is not None and not callable(marker):
+            raise ValueError("capability workspace marker must be callable")
+        with self._lock:
+            self._capability_workspace_marker = marker
+
+    def set_capability_patch_decider(self, decider: Any) -> None:
+        """Bind the gateway-owned model bridge used to draft capability patches."""
+        if decider is not None and not callable(decider):
+            raise ValueError("capability patch decider must be callable")
+        with self._lock:
+            self._capability_patch_decider = decider
 
     def set_artifact_invoker(self, invoker: Any) -> None:
         """Bind the fixed gateway entrypoint used by published composite artifacts."""
@@ -3732,17 +3838,10 @@ class EmbeddedLifeRuntime:
                 "activity_scope": activity_scope,
                 "policy": {"knowledge_auto_max": "A2", "skill_tool_min": "A3", "a3_a5_preview_confirmation": True, "user_direct_bypasses_card": True},
             },
-            "capabilities": {
-                "by_id": deepcopy(scope["capabilities"]),
-                "active_skills": [row for row in scope["capabilities"].values() if isinstance(row, Mapping) and row.get("kind") == "skill" and row.get("status") == "published"],
-                "released_tools": [row for row in scope["capabilities"].values() if isinstance(row, Mapping) and row.get("kind") == "tool" and row.get("status") == "published"],
-                "history": [
-                    deepcopy(row)
-                    for row in scope["capabilities"].values()
-                    if isinstance(row, Mapping) and record_day(row) == today
-                ],
-                "usage": {},
-            },
+            "capabilities": _capability_panel_projection(
+                scope,
+                today=today,
+            ),
             "upgrade_cards": upgrade_rows,
             "boundaries": boundary_projection(
                 scope["settings"],
@@ -5590,6 +5689,7 @@ class EmbeddedLifeRuntime:
             "current_artifact_sha256": artifact.get("artifact_sha256"),
             "history": history[-64:],
         }
+        pointer = attach_health(pointer, artifact=artifact, now_ms=time.time_ns() // 1_000_000)
         pointer["pointer_sha256"] = canonical_sha256({key: pointer[key] for key in pointer if key != "pointer_sha256"})
         pointers[lineage_id] = pointer
         persist_current_pointer(self.paths.artifact_root, life_id=life_id, lineage_id=lineage_id, pointer=pointer)
@@ -5758,6 +5858,569 @@ class EmbeddedLifeRuntime:
             "bundle_deleted": bundle_deleted,
             "workspace_mapping_removed": workspace_mapping_removed,
         }
+
+    def _mark_capability_workspace_status(self, artifact: Mapping[str, Any], pointer: Mapping[str, Any]) -> None:
+        """同步工作区映射的状态标记；失败仅影响标记，不影响权威状态。"""
+        marker = self._capability_workspace_marker
+        if not callable(marker):
+            return
+        try:
+            marker(artifact, pointer)
+        except Exception:
+            return
+
+    def _capability_health_material(
+        self,
+        *,
+        life_id: str,
+        artifact: Mapping[str, Any],
+        pointer: Mapping[str, Any],
+        scope: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """构建补丁决策的只读上下文：当前版本 + 健康档案 + 最近失败执行。"""
+        health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+        recent_failures: list[dict[str, Any]] = []
+        executions = scope.get("executions") if isinstance(scope.get("executions"), Mapping) else {}
+        for row in executions.values():
+            if (
+                isinstance(row, Mapping)
+                and row.get("artifact_id") == artifact.get("artifact_id")
+                and str(row.get("status") or "") == "failed"
+            ):
+                recent_failures.append({
+                    "execution_id": str(row.get("execution_id") or "")[:40],
+                    "status": "failed",
+                    "steps": [
+                        {
+                            "position": step.get("position"),
+                            "step_id": step.get("step_id"),
+                            "action_id": step.get("action_id"),
+                            "ok": step.get("ok"),
+                        }
+                        for step in (row.get("steps") or [])
+                        if isinstance(step, Mapping)
+                    ][:8],
+                })
+            if len(recent_failures) >= 3:
+                break
+        spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), Mapping) else {}
+        return {
+            "life_id": life_id,
+            "artifact_id": str(artifact.get("artifact_id") or ""),
+            "artifact_sha256": str(artifact.get("artifact_sha256") or ""),
+            "version": artifact.get("version"),
+            "kind": str(artifact.get("kind") or "skill"),
+            "title": str(artifact.get("title") or ""),
+            "summary": str(artifact.get("summary") or ""),
+            "risk_level": str(artifact.get("risk_level") or "A3"),
+            "skill_spec": deepcopy(dict(spec)),
+            "document": deepcopy(dict(artifact.get("document") or {})),
+            "health": {
+                key: health.get(key)
+                for key in (
+                    "uses", "successes", "failures", "consecutive_failures",
+                    "patch_rounds", "patch_history",
+                )
+            },
+            "recent_failures": recent_failures,
+        }
+
+    def _capability_patch_propose(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        decision: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """为连续失败的能力生成补丁草案并进入验证（不替换当前指针）。
+
+        decision 可来自显式 API 或模型桥。补丁编译为下一版本 artifact，
+        注册为候选（published 但非 current），随后 propose_patch 进入验证门。
+        """
+        life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
+        artifact_id = str(payload.get("artifact_id") or "").strip()
+        if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
+            raise EmbeddedLifeError("life.capability.id_invalid")
+        scope = self._scope_state(life_id)
+        artifact = scope["capabilities"].get(artifact_id)
+        if (
+            not isinstance(artifact, Mapping)
+            or artifact.get("status") != "published"
+            or artifact.get("kind") not in {"skill", "tool"}
+        ):
+            raise EmbeddedLifeError("life.capability.not_found", status=404)
+        lineage_id = str(artifact.get("lineage_id") or "")
+        pointer = (scope.get("capability_pointers") or {}).get(lineage_id)
+        if (
+            not isinstance(pointer, Mapping)
+            or pointer.get("status") != "active"
+            or pointer.get("current_artifact_id") != artifact_id
+        ):
+            raise EmbeddedLifeError("life.capability.not_active", status=409)
+        health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+        if int(health.get("consecutive_failures") or 0) < DEFAULT_MAX_CONSECUTIVE_FAILURES:
+            raise EmbeddedLifeError("life.capability.patch_not_triggered", status=409)
+        if health.get("patch_pending"):
+            raise EmbeddedLifeError("life.capability.patch_already_pending", status=409)
+        if int(health.get("patch_rounds") or 0) >= DEFAULT_MAX_PATCH_ROUNDS:
+            raise EmbeddedLifeError("life.capability.patch_rounds_exhausted", status=409)
+        if decision is None:
+            material = self._capability_health_material(
+                life_id=life_id,
+                artifact=artifact,
+                pointer=pointer,
+                scope=scope,
+            )
+            decider = self._capability_patch_decider
+            if not callable(decider):
+                raise EmbeddedLifeError("life.capability.patch_decider_unavailable", status=503)
+            decision = decider(material)
+        if not isinstance(decision, Mapping):
+            raise EmbeddedLifeError("life.capability.patch_decision_invalid", status=409)
+        draft_artifact = decision.get("draft_artifact") or decision.get("artifact") or {}
+        if not isinstance(draft_artifact, Mapping) or not draft_artifact:
+            raise EmbeddedLifeError("life.capability.patch_artifact_invalid", status=409)
+        learning = {
+            "life_id": life_id,
+            "learning_id": "learn_patch_" + canonical_sha256({
+                "artifact_id": artifact_id,
+                "round": int(health.get("patch_rounds") or 0) + 1,
+            })[:32],
+            "target": str(artifact.get("kind") or "skill"),
+            "title": str(decision.get("title") or f"{artifact.get('title')} 补丁"),
+            "summary": str(decision.get("summary") or artifact.get("summary") or ""),
+            "risk_level": str(decision.get("risk_level") or artifact.get("risk_level") or "A3"),
+            "draft_artifact": deepcopy(dict(draft_artifact)),
+        }
+        try:
+            compiled = compile_artifact(
+                learning,
+                action_catalog=self._artifact_action_catalog(),
+                previous_artifact=artifact,
+                require_acceptance=True,
+            )
+        except (ArtifactExecutorError, TypeError, ValueError) as exc:
+            # 编译失败也是一轮失败的补丁尝试：轮次照常消耗，轮次用尽则
+            # 自动降级，否则坏模型可以无限产出编译不过的“补丁”而永不闭环。
+            return self._register_failed_patch_attempt(
+                life_id=life_id,
+                scope=scope,
+                artifact=artifact,
+                pointer=pointer,
+                round_kind="build_failed",
+                error_code=f"life.capability.patch_unbuildable:{str(exc)[:120]}",
+            )
+        bundle_path = persist_artifact_bundle(self.paths.artifact_root, compiled)
+        published_patch = publish_artifact(compiled)
+        patched_id = str(published_patch.get("artifact_id") or "")
+        capabilities_before = deepcopy(scope["capabilities"])
+        pointers_before = deepcopy(scope["capability_pointers"])
+        try:
+            scope["capabilities"][patched_id] = {
+                **published_patch,
+                "origin": "life_patch",
+                "patch_of": artifact_id,
+            }
+            updated_pointer = propose_patch(
+                pointer,
+                published_patch,
+                now_ms=time.time_ns() // 1_000_000,
+                max_patch_rounds=DEFAULT_MAX_PATCH_ROUNDS,
+            )
+            scope["capability_pointers"][lineage_id] = updated_pointer
+            event = self.system.journal.append(
+                life_id,
+                "capability.patch_proposed",
+                {
+                    "artifact_id": artifact_id,
+                    "patched_artifact_id": patched_id,
+                    "pointer": updated_pointer,
+                    "bundle_path": str(bundle_path),
+                },
+                actor=str(payload.get("actor") or "life_health"),
+                idempotency_key=f"capability.patch_propose:{artifact_id}:{patched_id}",
+            )
+            self._persist(life_id)
+        except Exception:
+            scope["capabilities"] = capabilities_before
+            scope["capability_pointers"] = pointers_before
+            raise
+        return {
+            "ok": True,
+            "patch_artifact": deepcopy(published_patch),
+            "pointer": deepcopy(updated_pointer),
+            "event": event,
+            "bundle_path": str(bundle_path),
+        }
+
+    def _register_failed_patch_attempt(
+        self,
+        *,
+        life_id: str,
+        scope: Mapping[str, Any],
+        artifact: Mapping[str, Any],
+        pointer: Mapping[str, Any],
+        round_kind: str,
+        error_code: str,
+    ) -> dict[str, Any]:
+        """把一次失败的补丁尝试计入轮次；轮次用尽自动降级。"""
+        now_ms = time.time_ns() // 1_000_000
+        lineage_id = str(artifact.get("lineage_id") or "")
+        health = dict(pointer.get("health") or {})
+        rounds = int(health.get("patch_rounds") or 0) + 1
+        health["patch_rounds"] = rounds
+        history = list(health.get("patch_history") or [])
+        history.append({
+            "round": rounds,
+            "from_artifact_id": str(artifact.get("artifact_id") or ""),
+            "to_artifact_id": "",
+            "result": round_kind,
+            "verified_at_ms": now_ms,
+            "evidence_sha256": error_code[:160] or "",
+        })
+        health["patch_history"] = history[-64:]
+        updated = dict(pointer)
+        updated["health"] = health
+        degraded = False
+        if rounds >= DEFAULT_MAX_PATCH_ROUNDS:
+            updated = degrade_pointer(updated, reason=f"patch_rounds_exhausted:{rounds}", now_ms=now_ms)
+            degraded = True
+        else:
+            updated["pointer_sha256"] = canonical_sha256({
+                key: updated[key] for key in updated if key != "pointer_sha256"
+            })
+        pointers_before = deepcopy(scope["capability_pointers"])
+        try:
+            scope["capability_pointers"][lineage_id] = updated
+            if degraded:
+                self._mark_capability_workspace_status(artifact, updated)
+            event = self.system.journal.append(
+                life_id,
+                "capability.patch_failed",
+                {
+                    "artifact_id": artifact.get("artifact_id"),
+                    "round": rounds,
+                    "round_kind": round_kind,
+                    "error_code": error_code[:240],
+                    "degraded": degraded,
+                    "pointer": updated,
+                },
+                actor="life_health",
+                idempotency_key=f"capability.patch_failed:{artifact.get('artifact_id')}:{rounds}",
+            )
+            self._persist(life_id)
+        except Exception:
+            scope["capability_pointers"] = pointers_before
+            raise
+        return {
+            "ok": False,
+            "error_code": error_code[:240],
+            "patch_rounds": rounds,
+            "degraded": degraded,
+            "pointer": deepcopy(updated),
+            "event": event,
+        }
+
+    def _capability_verify_patch(self, artifact: Mapping[str, Any]) -> dict[str, Any]:
+        """补丁验证门（L1 静态契约，无外部副作用）。
+
+        检查：不可变摘要、动作绑定、步骤完整性、参数模板可静态解析、
+        输入/输出 schema 与验收标准。任何一项不满足即拒绝补丁。
+        执行级 fixture（L2）保留为后续显式验证器扩展，本门不自动执行工具。
+        """
+        reasons: list[str] = []
+        digest = str(artifact.get("artifact_sha256") or "")
+        digest_ok = False
+        if digest:
+            # 权威摘要来自不可变 bundle（built 形态），scope 中发布的附加
+            # 字段（origin/publication/patch_of 等）不参与摘要。
+            bundle = self.paths.artifact_root / str(artifact.get("artifact_id") or "") / "artifact.json"
+            try:
+                if bundle.is_file():
+                    stored = json.loads(bundle.read_text(encoding="utf-8"))
+                    digest_ok = str(stored.get("artifact_sha256") or "") == digest
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                digest_ok = False
+            if not digest_ok:
+                build_value = {key: artifact[key] for key in artifact if key != "artifact_sha256"}
+                if build_value.get("status") == "published":
+                    build_value["status"] = "built"
+                    build_value.pop("publish_sha256", None)
+                for key in ("origin", "patch_of", "publication"):
+                    build_value.pop(key, None)
+                expected = canonical_sha256({
+                    "schema": str(artifact.get("schema") or ""),
+                    "artifact": build_value,
+                })
+                digest_ok = digest == expected
+        if not digest_ok:
+            reasons.append("patch.digest_invalid")
+        spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), Mapping) else {}
+        if not isinstance(spec, Mapping) or not spec:
+            reasons.append("patch.skill_spec_missing")
+        steps = spec.get("steps") if isinstance(spec, Mapping) else []
+        if not isinstance(steps, list) or not steps:
+            reasons.append("patch.steps_missing")
+        required_actions = list(artifact.get("required_actions") or [])
+        if not required_actions:
+            reasons.append("patch.actions_missing")
+        catalog = {row.get("action_id"): row for row in self._artifact_action_catalog() if isinstance(row, Mapping)}
+        for index, raw_step in enumerate(steps):
+            if not isinstance(raw_step, Mapping):
+                reasons.append("patch.step_invalid")
+                continue
+            action_id = str(raw_step.get("action_id") or "").strip()
+            action = catalog.get(action_id)
+            if action is None:
+                reasons.append(f"patch.action_unknown:{action_id}")
+                continue
+            if action.get("available") is not True:
+                reasons.append(f"patch.action_unavailable:{action_id}")
+            template = raw_step.get("arguments_template")
+            if not isinstance(template, Mapping):
+                reasons.append(f"patch.arguments_invalid:{action_id}")
+            elif not _template_syntax_ok(template):
+                reasons.append(f"patch.arguments_unresolvable:{action_id}")
+        for key in ("input_schema", "output_schema"):
+            if not isinstance(spec.get(key), Mapping):
+                reasons.append(f"patch.{key}_missing")
+        if not isinstance(spec.get("acceptance"), list) or not spec.get("acceptance"):
+            reasons.append("patch.acceptance_missing")
+        evidence_sha256 = canonical_sha256({
+            "domain": "tiangong.life.capability-patch-verification.v1",
+            "artifact_id": artifact.get("artifact_id"),
+            "artifact_sha256": digest,
+            "reasons": tuple(sorted(reasons)),
+        })
+        return {
+            "passed": not reasons,
+            "reasons": reasons,
+            "evidence_sha256": evidence_sha256,
+        }
+
+    def _capability_patch_settle(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """结算补丁验证：通过则 CAS 切换，失败则回滚，轮次用尽自动降级。"""
+        life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
+        artifact_id = str(payload.get("artifact_id") or "").strip()
+        if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
+            raise EmbeddedLifeError("life.capability.id_invalid")
+        scope = self._scope_state(life_id)
+        artifact = scope["capabilities"].get(artifact_id)
+        if not isinstance(artifact, Mapping) or artifact.get("status") != "published":
+            raise EmbeddedLifeError("life.capability.not_found", status=404)
+        lineage_id = str(artifact.get("lineage_id") or "")
+        pointer = (scope.get("capability_pointers") or {}).get(lineage_id)
+        health = pointer.get("health") if isinstance(pointer, Mapping) and isinstance(pointer.get("health"), Mapping) else {}
+        pending = health.get("patch_pending") if isinstance(health.get("patch_pending"), Mapping) else None
+        if not isinstance(pointer, Mapping) or pending is None:
+            raise EmbeddedLifeError("life.capability.patch_nothing_pending", status=409)
+        patched = scope["capabilities"].get(str(pending.get("to_artifact_id") or ""))
+        if not isinstance(patched, Mapping):
+            raise EmbeddedLifeError("life.capability.patch_missing", status=404)
+        verification = self._capability_verify_patch(patched)
+        pointers_before = deepcopy(scope["capability_pointers"])
+        try:
+            updated, applied, reason = settle_patch(
+                pointer,
+                verification,
+                now_ms=time.time_ns() // 1_000_000,
+                max_patch_rounds=DEFAULT_MAX_PATCH_ROUNDS,
+            )
+            scope["capability_pointers"][lineage_id] = updated
+            if applied:
+                self._mark_capability_workspace_status(patched, updated)
+            elif reason == "degraded":
+                self._mark_capability_workspace_status(artifact, updated)
+            event = self.system.journal.append(
+                life_id,
+                "capability.patch_settled",
+                {
+                    "artifact_id": artifact_id,
+                    "patched_artifact_id": str(patched.get("artifact_id") or ""),
+                    "applied": applied,
+                    "reason": reason,
+                    "verification": verification,
+                    "pointer": updated,
+                },
+                actor=str(payload.get("actor") or "life_health"),
+                idempotency_key=(
+                    f"capability.patch_settle:{artifact_id}:"
+                    f"{patched.get('artifact_id')}:{reason}"
+                ),
+            )
+            self._persist(life_id)
+        except Exception:
+            scope["capability_pointers"] = pointers_before
+            raise
+        return {
+            "ok": True,
+            "applied": applied,
+            "reason": reason,
+            "verification": verification,
+            "pointer": deepcopy(updated),
+            "event": event,
+        }
+
+    def _capability_reactivate(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """用户手动重新激活已自动降级的能力（仅 user 可操作）。"""
+        life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
+        artifact_id = str(payload.get("artifact_id") or "").strip()
+        actor = str(payload.get("actor") or "user").strip()
+        if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
+            raise EmbeddedLifeError("life.capability.id_invalid")
+        scope = self._scope_state(life_id)
+        artifact = scope["capabilities"].get(artifact_id)
+        if not isinstance(artifact, Mapping) or artifact.get("status") != "published":
+            raise EmbeddedLifeError("life.capability.not_found", status=404)
+        lineage_id = str(artifact.get("lineage_id") or "")
+        pointer = (scope.get("capability_pointers") or {}).get(lineage_id)
+        pointers_before = deepcopy(scope["capability_pointers"])
+        try:
+            updated = reactivate_pointer(
+                pointer,
+                actor=actor,
+                now_ms=time.time_ns() // 1_000_000,
+            )
+            scope["capability_pointers"][lineage_id] = updated
+            self._mark_capability_workspace_status(artifact, updated)
+            event = self.system.journal.append(
+                life_id,
+                "capability.reactivated",
+                {"artifact_id": artifact_id, "pointer": updated},
+                actor=actor,
+                idempotency_key=f"capability.reactivate:{artifact_id}:{actor}",
+            )
+            self._persist(life_id)
+        except ValueError as exc:
+            raise EmbeddedLifeError("life.capability.reactivate_invalid", status=409) from exc
+        except Exception:
+            scope["capability_pointers"] = pointers_before
+            raise
+        return {"ok": True, "capability": deepcopy(artifact), "pointer": deepcopy(updated), "event": event}
+
+    def _capability_outcome_report(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """显式上报一次能力执行结果（外部执行路径信号源，幂等）。"""
+        life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
+        artifact_id = str(payload.get("artifact_id") or "").strip()
+        outcome_id = str(payload.get("outcome_id") or "").strip()
+        outcome = str(payload.get("outcome") or "").strip().casefold()
+        if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
+            raise EmbeddedLifeError("life.capability.id_invalid")
+        if not outcome_id:
+            raise EmbeddedLifeError("life.capability.outcome_id_required", status=400)
+        if outcome not in {"success", "failure"}:
+            raise EmbeddedLifeError("life.capability.outcome_invalid", status=400)
+        scope = self._scope_state(life_id)
+        artifact = scope["capabilities"].get(artifact_id)
+        if not isinstance(artifact, Mapping) or artifact.get("status") != "published":
+            raise EmbeddedLifeError("life.capability.not_found", status=404)
+        lineage_id = str(artifact.get("lineage_id") or "")
+        pointer = (scope.get("capability_pointers") or {}).get(lineage_id)
+        pointers_before = deepcopy(scope["capability_pointers"])
+        try:
+            updated, action, reason = ingest_outcome(
+                pointer,
+                {
+                    "outcome_id": outcome_id,
+                    "artifact_id": artifact_id,
+                    "outcome": outcome,
+                    "occurred_at_ms": int(payload.get("occurred_at_ms") or time.time_ns() // 1_000_000),
+                },
+                now_ms=time.time_ns() // 1_000_000,
+                max_consecutive_failures=DEFAULT_MAX_CONSECUTIVE_FAILURES,
+                max_patch_rounds=DEFAULT_MAX_PATCH_ROUNDS,
+            )
+            scope["capability_pointers"][lineage_id] = updated
+            if reason in {"duplicate", "stale_version"}:
+                # 幂等路径不重复写 journal：同一 outcome_id 只留一条权威记录。
+                event = None
+            else:
+                event = self.system.journal.append(
+                    life_id,
+                    "capability.outcome",
+                    {"artifact_id": artifact_id, "outcome": outcome, "action": action, "reason": reason},
+                    actor=str(payload.get("actor") or "life_health"),
+                    idempotency_key=f"capability.outcome:{outcome_id}",
+                )
+            self._persist(life_id)
+        except Exception:
+            scope["capability_pointers"] = pointers_before
+            raise
+        return {"ok": True, "action": action, "reason": reason, "pointer": deepcopy(updated), "event": event}
+
+    def _schedule_capability_health_decision(self, *, life_id: str) -> None:
+        """自动补丁调度：连续失败达标的能力由模型起草补丁并过验证门。
+
+        模型调用在后台线程执行（同学习决策模式），不阻塞心跳；编译、验证门
+        与指针结算在锁内完成，失败不会留下半写状态。
+        """
+        scope_state = self._scope_state(life_id)
+        scheduler = scope_state.setdefault("scheduler", {})
+        now_ms = time.time_ns() // 1_000_000
+        if bool(scheduler.get("capability_health_inflight")):
+            return
+        if now_ms - int(scheduler.get("last_capability_health_at_ms") or 0) < 600_000:
+            return
+        if not callable(getattr(self, "_capability_patch_decider", None)):
+            return
+        scheduler["capability_health_inflight"] = True
+        scheduler["last_capability_health_at_ms"] = now_ms
+        self._persist(life_id)
+
+        def worker() -> None:
+            try:
+                with self._lock:
+                    scope = self._scope_state(life_id)
+                    targets: list[dict[str, Any]] = []
+                    for pointer in scope.get("capability_pointers", {}).values():
+                        if not isinstance(pointer, Mapping) or pointer.get("status") != "active":
+                            continue
+                        health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+                        if (
+                            int(health.get("consecutive_failures") or 0) >= DEFAULT_MAX_CONSECUTIVE_FAILURES
+                            and not health.get("patch_pending")
+                            and int(health.get("patch_rounds") or 0) < DEFAULT_MAX_PATCH_ROUNDS
+                        ):
+                            artifact = scope["capabilities"].get(str(pointer.get("current_artifact_id") or ""))
+                            if isinstance(artifact, Mapping):
+                                targets.append({
+                                    "life_id": life_id,
+                                    "artifact": deepcopy(dict(artifact)),
+                                    "pointer": deepcopy(dict(pointer)),
+                                })
+                for target in targets:
+                    artifact = target["artifact"]
+                    material = self._capability_health_material(
+                        life_id=life_id,
+                        artifact=artifact,
+                        pointer=target["pointer"],
+                        scope=self._scope_state(life_id),
+                    )
+                    decision = self._capability_patch_decider(material)
+                    if not isinstance(decision, Mapping):
+                        continue
+                    with self._lock:
+                        proposed = self._capability_patch_propose(
+                            {"life_id": life_id, "artifact_id": artifact["artifact_id"], "actor": "life_health"},
+                            decision=decision,
+                        )
+                        if proposed.get("ok") is True:
+                            self._capability_patch_settle(
+                                {
+                                    "life_id": life_id,
+                                    "artifact_id": artifact["artifact_id"],
+                                    "actor": "life_health",
+                                }
+                            )
+            except Exception:
+                # 补丁调度失败不得打断心跳；错误留在健康档案的下次尝试。
+                return
+            finally:
+                with self._lock:
+                    state = self._scope_state(life_id).setdefault("scheduler", {})
+                    state["capability_health_inflight"] = False
+                    self._persist(life_id)
+
+        threading.Thread(target=worker, name="tiangong-life-capability-health", daemon=True).start()
 
     def _artifact_action_catalog(self) -> list[dict[str, Any]]:
         provider = self._artifact_action_catalog_provider
@@ -6328,8 +6991,24 @@ class EmbeddedLifeRuntime:
             "created_at": utc_now(),
         }
         before = deepcopy(scope["executions"])
+        pointer_before = deepcopy((scope.get("capability_pointers") or {}).get(lineage_id) or {})
         try:
             scope["executions"][execution_id] = execution
+            # 执行结果进入健康档案（幂等：execution_id 即 outcome_id）。
+            # 这是自动降级/补丁触发的真实信号源。
+            updated_pointer, _health_action, _health_reason = ingest_outcome(
+                pointer_before,
+                {
+                    "outcome_id": execution_id,
+                    "artifact_id": artifact_id,
+                    "outcome": "success" if completed else "failure",
+                    "occurred_at_ms": time.time_ns() // 1_000_000,
+                },
+                now_ms=time.time_ns() // 1_000_000,
+                max_consecutive_failures=DEFAULT_MAX_CONSECUTIVE_FAILURES,
+                max_patch_rounds=DEFAULT_MAX_PATCH_ROUNDS,
+            )
+            scope["capability_pointers"][lineage_id] = updated_pointer
             event = self.system.journal.append(
                 life_id, "capability.executed", {"execution": execution},
                 actor=str(payload.get("actor") or "life_composite"), idempotency_key=f"capability.execute:{execution_id}",
@@ -6337,8 +7016,14 @@ class EmbeddedLifeRuntime:
             self._persist(life_id)
         except Exception:
             scope["executions"] = before
+            scope["capability_pointers"][lineage_id] = pointer_before
             raise
-        return {"ok": completed, "execution": deepcopy(execution), "event": event}
+        return {
+            "ok": completed,
+            "execution": deepcopy(execution),
+            "pointer": deepcopy(updated_pointer),
+            "event": event,
+        }
 
     def _execution_recover(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         request_id = str(payload.get("request_id") or "").strip()
@@ -7045,6 +7730,14 @@ class EmbeddedLifeRuntime:
                         result = self._capability_activate(body)
                     elif action == "rollback":
                         result = self._capability_rollback(body)
+                    elif action == "reactivate":
+                        result = self._capability_reactivate(body)
+                    elif action == "propose" and path.endswith("/capability/patch/propose"):
+                        result = self._capability_patch_propose(body)
+                    elif action == "verify" and path.endswith("/capability/patch/verify"):
+                        result = self._capability_patch_settle(body)
+                    elif action == "outcome" and path.endswith("/capability/outcome"):
+                        result = self._capability_outcome_report(body)
                     elif action == "discard" and str(body.get("artifact_id") or "") in self._scope_state()["capabilities"]:
                         result = self._capability_discard(body)
                     else:

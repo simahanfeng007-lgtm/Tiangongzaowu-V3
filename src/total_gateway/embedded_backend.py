@@ -722,6 +722,50 @@ class EmbeddedBackendRuntime:
             raise ValueError("learning synthesis is invalid")
         return {"ok": True, "preview": value, "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest()}
 
+    def _capability_patch_decision(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Ask the configured model for one bounded capability patch proposal.
+
+        Model-only: the proposal is compiled, gated by the patch verification
+        door, and only then may replace the current pointer.  This lane never
+        edits the active artifact itself.
+        """
+        material = body.get("material")
+        if not isinstance(material, Mapping):
+            raise ValueError("capability patch material is required")
+        encoded = json.dumps(dict(material), ensure_ascii=False, sort_keys=True)
+        if len(encoded.encode("utf-8")) > 128 * 1024:
+            raise ValueError("capability patch material is too large")
+        system_prompt = (
+            "You are the Tiangong capability patch designer. Given a published life skill/tool, its health ledger and "
+            "recent failing executions, produce exactly one JSON object and no markdown: "
+            "{patch_possible: bool, title: string, summary: string (root cause and fix, Chinese), risk_level: A3-A5, "
+            "draft_artifact: object}. draft_artifact MUST keep the same lineage/skill identity and the SAME required_actions "
+            "as the current artifact; fix the root cause of the supplied failures; keep the capability GENERIC and "
+            "first-principles (concrete paths/files/session ids in evidence are examples and must be parameterized or "
+            "discovered at run time); preserve input_schema, output_schema and verifiable acceptance criteria. "
+            "Every step must be buildable: action_id must exist in the supplied available_actions (normally omni_body with "
+            "its {action,target,args} shape). If the evidence is insufficient to diagnose a safe fix, return "
+            "patch_possible=false and an EMPTY draft_artifact instead of inventing one. Never claim the patch is applied, "
+            "verified, or already active."
+        )
+        llm = getattr(self.scheduler, "_zhiming_llm", None)
+        if not callable(llm):
+            raise RuntimeError("capability patch model bridge unavailable")
+        raw = str(llm(system_prompt, encoded) or "").strip()
+        if raw.startswith("[LLM"):
+            raise RuntimeError(raw[:240])
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if match is None:
+            raise ValueError("capability patch model did not return JSON")
+        value = json.loads(match.group(0))
+        if not isinstance(value, dict):
+            raise ValueError("capability patch decision is invalid")
+        return {
+            "ok": True,
+            "decision": value,
+            "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest(),
+        }
+
     def _share_compose(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """Compose one proactive, persona-voiced chat message (share/greeting).
 
@@ -857,6 +901,9 @@ class EmbeddedBackendRuntime:
                     result = self._invoke_life_bound_action(body)
             elif verb == "POST" and path == "/api/v1/internal/learning/synthesize":
                 result = self._learning_synthesis(body)
+            elif verb == "POST" and path == "/api/v1/internal/capability/patch/decision":
+                # Model-only patch drafting lane; no core execution lock.
+                result = self._capability_patch_decision(body)
             elif verb == "POST" and path == "/api/v1/internal/share/compose":
                 # Model-only persona copywriting lane; no core lock.
                 result = self._share_compose(body)

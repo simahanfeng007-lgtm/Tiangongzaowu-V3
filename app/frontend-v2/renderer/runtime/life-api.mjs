@@ -72,6 +72,7 @@ export const LIFE_API_ROUTES = Object.freeze({
   capabilityDiscard: route("POST", "/api/v1/v3/life/capability/discard", "life.capability.discard"),
   capabilityInvoke: route("POST", "/api/v1/v3/life/capability/invoke", "life.capability.invoke"),
   capabilityRollback: route("POST", "/api/v1/v3/life/capability/rollback", "life.capability.rollback"),
+  capabilityReactivate: route("POST", "/api/v1/v3/life/capability/reactivate", "life.capability.reactivate"),
   capabilityUsage: route("POST", "/api/v1/v3/life/capability/usage", "life.capability.usage"),
   learningConfirm: route("POST", "/api/v1/v3/learning/confirm", "learning.review"),
   learningProcessApproved: route("POST", "/api/v1/v3/learning/process-approved", "learning.processing"),
@@ -323,6 +324,11 @@ export function createLifeApiClient({ request = defaultRequest, timeoutMs = 9000
       const artifact_id = String(artifactId || "").trim();
       if (!artifact_id) throw new LifeApiContractError("artifact_id is required", "empty_artifact_id");
       return call("capabilityRollback", { body: { artifact_id, actor: "user", ...extra } });
+    },
+    reactivateCapability(artifactId, extra = {}) {
+      const artifact_id = String(artifactId || "").trim();
+      if (!artifact_id) throw new LifeApiContractError("artifact_id is required", "empty_artifact_id");
+      return call("capabilityReactivate", { body: { artifact_id, actor: "user", ...extra } });
     },
     recordCapabilityUsage(artifactId, executionEventId, extra = {}) {
       const artifact_id = String(artifactId || "").trim();
