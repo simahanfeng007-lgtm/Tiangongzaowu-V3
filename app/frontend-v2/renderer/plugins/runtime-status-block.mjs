@@ -144,10 +144,10 @@ export const runtimeStatusBlockPlugin = {
     button.addEventListener("click", () => actions.refreshStatus());
     state.on("runtimeStatus", render);
     render(state.snapshot().runtimeStatus);
-    // 身体页左侧只保留身体摘要：运行后台区块在 body 页隐藏。
+    // 运行后台只展示在设置页左侧栏；其它页面不显示。
     const section = status.closest("section");
     const renderPage = (page) => {
-      if (section) section.hidden = page === "body";
+      if (section) section.hidden = page !== "settings";
     };
     state.on("page", renderPage);
     renderPage(state.snapshot().activePage);
