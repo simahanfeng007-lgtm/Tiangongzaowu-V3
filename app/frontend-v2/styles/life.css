@@ -302,16 +302,94 @@
 .life-identity-side-block .life-identity-side-grid {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .life-identity-side-block .life-side-form {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 .life-identity-side-block .life-side-form > strong {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 750;
   color: var(--text-2);
+  line-height: 1.3;
+}
+.life-identity-side-block .life-side-form > strong::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.life-identity-side-block .life-setting-field {
+  display: block;
+  min-height: 0;
+  padding: 4px 0 0;
+  border: 0;
+  gap: 0;
+}
+.life-identity-side-block .life-setting-field span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.life-identity-side-block .life-side-form .life-setting-field input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.life-identity-side-block .life-side-form .life-setting-field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.life-identity-side-block .life-action-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 2px;
+}
+.life-identity-side-block .life-action-row button {
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.life-identity-side-block .life-action-row button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.life-identity-side-block .life-action-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 }
 .life-identity-side-block .life-setting-field input {
   width: 100%;
