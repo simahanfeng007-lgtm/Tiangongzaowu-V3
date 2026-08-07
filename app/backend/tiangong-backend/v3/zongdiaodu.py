@@ -2846,7 +2846,13 @@ def _simple_chain_protected_block(
     tool_args: dict,
     protected_keys: set[str],
 ) -> list[str]:
-    """Return protected path keys a proposed tool call would destroy/overwrite."""
+    """Return protected path keys a proposed tool call would destroy.
+
+    覆盖写（file.write/docx.create/zip.create 等）不再拦截：模型在本轮刚写出
+    草稿后需要迭代修正（例如 README 标题数不足时重写），平台有快照/内容守卫/
+    状态指纹做反空转，不应把“本轮合法重写”误判成破坏。删除/移动/重命名以及
+    破坏性 shell 命令仍受保护。
+    """
     if not protected_keys or not isinstance(tool_args, dict):
         return []
     action = _simple_chain_tool_action(tool_name, tool_args)
@@ -2856,7 +2862,7 @@ def _simple_chain_protected_block(
         if not command or not _SIMPLE_CHAIN_DESTRUCTIVE_COMMAND_RE.search(command):
             return []
         return _simple_chain_command_touches_protected(command, protected_keys)
-    if action not in _SIMPLE_CHAIN_DESTRUCTIVE_ACTIONS and action not in _SIMPLE_CHAIN_OVERWRITE_ACTIONS:
+    if action not in _SIMPLE_CHAIN_DESTRUCTIVE_ACTIONS:
         return []
     base = _delivery_workspace_root()
     hits: list[str] = []
@@ -2882,8 +2888,9 @@ def _simple_chain_protect_paths(
 ) -> None:
     """Protect artifacts that have a verified write effect or passing verification.
 
-    Once a path is protected, later turns may not delete, move, rename, or
-    overwrite it; the model must reuse the existing evidence instead.
+    Once a path is protected, later turns may not delete, move, or rename it;
+    the model must reuse the existing evidence instead.  Same-run overwrites
+    remain allowed so the model can iterate on drafts it just produced.
     """
     if not isinstance(payload, dict) or not bool(payload.get("ok")):
         return

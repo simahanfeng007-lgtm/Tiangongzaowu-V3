@@ -641,6 +641,37 @@ def test_protected_block_ignores_prose_mentions(monkeypatch: pytest.MonkeyPatch,
     assert _simple_chain_protected_block("omni_body", args, protected) == []
 
 
+def test_protected_block_allows_same_run_overwrite_but_blocks_delete(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """本轮已写产物的覆盖写允许迭代；删除/移动仍受保护。"""
+    from v3.zongdiaodu import (
+        _simple_chain_protected_block,
+        _simple_chain_protected_key,
+    )
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "md-tools").mkdir()
+    readme = tmp_path / "md-tools" / "README.md"
+    readme.write_text("# Markdown 摘要工具\n", encoding="utf-8")
+    protected = {
+        _simple_chain_protected_key(str(readme)),
+    }
+    overwrite_args = {
+        "action": "file.write",
+        "target": "md-tools/README.md",
+        "args": {"content": "# Markdown 摘要工具\n\n# 项目简介\n\n# 使用方法\n"},
+    }
+    assert _simple_chain_protected_block("omni_body", overwrite_args, protected) == []
+    delete_args = {
+        "action": "file.delete_to_trash",
+        "target": "md-tools/README.md",
+        "args": {},
+    }
+    assert _simple_chain_protected_block("omni_body", delete_args, protected) != []
+
+
 def test_missing_deliverable_detects_subdirectory_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
