@@ -7,9 +7,9 @@ import { inspectorPanelPlugin } from "./inspector-panel.mjs";
 import { knowledgePanelPlugin } from "./knowledge-panel.mjs";
 import { lifePanelPlugin } from "./life-panel.mjs";
 import { lifeSummaryBlockPlugin } from "./life-summary-block.mjs";
+import { lifecyclePanelPlugin } from "./lifecycle-panel.mjs";
 import { navRailPlugin } from "./nav-rail.mjs";
 import { personaSideBlockPlugin } from "./persona-side-block.mjs";
-import { runtimeStatusBlockPlugin } from "./runtime-status-block.mjs";
 import { settingsPanelPlugin } from "./settings-panel.mjs";
 import { skillsPanelPlugin } from "./skills-panel.mjs";
 import { skillsSideBlockPlugin } from "./skills-side-block.mjs";
@@ -22,7 +22,6 @@ export const plugins = [
   lifeSummaryBlockPlugin,
   personaSideBlockPlugin,
   skillsSideBlockPlugin,
-  runtimeStatusBlockPlugin,
   historyBlockPlugin,
   conversationPanelPlugin,
   executePanelPlugin,
@@ -30,6 +29,7 @@ export const plugins = [
   skillsPanelPlugin,
   bodyPanelPlugin,
   lifePanelPlugin,
+  lifecyclePanelPlugin,
   settingsPanelPlugin,
   inspectorPanelPlugin,
   vrmInspectorPanelPlugin,

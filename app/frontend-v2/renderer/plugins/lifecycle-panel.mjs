@@ -142,10 +142,11 @@ function row(label, value) {
 function candidateRow(item = {}, capabilities = {}) {
   const title = item.title || item.summary || "未命名学习卡";
   const summary = item.summary && item.summary !== title ? item.summary : "候选待学习，不会自动注册技能或激活工具。";
-  const id = item.card_id || item.id || "";
+  const id = item.card_id || item.id || item.learning_id || "";
   const state = String(item.status || item.promotion_stage || "candidate").toLowerCase();
   const stage = String(item.promotion_stage || item.status || "candidate").toLowerCase();
-  const action = item.next_action || (state === "processing_approved" ? "process_learning" : state === "pending_card" || stage === "candidate" ? "confirm_learning" : "request_activation");
+  const confirmStates = ["awaiting_user", "pending_card", "candidate"];
+  const action = item.next_action || (state === "processing_approved" ? "process_learning" : confirmStates.includes(state) || stage === "candidate" ? "confirm_learning" : "request_activation");
   const badges = [
     item.priority || "",
     friendly(state, STAGE_NAMES, friendly(item.status, STATUS_NAMES, "候选")),
@@ -153,7 +154,7 @@ function candidateRow(item = {}, capabilities = {}) {
     item.risk_level ? `${item.risk_level}${item.risk_label ? ` ${item.risk_label}` : ""}` : "",
     Number.isFinite(Number(item.score)) ? `score ${Number(item.score).toFixed(2)}` : ""
   ].filter(Boolean);
-  const canConfirm = capabilities.confirm && id && item.can_confirm_learning && ["pending_card", "candidate"].includes(state);
+  const canConfirm = capabilities.confirm && id && item.can_confirm_learning && confirmStates.includes(state);
   const canProcess = capabilities.process && id && item.can_process_learning && state === "processing_approved";
   const canRequest = capabilities.request && id && item.can_request_activation && ["draft", "sandbox_passed"].includes(stage);
   const canActivate = capabilities.activate && id && item.can_activate_learning && (state === "draft_ready" || ["review_ready", "sandbox_passed"].includes(stage));
@@ -221,7 +222,7 @@ export const lifecyclePanelPlugin = {
   order: 218,
   mount({ slot, state, actions, kernel }) {
     slot.insertAdjacentHTML("beforeend", `
-      <section class="page-panel lifecycle-page" data-page-panel="lifecycle">
+      <section class="page-panel lifecycle-page lifecycle-panel-page" data-page-panel="lifecycle">
         <header class="page-header">
           <div class="title-group">
             <span class="caption">生命</span>
@@ -287,7 +288,7 @@ export const lifecyclePanelPlugin = {
       </section>
     `);
 
-    const panel = slot.querySelector('[data-page-panel="lifecycle"]');
+    const panel = slot.querySelector('[data-page-panel="lifecycle"].lifecycle-panel-page');
     const pill = panel.querySelector("#lifeStatePill");
     const refresh = panel.querySelector("#lifeRefresh");
     const unbind = panel.querySelector("#lifeUnbind");
@@ -303,10 +304,29 @@ export const lifecyclePanelPlugin = {
     const learningMetrics = panel.querySelector("#learningMetrics");
     const learningCandidates = panel.querySelector("#learningCandidates");
     let latestLearningCards = [];
+    let panelLearning = null;
+
+    async function loadPanelLearning() {
+      try {
+        const res = await kernel?.request?.("/api/v1/v3/life/panel", {
+          method: "GET",
+          timeoutMs: 15000,
+        });
+        if (res && res.learning) {
+          panelLearning = res.learning;
+          render(state.snapshot().runtimeStatus);
+        }
+      } catch (_error) {
+        // 拉取失败保留上一次数据，面板其它区域不受影响。
+      }
+    }
 
     function renderPage(page) {
       panel.classList.toggle("active", page === "lifecycle");
-      if (page === "lifecycle") actions.refreshStatus?.();
+      if (page === "lifecycle") {
+        actions.refreshStatus?.();
+        loadPanelLearning();
+      }
     }
 
     // P2-16: a user-triggerable unbind entry for the lifecycle identity.
@@ -348,9 +368,21 @@ export const lifecyclePanelPlugin = {
       const jinhua = runtime.jinhua || {};
       const anquan = runtime.anquan || {};
       const freeWill = payload.lifecycle?.free_will || runtime.free_will || {};
-      const learning = payload.learning || {};
-      const cards = learning.learning_cards || {};
-      const latestCards = Array.isArray(cards.latest) ? cards.latest : [];
+      const learning = panelLearning || payload.learning || {};
+      const legacyCards = learning.learning_cards || {};
+      const latestCards = Array.isArray(learning.latest)
+        ? learning.latest
+        : Array.isArray(legacyCards.latest)
+          ? legacyCards.latest
+          : [];
+      const cards = {
+        latest: latestCards,
+        total: numberValue(learning.candidate_count) || numberValue(legacyCards.total),
+        candidate: numberValue(learning.candidate_count) || numberValue(legacyCards.candidate),
+        draft: legacyCards.draft,
+        seconds_until_next: legacyCards.seconds_until_next,
+        last_reason: legacyCards.last_reason,
+      };
       const ok = runtimeStatus?.ok === true;
       const draftCount = numberValue(cards.draft);
       const candidateCount = numberValue(cards.candidate);
@@ -448,7 +480,7 @@ export const lifecyclePanelPlugin = {
       if (!button || button.disabled) return;
       const id = String(button.dataset.learnCard || button.dataset.processCard || button.dataset.requestActivation || button.dataset.activateCard || button.dataset.releaseCard || button.dataset.discardCard || "").trim();
       if (!id) return;
-      const item = latestLearningCards.find((card) => String(card.card_id || card.id || "") === id) || {};
+      const item = latestLearningCards.find((card) => String(card.card_id || card.id || card.learning_id || "") === id) || {};
       const previousText = button.textContent;
       button.disabled = true;
       button.textContent = "处理中";
@@ -479,5 +511,6 @@ export const lifecyclePanelPlugin = {
     const snap = state.snapshot();
     renderPage(snap.activePage);
     render(snap.runtimeStatus);
+    loadPanelLearning();
   }
 };
