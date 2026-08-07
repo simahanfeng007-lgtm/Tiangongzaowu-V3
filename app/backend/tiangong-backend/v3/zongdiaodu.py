@@ -7319,13 +7319,50 @@ class Zongdiaodu:
         _simple_chain_save_run_state(run_state)
 
         def _llm_huanxing_scoped(on_chunk=None) -> tuple[ShentiZhuangtai, str]:
-            if self.http_kehuduan is not None:
-                with self.http_kehuduan.scoped_tools(
-                    allowed_tool_names=allowed_tool_names,
-                    disable_tools=response_only_without_tools,
-                ):
-                    return self.gutong.huanxing(system_tishi, cache_stable_user_message, shenti, on_text_chunk=on_chunk)
-            return self.gutong.huanxing(system_tishi, cache_stable_user_message, shenti, on_text_chunk=on_chunk)
+            # 首轮唤醒同样必须有硬超时：模型 API 挂起时 run 必须收口，
+            # 不能一直占用执行槽（与 _llm_jixu_scoped 的看门狗一致）。
+            import contextvars as _contextvars
+            import threading as _threading
+
+            def _call_huanxing() -> tuple[ShentiZhuangtai, str]:
+                if self.http_kehuduan is not None:
+                    with self.http_kehuduan.scoped_tools(
+                        allowed_tool_names=allowed_tool_names,
+                        disable_tools=response_only_without_tools,
+                    ):
+                        return self.gutong.huanxing(
+                            system_tishi,
+                            cache_stable_user_message,
+                            shenti,
+                            on_text_chunk=on_chunk,
+                        )
+                return self.gutong.huanxing(
+                    system_tishi,
+                    cache_stable_user_message,
+                    shenti,
+                    on_text_chunk=on_chunk,
+                )
+
+            holder: dict[str, Any] = {}
+
+            def _runner() -> None:
+                try:
+                    holder["value"] = _call_huanxing()
+                except Exception as exc:
+                    holder["error"] = exc
+
+            _ctx = _contextvars.copy_context()
+            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
+            _thread.start()
+            _thread.join(timeout=_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS)
+            if _thread.is_alive():
+                return shenti, (
+                    "[LLM错误: initial_llm_call_hard_timeout 超过 "
+                    f"{_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS}s，已强制收口]"
+                )
+            if "error" in holder:
+                raise holder["error"]
+            return holder["value"]
 
         def _llm_jixu_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
             prior_texts: list[str] = []
