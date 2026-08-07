@@ -5042,6 +5042,14 @@ def _simple_chain_is_productive_run_attempt(
     return False
 
 
+def _simple_chain_recent_tool_failure(quality_history: list[dict[str, Any]]) -> bool:
+    """最近一次工具观察是否失败（模型正处于修复/自愈阶段）。"""
+    if not quality_history:
+        return False
+    last = quality_history[-1]
+    return isinstance(last, dict) and not bool(last.get("ok"))
+
+
 def _simple_chain_has_post_mutation_verification(
     quality_history: list[dict[str, Any]],
     user_message: str = "",
@@ -8968,6 +8976,7 @@ class Zongdiaodu:
                 and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
                 and attempted_action not in {"skill.get", "skill.read", "skill.route"}
                 and not productive_run_attempt
+                and not _simple_chain_recent_tool_failure(quality_history)
             ):
                 # 按 run 全局计数：模型换参数反复探测时不能重置 guard 预算。
                 guard_key = "no_deliverable_guard"

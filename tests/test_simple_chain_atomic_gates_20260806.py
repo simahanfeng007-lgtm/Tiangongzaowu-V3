@@ -1130,3 +1130,12 @@ def test_repair_remaps_wrong_parent_project_paths() -> None:
     }
     repaired2 = _simple_chain_repair_tool_args_before_execution(prompt, "file.write", args2)
     assert repaired2["target"] == "markdown-wiki/README.md"
+
+
+def test_recent_tool_failure_detects_last_failed_observation() -> None:
+    """最近一次工具失败时，交付守卫应放行修复动作。"""
+    from v3.zongdiaodu import _simple_chain_recent_tool_failure
+
+    assert _simple_chain_recent_tool_failure([]) is False
+    assert _simple_chain_recent_tool_failure([{"ok": True}]) is False
+    assert _simple_chain_recent_tool_failure([{"ok": True}, {"ok": False}]) is True
