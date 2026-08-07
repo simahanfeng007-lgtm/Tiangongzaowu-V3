@@ -639,3 +639,25 @@ def test_protected_block_ignores_prose_mentions(monkeypatch: pytest.MonkeyPatch,
         },
     }
     assert _simple_chain_protected_block("omni_body", args, protected) == []
+
+
+def test_missing_deliverable_detects_subdirectory_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """裸文件名产物放在任务指定的项目子目录里也算已交付。"""
+    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "md-tools").mkdir()
+    (tmp_path / "md-tools" / "README.md").write_text(
+        "# Markdown 摘要工具示例\n\n# 项目简介\n\n# 使用方法\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "md-tools" / "summary.md").write_text("摘要输出", encoding="utf-8")
+    missing = _simple_chain_missing_deliverable_paths(
+        "全部产物放工作区 md-tools/ 目录：README.md、summary.md",
+        [],
+        [],
+    )
+    assert missing == []

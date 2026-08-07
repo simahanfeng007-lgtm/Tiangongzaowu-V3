@@ -5075,8 +5075,24 @@ def _simple_chain_missing_deliverable_paths(
             candidate = Path(resolved)
             if candidate.is_file():
                 observed.append(path)
+                continue
         except Exception:
             pass
+        # 用户把产物放在项目子目录（如 md-tools/）时，裸文件名产物会在
+        # 子目录里而非工作区根。与 _simple_chain_paths_match_expected 的
+        # “/basename 后缀匹配”一致：有界搜索工作区内同名文件，避免把
+        # 已真实落盘的产物误判为缺失。
+        bare = "/" not in str(path).replace("\\", "/")
+        name = Path(path).name
+        if bare and name and base:
+            try:
+                root = Path(base)
+                for candidate in root.rglob(name):
+                    if candidate.is_file():
+                        observed.append(path)
+                        break
+            except Exception:
+                pass
     return [
         path
         for path in expected
