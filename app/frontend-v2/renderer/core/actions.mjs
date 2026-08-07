@@ -1532,7 +1532,7 @@ export function createActions({ runtime, state, kernel = null }) {
           },
           onToolResult: (data) => {
             const id = toolResultStepId(data);
-            state.applyRunProgress(targetSessionId, { requestId, id, title: data.label || data.name, status: data.ok ? "done" : "failed", summary: data.summary || (data.ok ? "完成" : "失败") });
+            state.applyRunProgress(targetSessionId, { requestId, id, title: data.label || data.name, status: data.ok ? "done" : "failed", summary: data.summary || (data.ok ? "已结束" : "失败") });
           },
           onBiaoxian: (data) => {
             try { window.dispatchEvent(new CustomEvent("tiangong-biaoxian", { detail: data })); } catch {}
@@ -1665,7 +1665,7 @@ export function createActions({ runtime, state, kernel = null }) {
       // GF 门：非流式路径同样透传网关终态相位
       state.setLastRun(targetSessionId, mergeTerminalIntoLastRun({ ...result, requestId, sessionId: activeSessionId, phase: result.phase || "finished", finishedAt: Date.now() }));
       const reply = backendReply(result);
-      let displayText = spokenBackendText(reply.text) || (reply.error ? reply.text : "已完成。");
+      let displayText = spokenBackendText(reply.text) || (reply.error ? reply.text : "已结束。");
       let productVerification = null;
       if (claimsCompleted(result, displayText)
         && requiresDeterministicWebQa(inheritedRootGoal, activeProjectRoot)

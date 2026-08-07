@@ -134,7 +134,7 @@ function renderEmptyState(container, settings) {
 
 function progressStatusText(status) {
   const value = String(status || "pending");
-  if (["done", "ok", "success", "completed"].includes(value)) return "完成";
+  if (["done", "ok", "success", "completed"].includes(value)) return "已结束";
   if (value === "neutral") return "未要求质检";
   if (["failed", "blocked", "timeout"].includes(value)) return "异常";
   if (["interrupted", "canceled", "cancelled"].includes(value)) return "已中断";
@@ -535,7 +535,7 @@ function progressSignature(progress) {
 }
 
 export function progressDisplayText(progress = {}) {
-  if (progress?.phase === "finished") return "完成";
+  if (progress?.phase === "finished") return "";
   // GF 门（草案 §8）：非成功相位的呼吸灯文案，明确不给"仍在跑"的假安心
   if (progress?.phase === "reconcile_required") return "结果待对账，禁止重试";
   if (progress?.phase === "partial") return "部分完成";

@@ -374,8 +374,6 @@ export function terminalStatusLabel(simpleChainStatus, phase) {
     force_stopped: "已强制停止",
     interrupted: "已中断",
     incomplete: "未完成",
-    complete: "完成",
-    chat_reply: "完成",
     failed: "执行失败",
   };
   const scs = String(simpleChainStatus || "").trim();

@@ -1654,7 +1654,7 @@ export function runEventToProgressStep(event = {}, run = {}) {
     return { ...base, id: "completion_gate", title: "完成验收", status: "repairing", summary: String(detail.reason || "尚未达到真实交付标准，继续修复") };
   }
   if (type === "RUN_COMPLETED") {
-    return { ...base, id: "backend_complete", title: "后端执行完成", status: "done", summary: "运行已通过完成门" };
+    return { ...base, id: "backend_complete", title: "后端执行结束", status: "done", summary: "运行已通过完成门" };
   }
   if (type === "RUN_FAILED_SAFE") {
     return { ...base, id: "backend_complete", title: "后端安全失败", status: "failed", summary: String(detail.error || "运行未完成") };
