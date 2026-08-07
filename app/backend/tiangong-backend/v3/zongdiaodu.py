@@ -5896,6 +5896,14 @@ def _simple_chain_delivery_guard_payload(
     run_state: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """B1 干预载荷：交付物缺失且探测轮次超限时，强制要求写工具生成产物。"""
+    text = str(user_message or "")
+    action_hint = ""
+    if re.search(r"浏览器|browser|example\.com|打开.{0,8}网站|网页|截图", text, re.IGNORECASE):
+        action_hint = (
+            " 本任务需要真实访问网页：请调用 omni_body action=browser.open "
+            "（target=目标 URL，args 可带 wait_ms/format），它会返回本地快照与文本证据；"
+            "随后用 file.write 把证据整理成报告。不要只做能力探测。"
+        )
     return {
         "schema": "tiangong.v3.simple_chain.delivery_guard.v1",
         "request_id": str(request_id or ""),
@@ -5913,6 +5921,7 @@ def _simple_chain_delivery_guard_payload(
             "environment genuinely cannot produce the real deliverable, still call file.write to create "
             "the requested report file (e.g. the named .md path) containing the availability conclusion "
             "and the blocking reason; do not merely reply in chat and do not call another inspection tool."
+            + action_hint
         ),
     }
 
