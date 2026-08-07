@@ -338,7 +338,7 @@ def compile_artifact(
                 "step_id": step_id,
                 "action_id": action_id,
                 "arguments_template": deepcopy(dict(arguments)),
-                "on_failure": _text(raw_step.get("on_failure") or "stop", "on_failure", limit=40),
+                "on_failure": _text(raw_step.get("on_failure") or "stop", "on_failure", limit=256),
             })
         if not required:
             raise ArtifactExecutorError("artifact.skill_spec.actions_required")

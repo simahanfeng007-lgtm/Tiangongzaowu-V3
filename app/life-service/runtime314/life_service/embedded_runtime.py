@@ -1891,6 +1891,7 @@ class EmbeddedLifeRuntime:
                 self._persist(life_id)
             self._schedule_autonomous_activity_decision(life_id=life_id)
             self._schedule_autonomous_learning_decision(life_id=life_id)
+            self._recover_approved_learning_cards(life_id=life_id)
             self._schedule_self_iteration_decision(life_id=life_id)
             self._schedule_greeting(life_id=life_id)
             self._cognition_shadow_tick(life_id=life_id)
@@ -3422,9 +3423,9 @@ class EmbeddedLifeRuntime:
         scope["schedule"] = schedule_state
         scheduled_rows = list(schedule_state["tasks"].values())
         # Learning cards stay visible while they still need a decision or work,
-        # even when they were drafted on an earlier day; finished cards remain
-        # on the day they closed.  A today-only filter would silently drop a
-        # card that is still waiting for the user.
+        # even when they were drafted on an earlier day.  A closed card
+        # (published/discarded) leaves the panel immediately; the learning
+        # report and capability list remain as the durable evidence.
         learning_open_statuses = {
             "awaiting_user",
             "approved",
@@ -3442,10 +3443,7 @@ class EmbeddedLifeRuntime:
             deepcopy(row)
             for row in scope.get("learning", {}).values()
             if isinstance(row, Mapping)
-            and (
-                record_day(row) == today
-                or str(row.get("status") or "").casefold() in learning_open_statuses
-            )
+            and str(row.get("status") or "").casefold() in learning_open_statuses
         ]
         learning_rows.sort(key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""), reverse=True)
         learning_pending = [row for row in learning_rows if str(row.get("status") or "") == "awaiting_user"]
@@ -5903,6 +5901,11 @@ class EmbeddedLifeRuntime:
         built = draft["execution"].get("artifact")
         if isinstance(built, Mapping):
             draft["effective_risk_level"] = built.get("risk_level")
+        else:
+            # A card that can never be built must never reach the user as a
+            # confirmable preview: confirmation would strand it forever.
+            detail = str(draft["execution"].get("error_code") or "artifact.build_failed")
+            raise EmbeddedLifeError(f"life.learning.artifact_build_failed:{detail}", status=409)
         scope["learning"][draft["learning_id"]] = draft
         try:
             event = self.system.journal.append(
@@ -6010,7 +6013,16 @@ class EmbeddedLifeRuntime:
         self._persist(life_id)
         # Confirmation is deliberately the only transition users need: the
         # reviewed preview is now written/published in the same authority turn.
-        return self._learning_publish({"life_id": life_id, "learning_id": learning_id, "actor": payload.get("actor") or "user"})
+        try:
+            return self._learning_publish({"life_id": life_id, "learning_id": learning_id, "actor": payload.get("actor") or "user"})
+        except Exception as exc:
+            # Keep the card visible as user-confirmed and let the maintenance
+            # tick retry publication; never leave a silently dangling card.
+            record = scope["learning"].get(learning_id)
+            if isinstance(record, Mapping):
+                record["last_publish_error"] = str(getattr(exc, "code", "") or exc)[:200]
+                self._persist(life_id)
+            raise
 
     def _learning_discard(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
@@ -6029,6 +6041,78 @@ class EmbeddedLifeRuntime:
         event = self.system.journal.append(life_id, "learning.discarded", {"learning": discarded}, actor=str(payload.get("actor") or "user"), idempotency_key=f"learning.discard:{learning_id}")
         self._persist(life_id)
         return {"ok": True, "learning": deepcopy(discarded), "event": event}
+
+    def _recover_approved_learning_cards(self, *, life_id: str) -> None:
+        """Retry publication for user-confirmed cards whose first publish
+        attempt failed.  Runs inside the maintenance tick so a transient
+        failure (or a fixed artifact build) no longer strands an approved
+        card forever."""
+        try:
+            with self._lock:
+                scope = self._scope_state(life_id)
+                learning = scope.get("learning")
+                if not isinstance(learning, Mapping):
+                    return
+                now_ms = time.time_ns() // 1_000_000
+                settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+                risk_rank = {"A0": 0, "A1": 1, "A2": 2, "A3": 3, "A4": 4}
+                for learning_id, record in list(learning.items()):
+                    if not isinstance(record, Mapping) or str(record.get("status") or "") != "approved":
+                        continue
+                    retry = record.get("publish_retry") if isinstance(record.get("publish_retry"), Mapping) else {}
+                    attempts = int(retry.get("count") or 0)
+                    last_ms = int(retry.get("last_attempt_at_ms") or 0)
+                    if attempts >= 5:
+                        continue
+                    if last_ms and now_ms - last_ms < 600_000:
+                        continue
+                    user_authorized = bool(record.get("requires_confirmation"))
+                    if not user_authorized:
+                        effective_risk = str(record.get("effective_risk_level") or record.get("risk_level") or "A0")
+                        risk_allowed = risk_rank.get(effective_risk, 99) <= risk_rank.get(
+                            str(settings.get("autonomous_risk_max") or "A0"),
+                            0,
+                        )
+                        if not risk_allowed:
+                            record["last_publish_error"] = "life.learning.autonomous_risk_limit"
+                            continue
+                    record["publish_retry"] = {"count": attempts + 1, "last_attempt_at_ms": now_ms}
+                    record["publish_retry_at"] = utc_now()
+                    execution = record.get("execution") if isinstance(record.get("execution"), Mapping) else {}
+                    materialization = record.get("learning_execution") if isinstance(record.get("learning_execution"), Mapping) else {}
+                    if str(execution.get("status") or "") != "built":
+                        if str(materialization.get("status") or "") not in {"completed", "completed_with_warnings"}:
+                            record["last_publish_error"] = "life.learning.materialization_not_complete"
+                            self._persist(life_id)
+                            continue
+                        rebuilt = self._build_learning_artifact(record, scope)
+                        record["execution"] = rebuilt
+                        if str(rebuilt.get("status") or "") != "built":
+                            record["last_publish_error"] = str(rebuilt.get("error_code") or "life.learning.artifact_not_buildable")
+                            self._persist(life_id)
+                            continue
+                        self._persist(life_id)
+                    try:
+                        self._learning_publish({"life_id": life_id, "learning_id": learning_id, "actor": "life_scheduler"})
+                    except Exception as exc:
+                        record = scope["learning"].get(learning_id)
+                        if isinstance(record, Mapping):
+                            record["last_publish_error"] = str(getattr(exc, "code", "") or exc)[:200]
+                            if attempts + 1 >= 5:
+                                record["can_discard_learning"] = True
+                                record["publish_retry_exhausted"] = True
+                            self._persist(life_id)
+                    else:
+                        record = scope["learning"].get(learning_id)
+                        if isinstance(record, Mapping):
+                            record.pop("last_publish_error", None)
+                            record.pop("publish_retry", None)
+                            record.pop("publish_retry_at", None)
+                            record.pop("publish_retry_exhausted", None)
+                            self._persist(life_id)
+        except Exception:
+            # Recovery must never break the heartbeat tick.
+            return
 
     @staticmethod
     def _resolve_artifact_template(value: Any, inputs: Mapping[str, Any]) -> Any:

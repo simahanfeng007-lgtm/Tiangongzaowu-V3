@@ -38,6 +38,35 @@ def test_skill_compilation_rejects_unknown_or_unavailable_actions():
         compile_artifact(_learning(), action_catalog=[{"action_id": "web.search", "risk": "A3", "available": False}])
 
 
+def test_skill_compilation_accepts_long_generated_on_failure_policy_tokens():
+    # Regression: the life executor emits on_failure policy tokens longer than
+    # the old 40-char limit, which silently made user-confirmable cards
+    # unbuildable forever (learning chain strand).
+    learning = _learning()
+    learning["draft_artifact"]["steps"] = [
+        {
+            "step_id": "s1_read_outline",
+            "action_id": "web.search",
+            "arguments_template": {"query": "{{input.topic}}"},
+            "on_failure": "log_skip_reason_and_continue_with_partial_evidence",
+        },
+        {
+            "step_id": "s2_write_draft",
+            "action_id": "web.search",
+            "arguments_template": {"query": "{{input.topic}}"},
+            "on_failure": "abort_without_retry_and_report_to_user",
+        },
+    ]
+    artifact = compile_artifact(
+        learning,
+        action_catalog=[{"action_id": "web.search", "risk": "A3", "available": True}],
+    )
+    assert [step["on_failure"] for step in artifact["skill_spec"]["steps"]] == [
+        "log_skip_reason_and_continue_with_partial_evidence",
+        "abort_without_retry_and_report_to_user",
+    ]
+
+
 def test_knowledge_has_no_tool_binding_and_rollback_is_a_pointer(tmp_path):
     knowledge = _learning("knowledge")
     knowledge["risk_level"] = "A0"

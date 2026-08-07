@@ -124,8 +124,8 @@ class LifeFrontendP10Tests(unittest.TestCase):
         self.assertNotIn(".life-summary-inbox-message", css)
 
         panel_source = LIFE_PANEL.read_text(encoding="utf-8")
-        self.assertIn('data-life-open-inbox', panel_source)
-        self.assertIn('actions.setActivePage("chat")', panel_source)
+        self.assertIn("data-life-inbox-modal", panel_source)
+        self.assertIn("data-life-inbox-message", panel_source)
 
     def test_frontend_connects_only_to_the_total_gateway(self) -> None:
         frontend_files = (HTTP_RUNTIME, PRELOAD, LEGACY_WINDOW)
@@ -280,10 +280,14 @@ class LifeFrontendP10Tests(unittest.TestCase):
         self.assertEqual(value["openness"], 0.51)
         self.assertEqual(value["soulInfluence"], "none")
 
+        side_block = (ROOT / "app/frontend-v2/renderer/plugins/life-identity-side-block.mjs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("data-side-bind-root", side_block)
+        self.assertIn("data-side-identity-bind", side_block)
         panel = (ROOT / "app/frontend-v2/renderer/plugins/life-panel.mjs").read_text(
             encoding="utf-8"
         )
-        self.assertIn('data-life-bind-root value="${esc(current.root || "")}"', panel)
         self.assertIn('item.active ? "当前生命"', panel)
         self.assertIn('item.integrity === "valid" ? "封印中" : "封印异常"', panel)
         self.assertIn('item.integrity === "valid" ? "激活" : "不可激活"', panel)

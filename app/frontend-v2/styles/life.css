@@ -1704,6 +1704,17 @@
   background: rgba(245, 158, 11, 0.055);
 }
 
+.life-learning-card.life-learning-confirmed {
+  border-color: rgba(90, 145, 130, 0.46);
+  background: linear-gradient(180deg, rgba(90, 145, 130, 0.14), rgba(90, 145, 130, 0.06));
+}
+
+.life-learning-card.life-learning-confirmed .life-reflection-head span {
+  border-color: rgba(90, 145, 130, 0.46);
+  background: rgba(90, 145, 130, 0.18);
+  color: var(--life-mind);
+}
+
 .life-artifact-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

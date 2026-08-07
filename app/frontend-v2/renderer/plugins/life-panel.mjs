@@ -1561,6 +1561,31 @@ function learningCardState(card = {}) {
   return String(card.status || card.promotion_stage || "candidate").toLowerCase();
 }
 
+function publishErrorText(code = "") {
+  const text = String(code || "").trim();
+  const known = {
+    "life.learning.artifact_not_buildable": "产物构建未完成",
+    "life.learning.materialization_not_complete": "学习素材尚未完成",
+    "life.learning.publish_not_authorized": "发布未获授权",
+    "life.learning.publisher_invalid": "发布通道异常",
+    "life.learning.autonomous_risk_limit": "自主权限上限未放开",
+    "life.learning.artifact.on_failure.too_large": "产物步骤参数超限"
+  };
+  return known[text] || text || "未知原因";
+}
+
+function markLearningCardConfirmed(cardEl, busyLabel = "确认学习中") {
+  if (!cardEl) return;
+  cardEl.classList.add("life-learning-confirmed");
+  cardEl.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  const statusTag = cardEl.querySelector(".life-tag-row span");
+  if (statusTag) statusTag.textContent = "已确认 · 学习队列";
+  const confirmButton = cardEl.querySelector('[data-life-learning-action="confirm"]');
+  if (confirmButton) confirmButton.textContent = busyLabel;
+  const note = cardEl.querySelector(".life-action-muted");
+  if (note) note.textContent = "已确认进入学习队列，正在自动发布产物…";
+}
+
 function learningCardStage(card = {}) {
   return String(card.promotion_stage || card.status || "candidate").toLowerCase();
 }
@@ -1618,8 +1643,24 @@ function learningCardRowsHtml(payload) {
       ${cards.map((card) => {
         const id = learningCardId(card);
         const actions = learningCardActions(card);
+        const state = learningCardState(card);
+        const confirmed = !card.can_confirm_learning && ["approved", "processing_approved"].includes(state);
+        const userAuthorized = card.requires_confirmation !== false;
+        const publishError = String(card.last_publish_error || card.publish_error || "").trim();
+        const retryExhausted = Boolean(card.publish_retry_exhausted);
+        const queuedLabel = userAuthorized ? "已确认 · 学习队列" : "已批准 · 自动发布中";
+        const statusText = confirmed
+          ? queuedLabel
+          : labelForStatus(card.status || card.promotion_stage || "candidate");
+        const note = confirmed
+          ? (retryExhausted
+              ? `${queuedLabel}，但发布连续失败，自动重试已停止（${publishErrorText(publishError)}）。你可以取消这张卡。`
+              : publishError
+                ? `${queuedLabel}，发布暂未完成，系统自动重试中（${publishErrorText(publishError)}）`
+                : `${queuedLabel}，正在自动发布产物…`)
+          : governanceNoteText(card.governance_note);
         return `
-          <article class="life-learning-card">
+          <article class="life-learning-card${confirmed ? " life-learning-confirmed" : ""}">
             <div class="life-learning-main">
               <div class="life-reflection-head">
                 <strong>${esc(zhTerm(firstText(card.title, id, "未命名学习卡")))}</strong>
@@ -1627,7 +1668,7 @@ function learningCardRowsHtml(payload) {
               </div>
               <p>${esc(humanizeText(firstText(card.summary, card.description, card.evidence_summary, card.reason, ""), 180, "暂无学习说明"))}</p>
               <div class="life-tag-row">
-                <span>${esc(labelForStatus(card.status || card.promotion_stage || "candidate"))}</span>
+                <span>${esc(statusText)}</span>
                 ${card.human_action_label ? `<span>下一步 ${esc(zhTerm(card.human_action_label))}</span>` : ""}
                 ${card.kind ? `<span>${esc(zhTerm(card.kind))}</span>` : ""}
                 ${card.score ? `<span>分数 ${esc(formatScore(card.score))}</span>` : ""}
@@ -1644,7 +1685,7 @@ function learningCardRowsHtml(payload) {
                   data-action-reason="${esc(action.reason)}"
                   class="${action.danger ? "danger" : ""}"
                 >${esc(action.label)}</button>
-              `).join("") : `<span class="life-action-muted">${esc(governanceNoteText(card.governance_note))}</span>`}
+              `).join("") : `<span class="life-action-muted">${esc(note)}</span>`}
             </div>
           </article>
         `;
@@ -2354,7 +2395,7 @@ export const lifePanelPlugin = {
       }
     }
 
-    async function runAction(label, operation, { syncSettings = false } = {}) {
+    async function runAction(label, operation, { syncSettings = false, reloadOnError = false } = {}) {
       if (actionBusy) return;
       actionBusy = true;
       setPill(label, "warn");
@@ -2369,6 +2410,7 @@ export const lifePanelPlugin = {
         }
       } catch (error) {
         setPill(error?.message || "操作失败", "failed");
+        if (reloadOnError) await loadPanel("action_error");
       } finally {
         actionBusy = false;
         content.classList.remove("is-action-busy");
@@ -2479,7 +2521,8 @@ export const lifePanelPlugin = {
         if (!["confirm", "process", "activate", "release", "discard"].includes(action)) return;
         const label = learningButton.dataset.busyLabel || "处理中";
         const reason = learningButton.dataset.actionReason || "用户在生命面板处理学习卡";
-        void runAction(label, () => lifeApi.transitionLearning(action, cardId, { reason }));
+        if (action === "confirm") markLearningCardConfirmed(learningButton.closest(".life-learning-card"), label);
+        void runAction(label, () => lifeApi.transitionLearning(action, cardId, { reason }), { reloadOnError: true });
         return;
       }
 
