@@ -1055,3 +1055,53 @@ def test_missing_deliverable_scoped_to_declared_project_dir(
         [],
     )
     assert "README.md" not in missing2
+
+
+def test_project_dir_block_confines_writes_to_declared_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """项目目录围栏：写操作写到目录外直接拦截，读操作不受限。"""
+    from v3.zongdiaodu import _simple_chain_prepare_tool_call
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = (
+        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
+        "pyproject.toml、README.md"
+    )
+    _name, _args, _action, _issues, block = _simple_chain_prepare_tool_call(
+        "req_x",
+        prompt,
+        "omni_body",
+        {
+            "action": "file.write",
+            "target": "CLI/markdown-wiki/README.md",
+            "args": {"content": "x"},
+        },
+    )
+    assert block is not None
+    assert block.get("schema") == "tiangong.v3.simple_chain.project_dir_confined.v1"
+
+    _name2, _args2, _action2, _issues2, block2 = _simple_chain_prepare_tool_call(
+        "req_x",
+        prompt,
+        "omni_body",
+        {
+            "action": "file.write",
+            "target": "markdown-wiki/README.md",
+            "args": {"content": "x"},
+        },
+    )
+    assert block2 is None
+
+    _name3, _args3, _action3, _issues3, block3 = _simple_chain_prepare_tool_call(
+        "req_x",
+        prompt,
+        "omni_body",
+        {
+            "action": "file.read",
+            "target": "CLI/markdown-wiki/README.md",
+            "args": {},
+        },
+    )
+    assert block3 is None

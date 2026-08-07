@@ -4541,7 +4541,64 @@ def _simple_chain_prepare_tool_call(
             nested["user_text"] = str(user_message or "")
             update_run_context(learning_intent_verified=True)
         args = {**args, "args": nested}
+    project_block = _simple_chain_project_dir_block(request_id, user_message, name, args, action)
+    if project_block is not None:
+        return name, args, action, [], project_block
     return name, args, action, _simple_chain_preflight_issues(user_message, action, args), None
+
+
+def _simple_chain_project_dir_block(
+    request_id: str,
+    user_message: str,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    action: str,
+) -> dict[str, Any] | None:
+    """项目目录围栏：任务指定“工作区 xxx/ 目录”时，写操作必须落在该目录内。
+
+    模型可能把“CLI 项目”自行解读成 CLI/ 子目录（如 CLI/markdown-wiki），
+    导致产物写到错误位置后 gate 又按文件名误判完成。这里在写操作执行前
+    拦截目录外路径，并明确引导回项目目录；只读调用不受限。
+    """
+    project_dir = _simple_chain_project_dir(user_message)
+    if not project_dir:
+        return None
+    if action not in _SIMPLE_CHAIN_MUTATING_ACTIONS:
+        return None
+    if action in {"shell.run", "command.run", "run"}:
+        # 命令类由交付守卫/类型校验处理，结构化 omni_body 写路径在此约束。
+        return None
+    root = _delivery_workspace_root()
+    if not root:
+        return None
+    project_root = (Path(root) / project_dir).resolve(strict=False)
+    blocked: list[str] = []
+    for raw in _simple_chain_requested_paths(tool_args):
+        if not str(raw).strip():
+            continue
+        try:
+            resolved = Path(_delivery_resolve_path(str(raw), root)).resolve(strict=False)
+            resolved.relative_to(project_root)
+        except Exception:
+            if str(raw) not in blocked:
+                blocked.append(str(raw))
+    if not blocked:
+        return None
+    return {
+        "schema": "tiangong.v3.simple_chain.project_dir_confined.v1",
+        "request_id": str(request_id or ""),
+        "ok": False,
+        "stage": "project_dir_confined",
+        "tool_name": str(tool_name or ""),
+        "project_dir": project_dir,
+        "blocked_paths": blocked[:8],
+        "instruction": (
+            f"任务要求所有产物放在工作区 {project_dir}/ 目录内。"
+            "不要创建或写入目录外的同名项目目录（例如 CLI/markdown-wiki）。"
+            f"请把全部文件直接写到 {project_dir}/ 下，并保持相对路径一致；"
+            "这是硬性位置约束，不是建议。"
+        ),
+    }
 
 
 
@@ -8692,10 +8749,14 @@ class Zongdiaodu:
                 tool_args,
             )
             if block_payload is not None:
-                guard_payload = _simple_chain_tool_block_payload(
-                    request_id,
-                    prepared_name,
-                    prepared_args,
+                guard_payload = (
+                    block_payload
+                    if isinstance(block_payload, dict) and block_payload.get("schema")
+                    else _simple_chain_tool_block_payload(
+                        request_id,
+                        prepared_name,
+                        prepared_args,
+                    )
                 )
                 if run_control:
                     run_control.step(
