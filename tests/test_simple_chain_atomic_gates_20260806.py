@@ -1010,6 +1010,34 @@ def test_fallback_zip_deliverable_packages_project(
     assert not any(name.startswith(".hidden") for name in names)
 
 
+def test_fallback_zip_rebuilds_incomplete_archive(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """zip 已存在但缺交付文件时，平台打包兜底必须重建完整压缩包。"""
+    import zipfile
+
+    from v3.zongdiaodu import _simple_chain_fallback_zip_deliverable
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "sales-insight" / "src" / "sales_insight").mkdir(parents=True)
+    (tmp_path / "sales-insight" / "report.md").write_text("报告", encoding="utf-8")
+    (tmp_path / "sales-insight" / "src" / "sales_insight" / "__init__.py").write_text(
+        "",
+        encoding="utf-8",
+    )
+    zip_path = tmp_path / "sales-insight" / "sales-insight.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.write(tmp_path / "sales-insight" / "report.md", arcname="report.md")
+    prompt = "完成《销售分析引擎》项目到工作区 sales-insight/ 目录，把全部产物打成 sales-insight.zip"
+    items = _simple_chain_fallback_zip_deliverable(prompt, [], [], "req_z2", [])
+    assert items
+    with zipfile.ZipFile(zip_path) as archive:
+        names = set(archive.namelist())
+    assert "report.md" in names
+    assert "src/sales_insight/__init__.py" in names
+
+
 def test_missing_deliverable_scoped_to_declared_project_dir(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

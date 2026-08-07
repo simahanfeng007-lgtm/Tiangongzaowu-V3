@@ -6091,12 +6091,7 @@ def _simple_chain_fallback_zip_deliverable(
         quality_history,
         generated_attachments or [],
     )
-    target_name = next(
-        (candidate for candidate in zip_targets if candidate in missing),
-        None,
-    )
-    if not target_name:
-        return []
+    target_name = zip_targets[0]
     project_dir = _simple_chain_project_dir(user_message)
     if not project_dir:
         return []
@@ -6106,6 +6101,30 @@ def _simple_chain_fallback_zip_deliverable(
     zip_path = Path(_delivery_resolve_path(target_name, root))
     if zip_path.parent == Path(root).resolve(strict=False):
         zip_path = (Path(root) / project_dir / zip_path.name).resolve(strict=False)
+    expected_names: set[str] = set()
+    for item in project_path.rglob("*"):
+        if not item.is_file() or item == zip_path:
+            continue
+        rel_segments = item.relative_to(project_path).as_posix().split("/")
+        if any(
+            segment.startswith(".")
+            or segment == "__pycache__"
+            or "egg-info" in segment
+            for segment in rel_segments
+        ):
+            continue
+        expected_names.add(item.relative_to(project_path).as_posix())
+    if zip_path.is_file() and target_name not in missing:
+        # zip 已存在：校验内容完整，缺任何交付文件则重建。
+        try:
+            import zipfile as _zipfile
+
+            with _zipfile.ZipFile(zip_path) as existing:
+                existing_names = set(existing.namelist())
+            if existing_names.issuperset(expected_names):
+                return []
+        except Exception:
+            pass
     try:
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -6114,7 +6133,7 @@ def _simple_chain_fallback_zip_deliverable(
                     continue
                 rel_segments = item.relative_to(project_path).as_posix().split("/")
                 if any(
-                    segment.startswith((".", "_"))
+                    segment.startswith(".")
                     or segment == "__pycache__"
                     or "egg-info" in segment
                     for segment in rel_segments
