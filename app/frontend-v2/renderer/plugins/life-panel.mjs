@@ -1546,7 +1546,7 @@ function reflectionTitle(item = {}, index = 0) {
 }
 
 function learningCardId(item = {}) {
-  return firstText(item.card_id, item.id, item.ability_id, item.title);
+  return firstText(item.card_id, item.id, item.learning_id, item.ability_id, item.title);
 }
 
 function riskValue(item = {}) {
@@ -1600,50 +1600,57 @@ function learningCardActions(card = {}) {
   return actions;
 }
 
+function learningCardRowsHtml(payload) {
+  const learning = safeObject(payload.learning);
+  const cards = safeArray(learning.latest).filter(isVisibleLearningCard);
+  if (!cards.length) return "";
+  return `
+    <div class="life-learning-list">
+      ${cards.map((card) => {
+        const id = learningCardId(card);
+        const actions = learningCardActions(card);
+        return `
+          <article class="life-learning-card">
+            <div class="life-learning-main">
+              <div class="life-reflection-head">
+                <strong>${esc(zhTerm(firstText(card.title, id, "未命名学习卡")))}</strong>
+                <span>${esc(labelForRisk(riskValue(card)))}</span>
+              </div>
+              <p>${esc(humanizeText(firstText(card.summary, card.description, card.evidence_summary, card.reason, ""), 180, "暂无学习说明"))}</p>
+              <div class="life-tag-row">
+                <span>${esc(labelForStatus(card.status || card.promotion_stage || "candidate"))}</span>
+                ${card.human_action_label ? `<span>下一步 ${esc(zhTerm(card.human_action_label))}</span>` : ""}
+                ${card.kind ? `<span>${esc(zhTerm(card.kind))}</span>` : ""}
+                ${card.score ? `<span>分数 ${esc(formatScore(card.score))}</span>` : ""}
+                ${card.updated_at ? `<span>${esc(formatDate(card.updated_at))}</span>` : ""}
+              </div>
+            </div>
+            <div class="life-action-row">
+              ${actions.length ? actions.map((action) => `
+                <button
+                  type="button"
+                  data-life-learning-action="${esc(action.id)}"
+                  data-card-id="${esc(id)}"
+                  data-busy-label="${esc(action.busy)}"
+                  data-action-reason="${esc(action.reason)}"
+                  class="${action.danger ? "danger" : ""}"
+                >${esc(action.label)}</button>
+              `).join("") : `<span class="life-action-muted">${esc(card.governance_note || "等待后端状态推进")}</span>`}
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 function renderLearningCards(payload) {
   const learning = safeObject(payload.learning);
   const cards = safeArray(learning.latest).filter(isVisibleLearningCard);
   return `
     <section class="life-card life-reflection-learning">
       ${sectionTitle("学习卡与能力草案", `${cards.length} 张`)}
-      ${cards.length ? `
-        <div class="life-learning-list">
-          ${cards.map((card) => {
-            const id = learningCardId(card);
-            const actions = learningCardActions(card);
-            return `
-              <article class="life-learning-card">
-                <div class="life-learning-main">
-                  <div class="life-reflection-head">
-                    <strong>${esc(zhTerm(firstText(card.title, id, "未命名学习卡")))}</strong>
-                    <span>${esc(labelForRisk(riskValue(card)))}</span>
-                  </div>
-                  <p>${esc(humanizeText(firstText(card.summary, card.description, card.evidence_summary, card.reason, ""), 180, "暂无学习说明"))}</p>
-                  <div class="life-tag-row">
-                    <span>${esc(labelForStatus(card.status || card.promotion_stage || "candidate"))}</span>
-                    ${card.human_action_label ? `<span>下一步 ${esc(zhTerm(card.human_action_label))}</span>` : ""}
-                    ${card.kind ? `<span>${esc(zhTerm(card.kind))}</span>` : ""}
-                    ${card.score ? `<span>分数 ${esc(formatScore(card.score))}</span>` : ""}
-                    ${card.updated_at ? `<span>${esc(formatDate(card.updated_at))}</span>` : ""}
-                  </div>
-                </div>
-                <div class="life-action-row">
-                  ${actions.length ? actions.map((action) => `
-                    <button
-                      type="button"
-                      data-life-learning-action="${esc(action.id)}"
-                      data-card-id="${esc(id)}"
-                      data-busy-label="${esc(action.busy)}"
-                      data-action-reason="${esc(action.reason)}"
-                      class="${action.danger ? "danger" : ""}"
-                    >${esc(action.label)}</button>
-                  `).join("") : `<span class="life-action-muted">${esc(card.governance_note || "等待后端状态推进")}</span>`}
-                </div>
-              </article>
-            `;
-          }).join("")}
-        </div>
-      ` : emptyState("暂无需要处理的学习卡或能力草案。")}
+      ${learningCardRowsHtml(payload) || emptyState("暂无需要处理的学习卡或能力草案。")}
     </section>
   `;
 }
@@ -1708,6 +1715,8 @@ function canActOnUpgrade(card = {}) {
 function renderIteration(payload) {
   const cards = safeArray(payload.upgrade_cards);
   const learning = safeObject(payload.learning);
+  const learningCards = safeArray(learning.latest).filter(isVisibleLearningCard);
+  const learningRows = learningCardRowsHtml(payload);
   const capabilities = safeObject(payload.capabilities);
   const artifacts = capabilityArtifactRows(capabilities);
   const candidates = artifacts.filter((item) => ["candidate", "proposed", "draft"].includes(String(item.status || "").toLowerCase()));
@@ -1722,7 +1731,7 @@ function renderIteration(payload) {
         ${shellCard({ icon: "shield", label: "迭代管线", value: pipelineState, hint: "候选 → 审核 → 沙盒 → 发布" })}
       </section>
       <section class="life-card">
-        ${sectionTitle("升级卡", `${cards.length} 张`)}
+        ${sectionTitle("升级卡", `${cards.length + learningCards.length} 张`)}
         ${cards.length ? `
           <div class="life-upgrade-list">
             ${cards.map((card) => {
@@ -1752,7 +1761,9 @@ function renderIteration(payload) {
               `;
             }).join("")}
           </div>
-        ` : emptyState("暂无自我迭代升级卡。")}
+        ` : ""}
+        ${learningRows}
+        ${(!cards.length && !learningCards.length) ? emptyState("暂无自我迭代升级卡。") : ""}
       </section>
     </div>
   `;
