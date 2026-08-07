@@ -71,10 +71,25 @@ def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object
             target.parent.mkdir(parents=True, exist_ok=True)
         except (OSError, ValueError):
             return {}
-        document = artifact.get("document")
+        spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), Mapping) else {}
+        steps = spec.get("steps") if isinstance(spec, Mapping) else []
         content = ""
-        if isinstance(document, dict) and isinstance(document.get("content"), str):
-            content = document["content"]
+        if isinstance(steps, list):
+            candidates: list[str] = []
+            for step in steps:
+                if not isinstance(step, Mapping):
+                    continue
+                template = step.get("arguments_template") or step.get("arguments") or {}
+                arguments = template.get("args") if isinstance(template, Mapping) else {}
+                body = arguments.get("content") if isinstance(arguments, Mapping) else None
+                if isinstance(body, str) and body.strip():
+                    candidates.append(body)
+            if candidates:
+                content = max(candidates, key=len)
+        if not content.strip():
+            document = artifact.get("document")
+            if isinstance(document, Mapping) and isinstance(document.get("content"), str):
+                content = document["content"]
         if not content.strip():
             title = str(artifact.get("title") or artifact.get("artifact_id") or "生命能力")
             summary = str(artifact.get("summary") or "")

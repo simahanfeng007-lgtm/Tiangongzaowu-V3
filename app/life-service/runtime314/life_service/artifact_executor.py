@@ -237,6 +237,19 @@ def _string_list(value: Any, field: str, *, limit: int = 128) -> list[str]:
 
 
 def _draft_text(draft_artifact: Mapping[str, Any], *, title: str, summary: str) -> str:
+    steps = draft_artifact.get("steps")
+    if isinstance(steps, list):
+        embedded: list[str] = []
+        for step in steps:
+            if not isinstance(step, Mapping):
+                continue
+            template = step.get("arguments_template") or step.get("arguments") or {}
+            arguments = template.get("args") if isinstance(template, Mapping) else {}
+            body = arguments.get("content") if isinstance(arguments, Mapping) else None
+            if isinstance(body, str) and body.strip():
+                embedded.append(body)
+        if embedded:
+            return _text(max(embedded, key=len), "content", limit=256_000, required=True)
     for key in ("markdown", "content", "text", "body", "instructions"):
         value = draft_artifact.get(key)
         if isinstance(value, str) and value.strip():

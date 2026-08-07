@@ -13,11 +13,24 @@ def _artifact(kind: str = "skill") -> dict[str, object]:
         "kind": kind,
         "title": "测试能力",
         "summary": "测试摘要",
-        "skill_spec": {"skill_id": f"test_{kind}_v1", "steps": []},
+        "skill_spec": {
+            "skill_id": f"test_{kind}_v1",
+            "steps": [
+                {
+                    "step_id": "s4_write_skill_draft",
+                    "action_id": "omni_body",
+                    "arguments_template": {
+                        "action": "file.write",
+                        "target": f"skills/life/test_{kind}_v1.md",
+                        "args": {"content": f"# {kind} 完整版\n\n这是完整内容。\n"},
+                    },
+                }
+            ],
+        },
         "document": {
             "format": "markdown",
             "name": "SKILL.md",
-            "content": "# 测试能力\n\n完整内容。\n",
+            "content": "# 测试能力\n\n这是摘要版。\n",
         },
     }
 
@@ -28,7 +41,7 @@ def test_skill_maps_to_skills_life_zone(tmp_path):
     assert result["workspace_path"] == "skills/life/test_skill_v1.md"
     target = tmp_path / "skills" / "life" / "test_skill_v1.md"
     assert target.is_file()
-    assert target.read_text(encoding="utf-8") == "# 测试能力\n\n完整内容。\n"
+    assert target.read_text(encoding="utf-8") == "# skill 完整版\n\n这是完整内容。\n"
 
 
 def test_tool_maps_to_tools_life_zone(tmp_path):

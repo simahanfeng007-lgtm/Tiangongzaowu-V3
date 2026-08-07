@@ -67,6 +67,28 @@ def test_skill_compilation_accepts_long_generated_on_failure_policy_tokens():
     ]
 
 
+def test_skill_document_prefers_full_embedded_write_content():
+    learning = _learning()
+    learning["draft_artifact"] = {
+        "content": "# 摘要版",
+        "steps": [
+            {
+                "step_id": "write_draft",
+                "action_id": "web.search",
+                "arguments_template": {
+                    "action": "file.write",
+                    "args": {"content": "# 完整版\n\n这是真正的技能正文。\n"},
+                },
+            }
+        ],
+    }
+    artifact = compile_artifact(
+        learning,
+        action_catalog=[{"action_id": "web.search", "risk": "A3", "available": True}],
+    )
+    assert artifact["document"]["content"] == "# 完整版\n\n这是真正的技能正文。"
+
+
 def test_knowledge_has_no_tool_binding_and_rollback_is_a_pointer(tmp_path):
     knowledge = _learning("knowledge")
     knowledge["risk_level"] = "A0"
