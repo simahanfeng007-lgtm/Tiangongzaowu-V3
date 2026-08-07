@@ -6134,6 +6134,14 @@ def _simple_chain_platform_run_tests_verification(
         return False
     test_target = str(match.group(1) or "tests").strip()
     command = [sys.executable, "-m", "pytest", test_target, "-q"]
+    run_env = os.environ.copy()
+    src_dir = cwd / "src"
+    if src_dir.is_dir():
+        # src 布局项目未安装时，pytest 收集 tests/ 会因 import textutils 失败；
+        # 用 pytest 的 pythonpath 选项把 src/ 加入导入路径（捆绑解释器可能
+        # 忽略 PYTHONPATH，-o 选项与解释器无关），等价于可编辑安装。
+        command += ["-o", "pythonpath=src"]
+        run_env["PYTHONPATH"] = str(src_dir) + os.pathsep + run_env.get("PYTHONPATH", "")
     try:
         result = subprocess.run(
             command,
@@ -6142,6 +6150,7 @@ def _simple_chain_platform_run_tests_verification(
             text=True,
             encoding="utf-8",
             timeout=120,
+            env=run_env,
         )
     except Exception:
         return False

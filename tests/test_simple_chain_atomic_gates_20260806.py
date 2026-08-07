@@ -866,8 +866,15 @@ def test_platform_run_tests_verification_executes_pytest(
 
     monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
     (tmp_path / "textutils" / "tests").mkdir(parents=True)
+    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2").mkdir(parents=True)
+    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2" / "core.py").write_text(
+        "def reverse_words(s: str) -> str:\n    return ' '.join(reversed(s.split()))\n",
+        encoding="utf-8",
+    )
     (tmp_path / "textutils" / "tests" / "test_core.py").write_text(
-        "def test_ok():\n    assert 1 + 1 == 2\n",
+        "from tmputils_unique_9f2.core import reverse_words\n"
+        "def test_reverse():\n"
+        "    assert reverse_words('a b c') == 'c b a'\n",
         encoding="utf-8",
     )
     history: list[dict] = []
