@@ -4224,6 +4224,17 @@ def _gongju_jieguo_chenggong(result: Any) -> bool:
     return tool_result_ok("", result)
 
 
+def _simple_chain_should_replay_cached_call(cached_result: Any) -> bool:
+    """重复观察去重只对“已成功”的结果生效。
+
+    模型修完代码后重跑同一条验证命令（pytest 等）是修复的关键步骤；
+    若缓存结果是失败，必须放行重跑，不能复用旧失败当“重复副作用”。
+    """
+    if cached_result is None:
+        return False
+    return _gongju_jieguo_chenggong(cached_result)
+
+
 def _gongju_jieguo_status(result: Any) -> str:
     return tool_result_status("", result) or ("wancheng" if _gongju_jieguo_chenggong(result) else "cuowu")
 
@@ -6361,7 +6372,34 @@ def _simple_chain_platform_run_tests_verification(
     test_target = str(match.group(1) or "tests").strip()
     # 自带运行时是 -I 隔离模式（忽略 PYTHONPATH），src 布局项目的子进程
     # 无法 import 包；先做一次无依赖的可编辑安装，等价于开发者本地环境。
-    if (cwd / "pyproject.toml").is_file() and (cwd / "src").is_dir():
+    has_packaging_meta = any(
+        (cwd / name).is_file()
+        for name in ("pyproject.toml", "setup.py", "setup.cfg")
+    )
+    if (cwd / "src").is_dir():
+        if not has_packaging_meta:
+            # src 布局但缺打包元数据（如任务只要求 -m pkg.cli 可运行）：
+            # 生成最小 pyproject.toml，让可编辑安装与子进程 import 可用。
+            try:
+                package_dirs = [
+                    item.name
+                    for item in (cwd / "src").iterdir()
+                    if item.is_dir() and not item.name.startswith((".", "_"))
+                ]
+                package_name = package_dirs[0] if package_dirs else "platform_pkg"
+                minimal_pyproject = (
+                    "[build-system]\n"
+                    'requires = ["setuptools>=61.0"]\n'
+                    'build-backend = "setuptools.build_meta"\n\n'
+                    "[project]\n"
+                    f'name = "{package_name}"\n'
+                    'version = "0.1.0"\n\n'
+                    "[tool.setuptools.packages.find]\n"
+                    'where = ["src"]\n'
+                )
+                (cwd / "pyproject.toml").write_text(minimal_pyproject, encoding="utf-8")
+            except Exception:
+                return False
         try:
             install_result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"],
@@ -7952,7 +7990,9 @@ class Zongdiaodu:
                         # Execute a single occurrence; there is no prior fact to
                         # replay yet and duplicate side effects are forbidden.
                         continue
-                    if call_key in tool_call_results:
+                    if call_key in tool_call_results and _simple_chain_should_replay_cached_call(
+                        tool_call_results.get(call_key)
+                    ):
                         repeated_parallel.append((tn, ta, call_key, _action))
                         seen_parallel.add(call_key)
                         continue
@@ -9296,7 +9336,9 @@ class Zongdiaodu:
                 continue
             tool_label = _gongju_xianshi_ming(tool_name)
             tool_call_key = _gongju_diaoyong_key(tool_name, tool_args)
-            if tool_call_key in tool_call_results:
+            if tool_call_key in tool_call_results and _simple_chain_should_replay_cached_call(
+                tool_call_results.get(tool_call_key)
+            ):
                 repeat_count = repeat_observation_counts.get(tool_call_key, 0) + 1
                 repeat_observation_counts[tool_call_key] = repeat_count
                 repeat_action = _simple_chain_tool_action(tool_name, tool_args)

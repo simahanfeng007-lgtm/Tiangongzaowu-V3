@@ -893,6 +893,8 @@ def test_platform_run_tests_verification_executes_pytest(
     text = report.read_text(encoding="utf-8")
     assert "passed" in text
     assert attachments
+    # src 布局缺打包元数据时，平台生成最小 pyproject.toml 以便子进程 import。
+    assert (tmp_path / "textutils" / "pyproject.toml").is_file()
 
 
 def test_platform_runtime_verified_uses_platform_evidence_or_runs(
@@ -1161,3 +1163,12 @@ def test_project_internal_inspection_exempts_project_reads() -> None:
         "file.write",
         {"action": "file.write", "target": "markdown-wiki/README.md", "args": {}},
     ) is False
+
+
+def test_replay_cached_call_only_for_successful_results() -> None:
+    """失败的缓存结果不触发去重，模型修完后必须允许重跑同一条命令。"""
+    from v3.zongdiaodu import _simple_chain_should_replay_cached_call
+
+    assert _simple_chain_should_replay_cached_call(None) is False
+    assert _simple_chain_should_replay_cached_call({"ok": False}) is False
+    assert _simple_chain_should_replay_cached_call({"ok": True}) is True
