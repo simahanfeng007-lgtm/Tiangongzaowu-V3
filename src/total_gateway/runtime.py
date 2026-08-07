@@ -61,30 +61,14 @@ def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object
     """
 
     def map_artifact(artifact: object) -> dict[str, object]:
-        if not isinstance(artifact, dict):
+        if not isinstance(artifact, Mapping):
             return {}
-        kind = str(artifact.get("kind") or "")
-        if kind not in {"skill", "tool"}:
+        resolved = _life_capability_zone_target(workspace_root, artifact)
+        if resolved is None:
             return {}
-        root = workspace_root
-        if root is None:
-            return {}
+        target, relative = resolved
         try:
-            root_path = Path(str(root)).expanduser().resolve(strict=True)
-        except (OSError, ValueError):
-            return {}
-        spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), dict) else {}
-        raw_name = str(spec.get("skill_id") or artifact.get("artifact_id") or "life_capability")
-        safe_name = "".join(ch for ch in raw_name if ch.isalnum() or ch in "._-").strip(" ._-") or "life_capability"
-        zone = "skills/life" if kind == "skill" else "tools/life"
-        directory = root_path / zone
-        target = directory / f"{safe_name}.md"
-        try:
-            if target.is_symlink():
-                return {}
-            resolved = target.resolve(strict=False)
-            resolved.relative_to(root_path)
-            directory.mkdir(parents=True, exist_ok=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
         except (OSError, ValueError):
             return {}
         document = artifact.get("document")
@@ -103,9 +87,67 @@ def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object
                 os.replace(temporary, target)
         except OSError:
             return {}
-        return {"workspace_path": f"{zone}/{safe_name}.md"}
+        return {"workspace_path": relative}
 
     return map_artifact
+
+
+def _life_capability_zone_target(
+    workspace_root: object,
+    artifact: Mapping[str, object],
+) -> tuple[Path, str] | None:
+    """Resolve the workspace-zone mirror path for one Life skill/tool."""
+    kind = str(artifact.get("kind") or "")
+    if kind not in {"skill", "tool"} or workspace_root is None:
+        return None
+    try:
+        root_path = Path(str(workspace_root)).expanduser().resolve(strict=True)
+    except (OSError, ValueError):
+        return None
+    spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), Mapping) else {}
+    raw_name = str(spec.get("skill_id") or artifact.get("artifact_id") or "life_capability")
+    safe_name = "".join(ch for ch in raw_name if ch.isalnum() or ch in "._-").strip(" ._-") or "life_capability"
+    zone = "skills/life" if kind == "skill" else "tools/life"
+    target = root_path / zone / f"{safe_name}.md"
+    try:
+        if target.is_symlink():
+            return None
+        resolved = target.resolve(strict=False)
+        resolved.relative_to(root_path)
+    except (OSError, ValueError):
+        return None
+    return target, f"{zone}/{safe_name}.md"
+
+
+def life_capability_workspace_remover(workspace_root: object) -> Callable[[object], dict[str, object]]:
+    """Build the workspace-zone remover paired with the mapper above.
+
+    Deleting a Life skill/tool removes exactly its mirrored zone file and
+    prunes now-empty zone directories; unrelated workspace files are never
+    touched.
+    """
+
+    def remove_artifact(artifact: object) -> dict[str, object]:
+        if not isinstance(artifact, Mapping):
+            return {}
+        resolved = _life_capability_zone_target(workspace_root, artifact)
+        if resolved is None:
+            return {}
+        target, relative = resolved
+        try:
+            existed = target.is_file()
+            if existed and not target.is_symlink():
+                target.unlink()
+            for empty in (target.parent, target.parent.parent):
+                try:
+                    empty.rmdir()
+                except OSError:
+                    pass
+        except OSError:
+            return {}
+        return {"workspace_path": relative, "removed": existed}
+
+    return remove_artifact
 
 
 def _gateway_body_state_query(runtime: object, arguments: object) -> dict[str, object]:
@@ -813,6 +855,9 @@ class GatewayRuntime:
                 runtime.life_service.set_artifact_publisher(publish_learning_artifact)
                 runtime.life_service.set_capability_workspace_mapper(
                     life_capability_workspace_mapper(config.workspace_root)
+                )
+                runtime.life_service.set_capability_workspace_remover(
+                    life_capability_workspace_remover(config.workspace_root)
                 )
                 runtime.life_service.set_artifact_invoker(invoke_learning_artifact_action)
                 runtime.life_service.set_learning_materializers(

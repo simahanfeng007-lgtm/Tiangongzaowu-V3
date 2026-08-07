@@ -348,6 +348,7 @@ class EmbeddedLifeRuntime:
         self._artifact_action_catalog_provider: Any = None
         self._artifact_publisher: Any = None
         self._capability_workspace_mapper: Any = None
+        self._capability_workspace_remover: Any = None
         self._artifact_invoker: Any = None
         self._learning_researcher: Any = None
         self._learning_synthesizer: Any = None
@@ -2548,6 +2549,13 @@ class EmbeddedLifeRuntime:
             raise ValueError("capability workspace mapper must be callable")
         with self._lock:
             self._capability_workspace_mapper = mapper
+
+    def set_capability_workspace_remover(self, remover: Any) -> None:
+        """Bind the gateway-owned workspace-zone remover for life skills/tools."""
+        if remover is not None and not callable(remover):
+            raise ValueError("capability workspace remover must be callable")
+        with self._lock:
+            self._capability_workspace_remover = remover
 
     def set_artifact_invoker(self, invoker: Any) -> None:
         """Bind the fixed gateway entrypoint used by published composite artifacts."""
@@ -5731,6 +5739,13 @@ class EmbeddedLifeRuntime:
             bundle_deleted = delete_artifact_bundle(self.paths.artifact_root, artifact)
         except (ArtifactExecutorError, OSError):
             bundle_deleted = False
+        workspace_mapping_removed = False
+        remover = self._capability_workspace_remover
+        if callable(remover):
+            try:
+                workspace_mapping_removed = bool((remover(artifact) or {}).get("removed"))
+            except Exception:
+                workspace_mapping_removed = False
         generated_tool_id = str((artifact.get("skill_spec") or {}).get("skill_id") or artifact_id)
         return {
             "ok": True,
@@ -5741,6 +5756,7 @@ class EmbeddedLifeRuntime:
             "deleted_generated_tool_ids": [generated_tool_id],
             "preserved_release_actions": list(artifact.get("required_actions") or []),
             "bundle_deleted": bundle_deleted,
+            "workspace_mapping_removed": workspace_mapping_removed,
         }
 
     def _artifact_action_catalog(self) -> list[dict[str, Any]]:

@@ -1320,7 +1320,10 @@ function renderCapabilities(payload) {
                 </div>
               `).join("")}</div>` : ""}
               ${doc.content ? `<details class="life-artifact-doc"><summary>完整文档</summary><pre>${esc(doc.content)}</pre></details>` : ""}
-              ${rollbackAllowed ? `<div class="life-action-row"><button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button></div>` : ""}
+              <div class="life-action-row">
+                ${rollbackAllowed ? `<button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button>` : ""}
+                <button type="button" class="danger" data-life-capability-delete="${esc(artifactId)}">删除能力</button>
+              </div>
             </article>
           `;
         }).join("")}</div>` : emptyState("尚无已确认、构建或发布的能力产物。")}
@@ -2547,6 +2550,16 @@ export const lifePanelPlugin = {
       if (rollbackButton) {
         const artifactId = rollbackButton.dataset.lifeCapabilityRollback || "";
         void runAction("回滚能力中", () => lifeApi.rollbackCapability(artifactId, { reason: "用户在生命面板回滚当前能力版本" }));
+        return;
+      }
+
+      const deleteCapability = event.target.closest("[data-life-capability-delete]");
+      if (deleteCapability) {
+        const artifactId = String(deleteCapability.dataset.lifeCapabilityDelete || "");
+        const record = safeObject(payload?.capabilities?.by_id)[artifactId] || {};
+        const name = firstText(record.title, record.name, artifactId, "该能力");
+        if (!window.confirm(`确定删除能力“${name}”吗？\n\n将删除能力记录、产物包与工作区映射文件，无法恢复。`)) return;
+        void runAction("删除能力中", () => lifeApi.capabilityDiscard(artifactId, { reason: "用户在生命面板删除生命能力" }));
         return;
       }
 
