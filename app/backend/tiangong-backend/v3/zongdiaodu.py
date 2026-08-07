@@ -5159,11 +5159,31 @@ def _simple_chain_missing_deliverable_paths(
     observed = _simple_chain_unique_paths(observed)
     base = _delivery_workspace_root()
     project_dir = _simple_chain_project_dir(user_message)
+    if project_dir and base:
+        # 任务指定了项目目录（如 markdown-wiki/）时，只有位于该目录下的
+        # 产物才算数；模型把项目写到别的目录（如历史会话里的 CLI/xxx/）
+        # 不得按“文件名后缀相同”误判为已交付。
+        try:
+            project_root = (Path(base) / project_dir).resolve(strict=False)
+            filtered: list[str] = []
+            for item in observed:
+                try:
+                    resolved_item = Path(_delivery_resolve_path(item, base)).resolve(strict=False)
+                    resolved_item.relative_to(project_root)
+                    filtered.append(item)
+                except Exception:
+                    continue
+            observed = _simple_chain_unique_paths(filtered)
+        except Exception:
+            pass
     for path in expected:
         # A deliverable that already exists on disk is real evidence.  A fresh
         # run must not delete/rebuild it just because this run has no new
         # tool observation yet; the completion gate reads the filesystem.
-        resolved = _delivery_resolve_path(path, base)
+        resolved = _delivery_resolve_path(
+            path,
+            str(Path(base) / project_dir) if project_dir else base,
+        )
         try:
             candidate = Path(resolved)
             if candidate.is_file():

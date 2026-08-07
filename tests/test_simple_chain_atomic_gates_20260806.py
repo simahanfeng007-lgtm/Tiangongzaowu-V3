@@ -1006,3 +1006,52 @@ def test_fallback_zip_deliverable_packages_project(
         names = archive.namelist()
     assert "report.md" in names
     assert not any(name.startswith(".hidden") for name in names)
+
+
+def test_missing_deliverable_scoped_to_declared_project_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """指定项目目录后，写到别的目录的同名文件不得算已交付。"""
+    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = (
+        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
+        "pyproject.toml、README.md"
+    )
+
+    def write_payload(target: str) -> dict:
+        return {
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {
+                "action": "file.write",
+                "target": target,
+                "args": {"content": "x"},
+            },
+            "tool_result_contract": {
+                "ok": True,
+                "paths": [target],
+                "observed_write_effect": True,
+                "write_evidence": {"changed_files": [target]},
+            },
+        }
+
+    (tmp_path / "CLI" / "markdown-wiki").mkdir(parents=True)
+    (tmp_path / "CLI" / "markdown-wiki" / "README.md").write_text("x", encoding="utf-8")
+    missing = _simple_chain_missing_deliverable_paths(
+        prompt,
+        [write_payload("CLI/markdown-wiki/README.md")],
+        [],
+    )
+    assert "README.md" in missing
+
+    (tmp_path / "markdown-wiki").mkdir()
+    (tmp_path / "markdown-wiki" / "README.md").write_text("x", encoding="utf-8")
+    missing2 = _simple_chain_missing_deliverable_paths(
+        prompt,
+        [write_payload("markdown-wiki/README.md")],
+        [],
+    )
+    assert "README.md" not in missing2
