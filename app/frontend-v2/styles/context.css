@@ -14,17 +14,12 @@
 .brand-text p  { font-size: 11px; color: var(--muted); line-height: 1.2; }
 
 .side-section {
-  padding: 12px 14px;
-  margin: 0 12px 12px;
+  padding: 14px 16px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .side-section[hidden] {
