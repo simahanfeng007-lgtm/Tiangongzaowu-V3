@@ -50,5 +50,5 @@ def test_body_page_hides_default_history_scroll_region():
     source = (FRONTEND / "renderer" / "plugins" / "history-block.mjs").read_text(
         encoding="utf-8"
     )
-    assert 'page === "body"' in source
-    assert 'activePage === "body"' in source
+    assert 'page !== "chat"' in source
+    assert 'activePage !== "chat"' in source

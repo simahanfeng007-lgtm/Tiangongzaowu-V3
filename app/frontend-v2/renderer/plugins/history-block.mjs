@@ -86,10 +86,10 @@ export const historyBlockPlugin = {
 
     state.on("sessions", render);
     state.on("page", (page) => {
-      section.hidden = page === "lifecycle" || page === "body" || page === "persona" || page === "skills" || page === "settings";
+      section.hidden = page !== "chat";
     });
     state.on("busy", () => render());
-    section.hidden = state.snapshot().activePage === "lifecycle" || state.snapshot().activePage === "body" || state.snapshot().activePage === "persona" || state.snapshot().activePage === "skills" || state.snapshot().activePage === "settings";
+    section.hidden = state.snapshot().activePage !== "chat";
     render(state.snapshot().sessions);
   },
 };

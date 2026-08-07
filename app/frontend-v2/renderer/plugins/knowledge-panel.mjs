@@ -389,6 +389,9 @@ export const knowledgePanelPlugin = {
       }
       loaded = true;
       renderAll();
+      try {
+        window.dispatchEvent(new CustomEvent("knowledge:list-changed", { detail: { documents } }));
+      } catch {}
     }
 
     async function refreshKnowledge(quiet = false) {
@@ -559,6 +562,14 @@ export const knowledgePanelPlugin = {
       const button = event.target.closest("[data-doc-id]");
       if (!button) return;
       selectedId = button.dataset.docId;
+      queryResult = null;
+      lastExportPath = "";
+      renderAll();
+    });
+    window.addEventListener("knowledge:select-document", (event) => {
+      const id = String(event?.detail?.documentId || "");
+      if (!id || !documents.some((item) => item.document_id === id)) return;
+      selectedId = id;
       queryResult = null;
       lastExportPath = "";
       renderAll();

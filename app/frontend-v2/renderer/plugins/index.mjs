@@ -2,8 +2,10 @@ import { brandBlockPlugin } from "./brand-block.mjs";
 import { bodyPanelPlugin } from "./body-panel.mjs";
 import { conversationPanelPlugin } from "./conversation-panel.mjs";
 import { executePanelPlugin } from "./execute-panel.mjs";
+import { executeSideBlockPlugin } from "./execute-side-block.mjs";
 import { historyBlockPlugin } from "./history-block.mjs";
 import { inspectorPanelPlugin } from "./inspector-panel.mjs";
+import { knowledgeSideBlockPlugin } from "./knowledge-side-block.mjs";
 import { knowledgePanelPlugin } from "./knowledge-panel.mjs";
 import { lifePanelPlugin } from "./life-panel.mjs";
 import { lifeIdentitySideBlockPlugin } from "./life-identity-side-block.mjs";
@@ -25,6 +27,8 @@ export const plugins = [
   lifeIdentitySideBlockPlugin,
   personaSideBlockPlugin,
   skillsSideBlockPlugin,
+  knowledgeSideBlockPlugin,
+  executeSideBlockPlugin,
   runtimeStatusBlockPlugin,
   historyBlockPlugin,
   conversationPanelPlugin,

@@ -607,3 +607,122 @@
   margin-top: 7px;
   min-height: 22px;
 }
+
+/* 知识库概览（知识页左侧栏） */
+.knowledge-side-panel .mini-pill {
+  margin-bottom: 8px;
+}
+.knowledge-side-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.knowledge-side-summary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.025);
+}
+.knowledge-side-summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.knowledge-side-summary strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.knowledge-side-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.knowledge-side-formats span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.026);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.knowledge-side-root {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+.knowledge-side-root span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.knowledge-side-root strong {
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.knowledge-side-recent-title {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+.knowledge-side-recent {
+  display: grid;
+  gap: 6px;
+}
+.knowledge-side-doc {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms ease-out, background 180ms ease-out;
+}
+.knowledge-side-doc:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.knowledge-side-doc span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+.knowledge-side-doc small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+.knowledge-side-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 运行概览（运行页左侧栏） */
+.execute-side-panel .runtime-state {
+  display: grid;
+  gap: 6px;
+}
