@@ -1296,10 +1296,13 @@ function renderCapabilities(payload) {
           const artifactId = firstText(artifact.artifact_id, artifact.id);
           const usageRow = safeObject(usage[artifactId]);
           const rollbackAllowed = Boolean(artifact.current && artifact.upgrade_of && ["active", "released"].includes(String(artifact.status || "")));
+          const spec = safeObject(artifact.skill_spec);
+          const steps = safeArray(spec.steps);
+          const doc = safeObject(artifact.document);
           return `
             <article class="life-learning-card life-artifact-card">
               <div class="life-reflection-head"><strong>${esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"))}</strong><span>${esc(labelForStatus(artifact.status || "candidate"))}</span></div>
-              <p>${esc(humanizeText(firstText(artifact.description, artifact.procedure, ""), 180, "暂无能力说明"))}</p>
+              <p class="life-artifact-summary">${esc(firstText(artifact.summary, artifact.description, artifact.procedure, "暂无能力说明"))}</p>
               <div class="life-tag-row">
                 <span>${esc(String(artifact.kind || "skill").toUpperCase())}</span>
                 <span>版本 ${esc(artifact.version || "—")}</span>
@@ -1307,6 +1310,13 @@ function renderCapabilities(payload) {
                 ${artifact.current ? "<span>当前版本</span>" : ""}
                 ${artifact.updated_at ? `<span>${esc(formatDate(artifact.updated_at))}</span>` : ""}
               </div>
+              ${steps.length ? `<div class="life-artifact-steps">${steps.map((step, stepIndex) => `
+                <div class="life-artifact-step">
+                  <span>${stepIndex + 1}</span>
+                  <div><strong>${esc(firstText(step.step_id, `步骤 ${stepIndex + 1}`))}</strong>${step.on_failure ? `<small>${esc(step.on_failure)}</small>` : ""}</div>
+                </div>
+              `).join("")}</div>` : ""}
+              ${doc.content ? `<details class="life-artifact-doc"><summary>完整文档</summary><pre>${esc(doc.content)}</pre></details>` : ""}
               ${rollbackAllowed ? `<div class="life-action-row"><button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button></div>` : ""}
             </article>
           `;
@@ -1647,7 +1657,7 @@ function learningCardRowsHtml(payload) {
                 <strong>${esc(zhTerm(firstText(card.title, id, "未命名学习卡")))}</strong>
                 <span>${esc(labelForRisk(riskValue(card)))}</span>
               </div>
-              <p>${esc(humanizeText(firstText(card.summary, card.description, card.evidence_summary, card.reason, ""), 180, "暂无学习说明"))}</p>
+              <p>${esc(firstText(card.summary, card.description, card.evidence_summary, card.reason, "暂无学习说明"))}</p>
               <div class="life-tag-row">
                 <span>${esc(statusText)}</span>
                 ${card.human_action_label ? `<span>下一步 ${esc(zhTerm(card.human_action_label))}</span>` : ""}
@@ -1655,6 +1665,19 @@ function learningCardRowsHtml(payload) {
                 ${card.score ? `<span>分数 ${esc(formatScore(card.score))}</span>` : ""}
                 ${card.updated_at ? `<span>${esc(formatDate(card.updated_at))}</span>` : ""}
               </div>
+              ${safeArray(card.learning_plan).length ? `
+                <div class="life-learning-plan">
+                  ${safeArray(card.learning_plan).map((planItem, planIndex) => `
+                    <div class="life-learning-plan-row">
+                      <span>${planIndex + 1}</span>
+                      <div>
+                        <strong>${esc(firstText(planItem.phase, `阶段 ${planIndex + 1}`))}</strong>
+                        <p>${esc(firstText(planItem.goal, planItem.description, planItem.action, planItem.title, "暂无计划说明"))}</p>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              ` : ""}
             </div>
             <div class="life-action-row">
               ${actions.length ? actions.map((action) => `

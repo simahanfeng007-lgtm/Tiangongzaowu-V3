@@ -1736,10 +1736,7 @@
 .life-artifact-card p {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
 }
 
 .life-artifact-card .life-tag-row {
@@ -1747,9 +1744,113 @@
   margin-top: 8px;
 }
 
+.life-artifact-steps {
+  display: grid;
+  gap: 6px;
+  flex: none;
+  margin-top: 10px;
+}
+
+.life-artifact-step {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+
+.life-artifact-step > span,
+.life-learning-plan-row > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.life-artifact-step strong,
+.life-learning-plan-row strong {
+  display: block;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.life-artifact-step small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.life-artifact-doc {
+  flex: none;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.life-artifact-doc summary {
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.life-artifact-doc pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-family: "Cascadia Mono", "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .life-artifact-card .life-action-row {
   margin-top: auto;
   padding-top: 8px;
+}
+
+.life-learning-card .life-learning-main p {
+  white-space: pre-wrap;
+}
+
+.life-learning-plan {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.life-learning-plan-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.life-learning-plan-row p {
+  margin-top: 3px;
+  white-space: pre-wrap;
 }
 
 .life-learning-main {
