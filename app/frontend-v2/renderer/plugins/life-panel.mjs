@@ -1271,7 +1271,6 @@ function capabilityArtifactRows(capabilities) {
 
 function renderCapabilities(payload) {
   const capabilities = safeObject(payload.capabilities);
-  const systemCapabilities = safeObject(payload.system_capabilities);
   const activeSkills = safeArray(capabilities.active_skills);
   const releasedTools = safeArray(capabilities.released_tools);
   const allArtifacts = capabilityArtifactRows(capabilities);
@@ -1282,15 +1281,6 @@ function renderCapabilities(payload) {
   const usage = safeObject(capabilities.usage);
   return `
     <div class="life-tab-view life-capability-layout">
-      <section class="life-card life-capability-global">
-        ${sectionTitle("全局系统能力", "与当前生命自产产物分开计数")}
-        <div class="life-overview-grid life-overview-grid-auto">
-          ${shellCard({ icon: "sprout", label: "系统技能", value: String(systemCapabilities.skill_count || 0), hint: "后端全局注册" })}
-          ${shellCard({ icon: "compass", label: "系统能力", value: String(systemCapabilities.ability_count || 0), hint: "能力索引" })}
-          ${shellCard({ icon: "scroll", label: "可执行工具", value: String(systemCapabilities.runtime_tool_count || 0), hint: "当前运行时可用" })}
-          ${shellCard({ icon: "shield", label: "已声明工具", value: String(systemCapabilities.declared_tool_count || 0), hint: `其中 ${systemCapabilities.unavailable_tool_count || 0} 项当前不可执行` })}
-        </div>
-      </section>
       <section class="life-card life-capability-owned">
         ${sectionTitle("当前生命自产能力", "只计该生命自主提案、构建与发布的产物")}
         <div class="life-overview-grid life-overview-grid-auto">
@@ -1298,7 +1288,6 @@ function renderCapabilities(payload) {
           ${shellCard({ icon: "compass", label: "自产已发布工具", value: String(releasedTools.length), hint: "已核对真实执行工具" })}
           ${shellCard({ icon: "scroll", label: "正式能力版本", value: String(formalArtifacts.length), hint: formalArtifacts.length ? "已激活或已发布" : "当前尚无正式能力" })}
           ${shellCard({ icon: "compass", label: "待审能力候选", value: String(candidates.length), hint: archivedCount ? `尚未成为能力；另有 ${archivedCount} 个已归档` : "尚未成为能力" })}
-          ${shellCard({ icon: "heart", label: "使用记录", value: String(Object.values(usage).reduce((total, item) => total + numberValue(item?.count), 0)), hint: "仅验证执行事实计数" })}
         </div>
       </section>
       <section class="life-card life-capability-artifacts">
@@ -1322,14 +1311,6 @@ function renderCapabilities(payload) {
             </article>
           `;
         }).join("")}</div>` : emptyState("尚无已确认、构建或发布的能力产物。")}
-      </section>
-      <section class="life-card life-capability-history">
-        ${sectionTitle("能力生命周期", `${safeArray(capabilities.history).length} 条`)}
-        ${safeArray(capabilities.history).length ? `<div class="life-timeline">${safeArray(capabilities.history).slice(-20).reverse().map((item) => {
-          const candidateName = firstText(item.name, safeObject(capabilities.by_id)[item.artifact_id]?.name, item.artifact_id, "能力");
-          const displayName = /\?{3,}/.test(candidateName) ? firstText(item.artifact_id, "已归档能力") : candidateName;
-          return `<div class="life-timeline-item"><span></span><div><strong>${esc(labelForStatus(item.status || item.event || "unknown"))}</strong><p>${esc(`${displayName} · ${formatDate(item.at || item.updated_at || item.occurred_at)}`)}</p></div></div>`;
-        }).join("")}</div>` : emptyState("暂无能力生命周期事件。")}
       </section>
     </div>
   `;

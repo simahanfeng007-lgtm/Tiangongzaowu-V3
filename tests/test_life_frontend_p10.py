@@ -322,7 +322,8 @@ class LifeFrontendP10Tests(unittest.TestCase):
         self.assertNotIn("@media", css)
         self.assertNotIn("@container", css)
         self.assertNotIn("container-type:", css)
-        self.assertEqual(css.count("repeat(auto-fit"), 1)
+        # Two bounded responsive reflows: reflection cards and capability artifacts.
+        self.assertEqual(css.count("repeat(auto-fit"), 2)
         self.assertIn(
             ".life-reflection-cards .life-reflection-list {\n"
             "  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));",

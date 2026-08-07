@@ -450,7 +450,6 @@
 .life-schedule-ledger,
 .life-will-schedule,
 .life-will-actions,
-.life-capability-owned,
 .life-reflection-learning {
   height: var(--life-window-large) !important;
   min-height: var(--life-window-large) !important;
@@ -1650,18 +1649,25 @@
 }
 
 .life-capability-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.38fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "global global"
-    "owned owned"
-    "artifacts history";
+    "owned"
+    "artifacts";
   align-items: start;
 }
 
-.life-capability-global { grid-area: global; }
 .life-capability-owned { grid-area: owned; }
 .life-capability-artifacts { grid-area: artifacts; }
-.life-capability-history { grid-area: history; }
+
+.life-capability-owned {
+  height: var(--life-window-standard);
+  min-height: var(--life-window-standard);
+}
+
+.life-capability-artifacts {
+  height: auto;
+  min-height: var(--life-window-standard);
+}
 
 .life-task-title-line {
   display: grid;
@@ -1716,15 +1722,34 @@
 }
 
 .life-artifact-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: stretch;
 }
 
 .life-artifact-card {
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 210px;
+  padding: 14px 16px;
+}
+
+.life-artifact-card p {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
+.life-artifact-card .life-tag-row {
+  flex: none;
+  margin-top: 8px;
 }
 
 .life-artifact-card .life-action-row {
   margin-top: auto;
+  padding-top: 8px;
 }
 
 .life-learning-main {
