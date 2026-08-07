@@ -3722,6 +3722,9 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # operational tuning; defaults are the shipped contract.
 _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
 _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES", "9"))
+_SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER", "3")
+)
 _SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
 _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
 _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS", "90"))
@@ -7192,26 +7195,43 @@ class Zongdiaodu:
                     ]
                     if mismatched_inspection and not matching_required:
                         attempted = mismatched_inspection[0][2]
-                        guard_payload = _simple_chain_explicit_action_guard_payload(
-                            request_id,
-                            xiaoxi,
-                            attempted,
-                            parallel_next_action,
-                            run_state,
-                        )
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_parallel_explicit_action_guard",
-                                "Parallel explicit action sequence",
-                                "done",
-                                f"Blocked {attempted}; next requested action is {parallel_next_action}.",
-                                meta=guard_payload,
+                        guard_key = "explicit_action_yield:" + parallel_next_action
+                        guard_count = repeat_observation_counts.get(guard_key, 0) + 1
+                        repeat_observation_counts[guard_key] = guard_count
+                        if guard_count > _SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER:
+                            if run_control:
+                                run_control.step(
+                                    "simple_chain_parallel_explicit_action_yield",
+                                    "Parallel explicit action sequence yield",
+                                    "done",
+                                    f"Yielded sequence order after {guard_count} guard hits; allowing {attempted} while {parallel_next_action} remains due.",
+                                    meta={
+                                        "attempted_action": attempted,
+                                        "required_action": parallel_next_action,
+                                        "guard_count": guard_count,
+                                    },
+                                )
+                        else:
+                            guard_payload = _simple_chain_explicit_action_guard_payload(
+                                request_id,
+                                xiaoxi,
+                                attempted,
+                                parallel_next_action,
+                                run_state,
                             )
-                        shenti, huifu = _llm_jixu_scoped(
-                            _simple_chain_model_payload(guard_payload),
-                            on_chunk=_on_text_chunk,
-                        )
-                        continue
+                            if run_control:
+                                run_control.step(
+                                    "simple_chain_parallel_explicit_action_guard",
+                                    "Parallel explicit action sequence",
+                                    "done",
+                                    f"Blocked {attempted}; next requested action is {parallel_next_action}.",
+                                    meta=guard_payload,
+                                )
+                            shenti, huifu = _llm_jixu_scoped(
+                                _simple_chain_model_payload(guard_payload),
+                                on_chunk=_on_text_chunk,
+                            )
+                            continue
                     if mismatched_inspection:
                         prepared_parallel = [
                             item for item in prepared_parallel
@@ -8544,26 +8564,46 @@ class Zongdiaodu:
                     "system.action_schema",
                 }
             ):
-                guard_payload = _simple_chain_explicit_action_guard_payload(
-                    request_id,
-                    xiaoxi,
-                    attempted_action,
-                    next_explicit_action,
-                    run_state,
-                )
-                if run_control:
-                    run_control.step(
-                        "simple_chain_explicit_action_guard",
-                        "Explicit action sequence",
-                        "done",
-                        f"Blocked {attempted_action}; next requested action is {next_explicit_action}.",
-                        meta=guard_payload,
+                guard_key = "explicit_action_yield:" + next_explicit_action
+                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
+                repeat_observation_counts[guard_key] = guard_count
+                if guard_count > _SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER:
+                    # 有界让步：模型连续 N 次坚持先做其它动作时，尊重其执行顺序
+                    # 判断，放行本次调用（必需动作仍保留在欠账清单里）。避免
+                    # “严格按序”硬拦变成纯空转，直到无进展监视器强停。
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_explicit_action_yield",
+                            "Explicit action sequence yield",
+                            "done",
+                            f"Yielded sequence order after {guard_count} guard hits; allowing {attempted_action} while {next_explicit_action} remains due.",
+                            meta={
+                                "attempted_action": attempted_action,
+                                "required_action": next_explicit_action,
+                                "guard_count": guard_count,
+                            },
+                        )
+                else:
+                    guard_payload = _simple_chain_explicit_action_guard_payload(
+                        request_id,
+                        xiaoxi,
+                        attempted_action,
+                        next_explicit_action,
+                        run_state,
                     )
-                shenti, huifu = _llm_jixu_scoped(
-                    _simple_chain_model_payload(guard_payload),
-                    on_chunk=_on_text_chunk,
-                )
-                continue
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_explicit_action_guard",
+                            "Explicit action sequence",
+                            "done",
+                            f"Blocked {attempted_action}; next requested action is {next_explicit_action}.",
+                            meta=guard_payload,
+                        )
+                    shenti, huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(guard_payload),
+                        on_chunk=_on_text_chunk,
+                    )
+                    continue
             if preflight_issues:
                 if run_control:
                     run_control.step(
