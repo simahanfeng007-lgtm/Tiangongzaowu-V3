@@ -80,9 +80,11 @@
 
 .history-list {
   display: flex; flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  max-height: 40vh;
   min-height: 0; overflow-y: auto; overflow-x: hidden;
-  padding: 0;
+  padding: 2px 4px 8px 0;
+  scrollbar-gutter: stable;
 }
 .history-item-row {
   display: grid;
@@ -106,9 +108,9 @@
 }
 .history-item {
   display: grid;
-  gap: 3px;
-  width: 100%; min-height: 46px;
-  padding: 8px 4px 8px 10px;
+  gap: 4px;
+  width: 100%; min-height: 52px;
+  padding: 10px 6px 10px 12px;
   background: transparent;
   color: var(--text-2);
   text-align: left;
