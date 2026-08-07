@@ -1443,8 +1443,7 @@ export const inspectorPanelPlugin = {
           { label: "接线健康", value: `${stability}%`, hint: `${activeCount}/5 运行接口`, tone: stability >= 75 ? "ok" : "warn" },
           { label: contextMetricLabel, value: `${Math.round(contextRatio)}%`, hint: hasAuthoritativeContextRatio ? "当前对话占用 / 生命可用预算" : "当前对话窗口估算", tone: contextRatio > 75 ? "warn" : "" },
           { label: "待确认", value: `${pendingUpdates.length}`, hint: "自主更新闭环", tone: pendingUpdates.length ? "warn" : "" },
-          { label: "学习候选", value: `${learningCandidateCount}`, hint: `需确认 ${learningConfirmCount}`, tone: learningCandidateCount ? "running" : "" },
-          { label: "自由意志", value: freeWillState, hint: skipReason || "运行正常", tone: hasFreeWillAction || freeWill.heartbeat_running ? "ok" : "" }
+          { label: "学习候选", value: `${learningCandidateCount}`, hint: `需确认 ${learningConfirmCount}`, tone: learningCandidateCount ? "running" : "" }
         ])}
         ${dashSection(
           "生命体征",

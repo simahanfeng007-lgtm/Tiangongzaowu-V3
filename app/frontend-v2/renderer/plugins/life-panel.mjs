@@ -1529,7 +1529,7 @@ function renderFreeWill(payload) {
         ${sectionTitle("长期目标", `${goals.length} 项`)}
         ${renderGoals(goals)}
       </section>
-      <section class="life-card life-compact-card life-will-drive">
+      <section class="life-card life-will-drive">
         ${sectionTitle("驱动力权重", "中文映射")}
         ${renderWeightBars(drive, "驱动力")}
       </section>
