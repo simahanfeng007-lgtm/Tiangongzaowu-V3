@@ -3495,6 +3495,37 @@ def _simple_chain_repair_tool_args_before_execution(user_message: str, action: s
         return updated_container
 
     tool_args = _normalize_container(tool_args)
+    # 项目目录重映射：任务指定“工作区 xxx/ 目录”时，模型可能把“CLI 项目”
+    # 写到 CLI/markdown-wiki/ 这类错误父目录下。这里把任何
+    # “<父目录>/<项目目录>/...” 路径改写成 “<项目目录>/...”，
+    # 再交给执行；路径里没有项目目录段落的仍由项目目录围栏拦截。
+    project_dir = _simple_chain_project_dir(user_message)
+    if action in _SIMPLE_CHAIN_MUTATING_ACTIONS and project_dir:
+        marker = "/" + project_dir + "/"
+
+        def _remap_path_value(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            text = str(value).strip()
+            normalized = text.replace("\\", "/")
+            index = normalized.find(marker)
+            if index < 0:
+                return value
+            return normalized[index + 1:]
+
+        def _remap_nested(container: Any, parent_key: str = "") -> Any:
+            if isinstance(container, dict):
+                return {
+                    key: _remap_nested(item, str(key))
+                    for key, item in container.items()
+                }
+            if isinstance(container, list):
+                return [_remap_nested(item, parent_key) for item in container]
+            if isinstance(container, str) and parent_key.lower() in path_keys:
+                return _remap_path_value(container)
+            return container
+
+        tool_args = _remap_nested(tool_args)
     if action == "qc.video.delivery_check":
         updated = dict(tool_args)
         args = dict(updated.get("args") or {}) if isinstance(updated.get("args"), dict) else {}

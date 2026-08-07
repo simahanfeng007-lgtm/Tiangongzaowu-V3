@@ -1075,7 +1075,7 @@ def test_project_dir_block_confines_writes_to_declared_dir(
         "omni_body",
         {
             "action": "file.write",
-            "target": "CLI/markdown-wiki/README.md",
+            "target": "CLI/README.md",
             "args": {"content": "x"},
         },
     )
@@ -1105,3 +1105,28 @@ def test_project_dir_block_confines_writes_to_declared_dir(
         },
     )
     assert block3 is None
+
+
+def test_repair_remaps_wrong_parent_project_paths() -> None:
+    """写目标带 <错误父目录>/<项目目录>/ 时，自动改写到项目目录下。"""
+    from v3.zongdiaodu import _simple_chain_repair_tool_args_before_execution
+
+    prompt = (
+        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
+        "pyproject.toml、README.md"
+    )
+    args = {
+        "action": "file.write",
+        "target": "CLI/markdown-wiki/src/mdwiki/cli.py",
+        "args": {"content": "x"},
+    }
+    repaired = _simple_chain_repair_tool_args_before_execution(prompt, "file.write", args)
+    assert repaired["target"] == "markdown-wiki/src/mdwiki/cli.py"
+
+    args2 = {
+        "action": "file.write",
+        "target": "markdown-wiki/README.md",
+        "args": {"content": "x"},
+    }
+    repaired2 = _simple_chain_repair_tool_args_before_execution(prompt, "file.write", args2)
+    assert repaired2["target"] == "markdown-wiki/README.md"
