@@ -5098,9 +5098,25 @@ def _simple_chain_missing_deliverable_paths(
             try:
                 root = Path(base)
                 for candidate in root.rglob(name):
-                    if candidate.is_file():
-                        observed.append(path)
-                        break
+                    if not candidate.is_file():
+                        continue
+                    try:
+                        rel_segments = candidate.relative_to(root).as_posix().lower().split("/")
+                    except Exception:
+                        rel_segments = []
+                    # 排除备份/归档/临时目录：rglob 可能命中我们自己移动的
+                    # md-tools.bak-* / _bak-* 旧产物，造成“假已交付”。
+                    if any(
+                        segment.startswith((".", "_"))
+                        or any(
+                            marker in segment
+                            for marker in ("bak", "backup", "old", "stale", "trash", "temp", "tmp")
+                        )
+                        for segment in rel_segments[:-1]
+                    ):
+                        continue
+                    observed.append(path)
+                    break
             except Exception:
                 pass
     return [

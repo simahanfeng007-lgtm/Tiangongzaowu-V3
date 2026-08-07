@@ -692,3 +692,31 @@ def test_missing_deliverable_detects_subdirectory_files(
         [],
     )
     assert missing == []
+
+
+def test_missing_deliverable_ignores_backup_directories(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """备份/归档目录里的旧产物不得被当成当前任务的已交付产物。"""
+    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "md-tools.bak-20260807").mkdir()
+    (tmp_path / "md-tools.bak-20260807" / "summary.md").write_text("旧产物", encoding="utf-8")
+    (tmp_path / "md-tools.bak-20260807" / "report.md").write_text("旧产物", encoding="utf-8")
+    missing = _simple_chain_missing_deliverable_paths(
+        "全部产物放工作区 md-tools/ 目录：summary.md、report.md",
+        [],
+        [],
+    )
+    assert set(missing) == {"summary.md", "report.md"}
+
+    (tmp_path / "md-tools").mkdir()
+    (tmp_path / "md-tools" / "report.md").write_text("新产物", encoding="utf-8")
+    missing2 = _simple_chain_missing_deliverable_paths(
+        "全部产物放工作区 md-tools/ 目录：summary.md、report.md",
+        [],
+        [],
+    )
+    assert missing2 == ["summary.md"]
