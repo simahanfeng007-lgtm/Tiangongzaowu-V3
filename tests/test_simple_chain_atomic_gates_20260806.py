@@ -1139,3 +1139,25 @@ def test_recent_tool_failure_detects_last_failed_observation() -> None:
     assert _simple_chain_recent_tool_failure([]) is False
     assert _simple_chain_recent_tool_failure([{"ok": True}]) is False
     assert _simple_chain_recent_tool_failure([{"ok": True}, {"ok": False}]) is True
+
+
+def test_project_internal_inspection_exempts_project_reads() -> None:
+    """项目目录内的列目录/读文件属于工程自检，不算无意义探测。"""
+    from v3.zongdiaodu import _simple_chain_is_project_internal_inspection
+
+    prompt = "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录"
+    assert _simple_chain_is_project_internal_inspection(
+        prompt,
+        "file.list",
+        {"action": "file.list", "target": "markdown-wiki", "args": {}},
+    ) is True
+    assert _simple_chain_is_project_internal_inspection(
+        prompt,
+        "file.list",
+        {"action": "file.list", "target": "workspace", "args": {}},
+    ) is False
+    assert _simple_chain_is_project_internal_inspection(
+        prompt,
+        "file.write",
+        {"action": "file.write", "target": "markdown-wiki/README.md", "args": {}},
+    ) is False

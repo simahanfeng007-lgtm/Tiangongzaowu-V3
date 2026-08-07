@@ -5050,6 +5050,33 @@ def _simple_chain_recent_tool_failure(quality_history: list[dict[str, Any]]) -> 
     return isinstance(last, dict) and not bool(last.get("ok"))
 
 
+def _simple_chain_is_project_internal_inspection(
+    user_message: str,
+    attempted_action: str,
+    tool_args: dict[str, Any] | None,
+) -> bool:
+    """项目内部自检：大型工程任务里，列/读自己项目目录不是无意义探测。"""
+    if str(attempted_action or "") not in {
+        "file.read", "file.list", "file.search", "file.hash",
+    }:
+        return False
+    project_dir = _simple_chain_project_dir(user_message)
+    if not project_dir:
+        return False
+    root = _delivery_workspace_root()
+    if not root:
+        return False
+    project_root = (Path(root) / project_dir).resolve(strict=False)
+    for raw in _simple_chain_requested_paths(tool_args if isinstance(tool_args, dict) else {}):
+        try:
+            resolved = Path(_delivery_resolve_path(str(raw), root)).resolve(strict=False)
+            resolved.relative_to(project_root)
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def _simple_chain_has_post_mutation_verification(
     quality_history: list[dict[str, Any]],
     user_message: str = "",
@@ -9014,6 +9041,11 @@ class Zongdiaodu:
                 and attempted_action not in {"skill.get", "skill.read", "skill.route"}
                 and not productive_run_attempt
                 and not _simple_chain_recent_tool_failure(quality_history)
+                and not _simple_chain_is_project_internal_inspection(
+                    xiaoxi,
+                    attempted_action,
+                    tool_args,
+                )
             ):
                 # 按 run 全局计数：模型换参数反复探测时不能重置 guard 预算。
                 guard_key = "no_deliverable_guard"
@@ -9027,7 +9059,12 @@ class Zongdiaodu:
                     gongju_cishu,
                     run_state,
                 )
-                if guard_count <= _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS:
+                guard_max_hits = _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS
+                if not _simple_chain_strict_single_deliverable(xiaoxi):
+                    # 多文件工程任务（脚手架/文档站/代码库）文件多、自检多，
+                    # 给 3 倍守卫预算，避免在模型写完剩余文件前误判空转。
+                    guard_max_hits *= 3
+                if guard_count <= guard_max_hits:
                     delivery_guard_active = True
                     if run_control:
                         run_control.step(
