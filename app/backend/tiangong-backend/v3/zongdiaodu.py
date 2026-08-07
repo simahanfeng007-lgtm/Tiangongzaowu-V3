@@ -4920,6 +4920,37 @@ def _simple_chain_requires_command_verification(user_message: str) -> bool:
     ))
 
 
+def _simple_chain_is_productive_run_attempt(
+    attempted_action: str,
+    tool_args: dict | None,
+    user_message: str,
+) -> bool:
+    """交付守卫放行判定：任务明确要求运行时，真正的运行调用不是探测。
+
+    例如“运行 python mdsummary.py README.md，把真实输出写入 summary.md”，
+    summary.md 只有脚本跑完才会产生；把 python.run/shell.run 当探测拦截
+    会形成死锁。仅放行真实脚本运行，dir/空 target 等仍按探测处理。
+    """
+    if not _simple_chain_requires_command_verification(user_message):
+        return False
+    attempted_action = str(attempted_action or "").strip().lower()
+    tool_args = tool_args if isinstance(tool_args, dict) else {}
+    if attempted_action == "python.run":
+        return str(tool_args.get("target") or "").lower().endswith(".py")
+    if attempted_action == "quality.run_tests":
+        return True
+    if attempted_action in {"shell.run", "command.run", "run"}:
+        try:
+            args_text = json.dumps(
+                tool_args.get("args") or {},
+                ensure_ascii=False,
+            ).lower()
+        except Exception:
+            args_text = ""
+        return ("python" in args_text or "pytest" in args_text) and ".py" in args_text
+    return False
+
+
 def _simple_chain_has_post_mutation_verification(
     quality_history: list[dict[str, Any]],
     user_message: str = "",
@@ -8460,11 +8491,20 @@ class Zongdiaodu:
                 guard_gap_reasons.append(
                     "explicitly named deliverables are missing: " + ", ".join(missing_now[:8])
                 )
+            # 任务明确要求“运行 python xxx.py”时，运行步骤本身就是产生
+            # summary/verification 等产物的前置动作，不是探测。交付守卫
+            # 必须放行真正的运行调用，否则模型永远无法产出这些文件。
+            productive_run_attempt = _simple_chain_is_productive_run_attempt(
+                attempted_action,
+                tool_args,
+                xiaoxi,
+            )
             if (
                 guard_gap_reasons
                 and gongju_cishu >= _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
                 and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
                 and attempted_action not in {"skill.get", "skill.read", "skill.route"}
+                and not productive_run_attempt
             ):
                 # 按 run 全局计数：模型换参数反复探测时不能重置 guard 预算。
                 guard_key = "no_deliverable_guard"

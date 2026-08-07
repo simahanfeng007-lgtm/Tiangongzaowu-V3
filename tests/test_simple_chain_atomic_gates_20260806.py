@@ -747,3 +747,43 @@ def test_missing_deliverable_scoped_to_project_dir(
         [],
     )
     assert missing2 == ["summary.md"]
+
+
+def test_productive_run_attempt_exempts_required_script_runs() -> None:
+    """任务明确要求运行脚本时，真正的运行调用不被交付守卫当探测拦截。"""
+    from v3.zongdiaodu import _simple_chain_is_productive_run_attempt
+
+    prompt = "请运行 python mdsummary.py README.md，把真实输出写入 summary.md"
+    assert _simple_chain_is_productive_run_attempt(
+        "python.run",
+        {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
+        prompt,
+    ) is True
+    assert _simple_chain_is_productive_run_attempt(
+        "python.run",
+        {"action": "python.run", "target": "", "args": {}},
+        prompt,
+    ) is False
+    assert _simple_chain_is_productive_run_attempt(
+        "shell.run",
+        {
+            "action": "shell.run",
+            "target": "md-tools",
+            "args": {"command": "python mdsummary.py README.md"},
+        },
+        prompt,
+    ) is True
+    assert _simple_chain_is_productive_run_attempt(
+        "shell.run",
+        {
+            "action": "shell.run",
+            "target": "md-tools",
+            "args": {"command": "dir /B md-tools"},
+        },
+        prompt,
+    ) is False
+    assert _simple_chain_is_productive_run_attempt(
+        "python.run",
+        {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
+        "整理工作区文件",
+    ) is False
