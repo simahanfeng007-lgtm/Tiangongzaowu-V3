@@ -6,6 +6,7 @@ import { historyBlockPlugin } from "./history-block.mjs";
 import { inspectorPanelPlugin } from "./inspector-panel.mjs";
 import { knowledgePanelPlugin } from "./knowledge-panel.mjs";
 import { lifePanelPlugin } from "./life-panel.mjs";
+import { lifeIdentitySideBlockPlugin } from "./life-identity-side-block.mjs";
 import { lifeSummaryBlockPlugin } from "./life-summary-block.mjs";
 import { lifecyclePanelPlugin } from "./lifecycle-panel.mjs";
 import { navRailPlugin } from "./nav-rail.mjs";
@@ -21,6 +22,7 @@ export const plugins = [
   navRailPlugin,
   brandBlockPlugin,
   lifeSummaryBlockPlugin,
+  lifeIdentitySideBlockPlugin,
   personaSideBlockPlugin,
   skillsSideBlockPlugin,
   runtimeStatusBlockPlugin,

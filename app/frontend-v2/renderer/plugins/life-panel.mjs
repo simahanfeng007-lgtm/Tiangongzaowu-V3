@@ -2015,21 +2015,6 @@ function renderIdentity(payload) {
           </article>
         `).join("")}</div>` : emptyState("尚无可显示的身份操作记录。")}
       </section>
-      <div class="life-identity-actions-grid">
-        <section class="life-card">
-          ${sectionTitle("新建生命", "独立生命标识")}
-          <label class="life-setting-field"><span>生命名称</span><input type="text" data-life-create-name value="起源" maxlength="40" /><small>生命名称以后可以修改，生命标识永久不变。</small></label>
-          <div class="life-action-row"><button type="button" data-life-identity-create>确认新建生命</button></div>
-        </section>
-        <section class="life-card">
-          ${sectionTitle("绑定已有生命", "校验身份与账本")}
-          <label class="life-setting-field"><span>生命数据目录</span><input type="text" data-life-bind-root value="${esc(current.root || "")}" placeholder="选择包含 identity 文件夹的生命目录" /><small>当前显示已激活生命的具体目录；选择其他目录后可验证并绑定。</small></label>
-          <div class="life-action-row">
-            <button type="button" data-life-bind-choose>选择目录</button>
-            <button type="button" data-life-identity-bind>验证并绑定</button>
-          </div>
-        </section>
-      </div>
     </div>
   `;
 }
@@ -2525,6 +2510,10 @@ export const lifePanelPlugin = {
     renderPage(snap.activePage);
     renderContent();
     void loadPanel("mount");
+
+    window.addEventListener("life:identity-changed", () => {
+      if (state.snapshot().activePage === "lifecycle") loadPanel("identity_changed");
+    });
 
     if (!lifePanelTimer) {
       lifePanelTimer = window.setInterval(() => {

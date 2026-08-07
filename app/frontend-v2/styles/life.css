@@ -298,6 +298,29 @@
   color: var(--text);
 }
 
+/* 生命页左侧栏：新建生命 / 绑定已有身份 */
+.life-identity-side-block .life-identity-side-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.life-identity-side-block .life-side-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.life-identity-side-block .life-side-form > strong {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.life-identity-side-block .life-setting-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.life-identity-side-block .life-action-row {
+  flex-wrap: wrap;
+}
+
 .life-tab-view > .life-card {
   height: var(--life-window-standard);
   min-height: var(--life-window-standard);
