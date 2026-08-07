@@ -1604,6 +1604,15 @@ function learningCardRowsHtml(payload) {
   const learning = safeObject(payload.learning);
   const cards = safeArray(learning.latest).filter(isVisibleLearningCard);
   if (!cards.length) return "";
+  const governanceNoteText = (note = "") => {
+    const legacyNotes = {
+      "Preview only; no Skill or Tool is registered before user confirmation.": "当前仅为预览；在用户确认前不会注册任何技能或工具。",
+      "Approved direct/low-risk learning is ready for publication.": "已批准的直通/低风险学习已具备发布条件。",
+      "User confirmed the preview; publication may now write the artifact.": "用户已确认预览，发布流程现在可以写入产物。"
+    };
+    const key = String(note || "").trim();
+    return legacyNotes[key] || note || "等待后端状态推进";
+  };
   return `
     <div class="life-learning-list">
       ${cards.map((card) => {
@@ -1635,7 +1644,7 @@ function learningCardRowsHtml(payload) {
                   data-action-reason="${esc(action.reason)}"
                   class="${action.danger ? "danger" : ""}"
                 >${esc(action.label)}</button>
-              `).join("") : `<span class="life-action-muted">${esc(card.governance_note || "等待后端状态推进")}</span>`}
+              `).join("") : `<span class="life-action-muted">${esc(governanceNoteText(card.governance_note))}</span>`}
             </div>
           </article>
         `;

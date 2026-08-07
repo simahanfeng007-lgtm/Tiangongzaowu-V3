@@ -1623,7 +1623,26 @@
 /* 反思卡片：下方通栏，宽屏双列 */
 .life-reflection-cards .life-reflection-list {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: start;
+  align-items: stretch;
+}
+
+/* 反思卡片统一高度：正文最多 6 行，超出省略 */
+.life-reflection-card {
+  display: flex;
+  flex-direction: column;
+  height: 196px;
+  box-sizing: border-box;
+}
+.life-reflection-card p {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+.life-reflection-card .life-tag-row {
+  flex: none;
 }
 
 .life-recent-action-grid {

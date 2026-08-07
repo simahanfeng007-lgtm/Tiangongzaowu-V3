@@ -80,7 +80,7 @@ def build_draft(*, life_id: str, scope: Mapping[str, Any], decision: Mapping[str
         "registered": False,
         "created_at": utc_now(),
         "updated_at": utc_now(),
-        "governance_note": "Preview only; no Skill or Tool is registered before user confirmation." if needs_confirmation else "Approved direct/low-risk learning is ready for publication.",
+        "governance_note": "当前仅为预览；在用户确认前不会注册任何技能或工具。" if needs_confirmation else "已批准的直通/低风险学习已具备发布条件。",
     }
     draft["draft_sha256"] = canonical_sha256({"domain": "tiangong.life.learning-draft.v1", "draft": draft})
     return draft
@@ -99,7 +99,7 @@ def confirm_draft(record: Mapping[str, Any], *, draft_sha256: str = "") -> dict[
         "can_discard_learning": False,
         "approved_at": utc_now(),
         "updated_at": utc_now(),
-        "governance_note": "User confirmed the preview; publication may now write the artifact.",
+        "governance_note": "用户已确认预览，发布流程现在可以写入产物。",
     })
     return value
 
