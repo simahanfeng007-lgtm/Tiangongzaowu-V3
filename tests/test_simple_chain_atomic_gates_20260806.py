@@ -806,3 +806,48 @@ def test_productive_run_attempt_exempts_required_script_runs() -> None:
         {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
         "整理工作区文件",
     ) is False
+
+
+def test_post_mutation_verification_ignores_report_document_write() -> None:
+    """先跑测试、再写《测试报告.md》的正确顺序不得被误判为缺验证。"""
+    from v3.zongdiaodu import _simple_chain_has_post_mutation_verification
+
+    def write_payload(target: str, content: str) -> dict:
+        return {
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {
+                "action": "file.write",
+                "target": target,
+                "args": {"content": content},
+            },
+            "tool_result_contract": {
+                "ok": True,
+                "paths": [target],
+                "observed_write_effect": True,
+                "write_evidence": {
+                    "authoritative": True,
+                    "source": "tool_pre_post",
+                    "changed_files": [target],
+                    "post": [{"path": target, "exists": True, "is_file": True}],
+                },
+            },
+        }
+
+    run_payload = {
+        "ok": True,
+        "tool_action": "shell.run",
+        "tool_args": {
+            "action": "shell.run",
+            "target": "textutils",
+            "args": {"command": "python -m pytest tests -q"},
+        },
+        "tool_result_contract": {"ok": True, "paths": [], "write_effect": False},
+    }
+    history = [
+        write_payload("textutils/src/textutils/core.py", "def reverse_words(...)"),
+        run_payload,
+        write_payload("textutils/测试报告.md", "pytest 运行结果：8 passed"),
+    ]
+    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
+    assert _simple_chain_has_post_mutation_verification(history, prompt) is True

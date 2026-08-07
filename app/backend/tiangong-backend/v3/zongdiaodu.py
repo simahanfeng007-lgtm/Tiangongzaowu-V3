@@ -4990,6 +4990,33 @@ def _simple_chain_has_post_mutation_verification(
             or re.search(r"(?<![a-z])(?:tests?|verify|validate|regression)(?![a-z])", command_text) is not None
         )
 
+    def is_verification_document_write(payload: dict[str, Any]) -> bool:
+        """验证报告类文档（测试报告/report/verification）是验证输出的记录，
+        不是需要再次验证的代码变更；把它当作最后一次变更会把“先跑测试、
+        再写报告”的正确顺序误判成缺验证。"""
+        if not isinstance(payload, dict) or not bool(payload.get("ok")):
+            return False
+        paths = _simple_chain_payload_paths(payload)
+        names = {str(Path(item).name).lower() for item in paths if item}
+        report_names = {
+            "report.md", "test_report.md", "testing_report.md",
+            "测试报告.md", "测试结果.md", "验证结果.md", "verification.md",
+        }
+        if not any(
+            name in report_names
+            or re.match(r"^(测试报告|测试结果|验证结果|report|verification)[._\-]", name)
+            for name in names
+        ):
+            return False
+        try:
+            args_text = json.dumps(payload.get("tool_args") or {}, ensure_ascii=False).lower()
+        except Exception:
+            args_text = ""
+        return any(
+            marker in args_text
+            for marker in ("passed", "failed", "pytest", "unittest", "测试", "验证", "ran ")
+        )
+
     last_mutation_index = -1
     mutation_paths: list[str] = []
     for index, payload in enumerate(quality_history or []):
@@ -5004,6 +5031,8 @@ def _simple_chain_has_post_mutation_verification(
             if isinstance(evidence, dict) and evidence.get("source") == "platform_fallback":
                 # 平台兜底产物不是模型变更，不参与“最后一次模型变更”的顺序判定，
                 # 否则会把它之后才发生的真实验证（pytest）误判为“验证早于变更”。
+                continue
+            if is_verification_document_write(payload):
                 continue
             last_mutation_index = index
             mutation_paths = _simple_chain_payload_paths(payload)
