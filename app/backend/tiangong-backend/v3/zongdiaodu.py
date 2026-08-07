@@ -6053,7 +6053,10 @@ def _simple_chain_platform_run_verification(
         },
         "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
         "summary": f"platform verification run output: {output[:300]}",
-        "codex_evidence": {"verification_output": output[:2000]},
+        "codex_evidence": {
+            "verification_output": output[:2000],
+            "verification_runtime": "platform",
+        },
     })
     # 把真实输出写回任务要求的输出文件（优先 summary/output/result，其次不存在的 .md）。
     out_targets = _simple_chain_explicit_deliverable_paths(user_message)
@@ -6133,6 +6136,22 @@ def _simple_chain_platform_run_tests_verification(
     if not (cwd / "tests").is_dir():
         return False
     test_target = str(match.group(1) or "tests").strip()
+    # 自带运行时是 -I 隔离模式（忽略 PYTHONPATH），src 布局项目的子进程
+    # 无法 import 包；先做一次无依赖的可编辑安装，等价于开发者本地环境。
+    if (cwd / "pyproject.toml").is_file() and (cwd / "src").is_dir():
+        try:
+            install_result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"],
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=120,
+            )
+        except Exception:
+            return False
+        if install_result.returncode != 0:
+            return False
     command = [sys.executable, "-m", "pytest", test_target, "-q"]
     run_env = os.environ.copy()
     src_dir = cwd / "src"
@@ -6168,7 +6187,10 @@ def _simple_chain_platform_run_tests_verification(
         },
         "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
         "summary": f"platform pytest verification output: {output[:300]}",
-        "codex_evidence": {"verification_output": output[:4000]},
+        "codex_evidence": {
+            "verification_output": output[:4000],
+            "verification_runtime": "platform",
+        },
     })
     report_candidates = [
         candidate
@@ -6225,6 +6247,47 @@ def _simple_chain_platform_run_tests_verification(
         })
         return True
     return True
+
+
+def _simple_chain_platform_runtime_verified(
+    *,
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    request_id: str,
+) -> bool:
+    """完成门独立复验：任务要求真实运行验证时，以平台自带运行时为准。
+
+    模型 shell 里 PATH 上的 python 可能与应用自带运行时不一致（例如系统
+    Python 已装过该包、自带运行时未装），仅凭模型验证证据可能“假通过”。
+    这里用平台运行时重新执行 pytest/脚本；已有平台复验证据时直接放行。
+    """
+    if not _simple_chain_requires_command_verification(user_message):
+        return True
+    for payload in reversed(quality_history or []):
+        if not isinstance(payload, dict):
+            continue
+        evidence = payload.get("codex_evidence")
+        if (
+            isinstance(evidence, dict)
+            and str(evidence.get("verification_runtime") or "") == "platform"
+        ):
+            return True
+    if _simple_chain_platform_run_tests_verification(
+        user_message=user_message,
+        quality_history=quality_history,
+        generated_attachments=generated_attachments,
+        request_id=request_id,
+    ):
+        return True
+    if _simple_chain_platform_run_verification(
+        user_message=user_message,
+        quality_history=quality_history,
+        generated_attachments=generated_attachments,
+        request_id=request_id,
+    ):
+        return True
+    return False
 
 
 def _simple_chain_content_shortage_gap(
@@ -7226,6 +7289,25 @@ class Zongdiaodu:
                 tool_count=gongju_cishu,
             )
             clean_reasons = list(reasons or [])
+            if status == "complete" and _simple_chain_requires_command_verification(xiaoxi):
+                try:
+                    remaining_seconds = _simple_chain_remaining_deadline_seconds()
+                except Exception:
+                    remaining_seconds = 60.0
+                if remaining_seconds >= 30:
+                    # 平台独立复验：任务要求真实运行测试/脚本时，模型提供的
+                    # 验证证据必须以平台自带运行时重新执行通过为准。
+                    if not _simple_chain_platform_runtime_verified(
+                        user_message=xiaoxi,
+                        quality_history=quality_history,
+                        generated_attachments=generated_attachments,
+                        request_id=request_id,
+                    ):
+                        status = "incomplete"
+                        clean_reasons.append(
+                            "[platform_runtime_verification_failed] "
+                            "平台自带运行时复验未通过；产物保留，验证命令未在应用运行时跑通"
+                        )
             reason_text = " ".join(str(item) for item in clean_reasons).lower()
             if status == "complete":
                 fallback = _simple_chain_completion_fallback_reply(

@@ -893,3 +893,54 @@ def test_platform_run_tests_verification_executes_pytest(
     text = report.read_text(encoding="utf-8")
     assert "passed" in text
     assert attachments
+
+
+def test_platform_runtime_verified_uses_platform_evidence_or_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """完成门独立复验：已有平台证据直接放行，否则平台自带运行时真实跑测试。"""
+    from v3.zongdiaodu import _simple_chain_platform_runtime_verified
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
+    history_with_evidence = [{
+        "ok": True,
+        "tool_action": "shell.run",
+        "tool_args": {},
+        "tool_result_contract": {"ok": True},
+        "codex_evidence": {"verification_runtime": "platform"},
+    }]
+    assert _simple_chain_platform_runtime_verified(
+        user_message=prompt,
+        quality_history=history_with_evidence,
+        generated_attachments=[],
+        request_id="r1",
+    ) is True
+
+    (tmp_path / "textutils" / "tests").mkdir(parents=True)
+    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2").mkdir(parents=True)
+    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2" / "core.py").write_text(
+        "def f():\n    return 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "textutils" / "tests" / "test_core.py").write_text(
+        "from tmputils_unique_9f2.core import f\n"
+        "def test_f():\n"
+        "    assert f() == 1\n",
+        encoding="utf-8",
+    )
+    history2: list[dict] = []
+    attachments2: list[dict] = []
+    ok2 = _simple_chain_platform_runtime_verified(
+        user_message=prompt,
+        quality_history=history2,
+        generated_attachments=attachments2,
+        request_id="r2",
+    )
+    assert ok2 is True
+    assert any(
+        isinstance(p.get("codex_evidence"), dict)
+        and p.get("codex_evidence", {}).get("verification_runtime") == "platform"
+        for p in history2
+    )
