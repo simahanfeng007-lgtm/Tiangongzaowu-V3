@@ -5977,6 +5977,23 @@ def _simple_chain_try_fallback_delivery(
             required_read_paths=required_read_paths,
             final_reply=final_reply,
         )
+    if not allowed:
+        # pytest 类验证兜底：任务要求“运行 python -m pytest tests -q”而模型
+        # 未能执行时，平台在项目目录内真实运行测试，并把 stdout/stderr 原样
+        # 写入《测试报告.md》，作为机器验证证据，避免任务因模型空转而失败。
+        _simple_chain_platform_run_tests_verification(
+            user_message=xiaoxi,
+            quality_history=quality_history,
+            generated_attachments=generated_attachments,
+            request_id=request_id,
+        )
+        allowed, _status, _reasons = _simple_chain_final_hard_gate(
+            xiaoxi,
+            quality_history,
+            generated_attachments,
+            required_read_paths=required_read_paths,
+            final_reply=final_reply,
+        )
     return allowed, items
 
 
@@ -6067,6 +6084,137 @@ def _simple_chain_platform_run_verification(
             break
         except Exception:
             continue
+    return True
+
+
+def _simple_chain_platform_run_tests_verification(
+    *,
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    request_id: str,
+) -> bool:
+    """B6/pytest 兜底：模型未能在项目目录运行测试时，平台真实执行。
+
+    仅当任务明确要求 pytest/unittest 且项目 tests/ 目录已存在时触发；
+    在项目目录内运行 ``python -m pytest <target> -q``（限时 120 秒），
+    把真实 stdout/stderr 写入《测试报告.md》，并把执行与写盘都标记为
+    平台兜底证据（不参与模型变更顺序判定）。
+    """
+    import subprocess
+    import sys
+
+    text = str(user_message or "")
+    match = re.search(
+        r"(?:python\s+-m\s+)?pytest(?:\s+([A-Za-z0-9_./\\-]+))?",
+        text,
+        re.IGNORECASE,
+    )
+    if not match or not _simple_chain_requires_command_verification(user_message):
+        return False
+    root = _delivery_workspace_root()
+    if not root:
+        return False
+    project_dir = _simple_chain_project_dir(user_message)
+    if project_dir:
+        cwd = Path(_delivery_resolve_path(project_dir, root))
+    else:
+        cwd = Path(root)
+    if not (cwd / "tests").is_dir():
+        # 项目目录名没被解析到时，在根目录的一级子目录里找 tests/。
+        try:
+            for candidate in Path(root).iterdir():
+                if candidate.is_dir() and (candidate / "tests").is_dir():
+                    cwd = candidate
+                    project_dir = str(candidate.relative_to(root))
+                    break
+        except Exception:
+            pass
+    if not (cwd / "tests").is_dir():
+        return False
+    test_target = str(match.group(1) or "tests").strip()
+    command = [sys.executable, "-m", "pytest", test_target, "-q"]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+        )
+    except Exception:
+        return False
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0 or not output.strip():
+        return False
+    command_text = " ".join(command)
+    quality_history.append({
+        "ok": True,
+        "tool_action": "shell.run",
+        "tool_args": {
+            "action": "shell.run",
+            "target": str(cwd.relative_to(root)) if cwd != Path(root) else "",
+            "args": {"command": command_text},
+        },
+        "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
+        "summary": f"platform pytest verification output: {output[:300]}",
+        "codex_evidence": {"verification_output": output[:4000]},
+    })
+    report_candidates = [
+        candidate
+        for candidate in _simple_chain_explicit_deliverable_paths(user_message)
+        if re.search(r"测试报告|测试结果|验证结果|report|verification", candidate, re.IGNORECASE)
+    ]
+    report_candidates += [
+        candidate
+        for candidate in _simple_chain_explicit_deliverable_paths(user_message)
+        if candidate.lower().endswith((".md", ".txt"))
+        and candidate not in report_candidates
+    ]
+    for candidate in dict.fromkeys(report_candidates):
+        if not str(candidate).lower().endswith((".md", ".txt")):
+            continue
+        resolved = Path(_delivery_resolve_path(str(candidate), root))
+        if project_dir and resolved.parent == Path(root).resolve(strict=False):
+            resolved = (Path(root) / project_dir / resolved.name).resolve(strict=False)
+        try:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            content = (
+                f"# 测试报告\n\n"
+                f"## 执行命令\n\n```\n{command_text}\n```\n\n"
+                f"## 真实输出\n\n```\n{output.rstrip()}\n```\n"
+            )
+            resolved.write_text(content, encoding="utf-8")
+        except Exception:
+            continue
+        generated_attachments.append({
+            "kind": "document",
+            "path": str(resolved),
+            "suffix": resolved.suffix.lower(),
+        })
+        quality_history.append({
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {
+                "action": "file.write",
+                "target": str(resolved),
+                "args": {"content": content},
+            },
+            "tool_result_contract": {
+                "ok": True,
+                "paths": [str(resolved)],
+                "observed_write_effect": True,
+                "write_effect": True,
+                "write_evidence": {
+                    "authoritative": True,
+                    "source": "platform_fallback",
+                    "changed_files": [str(resolved)],
+                },
+            },
+            "summary": "platform fallback test report write",
+        })
+        return True
     return True
 
 

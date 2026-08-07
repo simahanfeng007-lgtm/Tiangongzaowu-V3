@@ -849,5 +849,40 @@ def test_post_mutation_verification_ignores_report_document_write() -> None:
         run_payload,
         write_payload("textutils/测试报告.md", "pytest 运行结果：8 passed"),
     ]
-    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
+    prompt = (
+        "创建 Python 库项目 textutils 到工作区 textutils/ 目录："
+        "全部完成后从项目根目录运行 python -m pytest tests -q，"
+        "把真实测试输出写入《测试报告.md》"
+    )
     assert _simple_chain_has_post_mutation_verification(history, prompt) is True
+
+
+def test_platform_run_tests_verification_executes_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """平台兜底：模型未跑测试时，平台在项目目录真实运行 pytest 并写报告。"""
+    from v3.zongdiaodu import _simple_chain_platform_run_tests_verification
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "textutils" / "tests").mkdir(parents=True)
+    (tmp_path / "textutils" / "tests" / "test_core.py").write_text(
+        "def test_ok():\n    assert 1 + 1 == 2\n",
+        encoding="utf-8",
+    )
+    history: list[dict] = []
+    attachments: list[dict] = []
+    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
+    ok = _simple_chain_platform_run_tests_verification(
+        user_message=prompt,
+        quality_history=history,
+        generated_attachments=attachments,
+        request_id="req_t",
+    )
+    assert ok is True
+    assert any(p.get("tool_action") == "shell.run" for p in history)
+    report = tmp_path / "textutils" / "测试报告.md"
+    assert report.is_file()
+    text = report.read_text(encoding="utf-8")
+    assert "passed" in text
+    assert attachments
