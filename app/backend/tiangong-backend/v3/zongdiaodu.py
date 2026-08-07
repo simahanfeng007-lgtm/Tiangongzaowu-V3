@@ -5843,6 +5843,7 @@ def _simple_chain_platform_run_verification(
     并把真实输出写回任务要求的输出文件。
     """
     import subprocess
+    import sys
 
     if not _simple_chain_requires_command_verification(user_message):
         return False
@@ -5869,7 +5870,7 @@ def _simple_chain_platform_run_verification(
             encoding="utf-8",
             timeout=30,
         )
-    except Exception:
+    except Exception as exc:
         return False
     output = (result.stdout or "") + (result.stderr or "")
     if result.returncode != 0 or not output.strip():
