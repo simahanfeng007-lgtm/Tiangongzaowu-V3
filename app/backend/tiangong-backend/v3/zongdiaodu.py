@@ -4947,7 +4947,10 @@ def _simple_chain_is_productive_run_attempt(
             ).lower()
         except Exception:
             args_text = ""
-        return ("python" in args_text or "pytest" in args_text) and ".py" in args_text
+        has_pytest = "pytest" in args_text
+        has_python_script = "python" in args_text and ".py" in args_text
+        has_python_module = bool(re.search(r"python\s+-m\s+[a-z0-9_]+", args_text))
+        return has_pytest or has_python_script or has_python_module
     return False
 
 

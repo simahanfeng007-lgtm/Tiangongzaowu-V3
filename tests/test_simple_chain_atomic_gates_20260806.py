@@ -782,6 +782,25 @@ def test_productive_run_attempt_exempts_required_script_runs() -> None:
         },
         prompt,
     ) is False
+    pytest_prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实输出写入《测试报告.md》"
+    assert _simple_chain_is_productive_run_attempt(
+        "shell.run",
+        {
+            "action": "shell.run",
+            "target": "textutils",
+            "args": {"command": "python -m pytest tests -q"},
+        },
+        pytest_prompt,
+    ) is True
+    assert _simple_chain_is_productive_run_attempt(
+        "shell.run",
+        {
+            "action": "shell.run",
+            "target": "textutils",
+            "args": {"command": "python -m pytest tests -q"},
+        },
+        "整理工作区文件",
+    ) is False
     assert _simple_chain_is_productive_run_attempt(
         "python.run",
         {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
