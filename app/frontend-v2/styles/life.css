@@ -414,6 +414,26 @@
   min-height: 0;
 }
 
+.life-tab-view.life-two-column > .life-card.life-soul-card {
+  grid-column: 1 / -1;
+  grid-row: span 2;
+  height: auto;
+  min-height: 0;
+}
+
+.life-soul-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.life-soul-meta {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
 .life-card,
 .life-boundary-card {
   overflow-y: auto;

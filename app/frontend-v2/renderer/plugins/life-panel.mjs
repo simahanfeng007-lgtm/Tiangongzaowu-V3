@@ -1087,27 +1087,31 @@ function renderOrganism(payload) {
 
   return `
     <div class="life-tab-view life-two-column">
-      <section class="life-card">
+      <section class="life-card life-soul-card">
         ${sectionTitle("灵魂", soul.revision ? `修订 ${soul.revision}` : "当前生命标识")}
-        <form class="life-settings-form" data-life-soul-form>
-          <label class="life-setting-field">
-            <span>生命名称</span>
-            <input name="name" type="text" maxlength="120" value="${esc(soul.name || "起源")}" />
-            <small>名称可修改；生命标识永久不变。</small>
-          </label>
-          <label class="life-setting-field">
-            <span>人格底稿</span>
-            <textarea name="prompt" rows="10" maxlength="20000" placeholder="定义表达方式、价值取向和长期边界。">${esc(soul.prompt || "")}</textarea>
-            <small>保存后签名写入当前生命标识，并进入下一次统一上下文。</small>
-          </label>
-          <div class="life-action-row"><button type="button" data-life-soul-save>保存灵魂配置</button></div>
-        </form>
-        ${kvRows([
-          ["revision_id", soul.revision_id || "—"],
-          ["价值", values.length ? values : "尚未单独声明"],
-          ["长期边界", boundaries.length ? boundaries : "尚未单独声明"],
-          ["更新时间", soul.updated_at || "—"]
-        ])}
+        <div class="life-soul-body">
+          <form class="life-settings-form" data-life-soul-form>
+            <label class="life-setting-field">
+              <span>生命名称</span>
+              <input name="name" type="text" maxlength="120" value="${esc(soul.name || "起源")}" />
+              <small>名称可修改；生命标识永久不变。</small>
+            </label>
+            <label class="life-setting-field">
+              <span>人格底稿</span>
+              <textarea name="prompt" rows="12" maxlength="20000" placeholder="定义表达方式、价值取向和长期边界。">${esc(soul.prompt || "")}</textarea>
+              <small>保存后签名写入当前生命标识，并进入下一次统一上下文。</small>
+            </label>
+            <div class="life-action-row"><button type="button" data-life-soul-save>保存灵魂配置</button></div>
+          </form>
+          <div class="life-soul-meta">
+            ${kvRows([
+              ["revision_id", soul.revision_id || "—"],
+              ["价值", values.length ? values : "尚未单独声明"],
+              ["长期边界", boundaries.length ? boundaries : "尚未单独声明"],
+              ["更新时间", soul.updated_at || "—"]
+            ])}
+          </div>
+        </div>
       </section>
 
       <section class="life-card">
