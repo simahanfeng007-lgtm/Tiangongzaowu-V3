@@ -944,3 +944,65 @@ def test_platform_runtime_verified_uses_platform_evidence_or_runs(
         and p.get("codex_evidence", {}).get("verification_runtime") == "platform"
         for p in history2
     )
+
+
+def test_platform_run_verification_scopes_to_project_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """验证兜底要在任务指定的项目目录里解析脚本与输出文件。"""
+    from v3.zongdiaodu import _simple_chain_platform_run_verification
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "agent-tools" / "tools").mkdir(parents=True)
+    (tmp_path / "agent-tools" / "args.txt").write_text("a b c\n", encoding="utf-8")
+    (tmp_path / "agent-tools" / "tools" / "summarize.py").write_text(
+        "import sys\n"
+        "path = sys.argv[1] if len(sys.argv) > 1 else 'args.txt'\n"
+        "print('TOKENS', len(open(path, encoding='utf-8').read().split()))\n",
+        encoding="utf-8",
+    )
+    history: list[dict] = []
+    attachments: list[dict] = []
+    ok = _simple_chain_platform_run_verification(
+        user_message=(
+            "完成《智能体工具链分析》项目到工作区 agent-tools/ 目录："
+            "运行 python tools/summarize.py，把真实执行输出写入 verification.md"
+        ),
+        quality_history=history,
+        generated_attachments=attachments,
+        request_id="req_vp",
+    )
+    assert ok is True
+    report = tmp_path / "agent-tools" / "verification.md"
+    assert report.is_file()
+    assert "TOKENS" in report.read_text(encoding="utf-8")
+
+
+def test_fallback_zip_deliverable_packages_project(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """平台打包兜底：任务要求 zip 且缺失时，把项目目录打成 zip。"""
+    import zipfile
+
+    from v3.zongdiaodu import _simple_chain_fallback_zip_deliverable
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "agent-tools").mkdir()
+    (tmp_path / "agent-tools" / "report.md").write_text("报告", encoding="utf-8")
+    (tmp_path / "agent-tools" / ".hidden").write_text("x", encoding="utf-8")
+    items = _simple_chain_fallback_zip_deliverable(
+        "完成《智能体工具链分析》项目到工作区 agent-tools/ 目录，打包成 agent-tools.zip 保存到工作区",
+        [],
+        ["agent-tools.zip missing"],
+        "req_z",
+        [],
+    )
+    assert items
+    zip_path = Path(items[0]["path"])
+    assert zip_path.is_file()
+    with zipfile.ZipFile(zip_path) as archive:
+        names = archive.namelist()
+    assert "report.md" in names
+    assert not any(name.startswith(".hidden") for name in names)

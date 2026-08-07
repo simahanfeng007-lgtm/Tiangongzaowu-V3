@@ -5911,6 +5911,67 @@ def _simple_chain_fallback_write_deliverable(
         return []
 
 
+def _simple_chain_fallback_zip_deliverable(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    gap_reasons: list[str],
+    request_id: str,
+    generated_attachments: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """B1/打包兜底：任务要求 zip 但模型未打包时，平台把项目目录打成 zip。
+
+    仅打包用户显式要求的 .zip 交付物且目标缺失时触发；排除隐藏/缓存/
+    egg-info/__pycache__ 等非交付内容，产物标记为平台兜底证据。
+    """
+    import zipfile
+
+    explicit = _simple_chain_explicit_deliverable_paths(user_message)
+    zip_targets = [str(p) for p in explicit if str(p).lower().endswith(".zip")]
+    if not zip_targets:
+        return []
+    root = _delivery_workspace_root()
+    if not root:
+        return []
+    missing = _simple_chain_missing_deliverable_paths(
+        user_message,
+        quality_history,
+        generated_attachments or [],
+    )
+    target_name = next(
+        (candidate for candidate in zip_targets if candidate in missing),
+        None,
+    )
+    if not target_name:
+        return []
+    project_dir = _simple_chain_project_dir(user_message)
+    if not project_dir:
+        return []
+    project_path = Path(root) / project_dir
+    if not project_path.is_dir():
+        return []
+    zip_path = Path(_delivery_resolve_path(target_name, root))
+    if zip_path.parent == Path(root).resolve(strict=False):
+        zip_path = (Path(root) / project_dir / zip_path.name).resolve(strict=False)
+    try:
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            for item in sorted(project_path.rglob("*")):
+                if not item.is_file() or item == zip_path:
+                    continue
+                rel_segments = item.relative_to(project_path).as_posix().split("/")
+                if any(
+                    segment.startswith((".", "_"))
+                    or segment == "__pycache__"
+                    or "egg-info" in segment
+                    for segment in rel_segments
+                ):
+                    continue
+                archive.write(item, arcname=item.relative_to(project_path).as_posix())
+    except Exception:
+        return []
+    return [{"kind": "archive", "path": str(zip_path), "suffix": ".zip"}]
+
+
 def _simple_chain_try_fallback_delivery(
     *,
     xiaoxi: str,
@@ -5933,27 +5994,36 @@ def _simple_chain_try_fallback_delivery(
         request_id,
         generated_attachments,
     )
+    items = list(items) + _simple_chain_fallback_zip_deliverable(
+        xiaoxi,
+        quality_history,
+        gap_reasons,
+        request_id,
+        generated_attachments,
+    )
     if not items:
         return False, []
     generated_attachments.extend(items)
-    fallback_path = str(Path(items[0].get("path") or ""))
-    quality_history.append({
-        "ok": True,
-        "tool_action": "file.write",
-        "tool_args": {"action": "file.write", "target": fallback_path, "args": {"content": ""}},
-        "tool_result_contract": {
+    for item in items:
+        fallback_path = str(Path(item.get("path") or ""))
+        action = "zip.create" if str(fallback_path).lower().endswith(".zip") else "file.write"
+        quality_history.append({
             "ok": True,
-            "paths": [fallback_path],
-            "observed_write_effect": True,
-            "write_effect": True,
-            "write_evidence": {
-                "authoritative": True,
-                "source": "platform_fallback",
-                "changed_files": [fallback_path],
+            "tool_action": action,
+            "tool_args": {"action": action, "target": fallback_path, "args": {}},
+            "tool_result_contract": {
+                "ok": True,
+                "paths": [fallback_path],
+                "observed_write_effect": True,
+                "write_effect": True,
+                "write_evidence": {
+                    "authoritative": True,
+                    "source": "platform_fallback",
+                    "changed_files": [fallback_path],
+                },
             },
-        },
-        "summary": "platform fallback write",
-    })
+            "summary": "platform fallback write",
+        })
     allowed, _status, _reasons = _simple_chain_final_hard_gate(
         xiaoxi,
         quality_history,
@@ -6026,13 +6096,21 @@ def _simple_chain_platform_run_verification(
     root = _delivery_workspace_root()
     if not root:
         return False
-    script_path = _delivery_resolve_path(script_rel, root)
+    project_dir = _simple_chain_project_dir(user_message)
+    script_base = str(Path(root) / project_dir) if project_dir else root
+    script_path = _delivery_resolve_path(script_rel, script_base)
     if not Path(script_path).is_file():
-        return False
+        # 兜底：项目目录没解析出来时按工作区根解析一次。
+        script_path = _delivery_resolve_path(script_rel, root)
+        if not Path(script_path).is_file():
+            return False
+    # 项目内脚本常引用项目根下的数据文件（如 tools/summarize.py 读 args.txt），
+    # 有项目目录时以项目根为 cwd；无项目目录时才退化为脚本所在目录。
+    run_cwd = str(Path(root) / project_dir) if project_dir else str(Path(script_path).parent)
     try:
         result = subprocess.run(
             [sys.executable, script_rel, arg_rel] if arg_rel else [sys.executable, script_rel],
-            cwd=str(Path(script_path).parent),
+            cwd=run_cwd,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -6075,6 +6153,8 @@ def _simple_chain_platform_run_verification(
         if not str(candidate).lower().endswith((".md", ".txt")):
             continue
         resolved = _delivery_resolve_path(str(candidate).strip().strip('"').strip("'"), root)
+        if project_dir and Path(resolved).parent == Path(root).resolve(strict=False):
+            resolved = str((Path(root) / project_dir / Path(resolved).name).resolve(strict=False))
         target_path = Path(resolved)
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
