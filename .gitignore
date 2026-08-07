@@ -21,3 +21,4 @@
 .env
 .env.*
 !.env.example
+/.tiangong-release-hash-cache.json
