@@ -175,6 +175,129 @@
   --life-window-large: 360px;
 }
 
+/* 生命信箱：信件列表 + 弹窗 */
+.life-inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.life-inbox-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.life-inbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.life-inbox-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+.life-inbox-item .life-inbox-dot {
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 10px;
+}
+.life-inbox-item .life-inbox-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.life-inbox-item .life-inbox-meta {
+  flex-shrink: 0;
+  color: var(--muted-2);
+  font-size: 12px;
+}
+.life-inbox-delete {
+  flex-shrink: 0;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-2);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.life-inbox-delete:hover {
+  color: var(--bad);
+  border-color: var(--bad-soft);
+  background: var(--bad-soft);
+}
+.life-inbox-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.life-inbox-modal[hidden] {
+  display: none;
+}
+.life-inbox-modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 92vw);
+  max-height: 78vh;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+.life-inbox-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.life-inbox-modal-close {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.life-inbox-modal-meta {
+  padding: 8px 18px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.life-inbox-modal-body {
+  padding: 12px 18px 18px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 14px;
+  color: var(--text);
+}
+
 .life-tab-view > .life-card {
   height: var(--life-window-standard);
   min-height: var(--life-window-standard);

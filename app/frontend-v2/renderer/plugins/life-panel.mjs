@@ -991,6 +991,7 @@ function renderOverview(payload) {
   const budget = safeObject(payload.budget);
   const settings = safeObject(payload.settings);
   const inbox = safeObject(payload.inbox);
+  const inboxItems = safeArray(inbox.items);
   const unread = numberValue(inbox.unread_count);
   const completed = numberValue(summary.completed_tasks_today);
   const dailyBudget = numberValue(budget.success_limit, numberValue(settings.llm_daily_budget));
@@ -1035,8 +1036,21 @@ function renderOverview(payload) {
 
       <section class="life-card">
         ${sectionTitle("生命信箱", unread ? `${unread} 条未读` : "今日消息")}
-        <p class="life-card-hint">${esc(safeArray(inbox.items).length ? "在聊天区打开信封后会写入主对话，并将该消息标记为已读。" : "今天还没有生命信箱消息。")}</p>
-        <div class="life-action-row"><button type="button" data-life-open-inbox>打开信箱并进入聊天</button></div>
+        <p class="life-card-hint">${esc(inboxItems.length ? "点击信件在弹窗中查看，并标记为已读。" : "今天还没有生命信箱消息。")}</p>
+        ${inboxItems.length ? `
+          <div class="life-inbox-list">
+            ${inboxItems.map((item) => `
+              <div class="life-inbox-row${item.read ? "" : " unread"}">
+                <button type="button" class="life-inbox-item" data-life-inbox-message="${esc(String(item.message_id || ""))}">
+                  <span class="life-inbox-dot">${item.read ? "" : "●"}</span>
+                  <span class="life-inbox-title">${esc(item.title || "生命来信")}</span>
+                  <span class="life-inbox-meta">${esc(formatDate(item.created_at))}</span>
+                </button>
+                <button type="button" class="life-inbox-delete" data-life-inbox-delete="${esc(String(item.message_id || ""))}" title="删除信件" aria-label="删除信件">🗑</button>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       </section>
 
       <section class="life-card">
@@ -2142,6 +2156,38 @@ export const lifePanelPlugin = {
     let actionBusy = false;
     let activeLifeId = "";
     let fitFrame = 0;
+    let latestInboxItems = [];
+
+    panel.insertAdjacentHTML("beforeend", `
+      <div class="life-inbox-modal" data-life-inbox-modal hidden>
+        <div class="life-inbox-modal-card" role="dialog" aria-modal="true" aria-label="生命信箱信件">
+          <div class="life-inbox-modal-head">
+            <strong data-life-inbox-modal-title></strong>
+            <button type="button" class="life-inbox-modal-close" data-life-inbox-modal-close aria-label="关闭">×</button>
+          </div>
+          <div class="life-inbox-modal-meta" data-life-inbox-modal-meta></div>
+          <div class="life-inbox-modal-body" data-life-inbox-modal-body></div>
+        </div>
+      </div>
+    `);
+    const inboxModal = panel.querySelector("[data-life-inbox-modal]");
+    const inboxModalTitle = panel.querySelector("[data-life-inbox-modal-title]");
+    const inboxModalMeta = panel.querySelector("[data-life-inbox-modal-meta]");
+    const inboxModalBody = panel.querySelector("[data-life-inbox-modal-body]");
+
+    function showInboxModal(item = {}) {
+      inboxModalTitle.textContent = item.title || "生命来信";
+      inboxModalMeta.textContent = [
+        formatDate(item.created_at),
+        item.kind === "daily_life_summary" ? "今日生命总结" : String(item.kind || "")
+      ].filter(Boolean).join(" · ");
+      inboxModalBody.textContent = item.message || "（信件内容为空）";
+      inboxModal.hidden = false;
+    }
+
+    function closeInboxModal() {
+      inboxModal.hidden = true;
+    }
 
     function scheduleLifeCardFit() {
       if (fitFrame) window.cancelAnimationFrame(fitFrame);
@@ -2192,6 +2238,7 @@ export const lifePanelPlugin = {
       }
       content.classList.add("is-switching");
       window.setTimeout(() => {
+        latestInboxItems = safeArray(payload.inbox?.items);
         content.innerHTML = renderTab(payload, activeTab);
         content.classList.toggle("is-action-busy", actionBusy);
         content.classList.remove("is-switching");
@@ -2341,9 +2388,30 @@ export const lifePanelPlugin = {
         return;
       }
 
-      if (event.target.closest("[data-life-open-inbox]")) {
-        if (typeof actions?.setActivePage === "function") actions.setActivePage("chat");
-        else state.setActivePage?.("chat");
+      if (event.target.closest("[data-life-inbox-message]")) {
+        const messageId = String(event.target.closest("[data-life-inbox-message]").dataset.lifeInboxMessage || "");
+        const item = latestInboxItems.find((row) => String(row.message_id || "") === messageId);
+        if (item) {
+          showInboxModal(item);
+          if (!item.read) {
+            item.read = true;
+            void lifeApi.markInboxRead(messageId).then(() => loadPanel("inbox_read")).catch(() => {});
+          }
+        }
+        return;
+      }
+      if (event.target.closest("[data-life-inbox-delete]")) {
+        const messageId = String(event.target.closest("[data-life-inbox-delete]").dataset.lifeInboxDelete || "");
+        if (messageId) {
+          void lifeApi.deleteInboxMessage(messageId).then(() => loadPanel("inbox_delete")).catch(() => {});
+        }
+        return;
+      }
+      if (
+        event.target.closest("[data-life-inbox-modal-close]")
+        || (event.target.closest("[data-life-inbox-modal]") && event.target === inboxModal)
+      ) {
+        closeInboxModal();
         return;
       }
 
