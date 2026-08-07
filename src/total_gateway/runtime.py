@@ -11,6 +11,8 @@ import threading
 import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
 from contracts import (
     ChannelCutoverSnapshot,
@@ -45,6 +47,65 @@ _RUNTIME_BODY_SECTIONS = frozenset({
     "identity", "health", "emotion", "drives", "lifecycle", "autonomy",
     "environment", "evolution", "memory", "recent_actions",
 })
+
+
+def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object], dict[str, object]]:
+    """Build the workspace-zone mapper for published Life skills and tools.
+
+    Every published Life skill/tool gets a readable markdown mirror under the
+    current workspace:
+      - skill -> <workspace>/skills/life/<skill_id>.md
+      - tool  -> <workspace>/tools/life/<tool_id>.md
+    The write is idempotent and atomic; mapping failures never fail the
+    publication itself.
+    """
+
+    def map_artifact(artifact: object) -> dict[str, object]:
+        if not isinstance(artifact, dict):
+            return {}
+        kind = str(artifact.get("kind") or "")
+        if kind not in {"skill", "tool"}:
+            return {}
+        root = workspace_root
+        if root is None:
+            return {}
+        try:
+            root_path = Path(str(root)).expanduser().resolve(strict=True)
+        except (OSError, ValueError):
+            return {}
+        spec = artifact.get("skill_spec") if isinstance(artifact.get("skill_spec"), dict) else {}
+        raw_name = str(spec.get("skill_id") or artifact.get("artifact_id") or "life_capability")
+        safe_name = "".join(ch for ch in raw_name if ch.isalnum() or ch in "._-").strip(" ._-") or "life_capability"
+        zone = "skills/life" if kind == "skill" else "tools/life"
+        directory = root_path / zone
+        target = directory / f"{safe_name}.md"
+        try:
+            if target.is_symlink():
+                return {}
+            resolved = target.resolve(strict=False)
+            resolved.relative_to(root_path)
+            directory.mkdir(parents=True, exist_ok=True)
+        except (OSError, ValueError):
+            return {}
+        document = artifact.get("document")
+        content = ""
+        if isinstance(document, dict) and isinstance(document.get("content"), str):
+            content = document["content"]
+        if not content.strip():
+            title = str(artifact.get("title") or artifact.get("artifact_id") or "生命能力")
+            summary = str(artifact.get("summary") or "")
+            content = f"# {title}\n\n{summary}\n"
+        try:
+            existing = target.read_text(encoding="utf-8") if target.is_file() else None
+            if existing != content:
+                temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+                temporary.write_text(content, encoding="utf-8", newline="\n")
+                os.replace(temporary, target)
+        except OSError:
+            return {}
+        return {"workspace_path": f"{zone}/{safe_name}.md"}
+
+    return map_artifact
 
 
 def _gateway_body_state_query(runtime: object, arguments: object) -> dict[str, object]:
@@ -750,6 +811,9 @@ class GatewayRuntime:
 
                 runtime.life_service.set_artifact_action_catalog_provider(artifact_action_catalog)
                 runtime.life_service.set_artifact_publisher(publish_learning_artifact)
+                runtime.life_service.set_capability_workspace_mapper(
+                    life_capability_workspace_mapper(config.workspace_root)
+                )
                 runtime.life_service.set_artifact_invoker(invoke_learning_artifact_action)
                 runtime.life_service.set_learning_materializers(
                     researcher=research_learning_material,

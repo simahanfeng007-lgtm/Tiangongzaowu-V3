@@ -347,6 +347,7 @@ class EmbeddedLifeRuntime:
         self._cognition_shadow: UnifiedCognitionShadow | None = None
         self._artifact_action_catalog_provider: Any = None
         self._artifact_publisher: Any = None
+        self._capability_workspace_mapper: Any = None
         self._artifact_invoker: Any = None
         self._learning_researcher: Any = None
         self._learning_synthesizer: Any = None
@@ -1892,6 +1893,7 @@ class EmbeddedLifeRuntime:
             self._schedule_autonomous_activity_decision(life_id=life_id)
             self._schedule_autonomous_learning_decision(life_id=life_id)
             self._recover_approved_learning_cards(life_id=life_id)
+            self._sync_life_capability_workspace_zone(life_id=life_id)
             self._schedule_self_iteration_decision(life_id=life_id)
             self._schedule_greeting(life_id=life_id)
             self._cognition_shadow_tick(life_id=life_id)
@@ -2539,6 +2541,13 @@ class EmbeddedLifeRuntime:
             raise ValueError("artifact publisher must be callable")
         with self._lock:
             self._artifact_publisher = publisher
+
+    def set_capability_workspace_mapper(self, mapper: Any) -> None:
+        """Bind the gateway-owned workspace-zone mapper for life skills/tools."""
+        if mapper is not None and not callable(mapper):
+            raise ValueError("capability workspace mapper must be callable")
+        with self._lock:
+            self._capability_workspace_mapper = mapper
 
     def set_artifact_invoker(self, invoker: Any) -> None:
         """Bind the fixed gateway entrypoint used by published composite artifacts."""
@@ -5514,6 +5523,7 @@ class EmbeddedLifeRuntime:
         active_rows = [row for row in rows if row.get("activation_status") == "active"]
         for row in active_rows[:32]:
             spec = row.get("skill_spec") if isinstance(row.get("skill_spec"), Mapping) else {}
+            publication = row.get("publication") if isinstance(row.get("publication"), Mapping) else {}
             model_context.append({
                 "artifact_id": row.get("artifact_id"),
                 "kind": row.get("kind"),
@@ -5523,6 +5533,7 @@ class EmbeddedLifeRuntime:
                 "task_intents": list(spec.get("task_intents") or [])[:24],
                 "required_actions": list(row.get("required_actions") or [])[:16],
                 "steps": list(spec.get("steps") or [])[:16],
+                "workspace_path": publication.get("workspace_path") or "",
             })
         return {
             "ok": True,
@@ -5948,6 +5959,17 @@ class EmbeddedLifeRuntime:
             publication = publisher(artifact) if callable(publisher) else {"publisher": "life_local_projection"}
             if not isinstance(publication, Mapping):
                 raise EmbeddedLifeError("life.learning.publisher_invalid", status=503)
+            mapper = self._capability_workspace_mapper
+            if callable(mapper):
+                try:
+                    mapped = mapper(artifact)
+                    if isinstance(mapped, Mapping) and mapped.get("workspace_path"):
+                        publication = {
+                            **dict(publication),
+                            "workspace_path": str(mapped["workspace_path"]),
+                        }
+                except Exception:
+                    pass
             bundle_path = persist_artifact_bundle(
                 self.paths.artifact_root,
                 compiled,
@@ -6112,6 +6134,46 @@ class EmbeddedLifeRuntime:
                             self._persist(life_id)
         except Exception:
             # Recovery must never break the heartbeat tick.
+            return
+
+    def _sync_life_capability_workspace_zone(self, *, life_id: str) -> None:
+        """Ensure every published life skill/tool has its workspace-zone file.
+
+        Runs inside the maintenance tick so a newly published capability is
+        mirrored into the workspace automatically, and a deleted/missing
+        mirror is restored from the authoritative artifact record.
+        """
+        try:
+            mapper = self._capability_workspace_mapper
+            if not callable(mapper):
+                return
+            with self._lock:
+                scope = self._scope_state(life_id)
+                capabilities = scope.get("capabilities")
+                if not isinstance(capabilities, Mapping):
+                    return
+                changed = False
+                for artifact in capabilities.values():
+                    if (
+                        not isinstance(artifact, Mapping)
+                        or artifact.get("status") != "published"
+                        or artifact.get("kind") not in {"skill", "tool"}
+                    ):
+                        continue
+                    try:
+                        mapped = mapper(artifact)
+                    except Exception:
+                        continue
+                    if not isinstance(mapped, Mapping) or not mapped.get("workspace_path"):
+                        continue
+                    publication = artifact.get("publication") if isinstance(artifact.get("publication"), Mapping) else {}
+                    if str(publication.get("workspace_path") or "") != str(mapped["workspace_path"]):
+                        artifact["publication"] = {**dict(publication), "workspace_path": str(mapped["workspace_path"])}
+                        changed = True
+                if changed:
+                    self._persist(life_id)
+        except Exception:
+            # Zone mirroring must never break the heartbeat tick.
             return
 
     @staticmethod

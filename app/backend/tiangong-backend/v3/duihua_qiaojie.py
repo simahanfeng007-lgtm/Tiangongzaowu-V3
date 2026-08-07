@@ -2752,6 +2752,8 @@ def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> s
             "【本生命已确认的学习 Skill/Tool】\n"
             "它们是可复用流程说明；仅在与当前用户请求相关时使用。步骤绑定的顶层 action 必须保持不变，"
             "不得把内部 action 当成独立工具或声称未执行的结果。\n"
+            "完整内容已同步到工作区：优先按每条里的 workspace_path（相对工作区根目录）读取对应文件；"
+            "步骤里的示例 target 只是草案写法，不代表文件一定存在。\n"
             + json.dumps(learned_skills[:16], ensure_ascii=False, indent=2)[:4000]
         )
     sections.append(

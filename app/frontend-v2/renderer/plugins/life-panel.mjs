@@ -1299,6 +1299,8 @@ function renderCapabilities(payload) {
           const spec = safeObject(artifact.skill_spec);
           const steps = safeArray(spec.steps);
           const doc = safeObject(artifact.document);
+          const publication = safeObject(artifact.publication);
+          const workspacePath = String(publication.workspace_path || "").trim();
           return `
             <article class="life-learning-card life-artifact-card">
               <div class="life-reflection-head"><strong>${esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"))}</strong><span>${esc(labelForStatus(artifact.status || "candidate"))}</span></div>
@@ -1310,6 +1312,7 @@ function renderCapabilities(payload) {
                 ${artifact.current ? "<span>当前版本</span>" : ""}
                 ${artifact.updated_at ? `<span>${esc(formatDate(artifact.updated_at))}</span>` : ""}
               </div>
+              ${workspacePath ? `<div class="life-artifact-path">工作区文件：${esc(workspacePath)}</div>` : ""}
               ${steps.length ? `<div class="life-artifact-steps">${steps.map((step, stepIndex) => `
                 <div class="life-artifact-step">
                   <span>${stepIndex + 1}</span>
