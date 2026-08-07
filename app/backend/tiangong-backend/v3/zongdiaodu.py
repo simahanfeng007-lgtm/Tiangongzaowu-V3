@@ -2477,6 +2477,25 @@ def _simple_chain_explicit_deliverable_paths(user_message: str) -> list[str]:
     return _simple_chain_unique_paths(out)
 
 
+def _simple_chain_project_dir(user_message: str) -> str:
+    """从任务文案提取“工作区 xxx/ 目录”里的项目目录名。
+
+    例如“全部产物放工作区 md-tools/ 目录”返回 md-tools；未指定返回空串。
+    只用于完成门磁盘兜底的搜索范围，避免在无关/备份目录里误命中同名旧产物。
+    """
+    text = str(user_message or "")
+    patterns = (
+        r"(?:到|放|保存到|创建(?:到|在)?|输出到|生成到|全部产物放)\s*"
+        r"工作区\s*([A-Za-z0-9_.-]+)\s*[\\/]?\s*(?:目录|文件夹|下)",
+        r"工作区\s*([A-Za-z0-9_.-]+)\s*[\\/]?\s*(?:目录|文件夹|下)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return str(match.group(1) or "").strip().strip("/\\")
+    return ""
+
+
 def _simple_chain_unique_paths(paths: list[str]) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
@@ -5076,6 +5095,7 @@ def _simple_chain_missing_deliverable_paths(
             observed.append(str(item.get("path")))
     observed = _simple_chain_unique_paths(observed)
     base = _delivery_workspace_root()
+    project_dir = _simple_chain_project_dir(user_message)
     for path in expected:
         # A deliverable that already exists on disk is real evidence.  A fresh
         # run must not delete/rebuild it just because this run has no new
@@ -5097,26 +5117,43 @@ def _simple_chain_missing_deliverable_paths(
         if bare and name and base:
             try:
                 root = Path(base)
-                for candidate in root.rglob(name):
-                    if not candidate.is_file():
-                        continue
-                    try:
-                        rel_segments = candidate.relative_to(root).as_posix().lower().split("/")
-                    except Exception:
-                        rel_segments = []
-                    # 排除备份/归档/临时目录：rglob 可能命中我们自己移动的
-                    # md-tools.bak-* / _bak-* 旧产物，造成“假已交付”。
-                    if any(
-                        segment.startswith((".", "_"))
-                        or any(
-                            marker in segment
-                            for marker in ("bak", "backup", "old", "stale", "trash", "temp", "tmp")
-                        )
-                        for segment in rel_segments[:-1]
-                    ):
-                        continue
+                # 任务指定了项目目录（如 md-tools/）时，只在那个目录内搜索；
+                # 目录尚未创建说明产物还没落盘，不跨目录猜测。
+                search_roots: list[Path] = []
+                if project_dir:
+                    project_path = (root / project_dir).resolve(strict=False)
+                    if project_path.is_dir():
+                        search_roots = [project_path]
+                else:
+                    search_roots = [root]
+                found = False
+                for search_root in search_roots:
+                    for candidate in search_root.rglob(name):
+                        if not candidate.is_file():
+                            continue
+                        if search_root != root:
+                            found = True
+                            break
+                        try:
+                            rel_segments = candidate.relative_to(root).as_posix().lower().split("/")
+                        except Exception:
+                            rel_segments = []
+                        # 无项目目录约束时，排除备份/归档/临时目录里的旧产物。
+                        if any(
+                            segment.startswith((".", "_"))
+                            or any(
+                                marker in segment
+                                for marker in ("bak", "backup", "old", "stale", "trash", "temp", "tmp")
+                            )
+                            for segment in rel_segments[:-1]
+                        ):
+                            continue
+                        found = True
+                        break
+                    if found:
+                        break
+                if found:
                     observed.append(path)
-                    break
             except Exception:
                 pass
     return [

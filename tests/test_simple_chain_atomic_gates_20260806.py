@@ -720,3 +720,30 @@ def test_missing_deliverable_ignores_backup_directories(
         [],
     )
     assert missing2 == ["summary.md"]
+
+
+def test_missing_deliverable_scoped_to_project_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """指定项目目录后，无关目录里的同名旧产物不得算已交付。"""
+    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
+
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    (tmp_path / "agent-tools").mkdir()
+    (tmp_path / "agent-tools" / "report.md").write_text("别的项目产物", encoding="utf-8")
+    missing = _simple_chain_missing_deliverable_paths(
+        "全部产物放工作区 md-tools/ 目录：report.md、summary.md",
+        [],
+        [],
+    )
+    assert set(missing) == {"report.md", "summary.md"}
+
+    (tmp_path / "md-tools").mkdir()
+    (tmp_path / "md-tools" / "report.md").write_text("本任务产物", encoding="utf-8")
+    missing2 = _simple_chain_missing_deliverable_paths(
+        "全部产物放工作区 md-tools/ 目录：report.md、summary.md",
+        [],
+        [],
+    )
+    assert missing2 == ["summary.md"]
