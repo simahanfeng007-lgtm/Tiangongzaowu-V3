@@ -1279,7 +1279,6 @@ function renderCapabilities(payload) {
   const candidates = artifacts.filter((item) => ["candidate", "proposed", "approved", "building", "draft", "draft_ready", "tested", "review_ready", "sandbox_passed"].includes(String(item.status || "").toLowerCase()));
   const formalArtifacts = artifacts.filter((item) => ["active", "released", "published", "accepted", "learned"].includes(String(item.status || "").toLowerCase()));
   const archivedCount = allArtifacts.length - artifacts.length;
-  const usage = safeObject(capabilities.usage);
   return `
     <div class="life-tab-view life-capability-layout">
       <section class="life-card life-capability-owned">
@@ -1295,7 +1294,6 @@ function renderCapabilities(payload) {
         ${sectionTitle("生命能力候选与正式产物", `${artifacts.length} 项`)}
         ${artifacts.length ? `<div class="life-learning-list life-artifact-grid">${artifacts.map((artifact) => {
           const artifactId = firstText(artifact.artifact_id, artifact.id);
-          const usageRow = safeObject(usage[artifactId]);
           const activationStatus = String(artifact.activation_status || artifact.status || "").toLowerCase();
           const degraded = activationStatus === "degraded";
           const rollbackAllowed = Boolean(artifact.current && artifact.upgrade_of && ["active", "released", "degraded"].includes(activationStatus));
@@ -1311,7 +1309,6 @@ function renderCapabilities(payload) {
               <div class="life-tag-row">
                 <span>${esc(String(artifact.kind || "skill").toUpperCase())}</span>
                 <span>版本 ${esc(artifact.version || "—")}</span>
-                <span>使用 ${esc(usageRow.count || 0)} 次</span>
                 ${artifact.current ? "<span>当前版本</span>" : ""}
                 ${artifact.updated_at ? `<span>${esc(formatDate(artifact.updated_at))}</span>` : ""}
               </div>
@@ -1849,8 +1846,6 @@ function renderBoundarySection(title, data = {}, icon = "shield") {
 
 function renderBoundaries(payload) {
   const boundaries = safeObject(payload.boundaries);
-  const learnedRules = safeArray(boundaries.learned_rules);
-  const learnedSemantics = safeObject(boundaries.learned_rule_semantics);
   return `
     <div class="life-tab-view life-boundary-view">
       <section class="life-boundary-grid">
@@ -1866,26 +1861,6 @@ function renderBoundaries(payload) {
             ${safeArray(boundaries.declared_rules).map((rule) => `<span>${esc(displayValue(rule))}</span>`).join("")}
           </div>
         ` : emptyState("灵魂配置尚未声明长期边界。")}
-      </section>
-      <section class="life-card">
-        ${sectionTitle("沟通中学习到的边界规则", `${learnedRules.length} 条`)}
-        ${learnedRules.length ? `
-          <div class="life-rule-list">
-            ${learnedRules.map((rule) => {
-              const item = safeObject(rule);
-              const text = firstText(item.text, item.rule, item.title, displayValue(rule));
-              const evidence = numberValue(item.evidence_count);
-              const confidence = item.confidence == null ? "" : formatScore(item.confidence);
-              return `<span>${esc(text)}${evidence ? ` · 证据 ${esc(evidence)}` : ""}${confidence ? ` · 置信 ${esc(confidence)}` : ""}</span>`;
-            }).join("")}
-          </div>
-        ` : emptyState("尚无达到证据门槛的学习规则；单次对话不会改变长期边界。")}
-        ${Object.keys(learnedSemantics).length ? kvRows([
-          ["最少重复证据", learnedSemantics.minimum_evidence_count ?? "—"],
-          ["最低置信度", learnedSemantics.minimum_confidence ?? "—"],
-          ["变化速度", zhTerm(learnedSemantics.decay || "slow")],
-          ["能否覆盖用户明确规则", learnedSemantics.may_override_explicit_user_rule ? "可以" : "不可以"]
-        ]) : ""}
       </section>
     </div>
   `;
