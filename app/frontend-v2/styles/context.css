@@ -92,6 +92,7 @@
   align-items: stretch;
   gap: 4px;
   width: 100%;
+  flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -137,6 +138,17 @@
 .history-item-row:hover .history-delete,
 .history-delete:focus-visible {
   opacity: 1;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 8px;
+}
+.history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.history-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong, rgba(127, 127, 127, 0.45));
+  border-radius: 4px;
 }
 .history-delete:hover {
   color: var(--bad);
