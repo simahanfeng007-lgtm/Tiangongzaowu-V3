@@ -451,6 +451,13 @@ class EmbeddedBackendRuntime:
             "step_id, action_id, arguments_template, and on_failure. action_id MUST exactly match an item in "
             "activity_scope.available_actions; never invent web.search, file.write, or another internal action as a top-level tool. "
             "If omni_body is the available action, arguments_template must use its existing {action,target,args} shape. "
+            "Design skills/tools as GENERIC, REUSABLE capabilities for an entire class of problems, derived from first "
+            "principles, never as a replay of one session: concrete paths, file names, session ids and one-off artifacts in "
+            "the scope are examples only and must be parameterized or discovered dynamically at run time. Define "
+            "input_schema and output_schema (field names, types, required flags) and verifiable acceptance criteria; steps "
+            "must not depend on files that may not exist in a new context. If evidence covers only a single session or is "
+            "too thin to generalize, prefer target none or mark the proposal as a draft-only methodology with explicit "
+            "evidence gaps instead of fabricating a reusable flow. "
             "Do not claim publication, registration, user approval, tool execution, or credentials."
         )
         user_prompt = json.dumps({
@@ -695,6 +702,11 @@ class EmbeddedBackendRuntime:
             "Return optional title, summary, and draft_artifact. Cite only supplied evidence; distinguish missing evidence. "
             "For skill/tool preserve a structured draft_artifact with required_actions and steps. Top-level action_id must be "
             "an already supplied action, normally omni_body; do not invent tools, execute actions, register anything, or claim completion."
+            " Design the skill/tool as a GENERIC, first-principles capability for the whole problem class, not a replay of the "
+            "supplied session: concrete paths, file names, session ids and one-off artifacts are examples only and must be "
+            "parameterized or discovered at run time; provide input_schema, output_schema and verifiable acceptance checks; "
+            "never hardcode files that may not exist in a new context. If the evidence is a single session or insufficient to "
+            "generalize, say so explicitly and keep the draft draft_only instead of inventing a reusable flow."
         )
         llm = getattr(self.scheduler, "_zhiming_llm", None)
         if not callable(llm):
