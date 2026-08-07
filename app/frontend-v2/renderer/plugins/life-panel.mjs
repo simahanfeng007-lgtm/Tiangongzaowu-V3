@@ -1,5 +1,5 @@
 import { lifeApi } from "../runtime/life-api.mjs";
-import { buildLifeViewModel, relationshipDisplayName } from "../runtime/life-view-model.mjs";
+import { buildLifeViewModel } from "../runtime/life-view-model.mjs";
 
 const REFRESH_INTERVAL_MS = 30000;
 let lifePanelTimer = null;
@@ -1077,11 +1077,9 @@ function renderOrganism(payload) {
   const affect = safeObject(payload.affect);
   const state = safeObject(affect.state);
   const expression = safeObject(affect.expression);
-  const relationship = safeObject(payload.relationship);
   const body = safeObject(payload.body);
   const bodyProfile = safeObject(body.profile);
   const bodySignals = safeObject(body.signals);
-  const relationships = Object.entries(safeObject(relationship.by_id));
   const emotions = topNumberEntries(state.emotions, 10);
   const drives = topNumberEntries(state.drives, 8);
   const values = safeArray(soul.values);
@@ -1143,16 +1141,6 @@ function renderOrganism(payload) {
         ])}
       </section>
 
-      <section class="life-card">
-        ${sectionTitle("关系状态", `${relationship.count || 0} 个对象`)}
-        ${relationships.length ? `<div class="life-learning-list">${relationships.map(([relationshipId, vector]) => `
-          <article class="life-learning-card">
-            <div class="life-reflection-head"><strong>${esc(relationshipDisplayName(relationshipId, payload.user_identity))}</strong><span>${esc(formatDate(relationship.updated_at))}</span></div>
-            ${kvRows(Object.entries(safeObject(vector)))}
-          </article>
-        `).join("")}</div>` : emptyState("尚未形成关系情感记录；首次有来源明确的互动评估后建立。")}
-        ${kvRows([["关系记忆数", relationship.relational_memory_count || 0], ["数据来源", zhTerm(relationship.source || "—")]])}
-      </section>
       <section class="life-card">
         ${sectionTitle("身体状态", zhTerm(bodySignals.availability || "未标注"))}
         ${kvRows([
