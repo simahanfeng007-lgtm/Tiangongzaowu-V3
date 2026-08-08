@@ -7,11 +7,11 @@ or judge task quality. It only:
 
 1. establishes a conservative Runtime execution floor from the current user text;
 2. treats the LLM's real tool call/result as its execution submission; and
-3. blocks terminal completion when an explicit actionable request has no
+3. blocks terminal completion when an explicit tool-required request has no
    matching successful tool evidence.
 
-The design keeps Runtime responsible for factual execution integrity while the
-LLM remains responsible for semantic understanding, planning and tool choice.
+Runtime owns factual execution integrity. The LLM still owns semantic
+understanding, planning, tool choice, replanning and answer quality.
 """
 
 import re
@@ -21,6 +21,8 @@ ACT_REQUIRED = "ACT_REQUIRED"
 ACT_FORBIDDEN = "ACT_FORBIDDEN"
 ACT_UNKNOWN = "UNKNOWN"
 
+# Global user controls only. Scoped negation such as
+# "查看目录，但不要修改" must not disable the requested observation.
 _RESPONSE_ONLY_MARKERS = (
     "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
     "只告诉我", "只解释", "只分析", "只讨论", "先分析", "先讨论",
@@ -29,45 +31,48 @@ _GLOBAL_NO_ACTION_PATTERNS = (
     r"^(?:先|暂时)?(?:不要|别|不用|无需)(?:执行|操作|动|处理|修改|改|运行|调用工具|使用工具)(?:任何)?(?:操作|动作|工具)?$",
     r"^(?:先|暂时)?(?:不要|别)(?:做|干|动)(?:任何)?(?:东西|事情|操作)?$",
 )
+
+# These cues establish command context; they never choose a tool.
 _REQUEST_CUES = (
     "请", "帮我", "帮忙", "给我", "替我", "直接", "一下", "现在", "马上", "立刻",
     "开始", "先", "只", "再", "接着", "那就", "那么就", "把", "将", "不就行了",
 )
+_STRONG_REQUEST_CUES = ("请", "帮我", "帮忙", "替我", "直接", "现在", "马上", "立刻", "开始", "不就行了")
+_SEQUENCE_MARKERS = ("然后", "然后再", "再帮我", "并且", "同时", "接着", "那就", "那么就")
+_EXPLANATION_MARKERS = ("解释", "说明", "讲讲", "告诉我怎么", "告诉我如何", "分析怎么", "分析如何")
+_STATUS_MARKERS = ("结果", "状态", "情况", "是否", "是什么", "什么意思", "怎么样", "为什么", "怎么回事")
+
 _AMBIGUOUS_TARGETS = (
     "那个目录", "某个目录", "一个目录", "那个文件夹", "某个文件夹",
     "那个文件", "某个文件", "那个附件", "某个附件",
 )
 _DIRECTORY_TERMS = ("目录", "文件夹", "workspace", "工作区", "当前路径")
-_FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格", "源码", "代码")
+_FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格")
+_OBSERVATION_ANCHORS = _DIRECTORY_TERMS + _FILE_TERMS + (
+    "日志", "配置", "数据库", "系统", "环境", "服务", "进程", "端口", "仓库", "repository", "repo",
+)
+_MUTATION_ANCHORS = ("文件", "目录", "文件夹", "代码", "源码", "项目", "仓库", "repository", "repo", "配置", "脚本")
+_ARTIFACT_ANCHORS = (
+    "word", "docx", "excel", "xlsx", "ppt", "pptx", "pdf", "zip", "报告", "文档", "文件", "表格", "压缩包", "桌面",
+)
+_DELIVERY_ANCHORS = _ARTIFACT_ANCHORS + ("邮件", "email", "附件")
 
-# Four factual classes only; these are not task taxonomies and do not prescribe
-# a tool. Existing specialised completion checks remain in zongdiaodu.py.
-_OBSERVE_VERBS = (
-    "读取", "读一下", "读下", "读", "查看", "看一下", "看下", "看看", "列出", "列一下", "列",
-    "检查", "扫描", "浏览", "打开", "搜索", "搜一下", "搜", "查询", "查一下", "查",
+# Four factual classes only. These are not task taxonomies and never prescribe
+# a concrete capability. High precision is more important than recall: an
+# uncertain instruction remains UNKNOWN and falls through to the existing V3
+# chain/LLM instead of becoming a new hard blocker.
+_LOCAL_OBSERVE_VERBS = (
+    "读取", "读一下", "读下", "查看", "看一下", "看下", "看看", "列出", "列一下",
+    "检查", "扫描", "浏览", "打开",
 )
-_EFFECT_VERBS = (
-    "修改", "改一下", "改下", "改", "写入", "写", "创建", "生成", "删除", "移除", "复制",
-    "移动", "重命名", "保存", "下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压",
-    "修复", "导出",
-)
-_EXECUTE_VERBS = (
-    "运行", "跑一下", "跑", "执行", "测试", "验证", "启动", "编译", "构建",
-)
-_DELIVER_VERBS = (
-    "发送", "发给我", "发我", "传给我", "上传", "提交", "交付",
-)
+_SEARCH_VERBS = ("搜索", "搜一下", "查询", "查一下", "帮我查", "帮我搜")
+_MUTATION_VERBS = ("修改", "改一下", "改下", "修复", "删除", "移除", "复制", "移动", "重命名")
+_ARTIFACT_VERBS = ("写入", "创建", "新建", "生成", "保存")
+_EXTERNAL_EFFECT_VERBS = ("下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压", "导出")
+_EXECUTION_VERBS = ("运行", "跑一下", "执行", "测试", "验证", "启动", "编译", "构建")
+_DELIVERY_STRONG_VERBS = ("上传", "提交", "交付")
+_DELIVERY_ARTIFACT_VERBS = ("发送", "发给我", "发我", "传给我")
 
-_ENGLISH_ACTION_RE = re.compile(
-    r"\b(read|list|inspect|check|scan|browse|open|search|query|find|modify|edit|fix|write|create|generate|"
-    r"delete|remove|copy|move|rename|save|download|clone|pull|install|deploy|package|compress|extract|"
-    r"run|execute|test|verify|start|compile|build|send|upload|submit|deliver|export)\b",
-    re.IGNORECASE,
-)
-_ENGLISH_REQUEST_RE = re.compile(
-    r"(?:^|\b)(please|for\s+me|must|now|directly|go\s+ahead|do\s+it|can\s+you|could\s+you)\b",
-    re.IGNORECASE,
-)
 _COMPLETION_CLAIM_RE = re.compile(
     r"(?:已经|已)(?:完成|读取|读完|查看|检查|执行|下载|修改|写入|生成|发送|处理|打开|运行|测试|上传|部署)"
     r"|(?:完成了|办妥了?|搞定了?|读完了|读取完毕|查看完毕|检查完毕|执行完毕|下载完成|处理完成|运行完成|测试完成)",
@@ -75,6 +80,8 @@ _COMPLETION_CLAIM_RE = re.compile(
 )
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
+_URL_RE = re.compile(r"https?://", re.IGNORECASE)
+_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[，。；：,.;:！!？?])", re.IGNORECASE)
 
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
@@ -115,12 +122,7 @@ def _response_only(text: str) -> bool:
 
 
 def _meta_or_hypothetical(text: str) -> bool:
-    """Preserve the existing narrow V3 discussion boundary.
-
-    This refactor must not broaden general chat/work semantics. The Runtime
-    floor only owns high-confidence execution invariants; everything else stays
-    UNKNOWN and is left to the existing chain/LLM.
-    """
+    """Keep the pre-existing narrow V3 discussion boundary stable."""
     compact = _compact(text)
     if not compact:
         return True
@@ -192,7 +194,7 @@ def _is_deferred_action_explanation(user_text: object) -> bool:
 
 
 def is_execution_discussion_only(user_text: object) -> bool:
-    """Return True only for high-confidence no-side-effect discussion turns."""
+    """Only the existing high-confidence no-side-effect discussion cases."""
     return bool(
         _is_high_confidence_capability_question(user_text)
         or _is_hypothetical_action_discussion(user_text)
@@ -212,65 +214,172 @@ def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     return False
 
 
-def _english_action_is_negated(text: str, action_start: int) -> bool:
-    left = text[max(0, action_start - 24):action_start].lower()
-    return bool(re.search(r"(?:do\s+not|don't|dont|never|without)\s+$", left))
+def _has_affirmative(compact: str, verbs: tuple[str, ...]) -> bool:
+    return any(_verb_occurs_affirmatively(compact, verb) for verb in verbs)
 
 
-def _all_action_verbs() -> tuple[str, ...]:
-    return _OBSERVE_VERBS + _EFFECT_VERBS + _EXECUTE_VERBS + _DELIVER_VERBS
+def _has_request_cue(compact: str) -> bool:
+    return any(cue in compact for cue in _REQUEST_CUES)
 
 
-def _high_confidence_action_request(user_text: object) -> bool:
-    text = str(user_text or "").strip()
-    compact = _compact(text)
-    if not compact or _response_only(text) or is_execution_discussion_only(text) or _meta_or_hypothetical(text):
-        return False
-    matched_cn = [verb for verb in _all_action_verbs() if _verb_occurs_affirmatively(compact, verb)]
-    if matched_cn:
-        if any(cue in compact for cue in _REQUEST_CUES):
-            return True
-        lead = compact.lstrip("，。；：,.;:！!？?")
-        if any(lead.startswith(verb) for verb in matched_cn):
-            return True
-    english = re.sub(r"\s+", " ", text.strip().lower())
-    action_match = _ENGLISH_ACTION_RE.search(english)
-    if not action_match or _english_action_is_negated(english, action_match.start()):
-        return False
-    if _ENGLISH_REQUEST_RE.search(english):
+def _has_strong_request_cue(compact: str) -> bool:
+    return any(cue in compact for cue in _STRONG_REQUEST_CUES)
+
+
+def _leading_verb(compact: str, verbs: tuple[str, ...]) -> bool:
+    lead = compact.lstrip("，。；：,.;:！!？?")
+    return any(lead.startswith(verb) for verb in verbs)
+
+
+def _has_anchor(text: str, compact: str, anchors: tuple[str, ...]) -> bool:
+    return bool(
+        any(anchor.lower() in compact for anchor in anchors)
+        or _LOCAL_PATH_RE.search(text)
+        or _URL_RE.search(text)
+        or _SUFFIX_RE.search(compact)
+    )
+
+
+def _looks_like_status_or_question(text: str, compact: str) -> bool:
+    if any(marker in compact for marker in _STATUS_MARKERS):
         return True
-    return bool(action_match.start() == 0)
+    stripped = str(text or "").strip()
+    return stripped.endswith(("?", "？", "吗", "么"))
+
+
+def _explanation_only(compact: str) -> bool:
+    return bool(
+        any(marker in compact for marker in _EXPLANATION_MARKERS)
+        and not any(marker in compact for marker in _SEQUENCE_MARKERS)
+    )
+
+
+def _chinese_requested_fact_kinds(text: str) -> list[str]:
+    compact = _compact(text)
+    if not compact or _explanation_only(compact):
+        return []
+
+    kinds: list[str] = []
+    cue = _has_request_cue(compact)
+    strong_cue = _has_strong_request_cue(compact)
+    questionish = _looks_like_status_or_question(text, compact)
+
+    local_observe = _has_affirmative(compact, _LOCAL_OBSERVE_VERBS)
+    search_observe = _has_affirmative(compact, _SEARCH_VERBS)
+    if (
+        local_observe
+        and _has_anchor(text, compact, _OBSERVATION_ANCHORS)
+        and (cue or _leading_verb(compact, _LOCAL_OBSERVE_VERBS))
+    ) or (
+        search_observe
+        and (strong_cue or _leading_verb(compact, _SEARCH_VERBS))
+        and not (questionish and not strong_cue)
+    ):
+        kinds.append("observation")
+
+    mutation = _has_affirmative(compact, _MUTATION_VERBS)
+    artifact_effect = _has_affirmative(compact, _ARTIFACT_VERBS)
+    external_effect = _has_affirmative(compact, _EXTERNAL_EFFECT_VERBS)
+    if (
+        mutation
+        and (
+            _has_anchor(text, compact, _MUTATION_ANCHORS)
+            or _verb_occurs_affirmatively(compact, "修复")
+        )
+        and (cue or _leading_verb(compact, _MUTATION_VERBS))
+    ) or (
+        artifact_effect
+        and _has_anchor(text, compact, _ARTIFACT_ANCHORS)
+        and (cue or _leading_verb(compact, _ARTIFACT_VERBS))
+    ) or (
+        external_effect
+        and (cue or _leading_verb(compact, _EXTERNAL_EFFECT_VERBS))
+    ):
+        kinds.append("effect")
+
+    execution = _has_affirmative(compact, _EXECUTION_VERBS)
+    if (
+        execution
+        and (strong_cue or _leading_verb(compact, _EXECUTION_VERBS))
+        and not (questionish and not strong_cue)
+    ):
+        kinds.append("execution")
+
+    strong_delivery = _has_affirmative(compact, _DELIVERY_STRONG_VERBS)
+    artifact_delivery = _has_affirmative(compact, _DELIVERY_ARTIFACT_VERBS)
+    if (
+        strong_delivery
+        and (strong_cue or _leading_verb(compact, _DELIVERY_STRONG_VERBS))
+        and not (questionish and not strong_cue)
+    ) or (
+        artifact_delivery
+        and _has_anchor(text, compact, _DELIVERY_ANCHORS)
+        and (cue or _leading_verb(compact, _DELIVERY_ARTIFACT_VERBS))
+    ):
+        kinds.append("delivery")
+
+    return kinds
+
+
+def _english_requested_fact_kinds(text: str) -> list[str]:
+    english = re.sub(r"\s+", " ", str(text or "").strip().lower())
+    if not english:
+        return []
+    if any(marker in english for marker in ("explain how", "tell me how", "what would you do", "how would you")) and not any(
+        marker in english for marker in (" then ", " and then ", " go ahead ")
+    ):
+        return []
+    explicit = bool(re.search(r"(?:^|\b)(please|for me|must|now|directly|go ahead|do it|can you|could you)\b", english))
+    tokens = re.findall(r"[a-z]+", english)
+    if not tokens:
+        return []
+    first = tokens[0]
+    anchors = set(tokens)
+    fact_kinds: list[str] = []
+    observation_words = {"read", "list", "inspect", "check", "scan", "browse", "open", "search", "query", "find"}
+    effect_words = {"modify", "edit", "fix", "delete", "remove", "copy", "move", "rename", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "export"}
+    execution_words = {"run", "execute", "test", "verify", "start", "compile", "build"}
+    delivery_words = {"send", "upload", "submit", "deliver"}
+    artifact_words = {"file", "directory", "folder", "workspace", "attachment", "repo", "repository", "project", "report", "document", "pdf", "zip"}
+
+    if any(word in anchors for word in observation_words) and (
+        explicit or first in observation_words
+    ) and (
+        bool(anchors.intersection(artifact_words)) or bool(anchors.intersection({"search", "query", "find"}))
+    ):
+        fact_kinds.append("observation")
+    if any(word in anchors for word in effect_words) and (explicit or first in effect_words):
+        fact_kinds.append("effect")
+    if any(word in anchors for word in execution_words) and (explicit or first in execution_words):
+        fact_kinds.append("execution")
+    if any(word in anchors for word in delivery_words) and (explicit or first in delivery_words):
+        fact_kinds.append("delivery")
+    return fact_kinds
+
+
+def _requested_fact_kinds(user_text: object) -> list[str]:
+    text = str(user_text or "")
+    kinds = _chinese_requested_fact_kinds(text)
+    for kind in _english_requested_fact_kinds(text):
+        if kind not in kinds:
+            kinds.append(kind)
+    return kinds
 
 
 def runtime_execution_floor(user_text: object) -> str:
     """Conservative pre-LLM execution floor.
 
-    It answers only whether a real action is definitely required, definitely
-    forbidden, or unclear. It never chooses a tool.
+    ACT_REQUIRED means a real external/tool action is unambiguously required.
+    UNKNOWN intentionally preserves the existing V3/LLM decision path.
     """
     text = str(user_text or "").strip()
     if not text:
         return ACT_UNKNOWN
     if _response_only(text) or is_execution_discussion_only(text):
         return ACT_FORBIDDEN
-    if _high_confidence_action_request(text):
+    if _requested_fact_kinds(text):
         return ACT_REQUIRED
     return ACT_UNKNOWN
-
-
-def _requested_fact_kinds(user_text: object) -> list[str]:
-    compact = _compact(user_text)
-    kinds: list[str] = []
-    groups = (
-        ("observation", _OBSERVE_VERBS),
-        ("effect", _EFFECT_VERBS),
-        ("execution", _EXECUTE_VERBS),
-        ("delivery", _DELIVER_VERBS),
-    )
-    for kind, verbs in groups:
-        if any(_verb_occurs_affirmatively(compact, verb) for verb in verbs):
-            kinds.append(kind)
-    return kinds or ["action"]
 
 
 def _requested_object_kind(user_text: object, fact_kind: str) -> str:
@@ -284,10 +393,11 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
 
 
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
-    """Build factual obligations from the Runtime floor, never a tool plan.
+    """Build factual obligations, never a concrete tool plan.
 
-    The LLM's actual tool call/result is its execution submission. Runtime does
-    not trust a self-declared ``mode=work`` to prove execution.
+    The Runtime floor is the anti-escape fallback. The LLM's actual tool call
+    and ToolResult are its execution submission; a self-declared "work" mode is
+    never accepted as proof that anything happened.
     """
     text = str(user_text or "").strip()
     if runtime_execution_floor(text) != ACT_REQUIRED:
@@ -352,6 +462,7 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
     action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if not action or action in _PREPARATION_ACTIONS:
         return set()
+
     facts: set[str] = {"action"}
     contract = _contract(payload)
     evidence = contract.get("write_evidence") if isinstance(contract.get("write_evidence"), dict) else None
@@ -361,6 +472,7 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
     ):
         facts.add("effect")
+
     action_tokens = set(part for part in re.split(r"[._-]+", action) if part)
     if action in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or action_tokens.intersection(
         {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan"}
