@@ -1,0 +1,43 @@
+name: Validate Tiangong Mobile Link
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/android-mobile-body-v1
+    paths:
+      - 'src/total_gateway/mobile_*.py'
+      - 'src/total_gateway/action_registry.py'
+      - 'tests/test_mobile_body_link.py'
+      - '.github/workflows/mobile-link-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test runner
+        run: python -m pip install --disable-pip-version-check pytest
+
+      - name: Compile mobile gateway modules
+        run: |
+          python -m py_compile \
+            src/total_gateway/action_registry.py \
+            src/total_gateway/mobile_capabilities.py \
+            src/total_gateway/mobile_link.py \
+            src/total_gateway/mobile_omni_bridge.py \
+            src/total_gateway/mobile_launcher.py
+
+      - name: Run mobile native-registry tests
+        env:
+          PYTHONPATH: src/total_gateway
+        run: python -m pytest -q tests/test_mobile_body_link.py
