@@ -22,13 +22,16 @@ ACT_FORBIDDEN = "ACT_FORBIDDEN"
 ACT_UNKNOWN = "UNKNOWN"
 
 _RESPONSE_ONLY_MARKERS = (
-    "不要使用工具", "不要调用工具", "不要执行", "无需执行", "先别执行", "先不要执行",
-    "先别读", "先不要读", "不要读", "别读", "只告诉我", "只解释", "只分析", "只讨论",
-    "先分析", "先讨论", "暂时不要动", "先别动",
+    "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
+    "只告诉我", "只解释", "只分析", "只讨论", "先分析", "先讨论",
+)
+_GLOBAL_NO_ACTION_PATTERNS = (
+    r"^(?:先|暂时)?(?:不要|别|不用|无需)(?:执行|操作|动|处理|修改|改|运行|调用工具|使用工具)(?:任何)?(?:操作|动作|工具)?$",
+    r"^(?:先|暂时)?(?:不要|别)(?:做|干|动)(?:任何)?(?:东西|事情|操作)?$",
 )
 _REQUEST_CUES = (
     "请", "帮我", "帮忙", "给我", "替我", "直接", "一下", "现在", "马上", "立刻",
-    "开始", "把", "将", "不就行了",
+    "开始", "先", "只", "再", "接着", "那就", "那么就", "把", "将", "不就行了",
 )
 _AMBIGUOUS_TARGETS = (
     "那个目录", "某个目录", "一个目录", "那个文件夹", "某个文件夹",
@@ -85,9 +88,6 @@ _NEGATION_PREFIXES = (
     "别再", "不要再", "不是让你", "不是叫你",
 )
 
-_LOCAL_WRITE_TOKENS = frozenset({
-    "write", "append", "create", "delete", "remove", "copy", "move", "rename", "patch",
-})
 _EXTERNAL_EFFECT_TOKENS = frozenset({
     "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "fix", "export",
 })
@@ -119,7 +119,10 @@ def has_execution_completion_claim(text: Any) -> bool:
 
 def _response_only(text: str) -> bool:
     compact = _compact(text)
-    return any(marker.replace(" ", "").lower() in compact for marker in _RESPONSE_ONLY_MARKERS)
+    if any(marker.replace(" ", "").lower() in compact for marker in _RESPONSE_ONLY_MARKERS):
+        return True
+    normalized = _intent_compact(text)
+    return any(re.fullmatch(pattern, normalized) for pattern in _GLOBAL_NO_ACTION_PATTERNS)
 
 
 def _meta_or_hypothetical(text: str) -> bool:
@@ -217,8 +220,11 @@ def is_execution_discussion_only(user_text: object) -> bool:
 
 def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     for match in re.finditer(re.escape(verb), compact):
-        left = compact[max(0, match.start() - 8):match.start()]
+        left = compact[max(0, match.start() - 14):match.start()]
+        clause_left = re.split(r"[，。；：,.;:！!？?]", left)[-1]
         if any(left.endswith(prefix) for prefix in _NEGATION_PREFIXES):
+            continue
+        if any(re.search(re.escape(prefix) + r"[^，。；：,.;:！!？?]{0,8}$", clause_left) for prefix in _NEGATION_PREFIXES):
             continue
         return True
     return False
@@ -243,6 +249,8 @@ def _high_confidence_action_request(user_text: object) -> bool:
     if matched_cn:
         if any(cue in compact for cue in _REQUEST_CUES):
             return True
+        # Imperative forms such as "查看工作区" / "运行测试" do not need a
+        # politeness cue. Keep this narrow: the action verb must lead the text.
         lead = compact.lstrip("，。；：,.;:！!？?")
         if any(lead.startswith(verb) for verb in matched_cn):
             return True
@@ -253,11 +261,17 @@ def _high_confidence_action_request(user_text: object) -> bool:
         return False
     if _ENGLISH_REQUEST_RE.search(english):
         return True
+    # Bare English imperative: "read the file", "run tests".
     return bool(action_match.start() == 0)
 
 
 def runtime_execution_floor(user_text: object) -> str:
-    """Conservative pre-LLM execution floor."""
+    """Conservative pre-LLM execution floor.
+
+    The floor answers only whether a real action is definitely required,
+    definitely forbidden, or unclear. It never chooses a tool or decides how
+    the task should be performed.
+    """
     text = str(user_text or "").strip()
     if not text:
         return ACT_UNKNOWN
@@ -296,8 +310,10 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     """Build factual obligations from the Runtime floor, not a tool plan.
 
-    The LLM's actual tool call/result is treated as its execution submission;
-    Runtime never trusts a self-declared ``mode=work`` to prove execution.
+    The pre-LLM obligation states only that the user has an actionable request.
+    The LLM's *actual tool call* is treated as its execution submission. A
+    successful matching ToolResult then satisfies the obligation. This is
+    deliberately harder to game than a self-reported ``mode=work`` field.
     """
     text = str(user_text or "").strip()
     if runtime_execution_floor(text) != ACT_REQUIRED:
@@ -383,8 +399,8 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         facts.add("observation")
     if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
-    if action_tokens.intersection(_LOCAL_WRITE_TOKENS) and "effect" not in facts:
-        pass
+    # Local filesystem/code mutations are factual only when the existing
+    # ToolResult contract supplied authoritative write evidence above.
     if action_tokens.intersection({"run", "execute", "test", "verify", "start", "compile", "build"}):
         facts.add("execution")
     if action_tokens.intersection({"send", "upload", "submit", "deliver", "export"}):
