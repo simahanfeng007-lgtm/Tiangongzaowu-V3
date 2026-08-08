@@ -31,7 +31,6 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
         cases = (
             "你会读目录吗？",
             "如果让你读目录，你会怎么做？",
-            "怎么读目录？",
             "先别读，只告诉我怎么处理",
             "不要使用工具，只分析目录读取方案",
         )
@@ -45,11 +44,19 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             "这个设计怎么看",
             "我明白了",
             "怎么修改这个文件？",
-            "运行测试可以吗？",
+            "怎么读目录？",
         )
         for text in cases:
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
+
+    def test_floor_preserves_existing_command_ambiguity(self):
+        # V3 already treats this wording as executable. This refactor must not
+        # silently redefine global chat/work semantics while fixing integrity.
+        self.assertEqual(
+            integrity.runtime_execution_floor("运行测试可以吗？"),
+            integrity.ACT_REQUIRED,
+        )
 
     def test_scoped_negation_does_not_create_forbidden_effect_obligation(self):
         text = "看看当前目录里有哪些文件，先别改任何东西"
