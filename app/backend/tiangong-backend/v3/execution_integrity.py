@@ -47,16 +47,17 @@ _OBSERVE_VERBS = (
 _EFFECT_VERBS = (
     "修改", "改一下", "改下", "改", "写入", "写", "创建", "生成", "删除", "移除", "复制",
     "移动", "重命名", "保存", "下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压",
+    "修复", "导出",
 )
 _EXECUTE_VERBS = (
     "运行", "跑一下", "跑", "执行", "测试", "验证", "启动", "编译", "构建",
 )
 _DELIVER_VERBS = (
-    "发送", "发给我", "发我", "传给我", "上传", "提交", "交付", "导出",
+    "发送", "发给我", "发我", "传给我", "上传", "提交", "交付",
 )
 
 _ENGLISH_ACTION_RE = re.compile(
-    r"\b(read|list|inspect|check|scan|browse|open|search|query|find|modify|edit|write|create|generate|"
+    r"\b(read|list|inspect|check|scan|browse|open|search|query|find|modify|edit|fix|write|create|generate|"
     r"delete|remove|copy|move|rename|save|download|clone|pull|install|deploy|package|compress|extract|"
     r"run|execute|test|verify|start|compile|build|send|upload|submit|deliver|export)\b",
     re.IGNORECASE,
@@ -73,10 +74,27 @@ _COMPLETION_CLAIM_RE = re.compile(
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
 
+# Internal preparation can happen before the requested action. It must never
+# by itself discharge the user's execution floor.
 _PREPARATION_ACTIONS = frozenset({
     "skill.route", "skill.get", "skill.read",
 })
 
+_NEGATION_PREFIXES = (
+    "不要", "别", "先别", "先不要", "不用", "无需", "禁止", "暂不", "暂时不要",
+    "别再", "不要再", "不是让你", "不是叫你",
+)
+
+_LOCAL_WRITE_TOKENS = frozenset({
+    "write", "append", "create", "delete", "remove", "copy", "move", "rename", "patch",
+})
+_EXTERNAL_EFFECT_TOKENS = frozenset({
+    "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "fix", "export",
+})
+
+# Observation retains the existing strict read-only evidence map where the
+# user supplied a high-confidence local object. This prevents an unrelated
+# successful action from being used to claim that a file/directory was read.
 _OBSERVATION_ACTIONS = {
     "directory": frozenset({"file.list"}),
     "file": frozenset({"file.read", "code.read", "sheet.read", "pdf.extract_text"}),
@@ -111,8 +129,17 @@ def _meta_or_hypothetical(text: str) -> bool:
     if compact.startswith(("如果", "假如", "假设", "要是")) and any(word in compact for word in ("怎么", "如何", "会怎样", "会怎么")):
         return True
     request_cued = any(cue in compact for cue in _REQUEST_CUES)
-    if not request_cued and any(word in compact for word in ("怎么读", "如何读", "怎么查看", "如何查看", "为什么", "原理", "是什么意思")):
+    intent = _intent_compact(text)
+    if not request_cued and any(word in intent for word in ("怎么读", "如何读", "怎么查看", "如何查看", "为什么", "原理", "是什么意思")):
         return True
+    if not request_cued and (
+        intent.startswith(("怎么", "如何", "为什么"))
+        or intent.endswith(("是什么", "怎么样", "可以吗", "行吗", "好吗", "吗", "么"))
+    ):
+        return True
+    if any(mark in compact for mark in ("解释怎么", "解释如何", "说明怎么", "说明如何", "告诉我怎么", "告诉我如何")):
+        if not any(joiner in compact for joiner in ("然后", "然后再", "再帮我", "并且", "同时", "接着")):
+            return True
     if not request_cued and re.search(r"(?:你会|会不会|你能|是否|能否).*(?:吗|么|\?|？)$", compact):
         return True
     return False
@@ -137,11 +164,13 @@ def _is_hypothetical_action_discussion(user_text: object) -> bool:
     compact = _intent_compact(text)
     if not compact:
         return False
+
     if re.search(
         r"(?:那么就|那就|就)(?:帮我)?(?:读|读取|看|查看|列|修改|改|修复|删除|运行|执行|下载|创建|生成|写|搜索|查)",
         compact,
     ):
         return False
+
     chinese_conditions = ("如果", "假如", "假设", "要是", "倘若", "若是")
     chinese_planning = (
         "你会怎么做", "你会如何做", "你会怎么处理", "你会如何处理",
@@ -151,6 +180,7 @@ def _is_hypothetical_action_discussion(user_text: object) -> bool:
     )
     if any(marker in compact for marker in chinese_conditions) and any(marker in compact for marker in chinese_planning):
         return True
+
     english = re.sub(r"\s+", " ", text.strip().lower())
     english_condition = any(marker in english for marker in ("if ", "suppose ", "assuming ", "were to "))
     english_planning = any(
@@ -181,7 +211,22 @@ def is_execution_discussion_only(user_text: object) -> bool:
         _is_high_confidence_capability_question(user_text)
         or _is_hypothetical_action_discussion(user_text)
         or _is_deferred_action_explanation(user_text)
+        or _meta_or_hypothetical(str(user_text or ""))
     )
+
+
+def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
+    for match in re.finditer(re.escape(verb), compact):
+        left = compact[max(0, match.start() - 8):match.start()]
+        if any(left.endswith(prefix) for prefix in _NEGATION_PREFIXES):
+            continue
+        return True
+    return False
+
+
+def _english_action_is_negated(text: str, action_start: int) -> bool:
+    left = text[max(0, action_start - 24):action_start].lower()
+    return bool(re.search(r"(?:do\s+not|don't|dont|never|without)\s+$", left))
 
 
 def _all_action_verbs() -> tuple[str, ...]:
@@ -193,16 +238,18 @@ def _high_confidence_action_request(user_text: object) -> bool:
     compact = _compact(text)
     if not compact or _response_only(text) or is_execution_discussion_only(text) or _meta_or_hypothetical(text):
         return False
-    matched_cn = [verb for verb in _all_action_verbs() if verb in compact]
+
+    matched_cn = [verb for verb in _all_action_verbs() if _verb_occurs_affirmatively(compact, verb)]
     if matched_cn:
         if any(cue in compact for cue in _REQUEST_CUES):
             return True
         lead = compact.lstrip("，。；：,.;:！!？?")
         if any(lead.startswith(verb) for verb in matched_cn):
             return True
+
     english = re.sub(r"\s+", " ", text.strip().lower())
     action_match = _ENGLISH_ACTION_RE.search(english)
-    if not action_match:
+    if not action_match or _english_action_is_negated(english, action_match.start()):
         return False
     if _ENGLISH_REQUEST_RE.search(english):
         return True
@@ -231,7 +278,7 @@ def _requested_fact_kinds(user_text: object) -> list[str]:
         ("delivery", _DELIVER_VERBS),
     )
     for kind, verbs in groups:
-        if any(verb in compact for verb in verbs):
+        if any(_verb_occurs_affirmatively(compact, verb) for verb in verbs):
             kinds.append(kind)
     return kinds or ["action"]
 
@@ -255,10 +302,12 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     text = str(user_text or "").strip()
     if runtime_execution_floor(text) != ACT_REQUIRED:
         return []
+
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
     path_match = _LOCAL_PATH_RE.search(text)
     explicit_target = path_match.group(0).strip() if path_match else ""
+
     obligations: list[dict[str, Any]] = []
     for index, fact_kind in enumerate(_requested_fact_kinds(text), start=1):
         object_kind = _requested_object_kind(text, fact_kind)
@@ -315,8 +364,10 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
     action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if not action or action in _PREPARATION_ACTIONS:
         return set()
+
     facts: set[str] = {"action"}
     contract = _contract(payload)
+
     evidence = contract.get("write_evidence") if isinstance(contract.get("write_evidence"), dict) else None
     if bool(contract.get("observed_write_effect")) or (
         isinstance(evidence, dict)
@@ -324,15 +375,16 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
     ):
         facts.add("effect")
+
     action_tokens = set(part for part in re.split(r"[._-]+", action) if part)
     if action in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or action_tokens.intersection(
         {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan"}
     ):
         facts.add("observation")
-    if action_tokens.intersection(
-        {"write", "append", "create", "delete", "remove", "copy", "move", "rename", "save", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "patch"}
-    ):
+    if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
+    if action_tokens.intersection(_LOCAL_WRITE_TOKENS) and "effect" not in facts:
+        pass
     if action_tokens.intersection({"run", "execute", "test", "verify", "start", "compile", "build"}):
         facts.add("execution")
     if action_tokens.intersection({"send", "upload", "submit", "deliver", "export"}):
@@ -397,15 +449,22 @@ def execution_integrity_blockers(
 
 
 def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict[str, Any] | None) -> None:
-    """Reconcile Runtime floor with the LLM's real execution submission."""
+    """Reconcile Runtime floor with the LLM's real execution submission.
+
+    The LLM submission is the actual tool call/result, not a self-declared
+    intent flag. This avoids the circular failure mode where a model that does
+    not want to act simply reports ``mode=chat``.
+    """
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
     obligations = run_state.get("obligations")
     if not isinstance(obligations, list):
         return
+
     action = str(payload.get("tool_action") or payload.get("action") or "").strip()
     target = _payload_target(payload)
     fact_kinds = sorted(_payload_fact_kinds(payload))
+
     for obligation in obligations:
         if not isinstance(obligation, dict) or obligation.get("status") == "satisfied":
             continue
