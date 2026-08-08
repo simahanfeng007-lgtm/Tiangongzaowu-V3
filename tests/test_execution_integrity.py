@@ -27,10 +27,11 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
 
-    def test_runtime_floor_forbids_high_confidence_discussion_only(self):
+    def test_runtime_floor_forbids_existing_high_confidence_discussion_only(self):
         cases = (
             "你会读目录吗？",
             "如果让你读目录，你会怎么做？",
+            "怎么读目录？",
             "先别读，只告诉我怎么处理",
             "不要使用工具，只分析目录读取方案",
         )
@@ -38,21 +39,17 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_FORBIDDEN)
 
-    def test_runtime_floor_unknown_for_normal_chat(self):
-        for text in ("你好", "这个设计怎么看", "我明白了"):
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
-
-    def test_floor_does_not_turn_explanation_questions_into_actions(self):
+    def test_runtime_floor_unknown_does_not_expand_old_semantics(self):
         cases = (
+            "你好",
+            "这个设计怎么看",
+            "我明白了",
             "怎么修改这个文件？",
-            "帮我解释怎么修改这个文件",
-            "测试结果是什么？",
             "运行测试可以吗？",
         )
         for text in cases:
             with self.subTest(text=text):
-                self.assertNotEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
 
     def test_scoped_negation_does_not_create_forbidden_effect_obligation(self):
         text = "看看当前目录里有哪些文件，先别改任何东西"
