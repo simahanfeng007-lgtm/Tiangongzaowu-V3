@@ -40,9 +40,8 @@ _AMBIGUOUS_TARGETS = (
 _DIRECTORY_TERMS = ("目录", "文件夹", "workspace", "工作区", "当前路径")
 _FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格", "源码", "代码")
 
-# Only four factual classes are maintained. They are not task taxonomies and
-# do not prescribe a tool. Existing specialised completion checks remain in
-# zongdiaodu.py for write evidence, deliverables and verification.
+# Four factual classes only; these are not task taxonomies and do not prescribe
+# a tool. Existing specialised completion checks remain in zongdiaodu.py.
 _OBSERVE_VERBS = (
     "读取", "读一下", "读下", "读", "查看", "看一下", "看下", "看看", "列出", "列一下", "列",
     "检查", "扫描", "浏览", "打开", "搜索", "搜一下", "搜", "查询", "查一下", "查",
@@ -77,24 +76,14 @@ _COMPLETION_CLAIM_RE = re.compile(
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
 
-# Internal preparation can happen before the requested action. It must never
-# by itself discharge the user's execution floor.
-_PREPARATION_ACTIONS = frozenset({
-    "skill.route", "skill.get", "skill.read",
-})
-
+_PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
     "不要", "别", "先别", "先不要", "不用", "无需", "禁止", "暂不", "暂时不要",
     "别再", "不要再", "不是让你", "不是叫你",
 )
-
 _EXTERNAL_EFFECT_TOKENS = frozenset({
     "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "fix", "export",
 })
-
-# Observation retains the existing strict read-only evidence map where the
-# user supplied a high-confidence local object. This prevents an unrelated
-# successful action from being used to claim that a file/directory was read.
 _OBSERVATION_ACTIONS = {
     "directory": frozenset({"file.list"}),
     "file": frozenset({"file.read", "code.read", "sheet.read", "pdf.extract_text"}),
@@ -126,23 +115,20 @@ def _response_only(text: str) -> bool:
 
 
 def _meta_or_hypothetical(text: str) -> bool:
+    """Preserve the existing narrow V3 discussion boundary.
+
+    This refactor must not broaden general chat/work semantics. The Runtime
+    floor only owns high-confidence execution invariants; everything else stays
+    UNKNOWN and is left to the existing chain/LLM.
+    """
     compact = _compact(text)
     if not compact:
         return True
     if compact.startswith(("如果", "假如", "假设", "要是")) and any(word in compact for word in ("怎么", "如何", "会怎样", "会怎么")):
         return True
     request_cued = any(cue in compact for cue in _REQUEST_CUES)
-    intent = _intent_compact(text)
-    if not request_cued and any(word in intent for word in ("怎么读", "如何读", "怎么查看", "如何查看", "为什么", "原理", "是什么意思")):
+    if not request_cued and any(word in compact for word in ("怎么读", "如何读", "怎么查看", "如何查看", "为什么", "原理", "是什么意思")):
         return True
-    if not request_cued and (
-        intent.startswith(("怎么", "如何", "为什么"))
-        or intent.endswith(("是什么", "怎么样", "可以吗", "行吗", "好吗", "吗", "么"))
-    ):
-        return True
-    if any(mark in compact for mark in ("解释怎么", "解释如何", "说明怎么", "说明如何", "告诉我怎么", "告诉我如何")):
-        if not any(joiner in compact for joiner in ("然后", "然后再", "再帮我", "并且", "同时", "接着")):
-            return True
     if not request_cued and re.search(r"(?:你会|会不会|你能|是否|能否).*(?:吗|么|\?|？)$", compact):
         return True
     return False
@@ -167,13 +153,11 @@ def _is_hypothetical_action_discussion(user_text: object) -> bool:
     compact = _intent_compact(text)
     if not compact:
         return False
-
     if re.search(
         r"(?:那么就|那就|就)(?:帮我)?(?:读|读取|看|查看|列|修改|改|修复|删除|运行|执行|下载|创建|生成|写|搜索|查)",
         compact,
     ):
         return False
-
     chinese_conditions = ("如果", "假如", "假设", "要是", "倘若", "若是")
     chinese_planning = (
         "你会怎么做", "你会如何做", "你会怎么处理", "你会如何处理",
@@ -183,7 +167,6 @@ def _is_hypothetical_action_discussion(user_text: object) -> bool:
     )
     if any(marker in compact for marker in chinese_conditions) and any(marker in compact for marker in chinese_planning):
         return True
-
     english = re.sub(r"\s+", " ", text.strip().lower())
     english_condition = any(marker in english for marker in ("if ", "suppose ", "assuming ", "were to "))
     english_planning = any(
@@ -214,7 +197,6 @@ def is_execution_discussion_only(user_text: object) -> bool:
         _is_high_confidence_capability_question(user_text)
         or _is_hypothetical_action_discussion(user_text)
         or _is_deferred_action_explanation(user_text)
-        or _meta_or_hypothetical(str(user_text or ""))
     )
 
 
@@ -244,33 +226,27 @@ def _high_confidence_action_request(user_text: object) -> bool:
     compact = _compact(text)
     if not compact or _response_only(text) or is_execution_discussion_only(text) or _meta_or_hypothetical(text):
         return False
-
     matched_cn = [verb for verb in _all_action_verbs() if _verb_occurs_affirmatively(compact, verb)]
     if matched_cn:
         if any(cue in compact for cue in _REQUEST_CUES):
             return True
-        # Imperative forms such as "查看工作区" / "运行测试" do not need a
-        # politeness cue. Keep this narrow: the action verb must lead the text.
         lead = compact.lstrip("，。；：,.;:！!？?")
         if any(lead.startswith(verb) for verb in matched_cn):
             return True
-
     english = re.sub(r"\s+", " ", text.strip().lower())
     action_match = _ENGLISH_ACTION_RE.search(english)
     if not action_match or _english_action_is_negated(english, action_match.start()):
         return False
     if _ENGLISH_REQUEST_RE.search(english):
         return True
-    # Bare English imperative: "read the file", "run tests".
     return bool(action_match.start() == 0)
 
 
 def runtime_execution_floor(user_text: object) -> str:
     """Conservative pre-LLM execution floor.
 
-    The floor answers only whether a real action is definitely required,
-    definitely forbidden, or unclear. It never chooses a tool or decides how
-    the task should be performed.
+    It answers only whether a real action is definitely required, definitely
+    forbidden, or unclear. It never chooses a tool.
     """
     text = str(user_text or "").strip()
     if not text:
@@ -308,22 +284,18 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
 
 
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
-    """Build factual obligations from the Runtime floor, not a tool plan.
+    """Build factual obligations from the Runtime floor, never a tool plan.
 
-    The pre-LLM obligation states only that the user has an actionable request.
-    The LLM's *actual tool call* is treated as its execution submission. A
-    successful matching ToolResult then satisfies the obligation. This is
-    deliberately harder to game than a self-reported ``mode=work`` field.
+    The LLM's actual tool call/result is its execution submission. Runtime does
+    not trust a self-declared ``mode=work`` to prove execution.
     """
     text = str(user_text or "").strip()
     if runtime_execution_floor(text) != ACT_REQUIRED:
         return []
-
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
     path_match = _LOCAL_PATH_RE.search(text)
     explicit_target = path_match.group(0).strip() if path_match else ""
-
     obligations: list[dict[str, Any]] = []
     for index, fact_kind in enumerate(_requested_fact_kinds(text), start=1):
         object_kind = _requested_object_kind(text, fact_kind)
@@ -380,10 +352,8 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
     action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if not action or action in _PREPARATION_ACTIONS:
         return set()
-
     facts: set[str] = {"action"}
     contract = _contract(payload)
-
     evidence = contract.get("write_evidence") if isinstance(contract.get("write_evidence"), dict) else None
     if bool(contract.get("observed_write_effect")) or (
         isinstance(evidence, dict)
@@ -391,7 +361,6 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
     ):
         facts.add("effect")
-
     action_tokens = set(part for part in re.split(r"[._-]+", action) if part)
     if action in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or action_tokens.intersection(
         {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan"}
@@ -399,8 +368,8 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         facts.add("observation")
     if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
-    # Local filesystem/code mutations are factual only when the existing
-    # ToolResult contract supplied authoritative write evidence above.
+    # Local file/code mutations are factual only when the existing ToolResult
+    # contract supplied authoritative write evidence above.
     if action_tokens.intersection({"run", "execute", "test", "verify", "start", "compile", "build"}):
         facts.add("execution")
     if action_tokens.intersection({"send", "upload", "submit", "deliver", "export"}):
@@ -465,22 +434,15 @@ def execution_integrity_blockers(
 
 
 def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict[str, Any] | None) -> None:
-    """Reconcile Runtime floor with the LLM's real execution submission.
-
-    The LLM submission is the actual tool call/result, not a self-declared
-    intent flag. This avoids the circular failure mode where a model that does
-    not want to act simply reports ``mode=chat``.
-    """
+    """Reconcile the Runtime floor with the LLM's real tool submission."""
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
     obligations = run_state.get("obligations")
     if not isinstance(obligations, list):
         return
-
     action = str(payload.get("tool_action") or payload.get("action") or "").strip()
     target = _payload_target(payload)
     fact_kinds = sorted(_payload_fact_kinds(payload))
-
     for obligation in obligations:
         if not isinstance(obligation, dict) or obligation.get("status") == "satisfied":
             continue
