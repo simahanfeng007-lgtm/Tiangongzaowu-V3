@@ -74,6 +74,14 @@ from .tool_result_contract import (
     tool_result_write_effect,
 )
 
+from .execution_integrity import (
+    build_action_obligations,
+    execution_integrity_blockers,
+    is_execution_discussion_only,
+    requires_evidence_safe_closeout,
+    update_run_state_obligations,
+)
+
 _ACTION_REGISTRY_DIR = Path(__file__).resolve().parents[1] / "omni_body_skill" / "registry"
 _SKILL_INDEX_PATH = _ACTION_REGISTRY_DIR / "skill_router_index.json"
 _ACTION_REGISTRY_PATHS = tuple(
@@ -487,6 +495,9 @@ def _runtime_detects_work_intent(user_text: str) -> bool:
         return False
     if _is_capability_or_meta_question(text):
         return False
+    # High-confidence read/list requests are work even when no mutation/deliverable exists.
+    if build_action_obligations(text):
+        return True
     if _requires_real_mutation(text) or _has_delivery_intent(text) or _simple_chain_expected_suffixes(text):
         return True
     markers = (
@@ -661,6 +672,7 @@ def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any =
         "skill_loaded": False,
         "loaded_skill_ids": [],
         "completed_actions": [],
+        "obligations": [],
         "delivery": {"phase": "skill_loading", "active_failures": [], "active_gaps": []},
         "tool_calls": [],
         "observations": [],
@@ -714,6 +726,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "skill_loaded": run_state.get("skill_loaded"),
         "loaded_skill_ids": list(run_state.get("loaded_skill_ids") or [])[:8],
         "completed_actions": list(run_state.get("completed_actions") or [])[-24:],
+        "obligations": [item for item in (run_state.get("obligations") or []) if isinstance(item, dict)][-12:],
         "delivery": run_state.get("delivery") if isinstance(run_state.get("delivery"), dict) else {},
         "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
         "failures": list(run_state.get("failures") or [])[-8:],
@@ -958,6 +971,7 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
         "completion_ok": completion_ok,
     })
     run_state.setdefault("observations", []).append(_run_state_safe_value(payload, limit=5000))
+    update_run_state_obligations(run_state, payload)
     if action not in {"skill.route", "skill.get", "skill.read"}:
         for item in payload.get("generated_attachments") or []:
             if isinstance(item, dict) and item not in run_state.setdefault("generated_attachments", []):
@@ -3902,6 +3916,7 @@ def _simple_chain_progress_blocking_reasons(
     if not _runtime_detects_work_intent(user_message):
         return []
     reasons: list[str] = []
+    reasons.extend(execution_integrity_blockers(user_message, quality_history, final_reply=None))
     completed_actions = {
         str(payload.get("tool_action") or "").strip().lower()
         for payload in (quality_history or [])
@@ -5533,6 +5548,16 @@ def _simple_chain_final_hard_gate(
     reasons: list[str] = []
     if not _runtime_detects_work_intent(user_message):
         return (not reasons, "incomplete" if reasons else "complete", reasons)
+    integrity_reasons = execution_integrity_blockers(
+        user_message, quality_history, final_reply=final_reply
+    )
+    if integrity_reasons:
+        reasons.extend(reason for reason in integrity_reasons if reason not in reasons)
+        # An actionable explicit observation request cannot terminate as prose-only.
+        # The existing continue-decision loop will return control to the same LLM;
+        # Runtime still does not choose or execute a tool.
+        if not quality_history:
+            return False, "incomplete", reasons
     if not quality_history:
         # 草案 §4.3：模型未调用任何工具、直接反问澄清时，这是 NEEDS_CLARIFICATION
         # 终态，不是"零观察值"的任务失败；run 以 awaiting_user 泊车，回复保留原问题。
@@ -5725,6 +5750,8 @@ def _simple_chain_skill_lifecycle_payload(
 
 
 _INCOMPLETE_REASON_RENHUA = (
+    ("execution_obligation:", "还没有获得用户明确要求动作对应的真实工具执行证据"),
+    ("execution_claim_without_evidence", "模型给出了完成性描述，但没有对应的真实工具执行证据"),
     ("confirm_required", "有操作需要你在确认卡片里允许后才能继续"),
     ("path_outside_workspace", "目标位置在当前工作区之外，需要你明确允许"),
     ("path_not_found", "要处理的文件或目录没有找到"),
@@ -7329,7 +7356,10 @@ class Zongdiaodu:
         on_event: Callable[[dict], None] | None = None,
     ) -> str:
         request_id = getattr(run_control, "request_id", "") if run_control else zhuizong_id
-        response_only_without_tools = _simple_chain_is_response_only_without_tools(xiaoxi)
+        response_only_without_tools = (
+            _simple_chain_is_response_only_without_tools(xiaoxi)
+            or is_execution_discussion_only(xiaoxi)
+        )
         # 流式回调：将 on_text_chunk 桥接到 on_event，同时过滤 biaoxian/思考标签
         _on_text_chunk = None
         if on_event:
@@ -7400,6 +7430,7 @@ class Zongdiaodu:
             })
         except Exception:
             pass
+        run_state["obligations"] = build_action_obligations(xiaoxi)
         requested_actions = [
             action
             for action in _simple_chain_explicit_action_sequence(xiaoxi)
@@ -7645,6 +7676,14 @@ class Zongdiaodu:
                 fallback = _simple_chain_force_stopped_reply(clean_reasons, gongju_cishu, status=status)
             else:
                 fallback = _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status=status)
+            # Execution-integrity failures are factual terminal states.
+            # Never ask a no-tool LLM to "polish" them: a weak or drifting model
+            # can fabricate a different completion sentence even though no
+            # observation exists.  Fail closed with the deterministic Runtime
+            # template after bounded replanning has already been exhausted.
+            if requires_evidence_safe_closeout(clean_reasons):
+                _simple_chain_closeout_record(run_state, status, clean_reasons, "template_evidence_safe")
+                return shenti, fallback
             pre_closeout_reply = str(huifu or "").strip()
             # 强制停止场景剩余墙钟可能极少：余量不足时不再调模型，
             # 直接回退模板，避免收尾调用拖过网关 watchdog。
@@ -8681,6 +8720,8 @@ class Zongdiaodu:
                                 ("written content" in reason and "required" in reason)
                                 or reason.startswith("no successful write action")
                                 or reason.startswith("explicitly named deliverables are missing")
+                                or reason.startswith("execution_obligation:")
+                                or reason.startswith("execution_claim_without_evidence")
                                 for reason in final_reasons_now
                             )
                             if fixable_at_budget:

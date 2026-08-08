@@ -299,6 +299,8 @@ _XUJIE_DONGZUO_DUANWEN_CI = (
     "查收",
 )
 
+_EXECUTION_DEVIATION_SIGNALS = {"?", "？", "??", "？？", "???", "？？？", "????", "？？？？"}
+
 _YONGHU_JIUPIAN_CI = (
     "不对",
     "不是",
@@ -360,6 +362,11 @@ _XIN_RENWU_QIDONG = (
     "搜一下",
     "看一下",
     "看下",
+    "读一下",
+    "读取",
+    "列一下",
+    "列出",
+    "查看",
     "打开",
     "创建",
     "删除",
@@ -517,11 +524,14 @@ def _history_assistant_content(raw_content: str) -> str:
     media_paths = _extract_media_history_paths(raw_content)
     clean = _strip_media_history_lines(raw_content)
     mentioned_paths = [path for path in _extract_local_paths(clean) if path not in media_paths]
-    status = "completed" if media_paths or re.search(r"(已完成|已办好|已写好|已生成|已发送|已附上|办妥|完成)", clean) else "reply"
+    completion_claim = bool(re.search(r"(已经完成|已完成|已办好|已写好|已生成|已发送|已附上|办妥|完成了|搞定了|读完了|读取完毕|查看完毕|检查完毕|执行完毕|下载完成|处理完成)", clean))
+    status = "completed" if media_paths else ("assistant_claim_unverified" if completion_claim else "reply")
     lines: list[str] = []
     if clean:
         lines.append("聊天回复: " + _short_text(" ".join(clean.split()), 900))
     result_lines = [f"- task_status={status}"]
+    if status == "assistant_claim_unverified":
+        result_lines.append("- completion_evidence=missing")
     for path in media_paths[:5]:
         result_lines.append(f"- delivered_file={path}")
     for path in mentioned_paths[:5]:
@@ -915,6 +925,8 @@ def _is_short_followup(xiaoxi: str) -> bool:
     if not text:
         return False
     compact = re.sub(r"\s+", "", text)
+    if compact in _EXECUTION_DEVIATION_SIGNALS:
+        return True
     if _looks_like_new_task_request(text):
         return False
     has_explicit_path = bool(re.search(r"(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/]|/[A-Za-z0-9_\-.]+)", text))
@@ -1168,6 +1180,13 @@ def xujie_duihua(xiaoxi: str, conversation_context: Optional[Mapping[str, Any]])
         + f"{evidence_lines}"
         + f"{correction_block}"
     )
+    if compact in _EXECUTION_DEVIATION_SIGNALS:
+        prompt_block += (
+            "\n[执行偏差信号]\n"
+            "当前极短问号可能是在质疑上一轮未履行的明确动作。仅当上一轮确有执行请求时，"
+            "优先核对真实工具证据和未完成动作；没有证据不得声称已经执行。"
+            "这只是校验提示，不代表必须调用工具，也不得覆盖用户当前明确的停止/只讨论要求。"
+        )
     effective_xiaoxi = f"{resolved_query}\n\n{prompt_block}"
     return {
         "followup_resolved": True,
