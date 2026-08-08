@@ -6316,6 +6316,11 @@ def _simple_chain_platform_run_verification(
     # 项目内脚本常引用项目根下的数据文件（如 tools/summarize.py 读 args.txt），
     # 有项目目录时以项目根为 cwd；无项目目录时才退化为脚本所在目录。
     run_cwd = str(Path(root) / project_dir) if project_dir else str(Path(script_path).parent)
+    run_env = os.environ.copy()
+    # Windows 的重定向管道默认可能使用系统代码页；固定子 Python 为 UTF-8，
+    # 使 capture_output 的解码契约与 encoding="utf-8" 一致。
+    run_env["PYTHONUTF8"] = "1"
+    run_env["PYTHONIOENCODING"] = "utf-8"
     try:
         result = subprocess.run(
             [sys.executable, script_rel, arg_rel] if arg_rel else [sys.executable, script_rel],
@@ -6324,6 +6329,7 @@ def _simple_chain_platform_run_verification(
             text=True,
             encoding="utf-8",
             timeout=30,
+            env=run_env,
         )
     except Exception as exc:
         return False
@@ -6425,56 +6431,12 @@ def _simple_chain_platform_run_tests_verification(
     if not (cwd / "tests").is_dir():
         return False
     test_target = str(match.group(1) or "tests").strip()
-    # 自带运行时是 -I 隔离模式（忽略 PYTHONPATH），src 布局项目的子进程
-    # 无法 import 包；先做一次无依赖的可编辑安装，等价于开发者本地环境。
-    has_packaging_meta = any(
-        (cwd / name).is_file()
-        for name in ("pyproject.toml", "setup.py", "setup.cfg")
-    )
-    if (cwd / "src").is_dir():
-        if not has_packaging_meta:
-            # src 布局但缺打包元数据（如任务只要求 -m pkg.cli 可运行）：
-            # 生成最小 pyproject.toml，让可编辑安装与子进程 import 可用。
-            try:
-                package_dirs = [
-                    item.name
-                    for item in (cwd / "src").iterdir()
-                    if item.is_dir() and not item.name.startswith((".", "_"))
-                ]
-                package_name = package_dirs[0] if package_dirs else "platform_pkg"
-                minimal_pyproject = (
-                    "[build-system]\n"
-                    'requires = ["setuptools>=61.0"]\n'
-                    'build-backend = "setuptools.build_meta"\n\n'
-                    "[project]\n"
-                    f'name = "{package_name}"\n'
-                    'version = "0.1.0"\n\n'
-                    "[tool.setuptools.packages.find]\n"
-                    'where = ["src"]\n'
-                )
-                (cwd / "pyproject.toml").write_text(minimal_pyproject, encoding="utf-8")
-            except Exception:
-                return False
-        try:
-            install_result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=120,
-            )
-        except Exception:
-            return False
-        if install_result.returncode != 0:
-            return False
     command = [sys.executable, "-m", "pytest", test_target, "-q"]
     run_env = os.environ.copy()
     src_dir = cwd / "src"
     if src_dir.is_dir():
-        # src 布局项目未安装时，pytest 收集 tests/ 会因 import textutils 失败；
-        # 用 pytest 的 pythonpath 选项把 src/ 加入导入路径（捆绑解释器可能
-        # 忽略 PYTHONPATH，-o 选项与解释器无关），等价于可编辑安装。
+        # 用 pytest 的 pythonpath 选项支持 src 布局，避免把被测项目以
+        # editable 包安装进应用自带 Python 并污染发行运行时。
         command += ["-o", "pythonpath=src"]
         run_env["PYTHONPATH"] = str(src_dir) + os.pathsep + run_env.get("PYTHONPATH", "")
     try:

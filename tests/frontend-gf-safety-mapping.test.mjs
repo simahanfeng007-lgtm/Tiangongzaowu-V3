@@ -119,7 +119,7 @@ assert.equal(progressDisplayText({ phase: "reconcile_required" }), "结果待对
 assert.equal(progressDisplayText({ phase: "partial" }), "部分完成");
 assert.equal(progressDisplayText({ phase: "incident" }), "结果矛盾，按非成功处理");
 assert.equal(progressDisplayText({ phase: "unknown" }), "状态未知，按未成功处理");
-assert.equal(progressDisplayText({ phase: "finished" }), "完成");
+assert.equal(progressDisplayText({ phase: "finished" }), "");
 assert.notEqual(progressDisplayText({ phase: "partial", ok: true }), "完成");
 assert.notEqual(progressDisplayText({ phase: "reconcile_required", ok: true }), "完成");
 

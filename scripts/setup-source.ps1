@@ -62,16 +62,8 @@ if (-not $SkipNpm) {
     if (-not $node) { $node = Get-Command node -ErrorAction SilentlyContinue }
     if (-not $node) { throw "Node.js was not found. Install Node.js 22 LTS or newer." }
     Write-Host "[3/4] Installing locked Electron dependencies"
-    & $npm.Source --prefix $AppRoot ci --ignore-scripts
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install locked Electron dependencies" }
-    # Keep the general dependency install script-free, then run the one audited
-    # native payload installer required by the desktop product.
-    $ElectronInstall = Join-Path $AppRoot "node_modules\electron\install.js"
-    if (-not (Test-Path -LiteralPath $ElectronInstall -PathType Leaf)) {
-        throw "Electron distribution installer is missing: $ElectronInstall"
-    }
-    & $node.Source $ElectronInstall
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install the Electron distribution" }
+    & $node.Source (Join-Path $PSScriptRoot "install-node-dependencies.mjs") --platform win32 --arch x64
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install locked Node/Electron dependencies" }
     $ElectronExecutable = Join-Path $AppRoot "node_modules\electron\dist\electron.exe"
     if (-not (Test-Path -LiteralPath $ElectronExecutable -PathType Leaf)) {
         throw "Electron distribution is missing after installation: $ElectronExecutable"
