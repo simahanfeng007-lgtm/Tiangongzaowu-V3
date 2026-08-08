@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { verifyAppAsarAvatarContract } from "./verify-app-asar-avatar-contract.mjs";
+import { verifyFrontendModuleClosure } from "./verify-frontend-module-closure.mjs";
 
 const scriptsRoot = dirname(fileURLToPath(import.meta.url));
 export const workspaceRoot = resolve(scriptsRoot, "..");
@@ -570,6 +571,13 @@ function verifyPackagedWindowsRelease(stageRoot, builderOutput) {
     }
   }
   const avatarAsarContract = verifyAppAsarAvatarContract(asarPath, { asar });
+  const frontendModuleClosure = verifyFrontendModuleClosure({
+    packagedFiles,
+    readText: (archivePath) => asar.extractFile(
+      asarPath,
+      join(...archivePath.replace(/^\/+/, "").split("/")),
+    ).toString("utf8"),
+  });
   const asarUnpackedRoot = join(resourcesRoot, "app.asar.unpacked");
   if (existsSync(asarUnpackedRoot) && listFiles(asarUnpackedRoot).length) {
     throw new Error("desktop archive unexpectedly produced app.asar.unpacked payload");
@@ -596,7 +604,6 @@ function verifyPackagedWindowsRelease(stageRoot, builderOutput) {
   }
   for (const forbidden of [
     "/frontend-v2/renderer/plugins/persona-panel.mjs",
-    "/frontend-v2/renderer/plugins/lifecycle-panel.mjs",
     "/frontend-v2/renderer/plugins/lifecycle-side-block.mjs",
   ]) {
     if (packagedFiles.has(forbidden)) throw new Error(`dead frontend module leaked into app.asar: ${forbidden}`);
@@ -676,6 +683,7 @@ function verifyPackagedWindowsRelease(stageRoot, builderOutput) {
     app_asar_native_files: 0,
     app_asar_unpacked_files: 0,
     app_asar_avatar_module_closure: avatarAsarContract.requiredModuleCount,
+    app_asar_frontend_module_closure: frontendModuleClosure.moduleCount,
     app_asar_forbidden_avatar_assets_absent: avatarAsarContract.forbiddenAssetCount,
     sandboxed_preload_requires: preloadRequires,
     a5_confirmation_overlays: 2,
