@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Mapping
@@ -86,6 +87,8 @@ def _side_effects(action_id: str, effect: str) -> tuple[str, ...]:
     if "delete" in folded:
         values.add("destructive")
     if re.search(r"(?:^|\.)(?:send|publish|upload)(?:\.|$)", folded):
+        values.add("external_write")
+    if folded.startswith("mobile.") and effect == "execute":
         values.add("external_write")
     return tuple(sorted(values))
 
@@ -214,6 +217,26 @@ def compile_action_registry(
     ).with_computed_sha256()
 
 
+def _mobile_overlay(manifest: dict[str, Any]) -> dict[str, Any]:
+    if os.environ.get("TIANGONG_MOBILE_LINK", "0") != "1":
+        return manifest
+    try:
+        from .mobile_capabilities import augment_capability_manifest, capability_manifest_entries
+    except ImportError:
+        from mobile_capabilities import augment_capability_manifest, capability_manifest_entries
+    overlay_hash = canonical_sha256(
+        {
+            "base_source_hash": str(manifest.get("source_hash") or ""),
+            "mobile_capabilities": capability_manifest_entries(),
+            "schema": "tiangong.mobile.capability.overlay.v1",
+        }
+    )
+    try:
+        return augment_capability_manifest(manifest, source_hash=overlay_hash)
+    except (TypeError, ValueError) as exc:
+        raise ActionRegistryError(str(exc)) from exc
+
+
 def load_action_registry(path: Path, *, generated_at_ms: int) -> ActionRegistrySnapshot:
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise ActionRegistryError("action registry path is missing or unsafe")
@@ -232,10 +255,8 @@ def load_action_registry(path: Path, *, generated_at_ms: int) -> ActionRegistryS
         raise ActionRegistryError("action registry JSON is invalid") from exc
     if not isinstance(manifest, dict):
         raise ActionRegistryError("action registry root must be an object")
-    # Reject alternate byte encodings of the same object.  The checked-in
-    # manifest is pretty-printed, so canonical bytes are used only as a stable
-    # semantic round trip rather than a byte equality requirement.
     canonical_json_bytes(manifest)
+    manifest = _mobile_overlay(manifest)
     return compile_action_registry(manifest, generated_at_ms=generated_at_ms)
 
 
