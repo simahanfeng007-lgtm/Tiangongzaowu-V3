@@ -1,8 +1,8 @@
 {
-  "file_count": 147,
+  "file_count": 148,
   "mapping_id": "omni-body-runtime",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "readable-python-source/omni_body_skill",
-  "tree_sha256": "352d4481925a16fcc2325e9e3b570bfa2b428ea046aeb32249b3754758cdc642",
+  "tree_sha256": "e4b2d8019b74aabc02ed18062d31d037c21eb87ef5f3a48fa4eee6adfc490247",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

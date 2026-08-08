@@ -178,6 +178,15 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "target": "workspace-relative .js/.mjs/.cjs file or directory (required)",
         "args": {"recursive": "optional boolean"},
     },
+    "git.clone": {
+        "target": "public https://github.com/<owner>/<repo>[.git] repository URL (required; no credentials/query/fragment)",
+        "args": {
+            "destination": "new workspace-relative or granted local directory path (required; must not already exist)",
+            "timeout": "optional integer seconds from 10 to 600; default 300",
+        },
+        "required": ["args.destination"],
+        "note": "Typed network-read capability. Public GitHub HTTPS only; no arbitrary git flags, credentials, submodule recursion, LFS smudge, or shell network access.",
+    },
     "shell.run": {
         "target": "empty; execution cwd is the backend-owned workspace",
         "args": {"command": "string or argv array (required)", "timeout": "optional positive integer"},

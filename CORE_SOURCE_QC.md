@@ -1,7 +1,7 @@
 # CORE SOURCE QC
 
 - schema: tiangong.core-source-archive.v1
-- source_file_count: 1047
+- source_file_count: 1049
 - compiled_only_core_files: 0
 - frozen_bytecode_files_checked: 13
 - dependencies_included: False

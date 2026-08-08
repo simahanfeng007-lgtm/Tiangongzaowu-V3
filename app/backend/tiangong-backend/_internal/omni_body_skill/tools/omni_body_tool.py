@@ -325,6 +325,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
     "quality.run_tests": {"risk": "A4", "implemented": True, "summary": "Run a test command inside workspace; requires allow_shell=True."},
     "python.run": {"risk": "A4", "implemented": True, "summary": "Run Python code or a Python script in workspace; requires allow_python=True."},
     "shell.run": {"risk": "A4", "implemented": True, "summary": "Run shell command in workspace; requires allow_shell=True."},
+    "git.clone": {"risk": "A2", "implemented": True, "effect": "create", "summary": "Clone a public GitHub HTTPS repository into a new local directory through a governed network-read capability; generic shell/python remain network-denied."},
 
     "docx.create": {"risk": "A2", "implemented": True, "summary": "Create a Word .docx document from structured sections/tables."},
     "word.create": {"risk": "A2", "implemented": True, "summary": "Alias for docx.create — create a Word document."},
@@ -2278,6 +2279,33 @@ class BodyRuntime:
             except FileNotFoundError:
                 pass
 
+    def _action_git_clone(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
+        """Governed GitHub network-read clone; never delegates to shell.run."""
+        repo_url = str(target or args.get("url") or "").strip()
+        destination = str(args.get("destination") or "").strip()
+        if not repo_url:
+            raise OmniBodyError("git.clone requires a GitHub HTTPS repository URL as target")
+        if not destination:
+            raise OmniBodyError("git.clone requires args.destination")
+        output = self._resolve(destination, must_exist=False)
+        if output.exists():
+            raise OmniBodyError("git.clone destination must be a new directory")
+        try:
+            from .network_capabilities import NetworkCapabilityError, clone_public_github_repo
+            result = clone_public_github_repo(
+                repo_url,
+                output,
+                timeout_seconds=int(args.get("timeout", 300)),
+            )
+        except NetworkCapabilityError as exc:
+            raise OmniBodyError(str(exc)) from exc
+        return {
+            **result,
+            "operation_id": op_id,
+            "network_authority": "typed:git.clone:github.com:https:read-only",
+            "generic_shell_network": "denied",
+        }
+
     def _action_shell_run(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         if not self.config.allow_shell:
             raise OmniBodyError("shell.run requires BodyRuntimeConfig.allow_shell=True")
@@ -3481,7 +3509,11 @@ class BodyRuntime:
         elif parsed.scheme in {"http", "https"}:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - user-controlled browser fetch tool
-                raw = resp.read(max_bytes)
+                try:
+                    from .network_capabilities import NetworkCapabilityError, read_bounded_http_body
+                    raw = read_bounded_http_body(resp, max_bytes)
+                except NetworkCapabilityError as exc:
+                    raise OmniBodyError(str(exc)) from exc
                 final_url = resp.geturl()
                 if urllib.parse.urlparse(final_url).scheme not in {"http", "https"}:
                     raise OmniBodyError("browser redirect changed to a forbidden URL scheme")
@@ -3611,7 +3643,14 @@ class BodyRuntime:
         output = self._resolve(args.get("output") or Path("downloads") / filename)
         snapshots = self._snapshot(op_id, [output])
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(fetched["raw"])
+        fd, temp_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".download", dir=str(output.parent))
+        os.close(fd)
+        temp_output = Path(temp_name)
+        try:
+            temp_output.write_bytes(fetched["raw"])
+            os.replace(temp_output, output)
+        finally:
+            temp_output.unlink(missing_ok=True)
         return {"snapshots": snapshots, "url": fetched["final_url"], "status": fetched["status"], "output": self._file_evidence(output), "evidence": self._file_evidence(output)}
 
     def _action_web_download(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:

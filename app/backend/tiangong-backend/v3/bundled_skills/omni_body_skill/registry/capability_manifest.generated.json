@@ -8683,16 +8683,27 @@
       "reason": "",
       "risk": "A0",
       "summary": "Alias to browser.image_search. Never aliases web.search."
+    },
+    "git.clone": {
+      "alias_to": "",
+      "declared_status": "core_executable",
+      "effect": "create",
+      "executable": true,
+      "handler": "_action_git_clone",
+      "id": "git.clone",
+      "reason": "",
+      "risk": "A2",
+      "summary": "Clone a public GitHub HTTPS repository into a new local directory through a governed network-read capability; generic shell/python remain network-denied."
     }
   },
-  "executable": 289,
+  "executable": 290,
   "schema": "tiangong.v3.capability_manifest.v1",
-  "source_hash": "52f75d92a69fc4eccb09d9210603a19d9939270f127993ad2acf513e583eb105",
-  "total": 789,
+  "source_hash": "20a53e465c33eeca98fd684d795a3db348501e619f208869b6c7dc8fa2ebf27e",
+  "total": 790,
   "unavailable": 500,
   "validation": {
     "executable_without_route": [],
     "ok": true,
-    "source_hash": "52f75d92a69fc4eccb09d9210603a19d9939270f127993ad2acf513e583eb105"
+    "source_hash": "20a53e465c33eeca98fd684d795a3db348501e619f208869b6c7dc8fa2ebf27e"
   }
 }

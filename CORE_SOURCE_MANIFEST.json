@@ -374,7 +374,7 @@
     {
       "bytes": 366,
       "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/.tiangong-generated-source.json",
-      "sha256": "cd2e0a4b4d2fb1059cc077157c087f1eb2b0fc57de878e3e571efbaa485c3ae2"
+      "sha256": "3bd4421dbc00e9b63e86b4c0131a94e9bd64dfeba92f36146eb7ebe2afcf1e36"
     },
     {
       "bytes": 7572,
@@ -872,9 +872,9 @@
       "sha256": "e9ab3b7ae0e3a87138dcacf7348f105ff095e846a101269ed6b20ad36c3d6363"
     },
     {
-      "bytes": 317569,
+      "bytes": 317989,
       "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/registry/capability_manifest.generated.json",
-      "sha256": "e9e3a381bd27269eb85d53b78d0bb4e089f56014ce867de9572128bf7ec2d0fd"
+      "sha256": "3dbf2a2a67267f0c1cdf3c222a7ac8b2ec0ca21aa1d5c06b058167d4de29f1f6"
     },
     {
       "bytes": 2939,
@@ -1012,9 +1012,9 @@
       "sha256": "3f8f45aadcbc3abde17802dcf1af244416db1c780829b1c26ec06ac539156668"
     },
     {
-      "bytes": 75915,
+      "bytes": 78866,
       "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tool_contracts.py",
-      "sha256": "3c7c440be301006590c55ea2bfc36db36a2f7f81f761a7c26b63168ef25f2389"
+      "sha256": "beb4cd4ca876e0ac8a5621cf018205679d6f55b7c28b69df527c938b79d7c3a6"
     },
     {
       "bytes": 145,
@@ -1042,14 +1042,19 @@
       "sha256": "25ff932de9e076eeb005370b938c31fc7b0d4410bcf292e3cd5d2ad7d50fb402"
     },
     {
+      "bytes": 8652,
+      "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tools/network_capabilities.py",
+      "sha256": "d9ed9a0453d163c3bcd19491b08579323f0571886ab9a4ec8b0eda8e4540de69"
+    },
+    {
       "bytes": 16824,
       "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tools/novel_system.py",
       "sha256": "b60e5f548ce4b5213a8f0808e210bc9ff9b5d6b230b8772f56f90943db950c81"
     },
     {
-      "bytes": 223333,
+      "bytes": 227477,
       "path": "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tools/omni_body_tool.py",
-      "sha256": "b030053c111598dcfada6a4d39a688327c5e054d365aeb2766e3f6d0e4e2438f"
+      "sha256": "a83c89e21a5acd4f76c25b4ab0b110d1008995e50edcddfdca8a053093f1d780"
     },
     {
       "bytes": 13972,
@@ -2702,9 +2707,9 @@
       "sha256": "e9ab3b7ae0e3a87138dcacf7348f105ff095e846a101269ed6b20ad36c3d6363"
     },
     {
-      "bytes": 317569,
+      "bytes": 317989,
       "path": "readable-python-source/omni_body_skill/registry/capability_manifest.generated.json",
-      "sha256": "e9e3a381bd27269eb85d53b78d0bb4e089f56014ce867de9572128bf7ec2d0fd"
+      "sha256": "3dbf2a2a67267f0c1cdf3c222a7ac8b2ec0ca21aa1d5c06b058167d4de29f1f6"
     },
     {
       "bytes": 2939,
@@ -2842,9 +2847,9 @@
       "sha256": "3f8f45aadcbc3abde17802dcf1af244416db1c780829b1c26ec06ac539156668"
     },
     {
-      "bytes": 75915,
+      "bytes": 78866,
       "path": "readable-python-source/omni_body_skill/tool_contracts.py",
-      "sha256": "3c7c440be301006590c55ea2bfc36db36a2f7f81f761a7c26b63168ef25f2389"
+      "sha256": "beb4cd4ca876e0ac8a5621cf018205679d6f55b7c28b69df527c938b79d7c3a6"
     },
     {
       "bytes": 145,
@@ -2872,14 +2877,19 @@
       "sha256": "25ff932de9e076eeb005370b938c31fc7b0d4410bcf292e3cd5d2ad7d50fb402"
     },
     {
+      "bytes": 8652,
+      "path": "readable-python-source/omni_body_skill/tools/network_capabilities.py",
+      "sha256": "d9ed9a0453d163c3bcd19491b08579323f0571886ab9a4ec8b0eda8e4540de69"
+    },
+    {
       "bytes": 16824,
       "path": "readable-python-source/omni_body_skill/tools/novel_system.py",
       "sha256": "b60e5f548ce4b5213a8f0808e210bc9ff9b5d6b230b8772f56f90943db950c81"
     },
     {
-      "bytes": 223333,
+      "bytes": 227477,
       "path": "readable-python-source/omni_body_skill/tools/omni_body_tool.py",
-      "sha256": "b030053c111598dcfada6a4d39a688327c5e054d365aeb2766e3f6d0e4e2438f"
+      "sha256": "a83c89e21a5acd4f76c25b4ab0b110d1008995e50edcddfdca8a053093f1d780"
     },
     {
       "bytes": 13972,
@@ -5300,6 +5310,6 @@
     "source_ownership_mappings": 16
   },
   "schema": "tiangong.core-source-archive.v1",
-  "source_bytes": 24681337,
-  "source_file_count": 1047
+  "source_bytes": 24713671,
+  "source_file_count": 1049
 }
