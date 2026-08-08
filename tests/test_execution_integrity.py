@@ -25,6 +25,8 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             "帮我看一下附件",
             "生成一份Word给我",
             "如果发现错误，那就修复",
+            "读取 README.md",
+            "修改 package.json",
             "read the file",
             "please run the tests",
         )
@@ -79,6 +81,11 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             integrity.runtime_execution_floor("你能帮我运行测试吗？"),
             integrity.ACT_REQUIRED,
         )
+
+    def test_text_only_prefix_does_not_cancel_later_explicit_action(self):
+        text = "只分析一下，然后修改这个文件"
+        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+        self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], ["effect"])
 
     def test_scoped_negation_does_not_create_forbidden_effect_obligation(self):
         text = "看看当前目录里有哪些文件，先别改任何东西"
@@ -203,6 +210,25 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_generic_attachment_observation_accepts_image_info(self):
+        user = "帮我看一下附件"
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                user, [{"ok": True, "tool_action": "image.info"}]
+            ),
+            [],
+        )
+
+    def test_system_health_observation_accepts_health_evidence(self):
+        user = "检查系统状态"
+        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_REQUIRED)
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                user, [{"ok": True, "tool_action": "system.health"}]
+            ),
+            [],
+        )
+
     def test_explicit_target_still_requires_matching_target(self):
         user = r"读取 C:\work\note.txt"
         wrong = [{
@@ -214,6 +240,21 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             "ok": True,
             "tool_action": "file.read",
             "tool_args": {"args": {"target": r"C:\work\note.txt"}},
+        }]
+        self.assertTrue(integrity.execution_integrity_blockers(user, wrong))
+        self.assertEqual(integrity.execution_integrity_blockers(user, right), [])
+
+    def test_bare_filename_target_requires_same_basename(self):
+        user = "读取 README.md"
+        wrong = [{
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"args": {"target": "/workspace/package.json"}},
+        }]
+        right = [{
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"args": {"target": "/workspace/README.md"}},
         }]
         self.assertTrue(integrity.execution_integrity_blockers(user, wrong))
         self.assertEqual(integrity.execution_integrity_blockers(user, right), [])
@@ -258,6 +299,16 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         self.assertEqual(
             integrity.execution_integrity_blockers(
                 user, [{"ok": True, "tool_action": "quality.run_tests"}]
+            ),
+            [],
+        )
+
+    def test_quality_adapter_satisfies_execution_fact(self):
+        user = "运行语法检查"
+        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_REQUIRED)
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                user, [{"ok": True, "tool_action": "quality.python_syntax"}]
             ),
             [],
         )
