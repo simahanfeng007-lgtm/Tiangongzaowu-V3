@@ -43,6 +43,28 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
 
+    def test_floor_does_not_turn_explanation_questions_into_actions(self):
+        cases = (
+            "怎么修改这个文件？",
+            "帮我解释怎么修改这个文件",
+            "测试结果是什么？",
+            "运行测试可以吗？",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertNotEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+
+    def test_scoped_negation_does_not_create_forbidden_effect_obligation(self):
+        text = "看看当前目录里有哪些文件，先别改任何东西"
+        items = integrity.build_action_obligations(text)
+        self.assertEqual([item["kind"] for item in items], ["observation"])
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                text, [{"ok": True, "tool_action": "file.list"}]
+            ),
+            [],
+        )
+
     def test_obligations_are_fact_classes_not_tool_plans(self):
         cases = {
             "查看当前目录": "observation",
@@ -57,6 +79,11 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
                 self.assertIn(kind, [item["kind"] for item in items])
                 self.assertTrue(all("required_tool" not in item for item in items))
                 self.assertTrue(all(item["floor"] == integrity.ACT_REQUIRED for item in items))
+
+    def test_conditional_real_command_remains_actionable(self):
+        text = "如果当前目录里有 package.json，就读一下当前目录"
+        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+        self.assertTrue(integrity.build_action_obligations(text))
 
     def test_ambiguous_target_allows_clarification(self):
         items = integrity.build_action_obligations("读一下那个目录")
@@ -146,6 +173,16 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             },
         }]
         self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+
+    def test_ok_only_file_write_does_not_self_certify_effect(self):
+        user = "把 note.txt 改一下"
+        history = [{
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"args": {"target": "note.txt"}},
+            "tool_result_contract": {"ok": True},
+        }]
+        self.assertTrue(integrity.execution_integrity_blockers(user, history))
 
     def test_run_result_satisfies_execution_fact(self):
         user = "运行测试"
@@ -238,6 +275,11 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     planner, loop, judge, database or terminal gate is introduced.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        cls.zong = (ROOT / "app/backend/tiangong-backend/v3/zongdiaodu.py").read_text(encoding="utf-8")
+        cls.xujie = (ROOT / "app/backend/tiangong-backend/v3/shangxiawen_xujie.py").read_text(encoding="utf-8")
+
     def test_public_api_required_by_zongdiaodu_is_preserved(self):
         for name in (
             "build_action_obligations",
@@ -247,6 +289,52 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
             "update_run_state_obligations",
         ):
             self.assertTrue(callable(getattr(integrity, name, None)), name)
+
+    def test_discussion_only_gate_controls_native_tool_exposure(self):
+        self.assertIn("is_execution_discussion_only,", self.zong)
+        self.assertIn("or is_execution_discussion_only(xiaoxi)", self.zong)
+
+    def test_work_intent_uses_runtime_floor_via_obligations(self):
+        self.assertIn("if build_action_obligations(text):", self.zong)
+
+    def test_final_gate_checks_integrity_before_zero_observation_escape(self):
+        start = self.zong.index("def _simple_chain_final_hard_gate(")
+        end = self.zong.index("\ndef ", start + 10)
+        block = self.zong[start:end]
+        self.assertIn("execution_integrity_blockers(", block)
+        self.assertLess(block.index("execution_integrity_blockers("), block.index("if not quality_history:"))
+
+    def test_run_state_contains_and_updates_obligations(self):
+        self.assertIn('"obligations": [],', self.zong)
+        self.assertIn("update_run_state_obligations(run_state, payload)", self.zong)
+
+    def test_history_does_not_promote_prose_claim_to_fact(self):
+        self.assertIn("assistant_claim_unverified", self.xujie)
+        self.assertNotIn('status = "completed" if media_paths or re.search', self.xujie)
+
+    def test_question_mark_gets_soft_deviation_signal(self):
+        self.assertIn("_EXECUTION_DEVIATION_SIGNALS", self.xujie)
+        self.assertIn("[执行偏差信号]", self.xujie)
+
+    def test_integrity_blockers_have_user_visible_humanization(self):
+        self.assertIn(
+            '("execution_obligation:", "还没有获得用户明确要求动作对应的真实工具执行证据")',
+            self.zong,
+        )
+        self.assertIn(
+            '("execution_claim_without_evidence", "模型给出了完成性描述，但没有对应的真实工具执行证据")',
+            self.zong,
+        )
+
+    def test_execution_integrity_closeout_bypasses_llm_polish(self):
+        marker = "if requires_evidence_safe_closeout(clean_reasons):"
+        closeout_call = "next_body, reply = _llm_closeout_scoped("
+        self.assertIn(marker, self.zong)
+        natural_start = self.zong.index("def _natural_closeout(")
+        natural_end = self.zong.index("\n        def _check_stop", natural_start)
+        block = self.zong[natural_start:natural_end]
+        self.assertLess(block.index(marker), block.index(closeout_call))
+        self.assertIn('"template_evidence_safe"', block)
 
 
 if __name__ == "__main__":
