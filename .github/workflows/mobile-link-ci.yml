@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install test runner
-        run: python -m pip install --disable-pip-version-check pytest
+        run: python -m pip install --disable-pip-version-check pytest pydantic
 
       - name: Compile mobile gateway modules
         run: |
@@ -39,5 +39,5 @@ jobs:
 
       - name: Run mobile native-registry tests
         env:
-          PYTHONPATH: src/total_gateway
+          PYTHONPATH: src:src/total_gateway
         run: python -m pytest -q tests/test_mobile_body_link.py
