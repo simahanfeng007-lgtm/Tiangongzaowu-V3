@@ -17,6 +17,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -97,6 +98,31 @@ class LifeIdentityManager:
         self.data_root.mkdir(parents=True, exist_ok=True)
         self.lives_root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._registry_cache_fingerprint: tuple[int, ...] = ()
+        self._registry_cache: dict[str, Any] | None = None
+        self._verified_identity_cache: dict[
+            tuple[str, bool], tuple[tuple[int, ...], dict[str, Any]]
+        ] = {}
+        self._verified_temperament_cache: dict[
+            str, tuple[tuple[Any, ...], dict[str, Any]]
+        ] = {}
+        self._root_cache: dict[
+            str, tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], Path]
+        ] = {}
+
+    @staticmethod
+    def _file_fingerprint(path: Path) -> tuple[int, ...]:
+        try:
+            value = path.stat()
+        except FileNotFoundError:
+            return (0, 0, 0, 0, 0)
+        return (
+            1,
+            int(value.st_size),
+            int(value.st_mtime_ns),
+            int(value.st_ctime_ns),
+            int(getattr(value, "st_ino", 0) or 0),
+        )
 
     def _empty_registry(self) -> dict[str, Any]:
         return {
@@ -183,6 +209,13 @@ class LifeIdentityManager:
     def _load_registry(self) -> dict[str, Any]:
         if not self.registry_path.is_file():
             return self._empty_registry()
+        fingerprint = self._file_fingerprint(self.registry_path)
+        with self._lock:
+            if (
+                fingerprint == self._registry_cache_fingerprint
+                and self._registry_cache is not None
+            ):
+                return deepcopy(self._registry_cache)
         try:
             value = json.loads(self.registry_path.read_text(encoding="utf-8"))
         except Exception as exc:
@@ -192,6 +225,9 @@ class LifeIdentityManager:
         bindings = value.get("bindings")
         if not isinstance(bindings, dict):
             raise LifeCoreError("registry_bindings_invalid", "registry bindings must be an object", status=409)
+        with self._lock:
+            self._registry_cache_fingerprint = fingerprint
+            self._registry_cache = deepcopy(value)
         return value
 
     def _save_registry(self, registry: Mapping[str, Any]) -> None:
@@ -200,11 +236,30 @@ class LifeIdentityManager:
         value["revision"] = int(value.get("revision") or 0) + 1
         value["updated_at"] = utc_now()
         atomic_json(self.registry_path, value)
+        with self._lock:
+            self._registry_cache_fingerprint = self._file_fingerprint(self.registry_path)
+            self._registry_cache = deepcopy(value)
+            self._root_cache.clear()
 
     def verify_root(self, root: Path | str, *, require_private: bool = False) -> dict[str, Any]:
         root = Path(root).expanduser().resolve()
         identity_path = root / "identity" / "life_identity.json"
         signature_path = root / "identity" / "life_identity.sig"
+        private_path = root / "identity" / "private_key.pem"
+        fingerprint = (
+            *self._file_fingerprint(identity_path),
+            *self._file_fingerprint(signature_path),
+            *(
+                self._file_fingerprint(private_path)
+                if require_private
+                else ()
+            ),
+        )
+        cache_key = (str(root), bool(require_private))
+        with self._lock:
+            cached = self._verified_identity_cache.get(cache_key)
+            if cached is not None and cached[0] == fingerprint:
+                return deepcopy(cached[1])
         if not identity_path.is_file() or not signature_path.is_file():
             raise LifeCoreError("identity_files_missing", str(root), status=404)
         try:
@@ -219,7 +274,6 @@ class LifeIdentityManager:
             raise LifeCoreError("identity_schema_invalid", str(identity.get("schema") or ""), status=409)
         if root.name != life_id:
             raise LifeCoreError("identity_root_mismatch", f"{root.name} != {life_id}", status=409)
-        private_path = root / "identity" / "private_key.pem"
         if require_private:
             if not private_path.is_file():
                 raise LifeCoreError("identity_private_key_missing", life_id, status=409)
@@ -230,6 +284,8 @@ class LifeIdentityManager:
                     raise ValueError("private/public key mismatch")
             except Exception as exc:
                 raise LifeCoreError("identity_private_key_invalid", str(exc), status=409) from exc
+        with self._lock:
+            self._verified_identity_cache[cache_key] = (fingerprint, deepcopy(identity))
         return identity
 
     def verify_soul(
@@ -279,6 +335,17 @@ class LifeIdentityManager:
         verified_identity = dict(identity or self.verify_root(resolved, require_private=False))
         document_path = resolved / "identity" / "temperament.json"
         signature_path = resolved / "identity" / "temperament.sig"
+        fingerprint: tuple[Any, ...] = (
+            *self._file_fingerprint(document_path),
+            *self._file_fingerprint(signature_path),
+            str(verified_identity.get("public_key") or ""),
+            str(verified_identity.get("organism_id") or ""),
+        )
+        cache_key = str(resolved)
+        with self._lock:
+            cached = self._verified_temperament_cache.get(cache_key)
+            if cached is not None and cached[0] == fingerprint:
+                return deepcopy(cached[1])
         if not document_path.is_file() or not signature_path.is_file():
             raise LifeCoreError("temperament_files_missing", str(resolved), status=404)
         try:
@@ -295,10 +362,16 @@ class LifeIdentityManager:
                 signature,
                 canonical(document),
             )
-            return validate_innate_temperament(
+            verified = validate_innate_temperament(
                 document,
                 life_id=str(verified_identity.get("organism_id") or ""),
             )
+            with self._lock:
+                self._verified_temperament_cache[cache_key] = (
+                    fingerprint,
+                    deepcopy(verified),
+                )
+            return verified
         except LifeCoreError:
             raise
         except Exception as exc:
@@ -610,12 +683,40 @@ class LifeIdentityManager:
             }
 
     def root_for(self, life_id: str) -> Path:
+        registry_fingerprint = self._file_fingerprint(self.registry_path)
+        with self._lock:
+            cached = self._root_cache.get(str(life_id))
+        if cached is not None and cached[0] == registry_fingerprint:
+            raw_root_fingerprint, identity_fingerprint, root = cached[1:]
+            identity_path = root / "identity" / "life_identity.json"
+            signature_path = root / "identity" / "life_identity.sig"
+            current_identity_fingerprint = (
+                *self._file_fingerprint(identity_path),
+                *self._file_fingerprint(signature_path),
+            )
+            if (
+                self._file_fingerprint(root) == raw_root_fingerprint
+                and current_identity_fingerprint == identity_fingerprint
+            ):
+                return root
         registry = self._load_registry()
         binding = (registry.get("bindings") or {}).get(str(life_id))
         if not isinstance(binding, dict):
             raise LifeCoreError("life_identity_unknown", str(life_id), status=404)
-        root = Path(str(binding.get("root") or "")).expanduser().resolve()
+        raw_root = Path(str(binding.get("root") or "")).expanduser()
+        root = raw_root.resolve()
         self.verify_root(root, require_private=False)
+        identity_fingerprint = (
+            *self._file_fingerprint(root / "identity" / "life_identity.json"),
+            *self._file_fingerprint(root / "identity" / "life_identity.sig"),
+        )
+        with self._lock:
+            self._root_cache[str(life_id)] = (
+                registry_fingerprint,
+                self._file_fingerprint(raw_root),
+                identity_fingerprint,
+                root,
+            )
         return root
 
 
@@ -650,6 +751,10 @@ class SemanticJournal:
         self._append_idempotency: dict[str, dict[str, dict[str, Any]]] = {}
         self._append_fingerprints: dict[str, tuple[int, ...]] = {}
         self._append_hashers: dict[str, Any] = {}
+        self._append_head_bytes: dict[str, bytes | None] = {}
+        self._private_key_cache: dict[
+            str, tuple[tuple[int, ...], Ed25519PrivateKey]
+        ] = {}
 
     @staticmethod
     def _file_stat_tuple(path: Path) -> tuple[int, int, int, int]:
@@ -674,6 +779,21 @@ class SemanticJournal:
         self._append_idempotency.pop(life_id, None)
         self._append_fingerprints.pop(life_id, None)
         self._append_hashers.pop(life_id, None)
+        self._append_head_bytes.pop(life_id, None)
+
+    def _private_key(self, life_id: str) -> Ed25519PrivateKey:
+        private_path = self.manager.root_for(life_id) / "identity" / "private_key.pem"
+        fingerprint = self._file_stat_tuple(private_path)
+        cached = self._private_key_cache.get(life_id)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        private = serialization.load_pem_private_key(
+            private_path.read_bytes(), password=None
+        )
+        if not isinstance(private, Ed25519PrivateKey):
+            raise TypeError("journal head requires Ed25519 private key")
+        self._private_key_cache[life_id] = (fingerprint, private)
+        return private
 
     def _load_append_frontier(
         self,
@@ -699,6 +819,10 @@ class SemanticJournal:
         self._append_idempotency[life_id] = idempotency
         self._append_fingerprints[life_id] = self._append_fingerprint(life_id)
         self._append_hashers[life_id] = hasher
+        head_path = self._head_path(life_id)
+        self._append_head_bytes[life_id] = (
+            head_path.read_bytes() if head_path.is_file() else None
+        )
         return events, idempotency, hasher
 
     def _path(self, life_id: str) -> Path:
@@ -921,12 +1045,8 @@ class SemanticJournal:
         return migrated
 
     def _write_signed_head(self, life_id: str, chain: Mapping[str, Any]) -> dict[str, Any]:
-        root = self.manager.root_for(life_id)
-        private_path = root / "identity" / "private_key.pem"
         try:
-            private = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
-            if not isinstance(private, Ed25519PrivateKey):
-                raise TypeError("journal head requires Ed25519 private key")
+            private = self._private_key(life_id)
             payload = {
                 "schema": self.HEAD_SCHEMA,
                 "life_id": life_id,
@@ -1253,7 +1373,7 @@ class SemanticJournal:
             head_path = self._head_path(life_id)
             path.parent.mkdir(parents=True, exist_ok=True)
             previous_size = path.stat().st_size if path.exists() else 0
-            previous_head = head_path.read_bytes() if head_path.is_file() else None
+            previous_head = self._append_head_bytes.get(life_id)
             try:
                 with path.open("a", encoding="utf-8", newline="\n") as stream:
                     for event in new_events:
@@ -1277,7 +1397,7 @@ class SemanticJournal:
                     "journal_sha256": working_hasher.hexdigest(),
                     "reason_code": "",
                 }
-                self._write_signed_head(life_id, chain)
+                signed_head = self._write_signed_head(life_id, chain)
             except Exception as exc:
                 rollback_errors: list[Exception] = []
                 try:
@@ -1316,6 +1436,16 @@ class SemanticJournal:
             self._append_idempotency[life_id] = local_idempotency
             self._append_fingerprints[life_id] = self._append_fingerprint(life_id)
             self._append_hashers[life_id] = working_hasher
+            self._append_head_bytes[life_id] = (
+                json.dumps(
+                    signed_head,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    indent=2,
+                    allow_nan=False,
+                )
+                + "\n"
+            ).encode("utf-8")
             return resolved
 
     def append(self, life_id: str, event_type: str, payload: Any = None, *, actor: str = "life_system",

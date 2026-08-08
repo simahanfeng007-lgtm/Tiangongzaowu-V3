@@ -52,7 +52,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-release.lock
       - name: Install frozen-runtime build dependencies
-        run: python -m pip install -r requirements-release.lock
+        run: python scripts/install-python-dependencies.py --requirements requirements-release.lock
       - name: Build signed Windows installer
         working-directory: app
         run: npm run release:win
@@ -88,7 +88,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-release.lock
       - name: Install frozen-runtime build dependencies
-        run: python -m pip install -r requirements-release.lock
+        run: python scripts/install-python-dependencies.py --requirements requirements-release.lock
       - name: Materialize App Store Connect API key
         env:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}

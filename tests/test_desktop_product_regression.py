@@ -587,10 +587,8 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
             "life-reflection-learning",
             "life-reflection-cards",
             "life-reflection-values",
-            "life-capability-global",
             "life-capability-owned",
             "life-capability-artifacts",
-            "life-capability-history",
             "life-artifact-grid",
         ):
             self.assertIn(class_name, panel)
@@ -605,7 +603,7 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
             "  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));",
             css,
         )
-        self.assertIn('"artifacts history"', css)
+        self.assertIn('grid-template-areas:\n    "owned"\n    "artifacts";', css)
         self.assertNotIn(".life-will-layout > .life-card:nth-child", css)
         self.assertNotIn(".life-reflection-layout > .life-card:first-child", css)
 
@@ -1218,11 +1216,12 @@ console.log(JSON.stringify({{
 
         # 核心源码归档不携带无再分发权的 VRM/VRMA 二进制。仍须保留可验证
         # 的逻辑模型清单，并由主进程在运行时过滤缺失字节，避免悬空条目被
-        # 自动加载；正式 app.asar 则以独立硬门证明这些模型没有泄漏。
+        # 自动加载；当前仅保留许可允许分发的 AvatarSample A 逻辑条目，正式
+        # app.asar 则以独立硬门证明模型字节没有泄漏。
         models = builtin_manifest["models"]
         self.assertEqual(
             {model["id"] for model in models},
-            {"tiangong-z1", "zaowu-v2"},
+            {"tiangong-z1"},
         )
         for model in models:
             self.assertRegex(model["contentHash"], r"^[0-9a-f]{64}$")
@@ -1294,15 +1293,17 @@ console.log(JSON.stringify({{
     def test_clean_source_setup_bootstraps_hashing_and_electron_explicitly(self):
         provision = source("scripts/provision-embedded-python.ps1")
         setup = source("scripts/setup-source.ps1")
+        node_installer = source("scripts/install-node-dependencies.mjs")
 
         self.assertIn("function Get-FileDigest", provision)
         self.assertIn("[Security.Cryptography.MD5]::Create()", provision)
         self.assertIn("[Security.Cryptography.SHA256]::Create()", provision)
         self.assertNotIn("Get-FileHash", provision)
 
-        self.assertIn("ci --ignore-scripts", setup)
-        self.assertIn('"node_modules\\electron\\install.js"', setup)
-        self.assertIn("& $node.Source $ElectronInstall", setup)
+        self.assertIn('"install-node-dependencies.mjs"', setup)
+        self.assertIn('["--prefix", appRoot, "ci", "--ignore-scripts"]', node_installer)
+        self.assertIn('join(electronRoot, "install.js")', node_installer)
+        self.assertIn("ELECTRON_FALLBACK_MIRROR", node_installer)
         self.assertIn('"node_modules\\electron\\dist\\electron.exe"', setup)
 
 

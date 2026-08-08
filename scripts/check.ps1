@@ -89,9 +89,12 @@ if ($LASTEXITCODE -ne 0) { throw "Python syntax check failed" }
 
 $ReadableSourceRoot = Join-Path $Root "readable-python-source"
 $env:PYTHONPATH = @($SourceRoot, $BackendRoot, $ReadableSourceRoot) -join [IO.Path]::PathSeparator
-& $Python -m pytest -q --maxfail=1 `
-  $TestsRoot `
-  (Join-Path $BackendRoot "v3\bundled_skills\omni_body_skill\tests")
+$PythonTestRoots = @($TestsRoot)
+$BundledSkillTests = Join-Path $BackendRoot "v3\bundled_skills\omni_body_skill\tests"
+if (Test-Path -LiteralPath $BundledSkillTests -PathType Container) {
+  $PythonTestRoots += $BundledSkillTests
+}
+& $Python -m pytest -q --maxfail=1 @PythonTestRoots
 if ($LASTEXITCODE -ne 0) { throw "Python regression suite failed" }
 
 $NodeTests = @(Get-ChildItem -LiteralPath $TestsRoot -Filter "*.test.mjs" -File |

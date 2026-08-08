@@ -13,7 +13,30 @@ $Version = "3.12.10"
 $Archive = Join-Path ([IO.Path]::GetTempPath()) "python-$Version-embed-amd64.zip"
 $Bootstrap = Join-Path ([IO.Path]::GetTempPath()) "get-pip.py"
 $Uri = "https://www.python.org/ftp/python/$Version/python-$Version-embed-amd64.zip"
+$TunaUri = "https://mirrors.tuna.tsinghua.edu.cn/python/$Version/python-$Version-embed-amd64.zip"
 $ExpectedMd5 = "fe8ef205f2e9c3ba44d0cf9954e1abd3"
+
+function Invoke-DownloadWithFallback {
+    param(
+        [Parameter(Mandatory = $true)][string]$PrimaryUri,
+        [Parameter(Mandatory = $true)][string]$FallbackUri,
+        [Parameter(Mandatory = $true)][string]$OutputPath,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $DownloadPath = "$OutputPath.download"
+    Remove-Item -LiteralPath $DownloadPath -Force -ErrorAction SilentlyContinue
+    & curl.exe --fail --location --output $DownloadPath $PrimaryUri
+    if ($LASTEXITCODE -ne 0) {
+        if ($env:TIANGONG_DISABLE_DEPENDENCY_FALLBACK -eq "1") {
+            throw "$Label download failed and dependency fallback is disabled"
+        }
+        Write-Host "[dependency-fallback] $Label`: retrying with $FallbackUri"
+        Remove-Item -LiteralPath $DownloadPath -Force -ErrorAction SilentlyContinue
+        & curl.exe --fail --location --output $DownloadPath $FallbackUri
+        if ($LASTEXITCODE -ne 0) { throw "$Label download failed with primary and fallback sources" }
+    }
+    Move-Item -LiteralPath $DownloadPath -Destination $OutputPath -Force
+}
 
 function Get-FileDigest {
     param(
@@ -45,8 +68,7 @@ if ($Force -and (Test-Path -LiteralPath $RuntimeRoot)) {
 
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) {
-        & curl.exe --fail --location --output $Archive $Uri
-        if ($LASTEXITCODE -ne 0) { throw "Unable to download embedded CPython archive" }
+        Invoke-DownloadWithFallback -PrimaryUri $Uri -FallbackUri $TunaUri -OutputPath $Archive -Label "embedded CPython"
     }
     if ((Get-FileDigest -LiteralPath $Archive -Algorithm MD5) -ne $ExpectedMd5) {
         throw "Embedded CPython archive checksum mismatch"
@@ -62,8 +84,11 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     if (-not $Pth) { throw "Embedded Python path configuration is missing" }
     @("python312.zip", ".", "Lib\\site-packages", "", "import site") | Set-Content -LiteralPath $Pth.FullName -Encoding ascii
     if (-not (Test-Path -LiteralPath $Bootstrap -PathType Leaf)) {
-        & curl.exe --fail --location --output $Bootstrap "https://bootstrap.pypa.io/get-pip.py"
-        if ($LASTEXITCODE -ne 0) { throw "Unable to download pip bootstrap" }
+        Invoke-DownloadWithFallback `
+            -PrimaryUri "https://bootstrap.pypa.io/get-pip.py" `
+            -FallbackUri "https://raw.githubusercontent.com/pypa/get-pip/main/public/get-pip.py" `
+            -OutputPath $Bootstrap `
+            -Label "pip bootstrap"
     }
     & $Python $Bootstrap
     if ($LASTEXITCODE -ne 0) { throw "Unable to bootstrap pip in embedded CPython" }
@@ -71,9 +96,11 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
 
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "Embedded Python is missing: $Python" }
 & $Python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
-& $Python -m pip install --disable-pip-version-check --upgrade pip
-& $Python -m pip install --disable-pip-version-check -r (Join-Path $Root "requirements-release.lock")
-& $Python -m pip install --disable-pip-version-check --no-deps $Root
+& $Python (Join-Path $Root "scripts\install-python-dependencies.py") `
+    --upgrade-pip `
+    --requirements (Join-Path $Root "requirements-release.lock") `
+    --project $Root
+if ($LASTEXITCODE -ne 0) { throw "Embedded Python dependency installation failed" }
 & $Python -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Embedded Python dependency verification failed" }
 

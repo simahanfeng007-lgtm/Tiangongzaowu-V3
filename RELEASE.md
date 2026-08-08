@@ -7,10 +7,14 @@
 本地构建未签名发布候选包：
 
 ```powershell
-python -m pip install -r requirements-release.lock
+python scripts/install-python-dependencies.py --requirements requirements-release.lock
 Set-Location app
 npm run release:win
 ```
+
+依赖安装默认使用用户当前配置或官方源；仅在下载失败时使用国内镜像重试。
+Python/PyPI 使用清华 TUNA，npm、Electron 和 electron-builder 使用其对应的国内兼容镜像。
+完整策略和可覆盖环境变量见 `DEPENDENCY_SOURCES.md`。
 
 如果运行时冻结与发布清单已经通过，仅安装器配置阶段失败，可在修正配置后执行 `node ../scripts/release-win.mjs --resume`；恢复模式会重新检查两个冻结 EXE 及二维码能力，但不会绕过探针。
 

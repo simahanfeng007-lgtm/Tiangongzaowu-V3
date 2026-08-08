@@ -247,7 +247,7 @@ class SkillSelectionTests(unittest.TestCase):
 class FilesystemSkillCatalogTests(unittest.TestCase):
     INDEX_SHA256 = "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45"
     CATALOG_SHA256 = "fec4b0709945b614edce5b80aa1a69381ba66b0df85f4bf8f253eb47127d5b35"
-    CAPABILITY_SHA256 = "e9e3a381bd27269eb85d53b78d0bb4e089f56014ce867de9572128bf7ec2d0fd"
+    CAPABILITY_SHA256 = "3dbf2a2a67267f0c1cdf3c222a7ac8b2ec0ca21aa1d5c06b058167d4de29f1f6"
 
     @classmethod
     def source_root(cls) -> Path:
@@ -307,7 +307,7 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
             component_manifest_hash=HASH_C,
             generated_at_ms=100,
         )
-        self.assertEqual(model_capabilities.executable_count, 289)
+        self.assertEqual(model_capabilities.executable_count, 290)
         recommendation = SkillSelectionService(loaded.catalog).system_recommend(
             "\u8bf7\u5236\u4f5c\u5546\u4e1a\u65b9\u6848 Word\u6587\u6863",
             request_id=REQUEST_ID,

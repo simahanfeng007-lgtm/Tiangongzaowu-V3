@@ -3171,6 +3171,7 @@ class EmbeddedLifeRuntime:
             bool(autonomy.get("enabled")),
             int(autonomy.get("pending_limit") or 0),
             int(autonomy.get("last_tick_at_ms") or 0),
+            canonical_sha256(tasks),
         )
         if signature == self._autonomy_health_sig and self._autonomy_health_cache:
             return dict(self._autonomy_health_cache)

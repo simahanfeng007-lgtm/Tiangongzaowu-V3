@@ -468,18 +468,34 @@ function runElectronBuilder({ stageRoot, platform, architecture, signing }) {
     architecture === "arm64" ? "--arm64" : "--x64",
     "--publish", "never",
   ];
-  run(commandName("npx"), args, {
-    cwd: appRoot,
-    env: {
-      TIANGONG_RELEASE_PLATFORM: platform,
-      TIANGONG_RELEASE_ARCH: architecture,
-      TIANGONG_RELEASE_STAGE: stageRoot,
-      TIANGONG_RELEASE_RUNTIME_ROOT: stageRoot,
-      TIANGONG_RELEASE_REQUIRE_SIGNING: signing.required ? "1" : "0",
-      TIANGONG_RELEASE_FLAVOR: signing.required ? "signed" : "unsigned",
-    },
-  });
   const output = join(stageRoot, "electron-builder");
+  const builderEnv = {
+    TIANGONG_RELEASE_PLATFORM: platform,
+    TIANGONG_RELEASE_ARCH: architecture,
+    TIANGONG_RELEASE_STAGE: stageRoot,
+    TIANGONG_RELEASE_RUNTIME_ROOT: stageRoot,
+    TIANGONG_RELEASE_REQUIRE_SIGNING: signing.required ? "1" : "0",
+    TIANGONG_RELEASE_FLAVOR: signing.required ? "signed" : "unsigned",
+  };
+  try {
+    run(commandName("npx"), args, { cwd: appRoot, env: builderEnv });
+  } catch (error) {
+    if (String(process.env.TIANGONG_DISABLE_DEPENDENCY_FALLBACK || "").trim() === "1") {
+      throw error;
+    }
+    const fallback = String(
+      process.env.TIANGONG_ELECTRON_BUILDER_FALLBACK_MIRROR
+        || "https://npmmirror.com/mirrors/electron-builder-binaries/"
+    ).trim();
+    process.stdout.write(
+      `[dependency-fallback] electron-builder: retrying with ${fallback}\n`,
+    );
+    rmSync(output, { recursive: true, force: true });
+    run(commandName("npx"), args, {
+      cwd: appRoot,
+      env: { ...builderEnv, ELECTRON_BUILDER_BINARIES_MIRROR: fallback },
+    });
+  }
   assertDirectory(output, "electron-builder output");
   return output;
 }
@@ -720,18 +736,11 @@ function commonPreflight({ platform, architecture }) {
     run(releasePython, [join(workspaceRoot, "scripts", "rebuild_frozen_release_overlays.py")]);
   }
   assertNoPackageLinks(appRoot, "desktop application input");
-  run(commandName("npm"), ["ci", "--ignore-scripts"], { cwd: appRoot });
-  // Keep dependency installation script-free, then invoke the one audited
-  // native payload installer the desktop build actually requires.
-  const electronInstall = join(appRoot, "node_modules", "electron", "install.js");
-  assertFile(electronInstall, "Electron distribution installer");
-  run("node", [electronInstall], {
-    cwd: appRoot,
-    env: {
-      ELECTRON_INSTALL_PLATFORM: platform,
-      ELECTRON_INSTALL_ARCH: architecture,
-    },
-  });
+  run("node", [
+    join(workspaceRoot, "scripts", "install-node-dependencies.mjs"),
+    "--platform", platform,
+    "--arch", architecture,
+  ]);
   const electronDistribution = join(
     appRoot,
     "node_modules",
