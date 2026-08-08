@@ -81,6 +81,7 @@ _COMPLETION_CLAIM_RE = re.compile(
 )
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
+_BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[，。；：,.;:！!？?])", re.IGNORECASE)
 
@@ -239,6 +240,7 @@ def _has_anchor(text: str, compact: str, anchors: tuple[str, ...]) -> bool:
     return bool(
         any(anchor.lower() in compact for anchor in anchors)
         or _LOCAL_PATH_RE.search(text)
+        or _BARE_ASCII_FILE_RE.search(text)
         or _URL_RE.search(text)
         or _SUFFIX_RE.search(compact)
     )
@@ -388,11 +390,27 @@ def runtime_execution_floor(user_text: object) -> str:
 
 def _requested_object_kind(user_text: object, fact_kind: str) -> str:
     compact = _compact(user_text)
+    text = str(user_text or "")
     if fact_kind == "observation":
         if any(term in compact for term in _DIRECTORY_TERMS):
             return "directory"
-        if any(term in compact for term in _STRICT_FILE_TERMS) or _LOCAL_PATH_RE.search(str(user_text or "")):
+        if (
+            any(term in compact for term in _STRICT_FILE_TERMS)
+            or _LOCAL_PATH_RE.search(text)
+            or _BARE_ASCII_FILE_RE.search(text)
+        ):
             return "file"
+    return ""
+
+
+def _extract_explicit_target(user_text: object) -> str:
+    text = str(user_text or "")
+    path_match = _LOCAL_PATH_RE.search(text)
+    if path_match:
+        return path_match.group(0).strip()
+    file_match = _BARE_ASCII_FILE_RE.search(text)
+    if file_match:
+        return file_match.group(1).strip()
     return ""
 
 
@@ -408,8 +426,7 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
         return []
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
-    path_match = _LOCAL_PATH_RE.search(text)
-    explicit_target = path_match.group(0).strip() if path_match else ""
+    explicit_target = _extract_explicit_target(text)
     obligations: list[dict[str, Any]] = []
     for index, fact_kind in enumerate(_requested_fact_kinds(text), start=1):
         object_kind = _requested_object_kind(text, fact_kind)
@@ -452,7 +469,13 @@ def _target_matches(payload: dict[str, Any], obligation: dict[str, Any]) -> bool
     actual = _normalize_path(_payload_target(payload))
     if not actual:
         return False
-    return actual == expected
+    if actual == expected:
+        return True
+    # A bare requested filename may legitimately be resolved by the tool to an
+    # absolute workspace path. It must still be the same basename.
+    if "/" not in expected and actual.endswith("/" + expected):
+        return True
+    return False
 
 
 def _contract(payload: dict[str, Any]) -> dict[str, Any]:
