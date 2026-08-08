@@ -1,6 +1,6 @@
 """Revision-decision contracts for the world cognition system.
 
-Every promotion, challenge, confirmation, supersession, protection, or
+Every promotion, refresh, challenge, confirmation, supersession, protection, or
 retirement is recorded as an immutable deterministic decision. LLM output may
 propose a candidate statement but is never a revision authority.
 """
@@ -18,7 +18,18 @@ from .cognition_evidence import CognitionEvidenceId
 from .cognition_statement import CognitionId, CognitionStabilityLevel, CognitionStatus
 
 CognitionRevisionId = Annotated[str, StringConstraints(pattern=r"^crv_[0-9a-f]{64}$")]
-CognitionTransition = Literal["GENESIS", "PROMOTE", "CHALLENGE", "BEGIN_REVERIFY", "CONFIRM", "SUPERSEDE", "PROTECT", "RETIRE"]
+CognitionTransition = Literal[
+    "GENESIS",
+    "REFRESH",
+    "REPLACE_CANDIDATE",
+    "PROMOTE",
+    "CHALLENGE",
+    "BEGIN_REVERIFY",
+    "CONFIRM",
+    "SUPERSEDE",
+    "PROTECT",
+    "RETIRE",
+]
 CognitionDecisionAuthority = Literal["deterministic_policy", "explicit_system_authority", "migration"]
 
 
@@ -81,6 +92,16 @@ class CognitionRevision(ContractModel):
 
         if set(self.support_independence_groups) & set(self.counter_independence_groups):
             raise ValueError("one independence group cannot support and contradict the same decision")
+
+        if self.transition == "REFRESH":
+            if self.from_status not in {"CANDIDATE", "PROVISIONAL", "STABLE", "CORE"}:
+                raise ValueError("only active cognition may be refreshed")
+            if self.to_status != self.from_status or self.to_stability_level != self.from_stability_level:
+                raise ValueError("refresh must preserve cognition status and stability level")
+
+        if self.transition == "REPLACE_CANDIDATE":
+            if (self.from_status, self.from_stability_level, self.to_status, self.to_stability_level) != ("CANDIDATE", "C0", "CANDIDATE", "C0"):
+                raise ValueError("candidate replacement is only valid inside CANDIDATE/C0")
 
         if self.transition == "PROMOTE":
             allowed = {
