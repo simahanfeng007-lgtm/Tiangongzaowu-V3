@@ -13,13 +13,18 @@ spec.loader.exec_module(integrity)
 
 
 class ExecutionIntegrityFloorTests(unittest.TestCase):
-    def test_runtime_floor_requires_explicit_action(self):
+    def test_runtime_floor_requires_unambiguous_tool_actions(self):
         cases = (
             "你读一下目录不就行了",
             "看看当前目录",
             "把这个文件改一下",
             "运行一下测试",
             "把报告发给我",
+            "帮我查一下这个概念",
+            "帮我搜索一下最新资料",
+            "帮我看一下附件",
+            "生成一份Word给我",
+            "如果发现错误，那就修复",
             "read the file",
             "please run the tests",
         )
@@ -45,16 +50,33 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             "我明白了",
             "怎么修改这个文件？",
             "怎么读目录？",
+            "运行测试可以吗？",
         )
         for text in cases:
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
 
-    def test_floor_preserves_existing_command_ambiguity(self):
-        # V3 already treats this wording as executable. This refactor must not
-        # silently redefine global chat/work semantics while fixing integrity.
+    def test_floor_does_not_turn_text_only_work_into_tool_obligations(self):
+        cases = (
+            "帮我分析这段描写",
+            "帮我看看这个方案",
+            "给我写一段话",
+            "帮我改写一下这句话",
+            "测试结果是什么？",
+            "测试结果",
+            "验证是否通过",
+            "帮我分析这段代码",
+            "帮我写代码",
+            "请解释这段代码怎么修改",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
+                self.assertEqual(integrity.build_action_obligations(text), [])
+
+    def test_polite_question_with_explicit_execution_request_remains_required(self):
         self.assertEqual(
-            integrity.runtime_execution_floor("运行测试可以吗？"),
+            integrity.runtime_execution_floor("你能帮我运行测试吗？"),
             integrity.ACT_REQUIRED,
         )
 
@@ -76,6 +98,7 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             "不要运行测试，只修改代码": ["effect"],
             "先别读，只修改这个文件": ["effect"],
             "把这个文件修改一下，但不要运行测试": ["effect"],
+            "先不要执行部署，帮我查看配置": ["observation"],
         }
         for text, expected in cases.items():
             with self.subTest(text=text):
@@ -87,11 +110,6 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_FORBIDDEN)
                 self.assertEqual(integrity.build_action_obligations(text), [])
-
-    def test_conditional_fix_is_actionable(self):
-        text = "如果发现错误，那就修复"
-        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
-        self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], ["effect"])
 
     def test_obligations_are_fact_classes_not_tool_plans(self):
         cases = {
@@ -109,9 +127,14 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
                 self.assertTrue(all(item["floor"] == integrity.ACT_REQUIRED for item in items))
 
     def test_conditional_real_command_remains_actionable(self):
-        text = "如果当前目录里有 package.json，就读一下当前目录"
-        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
-        self.assertTrue(integrity.build_action_obligations(text))
+        cases = (
+            "如果当前目录里有 package.json，就读一下当前目录",
+            "如果发现错误，那就修复",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+                self.assertTrue(integrity.build_action_obligations(text))
 
     def test_ambiguous_target_allows_clarification(self):
         items = integrity.build_action_obligations("读一下那个目录")
@@ -171,6 +194,15 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_search_observation_accepts_search_evidence(self):
+        user = "帮我搜索一下最新资料"
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                user, [{"ok": True, "tool_action": "web.search"}]
+            ),
+            [],
+        )
+
     def test_explicit_target_still_requires_matching_target(self):
         user = r"读取 C:\work\note.txt"
         wrong = [{
@@ -212,11 +244,29 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         }]
         self.assertTrue(integrity.execution_integrity_blockers(user, history))
 
+    def test_external_typed_effect_can_satisfy_without_fake_local_write(self):
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                "克隆这个仓库",
+                [{"ok": True, "tool_action": "git.clone"}],
+            ),
+            [],
+        )
+
     def test_run_result_satisfies_execution_fact(self):
         user = "运行测试"
         self.assertEqual(
             integrity.execution_integrity_blockers(
                 user, [{"ok": True, "tool_action": "quality.run_tests"}]
+            ),
+            [],
+        )
+
+    def test_delivery_result_satisfies_delivery_fact(self):
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                "把报告发给我",
+                [{"ok": True, "tool_action": "mail.send"}],
             ),
             [],
         )
@@ -299,7 +349,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
 class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     """Static contracts for the existing V3 wiring.
 
-    The implementation deliberately reuses the current call sites. No second
+    The implementation deliberately reuses current V3 call sites. No second
     planner, loop, judge, database or terminal gate is introduced.
     """
 
