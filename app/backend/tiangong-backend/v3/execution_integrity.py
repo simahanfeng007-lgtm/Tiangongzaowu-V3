@@ -21,12 +21,12 @@ ACT_REQUIRED = "ACT_REQUIRED"
 ACT_FORBIDDEN = "ACT_FORBIDDEN"
 ACT_UNKNOWN = "UNKNOWN"
 
-# Global user controls only. Scoped negation such as
-# "查看目录，但不要修改" must not disable the requested observation.
-_RESPONSE_ONLY_MARKERS = (
+# Global user controls only. A hard tool ban always wins. Text-only markers are
+# global only when the same turn does not subsequently request execution.
+_HARD_TOOL_BAN_MARKERS = (
     "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
-    "只告诉我", "只解释", "只分析", "只讨论", "先分析", "先讨论",
 )
+_TEXT_ONLY_MARKERS = ("只告诉我", "只解释", "只分析", "只讨论")
 _GLOBAL_NO_ACTION_PATTERNS = (
     r"^(?:先|暂时)?(?:不要|别|不用|无需)(?:执行|操作|动|处理|修改|改|运行|调用工具|使用工具)(?:任何)?(?:操作|动作|工具)?$",
     r"^(?:先|暂时)?(?:不要|别)(?:做|干|动)(?:任何)?(?:东西|事情|操作)?$",
@@ -35,7 +35,7 @@ _GLOBAL_NO_ACTION_PATTERNS = (
 # These cues establish command context; they never choose a tool.
 _REQUEST_CUES = (
     "请", "帮我", "帮忙", "给我", "替我", "直接", "一下", "现在", "马上", "立刻",
-    "开始", "先", "只", "再", "接着", "那就", "那么就", "把", "将", "不就行了",
+    "开始", "先", "只", "再", "接着", "然后", "然后再", "那就", "那么就", "把", "将", "不就行了",
 )
 _STRONG_REQUEST_CUES = ("请", "帮我", "帮忙", "替我", "直接", "现在", "马上", "立刻", "开始", "不就行了")
 _SEQUENCE_MARKERS = ("然后", "然后再", "再帮我", "并且", "同时", "接着", "那就", "那么就")
@@ -48,6 +48,7 @@ _AMBIGUOUS_TARGETS = (
 )
 _DIRECTORY_TERMS = ("目录", "文件夹", "workspace", "工作区", "当前路径")
 _FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格")
+_STRICT_FILE_TERMS = ("文件", "文档", "压缩包", "pdf", "表格")
 _OBSERVATION_ANCHORS = _DIRECTORY_TERMS + _FILE_TERMS + (
     "日志", "配置", "数据库", "系统", "环境", "服务", "进程", "端口", "仓库", "repository", "repo",
 )
@@ -115,8 +116,11 @@ def has_execution_completion_claim(text: Any) -> bool:
 
 def _response_only(text: str) -> bool:
     compact = _compact(text)
-    if any(marker.replace(" ", "").lower() in compact for marker in _RESPONSE_ONLY_MARKERS):
+    if any(marker.replace(" ", "").lower() in compact for marker in _HARD_TOOL_BAN_MARKERS):
         return True
+    if any(marker.replace(" ", "").lower() in compact for marker in _TEXT_ONLY_MARKERS):
+        if not any(marker in compact for marker in _SEQUENCE_MARKERS):
+            return True
     normalized = _intent_compact(text)
     return any(re.fullmatch(pattern, normalized) for pattern in _GLOBAL_NO_ACTION_PATTERNS)
 
@@ -387,7 +391,7 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
     if fact_kind == "observation":
         if any(term in compact for term in _DIRECTORY_TERMS):
             return "directory"
-        if any(term in compact for term in _FILE_TERMS) or _LOCAL_PATH_RE.search(str(user_text or "")):
+        if any(term in compact for term in _STRICT_FILE_TERMS) or _LOCAL_PATH_RE.search(str(user_text or "")):
             return "file"
     return ""
 
@@ -475,16 +479,18 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
 
     action_tokens = set(part for part in re.split(r"[._-]+", action) if part)
     if action in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or action_tokens.intersection(
-        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan"}
+        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan", "open", "health", "status", "get", "show", "describe"}
     ):
         facts.add("observation")
     if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
     # Local file/code mutations are factual only when the existing ToolResult
     # contract supplied authoritative write evidence above.
-    if action_tokens.intersection({"run", "execute", "test", "verify", "start", "compile", "build"}):
+    if action.startswith(("quality.", "qc.")) or action_tokens.intersection(
+        {"run", "execute", "test", "verify", "start", "compile", "build", "syntax", "lint", "hash"}
+    ):
         facts.add("execution")
-    if action_tokens.intersection({"send", "upload", "submit", "deliver", "export"}):
+    if action_tokens.intersection({"send", "upload", "submit", "deliver", "export", "post", "publish", "share"}):
         facts.add("delivery")
     return facts
 
