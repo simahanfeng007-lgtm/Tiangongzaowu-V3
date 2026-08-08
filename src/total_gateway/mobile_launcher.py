@@ -11,6 +11,7 @@ import threading
 
 from .bootstrap import GatewayConfig
 from .mobile_link import create_mobile_link_server
+from .mobile_omni_bridge import install_mobile_omni_bridge
 from .runtime import GatewayRuntime
 from .server import GatewayHttpServer
 
@@ -26,6 +27,7 @@ def run_gateway_with_mobile(config: GatewayConfig | None = None) -> None:
         gateway = GatewayHttpServer(runtime)
         mobile = create_mobile_link_server(runtime)
         if mobile is not None:
+            install_mobile_omni_bridge(runtime, mobile.broker)
             mobile_thread = threading.Thread(
                 target=mobile.serve_forever,
                 kwargs={"poll_interval": 0.25},
