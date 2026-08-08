@@ -21,8 +21,6 @@ ACT_REQUIRED = "ACT_REQUIRED"
 ACT_FORBIDDEN = "ACT_FORBIDDEN"
 ACT_UNKNOWN = "UNKNOWN"
 
-# Global user controls only. A hard tool ban always wins. Text-only markers are
-# global only when the same turn does not subsequently request execution.
 _HARD_TOOL_BAN_MARKERS = (
     "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
 )
@@ -32,7 +30,6 @@ _GLOBAL_NO_ACTION_PATTERNS = (
     r"^(?:先|暂时)?(?:不要|别)(?:做|干|动)(?:任何)?(?:东西|事情|操作)?$",
 )
 
-# These cues establish command context; they never choose a tool.
 _REQUEST_CUES = (
     "请", "帮我", "帮忙", "给我", "替我", "直接", "一下", "现在", "马上", "立刻",
     "开始", "先", "只", "再", "接着", "然后", "然后再", "那就", "那么就", "把", "将", "不就行了",
@@ -51,12 +48,20 @@ _FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格")
 _STRICT_FILE_TERMS = ("文件", "文档", "压缩包", "pdf", "表格")
 _OBSERVATION_ANCHORS = _DIRECTORY_TERMS + _FILE_TERMS + (
     "日志", "配置", "数据库", "系统", "环境", "服务", "进程", "端口", "仓库", "repository", "repo",
+    "网页", "网站", "浏览器", "链接",
 )
-_MUTATION_ANCHORS = ("文件", "目录", "文件夹", "代码", "源码", "项目", "仓库", "repository", "repo", "配置", "脚本")
+_MUTATION_ANCHORS = (
+    "文件", "目录", "文件夹", "代码", "源码", "项目", "仓库", "repository", "repo", "配置", "脚本",
+    "错误", "bug", "故障",
+)
 _ARTIFACT_ANCHORS = (
     "word", "docx", "excel", "xlsx", "ppt", "pptx", "pdf", "zip", "报告", "文档", "文件", "表格", "压缩包", "桌面",
 )
-_DELIVERY_ANCHORS = _ARTIFACT_ANCHORS + ("邮件", "email", "附件")
+_DELIVERY_ANCHORS = _ARTIFACT_ANCHORS + ("邮件", "email", "附件", "消息", "微信")
+_EXECUTION_ANCHORS = (
+    "代码", "源码", "项目", "程序", "脚本", "接口", "api", "数据库", "服务", "环境", "命令", "语法",
+    "构建", "编译", "单元测试", "测试用例", "测试集", "文件",
+)
 
 # Four factual classes only. These are not task taxonomies and never prescribe
 # a concrete capability. High precision is more important than recall: an
@@ -70,8 +75,10 @@ _SEARCH_VERBS = ("搜索", "搜一下", "查询", "查一下", "帮我查", "帮
 _MUTATION_VERBS = ("修改", "改一下", "改下", "修复", "删除", "移除", "复制", "移动", "重命名")
 _ARTIFACT_VERBS = ("写入", "创建", "新建", "生成", "保存")
 _EXTERNAL_EFFECT_VERBS = ("下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压", "导出")
-_EXECUTION_VERBS = ("运行", "跑一下", "执行", "测试", "验证", "启动", "编译", "构建")
-_DELIVERY_STRONG_VERBS = ("上传", "提交", "交付")
+_RUN_EXECUTION_VERBS = ("运行", "跑一下", "执行", "启动", "编译", "构建")
+_VERIFY_EXECUTION_VERBS = ("测试", "验证")
+_EXECUTION_VERBS = _RUN_EXECUTION_VERBS + _VERIFY_EXECUTION_VERBS
+_DELIVERY_STRONG_VERBS = ("上传", "提交", "交付", "发邮件", "发消息", "发微信", "发布", "分享")
 _DELIVERY_ARTIFACT_VERBS = ("发送", "发给我", "发我", "传给我")
 
 _COMPLETION_CLAIM_RE = re.compile(
@@ -199,7 +206,6 @@ def _is_deferred_action_explanation(user_text: object) -> bool:
 
 
 def is_execution_discussion_only(user_text: object) -> bool:
-    """Only the existing high-confidence no-side-effect discussion cases."""
     return bool(
         _is_high_confidence_capability_question(user_text)
         or _is_hypothetical_action_discussion(user_text)
@@ -234,6 +240,11 @@ def _has_strong_request_cue(compact: str) -> bool:
 def _leading_verb(compact: str, verbs: tuple[str, ...]) -> bool:
     lead = compact.lstrip("，。；：,.;:！!？?")
     return any(lead.startswith(verb) for verb in verbs)
+
+
+def _sequenced_verb(compact: str, verbs: tuple[str, ...]) -> bool:
+    prefixes = ("先", "再", "然后", "然后再", "接着", "那就", "那么就", "就")
+    return any(prefix + verb in compact for prefix in prefixes for verb in verbs)
 
 
 def _has_anchor(text: str, compact: str, anchors: tuple[str, ...]) -> bool:
@@ -288,10 +299,7 @@ def _chinese_requested_fact_kinds(text: str) -> list[str]:
     external_effect = _has_affirmative(compact, _EXTERNAL_EFFECT_VERBS)
     if (
         mutation
-        and (
-            _has_anchor(text, compact, _MUTATION_ANCHORS)
-            or _verb_occurs_affirmatively(compact, "修复")
-        )
+        and _has_anchor(text, compact, _MUTATION_ANCHORS)
         and (cue or _leading_verb(compact, _MUTATION_VERBS))
     ) or (
         artifact_effect
@@ -303,10 +311,18 @@ def _chinese_requested_fact_kinds(text: str) -> list[str]:
     ):
         kinds.append("effect")
 
-    execution = _has_affirmative(compact, _EXECUTION_VERBS)
+    run_execution = _has_affirmative(compact, _RUN_EXECUTION_VERBS)
+    verify_execution = (
+        _has_affirmative(compact, _VERIFY_EXECUTION_VERBS)
+        and _has_anchor(text, compact, _EXECUTION_ANCHORS)
+    )
     if (
-        execution
-        and (strong_cue or _leading_verb(compact, _EXECUTION_VERBS))
+        (run_execution or verify_execution)
+        and (
+            strong_cue
+            or _leading_verb(compact, _EXECUTION_VERBS)
+            or _sequenced_verb(compact, _EXECUTION_VERBS)
+        )
         and not (questionish and not strong_cue)
     ):
         kinds.append("execution")
@@ -315,7 +331,11 @@ def _chinese_requested_fact_kinds(text: str) -> list[str]:
     artifact_delivery = _has_affirmative(compact, _DELIVERY_ARTIFACT_VERBS)
     if (
         strong_delivery
-        and (strong_cue or _leading_verb(compact, _DELIVERY_STRONG_VERBS))
+        and (
+            strong_cue
+            or _leading_verb(compact, _DELIVERY_STRONG_VERBS)
+            or _sequenced_verb(compact, _DELIVERY_STRONG_VERBS)
+        )
         and not (questionish and not strong_cue)
     ) or (
         artifact_delivery
@@ -345,7 +365,7 @@ def _english_requested_fact_kinds(text: str) -> list[str]:
     observation_words = {"read", "list", "inspect", "check", "scan", "browse", "open", "search", "query", "find"}
     effect_words = {"modify", "edit", "fix", "delete", "remove", "copy", "move", "rename", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "export"}
     execution_words = {"run", "execute", "test", "verify", "start", "compile", "build"}
-    delivery_words = {"send", "upload", "submit", "deliver"}
+    delivery_words = {"send", "upload", "submit", "deliver", "publish", "share"}
     artifact_words = {"file", "directory", "folder", "workspace", "attachment", "repo", "repository", "project", "report", "document", "pdf", "zip"}
 
     if any(word in anchors for word in observation_words) and (
@@ -471,8 +491,6 @@ def _target_matches(payload: dict[str, Any], obligation: dict[str, Any]) -> bool
         return False
     if actual == expected:
         return True
-    # A bare requested filename may legitimately be resolved by the tool to an
-    # absolute workspace path. It must still be the same basename.
     if "/" not in expected and actual.endswith("/" + expected):
         return True
     return False
@@ -507,8 +525,6 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         facts.add("observation")
     if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
-    # Local file/code mutations are factual only when the existing ToolResult
-    # contract supplied authoritative write evidence above.
     if action.startswith(("quality.", "qc.")) or action_tokens.intersection(
         {"run", "execute", "test", "verify", "start", "compile", "build", "syntax", "lint", "hash"}
     ):
