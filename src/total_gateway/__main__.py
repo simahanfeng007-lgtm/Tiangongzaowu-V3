@@ -48,9 +48,14 @@ def main() -> int:
     result = _backup_command(args)
     if result >= 0:
         return result
-    from .server import run_gateway
+    if os.environ.get("TIANGONG_MOBILE_LINK", "0") == "1":
+        from .mobile_launcher import run_gateway_with_mobile
 
-    run_gateway()
+        run_gateway_with_mobile()
+    else:
+        from .server import run_gateway
+
+        run_gateway()
     return 0
 
 
