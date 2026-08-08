@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">天工造物·移动身体</string>
+    <string name="accessibility_description">允许你主动授权的天工造物读取当前界面结构，并执行点击、滑动、输入、返回和主页等操作。密码节点不会回传文本。</string>
+</resources>
