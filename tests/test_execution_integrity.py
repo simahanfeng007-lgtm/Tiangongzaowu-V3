@@ -65,6 +65,30 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             [],
         )
 
+    def test_scoped_negation_preserves_other_explicit_actions(self):
+        cases = {
+            "先别读这个文件，查看一下当前目录": ["observation"],
+            "别删除，先运行测试": ["execution"],
+            "不要运行测试，只修改代码": ["effect"],
+            "先别读，只修改这个文件": ["effect"],
+            "把这个文件修改一下，但不要运行测试": ["effect"],
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+                self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], expected)
+
+    def test_global_stop_stays_forbidden(self):
+        for text in ("先不要执行", "不要做任何操作", "不要使用工具，只分析方案"):
+            with self.subTest(text=text):
+                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_FORBIDDEN)
+                self.assertEqual(integrity.build_action_obligations(text), [])
+
+    def test_conditional_fix_is_actionable(self):
+        text = "如果发现错误，那就修复"
+        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
+        self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], ["effect"])
+
     def test_obligations_are_fact_classes_not_tool_plans(self):
         cases = {
             "查看当前目录": "observation",
