@@ -160,7 +160,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
 
     def test_budget_defaults_tripled(self) -> None:
         from v3.zongdiaodu import (
-            _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
+            _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
             _SIMPLE_CHAIN_MAX_LOOP_TURNS,
             _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS,
             _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS,
@@ -174,7 +174,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 5400)
         self.assertEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 90)
         self.assertEqual(_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS, 90)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES, 9)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 3)
         self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 540)
 
     def test_work_status_question_is_not_mutation(self) -> None:
@@ -365,16 +365,14 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertIn("re-initiate", payload["instruction"])
         self.assertEqual(payload["blocking_reasons"][0], "[stuck] no effective progress for 4 consecutive steps")
 
-    def test_continue_decision_payload_allows_model_choice(self) -> None:
-        from v3.zongdiaodu import _simple_chain_continue_decision_payload
+    def test_completion_correction_payload_leaves_route_to_model(self) -> None:
+        from v3.zongdiaodu import _simple_chain_completion_correction_payload
 
-        payload = _simple_chain_continue_decision_payload("req_x", ["no_write_effect"], None)
-        self.assertEqual(payload["schema"], "tiangong.v3.simple_chain.continue_decision.v1")
-        self.assertIn(
-            "If you continue, return exactly one concrete omni_body tool call",
-            payload["instruction"],
-        )
-        self.assertIn("cannot continue productively", payload["instruction"])
+        payload = _simple_chain_completion_correction_payload("req_x", ["no_write_effect"], None)
+        self.assertEqual(payload["schema"], "tiangong.v3.simple_chain.completion_correction.v1")
+        self.assertIn("decide your own next step", payload["instruction"])
+        self.assertNotIn("omni_body", payload["instruction"])
+        self.assertNotIn("file.", payload["instruction"])
         self.assertEqual(payload["blocking_reasons"], ["no_write_effect"])
 
     def test_budget_close_reply_is_terminal_and_honest(self) -> None:
@@ -643,14 +641,14 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
 
     def test_budget_constants_are_sane(self) -> None:
         from v3.zongdiaodu import (
-            _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
+            _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
             _SIMPLE_CHAIN_MAX_LOOP_TURNS,
             _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS,
             _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
             _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
         )
 
-        self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES, 1)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 3)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 1)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 1)

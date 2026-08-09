@@ -552,8 +552,8 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
             self.zong,
         )
 
-    def test_execution_integrity_closeout_bypasses_llm_polish(self):
-        marker = "if requires_evidence_safe_closeout(clean_reasons):"
+    def test_execution_integrity_closeout_is_template_safe_except_bounded_exhaustion(self):
+        marker = "if requires_evidence_safe_closeout(clean_reasons) and not allow_evidence_model:"
         closeout_call = "next_body, reply = _llm_closeout_scoped("
         self.assertIn(marker, self.zong)
         natural_start = self.zong.index("def _natural_closeout(")
@@ -561,6 +561,7 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
         block = self.zong[natural_start:natural_end]
         self.assertLess(block.index(marker), block.index(closeout_call))
         self.assertIn('"template_evidence_safe"', block)
+        self.assertIn("allow_evidence_model=True", self.zong)
 
 
 if __name__ == "__main__":

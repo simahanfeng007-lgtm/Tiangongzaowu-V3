@@ -8,6 +8,7 @@ B7 边界：说明性语境（说明 file.read）与“参考 README.md”不得
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -185,34 +186,54 @@ def test_b2_strip_tool_markup_and_gate_complete_prerequisite(monkeypatch: pytest
     assert not reasons
 
 
-def test_b6_continue_decision_hints_content_shortage_is_fixable() -> None:
-    from v3.zongdiaodu import _simple_chain_continue_decision_payload
+def test_completion_correction_is_evidence_only_and_bounded() -> None:
+    from v3.zongdiaodu import (
+        _simple_chain_completion_correction_payload,
+        _simple_chain_completion_correction_state,
+    )
 
-    payload = _simple_chain_continue_decision_payload(
+    state = {
+        "completion_correction": {
+            "attempts_used": 2,
+            "attempts_max": 99,
+            "last_blockers": [],
+            "exhausted": False,
+        }
+    }
+    correction = _simple_chain_completion_correction_state(state)
+    assert correction["attempts_used"] == 2
+    assert correction["attempts_max"] == 3
+    payload = _simple_chain_completion_correction_payload(
         "req_x",
         ["written content cjk_chars=983 < required 2500"],
-        {},
+        state,
     )
-    assert "REQUIRED deliverable threshold" in payload["instruction"]
-    assert "file.append" in payload["instruction"]
-    payload_plain = _simple_chain_continue_decision_payload("req_y", ["some other gap"], {})
-    assert "REQUIRED deliverable threshold" not in payload_plain["instruction"]
+    assert payload["attempts_remaining"] == 1
+    serialized = json.dumps(payload, ensure_ascii=False).lower()
+    for forbidden in (
+        "file.append",
+        "file.write",
+        "file.read",
+        "file.hash",
+        "omni_body",
+        "exactly one",
+        "stop read-only",
+    ):
+        assert forbidden not in serialized
 
 
-def test_b1_delivery_guard_payload_demands_write_tool() -> None:
-    from v3.zongdiaodu import _simple_chain_delivery_guard_payload
+def test_route_enforcing_completion_guards_are_removed() -> None:
+    from v3 import zongdiaodu as scheduler
 
-    payload = _simple_chain_delivery_guard_payload(
-        "req_z",
-        "检查 Blender 是否可用并输出《设计桥可用性.md》",
-        ["no successful write action or generated attachment for requested deliverable:设计桥可用性.md"],
-        "shell.run",
-        4,
-        {},
-    )
-    assert payload["expected_deliverables"] == ["设计桥可用性.md"]
-    assert "file.write" in payload["instruction"]
-    assert "Stop read-only probing now" in payload["instruction"]
+    for removed in (
+        "_simple_chain_delivery_guard_payload",
+        "_simple_chain_content_guard_payload",
+        "_simple_chain_hard_continue_payload",
+        "_simple_chain_explicit_action_guard_payload",
+        "_simple_chain_final_gap_retry_payload",
+        "_simple_chain_continue_decision_payload",
+    ):
+        assert not hasattr(scheduler, removed)
 
 
 def test_b4_disk_existence_fallback_for_write_without_contract_flag(tmp_path: Path) -> None:
@@ -366,30 +387,6 @@ def test_b6_novel_honors_explicit_user_word_count() -> None:
         {"target": "回声年 第一章.md", "args": {}},
     ) == 2500
 
-
-def test_b6_hard_continue_payload_demands_write() -> None:
-    from v3.zongdiaodu import _simple_chain_hard_continue_payload
-
-    payload = _simple_chain_hard_continue_payload(
-        "req_h",
-        ["written content cjk_chars=1274 < required 2500"],
-        {},
-    )
-    assert "not optional" in payload["instruction"]
-    assert "file.append" in payload["instruction"]
-
-
-def test_b1_monitor_yields_to_delivery_guard_budget(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from v3.zongdiaodu import _simple_chain_monitor_yields_to_guard
-
-    msg = "用工具箱汇总工作区文件并生成《文件清单.md》"
-    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
-    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 9) is False
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "README.md").write_text("# readme", encoding="utf-8")
-    assert _simple_chain_monitor_yields_to_guard("参考 README.md 总结一下", [], [], 0) is False
-    # 交付物仍缺失时（即使已有部分写入）监视器继续让路，交给 guard/兜底收口。
-    assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
 
 def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
     from v3.zongdiaodu import (

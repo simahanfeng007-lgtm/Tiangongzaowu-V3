@@ -681,6 +681,12 @@ def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any =
         "generated_attachments": [],
         "failures": [],
         "gaps": [],
+        "completion_correction": {
+            "attempts_used": 0,
+            "attempts_max": 3,
+            "last_blockers": [],
+            "exhausted": False,
+        },
         "budget": {
             "rounds_used": 0,
             "tool_rounds": 0,
@@ -733,6 +739,16 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
         "failures": list(run_state.get("failures") or [])[-8:],
         "gaps": list(run_state.get("gaps") or [])[-8:],
+        "completion_correction": (
+            run_state.get("completion_correction")
+            if isinstance(run_state.get("completion_correction"), dict)
+            else {
+                "attempts_used": 0,
+                "attempts_max": 3,
+                "last_blockers": [],
+                "exhausted": False,
+            }
+        ),
     }
 
 
@@ -4076,10 +4092,7 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # the best evidence already produced.  Environment overrides exist for
 # operational tuning; defaults are the shipped contract.
 _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
-_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES", "9"))
-_SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER", "3")
-)
+_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 3
 _SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
 _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
 _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS", "90"))
@@ -4091,16 +4104,6 @@ _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS", "90")
 )
 # B1 干预：交付物缺失时允许的只读探测轮次，超过后强制要求写工具生成产物。
-_SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS", "3")
-)
-_SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS", "2")
-)
-# B6：可修复 gap（字数不足/交付物缺失）下模型返回“不继续”时的硬性追问次数。
-_SIMPLE_CHAIN_HARD_CONTINUE_MAX = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_HARD_CONTINUE_MAX", "2")
-)
 # A single tool execution/batch must never wedge the chain past the gateway
 # watchdog (720s after the 3x budget raise).  This hard cap applies even when
 # the effect-deadline context is not visible on the executing thread.
@@ -4774,6 +4777,17 @@ def _simple_chain_declared_action_names() -> frozenset[str]:
 
 def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
     text = _simple_chain_user_goal_text(user_message).lower()
+    strict_order_markers = (
+        r"严格(?:地)?按(?:照)?(?:以下|下列|上述|这个)?顺序",
+        r"严格按序",
+        r"按顺序",
+        r"按(?:以下|下列|上述|这个)顺序",
+        r"依次(?:调用|执行|使用|运行)",
+        r"(?:first|firstly)\b.{0,160}\b(?:then|next|after that)\b",
+        r"(?:strictly|exactly)\s+in\s+(?:this\s+)?order",
+    )
+    if not any(re.search(marker, text, re.IGNORECASE | re.DOTALL) for marker in strict_order_markers):
+        return []
     declared = _simple_chain_declared_action_names()
     positioned: list[tuple[int, str]] = []
     for match in re.finditer(r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)", text):
@@ -4802,47 +4816,6 @@ def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
             }
         ]
     return sequence
-
-
-def _simple_chain_next_explicit_action(
-    user_message: str,
-    quality_history: list[dict[str, Any]],
-) -> str:
-    completed = {
-        str(payload.get("tool_action") or "").strip().lower()
-        for payload in quality_history or []
-        if isinstance(payload, dict) and bool(payload.get("ok"))
-    }
-    for action in _simple_chain_explicit_action_sequence(user_message):
-        if action not in completed:
-            return action
-    return ""
-
-
-def _simple_chain_explicit_action_guard_payload(
-    request_id: str,
-    user_message: str,
-    attempted_action: str,
-    required_action: str,
-    run_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    return {
-        "schema": "tiangong.v3.simple_chain.explicit_action_guard.v1",
-        "ok": False,
-        "request_id": request_id,
-        "attempted_action": attempted_action,
-        "required_action": required_action,
-        "run_state": _simple_chain_run_state_view(run_state),
-        "original_user_request": str(user_message or "")[:1600],
-        "instruction": (
-            f"The user supplied an explicit action sequence. Do not call {attempted_action} or inspect/list "
-            f"the workspace at this checkpoint. Return exactly one `omni_body` call for the next action "
-            f"explicitly requested by the user: action={required_action}. Infer its target and args directly from "
-            "original_user_request. Use a necessary productive setup mutation only when the requested "
-            "artifact cannot otherwise be created. Return no skill.get, skill.read, skill.route, file.list, "
-            "or system capability call unless that is the required_action named above."
-        ),
-    }
 
 
 def _simple_chain_tool_block_payload(request_id: str, tool_name: str, tool_args: dict) -> dict[str, Any]:
@@ -5738,29 +5711,6 @@ def _simple_chain_no_deliverable_gap(
     return [f"no successful write action or generated attachment for requested deliverable{detail}"]
 
 
-def _simple_chain_monitor_yields_to_guard(
-    user_message: str,
-    quality_history: list[dict[str, Any]],
-    generated_attachments: list[dict[str, str]],
-    tool_rounds: int,
-) -> bool:
-    """监视器让路：存在可修复 gap 且 guard 预算未耗尽时，交由有界 guard 收口。
-
-    只读探测轮次不会改变完成门阻塞集，若监视器按“指纹不变”过早 force_stop，
-    交付/内容 guard 将永远没有机会把模型推向写工具。
-    """
-    if _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments):
-        guard_budget = (
-            _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
-            + _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS
-            + 1
-        )
-        return int(tool_rounds or 0) < guard_budget
-    if _simple_chain_content_shortage_gap(user_message, quality_history):
-        return int(tool_rounds or 0) < 10
-    return False
-
-
 def _simple_chain_path_is_reference_mention(user_message: str, path: str) -> bool:
     """判断路径在任务文本里是否只是“参考/阅读”类输入提及，而非交付产物。"""
     text = str(user_message or "")
@@ -5886,17 +5836,38 @@ def _simple_chain_final_hard_gate(
             or _simple_chain_qc_acceptance(payload)[0] is True
         )
     }
-    missing_explicit_actions = [
+    strict_action_sequence = [
         action
         for action in _simple_chain_explicit_action_sequence(user_message)
         if action not in {"skill.route", "skill.get", "skill.read"}
-        and action not in completed_actions
+    ]
+    missing_explicit_actions = [
+        action for action in strict_action_sequence if action not in completed_actions
     ]
     if missing_explicit_actions:
         reasons.append(
             "explicitly requested actions are missing: "
             + ", ".join(missing_explicit_actions[:8])
         )
+    elif strict_action_sequence:
+        observed_actions = [
+            str(payload.get("tool_action") or "").strip().lower()
+            for payload in quality_history
+            if isinstance(payload, dict) and bool(payload.get("ok"))
+        ]
+        cursor = -1
+        order_ok = True
+        for required_action in strict_action_sequence:
+            try:
+                cursor = observed_actions.index(required_action, cursor + 1)
+            except ValueError:
+                order_ok = False
+                break
+        if not order_ok:
+            reasons.append(
+                "explicitly requested strict action order was not observed: "
+                + " -> ".join(strict_action_sequence[:8])
+            )
     for qc_action in [
         action
         for action in _simple_chain_explicit_action_sequence(user_message)
@@ -5985,63 +5956,6 @@ def _simple_chain_final_hard_gate(
         if text and text not in deduped:
             deduped.append(text)
     return (not deduped, "incomplete" if deduped else "complete", deduped)
-
-
-def _simple_chain_skill_lifecycle_decision(
-    user_message: str,
-    quality_history: list[dict[str, Any]],
-    generated_attachments: list[dict[str, str]],
-    required_read_paths: list[str] | None = None,
-) -> dict[str, Any]:
-    completed_production = any(
-        isinstance(payload, dict)
-        and bool(payload.get("ok"))
-        and str(payload.get("tool_action") or "").strip().lower()
-        not in {"skill.route", "skill.get", "skill.read"}
-        for payload in quality_history
-    )
-    final_allowed, status, reasons = _simple_chain_final_hard_gate(
-        user_message,
-        quality_history,
-        generated_attachments,
-        required_read_paths=required_read_paths,
-    )
-    return {
-        "completed_production": completed_production,
-        "final_allowed": final_allowed,
-        "status": status,
-        "blocking_reasons": reasons,
-        "ready_to_deliver": completed_production and final_allowed,
-    }
-
-
-def _simple_chain_skill_lifecycle_payload(
-    request_id: str,
-    attempted_action: str,
-    repeat_count: int,
-    decision: dict[str, Any],
-    run_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    return {
-        "schema": "tiangong.v3.simple_chain.skill_lifecycle.v1",
-        "ok": False,
-        "request_id": request_id,
-        "delivery_context_active": True,
-        "skill_already_loaded": attempted_action in {"skill.get", "skill.read"},
-        "attempted_action": attempted_action,
-        "repeat_count": repeat_count,
-        "completed_production": bool(decision.get("completed_production")),
-        "delivery_status": str(decision.get("status") or "incomplete"),
-        "blocking_reasons": list(decision.get("blocking_reasons") or [])[:8],
-        "run_state": _simple_chain_run_state_view(run_state),
-        "instruction": (
-            "This run already retains the successful observation for the attempted action. Do not repeat "
-            "skill.get, skill.read, skill.route, file.list, file.read, file.hash, or system capability "
-            "calls with the same arguments. Continue with one different concrete production or verification "
-            "action that closes a blocking reason. "
-            "If no blocking reason remains, return a final evidence-backed delivery reply."
-        ),
-    }
 
 
 _INCOMPLETE_REASON_RENHUA = (
@@ -6143,181 +6057,59 @@ def _simple_chain_force_stopped_reply(
     )
 
 
-def _simple_chain_final_gap_retry_payload(
+def _simple_chain_completion_correction_state(
+    run_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current = (
+        run_state.get("completion_correction")
+        if isinstance(run_state, dict) and isinstance(run_state.get("completion_correction"), dict)
+        else {}
+    )
+    attempts_used = max(
+        0,
+        min(
+            _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+            int(current.get("attempts_used") or 0),
+        ),
+    )
+    normalized = {
+        "attempts_used": attempts_used,
+        "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+        "last_blockers": [
+            str(item).strip()
+            for item in (current.get("last_blockers") or [])
+            if str(item).strip()
+        ][:8],
+        "exhausted": bool(current.get("exhausted")),
+    }
+    if isinstance(run_state, dict):
+        run_state["completion_correction"] = normalized
+    return normalized
+
+
+def _simple_chain_completion_correction_payload(
     request_id: str,
     reasons: list[str],
     run_state: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
+    """Return facts only; Runtime never selects the model's repair route."""
+    correction = _simple_chain_completion_correction_state(run_state)
+    attempts_used = int(correction["attempts_used"])
     return {
-        "schema": "tiangong.v3.simple_chain.final_gate_feedback.v1",
+        "schema": "tiangong.v3.simple_chain.completion_correction.v1",
         "request_id": str(request_id or ""),
-        "ok": False,
-        "stage": "final_gate_feedback",
-        "blocking_reasons": clean_reasons,
-        "run_state": _simple_chain_run_state_view(run_state),
-        "instruction": (
-            "Do not produce a final answer yet. Preserve every successful tool result already present in this "
-            "request and close the first blocking reason with exactly one concrete omni_body call. For a missing "
-            "post-mutation verification, read/hash/test the existing artifact; do not rewrite it. Return the tool "
-            "call, not a prose plan."
+        "attempts_used": attempts_used,
+        "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+        "attempts_remaining": max(
+            0, _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS - attempts_used
         ),
-    }
-
-
-def _simple_chain_continue_decision_payload(
-    request_id: str,
-    reasons: list[str],
-    run_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """普通未完成的“继续决策”载荷：让模型自主判断能否换一种方式继续。
-
-    模型返回一个具体 omni_body 调用 → 继续执行；返回纯文本 → 视为模型判断
-    无法继续，自然收尾并交由用户决定。平台不再强制重试，也不自动续作。
-    """
-    clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
-    fixable_content_hint = ""
-    if any(
-        ("written content" in reason or "cjk_chars=" in reason or "nonspace_chars=" in reason)
-        and "required" in reason
-        for reason in clean_reasons
-    ):
-        fixable_content_hint = (
-            " Content-shortage is a REQUIRED deliverable threshold, not an optional preference: the "
-            "written file exists but is below the required length, so the task is NOT complete. You "
-            "MUST continue with file.append/file.write to extend the existing file to the required "
-            "size. Stopping here is only acceptable if the environment physically cannot write more "
-            "content (e.g. quota/permission failure); otherwise return exactly one concrete tool call "
-            "that extends the file."
-        )
-    return {
-        "schema": "tiangong.v3.simple_chain.continue_decision.v1",
-        "request_id": str(request_id or ""),
-        "ok": True,
-        "stage": "continue_decision",
-        "blocking_reasons": clean_reasons,
-        "run_state": _simple_chain_run_state_view(run_state),
+        "blocking_reasons": [
+            str(item).strip() for item in reasons if str(item).strip()
+        ][:8],
         "instruction": (
-            "You may continue this task only if a genuinely different approach can close a blocking reason. "
-            "If you continue, return exactly one concrete omni_body tool call: do not repeat an identical "
-            "failed call, and reuse existing successful evidence. If you cannot continue productively or need "
-            "the user to decide, stop now and reply in natural language explaining why, without claiming "
-            "completion and without implying you will continue automatically. Do not output a plan-only or "
-            "prose-only 'I will continue'."
-            + fixable_content_hint
-        ),
-    }
-
-
-def _simple_chain_delivery_guard_payload(
-    request_id: str,
-    user_message: str,
-    gap_reasons: list[str],
-    attempted_action: str,
-    tool_rounds: int,
-    run_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """B1 干预载荷：交付物缺失且探测轮次超限时，强制要求写工具生成产物。"""
-    text = str(user_message or "")
-    action_hint = ""
-    if re.search(r"浏览器|browser|example\.com|打开.{0,8}网站|网页|截图", text, re.IGNORECASE):
-        action_hint = (
-            " 本任务需要真实访问网页：请调用 omni_body action=browser.open "
-            "（target=目标 URL，args 可带 wait_ms/format），它会返回本地快照与文本证据；"
-            "随后用 file.write 把证据整理成报告。不要只做能力探测。"
-        )
-    return {
-        "schema": "tiangong.v3.simple_chain.delivery_guard.v1",
-        "request_id": str(request_id or ""),
-        "ok": True,
-        "stage": "delivery_guard",
-        "tool_rounds": int(tool_rounds or 0),
-        "attempted_action": str(attempted_action or ""),
-        "blocking_reasons": [str(item).strip() for item in (gap_reasons or []) if str(item).strip()][:8],
-        "expected_deliverables": _simple_chain_explicit_deliverable_paths(user_message)[:8],
-        "instruction": (
-            "The requested deliverable still does not exist: there is no successful write and no "
-            "attachment yet. Stop read-only probing now. Call exactly one concrete write tool "
-            "(file.write, docx.create, pptx.create, sheet.create, zip.create, mindmap.create, or the "
-            "equivalent for the expected format) that creates the expected deliverable path(s). If the "
-            "environment genuinely cannot produce the real deliverable, still call file.write to create "
-            "the requested report file (e.g. the named .md path) containing the availability conclusion "
-            "and the blocking reason; do not merely reply in chat and do not call another inspection tool."
-            + action_hint
-        ),
-    }
-
-
-def _simple_chain_hard_continue_payload(
-    request_id: str,
-    reasons: list[str],
-    run_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """B6 硬性追问：模型返回“不继续”但 gap 可修复时，明确要求必须收口。"""
-    clean_reasons = [str(item).strip() for item in reasons if str(item).strip()][:8]
-    return {
-        "schema": "tiangong.v3.simple_chain.hard_continue.v1",
-        "request_id": str(request_id or ""),
-        "ok": True,
-        "stage": "hard_continue",
-        "blocking_reasons": clean_reasons,
-        "run_state": _simple_chain_run_state_view(run_state),
-        "instruction": (
-            "You returned no tool call, but the deliverable requirement is still unmet and it IS "
-            "fixable with a concrete write action. This is not a user decision point and not optional. "
-            "Return exactly one omni_body write tool call now (file.append/file.write/docx.create/"
-            "pptx.create/sheet.create or the equivalent for the requested format) that closes the gap. "
-            "If you return no tool call again, the run will end incomplete with the file in its current "
-            "state and the user will have to re-request the work."
-        ),
-    }
-
-
-def _simple_chain_content_shortage_gap(
-    user_message: str,
-    quality_history: list[dict[str, Any]],
-) -> list[str]:
-    """B6：最新一次写类载荷是否因“内容长度不足”未达交付标准。"""
-    for payload in reversed(quality_history or []):
-        if not isinstance(payload, dict) or not bool(payload.get("ok")):
-            continue
-        action = str(payload.get("tool_action") or "").lower()
-        if action not in _SIMPLE_CHAIN_WRITE_ACTIONS:
-            continue
-        _ok, issues = _simple_chain_mutation_payload_satisfies_request(user_message, payload)
-        return [
-            str(item)
-            for item in issues
-            if "written content" in str(item) and "required" in str(item)
-        ]
-    return []
-
-
-def _simple_chain_content_guard_payload(
-    request_id: str,
-    gap_reasons: list[str],
-    target_paths: list[str],
-    attempted_action: str,
-    tool_rounds: int,
-) -> dict[str, Any]:
-    """B6 干预载荷：文件已存在但长度不足时，强制要求追加到同一路径。"""
-    return {
-        "schema": "tiangong.v3.simple_chain.content_guard.v1",
-        "request_id": str(request_id or ""),
-        "ok": True,
-        "stage": "content_guard",
-        "tool_rounds": int(tool_rounds or 0),
-        "attempted_action": str(attempted_action or ""),
-        "blocking_reasons": [str(item).strip() for item in (gap_reasons or []) if str(item).strip()][:8],
-        "existing_target_paths": target_paths[:8],
-        "instruction": (
-            "The deliverable file already exists on disk but is below the required length. This is a "
-            "content-shortage gap, not a verification problem. Do NOT call file.read, file.list, "
-            "file.hash, or any other inspection tool. Call exactly one concrete omni_body tool call "
-            "with action='file.append' and target set to one of the target paths above (args.content = "
-            "the additional text). Do not emit a bare tool name like 'file.append' outside the "
-            "omni_body wrapper: the call must be an omni_body invocation with the action field. "
-            "Stopping is only acceptable if the environment physically cannot extend the file."
+            "Completion is not supported by the recorded facts yet. Re-evaluate the factual gaps "
+            "and decide your own next step. Preserve valid evidence already recorded, and do not "
+            "claim completion unless the remaining gaps are resolved."
         ),
     }
 
@@ -7274,10 +7066,7 @@ class Zongdiaodu:
         skill_read_seen = False
         final_guard_exhausted = False
         final_chain_status = "complete"
-        final_gap_retry_count = 0
-        last_decision_fp: str | None = None
-        delivery_guard_active = False
-        content_guard_active = False
+        correction_state = _simple_chain_completion_correction_state(run_state)
         iteration_count = 0
         loop_started_at = time.monotonic()
         if isinstance(run_state, dict):
@@ -7311,7 +7100,12 @@ class Zongdiaodu:
         except Exception:
             pass
 
-        def _natural_closeout(status: str, reasons: list[str] | None = None) -> tuple[ShentiZhuangtai, str]:
+        def _natural_closeout(
+            status: str,
+            reasons: list[str] | None = None,
+            *,
+            allow_evidence_model: bool = False,
+        ) -> tuple[ShentiZhuangtai, str]:
             payload = _simple_chain_natural_closeout_payload(
                 status=status,
                 reasons=list(reasons or []),
@@ -7336,7 +7130,7 @@ class Zongdiaodu:
             # can fabricate a different completion sentence even though no
             # observation exists.  Fail closed with the deterministic Runtime
             # template after bounded replanning has already been exhausted.
-            if requires_evidence_safe_closeout(clean_reasons):
+            if requires_evidence_safe_closeout(clean_reasons) and not allow_evidence_model:
                 _simple_chain_closeout_record(run_state, status, clean_reasons, "template_evidence_safe")
                 return shenti, fallback
             pre_closeout_reply = str(huifu or "").strip()
@@ -7424,19 +7218,7 @@ class Zongdiaodu:
                 ),
                 _simple_chain_natural_reply_text(huifu),
             )
-            # B1：交付物强制写干预已激活时，监视器让路——guard 有界（2 次），
-            # 由 guard 以 incomplete 收尾而非被误判为卡死 force_stopped。
-            if (
-                stuck
-                and not delivery_guard_active
-                and not content_guard_active
-                and not _simple_chain_monitor_yields_to_guard(
-                    xiaoxi,
-                    quality_history,
-                    generated_attachments,
-                    gongju_cishu,
-                )
-            ):
+            if stuck:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", [stuck_reason])
@@ -7550,158 +7332,6 @@ class Zongdiaodu:
                         )
                     shenti, huifu = _llm_jixu_scoped(_simple_chain_model_payload(combined_block), on_chunk=_on_text_chunk)
                     continue
-                parallel_next_action = _simple_chain_next_explicit_action(xiaoxi, quality_history)
-                if parallel_next_action:
-                    inspection_actions = {
-                        "skill.get",
-                        "skill.read",
-                        "skill.route",
-                        "file.list",
-                        "system.capabilities",
-                        "system.action_schema",
-                    }
-                    matching_required = [
-                        item for item in prepared_parallel
-                        if item[2] == parallel_next_action
-                    ]
-                    mismatched_inspection = [
-                        item for item in prepared_parallel
-                        if item[2] in inspection_actions and item[2] != parallel_next_action
-                    ]
-                    if mismatched_inspection and not matching_required:
-                        attempted = mismatched_inspection[0][2]
-                        guard_key = "explicit_action_yield:" + parallel_next_action
-                        guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                        repeat_observation_counts[guard_key] = guard_count
-                        if guard_count > _SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER:
-                            if run_control:
-                                run_control.step(
-                                    "simple_chain_parallel_explicit_action_yield",
-                                    "Parallel explicit action sequence yield",
-                                    "done",
-                                    f"Yielded sequence order after {guard_count} guard hits; allowing {attempted} while {parallel_next_action} remains due.",
-                                    meta={
-                                        "attempted_action": attempted,
-                                        "required_action": parallel_next_action,
-                                        "guard_count": guard_count,
-                                    },
-                                )
-                        else:
-                            guard_payload = _simple_chain_explicit_action_guard_payload(
-                                request_id,
-                                xiaoxi,
-                                attempted,
-                                parallel_next_action,
-                                run_state,
-                            )
-                            if run_control:
-                                run_control.step(
-                                    "simple_chain_parallel_explicit_action_guard",
-                                    "Parallel explicit action sequence",
-                                    "done",
-                                    f"Blocked {attempted}; next requested action is {parallel_next_action}.",
-                                    meta=guard_payload,
-                                )
-                            shenti, huifu = _llm_jixu_scoped(
-                                _simple_chain_model_payload(guard_payload),
-                                on_chunk=_on_text_chunk,
-                            )
-                            continue
-                    if mismatched_inspection:
-                        prepared_parallel = [
-                            item for item in prepared_parallel
-                            if item not in mismatched_inspection
-                        ]
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_parallel_explicit_action_filter",
-                                "Parallel explicit action sequence",
-                                "done",
-                                f"Suppressed {len(mismatched_inspection)} premature inspection call(s).",
-                                meta={
-                                    "required_action": parallel_next_action,
-                                    "suppressed_actions": [item[2] for item in mismatched_inspection],
-                                },
-                            )
-                else:
-                    parallel_already_loaded = any(
-                        isinstance(payload, dict)
-                        and bool(payload.get("ok"))
-                        and str(payload.get("tool_action") or "").strip().lower() in {"skill.get", "skill.read"}
-                        for payload in quality_history
-                    )
-                    parallel_inspection = [
-                        item for item in prepared_parallel
-                        if item[2] in {
-                            "skill.route",
-                            "file.list",
-                            "system.capabilities",
-                            "system.action_schema",
-                        }
-                    ]
-                    if parallel_already_loaded and parallel_inspection:
-                        delivery_decision = _simple_chain_skill_lifecycle_decision(
-                            xiaoxi,
-                            quality_history,
-                            generated_attachments,
-                            required_read_paths=required_read_paths,
-                        )
-                        if (
-                            delivery_decision["completed_production"]
-                            and not delivery_decision["ready_to_deliver"]
-                        ):
-                            productive = [
-                                item for item in prepared_parallel
-                                if item not in parallel_inspection
-                            ]
-                            if productive:
-                                prepared_parallel = productive
-                                if run_control:
-                                    run_control.step(
-                                        "simple_chain_parallel_delivery_repair_filter",
-                                        "Parallel delivery repair",
-                                        "done",
-                                        f"Suppressed {len(parallel_inspection)} inspection call(s); executing concrete repair actions.",
-                                        meta={
-                                            "blocking_reasons": delivery_decision["blocking_reasons"][:8],
-                                            "suppressed_actions": [item[2] for item in parallel_inspection],
-                                        },
-                                    )
-                            else:
-                                attempted = parallel_inspection[0][2]
-                                guard_key = "parallel_delivery_guard:" + attempted
-                                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                                repeat_observation_counts[guard_key] = guard_count
-                                lifecycle_payload = _simple_chain_skill_lifecycle_payload(
-                                    request_id,
-                                    attempted,
-                                    guard_count,
-                                    delivery_decision,
-                                    run_state,
-                                )
-                                if guard_count == 1:
-                                    if run_control:
-                                        run_control.step(
-                                            "simple_chain_parallel_delivery_repair_guard",
-                                            "Parallel delivery repair",
-                                            "done",
-                                            f"Blocked {attempted}; a concrete delivery gap still requires repair.",
-                                            meta=lifecycle_payload,
-                                        )
-                                    shenti, huifu = _llm_jixu_scoped(
-                                        _simple_chain_model_payload(lifecycle_payload),
-                                        on_chunk=_on_text_chunk,
-                                    )
-                                    continue
-                                final_guard_exhausted = True
-                                final_chain_status = "incomplete"
-                                huifu = _simple_chain_incomplete_reply(
-                                    delivery_decision["blocking_reasons"]
-                                    or ["model repeated inspection instead of closing the delivery gate"],
-                                    gongju_cishu,
-                                    status="incomplete",
-                                )
-                                break
                 seen_parallel: set[str] = set()
                 unique_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
                 repeated_parallel: list[tuple[str, dict[str, Any], str, str]] = []
@@ -7868,59 +7498,6 @@ class Zongdiaodu:
                                 "Identical tool call repeated; no longer a stall verdict by itself.",
                                 meta={"repeat_key": repeated_key, "repeat_count": repeat_count},
                             )
-                    if repeated_action in {
-                        "skill.get",
-                        "skill.read",
-                        "skill.route",
-                        "file.list",
-                        "file.read",
-                        "file.hash",
-                        "system.capabilities",
-                        "system.action_schema",
-                    }:
-                        lifecycle_decision = _simple_chain_skill_lifecycle_decision(
-                            xiaoxi,
-                            quality_history,
-                            generated_attachments,
-                            required_read_paths=required_read_paths,
-                        )
-                        if lifecycle_decision["ready_to_deliver"]:
-                            shenti, huifu = _natural_closeout("complete")
-                            final_chain_status = "complete"
-                            if isinstance(run_state, dict):
-                                run_state["status"] = "delivery"
-                                run_state["stage"] = "delivery"
-                                run_state.setdefault("delivery", {})["phase"] = "ready_to_deliver"
-                                _simple_chain_save_run_state(run_state)
-                            if run_control:
-                                run_control.step(
-                                    "simple_chain_skill_lifecycle",
-                                    "Skill lifecycle",
-                                    "done",
-                                    "Suppressed redundant parallel skill reload after the delivery gate passed.",
-                                    meta=_simple_chain_run_state_view(run_state),
-                                )
-                            break
-                        lifecycle_payload = _simple_chain_skill_lifecycle_payload(
-                            request_id,
-                            repeated_action,
-                            repeat_count,
-                            lifecycle_decision,
-                            run_state,
-                        )
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_skill_lifecycle",
-                                "Skill lifecycle",
-                                "done",
-                                "Suppressed redundant parallel skill reload and returned the active delivery state without stopping the task.",
-                                meta=lifecycle_payload,
-                            )
-                        shenti, huifu = _llm_jixu_scoped(
-                            _simple_chain_model_payload(lifecycle_payload),
-                            on_chunk=_on_text_chunk,
-                        )
-                        continue
                     repeated_result = {
                         "schema": "tiangong.v3.simple_chain.repeat_observation.v1",
                         "ok": True,
@@ -8335,175 +7912,107 @@ class Zongdiaodu:
                         pass
             if not tool_name:
                 if quality_history or _runtime_detects_work_intent(xiaoxi):
-                    final_allowed_now, _status_now, final_reasons_now = _simple_chain_final_hard_gate(
+                    final_allowed_now, final_status_now, final_reasons_now = _simple_chain_final_hard_gate(
                         xiaoxi,
                         quality_history,
                         generated_attachments,
                         required_read_paths=required_read_paths,
                         final_reply=huifu,
                     )
-                    can_retry_final_gap = (
-                        not final_allowed_now
-                    )
-                    if can_retry_final_gap:
-                        decision_fp_changed = False
-                        fp_now = _simple_chain_progress_fingerprint(
-                            xiaoxi,
-                            quality_history,
-                            generated_attachments,
-                        )
-                        if last_decision_fp is not None and fp_now != last_decision_fp:
-                            # 上次决策后有实质进展：无进展计数清零，合法长任务不受限。
-                            final_gap_retry_count = 0
-                            decision_fp_changed = True
-                        last_decision_fp = fp_now
-                        if final_gap_retry_count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
-                            # 决策回合超限：可修复 gap 按 incomplete 收尾（保留产物，
-                            # 交用户决定）；真正无进展才 fail-closed force_stopped。
-                            fixable_at_budget = any(
-                                ("written content" in reason and "required" in reason)
-                                or reason.startswith("no successful write action")
-                                or reason.startswith("explicitly named deliverables are missing")
-                                or reason.startswith("execution_obligation:")
-                                or reason.startswith("execution_claim_without_evidence")
-                                for reason in final_reasons_now
-                            )
-                            if fixable_at_budget:
-                                final_guard_exhausted = True
-                                final_chain_status = "incomplete"
-                                shenti, huifu = _natural_closeout(
-                                    "incomplete",
-                                    final_reasons_now or ["模型判断无法继续"],
-                                )
-                                if run_control:
-                                    run_control.step(
-                                        "simple_chain_continue_decision",
-                                        "Continue decision budget",
-                                        "incomplete",
-                                        "Fixable gap remained open; run ended incomplete with artifacts preserved.",
-                                        meta={
-                                            "attempt": final_gap_retry_count,
-                                            "max_retries": _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
-                                            "blocking_reasons": final_reasons_now[:8],
-                                        },
-                                    )
-                                break
-                            final_guard_exhausted = True
-                            final_chain_status = "force_stopped"
-                            shenti, huifu = _natural_closeout(
-                                "force_stopped",
-                                final_reasons_now
-                                or ["[continue_decision_budget_exhausted] model failed to close the completion gate"],
-                            )
-                            if run_control:
-                                run_control.step(
-                                    "simple_chain_continue_decision",
-                                    "Continue decision budget",
-                                    "force_stopped",
-                                    "Continue decision budget exhausted; run terminated fail-closed.",
-                                    meta={
-                                        "attempt": final_gap_retry_count,
-                                        "max_retries": _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
-                                        "blocking_reasons": final_reasons_now[:8],
-                                    },
-                                )
-                            break
-                        final_gap_retry_count += 1
-                        decision_payload = _simple_chain_continue_decision_payload(
-                            request_id,
-                            final_reasons_now,
-                            run_state,
-                        )
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_continue_decision",
-                                "模型自主判断是否继续",
-                                "running",
-                                "; ".join(final_reasons_now)[:500],
-                                meta={
-                                    "attempt": final_gap_retry_count,
-                                    "blocking_reasons": final_reasons_now[:8],
-                                },
-                            )
-                        shenti, huifu = _llm_jixu_scoped(
-                            _simple_chain_model_payload(decision_payload),
-                            on_chunk=_on_text_chunk,
-                        )
-                        decision_tools = (
-                            []
-                            if response_only_without_tools
-                            else self.gutong.jiexi_duogongju(huifu)
-                        )
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_continue_decision",
-                                "模型自主判断是否继续",
-                                "done",
-                                "模型选择继续（返回工具调用）" if decision_tools else "模型判断无法继续，自然收尾",
-                                meta={
-                                    "attempt": final_gap_retry_count,
-                                    "decided_to_continue": bool(decision_tools),
-                                },
-                            )
-                        _simple_chain_emit_event(
-                            run_state,
-                            "continue_decision",
-                            "; ".join(final_reasons_now)[:500],
-                            "system",
-                            extra={
-                                "attempt": final_gap_retry_count,
-                                "decided_to_continue": bool(decision_tools),
-                                "fingerprint_changed": decision_fp_changed,
-                                "decision_tool_names": [
-                                    str(name or "").strip()
-                                    for name, _args in (decision_tools or [])
-                                ][:8],
-                            },
-                        )
-                        if decision_tools:
-                            # 模型选择换一种方式继续：本轮循环执行该工具。
-                            continue
-                        # B6：可修复 gap 下模型仍返回“不继续”→ 有界硬性追问。
-                        hard_retries = repeat_observation_counts.get("hard_continue", 0)
-                        fixable_gap = any(
-                            ("written content" in reason and "required" in reason)
-                            or reason.startswith("no successful write action")
-                            or reason.startswith("explicitly named deliverables are missing")
-                            for reason in final_reasons_now
-                        )
-                        if fixable_gap and hard_retries < _SIMPLE_CHAIN_HARD_CONTINUE_MAX:
-                            repeat_observation_counts["hard_continue"] = hard_retries + 1
-                            hard_payload = _simple_chain_hard_continue_payload(
-                                request_id,
-                                final_reasons_now,
-                                run_state,
-                            )
-                            if run_control:
-                                run_control.step(
-                                    "simple_chain_hard_continue",
-                                    "可修复 gap 硬性追问",
-                                    "running",
-                                    "模型未返回工具调用；已要求必须用写工具收口。",
-                                    meta={
-                                        "attempt": hard_retries + 1,
-                                        "max_retries": _SIMPLE_CHAIN_HARD_CONTINUE_MAX,
-                                        "blocking_reasons": final_reasons_now[:8],
-                                    },
-                                )
-                            shenti, huifu = _llm_jixu_scoped(
-                                _simple_chain_model_payload(hard_payload),
-                                on_chunk=_on_text_chunk,
-                            )
-                            continue
-                        # 模型判断无法继续时诚实收尾；平台不得替模型补写交付物。
+                    if final_allowed_now:
+                        final_chain_status = final_status_now
+                        break
+
+                    correction_state = _simple_chain_completion_correction_state(run_state)
+                    correction_state["last_blockers"] = [
+                        str(item).strip()
+                        for item in (final_reasons_now or [])
+                        if str(item).strip()
+                    ][:8]
+                    attempts_used = int(correction_state.get("attempts_used") or 0)
+                    if attempts_used >= _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS:
+                        correction_state["exhausted"] = True
                         final_guard_exhausted = True
                         final_chain_status = "incomplete"
+                        if isinstance(run_state, dict):
+                            run_state["terminal_reason"] = "completion_corrections_exhausted"
+                            run_state["final_reasons"] = list(correction_state["last_blockers"])
+                            _simple_chain_save_run_state(run_state)
                         shenti, huifu = _natural_closeout(
                             "incomplete",
-                            final_reasons_now or ["模型判断无法继续"],
+                            final_reasons_now or ["completion evidence remains incomplete"],
+                            allow_evidence_model=True,
                         )
+                        if isinstance(run_state, dict):
+                            run_state["terminal_reason"] = "completion_corrections_exhausted"
+                            _simple_chain_save_run_state(run_state)
+                        if run_control:
+                            run_control.step(
+                                "simple_chain_completion_correction",
+                                "Completion correction exhausted",
+                                "incomplete",
+                                "Three evidence corrections were attempted; no execution route was selected by Runtime.",
+                                meta={
+                                    "attempts_used": attempts_used,
+                                    "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+                                    "blocking_reasons": correction_state["last_blockers"],
+                                    "exhausted": True,
+                                },
+                            )
                         break
-                    break
+
+                    attempts_used += 1
+                    correction_state.update({
+                        "attempts_used": attempts_used,
+                        "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+                        "last_blockers": [
+                            str(item).strip()
+                            for item in (final_reasons_now or [])
+                            if str(item).strip()
+                        ][:8],
+                        "exhausted": False,
+                    })
+                    _simple_chain_save_run_state(run_state)
+                    correction_payload = _simple_chain_completion_correction_payload(
+                        request_id,
+                        final_reasons_now,
+                        run_state,
+                    )
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_completion_correction",
+                            "Completion evidence correction",
+                            "running",
+                            "; ".join(final_reasons_now)[:500],
+                            meta=correction_payload,
+                        )
+                    shenti, huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(correction_payload),
+                        on_chunk=_on_text_chunk,
+                    )
+                    _simple_chain_emit_event(
+                        run_state,
+                        "completion_correction",
+                        "; ".join(final_reasons_now)[:500],
+                        "system",
+                        extra={
+                            "attempts_used": attempts_used,
+                            "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+                            "attempts_remaining": max(
+                                0,
+                                _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS - attempts_used,
+                            ),
+                        },
+                    )
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_completion_correction",
+                            "Completion evidence correction",
+                            "done",
+                            "The model received factual gaps and retained control of its next step.",
+                            meta=correction_payload,
+                        )
+                    continue
                 # 无工具调用，直接对话回复
                 huifu = _safe_visible_chat_reply(str(huifu or ""), str(huifu or ""))
                 huifu, self.zuihou_biaoxian = _tiqu_biaoxian(huifu, xiaoxi)
@@ -8532,45 +8041,6 @@ class Zongdiaodu:
                 return huifu
 
 
-            # B2：交付门已在“上一轮工具观察”后满足，模型仍继续发工具调用 = 空转。
-            # 每次工具执行前复查完成门（每轮观察后的不变量），满足即提前自然收尾；
-            # 显式要求的 QC/验证/未完成交付物仍会使门保持未满足，不会误收尾。
-            if (
-                quality_history
-                and not final_guard_exhausted
-                and not _simple_chain_is_learning_only_request(xiaoxi)
-            ):
-                _early_allowed, _early_status, _early_reasons = _simple_chain_final_hard_gate(
-                    xiaoxi,
-                    quality_history,
-                    generated_attachments,
-                    required_read_paths=required_read_paths,
-                    final_reply=huifu,
-                )
-                if _early_allowed and _early_status == "complete":
-                    final_chain_status = "complete"
-                    _early_text = _simple_chain_strip_tool_markup(str(huifu or "")).strip()
-                    if not _early_text or _simple_chain_reply_restates_tool_error(_early_text):
-                        _early_text = ""
-                    if _early_text:
-                        huifu = _early_text
-                    else:
-                        shenti, huifu = _natural_closeout("complete")
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_delivery_gate_early_close",
-                            "交付门提前收尾",
-                            "done",
-                            "交付物已齐备且无 gap，模型继续调用工具视为空转，已提前自然收尾。",
-                            meta={"tool_rounds": gongju_cishu, "blocking_reasons": _early_reasons},
-                        )
-                    QUANZHUIXIAN.jilu_kuadu(
-                        zhuizong_id,
-                        "delivery_gate_early_close",
-                        "wancheng",
-                        f"status=complete;tools={gongju_cishu}",
-                    )
-                    break
             if run_control:
                 _check_stop("stopped before tool call")
             prepared_name, prepared_args, attempted_action, preflight_issues, block_payload = _simple_chain_prepare_tool_call(
@@ -8675,302 +8145,6 @@ class Zongdiaodu:
                         "done",
                         "Converted a repeated successful skill read into the explicitly requested pending-only ingest.",
                     )
-            next_explicit_action = _simple_chain_next_explicit_action(xiaoxi, quality_history)
-            if (
-                attempted_action in {"skill.get", "skill.read"}
-                and candidate_call_key in tool_call_results
-                and not _simple_chain_is_learning_only_request(xiaoxi)
-            ):
-                explicit_sequence = _simple_chain_explicit_action_sequence(xiaoxi)
-                if len(explicit_sequence) > 1 and not next_explicit_action:
-                    explicit_closeout_decision = _simple_chain_skill_lifecycle_decision(
-                        xiaoxi,
-                        quality_history,
-                        generated_attachments,
-                        required_read_paths=required_read_paths,
-                    )
-                    if explicit_closeout_decision["ready_to_deliver"]:
-                        shenti, huifu = _natural_closeout("complete")
-                        final_chain_status = "complete"
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_explicit_sequence_closeout",
-                                "Explicit action sequence complete",
-                                "done",
-                                "Ignored a redundant skill read after the action and delivery gates both succeeded.",
-                                meta={"explicit_actions": explicit_sequence},
-                            )
-                        break
-            already_loaded_skill = any(
-                isinstance(payload, dict)
-                and bool(payload.get("ok"))
-                and str(payload.get("tool_action") or "").strip().lower() in {"skill.get", "skill.read"}
-                for payload in quality_history
-            )
-            if (
-                already_loaded_skill
-                and not next_explicit_action
-                and attempted_action in {
-                    "skill.route",
-                    "file.list",
-                    "system.capabilities",
-                    "system.action_schema",
-                }
-            ):
-                delivery_decision = _simple_chain_skill_lifecycle_decision(
-                    xiaoxi,
-                    quality_history,
-                    generated_attachments,
-                    required_read_paths=required_read_paths,
-                )
-                if (
-                    delivery_decision["completed_production"]
-                    and not delivery_decision["ready_to_deliver"]
-                ):
-                    guard_key = "delivery_guard:" + candidate_call_key
-                    guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                    repeat_observation_counts[guard_key] = guard_count
-                    lifecycle_payload = _simple_chain_skill_lifecycle_payload(
-                        request_id,
-                        attempted_action,
-                        guard_count,
-                        delivery_decision,
-                        run_state,
-                    )
-                    if guard_count == 1:
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_delivery_repair_guard",
-                                "Delivery repair guard",
-                                "done",
-                                f"Blocked {attempted_action}; a concrete delivery gap still requires repair.",
-                                meta=lifecycle_payload,
-                            )
-                        shenti, huifu = _llm_jixu_scoped(
-                            _simple_chain_model_payload(lifecycle_payload),
-                            on_chunk=_on_text_chunk,
-                        )
-                        continue
-                    final_guard_exhausted = True
-                    final_chain_status = "incomplete"
-                    huifu = _simple_chain_incomplete_reply(
-                        delivery_decision["blocking_reasons"]
-                        or ["model repeated inspection instead of closing the delivery gate"],
-                        gongju_cishu,
-                        status="incomplete",
-                    )
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_delivery_repair_guard",
-                            "Delivery repair guard",
-                            "incomplete",
-                            "Repeated inspection stopped at the delivery boundary.",
-                            meta=lifecycle_payload,
-                        )
-                    break
-            # B1 干预：交付物缺失 + 只读探测轮次超限 → 强制写工具，避免模型
-            # 无限探测（capabilities/shell/python/adapter）而不产出交付物。
-            no_deliverable_now = _simple_chain_no_deliverable_gap(
-                xiaoxi,
-                quality_history,
-                generated_attachments,
-            )
-            missing_now = _simple_chain_missing_deliverable_paths(
-                xiaoxi,
-                quality_history,
-                generated_attachments,
-            )
-            guard_gap_reasons = list(no_deliverable_now)
-            if missing_now:
-                guard_gap_reasons.append(
-                    "explicitly named deliverables are missing: " + ", ".join(missing_now[:8])
-                )
-            # 任务明确要求“运行 python xxx.py”时，运行步骤本身就是产生
-            # summary/verification 等产物的前置动作，不是探测。交付守卫
-            # 必须放行真正的运行调用，否则模型永远无法产出这些文件。
-            productive_run_attempt = _simple_chain_is_productive_run_attempt(
-                attempted_action,
-                tool_args,
-                xiaoxi,
-            )
-            if (
-                guard_gap_reasons
-                and gongju_cishu >= _SIMPLE_CHAIN_DELIVERY_GUARD_MIN_ROUNDS
-                and attempted_action not in _SIMPLE_CHAIN_WRITE_ACTIONS
-                and attempted_action not in {"skill.get", "skill.read", "skill.route"}
-                and not productive_run_attempt
-                and not _simple_chain_recent_tool_failure(quality_history)
-                and not _simple_chain_is_project_internal_inspection(
-                    xiaoxi,
-                    attempted_action,
-                    tool_args,
-                )
-            ):
-                # 按 run 全局计数：模型换参数反复探测时不能重置 guard 预算。
-                guard_key = "no_deliverable_guard"
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
-                guard_payload = _simple_chain_delivery_guard_payload(
-                    request_id,
-                    xiaoxi,
-                    guard_gap_reasons,
-                    attempted_action,
-                    gongju_cishu,
-                    run_state,
-                )
-                guard_max_hits = _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS
-                if not _simple_chain_strict_single_deliverable(xiaoxi):
-                    # 多文件工程任务（脚手架/文档站/代码库）文件多、自检多，
-                    # 给 3 倍守卫预算，避免在模型写完剩余文件前误判空转。
-                    guard_max_hits *= 3
-                if guard_count <= guard_max_hits:
-                    delivery_guard_active = True
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_delivery_guard",
-                            "交付物强制写干预",
-                            "done",
-                            f"Blocked {attempted_action}; deliverable still missing after probing.",
-                            meta=guard_payload,
-                        )
-                    shenti, huifu = _llm_jixu_scoped(
-                        _simple_chain_model_payload(guard_payload),
-                        on_chunk=_on_text_chunk,
-                    )
-                    if isinstance(run_state, dict):
-                        live = run_state.setdefault("_live", {})
-                        replies = live.setdefault("delivery_guard_replies", [])
-                        replies.append({
-                            "attempt": guard_count,
-                            "parsed_tools": [
-                                str(name or "").strip()
-                                for name, _args in self.gutong.jiexi_duogongju(huifu)
-                            ][:8],
-                        })
-                    continue
-                final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_incomplete_reply(
-                    guard_gap_reasons
-                    or ["model kept probing without producing the requested deliverable"],
-                    gongju_cishu,
-                    status="incomplete",
-                )
-                if run_control:
-                    run_control.step(
-                        "simple_chain_delivery_guard",
-                        "交付物强制写干预",
-                        "incomplete",
-                        "Model exhausted the delivery-guard budget without producing the deliverable.",
-                        meta=guard_payload,
-                    )
-                break
-            # B6 干预：文件已存在但长度不足时，禁止只读验证/探测，强制追加到同一路径。
-            content_gap_now = _simple_chain_content_shortage_gap(xiaoxi, quality_history)
-            if (
-                content_gap_now
-                and gongju_cishu >= 1
-                and attempted_action not in {"file.append", "file.write", "code.write", "file.replace"}
-            ):
-                guard_key = "content_guard"
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
-                latest_write_paths: list[str] = []
-                for payload in reversed(quality_history or []):
-                    if isinstance(payload, dict) and str(payload.get("tool_action") or "").lower() in _SIMPLE_CHAIN_WRITE_ACTIONS:
-                        latest_write_paths = _simple_chain_payload_paths(payload)
-                        break
-                content_payload = _simple_chain_content_guard_payload(
-                    request_id,
-                    content_gap_now,
-                    latest_write_paths,
-                    attempted_action,
-                    gongju_cishu,
-                )
-                if guard_count <= _SIMPLE_CHAIN_DELIVERY_GUARD_MAX_HITS:
-                    content_guard_active = True
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_content_guard",
-                            "内容不足强制续写",
-                            "done",
-                            f"Blocked {attempted_action}; file exists but is below the required length.",
-                            meta=content_payload,
-                        )
-                    shenti, huifu = _llm_jixu_scoped(
-                        _simple_chain_model_payload(content_payload),
-                        on_chunk=_on_text_chunk,
-                    )
-                    continue
-                final_guard_exhausted = True
-                final_chain_status = "incomplete"
-                huifu = _simple_chain_incomplete_reply(
-                    content_gap_now
-                    or ["model kept verifying instead of extending the deliverable to the required length"],
-                    gongju_cishu,
-                    status="incomplete",
-                )
-                if run_control:
-                    run_control.step(
-                        "simple_chain_content_guard",
-                        "内容不足强制续写",
-                        "incomplete",
-                        "Model exhausted the content-guard budget without extending the deliverable.",
-                        meta=content_payload,
-                    )
-                break
-            if (
-                next_explicit_action
-                and attempted_action != next_explicit_action
-                and attempted_action in {
-                    "skill.get",
-                    "skill.read",
-                    "skill.route",
-                    "file.list",
-                    "system.capabilities",
-                    "system.action_schema",
-                }
-            ):
-                guard_key = "explicit_action_yield:" + next_explicit_action
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
-                if guard_count > _SIMPLE_CHAIN_EXPLICIT_ACTION_YIELD_AFTER:
-                    # 有界让步：模型连续 N 次坚持先做其它动作时，尊重其执行顺序
-                    # 判断，放行本次调用（必需动作仍保留在欠账清单里）。避免
-                    # “严格按序”硬拦变成纯空转，直到无进展监视器强停。
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_explicit_action_yield",
-                            "Explicit action sequence yield",
-                            "done",
-                            f"Yielded sequence order after {guard_count} guard hits; allowing {attempted_action} while {next_explicit_action} remains due.",
-                            meta={
-                                "attempted_action": attempted_action,
-                                "required_action": next_explicit_action,
-                                "guard_count": guard_count,
-                            },
-                        )
-                else:
-                    guard_payload = _simple_chain_explicit_action_guard_payload(
-                        request_id,
-                        xiaoxi,
-                        attempted_action,
-                        next_explicit_action,
-                        run_state,
-                    )
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_explicit_action_guard",
-                            "Explicit action sequence",
-                            "done",
-                            f"Blocked {attempted_action}; next requested action is {next_explicit_action}.",
-                            meta=guard_payload,
-                        )
-                    shenti, huifu = _llm_jixu_scoped(
-                        _simple_chain_model_payload(guard_payload),
-                        on_chunk=_on_text_chunk,
-                    )
-                    continue
             if preflight_issues:
                 if run_control:
                     run_control.step(
@@ -9114,59 +8288,6 @@ class Zongdiaodu:
                             "Identical tool call repeated; no longer a stall verdict by itself.",
                             meta={"repeat_key": tool_call_key, "repeat_count": repeat_count},
                         )
-                if repeat_action in {
-                    "skill.get",
-                    "skill.read",
-                    "skill.route",
-                    "file.list",
-                    "file.read",
-                    "file.hash",
-                    "system.capabilities",
-                    "system.action_schema",
-                }:
-                    lifecycle_decision = _simple_chain_skill_lifecycle_decision(
-                        xiaoxi,
-                        quality_history,
-                        generated_attachments,
-                        required_read_paths=required_read_paths,
-                    )
-                    if lifecycle_decision["ready_to_deliver"]:
-                        shenti, huifu = _natural_closeout("complete")
-                        final_chain_status = "complete"
-                        if isinstance(run_state, dict):
-                            run_state["status"] = "delivery"
-                            run_state["stage"] = "delivery"
-                            run_state.setdefault("delivery", {})["phase"] = "ready_to_deliver"
-                            _simple_chain_save_run_state(run_state)
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_skill_lifecycle",
-                                "Skill lifecycle",
-                                "done",
-                                "The skill was already loaded and the delivery gate passed; redundant reload was suppressed.",
-                                meta=_simple_chain_run_state_view(run_state),
-                            )
-                        break
-                    lifecycle_payload = _simple_chain_skill_lifecycle_payload(
-                        request_id,
-                        repeat_action,
-                        repeat_count,
-                        lifecycle_decision,
-                        run_state,
-                    )
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_skill_lifecycle",
-                            "Skill lifecycle",
-                            "done",
-                            "Suppressed redundant skill reload and returned the active delivery state without stopping the task.",
-                            meta=lifecycle_payload,
-                        )
-                    shenti, huifu = _llm_jixu_scoped(
-                        _simple_chain_model_payload(lifecycle_payload),
-                        on_chunk=_on_text_chunk,
-                    )
-                    continue
                 repeated_result = {
                     "schema": "tiangong.v3.simple_chain.repeat_observation.v1",
                     "ok": True,
