@@ -259,6 +259,49 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         self.assertTrue(integrity.execution_integrity_blockers(user, wrong))
         self.assertEqual(integrity.execution_integrity_blockers(user, right), [])
 
+    def test_multiple_targets_each_require_matching_evidence(self):
+        user = r"删除文件 C:\work\a.txt 和 C:\work\b.txt"
+        only_first = [{
+            "ok": True,
+            "tool_action": "file.delete",
+            "tool_args": {"args": {"target": r"C:\work\a.txt"}},
+            "tool_result_contract": {
+                "write_evidence": {
+                    "authoritative": True,
+                    "deleted_files": [r"C:\work\a.txt"],
+                },
+            },
+        }]
+        both = only_first + [{
+            "ok": True,
+            "tool_action": "file.delete",
+            "tool_args": {"args": {"target": r"C:\work\b.txt"}},
+            "tool_result_contract": {
+                "write_evidence": {
+                    "authoritative": True,
+                    "deleted_files": [r"C:\work\b.txt"],
+                },
+            },
+        }]
+
+        obligations = integrity.build_action_obligations(user)
+        self.assertEqual(
+            [item["target_path"] for item in obligations],
+            [r"C:\work\a.txt", r"C:\work\b.txt"],
+        )
+        self.assertTrue(integrity.execution_integrity_blockers(user, only_first))
+        self.assertEqual(integrity.execution_integrity_blockers(user, both), [])
+
+    def test_one_multi_target_tool_result_can_satisfy_each_target(self):
+        user = "读取 README.md 和 package.json"
+        history = [{
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"args": {"target": ["README.md", "package.json"]}},
+        }]
+
+        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+
     def test_write_effect_uses_existing_authoritative_contract(self):
         user = "把 note.txt 改一下"
         history = [{

@@ -423,15 +423,33 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
     return ""
 
 
-def _extract_explicit_target(user_text: object) -> str:
+def _extract_explicit_targets(user_text: object) -> list[str]:
     text = str(user_text or "")
-    path_match = _LOCAL_PATH_RE.search(text)
-    if path_match:
-        return path_match.group(0).strip()
-    file_match = _BARE_ASCII_FILE_RE.search(text)
-    if file_match:
-        return file_match.group(1).strip()
-    return ""
+    candidates: list[tuple[int, str]] = []
+    path_spans: list[tuple[int, int]] = []
+    for match in _LOCAL_PATH_RE.finditer(text):
+        value = match.group(0).strip()
+        if value:
+            candidates.append((match.start(), value))
+            path_spans.append(match.span())
+    for match in _BARE_ASCII_FILE_RE.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in path_spans):
+            continue
+        candidates.append((match.start(1), match.group(1).strip()))
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for _, value in sorted(candidates, key=lambda item: item[0]):
+        normalized = _normalize_path(value)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            targets.append(value)
+    return targets
+
+
+def _extract_explicit_target(user_text: object) -> str:
+    targets = _extract_explicit_targets(user_text)
+    return targets[0] if targets else ""
 
 
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
@@ -446,21 +464,25 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
         return []
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
-    explicit_target = _extract_explicit_target(text)
+    explicit_targets = _extract_explicit_targets(text)
     obligations: list[dict[str, Any]] = []
-    for index, fact_kind in enumerate(_requested_fact_kinds(text), start=1):
+    obligation_index = 0
+    for fact_kind in _requested_fact_kinds(text):
         object_kind = _requested_object_kind(text, fact_kind)
-        obligations.append({
-            "id": f"execution:{fact_kind}:{index}",
-            "kind": fact_kind,
-            "object_kind": object_kind,
-            "floor": ACT_REQUIRED,
-            "status": "needs_clarification" if ambiguous else "pending",
-            "actionable": not ambiguous,
-            "target_path": explicit_target if fact_kind in {"observation", "effect"} else "",
-            "evidence_policy": "successful_real_tool_result",
-            "source": "current_user_message",
-        })
+        targets = explicit_targets if fact_kind in {"observation", "effect"} and explicit_targets else [""]
+        for target in targets:
+            obligation_index += 1
+            obligations.append({
+                "id": f"execution:{fact_kind}:{obligation_index}",
+                "kind": fact_kind,
+                "object_kind": object_kind,
+                "floor": ACT_REQUIRED,
+                "status": "needs_clarification" if ambiguous else "pending",
+                "actionable": not ambiguous,
+                "target_path": target,
+                "evidence_policy": "successful_real_tool_result",
+                "source": "current_user_message",
+            })
     return obligations
 
 
@@ -471,28 +493,43 @@ def _normalize_path(value: Any) -> str:
     return text.rstrip("/").lower()
 
 
-def _payload_target(payload: dict[str, Any]) -> str:
+def _payload_targets(payload: dict[str, Any]) -> list[str]:
     tool_args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
     nested = tool_args.get("args") if isinstance(tool_args.get("args"), dict) else {}
+    targets: list[str] = []
+    seen: set[str] = set()
     for source in (nested, tool_args):
         for key in ("target", "path", "directory", "dir", "file", "source", "destination", "output_path"):
             value = source.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return ""
+            values = value if isinstance(value, (list, tuple, set)) else [value]
+            for item in values:
+                if not isinstance(item, str) or not item.strip():
+                    continue
+                target = item.strip()
+                normalized = _normalize_path(target)
+                if normalized and normalized not in seen:
+                    seen.add(normalized)
+                    targets.append(target)
+    return targets
+
+
+def _payload_target(payload: dict[str, Any]) -> str:
+    targets = _payload_targets(payload)
+    return targets[0] if targets else ""
 
 
 def _target_matches(payload: dict[str, Any], obligation: dict[str, Any]) -> bool:
     expected = _normalize_path(obligation.get("target_path"))
     if not expected:
         return True
-    actual = _normalize_path(_payload_target(payload))
-    if not actual:
+    actual_targets = [_normalize_path(value) for value in _payload_targets(payload)]
+    if not actual_targets:
         return False
-    if actual == expected:
-        return True
-    if "/" not in expected and actual.endswith("/" + expected):
-        return True
+    for actual in actual_targets:
+        if actual == expected:
+            return True
+        if "/" not in expected and actual.endswith("/" + expected):
+            return True
     return False
 
 
