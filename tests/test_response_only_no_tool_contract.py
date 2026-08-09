@@ -54,7 +54,10 @@ def test_real_work_requests_still_require_evidence() -> None:
     )
     assert not allowed
     assert status == "incomplete"
-    assert reasons == ["no omni_body observation exists for this work request"]
+    assert reasons == [
+        "execution_obligation:execution:missing_evidence",
+        "execution_claim_without_evidence",
+    ]
 
 
 def test_response_only_runtime_disables_tools_at_provider_boundary() -> None:
