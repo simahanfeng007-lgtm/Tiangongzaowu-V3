@@ -2431,12 +2431,19 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
     candidates: list[Path] = []
     if request_id:
         direct = root / f"{_safe_run_state_id(request_id)}.json"
-        if direct.exists():
-            candidates.append(direct)
-    try:
-        candidates.extend(sorted(root.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:40])
-    except Exception:
-        return {}
+        # Context is assembled before a new simple-chain state file normally
+        # exists. Falling back to the newest state from this session would
+        # relabel the previous turn's work_intent.message_preview as the
+        # current task. A supplied request id is therefore an exact identity
+        # boundary: missing means that no current run-state context exists yet.
+        if not direct.exists():
+            return {}
+        candidates.append(direct)
+    else:
+        try:
+            candidates.extend(sorted(root.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:40])
+        except Exception:
+            return {}
     seen: set[str] = set()
     for path in candidates:
         key = str(path).lower()
