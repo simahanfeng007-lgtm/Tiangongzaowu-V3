@@ -10,6 +10,7 @@ from .authority_matrix import AuthorityIntersectionError, intersect_authority
 from .rule import ClosureDiagnostic, DerivedCandidate, DeterministicRule
 from .registry import RuleRegistry
 from .set import KnownSet, KnownRecord, ActiveCutOverflow, known_ref, proposition_signature
+from world_understanding.common.epistemic import EpistemicPlane, EpistemicIntegrityError
 
 class ClosureLimitExceeded(RuntimeError): pass
 
@@ -30,13 +31,15 @@ def _sorted_parent_refs(parents: tuple[KnownRecord, ...]) -> tuple[WorldRecordRe
     return tuple(sorted(refs, key=lambda ref: ref.sort_key()))
 
 
-def _materialize(rule: DeterministicRule, candidate: DerivedCandidate) -> tuple[DerivedKnownRecord, DerivationRef, tuple[DerivationEdge, ...]]:
+def _materialize(rule: DeterministicRule, candidate: DerivedCandidate, *, epistemic_plane: EpistemicPlane) -> tuple[DerivedKnownRecord, DerivationRef, tuple[DerivationEdge, ...]]:
     if not candidate.parents:
         raise ValueError("deterministic derivation requires parents")
     scope = candidate.parents[0].world_scope
     require_same_scope_parents(scope, candidate.parents)
     if any(parent.truth_state != "TRUE" for parent in candidate.parents):
         raise ValueError("PARENT_NOT_TRUE")
+    for parent in candidate.parents:
+        epistemic_plane.require_stable_known(parent, expected_scope=scope)
     envelope = intersect_authority(rule.spec, candidate.parents)
     parent_refs = _sorted_parent_refs(candidate.parents)
     object_value = candidate.object_value
@@ -113,12 +116,13 @@ def _materialize(rule: DeterministicRule, candidate: DerivedCandidate) -> tuple[
     return child, derivation, tuple(edges)
 
 class KnownClosureEngine:
-    __slots__ = ("registry", "max_rounds", "max_records")
-    def __init__(self, registry: RuleRegistry, *, max_rounds: int = 64, max_records: int = 100_000) -> None:
+    __slots__ = ("registry", "max_rounds", "max_records", "epistemic_plane")
+    def __init__(self, registry: RuleRegistry, *, max_rounds: int = 64, max_records: int = 100_000, epistemic_plane: EpistemicPlane | None = None) -> None:
         if max_rounds < 1: raise ValueError("max_rounds must be positive")
         self.registry = registry
         self.max_rounds = int(max_rounds)
         self.max_records = int(max_records)
+        self.epistemic_plane = epistemic_plane or EpistemicPlane()
 
     def close(self, direct_known: tuple[KnownRecord, ...], *, prior: ClosureResult | None = None) -> ClosureResult:
         if not direct_known and prior is None:
@@ -153,7 +157,7 @@ class KnownClosureEngine:
                     continue
                 for candidate in candidates:
                     try:
-                        child, derivation, new_edges = _materialize(rule, candidate)
+                        child, derivation, new_edges = _materialize(rule, candidate, epistemic_plane=self.epistemic_plane)
                         child_sig = proposition_signature(child)
                         ancestor_sigs: set[str] = set()
                         for parent in candidate.parents:
@@ -168,7 +172,7 @@ class KnownClosureEngine:
                             derivations.append(derivation); edges.extend(new_edges)
                     except ActiveCutOverflow:
                         raise
-                    except AuthorityIntersectionError as exc:
+                    except (AuthorityIntersectionError, EpistemicIntegrityError) as exc:
                         diagnostics.append(ClosureDiagnostic(rule.spec.rule_id, str(exc), ""))
                     except Exception as exc:
                         diagnostics.append(ClosureDiagnostic(rule.spec.rule_id, str(exc) or type(exc).__name__, ""))
