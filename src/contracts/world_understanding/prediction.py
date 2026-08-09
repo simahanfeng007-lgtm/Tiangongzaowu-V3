@@ -57,12 +57,13 @@ class WorldPrediction(HashedWorldContract):
             raise ValueError("prediction stable id mismatch")
         return self
 
-def derive_prediction_outcome_id(*, prediction_id: str, outcome: str, resolved_at_ms: int, outcome_observation_refs: tuple[WorldRecordRef, ...]) -> str:
-    return "wpout_" + canonical_sha256({"domain": "tiangong.world.prediction-outcome-id.v1", "prediction_id": prediction_id, "outcome": outcome, "resolved_at_ms": resolved_at_ms, "outcome_observation_refs": [item.model_dump(mode="json") for item in outcome_observation_refs]})
+def derive_prediction_outcome_id(*, world_scope_hash: str, prediction_id: str, outcome: str, resolved_at_ms: int, outcome_observation_refs: tuple[WorldRecordRef, ...]) -> str:
+    return "wpout_" + canonical_sha256({"domain": "tiangong.world.prediction-outcome-id.v1", "world_scope_hash": world_scope_hash, "prediction_id": prediction_id, "outcome": outcome, "resolved_at_ms": resolved_at_ms, "outcome_observation_refs": [item.model_dump(mode="json") for item in outcome_observation_refs]})
 
 class PredictionOutcome(HashedWorldContract):
     _hash_field = "outcome_sha256"
     outcome_id: PredictionOutcomeId
+    scope: WorldScope
     prediction_id: PredictionId
     prediction_family: OpaqueId
     horizon_class: OpaqueId
@@ -80,6 +81,6 @@ class PredictionOutcome(HashedWorldContract):
     def validate_outcome(self) -> Self:
         if self.outcome in {"SUPPORTED", "CONTRADICTED"} and not self.outcome_observation_refs:
             raise ValueError("resolved prediction outcome requires reality observation refs")
-        if self.outcome_id != derive_prediction_outcome_id(prediction_id=self.prediction_id, outcome=self.outcome, resolved_at_ms=self.resolved_at_ms, outcome_observation_refs=self.outcome_observation_refs):
+        if self.outcome_id != derive_prediction_outcome_id(world_scope_hash=self.scope.world_scope_hash, prediction_id=self.prediction_id, outcome=self.outcome, resolved_at_ms=self.resolved_at_ms, outcome_observation_refs=self.outcome_observation_refs):
             raise ValueError("prediction outcome id mismatch")
         return self

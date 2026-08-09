@@ -74,6 +74,8 @@ def envelope(
         payload_inline=payload,
         payload_sha256=payload_sha256,
         source_time=source_time(),
+        life_id=world_scope.life_id,
+        principal_scope_hash=world_scope.principal_scope_hash,
         scope_hint=world_scope,
         correlation_id=correlation_id,
         dedup_key=dedup_key,
@@ -114,7 +116,7 @@ def test_unclassified_source_is_quarantined_without_compiler_execution() -> None
 
 
 def test_known_source_without_compiler_is_quarantined() -> None:
-    receipt = WorldUnderstandingFacade(enabled=True).accept(envelope(source_kind="TOOL_RESULT"))
+    receipt = WorldUnderstandingFacade(enabled=True, compiler_registry=CompilerRegistry()).accept(envelope(source_kind="TOOL_RESULT"))
     assert receipt.disposition == "QUARANTINED"
     assert receipt.reason_code == "NO_COMPILER_REGISTERED"
     assert receipt.processed is False

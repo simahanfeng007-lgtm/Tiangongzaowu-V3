@@ -19,7 +19,7 @@ def sr(k='FACT_EXECUTION',d='EXECUTION_ACTION'): return WorldSourceRef(source_ki
 def env(kind='SOURCE_RECORD'):
     s=sc(); sk='CONTEXT_REQUEST' if kind=='CONTEXT_REQUEST' else 'FACT_EXECUTION'; p={'kind':kind}; ph=canonical_sha256(p)
     dk=derive_ingress_dedup_key(envelope_kind=kind,source_kind=sk,source_native_id='n.1',payload_sha256=ph,world_scope_hash=s.world_scope_hash)
-    return WorldIngressEnvelope(envelope_id=derive_ingress_envelope_id(dedup_key=dk),envelope_kind=kind,source_kind=sk,source_native_id='n.1',producer_ref='producer',payload_inline=p,payload_sha256=ph,source_time=wt(),scope_hint=s,correlation_id='c.1',dedup_key=dk)
+    return WorldIngressEnvelope(envelope_id=derive_ingress_envelope_id(dedup_key=dk),envelope_kind=kind,source_kind=sk,source_native_id='n.1',producer_ref='producer',payload_inline=p,payload_sha256=ph,source_time=wt(),life_id=s.life_id,principal_scope_hash=s.principal_scope_hash,scope_hint=s,correlation_id='c.1',dedup_key=dk)
 def cl(): return WorldClaim(subject_ref=rr(),predicate='status',value=WorldValue(kind='string',string_value='active'))
 
 class P1Contracts(unittest.TestCase):

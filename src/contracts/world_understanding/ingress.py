@@ -43,7 +43,7 @@ class WorldIngressEnvelope(WorldContractModel):
     payload_ref: WorldSourceRef | None = None
     payload_sha256: Sha256
     source_time: WorldTime
-    life_id: OpaqueId | None = None
+    life_id: OpaqueId
     run_id: OpaqueId | None = None
     request_id: OpaqueId | None = None
     session_id: OpaqueId | None = None
@@ -72,6 +72,11 @@ class WorldIngressEnvelope(WorldContractModel):
                 raise ValueError("inline payload hash mismatch")
         elif self.payload_ref is not None and self.payload_ref.sha256 != self.payload_sha256:
             raise ValueError("payload_ref hash mismatch")
+
+        if self.life_id != self.scope_hint.life_id:
+            raise ValueError("ingress life_id does not match scope_hint.life_id")
+        if self.principal_scope_hash is not None and self.principal_scope_hash != self.scope_hint.principal_scope_hash:
+            raise ValueError("ingress principal_scope_hash does not match scope_hint.principal_scope_hash")
 
         if self.envelope_kind == "CONTEXT_REQUEST":
             if self.source_kind != "CONTEXT_REQUEST":

@@ -8,6 +8,7 @@ from .dedup import DedupGate
 from .receipt import IngressReceipt, make_receipt
 from .router import IngressRouter
 from .validation import IngressValidationError, validate_ingress_envelope
+from world_understanding.scope_guard import ScopeMismatchError
 
 
 class WorldUnderstandingIngress:
@@ -32,9 +33,25 @@ class WorldUnderstandingIngress:
 
         try:
             return self._dedup.run_once(validated.dedup_key, lambda: self._router.route(validated))
+        except ScopeMismatchError as exc:
+            return make_receipt(
+                envelope_id=validated.envelope_id,
+                dedup_key=validated.dedup_key,
+                correlation_id=validated.correlation_id,
+                disposition="REJECTED",
+                reason_code=exc.reason_code,
+                processed=False,
+            )
+        except (TypeError, ValueError):
+            return make_receipt(
+                envelope_id=validated.envelope_id,
+                dedup_key=validated.dedup_key,
+                correlation_id=validated.correlation_id,
+                disposition="REJECTED",
+                reason_code="COMPILER_OUTPUT_INVALID",
+                processed=False,
+            )
         except Exception:
-            # The dedup gate releases the reservation on exceptions, so a
-            # transient compiler failure is fail-closed but retryable.
             return make_receipt(
                 envelope_id=validated.envelope_id,
                 dedup_key=validated.dedup_key,

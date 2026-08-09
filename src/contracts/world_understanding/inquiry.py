@@ -71,12 +71,13 @@ class WorldInquiry(HashedWorldContract):
         if self.inquiry_id!=derive_inquiry_id(world_scope_hash=self.scope.world_scope_hash,question=self.question,knowledge_gap_id=self.knowledge_gap_id,subject_refs=self.subject_refs): raise ValueError("inquiry stable id mismatch")
         return self
 
-def derive_inquiry_outcome_id(*,inquiry_id:str,self_will_decision:str,closed_at_ms:int,resulting_source_envelope_refs:tuple[WorldRecordRef,...])->str:
-    return "wiout_"+canonical_sha256({"domain":"tiangong.world.inquiry-outcome-id.v1","inquiry_id":inquiry_id,"self_will_decision":self_will_decision,"closed_at_ms":closed_at_ms,"resulting_source_envelope_refs":[x.model_dump(mode="json") for x in resulting_source_envelope_refs]})
+def derive_inquiry_outcome_id(*,world_scope_hash:str,inquiry_id:str,self_will_decision:str,closed_at_ms:int,resulting_source_envelope_refs:tuple[WorldRecordRef,...])->str:
+    return "wiout_"+canonical_sha256({"domain":"tiangong.world.inquiry-outcome-id.v1","world_scope_hash":world_scope_hash,"inquiry_id":inquiry_id,"self_will_decision":self_will_decision,"closed_at_ms":closed_at_ms,"resulting_source_envelope_refs":[x.model_dump(mode="json") for x in resulting_source_envelope_refs]})
 
 class InquiryOutcome(HashedWorldContract):
     _hash_field="outcome_sha256"
     outcome_id:InquiryOutcomeId
+    scope:WorldScope
     inquiry_id:InquiryId
     self_will_decision:SelfWillDecision
     autonomous_intent_id:OpaqueId|None=None
@@ -104,5 +105,5 @@ class InquiryOutcome(HashedWorldContract):
     @model_validator(mode="after")
     def check(self)->Self:
         if self.resolved and self.self_will_decision=="ACCEPT" and not (self.resulting_source_envelope_refs or self.observation_refs or self.evidence_refs): raise ValueError("resolved accepted inquiry requires independent reality results")
-        if self.outcome_id!=derive_inquiry_outcome_id(inquiry_id=self.inquiry_id,self_will_decision=self.self_will_decision,closed_at_ms=self.closed_at_ms,resulting_source_envelope_refs=self.resulting_source_envelope_refs): raise ValueError("inquiry outcome id mismatch")
+        if self.outcome_id!=derive_inquiry_outcome_id(world_scope_hash=self.scope.world_scope_hash,inquiry_id=self.inquiry_id,self_will_decision=self.self_will_decision,closed_at_ms=self.closed_at_ms,resulting_source_envelope_refs=self.resulting_source_envelope_refs): raise ValueError("inquiry outcome id mismatch")
         return self

@@ -10,8 +10,8 @@ from ..models import OpaqueId, Sha256
 def derive_knowledge_gap_id(*, world_scope_hash: str, subject_refs: tuple[WorldRecordRef, ...], missing_evidence_types: tuple[str, ...], basis_refs: tuple[WorldRecordRef, ...]) -> str:
     return "wgap_" + canonical_sha256({"domain":"tiangong.world.knowledge-gap-id.v1","world_scope_hash":world_scope_hash,"subject_refs":[x.model_dump(mode="json") for x in subject_refs],"missing_evidence_types":list(missing_evidence_types),"basis_refs":[x.model_dump(mode="json") for x in basis_refs]})
 
-def derive_curiosity_id(*, life_id: str, frame_ref: WorldRecordRef | None, question: str, subject_refs: tuple[WorldRecordRef, ...], provenance_refs: tuple[WorldRecordRef, ...], created_at_ms: int) -> str:
-    return "wcur_" + canonical_sha256({"domain":"tiangong.world.curiosity-id.v1","life_id":life_id,"frame_ref":None if frame_ref is None else frame_ref.model_dump(mode="json"),"question":question,"subject_refs":[x.model_dump(mode="json") for x in subject_refs],"provenance_refs":[x.model_dump(mode="json") for x in provenance_refs],"created_at_ms":created_at_ms})
+def derive_curiosity_id(*, world_scope_hash: str, frame_ref: WorldRecordRef | None, question: str, subject_refs: tuple[WorldRecordRef, ...], provenance_refs: tuple[WorldRecordRef, ...], created_at_ms: int) -> str:
+    return "wcur_" + canonical_sha256({"domain":"tiangong.world.curiosity-id.v1","world_scope_hash":world_scope_hash,"frame_ref":None if frame_ref is None else frame_ref.model_dump(mode="json"),"question":question,"subject_refs":[x.model_dump(mode="json") for x in subject_refs],"provenance_refs":[x.model_dump(mode="json") for x in provenance_refs],"created_at_ms":created_at_ms})
 
 class KnowledgeGap(HashedWorldContract):
     _hash_field="gap_sha256"
@@ -42,7 +42,7 @@ class KnowledgeGap(HashedWorldContract):
 class WorldCuriosity(HashedWorldContract):
     _hash_field="curiosity_sha256"
     curiosity_id: CuriosityId
-    life_id: OpaqueId
+    scope: WorldScope
     frame_ref: WorldRecordRef|None=None
     subject_refs: tuple[WorldRecordRef,...]=Field(default=(),max_length=4096)
     question: str=Field(min_length=1,max_length=20_000)
@@ -72,5 +72,5 @@ class WorldCuriosity(HashedWorldContract):
     @model_validator(mode="after")
     def check(self)->Self:
         if self.expires_at_ms is not None and self.expires_at_ms < self.created_at_ms: raise ValueError("curiosity expiry precedes creation")
-        if self.curiosity_id != derive_curiosity_id(life_id=self.life_id,frame_ref=self.frame_ref,question=self.question,subject_refs=self.subject_refs,provenance_refs=self.provenance_refs,created_at_ms=self.created_at_ms): raise ValueError("curiosity id mismatch")
+        if self.curiosity_id != derive_curiosity_id(world_scope_hash=self.scope.world_scope_hash,frame_ref=self.frame_ref,question=self.question,subject_refs=self.subject_refs,provenance_refs=self.provenance_refs,created_at_ms=self.created_at_ms): raise ValueError("curiosity id mismatch")
         return self
