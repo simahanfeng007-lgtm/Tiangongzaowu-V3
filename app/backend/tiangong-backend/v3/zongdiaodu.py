@@ -96,7 +96,6 @@ _ACTION_REGISTRY_PATHS = tuple(
         "capability_manifest.generated.json",
     )
 )
-_SKILL_DELIVERABLE_DIR = Path(__file__).resolve().parents[1] / "omni_body_skill" / "deliverable_skills"
 _LIFE_SOUL_PREFIX = "[TIANGONG_LIFE_SOUL_V1]"
 _LIFE_SOUL_SUFFIX = "[/TIANGONG_LIFE_SOUL_V1]"
 
@@ -157,90 +156,55 @@ class _DetachedLegacyHeartbeat:
         return None
 
 
-def _partial_cjk_match(keyword: str, text: str) -> bool:
-    """CJK 部分匹配：关键词中任意 ≥2 字片段在文本中出现"""
-    cjk_chars = "".join(re.findall(r"[\u4e00-\u9fff]", keyword))
-    if len(cjk_chars) < 2:
-        return False
-    for i in range(len(cjk_chars) - 1):
-        if cjk_chars[i:i+2] in text:
-            return True
-    return False
-
-
-def _match_and_inject_skills(xiaoxi: str) -> str:
-    """扫描用户消息中的关键词，匹配 Skill 并返回注入文本（含已注册学习能力）。"""
-    injected: list[str] = []
-
-    # ① 预置 Skill（skill_router_index.json）
-    if _SKILL_INDEX_PATH.exists():
-        try:
-            index = json.loads(_SKILL_INDEX_PATH.read_text(encoding="utf-8"))
-            skills = index.get("skills") if isinstance(index, dict) else []
-            if isinstance(skills, list):
-                msg_lower = xiaoxi.lower()
-                for skill in skills:
-                    if not isinstance(skill, dict):
-                        continue
-                    keywords = skill.get("keywords") or []
-                    if not isinstance(keywords, list):
-                        continue
-                    hit = any(kw.lower() in msg_lower for kw in keywords if isinstance(kw, str))
-                    if not hit:
-                        continue
-                    file_rel = skill.get("file", "")
-                    skill_path = _SKILL_DELIVERABLE_DIR / Path(file_rel).name
-                    if not skill_path.exists():
-                        continue
-                    try:
-                        max_chars = int(skill.get("max_chars", 4000)) or None
-                        raw = skill_path.read_text(encoding="utf-8")
-                        content = raw if max_chars is None else raw[:max_chars]
-                    except Exception:
-                        continue
-                    name = skill.get("mingcheng", file_rel)
-                    injected.append(f"[已匹配Skill: {name}]\n{content}")
-        except Exception:
-            pass
-
-    # ② 学习注册能力（nengli_liebiao.json）
+def _simple_chain_explicit_named_skill_ids(user_message: str) -> list[str]:
+    """Return only complete registered Skill IDs/names explicitly present in the request."""
+    text = str(user_message or "")
+    if not text.strip() or not _SKILL_INDEX_PATH.exists():
+        return []
     try:
-        from .peizhi import NENGLI_ZHUCE_LUJING
-        if NENGLI_ZHUCE_LUJING.exists():
-            reg = json.loads(NENGLI_ZHUCE_LUJING.read_text(encoding="utf-8"))
-            learned = reg.get("nengli_liebiao") or []
-            if isinstance(learned, list) and learned:
-                msg_lower = xiaoxi.lower()
-                for item in learned:
-                    if not isinstance(item, dict):
-                        continue
-                    kw_list = item.get("keywords") or item.get("keyword") or []
-                    if isinstance(kw_list, str):
-                        kw_list = [kw_list]
-                    # fallback: 无 keywords 时用名称+描述匹配
-                    if not kw_list:
-                        name = item.get("mingcheng") or item.get("name") or item.get("id", "")
-                        desc = item.get("miaoshu") or item.get("description") or ""
-                        kw_list = [name, desc]
-                    if not any(kw.lower() in msg_lower or _partial_cjk_match(kw, msg_lower) for kw in kw_list if isinstance(kw, str)):
-                        continue
-                    name = item.get("mingcheng") or item.get("name") or item.get("id", "learned_skill")
-                    desc = item.get("description") or item.get("miaoshu") or ""
-                    spec = item.get("skill_spec") or ""
-                    parts = [f"[已匹配学习能力: {name}]"]
-                    if desc:
-                        parts.append(desc)
-                    if spec and isinstance(spec, str):
-                        parts.append(spec[:2000])
-                    elif spec and isinstance(spec, dict):
-                        parts.append(json.dumps(spec, ensure_ascii=False)[:2000])
-                    injected.append("\n".join(parts))
+        index = json.loads(_SKILL_INDEX_PATH.read_text(encoding="utf-8"))
     except Exception:
-        pass
+        return []
+    skills = index.get("skills") if isinstance(index, dict) else []
+    if not isinstance(skills, list):
+        return []
 
-    if injected:
-        return "\n\n---\n".join(injected)
-    return ""
+    matches: list[str] = []
+    for skill in skills:
+        if not isinstance(skill, dict):
+            continue
+        skill_id = str(skill.get("id") or "").strip()
+        registered_name = str(
+            skill.get("mingcheng") or skill.get("name") or ""
+        ).strip()
+        id_match = bool(
+            skill_id
+            and re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(skill_id)}(?![A-Za-z0-9_])",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        name_match = bool(registered_name and registered_name in text)
+        if (id_match or name_match) and skill_id not in matches:
+            matches.append(skill_id)
+    return matches[:8]
+
+
+def _simple_chain_explicit_skill_context(user_message: str) -> str:
+    """Expose an exact user selection without reading or activating Skill content."""
+    exact_ids = _simple_chain_explicit_named_skill_ids(user_message)
+    if not exact_ids:
+        return ""
+    return (
+        "[Explicit registered Skill selection]\n"
+        "The user explicitly named these exact registered Skill IDs: "
+        + ", ".join(exact_ids)
+        + ". If Skill instructions are needed, request only the exact named target through "
+        "the authority-backed Skill interface. Do not substitute a fuzzy, default, learned-local, "
+        "or similarly named Skill. A disabled, missing, incompatible, or integrity-rejected target "
+        "remains unavailable."
+    )
 
 
 BIAOXIAN_SYSTEM_PROMPT = """
@@ -268,23 +232,15 @@ V3_STEP_PLAN_PROMPT = """
 Two modes: chat or work.
 
 1. Chat mode: ordinary conversation, explanation, or advice.
-   Do not call tools.
+   Decide whether any tool is useful; avoid execution when a direct answer is sufficient.
 
 2. Work mode: file generation, documents, code, research, tables, any
-   local execution. Use the `omni_body` tool directly. No routing needed.
+   local execution. The available execution surface is `omni_body`.
 
 Work mode rules:
 - Before each `omni_body` call, write one short user-facing progress sentence.
-- Do not claim completion until the tool result shows ok=true.
-- **[Task Score]** Every work task must reach ≥80/100 before you may finish.
-  Score yourself each turn (cumulative):
-    +25  Called a production action AND got ok=true
-    +25  File/artifact verified at correct path (evidence in tool result)
-    +25  Content matches user's request
-    +25  All actions succeeded (no failures)
-    −50  Claimed completion in text without tool evidence — restart from 0
-  Report your score as [分数:X/100] in your visible reply.
-  If score < 80, you MUST call omni_body again. Do not final-answer.
+- Choose Skills, actions, ordering, retries, and verification steps from the task and observations.
+- Do not claim completion beyond successful recorded evidence; Runtime checks facts only at completion.
 
 For file delivery: create a real local file and reply with the absolute path.
 """
@@ -1363,7 +1319,8 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     return (
         "[Omni Body — 唯一可执行工具]\n"
         "所有本地文件/代码/文档/媒体操作通过 omni_body 执行。\n"
-        "模型自行判断任务，直接用对应 action 调用，无需路由。\n"
+        "模型自行判断是否需要 Skill、选择哪个 Skill，以及工具调用顺序；系统不预选执行路线。\n"
+        "需要 Skill 时可自主使用 skill.route/skill.list/skill.get/skill.read；用户明确点名完整注册 Skill 时只读取该精确目标。\n"
         "互不依赖的多个操作可以在一条回复里同时发出多个 omni_body 调用，系统会并行执行。\n"
         "有依赖关系的操作则分步进行，每次工具返回后根据实际结果决定下一步。\n"
         "**每次调用工具前，先用一句自然语言告诉用户你正在做什么。**\n\n"
@@ -2273,12 +2230,6 @@ SIMPLE_CHAIN_READ_ONLY_ACTIONS = {
 }
 
 
-def _simple_chain_needs_skill_read_before_action(user_message: str, action: str) -> bool:
-    if action in SIMPLE_CHAIN_READ_ONLY_ACTIONS:
-        return False
-    return _requires_real_mutation(user_message)
-
-
 def _simple_chain_tool_args_content(tool_args: Any) -> str:
     if not isinstance(tool_args, dict):
         return ""
@@ -2946,19 +2897,6 @@ def _is_novel_request(user_message: str) -> bool:
     text = str(user_message or "")
     markers = ("小说", "网文", "正文", "章节", "第一章", "第1章", "长安未雪", "novel", "chapter")
     return any(marker in text for marker in markers)
-
-
-def _skill_read_matches_request(user_message: str, tool_args: Any) -> bool:
-    if not _is_novel_request(user_message):
-        return True
-    if not isinstance(tool_args, dict):
-        return False
-    target = str(tool_args.get("target") or "")
-    args = tool_args.get("args")
-    if isinstance(args, dict):
-        target += " " + str(args.get("skill") or args.get("id") or args.get("path") or "")
-    target = target.lower()
-    return "13_novel_writing_webfiction" in target or "novel" in target
 
 
 def _tool_is_write_effect(tool_name: str, result: Any) -> bool:
@@ -3778,111 +3716,6 @@ def _simple_chain_delivery_has_attachment(
                 return True
     return False
 
-def _simple_chain_repair_tool_args_before_execution(user_message: str, action: str, tool_args: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(tool_args, dict):
-        return {}
-    try:
-        from .workspace_settings import duqu_workspace_root
-
-        workspace_root = duqu_workspace_root().expanduser().resolve()
-    except Exception:
-        workspace_root = None
-    path_keys = {
-        "target", "source", "path", "output", "input", "manifest",
-        "project_manifest", "directory", "dir_path", "folder", "workdir",
-        "video_path", "cover_path", "script_path", "project_root",
-    }
-
-    def _workspace_relative_path(key: str, value: Any) -> Any:
-        if workspace_root is None or key not in path_keys or not isinstance(value, str):
-            return value
-        if not _path_looks_absolute(value):
-            return value
-        try:
-            candidate = Path(value).expanduser().resolve(strict=False)
-            relative = candidate.relative_to(workspace_root)
-        except (OSError, ValueError):
-            return value
-        rendered = str(relative)
-        return rendered if rendered not in {"", "."} else value
-
-    def _normalize_container(container: dict[str, Any]) -> dict[str, Any]:
-        updated_container: dict[str, Any] = {}
-        for key, value in container.items():
-            if isinstance(value, dict):
-                updated_container[key] = _normalize_container(value)
-            else:
-                updated_container[key] = _workspace_relative_path(str(key), value)
-        return updated_container
-
-    tool_args = _normalize_container(tool_args)
-    # 项目目录重映射：任务指定“工作区 xxx/ 目录”时，模型可能把“CLI 项目”
-    # 写到 CLI/markdown-wiki/ 这类错误父目录下。这里把任何
-    # “<父目录>/<项目目录>/...” 路径改写成 “<项目目录>/...”，
-    # 再交给执行；路径里没有项目目录段落的仍由项目目录围栏拦截。
-    project_dir = _simple_chain_project_dir(user_message)
-    if action in _SIMPLE_CHAIN_MUTATING_ACTIONS and project_dir:
-        marker = "/" + project_dir + "/"
-
-        def _remap_path_value(value: Any) -> Any:
-            if not isinstance(value, str):
-                return value
-            text = str(value).strip()
-            normalized = text.replace("\\", "/")
-            index = normalized.find(marker)
-            if index < 0:
-                return value
-            return normalized[index + 1:]
-
-        def _remap_nested(container: Any, parent_key: str = "") -> Any:
-            if isinstance(container, dict):
-                return {
-                    key: _remap_nested(item, str(key))
-                    for key, item in container.items()
-                }
-            if isinstance(container, list):
-                return [_remap_nested(item, parent_key) for item in container]
-            if isinstance(container, str) and parent_key.lower() in path_keys:
-                return _remap_path_value(container)
-            return container
-
-        tool_args = _remap_nested(tool_args)
-    if action == "qc.video.delivery_check":
-        updated = dict(tool_args)
-        args = dict(updated.get("args") or {}) if isinstance(updated.get("args"), dict) else {}
-        target = str(updated.get("target") or args.get("video_path") or "").strip()
-        if target:
-            args.setdefault("video_path", target)
-            project_rel = str(Path(target).parent)
-            args.setdefault("project_root", project_rel)
-            if workspace_root is not None:
-                project_abs = (workspace_root / project_rel).resolve(strict=False)
-                for key, candidates in (
-                    ("cover_path", ("cover.png", "封面.png")),
-                    ("script_path", ("script.md", "脚本.md")),
-                ):
-                    if args.get(key):
-                        continue
-                    for name in candidates:
-                        candidate = project_abs / name
-                        if candidate.is_file():
-                            args[key] = str(Path(project_rel) / name)
-                            break
-        updated["args"] = args
-        tool_args = updated
-    if action != "skill.route":
-        return tool_args
-    args = tool_args.get("args")
-    if not isinstance(args, dict):
-        args = {}
-    if any(args.get(key) for key in ("job", "task", "message", "goal", "context")):
-        return tool_args
-    updated = dict(tool_args)
-    updated["args"] = dict(args)
-    updated["args"]["job"] = str(user_message or "")[:1200]
-    return updated
-
-
 def _simple_chain_strict_single_deliverable(user_message: str) -> bool:
     """单交付物任务才启用逐写路径/后缀严格匹配。
 
@@ -4103,7 +3936,6 @@ _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAI
 _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS", "90")
 )
-# B1 干预：交付物缺失时允许的只读探测轮次，超过后强制要求写工具生成产物。
 # A single tool execution/batch must never wedge the chain past the gateway
 # watchdog (720s after the 3x budget raise).  This hard cap applies even when
 # the effect-deadline context is not visible on the executing thread.
@@ -4848,8 +4680,6 @@ def _simple_chain_prepare_tool_call(
     if name not in SIMPLE_CHAIN_TOOL_NAMES:
         return name, args, "", [], _simple_chain_tool_block_payload(request_id, name, args)
     action = _simple_chain_tool_action(name, args)
-    args = _simple_chain_repair_tool_args_before_execution(user_message, action, args)
-    action = _simple_chain_tool_action(name, args)
     if action == "learning.ingest":
         nested = args.get("args") if isinstance(args.get("args"), dict) else {}
         nested = dict(nested)
@@ -5108,15 +4938,14 @@ def _simple_chain_quality_gate_payload(
     passed = not failures
     if action == "skill.route":
         instruction = (
-            "Skill route resolved internally. Skip skill.get/skill.read — directly call omni_body with the "
-            "recommended production action below. Example: if the task is 'write a Word document', call "
-            "omni_body action=docx.create or action=file.write directly. Do NOT call skill.route, skill.get, "
-            "or skill.read again."
+            "The authority-backed Skill routing facts are recorded in the result. Decide whether to load "
+            "a compatible candidate, inspect the catalog further, proceed without a Skill, or take another "
+            "in-scope step. Runtime does not select the next route."
         )
     elif action in {"skill.get", "skill.read"}:
         instruction = (
-            "Skill content obtained. Now call omni_body with the appropriate production action "
-            "(e.g., file.write, docx.create, shell.run, deliverable.package). Do not route again."
+            "The requested Skill result is recorded. Decide the next step from its verified activation, "
+            "content, and the original task. Runtime does not select an action or execution order."
         )
     elif action == "learning.ingest" and passed:
         learning_result = tool_result if isinstance(tool_result, dict) else {}
@@ -5144,8 +4973,7 @@ def _simple_chain_quality_gate_payload(
         instruction = (
             f"Pending learning card created successfully: card_id={card_id or 'unknown'}, "
             f"status={learning_status or 'unknown'}, registered=false. "
-            "Do not call skill.route, skill.get, skill.read, or learning.ingest again. "
-            "Continue with the user's next requested concrete deliverable and verification actions."
+            "Decide the next step from this fact and the original request without claiming activation or registration."
         )
     elif passed and final_requirement_gaps:
         instruction = (
@@ -5169,13 +4997,7 @@ def _simple_chain_quality_gate_payload(
             if isinstance(item, dict):
                 path = str(item.get("path") or "")
                 generated_attachment_items.append({"path": path, "suffix": _path_suffix(path)})
-    recommended_next_action = "continue_tool_loop"
-    if action == "skill.route":
-        recommended_next_action = "continue_tool_loop"  # 直接继续，不引导 skill.get
-    elif action in {"skill.get", "skill.read"}:
-        recommended_next_action = "continue_tool_loop"
-    elif passed and not final_requirement_gaps and action not in {"skill.get", "skill.read"}:
-        recommended_next_action = "review_and_decide"
+    recommended_next_action = "model_decides"
     return {
         "schema": "tiangong.v3.simple_chain.tool_observation.v1",
         "ok": passed,
@@ -5210,34 +5032,6 @@ def _simple_chain_quality_gate_payload(
     }
 
 
-def _simple_chain_final_guard_payload(
-    request_id: str,
-    user_message: str,
-    model_reply: str,
-    required_tool_args: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    required = required_tool_args if isinstance(required_tool_args, dict) else None
-    return {
-        "schema": "tiangong.v3.simple_chain.final_guard.v1",
-        "ok": False,
-        "zhuangtai": "not_completed",
-        "request_id": request_id,
-        "simple_chain_guard": True,
-        "retry_same_step": True,
-        "reason": "The user requested a real filesystem/code action, but no successful mutating omni_body result has passed quality gate yet.",
-        "model_reply_preview": str(model_reply or "")[:1200],
-        "required_tool": "omni_body" if required else "",
-        "required_tool_args": required or {},
-        "instruction": (
-            "Do not final-answer yet. Return exactly one `omni_body` tool call and no prose. "
-            "Use required_tool_args when present; if writing creative prose and the current content "
-            "does not satisfy the loaded skill, revise args.content before calling. "
-            "Then wait for the quality gate."
-        ),
-        "original_user_request": str(user_message or "")[:1200],
-    }
-
-
 def _simple_chain_model_payload(payload: Any, max_tokens: int | None = None) -> Any:
     """Keep the model-facing observation bounded while preserving audit payloads elsewhere."""
     budget = max_tokens
@@ -5254,7 +5048,7 @@ def _simple_chain_model_payload(payload: Any, max_tokens: int | None = None) -> 
             compacted.setdefault(
                 "model_payload_instruction",
                 "This is a compacted tool observation. Use paths, status, errors, quality_gate, gaps, "
-                "codex_evidence, and source_text_map as completion evidence; ask for another tool call if evidence is missing.",
+                "codex_evidence, and source_text_map as completion evidence. Missing evidence remains unresolved; the model decides its next step.",
             )
     return compacted
 
@@ -5296,75 +5090,6 @@ def _simple_chain_requires_command_verification(user_message: str) -> bool:
         text,
         re.IGNORECASE,
     ))
-
-
-def _simple_chain_is_productive_run_attempt(
-    attempted_action: str,
-    tool_args: dict | None,
-    user_message: str,
-) -> bool:
-    """交付守卫放行判定：任务明确要求运行时，真正的运行调用不是探测。
-
-    例如“运行 python mdsummary.py README.md，把真实输出写入 summary.md”，
-    summary.md 只有脚本跑完才会产生；把 python.run/shell.run 当探测拦截
-    会形成死锁。仅放行真实脚本运行，dir/空 target 等仍按探测处理。
-    """
-    if not _simple_chain_requires_command_verification(user_message):
-        return False
-    attempted_action = str(attempted_action or "").strip().lower()
-    tool_args = tool_args if isinstance(tool_args, dict) else {}
-    if attempted_action == "python.run":
-        return str(tool_args.get("target") or "").lower().endswith(".py")
-    if attempted_action == "quality.run_tests":
-        return True
-    if attempted_action in {"shell.run", "command.run", "run"}:
-        try:
-            args_text = json.dumps(
-                tool_args.get("args") or {},
-                ensure_ascii=False,
-            ).lower()
-        except Exception:
-            args_text = ""
-        has_pytest = "pytest" in args_text
-        has_python_script = "python" in args_text and ".py" in args_text
-        has_python_module = bool(re.search(r"python\s+-m\s+[a-z0-9_]+", args_text))
-        return has_pytest or has_python_script or has_python_module
-    return False
-
-
-def _simple_chain_recent_tool_failure(quality_history: list[dict[str, Any]]) -> bool:
-    """最近一次工具观察是否失败（模型正处于修复/自愈阶段）。"""
-    if not quality_history:
-        return False
-    last = quality_history[-1]
-    return isinstance(last, dict) and not bool(last.get("ok"))
-
-
-def _simple_chain_is_project_internal_inspection(
-    user_message: str,
-    attempted_action: str,
-    tool_args: dict[str, Any] | None,
-) -> bool:
-    """项目内部自检：大型工程任务里，列/读自己项目目录不是无意义探测。"""
-    if str(attempted_action or "") not in {
-        "file.read", "file.list", "file.search", "file.hash",
-    }:
-        return False
-    project_dir = _simple_chain_project_dir(user_message)
-    if not project_dir:
-        return False
-    root = _delivery_workspace_root()
-    if not root:
-        return False
-    project_root = (Path(root) / project_dir).resolve(strict=False)
-    for raw in _simple_chain_requested_paths(tool_args if isinstance(tool_args, dict) else {}):
-        try:
-            resolved = Path(_delivery_resolve_path(str(raw), root)).resolve(strict=False)
-            resolved.relative_to(project_root)
-            return True
-        except Exception:
-            continue
-    return False
 
 
 def _simple_chain_has_post_mutation_verification(
@@ -7063,7 +6788,6 @@ class Zongdiaodu:
         mutation_success_seen = False
         last_quality_payload: dict[str, Any] | None = None
         quality_history: list[dict[str, Any]] = []
-        skill_read_seen = False
         final_guard_exhausted = False
         final_chain_status = "complete"
         correction_state = _simple_chain_completion_correction_state(run_state)
@@ -8827,7 +8551,7 @@ class Zongdiaodu:
                 run_control.step("build_context", "构建上下文", "running", "正在整理最近对话、记忆与工具提示。")
             system_tishi = goujian_system_tishi(shenti, soul_text, self._body_settings_for_context())
             system_tishi = system_tishi.rstrip() + "\n\n" + BIAOXIAN_SYSTEM_PROMPT
-            skill_context = _match_and_inject_skills(xiaoxi)
+            skill_context = _simple_chain_explicit_skill_context(xiaoxi)
             dynamic_context_parts = [
                 goujian_shenti_tishi(
                     shenti,
@@ -8835,7 +8559,7 @@ class Zongdiaodu:
                 )
             ]
             if skill_context:
-                dynamic_context_parts.append("[匹配到的Skill内容]\n" + skill_context)
+                dynamic_context_parts.append(skill_context)
             recent_artifacts = _recent_local_artifact_context()
             if recent_artifacts:
                 dynamic_context_parts.append(recent_artifacts)

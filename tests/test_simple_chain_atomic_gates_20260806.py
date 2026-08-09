@@ -232,6 +232,7 @@ def test_route_enforcing_completion_guards_are_removed() -> None:
         "_simple_chain_explicit_action_guard_payload",
         "_simple_chain_final_gap_retry_payload",
         "_simple_chain_continue_decision_payload",
+        "_simple_chain_repair_tool_args_before_execution",
     ):
         assert not hasattr(scheduler, removed)
 
@@ -641,65 +642,6 @@ def test_missing_deliverable_scoped_to_project_dir(
     assert missing2 == ["summary.md"]
 
 
-def test_productive_run_attempt_exempts_required_script_runs() -> None:
-    """任务明确要求运行脚本时，真正的运行调用不被交付守卫当探测拦截。"""
-    from v3.zongdiaodu import _simple_chain_is_productive_run_attempt
-
-    prompt = "请运行 python mdsummary.py README.md，把真实输出写入 summary.md"
-    assert _simple_chain_is_productive_run_attempt(
-        "python.run",
-        {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
-        prompt,
-    ) is True
-    assert _simple_chain_is_productive_run_attempt(
-        "python.run",
-        {"action": "python.run", "target": "", "args": {}},
-        prompt,
-    ) is False
-    assert _simple_chain_is_productive_run_attempt(
-        "shell.run",
-        {
-            "action": "shell.run",
-            "target": "md-tools",
-            "args": {"command": "python mdsummary.py README.md"},
-        },
-        prompt,
-    ) is True
-    assert _simple_chain_is_productive_run_attempt(
-        "shell.run",
-        {
-            "action": "shell.run",
-            "target": "md-tools",
-            "args": {"command": "dir /B md-tools"},
-        },
-        prompt,
-    ) is False
-    pytest_prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实输出写入《测试报告.md》"
-    assert _simple_chain_is_productive_run_attempt(
-        "shell.run",
-        {
-            "action": "shell.run",
-            "target": "textutils",
-            "args": {"command": "python -m pytest tests -q"},
-        },
-        pytest_prompt,
-    ) is True
-    assert _simple_chain_is_productive_run_attempt(
-        "shell.run",
-        {
-            "action": "shell.run",
-            "target": "textutils",
-            "args": {"command": "python -m pytest tests -q"},
-        },
-        "整理工作区文件",
-    ) is False
-    assert _simple_chain_is_productive_run_attempt(
-        "python.run",
-        {"action": "python.run", "target": "md-tools/mdsummary.py", "args": {}},
-        "整理工作区文件",
-    ) is False
-
-
 def test_post_mutation_verification_ignores_report_document_write() -> None:
     """先跑测试、再写《测试报告.md》的正确顺序不得被误判为缺验证。"""
     from v3.zongdiaodu import _simple_chain_has_post_mutation_verification
@@ -860,9 +802,9 @@ def test_project_dir_block_confines_writes_to_declared_dir(
     assert block3 is None
 
 
-def test_repair_remaps_wrong_parent_project_paths() -> None:
-    """写目标带 <错误父目录>/<项目目录>/ 时，自动改写到项目目录下。"""
-    from v3.zongdiaodu import _simple_chain_repair_tool_args_before_execution
+def test_wrong_parent_project_path_is_blocked_without_semantic_rewrite() -> None:
+    """错误目标保持原样并由范围围栏拒绝，不替模型改写路径。"""
+    from v3.zongdiaodu import _simple_chain_prepare_tool_call
 
     prompt = (
         "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
@@ -873,47 +815,24 @@ def test_repair_remaps_wrong_parent_project_paths() -> None:
         "target": "CLI/markdown-wiki/src/mdwiki/cli.py",
         "args": {"content": "x"},
     }
-    repaired = _simple_chain_repair_tool_args_before_execution(prompt, "file.write", args)
-    assert repaired["target"] == "markdown-wiki/src/mdwiki/cli.py"
+    _name, prepared, action, _issues, block = _simple_chain_prepare_tool_call(
+        "req-no-remap", prompt, "omni_body", args
+    )
+    assert action == "file.write"
+    assert prepared == args
+    assert block is not None
+    assert block["stage"] == "project_dir_confined"
 
     args2 = {
         "action": "file.write",
         "target": "markdown-wiki/README.md",
         "args": {"content": "x"},
     }
-    repaired2 = _simple_chain_repair_tool_args_before_execution(prompt, "file.write", args2)
-    assert repaired2["target"] == "markdown-wiki/README.md"
-
-
-def test_recent_tool_failure_detects_last_failed_observation() -> None:
-    """最近一次工具失败时，交付守卫应放行修复动作。"""
-    from v3.zongdiaodu import _simple_chain_recent_tool_failure
-
-    assert _simple_chain_recent_tool_failure([]) is False
-    assert _simple_chain_recent_tool_failure([{"ok": True}]) is False
-    assert _simple_chain_recent_tool_failure([{"ok": True}, {"ok": False}]) is True
-
-
-def test_project_internal_inspection_exempts_project_reads() -> None:
-    """项目目录内的列目录/读文件属于工程自检，不算无意义探测。"""
-    from v3.zongdiaodu import _simple_chain_is_project_internal_inspection
-
-    prompt = "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录"
-    assert _simple_chain_is_project_internal_inspection(
-        prompt,
-        "file.list",
-        {"action": "file.list", "target": "markdown-wiki", "args": {}},
-    ) is True
-    assert _simple_chain_is_project_internal_inspection(
-        prompt,
-        "file.list",
-        {"action": "file.list", "target": "workspace", "args": {}},
-    ) is False
-    assert _simple_chain_is_project_internal_inspection(
-        prompt,
-        "file.write",
-        {"action": "file.write", "target": "markdown-wiki/README.md", "args": {}},
-    ) is False
+    _name2, prepared2, _action2, _issues2, block2 = _simple_chain_prepare_tool_call(
+        "req-correct-path", prompt, "omni_body", args2
+    )
+    assert prepared2 == args2
+    assert block2 is None
 
 
 def test_replay_cached_call_only_for_successful_results() -> None:
