@@ -94,7 +94,7 @@ _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[，。；：,.;:！!？?])", re.I
 
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
-    "不要", "别", "先别", "先不要", "不用", "无需", "禁止", "暂不", "暂时不要",
+    "不要", "别", "先别", "先不要", "不用", "无需", "禁止", "严禁", "绝不", "暂不", "暂时不要",
     "别再", "不要再", "不是让你", "不是叫你",
 )
 _EXTERNAL_EFFECT_TOKENS = frozenset({
@@ -441,6 +441,9 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
     for match in _BARE_ASCII_FILE_RE.finditer(text):
         if any(start <= match.start() and match.end() <= end for start, end in path_spans):
             continue
+        prefix = text[max(0, match.start(1) - 24):match.start(1)]
+        if re.search(r"(?:调用|执行|运行|call|invoke|execute)\s*$", prefix, re.IGNORECASE):
+            continue
         candidates.append((match.start(1), match.group(1).strip()))
 
     targets: list[str] = []
@@ -558,6 +561,16 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         isinstance(evidence, dict)
         and evidence.get("authoritative") is True
         and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
+    ):
+        facts.add("effect")
+
+    tool_result = payload.get("tool_result") if isinstance(payload.get("tool_result"), dict) else {}
+    result = tool_result.get("result") if isinstance(tool_result.get("result"), dict) else {}
+    if (
+        action == "learning.ingest"
+        and bool(result.get("card_id"))
+        and bool(result.get("status"))
+        and result.get("authority") == "life_kernel"
     ):
         facts.add("effect")
 

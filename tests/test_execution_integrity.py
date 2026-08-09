@@ -310,6 +310,28 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             ["execution"],
         )
 
+    def test_authoritative_learning_receipt_satisfies_effect(self):
+        user = (
+            "请调用 learning.ingest，只创建 awaiting_user 学习卡；"
+            "成功后立即报告 card_id，绝不激活、注册或发布。"
+        )
+        history = [{
+            "ok": True,
+            "tool_action": "learning.ingest",
+            "tool_result": {"result": {
+                "card_id": "learn_test_receipt",
+                "status": "awaiting_user",
+                "registered": False,
+                "authority": "life_kernel",
+            }},
+        }]
+
+        self.assertEqual(
+            [item["kind"] for item in integrity.build_action_obligations(user)],
+            ["effect"],
+        )
+        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+
     def test_write_effect_uses_existing_authoritative_contract(self):
         user = "把 note.txt 改一下"
         history = [{
