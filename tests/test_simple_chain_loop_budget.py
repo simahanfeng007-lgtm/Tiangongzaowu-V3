@@ -222,9 +222,12 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         )
         self.assertFalse(ok_write)
         self.assertEqual(status_write, "incomplete")
-        self.assertTrue(
-            any("no omni_body observation exists" in reason for reason in reasons_write),
+        self.assertEqual(
             reasons_write,
+            [
+                "execution_obligation:effect:missing_evidence",
+                "execution_claim_without_evidence",
+            ],
         )
 
     def _ok_payload(self, action: str = "file.read", target: str = "a.txt") -> dict:
