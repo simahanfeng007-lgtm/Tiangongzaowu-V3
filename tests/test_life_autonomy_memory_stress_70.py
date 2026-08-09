@@ -247,7 +247,23 @@ def test_heartbeat_runs_model_decision_off_the_scheduler_thread(tmp_path: Path):
         def decide(scope):
             assert scope["schema"] == "tiangong.life.activity-scope.v1"
             called.set()
-            return {"request": "heartbeat learning", "target": "skill", "risk_level": "A0", "title": "Heartbeat draft"}
+            return {
+                "request": "heartbeat learning",
+                "target": "skill",
+                "risk_level": "A0",
+                "title": "Heartbeat draft",
+                "draft_artifact": {
+                    "content": "# Heartbeat learning\n\nRun one bounded search and summarize the evidence.",
+                    "required_actions": ["web.search"],
+                    "steps": [
+                        {
+                            "step_id": "research",
+                            "action_id": "web.search",
+                            "arguments_template": {"query": "{{input.topic}}"},
+                        }
+                    ],
+                },
+            }
 
         life.set_learning_decider(decide)
         started = time.monotonic()

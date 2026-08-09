@@ -4,12 +4,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 
-ROOT = Path(r"C:\TG3Clean\src")
+ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "readable-python-source/omni_body_skill/registry/skill_router_index.json"
 MANIFEST = ROOT / "readable-python-source/omni_body_skill/registry/capability_manifest.generated.json"
 NON_SKILL_REFS = ROOT / "readable-python-source/omni_body_skill/registry/non_skill_references.json"
-LEDGER = Path(r"C:\TG3Clean\v21-work\v21-g0-20260802T100346Z-dbc48aae2392\ledgers\issue-closure-ledger.json")
+LEDGER = ROOT / "v21-work/v21-g0-20260802T100346Z-dbc48aae2392/ledgers/issue-closure-ledger.json"
 
 
 def _load() -> tuple[dict, dict]:
@@ -79,6 +80,8 @@ def test_t21_skill_selection_binds_to_gateway_activation_actions() -> None:
 
 
 def test_t30_issue_ledger_counts_and_claim_partition() -> None:
+    if not LEDGER.is_file():
+        pytest.skip("historical v2.1 issue ledger is not included in the source repository")
     ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     assert ledger["counts"] == {
         "full_qc": 58, "minimax_numbered": 8, "minimax_p2_groups": 1,

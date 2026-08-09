@@ -15,6 +15,7 @@ from pathlib import Path
 import py_compile
 import sys
 import tempfile
+import time
 
 
 OMNI_MODULES = (
@@ -44,17 +45,35 @@ def _compile_atomic(source: Path, destination: Path, *, dfile: str) -> None:
     )
     os.close(descriptor)
     temporary = Path(temporary_name)
+    # py_compile performs its own atomic write.  Leaving the mkstemp target in
+    # place gives Windows scanners a chance to lock it before that replace.
+    temporary.unlink(missing_ok=True)
     try:
-        py_compile.compile(
-            str(source),
-            cfile=str(temporary),
-            dfile=dfile,
-            doraise=True,
-            invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
-        )
+        for attempt in range(5):
+            try:
+                py_compile.compile(
+                    str(source),
+                    cfile=str(temporary),
+                    dfile=dfile,
+                    doraise=True,
+                    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+                )
+                break
+            except PermissionError:
+                temporary.unlink(missing_ok=True)
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (2 ** attempt))
         with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
-        os.replace(temporary, destination)
+        for attempt in range(5):
+            try:
+                os.replace(temporary, destination)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (2 ** attempt))
     finally:
         temporary.unlink(missing_ok=True)
 
