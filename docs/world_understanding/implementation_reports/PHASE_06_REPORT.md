@@ -127,14 +127,14 @@ P6 materializes only the frozen L3 deterministic relation vocabulary:
 Materialization classes:
 
 - STRUCTURAL: CONTAINS, DEFINES, REGISTERED_AS, BELONGS_TO, LOCATED_IN
-- MATERIALIZED: IMPORTS, DIRECT_CALLS, USES, READC, WRITES
+- MATERIALIZED: IMPORTS, DIRECT_CALLS, USES, READS, WRITES
 - DERIVED_CACHE: CALL_REACHABLE
 
 `CALL_REACHABLE` may therefore consume the deterministic P4 closure output and become a P6 derived-cache graph relation, while `DIRECT_CALLS` remains a distinct direct structural fact.
 
 The following are explicitly not deterministic L3 facts and are deferred to L4/L5:
 
-- GUARDDRD_BY
+- GUARDED_BY
 - AUTHORITATIVE_FOR
 - IS_BOUNDARY_OF
 
@@ -295,7 +295,7 @@ PASS in the available harness:
 - FALSE/UNKNOWN structural claims are not promoted;
 - cross-life Known cannot enter another life's Software World;
 - duplicate Git delta replay is idempotent;
-- P4 deterministic CALL_REACHABLE can materialize as P6 DERIVED_CACHE semantic relation.
+- P4 deterministic CALL_REACHABLE can materialize as P6 DERIVED_CACHE graph relation.
 
 ## 13. Tests not executed / limitations
 
