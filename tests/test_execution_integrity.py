@@ -358,6 +358,30 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         }]
         self.assertTrue(integrity.execution_integrity_blockers(user, history))
 
+    def test_existing_write_and_readback_contract_satisfies_verification(self):
+        user = "请修改 project/result.json 并验证"
+        history = [{
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"target": "project/result.json"},
+            "tool_result_contract": {
+                "ok": True,
+                "write_effect": True,
+                "paths": ["project/result.json"],
+            },
+        }, {
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"target": "project/result.json"},
+            "tool_result_contract": {
+                "ok": True,
+                "write_effect": False,
+                "paths": ["project/result.json"],
+            },
+        }]
+
+        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+
     def test_external_typed_effect_can_satisfy_without_fake_local_write(self):
         self.assertEqual(
             integrity.execution_integrity_blockers(

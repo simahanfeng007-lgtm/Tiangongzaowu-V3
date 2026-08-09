@@ -561,6 +561,10 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         isinstance(evidence, dict)
         and evidence.get("authoritative") is True
         and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
+    ) or (
+        contract.get("ok") is True
+        and contract.get("write_effect") is True
+        and bool(contract.get("paths"))
     ):
         facts.add("effect")
 
@@ -583,6 +587,13 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         facts.add("effect")
     if action.startswith(("quality.", "qc.")) or action_tokens.intersection(
         {"run", "execute", "test", "verify", "start", "compile", "build", "syntax", "lint", "hash"}
+    ):
+        facts.add("execution")
+    if (
+        action in {"file.read", "code.read", "sheet.read", "pdf.extract_text"}
+        and contract.get("ok") is True
+        and contract.get("write_effect") is False
+        and bool(contract.get("paths"))
     ):
         facts.add("execution")
     if action_tokens.intersection({"send", "upload", "submit", "deliver", "export", "post", "publish", "share"}):
