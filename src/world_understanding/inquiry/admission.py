@@ -26,6 +26,8 @@ class InquiryAdmissionSignals:
     privacy_allowed: bool = True
     user_present: bool = False
     active_user_task: bool = False
+    backoff_remaining_ms: int = 0
+    prior_zero_gain_count: int = 0
 
     def __post_init__(self) -> None:
         milli = (
@@ -35,7 +37,7 @@ class InquiryAdmissionSignals:
         )
         if any(isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 1000 for v in milli):
             raise ValueError("WORLD_INQUIRY_ADMISSION_SIGNAL_INVALID")
-        if self.time_remaining_ms < 0 or self.inquiry_count_remaining < 0:
+        if self.time_remaining_ms < 0 or self.inquiry_count_remaining < 0 or self.backoff_remaining_ms < 0 or self.prior_zero_gain_count < 0:
             raise ValueError("WORLD_INQUIRY_ADMISSION_BUDGET_INVALID")
 
 
@@ -101,6 +103,8 @@ class InquiryAdmission:
             return InquiryAdmissionDecision("DEFERRED", "INQUIRY_TIME_BUDGET", self.score(inquiry, signals))
         if not signals.privacy_allowed:
             return InquiryAdmissionDecision("REJECTED", "INQUIRY_PRIVACY_FORBIDDEN", self.score(inquiry, signals))
+        if signals.backoff_remaining_ms > 0:
+            return InquiryAdmissionDecision("DEFERRED", "INQUIRY_ZERO_GAIN_BACKOFF", self.score(inquiry, signals))
         if signals.user_present and signals.active_user_task and signals.runtime_pressure_milli >= 500:
             return InquiryAdmissionDecision("DEFERRED", "INQUIRY_INTERACTIVE_PRIORITY", self.score(inquiry, signals))
         if inquiry.dedup_key in self._admitted_dedup_keys or signals.duplicate_milli >= 1000:

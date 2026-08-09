@@ -52,6 +52,17 @@ class RhythmPlane:
     def __init__(self,*,config:RhythmConfig,budget:BudgetLedger,start_ms:int=0)->None:
         self.config=config; self.budget=budget; self._queues={name:[] for name in QUEUE_CLASSES}; self._coalescer=EventCoalescer(debounce_ms=config.debounce_ms); self._start_ms=int(start_ms)
         self._arrivals={name:0 for name in QUEUE_CLASSES}; self._services={name:0 for name in QUEUE_CLASSES}; self._latency={name:0 for name in QUEUE_CLASSES}; self._tokens={name:0 for name in QUEUE_CLASSES}; self._io={name:0 for name in QUEUE_CLASSES}
+    def set_debounce_ms(self, debounce_ms:int, *, queue_class:str|None=None)->None:
+        """Apply a P12 telemetry-derived debounce to the existing coalescer.
+
+        Queue-specific updates never change INTERACTIVE timing for background classes.
+        """
+        self._coalescer.set_debounce_ms(debounce_ms, queue_class=queue_class)
+    @property
+    def debounce_ms(self)->int:
+        return self._coalescer.debounce_ms
+    def debounce_ms_for(self, queue_class:str)->int:
+        return self._coalescer.debounce_for(queue_class)
     def _validate(self,item:WorkItem)->str:
         q=item.event.boundary.queue_class
         if q not in self._queues: raise ValueError("UNKNOWN_QUEUE_CLASS")
