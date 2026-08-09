@@ -302,6 +302,14 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
 
         self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
 
+    def test_tool_action_suffix_does_not_create_observation_obligation(self):
+        user = "Please execute file.hash and qc.docx.delivery_check."
+
+        self.assertEqual(
+            [item["kind"] for item in integrity.build_action_obligations(user)],
+            ["execution"],
+        )
+
     def test_write_effect_uses_existing_authoritative_contract(self):
         user = "把 note.txt 改一下"
         history = [{

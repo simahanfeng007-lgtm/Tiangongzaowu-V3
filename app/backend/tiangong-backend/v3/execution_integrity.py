@@ -368,17 +368,23 @@ def _english_requested_fact_kinds(text: str) -> list[str]:
     delivery_words = {"send", "upload", "submit", "deliver", "publish", "share"}
     artifact_words = {"file", "directory", "folder", "workspace", "attachment", "repo", "repository", "project", "report", "document", "pdf", "zip"}
 
-    if any(word in anchors for word in observation_words) and (
+    def has_standalone_action(words: set[str]) -> bool:
+        return any(
+            re.search(rf"(?<![a-z0-9_.-]){re.escape(word)}(?![a-z0-9_.-])", english)
+            for word in words
+        )
+
+    if has_standalone_action(observation_words) and (
         explicit or first in observation_words
     ) and (
         bool(anchors.intersection(artifact_words)) or bool(anchors.intersection({"search", "query", "find"}))
     ):
         fact_kinds.append("observation")
-    if any(word in anchors for word in effect_words) and (explicit or first in effect_words):
+    if has_standalone_action(effect_words) and (explicit or first in effect_words):
         fact_kinds.append("effect")
-    if any(word in anchors for word in execution_words) and (explicit or first in execution_words):
+    if has_standalone_action(execution_words) and (explicit or first in execution_words):
         fact_kinds.append("execution")
-    if any(word in anchors for word in delivery_words) and (explicit or first in delivery_words):
+    if has_standalone_action(delivery_words) and (explicit or first in delivery_words):
         fact_kinds.append("delivery")
     return fact_kinds
 
