@@ -327,29 +327,29 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
         [payload],
         "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
     ) is False
-    # 平台兜底写入不计入变更顺序：其前的真实验证仍然有效。
+    # 任何验证后的真实写入都会使先前验证过期；不再为平台来源开后门。
     pytest_payload = {
         "ok": True,
         "tool_action": "shell.run",
         "tool_args": {"action": "shell.run", "target": "", "args": {"command": "python -m pytest tests -q"}},
         "tool_result_contract": {"ok": True, "paths": [], "observed_write_effect": False, "write_effect": False},
     }
-    fallback_payload = {
+    later_write_payload = {
         "ok": True,
         "tool_action": "file.write",
-        "tool_args": {"action": "file.write", "target": "测试报告.md", "args": {"content": ""}},
+        "tool_args": {"action": "file.write", "target": "src/core.py", "args": {"content": ""}},
         "tool_result_contract": {
             "ok": True,
-            "paths": ["测试报告.md"],
+            "paths": ["src/core.py"],
             "observed_write_effect": True,
-            "write_evidence": {"authoritative": True, "source": "platform_fallback", "changed_files": ["测试报告.md"]},
+            "write_evidence": {"authoritative": True, "source": "tool_result", "changed_files": ["src/core.py"]},
         },
-        "summary": "platform fallback write",
+        "summary": "later model write",
     }
     assert _simple_chain_has_post_mutation_verification(
-        [payload, pytest_payload, fallback_payload],
+        [payload, pytest_payload, later_write_payload],
         "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
-    ) is True
+    ) is False
 
 
 def test_b6_novel_honors_explicit_user_word_count() -> None:
@@ -390,61 +390,6 @@ def test_b1_monitor_yields_to_delivery_guard_budget(monkeypatch: pytest.MonkeyPa
     assert _simple_chain_monitor_yields_to_guard("参考 README.md 总结一下", [], [], 0) is False
     # 交付物仍缺失时（即使已有部分写入）监视器继续让路，交给 guard/兜底收口。
     assert _simple_chain_monitor_yields_to_guard(msg, [], [], 0) is True
-
-
-def test_b1_platform_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from v3.zongdiaodu import (
-        _simple_chain_fallback_write_deliverable,
-        _simple_chain_final_hard_gate,
-    )
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    items = _simple_chain_fallback_write_deliverable(
-        "用浏览器自动化打开 example.com 并截图保存，输出《浏览器测试.md》",
-        [{"ok": True, "tool_action": "shell.run", "summary": "probe"}],
-        ["no successful write action or generated attachment for requested deliverable:浏览器测试.md"],
-        "req_fb",
-    )
-    assert items and (tmp_path / "浏览器测试.md").is_file()
-    assert (tmp_path / "浏览器测试.md").read_text(encoding="utf-8").startswith("# 浏览器测试.md")
-
-    model_write = {
-        "ok": True,
-        "tool_action": "file.write",
-        "tool_args": {"action": "file.write", "target": str(tmp_path / "browser_snapshot.txt"), "args": {"content": "snapshot"}},
-        "tool_result_contract": {
-            "ok": True,
-            "paths": [str(tmp_path / "browser_snapshot.txt")],
-            "observed_write_effect": True,
-            "write_evidence": {
-                "authoritative": True,
-                "source": "tool_post_readback",
-                "changed_files": [str(tmp_path / "browser_snapshot.txt")],
-                "post": [{"path": str(tmp_path / "browser_snapshot.txt"), "exists": True, "is_file": True, "size_bytes": 8, "sha256": "abc"}],
-            },
-        },
-    }
-    fallback_write = {
-        "ok": True,
-        "tool_action": "file.write",
-        "tool_args": {"action": "file.write", "target": str(tmp_path / "浏览器测试.md"), "args": {"content": ""}},
-        "tool_result_contract": {
-            "ok": True,
-            "paths": [str(tmp_path / "浏览器测试.md")],
-            "observed_write_effect": True,
-            "write_evidence": {"authoritative": True, "source": "platform_fallback", "changed_files": [str(tmp_path / "浏览器测试.md")]},
-        },
-        "summary": "platform fallback write",
-    }
-    allowed, status, reasons = _simple_chain_final_hard_gate(
-        "用浏览器自动化打开 example.com 并截图保存，输出《浏览器测试.md》",
-        [model_write, fallback_write],
-        items,
-        final_reply="已生成报告。",
-    )
-    assert allowed is True, reasons
-    assert status == "complete"
-
 
 def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
     from v3.zongdiaodu import (
@@ -496,56 +441,6 @@ def test_multi_file_project_allows_empty_scaffold_files() -> None:
     assert _simple_chain_allows_empty_scaffold(
         single_prompt, {"target": "pkg/__init__.py", "args": {}}
     ) is True
-
-
-def test_repeat_escalation_fallback_writes_deliverable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from v3.zongdiaodu import _simple_chain_try_fallback_delivery
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    allowed, items = _simple_chain_try_fallback_delivery(
-        xiaoxi="完成《智能体工具链分析》项目到工作区 agent-tools/ 目录，输出《verification.md》，并运行验证命令确认结果",
-        quality_history=[],
-        generated_attachments=[],
-        gap_reasons=["explicitly named deliverables are missing: verification.md"],
-        request_id="req_repeat",
-        required_read_paths=None,
-        final_reply="",
-    )
-    assert items and (tmp_path / "verification.md").is_file()
-    assert allowed is False  # 无真实验证时兜底不能伪造通过
-
-
-def test_platform_run_verification_executes_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from v3.zongdiaodu import (
-        _simple_chain_platform_run_verification,
-        _simple_chain_requires_command_verification,
-    )
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    script = tmp_path / "mdsummary.py"
-    script.write_text(
-        "import sys\n"
-        "text = open(sys.argv[1], encoding='utf-8').read()\n"
-        "print('TITLE:', [line for line in text.splitlines() if line.startswith('# ')][0])\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "README.md").write_text("# 项目简介\n正文\n", encoding="utf-8")
-    history: list[dict] = []
-    attachments: list[dict] = []
-    prompt = "请运行 python mdsummary.py README.md，把真实输出写入 summary.md"
-    assert _simple_chain_requires_command_verification(prompt) is True
-    ok = _simple_chain_platform_run_verification(
-        user_message=prompt,
-        quality_history=history,
-        generated_attachments=attachments,
-        request_id="req_v",
-    )
-    assert ok is True
-    assert any(p.get("tool_action") == "shell.run" for p in history)
-    assert (tmp_path / "summary.md").read_text(encoding="utf-8").startswith("TITLE:")
-    assert attachments
-
-
 def test_content_prose_tokens_are_not_requested_paths() -> None:
     """file.write 的正文提到 mdsummary.py/README.md 不得被当成要覆盖的路径。"""
     from v3.zongdiaodu import _simple_chain_requested_paths
@@ -855,188 +750,18 @@ def test_post_mutation_verification_ignores_report_document_write() -> None:
         "把真实测试输出写入《测试报告.md》"
     )
     assert _simple_chain_has_post_mutation_verification(history, prompt) is True
+def test_platform_completion_helpers_are_removed() -> None:
+    import v3.zongdiaodu as scheduler
 
-
-def test_platform_run_tests_verification_executes_pytest(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """平台兜底：模型未跑测试时，平台在项目目录真实运行 pytest 并写报告。"""
-    from v3.zongdiaodu import _simple_chain_platform_run_tests_verification
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "textutils" / "tests").mkdir(parents=True)
-    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2").mkdir(parents=True)
-    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2" / "core.py").write_text(
-        "def reverse_words(s: str) -> str:\n    return ' '.join(reversed(s.split()))\n",
-        encoding="utf-8",
+    removed = (
+        "_simple_chain_fallback_write_deliverable",
+        "_simple_chain_fallback_zip_deliverable",
+        "_simple_chain_try_fallback_delivery",
+        "_simple_chain_platform_run_verification",
+        "_simple_chain_platform_run_tests_verification",
+        "_simple_chain_platform_runtime_verified",
     )
-    (tmp_path / "textutils" / "tests" / "test_core.py").write_text(
-        "from tmputils_unique_9f2.core import reverse_words\n"
-        "def test_reverse():\n"
-        "    assert reverse_words('a b c') == 'c b a'\n",
-        encoding="utf-8",
-    )
-    history: list[dict] = []
-    attachments: list[dict] = []
-    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
-    ok = _simple_chain_platform_run_tests_verification(
-        user_message=prompt,
-        quality_history=history,
-        generated_attachments=attachments,
-        request_id="req_t",
-    )
-    assert ok is True
-    assert any(p.get("tool_action") == "shell.run" for p in history)
-    report = tmp_path / "textutils" / "测试报告.md"
-    assert report.is_file()
-    text = report.read_text(encoding="utf-8")
-    assert "passed" in text
-    assert attachments
-    # src 布局通过 pytest 的 pythonpath 运行，不应改写用户项目或把它
-    # editable 安装进应用自带 Python。
-    assert not (tmp_path / "textutils" / "pyproject.toml").exists()
-
-
-def test_platform_runtime_verified_uses_platform_evidence_or_runs(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """完成门独立复验：已有平台证据直接放行，否则平台自带运行时真实跑测试。"""
-    from v3.zongdiaodu import _simple_chain_platform_runtime_verified
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    prompt = "全部完成后从项目根目录运行 python -m pytest tests -q，把真实测试输出写入《测试报告.md》"
-    history_with_evidence = [{
-        "ok": True,
-        "tool_action": "shell.run",
-        "tool_args": {},
-        "tool_result_contract": {"ok": True},
-        "codex_evidence": {"verification_runtime": "platform"},
-    }]
-    assert _simple_chain_platform_runtime_verified(
-        user_message=prompt,
-        quality_history=history_with_evidence,
-        generated_attachments=[],
-        request_id="r1",
-    ) is True
-
-    (tmp_path / "textutils" / "tests").mkdir(parents=True)
-    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2").mkdir(parents=True)
-    (tmp_path / "textutils" / "src" / "tmputils_unique_9f2" / "core.py").write_text(
-        "def f():\n    return 1\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "textutils" / "tests" / "test_core.py").write_text(
-        "from tmputils_unique_9f2.core import f\n"
-        "def test_f():\n"
-        "    assert f() == 1\n",
-        encoding="utf-8",
-    )
-    history2: list[dict] = []
-    attachments2: list[dict] = []
-    ok2 = _simple_chain_platform_runtime_verified(
-        user_message=prompt,
-        quality_history=history2,
-        generated_attachments=attachments2,
-        request_id="r2",
-    )
-    assert ok2 is True
-    assert any(
-        isinstance(p.get("codex_evidence"), dict)
-        and p.get("codex_evidence", {}).get("verification_runtime") == "platform"
-        for p in history2
-    )
-
-
-def test_platform_run_verification_scopes_to_project_dir(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """验证兜底要在任务指定的项目目录里解析脚本与输出文件。"""
-    from v3.zongdiaodu import _simple_chain_platform_run_verification
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "agent-tools" / "tools").mkdir(parents=True)
-    (tmp_path / "agent-tools" / "args.txt").write_text("a b c\n", encoding="utf-8")
-    (tmp_path / "agent-tools" / "tools" / "summarize.py").write_text(
-        "import sys\n"
-        "path = sys.argv[1] if len(sys.argv) > 1 else 'args.txt'\n"
-        "print('TOKENS', len(open(path, encoding='utf-8').read().split()))\n",
-        encoding="utf-8",
-    )
-    history: list[dict] = []
-    attachments: list[dict] = []
-    ok = _simple_chain_platform_run_verification(
-        user_message=(
-            "完成《智能体工具链分析》项目到工作区 agent-tools/ 目录："
-            "运行 python tools/summarize.py，把真实执行输出写入 verification.md"
-        ),
-        quality_history=history,
-        generated_attachments=attachments,
-        request_id="req_vp",
-    )
-    assert ok is True
-    report = tmp_path / "agent-tools" / "verification.md"
-    assert report.is_file()
-    assert "TOKENS" in report.read_text(encoding="utf-8")
-
-
-def test_fallback_zip_deliverable_packages_project(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """平台打包兜底：任务要求 zip 且缺失时，把项目目录打成 zip。"""
-    import zipfile
-
-    from v3.zongdiaodu import _simple_chain_fallback_zip_deliverable
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "agent-tools").mkdir()
-    (tmp_path / "agent-tools" / "report.md").write_text("报告", encoding="utf-8")
-    (tmp_path / "agent-tools" / ".hidden").write_text("x", encoding="utf-8")
-    items = _simple_chain_fallback_zip_deliverable(
-        "完成《智能体工具链分析》项目到工作区 agent-tools/ 目录，打包成 agent-tools.zip 保存到工作区",
-        [],
-        ["agent-tools.zip missing"],
-        "req_z",
-        [],
-    )
-    assert items
-    zip_path = Path(items[0]["path"])
-    assert zip_path.is_file()
-    with zipfile.ZipFile(zip_path) as archive:
-        names = archive.namelist()
-    assert "report.md" in names
-    assert not any(name.startswith(".hidden") for name in names)
-
-
-def test_fallback_zip_rebuilds_incomplete_archive(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """zip 已存在但缺交付文件时，平台打包兜底必须重建完整压缩包。"""
-    import zipfile
-
-    from v3.zongdiaodu import _simple_chain_fallback_zip_deliverable
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "sales-insight" / "src" / "sales_insight").mkdir(parents=True)
-    (tmp_path / "sales-insight" / "report.md").write_text("报告", encoding="utf-8")
-    (tmp_path / "sales-insight" / "src" / "sales_insight" / "__init__.py").write_text(
-        "",
-        encoding="utf-8",
-    )
-    zip_path = tmp_path / "sales-insight" / "sales-insight.zip"
-    with zipfile.ZipFile(zip_path, "w") as archive:
-        archive.write(tmp_path / "sales-insight" / "report.md", arcname="report.md")
-    prompt = "完成《销售分析引擎》项目到工作区 sales-insight/ 目录，把全部产物打成 sales-insight.zip"
-    items = _simple_chain_fallback_zip_deliverable(prompt, [], [], "req_z2", [])
-    assert items
-    with zipfile.ZipFile(zip_path) as archive:
-        names = set(archive.namelist())
-    assert "report.md" in names
-    assert "src/sales_insight/__init__.py" in names
+    assert all(not hasattr(scheduler, name) for name in removed)
 
 
 def test_missing_deliverable_scoped_to_declared_project_dir(
