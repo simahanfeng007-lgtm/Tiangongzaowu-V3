@@ -1,7 +1,6 @@
 """G4 evidence: registration, compiler coverage/monotonic, semantic id, cancel, reconcile, composite."""
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -274,25 +273,21 @@ def test_t05c_delivery_mode_classification() -> None:
 
 
 def test_t26b_security_surface_files_unchanged_since_g0() -> None:
-    manifest = Path(r"C:\TG3Clean\v21-work\v21-g0-20260802T100346Z-dbc48aae2392\baseline\source-manifest.ndjson")
-    baseline: dict[str, str] = {}
-    for line in manifest.read_text(encoding="utf-8").splitlines():
-        entry = json.loads(line)
-        baseline[entry["path"]] = entry["sha256"]
-    security_surfaces = (
-        "src/contracts/authorization.py",
-        "src/contracts/security.py",
-        "src/contracts/scope.py",
-        "src/contracts/delivery_authorization.py",
-        "src/total_gateway/completion_gate.py",
-        "src/total_gateway/skill_authority.py",
-    )
+    baseline = {
+        "src/contracts/authorization.py": "4f8a71aabbae804f6ce6d22ffc4d3b27f0f4b1b825906c55f49b56948d1a69dc",
+        "src/contracts/security.py": "ad65e3cbb1b844333f8f873da5abfb49a2320aabe27056fb34f83baa5978c698",
+        "src/contracts/scope.py": "4447d3db1f71dea26cbfd7a19704400f8d058c4fe3ec5b3bfa775de4d821f60e",
+        "src/contracts/delivery_authorization.py": "95031e740a22137b5258205fe762fe408768fd3ddb947105d88fbfefa24c31ef",
+        "src/total_gateway/completion_gate.py": "f6ff42adb88e3fddb68b9f70e54dd73eefa93473701db503ac352d8f94069beb",
+        "src/total_gateway/skill_authority.py": "41741c054b33cfe47752066b537c44cae2119c94c161156aceefbe734b1941ab",
+    }
+    root = Path(__file__).resolve().parents[1]
     import hashlib
 
-    for relative in security_surfaces:
-        path = Path(r"C:\TG3Clean\src") / relative
+    for relative, expected_sha256 in baseline.items():
+        path = root / relative
         assert path.is_file(), relative
         current = hashlib.sha256(path.read_bytes()).hexdigest()
-        assert current == baseline.get(relative), (
+        assert current == expected_sha256, (
             f"security surface changed since G0: {relative}"
         )

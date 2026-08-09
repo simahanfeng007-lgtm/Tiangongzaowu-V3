@@ -893,8 +893,9 @@ def test_platform_run_tests_verification_executes_pytest(
     text = report.read_text(encoding="utf-8")
     assert "passed" in text
     assert attachments
-    # src 布局缺打包元数据时，平台生成最小 pyproject.toml 以便子进程 import。
-    assert (tmp_path / "textutils" / "pyproject.toml").is_file()
+    # src 布局通过 pytest 的 pythonpath 运行，不应改写用户项目或把它
+    # editable 安装进应用自带 Python。
+    assert not (tmp_path / "textutils" / "pyproject.toml").exists()
 
 
 def test_platform_runtime_verified_uses_platform_evidence_or_runs(
