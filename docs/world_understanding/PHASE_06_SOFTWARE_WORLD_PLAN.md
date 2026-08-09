@@ -96,7 +96,7 @@ Materialized predicates:
 
 Materialization classes:
 - STRUCTURAL: CONTAINS, DEFINES, REGISTERED_AS, BELONGS_TO, LOCATED_IN
-- MATERIALIZED: IMPORTS, DIRECT_CALLS, USES, READC, WRITES
+- MATERIALIZED: IMPORTS, DIRECT_CALLS, USES, READS, WRITES
 - DERIVED_CACHE: CALL_REACHABLE
 
 The following are explicitly deferred to L4/L5 and are not deterministic L3 facts:
