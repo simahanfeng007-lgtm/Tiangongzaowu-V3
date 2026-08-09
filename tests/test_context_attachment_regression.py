@@ -42,6 +42,65 @@ class ContextAttachmentRegressionTests(unittest.TestCase):
                 envelope = bridge._build_context_envelope(context, "fresh current request")
             self.assertEqual(envelope["current_user_text"], "fresh current request")
             self.assertEqual(envelope["run_state"], {})
+            self.assertEqual(envelope["recovery_checkpoint"], {})
+
+    def test_continue_inherits_only_failed_recovery_checkpoint(self) -> None:
+        bridge = importlib.import_module("v3.duihua_qiaojie")
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            state_root = home / ".tiangong" / "v3" / "simple_chain_run_state"
+            state_root.mkdir(parents=True)
+            (state_root / "req_previous.json").write_text(
+                json.dumps({
+                    "schema": "tiangong.v3.simple_chain.run_state.v2",
+                    "run_id": "req_previous",
+                    "request_id": "req_previous",
+                    "session_id": "session_same",
+                    "status": "force_stopped",
+                    "stage": "effect_unknown",
+                    "terminal_reason": "[effect_deadline_exhausted] tool deadline",
+                    "recovery": {
+                        "schema": "tiangong.v3.simple_chain.recovery.v1",
+                        "ambiguous_effect": True,
+                        "blocked_call_keys": ["omni_body:abc"],
+                    },
+                }),
+                encoding="utf-8",
+            )
+            context = {
+                "request_id": "req_current",
+                "session_id": "session_same",
+                "current_user_message": "继续\n\n【连续执行契约】\nA1-A4 工作在平台执行预算内连续执行。",
+            }
+            with mock.patch.object(bridge.Path, "home", return_value=home):
+                envelope = bridge._build_context_envelope(context, context["current_user_message"])
+            self.assertEqual(envelope["run_state"], {})
+            checkpoint = envelope["recovery_checkpoint"]
+            self.assertEqual(checkpoint["previous_request_id"], "req_previous")
+            rendered = bridge._render_context_envelope(envelope)
+            self.assertIn("[TIANGONG_RECOVERY_CHECKPOINT_V1]", rendered)
+            self.assertIn("omni_body:abc", rendered)
+
+    def test_unrelated_new_request_does_not_inherit_failed_recovery(self) -> None:
+        bridge = importlib.import_module("v3.duihua_qiaojie")
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            state_root = home / ".tiangong" / "v3" / "simple_chain_run_state"
+            state_root.mkdir(parents=True)
+            (state_root / "req_previous.json").write_text(
+                json.dumps({
+                    "run_id": "req_previous",
+                    "session_id": "session_same",
+                    "status": "force_stopped",
+                    "terminal_reason": "deadline",
+                    "recovery": {"blocked_call_keys": ["omni_body:abc"]},
+                }),
+                encoding="utf-8",
+            )
+            context = {"request_id": "req_new", "session_id": "session_same"}
+            with mock.patch.object(bridge.Path, "home", return_value=home):
+                envelope = bridge._build_context_envelope(context, "改做一个新任务")
+            self.assertEqual(envelope["recovery_checkpoint"], {})
 
     def test_current_attachment_parser_skips_source_partition_sentinel(self) -> None:
         scheduler = importlib.import_module("v3.zongdiaodu")
