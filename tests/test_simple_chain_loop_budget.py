@@ -390,6 +390,72 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertNotIn("我会按现有检查点继续处理", reply)
         self.assertNotIn("继续执行", reply.replace("本轮不再继续执行", ""))
 
+    def test_execution_deadline_persists_ambiguous_recovery(self) -> None:
+        from v3 import zongdiaodu as scheduler
+
+        state = {
+            "run_id": "req_deadline",
+            "request_id": "req_deadline",
+            "status": "tool_running",
+            "round": 0,
+            "tool_calls": [],
+            "observations": [],
+            "failures": [],
+        }
+        args = {"action": "shell.run", "args": {"command": "do-something"}}
+        with mock.patch.object(scheduler, "_simple_chain_save_run_state") as save:
+            recovery = scheduler._simple_chain_record_execution_deadline(
+                state,
+                tool_name="omni_body",
+                tool_args=args,
+                tool_call_id="call_1",
+                timeout_seconds=5,
+            )
+        self.assertTrue(recovery["ambiguous_effect"])
+        self.assertEqual(recovery["next_step"], "reconcile_before_retry")
+        self.assertEqual(state["stage"], "effect_unknown")
+        self.assertEqual(state["tool_calls"][0]["status"], "deadline")
+        self.assertEqual(len(recovery["blocked_call_keys"]), 1)
+        save.assert_called_once_with(state)
+
+    def test_recovery_checkpoint_parser_and_retry_authority(self) -> None:
+        import json
+
+        from v3 import zongdiaodu as scheduler
+
+        payload = {
+            "schema": "tiangong.v3.context.recovery_checkpoint.v1",
+            "previous_request_id": "req_old",
+            "recovery": {
+                "ambiguous_effect": True,
+                "blocked_call_keys": ["omni_body:abc"],
+            },
+        }
+        context = (
+            "prefix[TIANGONG_RECOVERY_CHECKPOINT_V1]"
+            + json.dumps(payload, ensure_ascii=False)
+            + "[/TIANGONG_RECOVERY_CHECKPOINT_V1]suffix"
+        )
+        parsed = scheduler._simple_chain_recovery_checkpoint_from_context(context)
+        self.assertEqual(parsed["previous_request_id"], "req_old")
+        self.assertFalse(scheduler._simple_chain_explicit_retry_authorized("继续"))
+        self.assertTrue(scheduler._simple_chain_explicit_retry_authorized("重新执行刚才的命令"))
+
+    def test_read_only_deadline_is_not_marked_ambiguous(self) -> None:
+        from v3 import zongdiaodu as scheduler
+
+        state = {"run_id": "req_read", "round": 0}
+        with mock.patch.object(scheduler, "_simple_chain_save_run_state"):
+            recovery = scheduler._simple_chain_record_execution_deadline(
+                state,
+                tool_name="omni_body",
+                tool_args={"action": "file.read", "target": "README.md"},
+                tool_call_id="call_read",
+                timeout_seconds=5,
+            )
+        self.assertFalse(recovery["ambiguous_effect"])
+        self.assertEqual(recovery["blocked_call_keys"], [])
+
     def test_requested_paths_extracts_target_and_nested_args(self) -> None:
         from v3.zongdiaodu import _simple_chain_requested_paths
 

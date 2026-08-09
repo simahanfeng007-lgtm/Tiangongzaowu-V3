@@ -1694,6 +1694,128 @@ def _gongju_diaoyong_key(tool_name: str, tool_args: dict) -> str:
     return f"{str(tool_name or '').strip()}:{args_digest}"
 
 
+_RECOVERY_CHECKPOINT_PATTERN = re.compile(
+    r"\[TIANGONG_RECOVERY_CHECKPOINT_V1\](.*?)\[/TIANGONG_RECOVERY_CHECKPOINT_V1\]",
+    re.DOTALL,
+)
+
+
+def _simple_chain_recovery_checkpoint_from_context(dynamic_context: str) -> dict[str, Any]:
+    match = _RECOVERY_CHECKPOINT_PATTERN.search(str(dynamic_context or ""))
+    if not match:
+        return {}
+    try:
+        payload = json.loads(match.group(1))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict) or payload.get("schema") != "tiangong.v3.context.recovery_checkpoint.v1":
+        return {}
+    recovery = payload.get("recovery") if isinstance(payload.get("recovery"), dict) else {}
+    blocked = [str(item) for item in recovery.get("blocked_call_keys") or [] if str(item).strip()]
+    payload["recovery"] = {**recovery, "blocked_call_keys": blocked[:8]}
+    return payload
+
+
+def _simple_chain_explicit_retry_authorized(user_message: str) -> bool:
+    compact = re.sub(r"\s+", "", _simple_chain_user_goal_text(user_message)).lower()
+    return bool(re.search(r"(?:重试|再试一次|重新执行|重新运行|再执行一次|再运行一次|retry|rerun|runagain)", compact))
+
+
+def _simple_chain_action_may_have_side_effects(action: str) -> bool:
+    normalized = str(action or "").strip().lower()
+    return bool(normalized) and normalized not in SIMPLE_CHAIN_READ_ONLY_ACTIONS
+
+
+def _simple_chain_record_execution_deadline(
+    run_state: dict[str, Any] | None,
+    *,
+    tool_name: str,
+    tool_args: dict,
+    tool_call_id: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Persist the timed-out call before closeout so a later turn can reconcile it."""
+    action = _simple_chain_tool_action(tool_name, tool_args)
+    call_key = _gongju_diaoyong_key(tool_name, tool_args)
+    ambiguous_effect = _simple_chain_action_may_have_side_effects(action)
+    checkpoint = {
+        "schema": "tiangong.v3.simple_chain.recovery.v1",
+        "required": True,
+        "reason": "tool_execution_deadline",
+        "ambiguous_effect": ambiguous_effect,
+        "blocked_call_keys": [call_key] if ambiguous_effect else [],
+        "last_tool_call": {
+            "call_id": str(tool_call_id or ""),
+            "call_key": call_key,
+            "tool_name": str(tool_name or ""),
+            "action": action,
+            "arguments": _safe_tool_args_for_display(tool_args),
+            "status": "deadline",
+            "timeout_seconds": round(float(timeout_seconds), 1),
+        },
+        "next_step": "reconcile_before_retry" if ambiguous_effect else "retry_or_alternate_read_only_action",
+    }
+    if isinstance(run_state, dict):
+        run_state["recovery"] = checkpoint
+        run_state["status"] = "force_stopped"
+        run_state["stage"] = "effect_unknown" if ambiguous_effect else "deadline"
+        run_state["round"] = int(run_state.get("round") or 0) + 1
+        run_state.setdefault("tool_calls", []).append({
+            "round": run_state["round"],
+            "call_id": str(tool_call_id or ""),
+            "call_key": call_key,
+            "tool_name": str(tool_name or ""),
+            "tool_action": action,
+            "ok": False,
+            "completion_ok": False,
+            "status": "deadline",
+            "ambiguous_effect": ambiguous_effect,
+        })
+        observation = {
+            "schema": "tiangong.v3.simple_chain.deadline_observation.v1",
+            "ok": False,
+            "tool_name": str(tool_name or ""),
+            "tool_action": action,
+            "tool_args": _safe_tool_args_for_display(tool_args),
+            "call_id": str(tool_call_id or ""),
+            "call_key": call_key,
+            "status": "deadline",
+            "ambiguous_effect": ambiguous_effect,
+            "timeout_seconds": round(float(timeout_seconds), 1),
+        }
+        run_state.setdefault("observations", []).append(observation)
+        failure = "tool execution deadline; effect is unknown and must be reconciled before retry" if ambiguous_effect else "tool execution deadline"
+        if failure not in run_state.setdefault("failures", []):
+            run_state["failures"].append(failure)
+        _simple_chain_save_run_state(run_state)
+    return checkpoint
+
+
+def _simple_chain_recovery_guard_payload(
+    request_id: str,
+    checkpoint: dict[str, Any],
+    tool_name: str,
+    tool_args: dict,
+) -> dict[str, Any]:
+    recovery = checkpoint.get("recovery") if isinstance(checkpoint.get("recovery"), dict) else {}
+    return {
+        "schema": "tiangong.v3.simple_chain.recovery_guard.v1",
+        "ok": False,
+        "status": "reconciliation_required",
+        "request_id": request_id,
+        "previous_request_id": checkpoint.get("previous_request_id"),
+        "blocked_call_key": _gongju_diaoyong_key(tool_name, tool_args),
+        "attempted_action": _simple_chain_tool_action(tool_name, tool_args),
+        "previous_terminal_reason": checkpoint.get("terminal_reason"),
+        "ambiguous_effect": bool(recovery.get("ambiguous_effect")),
+        "instruction": (
+            "Do not execute this identical side-effecting call. Its previous attempt exceeded the deadline and its effect is unknown. "
+            "First reconcile with a different read-only inspection action, or explain that explicit user authorization is required to retry. "
+            "A bare continue/resume message is not retry authorization."
+        ),
+    }
+
+
 def _simple_chain_tool_call_id(request_id: str, tool_index: int, tool_name: str, tool_args: dict) -> str:
     key = _gongju_diaoyong_key(tool_name, tool_args if isinstance(tool_args, dict) else {})
     digest = hashlib.sha1(key.encode("utf-8", errors="ignore")).hexdigest()[:10]
@@ -7500,6 +7622,10 @@ class Zongdiaodu:
         on_event: Callable[[dict], None] | None = None,
     ) -> str:
         request_id = getattr(run_control, "request_id", "") if run_control else zhuizong_id
+        recovery_checkpoint = _simple_chain_recovery_checkpoint_from_context(dynamic_context)
+        recovery = recovery_checkpoint.get("recovery") if isinstance(recovery_checkpoint.get("recovery"), dict) else {}
+        blocked_recovery_call_keys = set(recovery.get("blocked_call_keys") or [])
+        explicit_retry_authorized = _simple_chain_explicit_retry_authorized(xiaoxi)
         response_only_without_tools = (
             _simple_chain_is_response_only_without_tools(xiaoxi)
             or is_execution_discussion_only(xiaoxi)
@@ -7566,6 +7692,8 @@ class Zongdiaodu:
             run_control.step("build_context", "build context", "done", "Context is ready.")
 
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
+        if recovery_checkpoint:
+            run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
         try:
@@ -9151,6 +9279,37 @@ class Zongdiaodu:
             tool_args = prepared_args
             attempted_action = _simple_chain_tool_action(tool_name, tool_args)
             candidate_call_key = _gongju_diaoyong_key(tool_name, tool_args)
+            if candidate_call_key in blocked_recovery_call_keys and not explicit_retry_authorized:
+                guard_key = "recovery_guard:" + candidate_call_key
+                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
+                repeat_observation_counts[guard_key] = guard_count
+                recovery_payload = _simple_chain_recovery_guard_payload(
+                    request_id,
+                    recovery_checkpoint,
+                    tool_name,
+                    tool_args,
+                )
+                if run_control:
+                    run_control.step(
+                        "simple_chain_recovery_guard",
+                        "Deadline recovery guard",
+                        "done",
+                        "Blocked an identical side-effecting call whose prior effect is unknown.",
+                        meta=recovery_payload,
+                    )
+                if guard_count >= 2:
+                    final_guard_exhausted = True
+                    final_chain_status = "incomplete"
+                    shenti, huifu = _natural_closeout(
+                        "incomplete",
+                        ["[reconciliation_required] 上一轮超时动作结果未确认；用户仅说‘继续’，未授权原样重试"],
+                    )
+                    break
+                shenti, huifu = _llm_jixu_scoped(
+                    _simple_chain_model_payload(recovery_payload),
+                    on_chunk=_on_text_chunk,
+                )
+                continue
             if (
                 attempted_action in {"skill.get", "skill.read"}
                 and _simple_chain_is_learning_only_request(xiaoxi)
@@ -9834,6 +9993,23 @@ class Zongdiaodu:
                         "tool_name": tool_name,
                         "timeout_seconds": round(_tool_timeout_seconds, 1),
                     }
+                    recovery_record = _simple_chain_record_execution_deadline(
+                        run_state,
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        tool_call_id=tool_call_id,
+                        timeout_seconds=_tool_timeout_seconds,
+                    )
+                    if on_event:
+                        on_event({
+                            "type": "tool_result",
+                            "call_id": tool_call_id,
+                            "tool_index": gongju_cishu,
+                            "name": tool_name,
+                            "ok": False,
+                            "status": "deadline",
+                            "ambiguous_effect": bool(recovery_record.get("ambiguous_effect")),
+                        })
                     final_guard_exhausted = True
                     final_chain_status = "force_stopped"
                     shenti, huifu = _natural_closeout(
@@ -9845,8 +10021,12 @@ class Zongdiaodu:
                             "simple_chain_effect_deadline",
                             "Gateway effect deadline",
                             "incomplete",
-                            "Tool execution exceeded the platform tool-execution deadline; stopped instead of waiting.",
-                            meta={"deadline_reached": True, "tool_timeout_seconds": round(_tool_timeout_seconds, 1)},
+                            "Stopped waiting after the platform deadline; the action effect is unknown and must be reconciled before retry.",
+                            meta={
+                                "deadline_reached": True,
+                                "tool_timeout_seconds": round(_tool_timeout_seconds, 1),
+                                "ambiguous_effect": bool(recovery_record.get("ambiguous_effect")),
+                            },
                         )
                     break
             finally:
