@@ -43,7 +43,6 @@ def _head_load(value: dict[str,Any] | None) -> HeadManifest | None:
     built=HeadManifest.build(str(value["kind"]),refs,max_items=max(1,len(refs)))
     if built.manifest_sha256 != value["manifest_sha256"]: raise ValueError("WORLD_STATE_PERSISTED_MANIFEST_HASH_MISMATCH")
     return built
-
 def _snapshot_dict(snapshot: MaterializedWorldSnapshot) -> dict[str,Any]:
     return {
         "schema":"tiangong.world-state-store.snapshot.v1",
@@ -60,7 +59,6 @@ def _snapshot_dict(snapshot: MaterializedWorldSnapshot) -> dict[str,Any]:
             "manifest_sha256":snapshot.delta.manifest_sha256,
         },
     }
-
 def _refs(values: list[dict[str,Any]]) -> tuple[WorldRecordRef,...]: return tuple(WorldRecordRef.model_validate(v) for v in values)
 def _snapshot_load(payload: dict[str,Any]) -> MaterializedWorldSnapshot:
     if payload.get("schema")!="tiangong.world-state-store.snapshot.v1": raise ValueError("WORLD_STATE_PERSISTED_SCHEMA_INVALID")
@@ -122,6 +120,19 @@ class WorldStateStore:
             self._atomic_json(path,self._index_payload(self._current,self._history))
     def current(self, *, life_id: str, world_scope_hash: str, principal_scope_hash: str, frame_id: str) -> MaterializedWorldSnapshot | None:
         state_id=self._current.get((life_id,world_scope_hash,principal_scope_hash,frame_id)); return None if state_id is None else self.get(state_id)
+    def current_candidates(self, *, life_id: str, principal_scope_hash: str, world_scope_hash: str | None=None) -> tuple[MaterializedWorldSnapshot,...]:
+        """Return current snapshots matching an exact Life/principal partition.
+
+        This is a read-only enumeration for P10 context projection. It never
+        resolves ambiguity between frame/branch streams on the caller's behalf.
+        """
+        state_ids=[]
+        for key,state_id in sorted(self._current.items()):
+            key_life,key_world,key_principal,_frame_id=key
+            if key_life!=life_id or key_principal!=principal_scope_hash: continue
+            if world_scope_hash is not None and key_world!=world_scope_hash: continue
+            if state_id not in state_ids: state_ids.append(state_id)
+        return tuple(snapshot for state_id in state_ids if (snapshot:=self.get(state_id)) is not None)
     def get(self, state_id: str) -> MaterializedWorldSnapshot | None:
         cached=self._snapshots.get(state_id)
         if cached is not None: return cached
