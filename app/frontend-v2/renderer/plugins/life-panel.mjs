@@ -1272,7 +1272,7 @@ function renderCapabilities(payload) {
       </section>
       <section class="life-card life-capability-artifacts">
         ${sectionTitle("生命能力候选与正式产物", `${artifacts.length} 项`)}
-        ${artifacts.length ? `<div class="life-artifact-menu">${artifacts.map((artifact) => {
+        ${artifacts.length ? `<div class="life-learning-list life-artifact-grid">${artifacts.map((artifact) => {
           const artifactId = firstText(artifact.artifact_id, artifact.id);
           const activationStatus = String(artifact.activation_status || artifact.status || "").toLowerCase();
           const degraded = activationStatus === "degraded";
@@ -1282,46 +1282,31 @@ function renderCapabilities(payload) {
           const doc = safeObject(artifact.document);
           const publication = safeObject(artifact.publication);
           const workspacePath = String(publication.workspace_path || "").trim();
-          const displayName = esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"));
-          const displayStatus = esc(labelForStatus(activationStatus || artifact.status || "candidate"));
-          const rawKind = String(artifact.kind || "skill").toUpperCase();
-          const rawVersion = artifact.version ? `版本 ${artifact.version}` : "";
-          const displayKind = esc(rawKind);
-          const displayVersion = rawVersion ? esc(rawVersion) : "";
-          const displayDate = artifact.updated_at ? formatDate(artifact.updated_at) : "";
-          const metaParts = [rawKind, rawVersion, displayDate, artifact.current ? "当前版本" : ""].filter(Boolean);
           return `
-            <details class="life-artifact-item"${artifact.current ? ' data-current="1"' : ""}>
-              <summary>
-                <span class="life-artifact-burger" aria-hidden="true">☰</span>
-                <strong class="life-artifact-name">${displayName}</strong>
-                <span class="life-artifact-state">${displayStatus}</span>
-                <span class="life-artifact-meta">${esc(metaParts.join(" · "))}</span>
-              </summary>
-              <div class="life-artifact-body">
-                <p class="life-artifact-summary">${esc(firstText(artifact.summary, artifact.description, artifact.procedure, "暂无能力说明"))}</p>
-                <div class="life-tag-row">
-                  <span>${displayKind}</span>
-                  ${artifact.version ? `<span>${displayVersion}</span>` : ""}
-                  ${artifact.current ? "<span>当前版本</span>" : ""}
-                  ${artifact.updated_at ? `<span>${esc(displayDate)}</span>` : ""}
-                </div>
-                ${degraded ? `<p class="life-artifact-degraded">已自动降级：${esc(artifact.degraded_reason || "连续失败且补丁未通过验证")}。不再进入模型工具列表，可手动重新激活。</p>` : ""}
-                ${workspacePath ? `<div class="life-artifact-path">工作区文件：${esc(workspacePath)}</div>` : ""}
-                ${steps.length ? `<div class="life-artifact-steps">${steps.map((step, stepIndex) => `
-                  <div class="life-artifact-step">
-                    <span>${stepIndex + 1}</span>
-                    <div><strong>${esc(firstText(step.step_id, `步骤 ${stepIndex + 1}`))}</strong>${step.on_failure ? `<small>${esc(step.on_failure)}</small>` : ""}</div>
-                  </div>
-                `).join("")}</div>` : ""}
-                ${doc.content ? `<details class="life-artifact-doc"><summary>完整文档</summary><pre>${esc(doc.content)}</pre></details>` : ""}
-                <div class="life-action-row">
-                  ${degraded ? `<button type="button" data-life-capability-reactivate="${esc(artifactId)}">重新激活</button>` : ""}
-                  ${rollbackAllowed ? `<button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button>` : ""}
-                  <button type="button" class="danger" data-life-capability-delete="${esc(artifactId)}">删除能力</button>
-                </div>
+            <article class="life-learning-card life-artifact-card">
+              <div class="life-reflection-head"><strong>${esc(firstText(artifact.name, artifact.title, artifactId, "未命名能力"))}</strong><span>${esc(labelForStatus(activationStatus || artifact.status || "candidate"))}</span></div>
+              <p class="life-artifact-summary">${esc(firstText(artifact.summary, artifact.description, artifact.procedure, "暂无能力说明"))}</p>
+              <div class="life-tag-row">
+                <span>${esc(String(artifact.kind || "skill").toUpperCase())}</span>
+                <span>版本 ${esc(artifact.version || "—")}</span>
+                ${artifact.current ? "<span>当前版本</span>" : ""}
+                ${artifact.updated_at ? `<span>${esc(formatDate(artifact.updated_at))}</span>` : ""}
               </div>
-            </details>
+              ${degraded ? `<p class="life-artifact-degraded">已自动降级：${esc(artifact.degraded_reason || "连续失败且补丁未通过验证")}。不再进入模型工具列表，可手动重新激活。</p>` : ""}
+              ${workspacePath ? `<div class="life-artifact-path">工作区文件：${esc(workspacePath)}</div>` : ""}
+              ${steps.length ? `<div class="life-artifact-steps">${steps.map((step, stepIndex) => `
+                <div class="life-artifact-step">
+                  <span>${stepIndex + 1}</span>
+                  <div><strong>${esc(firstText(step.step_id, `步骤 ${stepIndex + 1}`))}</strong>${step.on_failure ? `<small>${esc(step.on_failure)}</small>` : ""}</div>
+                </div>
+              `).join("")}</div>` : ""}
+              ${doc.content ? `<details class="life-artifact-doc"><summary>完整文档</summary><pre>${esc(doc.content)}</pre></details>` : ""}
+              <div class="life-action-row">
+                ${degraded ? `<button type="button" data-life-capability-reactivate="${esc(artifactId)}">重新激活</button>` : ""}
+                ${rollbackAllowed ? `<button type="button" class="danger" data-life-capability-rollback="${esc(artifactId)}">回滚到上一版本</button>` : ""}
+                <button type="button" class="danger" data-life-capability-delete="${esc(artifactId)}">删除能力</button>
+              </div>
+            </article>
           `;
         }).join("")}</div>` : emptyState("尚无已确认、构建或发布的能力产物。")}
       </section>
