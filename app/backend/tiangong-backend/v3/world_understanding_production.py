@@ -160,10 +160,17 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
                     return None
                 return snapshot
 
+            def enrich_context(query, snapshot):
+                runtime = _runtime
+                if runtime is None:
+                    return ()
+                return runtime.repository_context_candidates(query, snapshot)
+
             handler = WorldContextRequestHandler(
                 state_resolver=resolve_state,
                 projector=WorldContextProjector(token_estimator=estimate_tokens),
                 output_port=output,
+                projection_enricher=enrich_context,
             )
             _active_coordinator = ActiveWorldCognitionCoordinator(
                 store=store,
