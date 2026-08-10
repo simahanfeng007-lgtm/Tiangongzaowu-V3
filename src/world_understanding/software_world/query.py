@@ -175,6 +175,14 @@ def execute_repository_graph_query(
                 hard_stop = True
                 break
 
+            # A bounded result is a coherent subgraph: never publish a relation
+            # whose opposite endpoint could not fit inside the entity budget.
+            neighbor_is_new = neighbor.entity_id not in selected_entities
+            if neighbor_is_new and len(selected_entities) >= query.max_entities:
+                truncation_reasons.add("ENTITY_BUDGET")
+                hard_stop = True
+                break
+
             if relation.relation_id not in selected_relations:
                 if len(selected_relations) >= query.max_relations:
                     truncation_reasons.add("RELATION_BUDGET")
@@ -183,11 +191,7 @@ def execute_repository_graph_query(
                 selected_relations[relation.relation_id] = relation
 
             next_depth = current_depth + 1
-            if neighbor.entity_id not in selected_entities:
-                if len(selected_entities) >= query.max_entities:
-                    truncation_reasons.add("ENTITY_BUDGET")
-                    hard_stop = True
-                    break
+            if neighbor_is_new:
                 selected_entities[neighbor.entity_id] = neighbor
                 visited_depth[neighbor.entity_id] = next_depth
                 queue.append((neighbor.entity_id, next_depth))
