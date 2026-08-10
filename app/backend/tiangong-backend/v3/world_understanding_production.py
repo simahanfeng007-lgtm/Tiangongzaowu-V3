@@ -28,6 +28,7 @@ from world_understanding.context_output import (
 from world_understanding.production import ProductionWorldUnderstandingRuntime
 from world_understanding.active_cognition import ActiveWorldCognitionCoordinator
 from world_understanding.software_world import SoftwareWorldFrame
+from world_understanding.software_world.git_observation import repository_frame_identity
 from world_understanding.source_adapters import build_post_commit_source_envelope
 from world_understanding.world_state import WorldStateStore
 
@@ -115,13 +116,21 @@ def _frame_factory(envelope, cut):
     workspace_id = str(bindings.get("workspace_id") or "").strip()
     if not workspace_id:
         raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_INCOMPLETE")
+    git_identity = repository_frame_identity(envelope)
+    if git_identity is None:
+        repository = "workspace:" + workspace_id
+        worktree = "workspace:" + workspace_id
+        branch = "unversioned"
+        commit = "content-state:unknown"
+    else:
+        repository, worktree, branch, commit = git_identity
     return SoftwareWorldFrame.build(
         scope=envelope.scope_hint,
         workspace=workspace_id,
-        repository="workspace:" + workspace_id,
-        worktree="workspace:" + workspace_id,
-        branch="runtime-current",
-        commit="runtime-current",
+        repository=repository,
+        worktree=worktree,
+        branch=branch,
+        commit=commit,
         environment=platform.system().lower() or "unknown-platform",
         time=envelope.source_time,
         world_cut=cut,
