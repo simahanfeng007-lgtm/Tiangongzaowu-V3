@@ -19,6 +19,7 @@ from .known import KnownClosureEngine, RuleRegistry, build_p4_rules
 from .known.closure import ClosureResult
 from .semantic import SemanticFactors, SemanticPipeline, build_semantic_input
 from .software_world import SoftwareWorldFrame, SoftwareWorldUpdater, SparseWorldGraph
+from .software_world.git_observation import repository_observation_to_git_delta
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
 
@@ -158,14 +159,21 @@ class ProductionWorldUnderstandingRuntime:
             prior_closure = None if live is None else live.closure
             closure = self._closure.close(rows, prior=prior_closure)
             graph = _fork_graph(frame, previous if live is None else live.graph)
+            git_delta = repository_observation_to_git_delta(
+                envelope=envelope,
+                frame=frame,
+                rows=rows,
+            ) if envelope.source_kind == "GIT_CODE" else None
+            added_hashes = set(closure.added_record_hashes)
             update = self._updater.update(
                 frame=frame,
                 graph=graph,
                 known_delta=tuple(
                     item
                     for item in closure.known.records()
-                    if item.record_hash in set(closure.added_record_hashes)
+                    if item.record_hash in added_hashes
                 ),
+                git_delta=git_delta,
             )
             semantic_input = build_semantic_input(
                 scope=frame.scope,
@@ -191,7 +199,7 @@ class ProductionWorldUnderstandingRuntime:
                 )
             )
             self._streams[frame.frame_id] = _StreamState(update.graph, closure)
-            # P13.2 is strictly post-publication and fail-open.  It may enqueue
+            # P13.2 is strictly post-publication and fail-open. It may enqueue
             # one inquiry into the existing Gateway, but cannot roll back or
             # alter the passive perception transaction that just committed.
             if self._committed_state_observer is not None:
