@@ -1,6 +1,6 @@
 """Immutable, side-effect-free contracts for repository reality observations.
 
-The contracts describe already-observed repository facts.  They deliberately do
+The contracts describe already-observed repository facts. They deliberately do
 not run Git, read files, execute tools, own WorldState, or persist learning.
 Repository providers implement the observation protocol outside this package.
 """
@@ -281,9 +281,13 @@ class RepositoryObservation(WorldContractModel):
         return value
 
     def computed_observation_sha256(self) -> str:
-        return canonical_sha256(
-            self.model_dump(mode="json", exclude={"observation_sha256", "observed_at_ms", "revision": {"observed_at_ms"}})
-        )
+        payload = self.model_dump(mode="json")
+        payload.pop("observation_sha256", None)
+        payload.pop("observed_at_ms", None)
+        revision = dict(payload.get("revision") or {})
+        revision.pop("observed_at_ms", None)
+        payload["revision"] = revision
+        return canonical_sha256(payload)
 
     @model_validator(mode="after")
     def validate_observation_hash(self) -> "RepositoryObservation":
@@ -331,7 +335,7 @@ class RepositoryProviderCapabilities(WorldContractModel):
 
 @runtime_checkable
 class RepositoryProvider(Protocol):
-    """Read-only provider boundary.  Implementations may observe but never mutate."""
+    """Read-only provider boundary. Implementations may observe but never mutate."""
 
     def discover(self, workspace_root: str) -> RepositoryIdentity | None: ...
     def observe(self, identity: RepositoryIdentity) -> RepositoryObservation: ...
