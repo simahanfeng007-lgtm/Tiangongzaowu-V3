@@ -8,6 +8,10 @@ import threading
 from pathlib import Path
 
 from contracts.canonical import canonical_sha256
+from contracts.world_understanding.repository_query import (
+    RepositoryGraphQuery,
+    RepositoryGraphQueryResult,
+)
 from contracts.world_understanding.scope import (
     ScopeBinding,
     WorldScope,
@@ -117,9 +121,6 @@ def _frame_factory(envelope, cut):
         raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_INCOMPLETE")
     git_identity = repository_frame_identity(envelope)
     if git_identity is None:
-        # Preserve the existing non-GIT production frame until repository
-        # binding is explicitly propagated to all source owners. M1 must not
-        # silently migrate unrelated MEMORY/KNOWLEDGE/TOOL_RESULT frame IDs.
         repository = "workspace:" + workspace_id
         worktree = "workspace:" + workspace_id
         branch = "runtime-current"
@@ -184,6 +185,13 @@ def production_context_output_port() -> ContextOutputPort:
     return _context_output
 
 
+def production_repository_graph_query(
+    query: RepositoryGraphQuery,
+) -> RepositoryGraphQueryResult:
+    """Use the one production WU runtime; never instantiate a query runtime."""
+    return production_world_understanding_runtime().query_repository_graph(query)
+
+
 def _native_id(value: str) -> str:
     value = str(value or "").strip()
     if _OPAQUE.fullmatch(value):
@@ -236,8 +244,6 @@ def observe_native_post_commit(event: NativePostCommitEvent):
     )
     disposition = production_world_understanding_runtime().facade.accept(envelope)
     if _tool_result_requests_repository_refresh(event):
-        # The ToolResult owner has already committed. Repository refresh is a
-        # bounded native sensor notification and is deliberately fail-open.
         try:
             from .repository_perception import publish_active_repository_observation
 
@@ -255,6 +261,7 @@ __all__ = [
     "install_world_understanding_observer",
     "observe_native_post_commit",
     "production_context_output_port",
+    "production_repository_graph_query",
     "production_world_understanding_runtime",
     "set_world_inquiry_dispatcher",
 ]

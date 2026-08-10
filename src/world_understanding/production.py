@@ -12,6 +12,10 @@ from typing import Callable, Protocol
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.known import DirectKnownRecord
+from contracts.world_understanding.repository_query import (
+    RepositoryGraphQuery,
+    RepositoryGraphQueryResult,
+)
 from contracts.world_understanding.world_cut import SourceWatermark, WorldCut, derive_world_cut_id
 
 from .facade import WorldUnderstandingFacade
@@ -20,6 +24,7 @@ from .known.closure import ClosureResult
 from .semantic import SemanticFactors, SemanticPipeline, build_semantic_input
 from .software_world import SoftwareWorldFrame, SoftwareWorldUpdater, SparseWorldGraph
 from .software_world.git_observation import repository_observation_to_git_delta
+from .software_world.query import execute_repository_graph_query
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
 
@@ -63,6 +68,8 @@ class ProductionWorldUnderstandingRuntime:
 
     Publication is the commit point. Candidate closure/graph state is built on
     forks and becomes live only after ``WorldStateStore.publish`` succeeds.
+    Repository graph queries are read-only projections over the committed live
+    stream and never become a second WorldState or Runtime.
     """
 
     def __init__(
@@ -133,6 +140,16 @@ class ProductionWorldUnderstandingRuntime:
             principal_scope_hash=scope.principal_scope_hash,
             frame_id=frame.frame_id,
         )
+
+    def query_repository_graph(
+        self, query: RepositoryGraphQuery
+    ) -> RepositoryGraphQueryResult:
+        """Run one bounded read-only query against the committed live graph."""
+        with self._lock:
+            live = self._streams.get(query.frame_id)
+            if live is None:
+                raise ValueError("REPOSITORY_QUERY_FRAME_NOT_LIVE")
+            return execute_repository_graph_query(live.graph, query)
 
     def consume_source(
         self,
