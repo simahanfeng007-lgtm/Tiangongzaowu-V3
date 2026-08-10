@@ -9,6 +9,8 @@ from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.context_packet import ExpansionHandle, WorldContextItem, WorldContextPacket, derive_expansion_handle_id, derive_world_packet_id
 from contracts.world_understanding.query import WorldQuery
 
+from .enrichment import ContextProjectionCandidate
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectionPolicy:
@@ -130,6 +132,15 @@ def diversity_ref_order(pairs: tuple[tuple[str, WorldRecordRef], ...], *, query:
     return tuple(ordered)
 
 
+def _next_expansion(
+    *, ref: WorldRecordRef, query: WorldQuery, generated_at_ms: int, policy: ProjectionPolicy
+) -> ExpansionHandle | None:
+    next_depth = {"L0": "L1", "L1": "L2", "L2": None}[query.requested_depth]
+    return None if next_depth is None else build_handle(
+        refs=(ref,), query=query, depth=next_depth, expires_at_ms=generated_at_ms + policy.expansion_ttl_ms
+    )
+
+
 def build_ranked_item(
     ref: WorldRecordRef, *, query: WorldQuery, source_keys: tuple[str, ...],
     evidence_ids: tuple[str, ...], generated_at_ms: int, policy: ProjectionPolicy,
@@ -141,9 +152,7 @@ def build_ranked_item(
     relevance = 1000 if required else (760 if lexical_hit else 520)
     impact = {"world_entity": 620, "world_relation": 580, "world_cognition": 820,
               "world_hypothesis": 560, "world_prediction": 600}.get(ref.record_type, 500)
-    next_depth = {"L0": "L1", "L1": "L2", "L2": None}[query.requested_depth]
-    expansion = None if next_depth is None else build_handle(
-        refs=(ref,), query=query, depth=next_depth, expires_at_ms=generated_at_ms + policy.expansion_ttl_ms)
+    expansion = _next_expansion(ref=ref, query=query, generated_at_ms=generated_at_ms, policy=policy)
     detail = f"{ref.record_type} {ref.record_id}"
     if query.requested_depth in {"L1", "L2"}:
         detail += f" revision={ref.revision or 0}; dependency_roots={len(source_keys)}"
@@ -155,6 +164,30 @@ def build_ranked_item(
         cognition_stability="stable" if ref.record_type == "world_cognition" else None,
         expansion_handle_id=None if expansion is None else expansion.handle_id)
     return context_item, expansion
+
+
+def build_enriched_ranked_item(
+    candidate: ContextProjectionCandidate,
+    *,
+    query: WorldQuery,
+    generated_at_ms: int,
+    policy: ProjectionPolicy,
+) -> tuple[WorldContextItem, ExpansionHandle | None]:
+    """Build one normal WorldContextItem using an internal summary/rank override."""
+    expansion = _next_expansion(
+        ref=candidate.ref, query=query, generated_at_ms=generated_at_ms, policy=policy
+    )
+    item = build_item(
+        kind=candidate.item_kind,
+        summary=clip(candidate.summary, policy.ranked_summary_chars),
+        refs=(candidate.ref,),
+        mandatory=False,
+        task_relevance_milli=candidate.task_relevance_milli,
+        impact_milli=candidate.impact_milli,
+        freshness_need_milli=candidate.freshness_need_milli,
+        expansion_handle_id=None if expansion is None else expansion.handle_id,
+    )
+    return item, expansion
 
 
 def build_packet(
@@ -178,4 +211,7 @@ def build_packet(
     return packet.with_computed_hash()
 
 
-__all__ = ["ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "build_item", "build_handle", "diversity_ref_order", "build_ranked_item", "build_packet"]
+__all__ = [
+    "ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "build_item", "build_handle",
+    "diversity_ref_order", "build_ranked_item", "build_enriched_ranked_item", "build_packet"
+]
