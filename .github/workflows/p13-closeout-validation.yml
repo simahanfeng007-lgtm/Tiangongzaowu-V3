@@ -41,14 +41,25 @@ jobs:
       - name: Regenerate existing generated-source mirrors
         run: python scripts/sync-generated-sources.py --write
 
-      - name: Print regenerated life-service marker
-        run: python -c "from pathlib import Path; print(Path('app/life-service/runtime314/life_service/.tiangong-generated-source.json').read_text(encoding='utf-8'))"
-
       - name: Verify generated-source mirrors after regeneration
         run: python scripts/sync-generated-sources.py --check
 
-      - name: Show regeneration diff
-        run: git diff --stat && git diff --name-only
+      - name: Show exact regeneration working tree
+        shell: bash
+        run: |
+          git status --short --untracked-files=all
+          git diff --stat
+          git diff
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          changed = subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+          for name in changed:
+              p = Path(name)
+              if p.name == ".tiangong-generated-source.json" and p.exists():
+                  print(f"--- MARKER {name} ---")
+                  print(p.read_text(encoding="utf-8"))
+          PY
 
       - name: Compile authoritative Python source
         run: python -m compileall -q src
