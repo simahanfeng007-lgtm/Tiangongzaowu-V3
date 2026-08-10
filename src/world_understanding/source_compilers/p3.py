@@ -116,6 +116,27 @@ class ChainEventCompiler(DeterministicSourceCompiler):
         event=str(payload.get("event") or payload.get("event_kind") or payload.get("kind") or "unknown")
         return (make_direct_known(envelope,self.spec,proposition_type="CHAIN_EVENT_RECORDED",predicate="chain.event",object_text=event),)
 
+_REPOSITORY_OBSERVATION_KEYS=frozenset({
+    "identity","revision","working_tree_state","observation_sha256","observed_at_ms","provider_version"
+})
+
+class CompatibleGitCodeCompiler(GitCodeCompiler):
+    """Preserve the legacy generic GIT_CODE contract while recognizing repository reality.
+
+    A payload with no repository-observation keys remains a generic GIT_CODE fact.
+    Once any repository key is present, the strict RepositoryObservation compiler
+    owns validation so malformed repository-shaped input cannot silently downgrade.
+    """
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="GIT_CODE": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline
+        if isinstance(payload,dict):
+            nested=payload.get("repository_observation")
+            candidate=nested if isinstance(nested,dict) else payload
+            if _REPOSITORY_OBSERVATION_KEYS.isdisjoint(candidate):
+                return (make_direct_known(envelope,self.spec),)
+        return super().__call__(envelope)
+
 def build_p3_compilers()->dict[str,object]:
     compilers={kind:DeterministicSourceCompiler(spec) for kind,spec in SPECS.items()}
     compilers["TOOL_RESULT"]=ToolResultCompiler(SPECS["TOOL_RESULT"])
@@ -124,8 +145,8 @@ def build_p3_compilers()->dict[str,object]:
     compilers["KNOWLEDGE"]=KnowledgeCompiler(SPECS["KNOWLEDGE"])
     compilers["MEMORY"]=MemoryCompiler(SPECS["MEMORY"])
     compilers["FILESYSTEM"]=FilesystemEvidenceCompiler(SPECS["FILESYSTEM"])
-    compilers["GIT_CODE"]=GitCodeCompiler(SPECS["GIT_CODE"])
+    compilers["GIT_CODE"]=CompatibleGitCodeCompiler(SPECS["GIT_CODE"])
     compilers["CHAIN_EVENT"]=ChainEventCompiler(SPECS["CHAIN_EVENT"])
     return compilers
 
-__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","GitCodeCompiler","ChainEventCompiler"]
+__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","GitCodeCompiler","CompatibleGitCodeCompiler","ChainEventCompiler"]

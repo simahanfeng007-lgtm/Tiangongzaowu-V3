@@ -1,7 +1,8 @@
 """Pure RepositoryObservation -> existing GitCommitDelta decoder.
 
 This layer performs no Git/filesystem/network IO. It only validates already-
-observed evidence against the current SoftwareWorldFrame.
+observed evidence against the current SoftwareWorldFrame. Legacy generic
+GIT_CODE payloads remain valid P3 observations but do not become Git deltas.
 """
 from __future__ import annotations
 
@@ -14,33 +15,48 @@ from contracts.world_understanding.repository import RepositoryObservation
 from .frame import SoftwareWorldFrame
 from .git_delta import GitCommitDelta, GitPathChange
 
+_REPOSITORY_OBSERVATION_KEYS = frozenset({
+    "identity",
+    "revision",
+    "working_tree_state",
+    "observation_sha256",
+    "observed_at_ms",
+    "provider_version",
+})
 
-def _repository_payload(envelope: WorldIngressEnvelope) -> dict:
-    if envelope.source_kind != "GIT_CODE" or not isinstance(
-        envelope.payload_inline, dict
-    ):
-        raise ValueError("GIT_CODE repository observation payload required")
-    nested = envelope.payload_inline.get("repository_observation")
+
+def _repository_payload(envelope: WorldIngressEnvelope) -> dict | None:
+    if envelope.source_kind != "GIT_CODE":
+        return None
+    payload = envelope.payload_inline
+    if not isinstance(payload, dict):
+        return None
+    nested = payload.get("repository_observation")
     if nested is not None:
         if not isinstance(nested, dict):
             raise ValueError("repository_observation wrapper must be an object")
-        return nested
-    return envelope.payload_inline
+        candidate = nested
+    else:
+        candidate = payload
+    if _REPOSITORY_OBSERVATION_KEYS.isdisjoint(candidate):
+        return None
+    return candidate
 
 
-def _decode(envelope: WorldIngressEnvelope) -> RepositoryObservation:
-    return RepositoryObservation.model_validate_json(
-        canonical_json_bytes(_repository_payload(envelope))
-    )
+def _decode(envelope: WorldIngressEnvelope) -> RepositoryObservation | None:
+    payload = _repository_payload(envelope)
+    if payload is None:
+        return None
+    return RepositoryObservation.model_validate_json(canonical_json_bytes(payload))
 
 
 def repository_frame_identity(
     envelope: WorldIngressEnvelope,
 ) -> tuple[str, str, str, str] | None:
-    """Return real SoftwareWorldFrame identity only for normalized GIT_CODE reality."""
-    if envelope.source_kind != "GIT_CODE":
-        return None
+    """Return real frame identity only for a normalized repository observation."""
     observation = _decode(envelope)
+    if observation is None:
+        return None
     return (
         observation.identity.repository_id,
         observation.identity.worktree_id,
@@ -76,10 +92,10 @@ def repository_observation_to_git_delta(
     frame: SoftwareWorldFrame,
     rows: tuple[DirectKnownRecord, ...],
 ) -> GitCommitDelta | None:
-    """Build the already-existing delta contract from normalized ingress evidence."""
-    if envelope.source_kind != "GIT_CODE":
-        return None
+    """Build the existing delta contract from normalized repository evidence."""
     observation = _decode(envelope)
+    if observation is None:
+        return None
     expected = (
         observation.identity.repository_id,
         observation.identity.worktree_id,
