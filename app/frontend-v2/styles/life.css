@@ -1733,6 +1733,92 @@
   align-items: stretch;
 }
 
+.life-artifact-menu {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.life-artifact-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.life-artifact-item > summary {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto minmax(0, auto) 14px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-2);
+  user-select: none;
+}
+
+.life-artifact-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.life-artifact-item > summary::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 11px;
+  transition: transform 160ms var(--ease-out);
+}
+
+.life-artifact-item[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.life-artifact-item[open] > summary {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.life-artifact-burger {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.life-artifact-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.life-artifact-state {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--life-mind);
+  white-space: nowrap;
+}
+
+.life-artifact-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.life-artifact-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
 .life-artifact-card {
   display: flex;
   flex-direction: column;

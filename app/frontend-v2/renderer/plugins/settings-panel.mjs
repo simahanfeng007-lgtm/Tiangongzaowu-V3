@@ -363,43 +363,44 @@ export const settingsPanelPlugin = {
               <div class="panel-actions">
                 <span id="linkSaveState" class="mini-pill">未读取</span>
                 <button id="settingsRefreshLinks" class="small-command" type="button">刷新</button>
-                <button id="settingsSaveLinks" class="small-command" type="button">应用微信状态</button>
+                <button id="settingsSaveLinks" class="small-command" type="button" hidden>应用微信状态</button>
               </div>
             </div>
 
             <details class="link-group" open>
               <summary class="settings-subtitle">微信 Bot</summary>
               <div class="settings-form compact-link-form">
-                <label class="field-row">
+                <label class="field-row" id="linkWechatEnabledRow" hidden>
                   <span>启用微信</span>
                   <select id="linkWechatEnabled">
                     <option value="false">关闭</option>
                     <option value="true">开启</option>
                   </select>
                 </label>
-                <label class="field-row">
+                <label class="field-row" id="linkWechatBotTokenRow" hidden>
                   <span>Bot Token</span>
                   <input id="linkWechatBotToken" type="text" disabled placeholder="由扫码登录安全写入，不在界面显示" />
                 </label>
-                <label class="field-row">
+                <label class="field-row" id="linkWechatAccountIdRow" hidden>
                   <span>Bot ID</span>
                   <input id="linkWechatAccountId" disabled placeholder="由扫码登录自动绑定" />
                 </label>
-                <label class="field-row">
+                <label class="field-row" id="linkWechatVerifyRow" hidden>
                   <span>配对数字</span>
                   <input id="linkWechatVerifyCode" inputmode="numeric" autocomplete="one-time-code" placeholder="手机微信要求时填写" />
                 </label>
                 <div class="settings-actions-row">
                   <button id="linkWechatLoginStart" class="small-command" type="button">生成登录二维码</button>
-                  <button id="linkWechatLoginWait" class="small-command" type="button">确认登录状态</button>
-                  <button id="linkWechatStart" class="small-command" type="button">启动连接</button>
+                  <button id="linkWechatLoginWait" class="small-command" type="button" hidden>确认配对数字</button>
+                  <button id="linkWechatStart" class="small-command" type="button" hidden>启动连接</button>
                   <button id="linkWechatStop" class="small-command subtle-command" type="button">停止连接</button>
                 </div>
-                <div class="channel-connect-detail">连接顺序：生成二维码 → 微信扫码 → 确认登录状态；登录成功后再启动连接。</div>
+                <div class="channel-connect-detail">扫码直连：手机扫码并确认后自动连接。</div>
                 <div id="linkWechatQrWrap" class="wechat-qr-preview" hidden>
                   <img id="linkWechatQrImage" alt="微信登录二维码" />
-                  <div id="linkWechatQrText" class="channel-connect-detail"></div>
+                  <div id="linkWechatConnectedOverlay" class="wechat-connected-overlay" hidden>已连接</div>
                 </div>
+                <div id="linkWechatQrText" class="channel-connect-detail wechat-scan-status" hidden></div>
                 <div id="linkWechatDiagnostics" class="channel-connect-detail link-diagnostics" hidden></div>
               </div>
             </details>
@@ -425,7 +426,7 @@ export const settingsPanelPlugin = {
               </div>
             </details>
 
-            <pre id="linkActionOutput" class="link-action-output"></pre>
+            <pre id="linkActionOutput" class="link-action-output" hidden></pre>
           </section>
         </section>
       </section>
@@ -464,8 +465,10 @@ export const settingsPanelPlugin = {
     const linkWechatBotToken = panel.querySelector("#linkWechatBotToken");
     const linkWechatAccountId = panel.querySelector("#linkWechatAccountId");
     const linkWechatVerifyCode = panel.querySelector("#linkWechatVerifyCode");
+    const linkWechatVerifyRow = panel.querySelector("#linkWechatVerifyRow");
     const linkWechatQrWrap = panel.querySelector("#linkWechatQrWrap");
     const linkWechatQrImage = panel.querySelector("#linkWechatQrImage");
+    const linkWechatConnectedOverlay = panel.querySelector("#linkWechatConnectedOverlay");
     const linkWechatQrText = panel.querySelector("#linkWechatQrText");
     const linkWechatDiagnostics = panel.querySelector("#linkWechatDiagnostics");
     const linkFeishuEnabled = panel.querySelector("#linkFeishuEnabled");
@@ -478,6 +481,8 @@ export const settingsPanelPlugin = {
       wechat_direct_stop: panel.querySelector("#linkWechatStop")
     };
     let activeWechatSessionKey = "";
+    let wechatStatusTimer = null;
+    let wechatAutoConnectActive = false;
     let lastLinkSettings = {};
     let currentPresetRows = providerPresetRows();
     let modelFormDirty = false;
@@ -510,13 +515,27 @@ export const settingsPanelPlugin = {
       permissionRiskRow.hidden = permissionModeInput.value !== "custom";
     }
 
-    function renderPage(page) {
+    async function renderPage(page) {
       panel.classList.toggle("active", page === "settings");
       if (page === "settings") {
         actions.refreshStatus?.();
         actions.refreshConfig?.();
-        loadLinks();
+        await loadLinks();
+        await ensureWechatQrIfNeeded();
       }
+    }
+
+    async function ensureWechatQrIfNeeded() {
+      if (!linkWechatLoginStart) return;
+      const result = await actions.gatewayLinksStatus?.();
+      const state = String(result?.links?.wechat_direct?.state || "");
+      const configured = result?.links?.wechat_direct?.configured === true
+        || Boolean(result?.links?.wechat_direct?.account_id);
+      if (configured) return;
+      if (["running", "starting", "ready", "available", "connected", "waiting_login", "waiting_confirm", "need_verifycode"].includes(state)) {
+        return;
+      }
+      await runLinkAction("wechat_direct_login_start");
     }
 
     function renderSettings(settings) {
@@ -573,16 +592,21 @@ export const settingsPanelPlugin = {
       const qrcodeUrl = String(result.qrcode_url || "").trim();
       const clearQr = () => {
         linkWechatQrWrap.hidden = true;
+        linkWechatQrWrap.classList.remove("connected");
         linkWechatQrImage.hidden = true;
         linkWechatQrImage.onerror = null;
         linkWechatQrImage.removeAttribute("src");
         linkWechatQrText.textContent = "";
+        linkWechatQrText.hidden = true;
+        if (linkWechatConnectedOverlay) linkWechatConnectedOverlay.hidden = true;
       };
       if (!qrcodeUrl || qrcodeUrl.length > 6 * 1024 * 1024) {
         clearQr();
         return;
       }
       linkWechatQrWrap.hidden = false;
+      linkWechatQrWrap.classList.remove("connected");
+      if (linkWechatConnectedOverlay) linkWechatConnectedOverlay.hidden = true;
       linkWechatQrImage.onerror = null;
       const isDataImage = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,/i.test(qrcodeUrl);
       const isHttpUrl = /^https?:/i.test(qrcodeUrl);
@@ -597,7 +621,37 @@ export const settingsPanelPlugin = {
         clearQr();
         return;
       }
-      linkWechatQrText.textContent = qrcodeUrl;
+      linkWechatQrText.textContent = result.message || "请用手机微信扫描二维码";
+      linkWechatQrText.hidden = false;
+    }
+
+    function setWechatStatus(message) {
+      if (!linkWechatQrText) return;
+      linkWechatQrText.textContent = message || "";
+      linkWechatQrText.hidden = !message;
+    }
+
+    function stopWechatStatusTimer() {
+      wechatAutoConnectActive = false;
+      if (wechatStatusTimer !== null) {
+        clearInterval(wechatStatusTimer);
+        wechatStatusTimer = null;
+      }
+    }
+
+    function startWechatStatusTimer() {
+      stopWechatStatusTimer();
+      wechatAutoConnectActive = true;
+      const tick = async () => {
+        if (!wechatAutoConnectActive) return;
+        try {
+          await loadLinks();
+        } catch (_error) {
+          // A transient status refresh must not break the background login.
+        }
+      };
+      tick();
+      wechatStatusTimer = setInterval(tick, 2500);
     }
 
     function renderLinks(result = {}) {
@@ -605,6 +659,7 @@ export const settingsPanelPlugin = {
       if (!available) {
         setPill(linkSaveState, "通信服务暂时离线", "warn");
         linkActionOutput.textContent = result.error || "通信连接服务当前不可用；请刷新后台后重试。";
+        setWechatStatus(result.error || "通信连接服务当前不可用；请刷新后台后重试。");
         return;
       }
       const settings = result.settings || {};
@@ -614,6 +669,28 @@ export const settingsPanelPlugin = {
       const direct = { ...DEFAULT_WECHAT_DIRECT, ...(wechat.direct || {}) };
       const feishu = { ...DEFAULT_FEISHU, ...(settings.feishu || {}) };
       const wechatState = String(links.wechat_direct?.state || "unknown");
+      const wechatConnected = ["running", "ready", "connected"].includes(wechatState);
+      const wechatPending = ["waiting_login", "waiting_confirm", "need_verifycode", "starting"].includes(wechatState);
+      const wechatCredentialsReady = links.wechat_direct?.configured === true
+        || Boolean(links.wechat_direct?.account_id);
+      if (linkWechatConnectedOverlay) {
+        linkWechatConnectedOverlay.hidden = !wechatConnected;
+        linkWechatQrWrap.classList.toggle("connected", wechatConnected);
+      }
+      linkWechatLoginStart.hidden = wechatConnected || wechatPending || wechatCredentialsReady;
+      linkWechatStart.hidden = wechatConnected || wechatPending || !wechatCredentialsReady;
+      linkWechatStop.hidden = !wechatConnected;
+      if (linkWechatVerifyRow) linkWechatVerifyRow.hidden = wechatState !== "need_verifycode";
+      if (linkButtons.wechat_direct_login_wait) {
+        linkButtons.wechat_direct_login_wait.hidden = wechatState !== "need_verifycode";
+      }
+      if (wechatAutoConnectActive) {
+        if (["running", "starting", "ready", "available", "connected"].includes(wechatState)) {
+          stopWechatStatusTimer();
+        } else if (["login_expired", "error", "need_verifycode", "missing_credentials", "disabled", "closed"].includes(wechatState)) {
+          stopWechatStatusTimer();
+        }
+      }
       const wechatActive = !["unknown", "disabled", "missing_credentials", "available", "closed"].includes(wechatState);
       linkWechatEnabled.value = String(Boolean(
         (wechat.enabled && wechat.mode === "direct_bot" && direct.enabled) || wechatActive
@@ -636,6 +713,26 @@ export const settingsPanelPlugin = {
       }
       if (links.wechat_direct?.session_key) activeWechatSessionKey = links.wechat_direct.session_key;
       renderQr({ qrcode_url: links.wechat_direct?.qrcode_url || "" });
+      if (wechatConnected) {
+        linkWechatQrWrap.hidden = false;
+        linkWechatQrImage.hidden = true;
+        if (linkWechatConnectedOverlay) linkWechatConnectedOverlay.hidden = false;
+        linkWechatQrWrap.classList.add("connected");
+        linkWechatQrText.hidden = true;
+      } else {
+        const hint = {
+          waiting_login: "请用手机微信扫描二维码",
+          waiting_confirm: "已扫码，请在手机上确认",
+          need_verifycode: "请输入配对数字后确认",
+          starting: "正在启动连接…",
+          login_expired: "二维码已过期，请重新生成",
+          error: "微信连接异常",
+        }[wechatState] || "";
+        if (hint) {
+          linkWechatQrText.textContent = hint;
+          linkWechatQrText.hidden = false;
+        }
+      }
     }
 
     async function loadLinks() {
@@ -685,7 +782,7 @@ export const settingsPanelPlugin = {
     async function runLinkAction(action) {
       const button = linkButtons[action];
       if (button) button.disabled = true;
-      linkActionOutput.textContent = "正在处理...";
+      setWechatStatus("正在处理...");
       try {
         const payload = { action };
         if (activeWechatSessionKey) payload.session_key = activeWechatSessionKey;
@@ -695,19 +792,37 @@ export const settingsPanelPlugin = {
         const result = await actions.gatewayLinksAction?.(payload);
         if (action === "wechat_direct_start" && result?.error === "missing_credentials") {
           const login = await actions.gatewayLinksAction?.({ action: "wechat_direct_login_start" });
-          if (login?.session_key) activeWechatSessionKey = login.session_key;
+          if (login?.session_key) {
+            activeWechatSessionKey = login.session_key;
+            startWechatStatusTimer();
+          }
           renderQr(login);
-          linkActionOutput.textContent = actionText(login, "微信登录");
+          setWechatStatus(actionText(login, "微信登录"));
           await loadLinks();
           return;
         }
         if (result?.session_key) activeWechatSessionKey = result.session_key;
+        if (action === "wechat_direct_login_start") {
+          if (result?.ok && result?.session_key) startWechatStatusTimer();
+          else stopWechatStatusTimer();
+        } else if (action === "wechat_direct_login_wait") {
+          stopWechatStatusTimer();
+          if (result?.ok && !result?.connected && !result?.error && !result?.need_verify_code) {
+            startWechatStatusTimer();
+          }
+        } else if (action === "wechat_direct_stop") {
+          stopWechatStatusTimer();
+        }
         renderQr(result);
-        linkActionOutput.textContent = actionText(result, "微信连接");
-        if (result?.need_verify_code) linkWechatVerifyCode.focus();
+        setWechatStatus(actionText(result, "微信连接"));
+        if (result?.need_verify_code) {
+          if (linkWechatVerifyRow) linkWechatVerifyRow.hidden = false;
+          if (linkButtons.wechat_direct_login_wait) linkButtons.wechat_direct_login_wait.hidden = false;
+          linkWechatVerifyCode.focus();
+        }
         await loadLinks();
       } catch (error) {
-        linkActionOutput.textContent = error?.message || String(error);
+        setWechatStatus(error?.message || String(error));
       } finally {
         if (button) button.disabled = false;
       }

@@ -55,7 +55,8 @@ from .shangxiawen_xujie import (
 MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 MAX_FILE_JSON_BODY_BYTES = 64 * 1024 * 1024
 MAX_VOICE_BODY_BYTES = 25 * 1024 * 1024
-CHAT_RETRY_LIMIT = 1
+# 首次调用 + 最多 5 次重试；仅对断联/超时等可重试错误生效。
+CHAT_RETRY_LIMIT = 6
 CHAT_RETRY_SLEEP_SECONDS = 0.35
 RUN_STATE_SCHEMA = "tiangong.v3.run_state.v1"
 BACKEND_BUILD_ID = os.environ.get("TIANGONG_BUILD_ID", "tiangong-v3.0.3-source-complete-20260722")
@@ -1138,6 +1139,7 @@ class DuihuaQiaojie:
                 _stream_queue.put(evt)
         last_error = ""
         last_error_payload: dict | None = None
+        attempt_context = duihua_shangxiawen
         for attempt in range(1, CHAT_RETRY_LIMIT + 1):
             try:
                 run_control.step("backend_attempt", "模型运行", "running", f"第 {attempt} 次调用。")
@@ -1151,7 +1153,7 @@ class DuihuaQiaojie:
                             huifu = self._zd.huanxing(
                                 "yonghu_xiaoxi",
                                 effective_xiaoxi,
-                                duihua_shangxiawen=duihua_shangxiawen,
+                                duihua_shangxiawen=attempt_context,
                                 run_control=run_control,
                                 on_event=on_event,
                             )
@@ -1161,7 +1163,7 @@ class DuihuaQiaojie:
                             huifu = self._zd.huanxing(
                                 "yonghu_xiaoxi",
                                 effective_xiaoxi,
-                                duihua_shangxiawen=duihua_shangxiawen,
+                                duihua_shangxiawen=attempt_context,
                                 on_event=on_event,
                             )
                         attempt_biaoxian = (
@@ -1169,21 +1171,6 @@ class DuihuaQiaojie:
                             or getattr(self._zd, "zuihou_biaoxian", None)
                             or {}
                         )
-                if _huifu_keyi_zhongshi(huifu) and attempt < CHAT_RETRY_LIMIT:
-                    last_error = str(huifu)
-                    candidate_error = chat_error_text_payload(last_error, source="chat_runtime")
-                    if candidate_error.get("error_code") in {"empty_json", "invalid_json"}:
-                        last_error_payload = candidate_error
-                    run_control.step("backend_attempt", "模型运行", "failed", "返回可重试错误，准备重试。")
-                    time.sleep(CHAT_RETRY_SLEEP_SECONDS * attempt)
-                    continue
-                if _huifu_keyi_zhongshi(huifu):
-                    last_error = str(huifu)
-                    candidate_error = chat_error_text_payload(last_error, source="chat_runtime")
-                    if candidate_error.get("error_code") in {"empty_json", "invalid_json"}:
-                        last_error_payload = candidate_error
-                    run_control.step("backend_attempt", "模型运行", "failed", "返回空或可重试错误，已结束重试。")
-                    break
                 biaoxian = dict(attempt_biaoxian or {})
                 simple_chain_status = ""
                 simple_chain_meta = {}
@@ -1199,6 +1186,31 @@ class DuihuaQiaojie:
                 except Exception:
                     simple_chain_status = ""
                     simple_chain_meta = {}
+                terminal_simple_chain_status = simple_chain_status in {
+                    "complete", "chat_reply", "failed", "incomplete", "force_stopped",
+                    "interrupted", "awaiting_user", "confirm_pending", "clarify",
+                }
+                if not terminal_simple_chain_status:
+                    if _huifu_keyi_zhongshi(huifu) and attempt < CHAT_RETRY_LIMIT:
+                        last_error = str(huifu)
+                        candidate_error = chat_error_text_payload(last_error, source="chat_runtime")
+                        if candidate_error.get("error_code") in {"empty_json", "invalid_json"}:
+                            last_error_payload = candidate_error
+                        run_control.step("backend_attempt", "模型运行", "failed", "返回可重试错误，准备重试。")
+                        attempt_context = duihua_shangxiawen + (
+                            "\n\n[系统纠错] 你上一轮输出存在问题（"
+                            + str(last_error or "输出为空")[:240]
+                            + "）。请整理后重新发送一个完整、自然的回复，不要重复同样的输出。"
+                        )
+                        time.sleep(CHAT_RETRY_SLEEP_SECONDS * attempt)
+                        continue
+                    if _huifu_keyi_zhongshi(huifu):
+                        last_error = str(huifu)
+                        candidate_error = chat_error_text_payload(last_error, source="chat_runtime")
+                        if candidate_error.get("error_code") in {"empty_json", "invalid_json"}:
+                            last_error_payload = candidate_error
+                        run_control.step("backend_attempt", "模型运行", "failed", "返回空或可重试错误，已结束重试。")
+                        break
                 if simple_chain_status == "complete":
                     completion_ok, completion_reason = True, "simple_chain_complete"
                 elif simple_chain_status == "chat_reply":
@@ -1289,10 +1301,20 @@ class DuihuaQiaojie:
                     _sys.stderr.flush()
                 except Exception:
                     pass
-                if attempt < CHAT_RETRY_LIMIT:
+                if attempt < CHAT_RETRY_LIMIT and _huifu_keyi_zhongshi(last_error):
+                    attempt_context = duihua_shangxiawen + (
+                        "\n\n[系统纠错] 你上一轮输出/调用出现问题（"
+                        + str(last_error or "连接异常")[:240]
+                        + "）。请整理后重新发送一个完整、自然的回复，不要重复同样的输出。"
+                    )
                     time.sleep(CHAT_RETRY_SLEEP_SECONDS * attempt)
                     continue
         # Ledger recovery not available — fall through to error response
+        retryable_exhausted = not str(last_error or "").strip() or _huifu_keyi_zhongshi(last_error)
+        fallback_reply = (
+            "我这边模型连接好像不太稳定，重试了几次还是没连上。"
+            "你先稍等一会儿再找我，或者检查一下网络；如果一直不行，可能需要重启应用。"
+        ) if retryable_exhausted else ""
         run_control.finish(run_control.request_id, False, last_error or "chat_failed")
         terminal_reason = f"[terminal_model_error] {str(last_error or 'chat_failed')[:480]}"
         try:
@@ -1308,6 +1330,7 @@ class DuihuaQiaojie:
             pass
         if last_error_payload:
             last_error_payload.update({
+                **({"huifu": fallback_reply} if fallback_reply else {}),
                 "retry_count": CHAT_RETRY_LIMIT - 1,
                 "recovered": False,
                 "request_id": run_control.request_id,
@@ -1319,6 +1342,7 @@ class DuihuaQiaojie:
         text_payload = chat_error_text_payload(last_error or "chat_failed", source="chat_runtime")
         return _cache_response(json.dumps({
             "cuowu": text_payload.get("cuowu") or "chat_failed",
+            **({"huifu": fallback_reply} if fallback_reply else {}),
             "error_code": text_payload.get("error_code", "backend_error"),
             "detail": text_payload.get("detail", ""),
             "source": text_payload.get("source", "chat_runtime"),

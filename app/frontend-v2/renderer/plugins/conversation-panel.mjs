@@ -989,8 +989,17 @@ export const conversationPanelPlugin = {
         return payload ? `操作确认：${payload.summary || payload.action || ""}` : "";
       }
       return String(item.role === "assistant"
-        ? spokenBackendText(item.content) || item.content || ""
-        : item.content || "");
+        ? cleanChatText(spokenBackendText(item.content) || item.content || "")
+        : cleanChatText(item.content || ""));
+    }
+
+    function cleanChatText(text) {
+      return String(text || "")
+        .replace(/<\s*system-reminder\b[^>]*>[\s\S]*?<\s*\/\s*system-reminder\s*>/gi, "")
+        .replace(/<\s*\/?\s*system-reminder\b[^>]*>/gi, "")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
     }
 
     // ── 确认卡片（视觉对齐学习卡：标题 + 摘要行 + 操作按钮行）────────────
@@ -1177,7 +1186,7 @@ export const conversationPanelPlugin = {
         content.appendChild(progressWrap);
         const replyText = document.createElement("div");
         replyText.className = "work-reply-text";
-        replyText.textContent = item.content || "";
+        replyText.textContent = cleanChatText(item.content || "");
         content.appendChild(replyText);
       } else if (item.kind === "confirm") {
         renderConfirmCard(content, decodeConfirmCardContent(item.content));
@@ -1186,8 +1195,8 @@ export const conversationPanelPlugin = {
         renderMessageAttachments(content, item.attachments);
       } else {
         renderMessageContent(content, item.role === "assistant"
-          ? spokenBackendText(item.content) || item.content
-          : item.content);
+          ? cleanChatText(spokenBackendText(item.content) || item.content)
+          : cleanChatText(item.content));
         renderMessageAttachments(content, item.attachments);
       }
 
@@ -1196,7 +1205,9 @@ export const conversationPanelPlugin = {
       if (item.role === "assistant" && item.requestId) {
         const lastRun = state.snapshot().lastRun || {};
         if (String(lastRun.requestId || "") === String(item.requestId)) {
-          appendGatewayPhaseCard(content, lastRun.phase);
+          if (!cleanChatText(item.content || "").trim()) {
+            appendGatewayPhaseCard(content, lastRun.phase);
+          }
         }
       }
 
@@ -1236,9 +1247,9 @@ export const conversationPanelPlugin = {
       }
       const msgId = String(anchorNode.dataset.messageId || "");
       const msgData = state.snapshot().messages.find((item) => String(item.id || "") === msgId);
-      const finalText = String(msgData?.content || replyText.textContent || "");
+      const finalText = cleanChatText(String(msgData?.content || replyText.textContent || ""));
       replyText.innerHTML = "";
-      renderMessageContent(replyText, spokenBackendText(finalText) || finalText);
+      renderMessageContent(replyText, cleanChatText(spokenBackendText(finalText) || finalText));
       const fragment = document.createDocumentFragment();
       while (replyText.firstChild) fragment.appendChild(replyText.firstChild);
       msgContent.innerHTML = "";
@@ -1357,7 +1368,14 @@ export const conversationPanelPlugin = {
 
       const snap = state.snapshot();
       const lastRun = snap.lastRun || {};
-      const stripLabel = terminalStatusLabel(lastRun.terminal?.status || lastRun.simple_chain_status, lastRun.phase);
+      const hasVisibleAssistantReply = messages.some((item) => (
+        item.role === "assistant"
+        && !["template", "system"].includes(item.meta?.origin)
+        && String(item.content || "").trim()
+      ));
+      const stripLabel = hasVisibleAssistantReply
+        ? ""
+        : terminalStatusLabel(lastRun.terminal?.status || lastRun.simple_chain_status, lastRun.phase);
       if (stripLabel) {
         const notice = document.createElement("div");
         notice.className = "chain-status-strip";
@@ -1859,12 +1877,12 @@ export const conversationPanelPlugin = {
       const stick = shouldStickToBottom();
       const replyText = targetNode.querySelector(".work-reply-text");
       if (replyText && !replyText.dataset.rendered) {
-        replyText.textContent = formatStreamingPreview(msg.content || "");
+        replyText.textContent = cleanChatText(formatStreamingPreview(msg.content || ""));
       } else if (!replyText) {
         // 普通消息
         const msgContent = targetNode.querySelector(".message-content");
         if (msgContent && !targetNode.classList.contains("progress")) {
-          msgContent.textContent = msg.content || "";
+          msgContent.textContent = cleanChatText(msg.content || "");
         }
       }
       if (stick) scrollMessagesToBottomAfterLayout();
@@ -1973,12 +1991,14 @@ export const conversationPanelPlugin = {
       content.innerHTML = "";
       content.classList.remove("work-card");
       content.classList.add("rich-text");
-      renderMessageContent(content, spokenBackendText(msgData.content) || msgData.content);
+      renderMessageContent(content, cleanChatText(spokenBackendText(msgData.content) || msgData.content));
       renderMessageAttachments(content, msgData.attachments);
       // GF 门：终态重渲染会重建内容区，系统裁决卡片需在这里补上
       const finalRun = state.snapshot().lastRun || {};
       if (String(finalRun.requestId || "") && String(finalRun.requestId) === String(msgData.requestId || "")) {
-        appendGatewayPhaseCard(content, finalRun.phase);
+        if (!cleanChatText(msgData.content || "").trim()) {
+          appendGatewayPhaseCard(content, finalRun.phase);
+        }
       }
       if (stickToBottom) scrollMessagesToBottomAfterLayout();
     }

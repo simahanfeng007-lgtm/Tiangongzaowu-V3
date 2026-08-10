@@ -159,6 +159,11 @@
   margin-top: 8px;
 }
 
+.settings-card-links .wechat-scan-status {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
 .settings-card-links .field-row {
   min-width: 0;
 }
@@ -1165,11 +1170,13 @@ details.link-group:not([open]) .settings-subtitle::before {
 }
 
 .wechat-qr-preview {
+  position: relative;
   display: grid;
   gap: 8px;
   place-items: center;
   min-width: 0;
-  padding: 10px;
+  min-height: 220px;
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
@@ -1186,6 +1193,29 @@ details.link-group:not([open]) .settings-subtitle::before {
   object-fit: contain;
   border-radius: var(--radius-sm);
   background: #fff;
+}
+
+.wechat-qr-preview.connected {
+  background: var(--surface-soft);
+  border-color: var(--muted);
+}
+
+.wechat-connected-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+
+.wechat-connected-overlay[hidden] {
+  display: none;
 }
 
 .compact-settings {

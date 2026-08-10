@@ -182,6 +182,15 @@ class ChannelCutoverCoordinator:
                 issued_at_ms=max(now_ms, snapshot.updated_at_ms),
                 lease_ttl_ms=30_000,
             )
+        elif snapshot.state == "CANDIDATE_ACTIVE":
+            # A candidate whose lease expired before the gateway could install
+            # it must be renewable in place; otherwise every restart wedges the
+            # channel on an active cutover with no live lease.
+            registration = self._runtime.renew_channel_candidate(
+                snapshot.cutover_id,
+                issued_at_ms=max(now_ms, snapshot.updated_at_ms),
+                lease_ttl_ms=30_000,
+            )
         else:
             raise CutoverCoordinatorError("cutover.active_lease_missing_or_expired")
         self._client.install_channel_lease(registration.lease)

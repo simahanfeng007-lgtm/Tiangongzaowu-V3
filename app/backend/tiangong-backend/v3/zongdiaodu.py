@@ -6646,6 +6646,21 @@ def _simple_chain_completion_fallback_reply(
     return "\n".join(lines).strip()
 
 
+def _simple_chain_closeout_reply_is_internal_error(text: object) -> bool:
+    lowered = str(text or "").lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "[llm错误",
+            "llm错误",
+            "已强制收口",
+            "hard_timeout",
+            "closeout_hard_timeout",
+            "llm_call_hard_timeout",
+        )
+    )
+
+
 def _simple_chain_natural_closeout_payload(
     *,
     status: str,
@@ -7663,7 +7678,9 @@ class Zongdiaodu:
             except Exception:
                 _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
                 return shenti, fallback
-            final_reply = str(reply or "").strip() or fallback
+            final_reply = str(reply or "").strip()
+            if not final_reply or _simple_chain_closeout_reply_is_internal_error(final_reply):
+                final_reply = fallback
             if final_reply == pre_closeout_reply:
                 # 收尾模型调用返回了上一条消息（未真正收尾）：按模板兜底，避免
                 # 用户看到“好的，我继续读一遍。”这类没有说明停止原因的内容。

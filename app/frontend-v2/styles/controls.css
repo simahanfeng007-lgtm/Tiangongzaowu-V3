@@ -1,3 +1,7 @@
+[hidden] {
+  display: none !important;
+}
+
 .meta-chip {
   display: inline-flex; align-items: center; justify-content: center;
   min-height: 26px; padding: 3px 10px;

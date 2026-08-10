@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
-from contracts import ChannelOwnershipLease, ComponentManifest, DeliveryTicket, OutboundPlan, TrustBundle
+from contracts import (
+    ChannelOwnershipLease,
+    ComponentManifest,
+    DeliveryTicket,
+    OutboundPlan,
+    TrustBundle,
+    canonical_json_bytes,
+)
 
 from .bootstrap import CommunicationConfig
 from runtime_security import ephemeral_test_protector_for_scope
@@ -132,7 +139,10 @@ class EmbeddedCommunicationService:
                 statuses = self.runtime.migrate_legacy_credentials(now_ms=now_ms)
                 return 200, {"ok": True, "migrated": [{"channel": item.channel, "tenant_id": item.tenant_id, "link_account_id": item.link_account_id, "revision": item.revision, "evidence_sha256": item.evidence_sha256} for item in statuses]}, "application/json; charset=utf-8"
             if verb == "POST" and path == "/api/v1/internal/control/lease/install":
-                lease = ChannelOwnershipLease.model_validate(body["lease"], strict=True)
+                lease = ChannelOwnershipLease.model_validate_json(
+                    canonical_json_bytes(body["lease"]),
+                    strict=True,
+                )
                 installed = self.runtime.install_channel_lease(lease, now_ms=now_ms)
                 started = False
                 if lease.channel == "wechat":
@@ -141,16 +151,28 @@ class EmbeddedCommunicationService:
                     started = self.runtime.start_feishu_adapter(tenant_id=lease.tenant_id, link_account_id=lease.link_account_id, now_ms=now_ms)
                 return 200, {"ok": True, "installed": installed, "adapter_started": started, "lease_sha256": lease.lease_sha256}, "application/json; charset=utf-8"
             if verb == "POST" and path == "/api/v1/internal/control/delivery/authority/install":
-                trust = TrustBundle.model_validate(body["trust_bundle"], strict=True)
-                manifest = ComponentManifest.model_validate(body["component_manifest"], strict=True)
+                trust = TrustBundle.model_validate_json(
+                    canonical_json_bytes(body["trust_bundle"]),
+                    strict=True,
+                )
+                manifest = ComponentManifest.model_validate_json(
+                    canonical_json_bytes(body["component_manifest"]),
+                    strict=True,
+                )
                 self.runtime.install_delivery_authority(trust, manifest)
                 return 200, {"ok": True, "installed": True, "trust_bundle_sha256": trust.bundle_sha256, "component_manifest_sha256": manifest.manifest_sha256}, "application/json; charset=utf-8"
             if verb == "POST" and path == "/api/v1/internal/control/drain/facts":
                 result = self.runtime.channel_drain_facts_payload(channel=str(body["channel"]), tenant_id=str(body["tenant_id"]), link_account_id=str(body["link_account_id"]))
                 return 200, {"ok": True, **result}, "application/json; charset=utf-8"
             if verb == "POST" and path == "/api/v1/internal/delivery":
-                ticket = DeliveryTicket.model_validate(body["ticket"], strict=True)
-                plan = OutboundPlan.model_validate(body["plan"], strict=True)
+                ticket = DeliveryTicket.model_validate_json(
+                    canonical_json_bytes(body["ticket"]),
+                    strict=True,
+                )
+                plan = OutboundPlan.model_validate_json(
+                    canonical_json_bytes(body["plan"]),
+                    strict=True,
+                )
                 receipt = self.runtime.dispatch_delivery(ticket, plan)
                 return 200, {"ok": True, "api_contract": "tiangong.communication.api.v1", "delivery_receipt": receipt.model_dump(mode="json")}, "application/json; charset=utf-8"
             if verb == "POST" and path == "/api/v1/internal/control/wechat/login/start":

@@ -53,7 +53,8 @@ from .wechat_session import WechatSessionLedger
 from .wechat_worker import WechatProductionAdapter
 from .wechat_attachment import WechatAttachmentGate, WechatInboundAttachmentIngestor
 from .wechat_media import WechatMediaDownloader
-from .wechat_login import WechatLoginError, WechatLoginManager
+from .wechat_login import WECHAT_LOGIN_TTL_MS, WechatLoginError, WechatLoginManager
+from .wechat_typing import WechatTypingManager
 from .wechat_text_outbound import (
     HttpWechatIlinkTextTransport,
     WechatTextDeliveryService,
@@ -98,6 +99,9 @@ class CommunicationRuntime:
         self.credentials = credentials
         self.raw_inbound = raw_inbound
         self.wechat_login = WechatLoginManager()
+        self.wechat_typing = WechatTypingManager()
+        self._wechat_login_pollers: dict[str, threading.Thread] = {}
+        self._wechat_login_pollers_lock = threading.RLock()
         self._workers: dict[str, object] = {}
         self._workers_lock = threading.RLock()
         self._delivery_lock = threading.RLock()
@@ -358,6 +362,36 @@ class CommunicationRuntime:
             ack_permit, ChannelAckPermit
         ):
             raise TypeError("production ingress requires shared envelope and ACK contracts")
+        if envelope.channel == "wechat":
+            try:
+                decision = self.wechat_sessions.get_decision(envelope.channel_message_ref)
+                if decision is not None and decision.should_forward:
+                    recipient = self.wechat_sessions.resolve_reply_target(
+                        session_key=decision.session_key,
+                        account_id=envelope.link_account_id,
+                        conversation_scope_hash=envelope.conversation_scope_hash,
+                    )
+                    context_token = self.wechat_sessions.resolve_context_token(
+                        session_key=decision.session_key,
+                        account_id=envelope.link_account_id,
+                        conversation_scope_hash=envelope.conversation_scope_hash,
+                    )
+                    values = self.credentials.get(
+                        "wechat",
+                        envelope.tenant_id,
+                        envelope.link_account_id,
+                    )
+                    if values and recipient:
+                        self.wechat_typing.start(
+                            bot_token=values["bot_token"],
+                            ilink_user_id=recipient,
+                            session_key=decision.session_key,
+                            context_token=context_token or "",
+                            to_user_id=recipient,
+                        )
+            except Exception:
+                # Typing feedback is best-effort and must never block inbound.
+                pass
         with self.adapters.operation_authority(
             channel=envelope.channel,
             tenant_id=envelope.tenant_id,
@@ -441,14 +475,23 @@ class CommunicationRuntime:
             )
             if values is None:
                 raise DeliveryDispatchError("delivery.wechat.credentials_missing")
-            policy = default_wechat_text_policy()
-            if any(part.kind == "artifact" for part in plan.parts):
-                if any(part.kind != "artifact" for part in plan.parts):
-                    raise DeliveryDispatchError("delivery.wechat.mixed_plan_unsupported")
-                service = self._runtime._wechat_file_delivery
-                if service is None:
-                    raise DeliveryDispatchError("delivery.wechat.artifact_source_unconfigured")
-                return service.send(
+            try:
+                policy = default_wechat_text_policy()
+                if any(part.kind == "artifact" for part in plan.parts):
+                    if any(part.kind != "artifact" for part in plan.parts):
+                        raise DeliveryDispatchError("delivery.wechat.mixed_plan_unsupported")
+                    service = self._runtime._wechat_file_delivery
+                    if service is None:
+                        raise DeliveryDispatchError("delivery.wechat.artifact_source_unconfigured")
+                    return service.send(
+                        payload,
+                        plan,
+                        policy=policy,
+                        bot_token=values["bot_token"],
+                        ilink_account_id=values["account_id"],
+                        session_key=decision.session_key,
+                    )
+                return self._runtime._wechat_text_delivery.send(
                     payload,
                     plan,
                     policy=policy,
@@ -456,14 +499,11 @@ class CommunicationRuntime:
                     ilink_account_id=values["account_id"],
                     session_key=decision.session_key,
                 )
-            return self._runtime._wechat_text_delivery.send(
-                payload,
-                plan,
-                policy=policy,
-                bot_token=values["bot_token"],
-                ilink_account_id=values["account_id"],
-                session_key=decision.session_key,
-            )
+            finally:
+                try:
+                    self._runtime.wechat_typing.stop(decision.session_key)
+                except Exception:
+                    pass
 
     class _FeishuDeliveryHandler:
         def __init__(self, runtime: "CommunicationRuntime") -> None:
@@ -738,13 +778,55 @@ class CommunicationRuntime:
         _status, existing = self._latest_wechat_credentials()
         local_tokens = () if existing is None else (existing["bot_token"],)
         try:
-            return self.wechat_login.start(
+            outcome = self.wechat_login.start(
                 payload,
                 now_ms=now_ms,
                 local_tokens=local_tokens,
-            ).public
+            )
         except WechatLoginError as exc:
             return self._wechat_login_failure(exc, "生成微信登录二维码失败，请稍后重试。")
+        public = outcome.public
+        session_key = str(public.get("session_key") or "").strip()
+        if session_key:
+            self._start_wechat_login_autopoll(session_key, now_ms)
+        return public
+
+    def _start_wechat_login_autopoll(self, session_key: str, started_ms: int) -> None:
+        """Poll iLink scan/confirm state in the background after QR generation.
+
+        The phone-side flow is scan -> confirm; once the gateway observes
+        ``confirmed`` the login wait installs credentials and starts the
+        adapter, so the desktop user does not need extra manual steps.
+        """
+        with self._wechat_login_pollers_lock:
+            if session_key in self._wechat_login_pollers:
+                return
+            thread = threading.Thread(
+                target=self._wechat_login_autopoll_worker,
+                args=(session_key, int(started_ms)),
+                name=f"wechat-login-autopoll-{session_key[:8]}",
+                daemon=True,
+            )
+            self._wechat_login_pollers[session_key] = thread
+            thread.start()
+
+    def _wechat_login_autopoll_worker(self, session_key: str, started_ms: int) -> None:
+        deadline_ms = int(started_ms) + WECHAT_LOGIN_TTL_MS
+        try:
+            while not self._closed and not self._closing:
+                now_ms = time.time_ns() // 1_000_000
+                if now_ms >= deadline_ms:
+                    break
+                try:
+                    result = self.wechat_login_wait({"session_key": session_key}, now_ms=now_ms)
+                except Exception:
+                    break
+                if result.get("connected") or result.get("need_verify_code") or result.get("error"):
+                    break
+                time.sleep(2)
+        finally:
+            with self._wechat_login_pollers_lock:
+                self._wechat_login_pollers.pop(session_key, None)
 
     def wechat_login_wait(self, payload: dict[str, object], *, now_ms: int) -> dict[str, object]:
         _status, existing = self._latest_wechat_credentials()
@@ -917,6 +999,10 @@ class CommunicationRuntime:
             if self._closed:
                 return
             self._closing = True
+
+        with self._wechat_login_pollers_lock:
+            self._wechat_login_pollers.clear()
+        self.wechat_typing.close()
 
         # Transport workers must stop before their ledgers and credentials.
         # Failed adapters remain registered by AdapterRegistry.close(), so the

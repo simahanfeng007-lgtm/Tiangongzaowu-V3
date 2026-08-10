@@ -18,6 +18,14 @@ _BIAOXIAN_TAIL_RE = re.compile(
     flags=re.DOTALL | re.IGNORECASE,
 )
 _MINIMAX_SENTINEL_RE = re.compile(r"\|?<\|minimax\|>\|?", flags=re.IGNORECASE)
+_SYSTEM_REMINDER_BLOCK_RE = re.compile(
+    r"<\s*system-reminder\b[^>]*>.*?<\s*/\s*system-reminder\s*>",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_SYSTEM_REMINDER_TAG_RE = re.compile(
+    r"<\s*/?\s*system-reminder\b[^>]*>",
+    flags=re.IGNORECASE,
+)
 _INTERNAL_TAGS = ("expression", "gaze", "posture", "gesture", "tail", "intensity", "duration")
 
 
@@ -72,6 +80,8 @@ def strip_internal_reply_markers(reply: Any) -> str:
     text = _BIAOXIAN_BLOCK_RE.sub("", text)
     text = _BIAOXIAN_TAIL_RE.sub("", text)
     text = _MINIMAX_SENTINEL_RE.sub("", text)
+    text = _SYSTEM_REMINDER_BLOCK_RE.sub("", text)
+    text = _SYSTEM_REMINDER_TAG_RE.sub("", text)
     for tag in _INTERNAL_TAGS:
         text = re.sub(
             rf"<\s*{tag}\b[^>]*>.*?<\s*/\s*{tag}\s*>",
@@ -83,4 +93,3 @@ def strip_internal_reply_markers(reply: Any) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
