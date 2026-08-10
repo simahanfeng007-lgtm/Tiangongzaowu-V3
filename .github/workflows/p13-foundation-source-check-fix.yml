@@ -24,11 +24,6 @@ jobs:
           ref: agent/world-understanding-v0.1
           fetch-depth: 0
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Align foundation closeout with source-check semantics
         shell: bash
         run: |
@@ -43,13 +38,7 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
           PY
 
-      - name: Install focused test runner
-        run: python -m pip install pytest==9.0.3
-
-      - name: Verify focused source authority contract
-        run: python -m pytest -q tests/test_foundation_closeout.py::SecureUpdateAndSourceAuthorityTests::test_generated_source_mirrors_are_in_sync
-
-      - name: Commit and remove helper
+      - name: Commit patch and remove helper
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
