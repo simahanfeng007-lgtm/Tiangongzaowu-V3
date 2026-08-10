@@ -1,6 +1,6 @@
 """Pure RepositoryObservation -> existing GitCommitDelta decoder.
 
-This layer performs no Git/filesystem/network IO.  It only validates already-
+This layer performs no Git/filesystem/network IO. It only validates already-
 observed evidence against the current SoftwareWorldFrame.
 """
 from __future__ import annotations
@@ -15,13 +15,28 @@ from .frame import SoftwareWorldFrame
 from .git_delta import GitCommitDelta, GitPathChange
 
 
-def _decode(envelope: WorldIngressEnvelope) -> RepositoryObservation:
-    if envelope.source_kind != "GIT_CODE" or not isinstance(envelope.payload_inline, dict):
+def _repository_payload(envelope: WorldIngressEnvelope) -> dict:
+    if envelope.source_kind != "GIT_CODE" or not isinstance(
+        envelope.payload_inline, dict
+    ):
         raise ValueError("GIT_CODE repository observation payload required")
-    return RepositoryObservation.model_validate_json(canonical_json_bytes(envelope.payload_inline))
+    nested = envelope.payload_inline.get("repository_observation")
+    if nested is not None:
+        if not isinstance(nested, dict):
+            raise ValueError("repository_observation wrapper must be an object")
+        return nested
+    return envelope.payload_inline
 
 
-def repository_frame_identity(envelope: WorldIngressEnvelope) -> tuple[str, str, str, str] | None:
+def _decode(envelope: WorldIngressEnvelope) -> RepositoryObservation:
+    return RepositoryObservation.model_validate_json(
+        canonical_json_bytes(_repository_payload(envelope))
+    )
+
+
+def repository_frame_identity(
+    envelope: WorldIngressEnvelope,
+) -> tuple[str, str, str, str] | None:
     """Return real SoftwareWorldFrame identity only for normalized GIT_CODE reality."""
     if envelope.source_kind != "GIT_CODE":
         return None
@@ -34,8 +49,13 @@ def repository_frame_identity(envelope: WorldIngressEnvelope) -> tuple[str, str,
     )
 
 
-def _basis_ref(rows: tuple[DirectKnownRecord, ...], envelope: WorldIngressEnvelope) -> WorldRecordRef:
-    row = next((item for item in rows if item.proposition_type == "REPOSITORY_IDENTITY"), rows[0])
+def _basis_ref(
+    rows: tuple[DirectKnownRecord, ...], envelope: WorldIngressEnvelope
+) -> WorldRecordRef:
+    row = next(
+        (item for item in rows if item.proposition_type == "REPOSITORY_IDENTITY"),
+        rows[0],
+    )
     return WorldRecordRef(
         record_type="known",
         record_id=row.known_id,
@@ -45,7 +65,9 @@ def _basis_ref(rows: tuple[DirectKnownRecord, ...], envelope: WorldIngressEnvelo
 
 
 def _file_anchor(repository_id: str, path: str) -> str:
-    return "gitfile." + canonical_sha256({"repository_id": repository_id, "path": path})[:48]
+    return "gitfile." + canonical_sha256(
+        {"repository_id": repository_id, "path": path}
+    )[:48]
 
 
 def repository_observation_to_git_delta(
@@ -75,16 +97,20 @@ def repository_observation_to_git_delta(
         path = change.new_path or change.old_path or ""
         explicit_anchor = change.explicit_identity_anchor
         if change.change_kind in {"ADD", "MODIFY"}:
-            explicit_anchor = _file_anchor(observation.identity.repository_id, path)
-        changes.append(GitPathChange(
-            change_kind=change.change_kind,
-            old_path=change.old_path,
-            new_path=change.new_path,
-            old_blob_sha=change.old_blob_sha,
-            new_blob_sha=change.new_blob_sha,
-            source_ref=source_ref,
-            explicit_identity_anchor=explicit_anchor,
-        ))
+            explicit_anchor = _file_anchor(
+                observation.identity.repository_id, path
+            )
+        changes.append(
+            GitPathChange(
+                change_kind=change.change_kind,
+                old_path=change.old_path,
+                new_path=change.new_path,
+                old_blob_sha=change.old_blob_sha,
+                new_blob_sha=change.new_blob_sha,
+                source_ref=source_ref,
+                explicit_identity_anchor=explicit_anchor,
+            )
+        )
     return GitCommitDelta.build(
         frame=frame,
         parent_commit=observation.revision.parent_commit,

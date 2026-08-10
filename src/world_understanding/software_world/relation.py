@@ -1,9 +1,8 @@
 """L3 deterministic relation materialization for sparse Software World Graph."""
 from __future__ import annotations
 from dataclasses import dataclass
-from contracts.world_understanding._base import WorldRecordRef, WorldValue
+from contracts.world_understanding._base import WorldValue
 from contracts.world_understanding.relation import WorldRelation, derive_relation_id
-from contracts.world_understanding.entity import WorldEntity
 from .perception import SoftwarePerception, RELATION_TYPES, FORBIDDEN_SEMANTIC_RELATIONS
 from .entity import entity_ref
 from .graph import SparseWorldGraph
@@ -20,6 +19,14 @@ MATERIALIZATION_CLASS = {
     "REGISTERED_AS": "STRUCTURAL",
     "BELONGS_TO": "STRUCTURAL",
     "LOCATED_IN": "STRUCTURAL",
+    "REFERENCES": "MATERIALIZED",
+    "INHERITS": "STRUCTURAL",
+    "IMPLEMENTS": "STRUCTURAL",
+    "DEPENDS_ON": "MATERIALIZED",
+    "BUILDS": "MATERIALIZED",
+    "TESTS": "MATERIALIZED",
+    "COVERS": "MATERIALIZED",
+    "INSTRUCTS_SCOPE": "STRUCTURAL",
 }
 
 @dataclass(frozen=True, slots=True)
@@ -37,19 +44,29 @@ def _target_token(perception: SoftwarePerception) -> str | None:
     return text
 
 
-def materialize_relation(graph: SparseWorldGraph, perception: SoftwarePerception) -> RelationMaterializationResult:
+def materialize_relation(
+    graph: SparseWorldGraph, perception: SoftwarePerception
+) -> RelationMaterializationResult:
     ptype = perception.proposition_type
     if ptype in FORBIDDEN_SEMANTIC_RELATIONS:
-        return RelationMaterializationResult(None, "SEMANTIC_RELATION_DEFERRED_TO_L4_L5")
+        return RelationMaterializationResult(
+            None, "SEMANTIC_RELATION_DEFERRED_TO_L4_L5"
+        )
     if ptype not in RELATION_TYPES:
         return RelationMaterializationResult(None, "NOT_A_P6_RELATION")
     subjects = graph.resolve_token(perception.subject_ref)
     target_token = _target_token(perception)
     targets = () if target_token is None else graph.resolve_token(target_token)
     if len(subjects) != 1:
-        return RelationMaterializationResult(None, "SUBJECT_IDENTITY_AMBIGUOUS" if subjects else "SUBJECT_ENTITY_NOT_FOUND")
+        return RelationMaterializationResult(
+            None,
+            "SUBJECT_IDENTITY_AMBIGUOUS" if subjects else "SUBJECT_ENTITY_NOT_FOUND",
+        )
     if len(targets) != 1:
-        return RelationMaterializationResult(None, "TARGET_IDENTITY_AMBIGUOUS" if targets else "TARGET_ENTITY_NOT_FOUND")
+        return RelationMaterializationResult(
+            None,
+            "TARGET_IDENTITY_AMBIGUOUS" if targets else "TARGET_ENTITY_NOT_FOUND",
+        )
     subject, target = subjects[0], targets[0]
     subject_ref = entity_ref(subject)
     value = WorldValue(kind="entity_ref", entity_ref=target.entity_id)
@@ -75,13 +92,21 @@ def materialize_relation(graph: SparseWorldGraph, perception: SoftwarePerception
         subject_ref=subject_ref,
         predicate=ptype,
         value=value,
-        extraction_mode="deterministic" if perception.record.derivation_type == "DETERMINISTIC_DERIVED" else "observed",
+        extraction_mode=(
+            "deterministic"
+            if perception.record.derivation_type == "DETERMINISTIC_DERIVED"
+            else "observed"
+        ),
         materialization_class=MATERIALIZATION_CLASS[ptype],
-        source_observation_refs=tuple(source_refs[key] for key in sorted(source_refs)),
+        source_observation_refs=tuple(
+            source_refs[key] for key in sorted(source_refs)
+        ),
         derivation_refs=(),
         truth_state=perception.record.truth_state,
         epistemic_state=perception.record.epistemic_state,
-        empirical_evidence_weight_milli=perception.record.empirical_evidence_weight_milli,
+        empirical_evidence_weight_milli=(
+            perception.record.empirical_evidence_weight_milli
+        ),
         revision=revision,
         supersedes_relation_sha256=supersedes,
         time=perception.record.time,
@@ -89,4 +114,9 @@ def materialize_relation(graph: SparseWorldGraph, perception: SoftwarePerception
     ).with_computed_hash()
     return RelationMaterializationResult(relation, "OK")
 
-__all__ = ["MATERIALIZATION_CLASS", "RelationMaterializationResult", "materialize_relation"]
+
+__all__ = [
+    "MATERIALIZATION_CLASS",
+    "RelationMaterializationResult",
+    "materialize_relation",
+]
