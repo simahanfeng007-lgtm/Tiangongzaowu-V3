@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from .base import CompilerSpec,DeterministicSourceCompiler,make_direct_known,payload_text
+from .git_code import GitCodeCompiler
 
 SPECS={
 "RUN_CONTEXT":CompilerSpec("RUN_CONTEXT","wu.compiler.run-context","v0.1","RUN_CONTEXT_OBSERVED","runtime.run_context","IDENTITY_RUN_CONTEXT",1000,1000),
@@ -123,7 +124,8 @@ def build_p3_compilers()->dict[str,object]:
     compilers["KNOWLEDGE"]=KnowledgeCompiler(SPECS["KNOWLEDGE"])
     compilers["MEMORY"]=MemoryCompiler(SPECS["MEMORY"])
     compilers["FILESYSTEM"]=FilesystemEvidenceCompiler(SPECS["FILESYSTEM"])
+    compilers["GIT_CODE"]=GitCodeCompiler(SPECS["GIT_CODE"])
     compilers["CHAIN_EVENT"]=ChainEventCompiler(SPECS["CHAIN_EVENT"])
     return compilers
 
-__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","ChainEventCompiler"]
+__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","GitCodeCompiler","ChainEventCompiler"]
