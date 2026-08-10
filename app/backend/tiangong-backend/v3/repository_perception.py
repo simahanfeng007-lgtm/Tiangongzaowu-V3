@@ -131,8 +131,6 @@ def _status_records(raw: bytes) -> tuple[tuple[str, str, str, str | None], ...]:
         code = field[:2].decode("ascii", errors="strict")
         path = _decode_path(field[3:])
         origin: str | None = None
-        # In porcelain v1 -z form, rename/copy records contain destination in
-        # the first field and origin in the following NUL-delimited field.
         if "R" in code or "C" in code:
             if index >= len(fields) or not fields[index]:
                 raise RepositoryObservationError("truncated Git rename record")
@@ -415,13 +413,33 @@ def observe_active_repository(
 def publish_active_repository_observation(
     provider: LocalGitRepositoryProvider | None = None,
 ) -> object | None:
-    """Publish one bounded GIT_CODE reality notification through the native ingress."""
+    """Publish one bounded Git + structure reality notification through native ingress."""
     try:
         observation = observe_active_repository(provider)
     except RepositoryObservationError:
         return None
     if observation is None:
         return None
+
+    payload: dict = observation.model_dump(mode="json")
+    native_hash = observation.observation_sha256
+    producer_ref = "repository.local-git.v0.1"
+    try:
+        from .repository_structure import repository_structure_index
+
+        structure_delta = repository_structure_index().update(observation)
+        payload = {
+            "repository_observation": observation.model_dump(mode="json"),
+            "structure_delta": structure_delta.model_dump(mode="json"),
+        }
+        native_hash = canonical_sha256({
+            "repository_observation_sha256": observation.observation_sha256,
+            "structure_delta_sha256": structure_delta.delta_sha256,
+        })
+        producer_ref = "repository.local-git-structure.v0.2"
+    except Exception:
+        pass
+
     context = current_run_context()
     raw_identity = {
         "life_id": context.life_id,
@@ -435,9 +453,9 @@ def publish_active_repository_observation(
     identity = {key: str(value) for key, value in raw_identity.items() if value}
     return notify_native_post_commit(NativePostCommitEvent(
         source_kind="GIT_CODE",
-        source_native_id="repoobs." + observation.observation_sha256[:48],
-        producer_ref="repository.local-git.v0.1",
-        payload=observation.model_dump(mode="json"),
+        source_native_id="repoobs." + native_hash[:48],
+        producer_ref=producer_ref,
+        payload=payload,
         occurred_at_ms=observation.observed_at_ms,
         identity=identity,
     ))
