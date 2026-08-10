@@ -807,6 +807,17 @@ class GatewayOrchestrationWorker:
                 sha256=life_evidence_ref[4:],
             ),
         )
+        provenance_source_refs = authorization_source_refs
+        if source_inquiry_id:
+            provenance_source_refs = tuple(sorted((
+                *authorization_source_refs,
+                SourceRef(
+                    source_type="EXTERNAL_DATA",
+                    object_id=source_inquiry_id,
+                    object_revision=1,
+                    sha256=artifact_sha256,
+                ),
+            ), key=lambda ref: ref.sort_key()))
         # D-09: derive impact from the learned step's normalized arguments and
         # its evaluation-time target state; deterministic, floors can only rise.
         step_action = str(arguments.get("action") or action_id)
@@ -845,7 +856,7 @@ class GatewayOrchestrationWorker:
             input_object_refs=(),
             requested_side_effects=permission.allowed_side_effects,
             requested_resources=resources,
-            source_refs=authorization_source_refs,
+            source_refs=provenance_source_refs,
             payload_sha256=invocation_sha256,
             target_ref=step_target_ref,
             target_snapshot_sha256=step_target_snapshot_sha256,
@@ -872,18 +883,65 @@ class GatewayOrchestrationWorker:
             "policy": "tiangong.gateway.learned-capability.outer-ticket.v1",
             "registry_sha256": outer_registry.registry_sha256,
         })
-        decision = PolicyEngine(
+        policy_engine = PolicyEngine(
             outer_registry,
             policy_snapshot_sha256=policy_snapshot_sha256,
             skill_catalog_hash=self._release_manifest.skill_catalog_sha256,
             capability_manifest_hash=manifest.sha256,
             component_manifest_hash=self._components.manifest_sha256,
-        ).evaluate(
-            intent,
-            impact,
-            decided_at_ms=now_ms,
-            authorization_source_refs=authorization_source_refs,
         )
+        if source_inquiry_id:
+            # P13.2 must traverse the already-existing Life proposal emitter.
+            # The in-process transport is the current Gateway itself: it owns
+            # Policy evaluation and returns only a receipt, never execution
+            # authority. Ticket/Grant issuance remains below this boundary.
+            from life_service.action_intents import ActionIntentReceipt, LifeActionIntentEmitter
+
+            class _GatewayPolicyTransport:
+                decision = None
+
+                def submit(self, proposed: ActionIntent) -> ActionIntentReceipt:
+                    self.decision = policy_engine.evaluate(
+                        proposed,
+                        impact,
+                        decided_at_ms=now_ms,
+                        authorization_source_refs=authorization_source_refs,
+                    )
+                    status = {
+                        "ALLOW": "AUTHORIZED",
+                        "REQUIRE_CONFIRMATION": "CONFIRMATION_REQUIRED",
+                        "REJECT": "REJECTED",
+                    }[self.decision.outcome]
+                    receipt = ActionIntentReceipt(
+                        proposed.intent_id,
+                        proposed.intent_sha256,
+                        status,
+                        self.decision.decision_id,
+                        "",
+                    )
+                    return ActionIntentReceipt(
+                        receipt.intent_id,
+                        receipt.intent_sha256,
+                        receipt.status,
+                        receipt.policy_decision_id,
+                        receipt.computed_sha256(),
+                    )
+
+            transport = _GatewayPolicyTransport()
+            LifeActionIntentEmitter(transport).submit_self_will(
+                intent,
+                source_inquiry_id=source_inquiry_id,
+                source_inquiry_sha256=artifact_sha256,
+            )
+            decision = transport.decision
+            assert decision is not None
+        else:
+            decision = policy_engine.evaluate(
+                intent,
+                impact,
+                decided_at_ms=now_ms,
+                authorization_source_refs=authorization_source_refs,
+            )
         if decision.outcome != "ALLOW":
             self._policy_evidence.record_evaluation(
                 intent=intent, impact=impact, permission=permission, registry=outer_registry,

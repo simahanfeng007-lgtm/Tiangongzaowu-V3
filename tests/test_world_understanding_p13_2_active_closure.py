@@ -268,3 +268,12 @@ def test_existing_gateway_worker_lane_carries_inquiry_to_authorized_runtime(tmp_
     assert authorized[0]["source_inquiry_id"] == inquiry.inquiry_id
     assert authorized[0]["action_id"] == "omni_body"
     assert worker._backend_compat_client.invocations[0][0].endswith("/life-action/invoke")
+
+
+def test_production_gateway_path_uses_existing_life_intent_emitter():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "src/total_gateway/orchestration.py").read_text(encoding="utf-8")
+    assert "LifeActionIntentEmitter(transport).submit_self_will(" in source
+    assert 'source_type="EXTERNAL_DATA"' in source
+    assert "authorization_source_refs=authorization_source_refs" in source
