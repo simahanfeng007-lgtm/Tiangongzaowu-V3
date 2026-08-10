@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextvars
 from contextlib import contextmanager
+import base64
 import hashlib
 import json
 import os
@@ -50,6 +51,10 @@ from .deepseek_zhuanshu import (
 HTTP_RETRY_LIMIT = 3
 HTTP_RETRY_SLEEP_SECONDS = 0.5
 TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+_NATIVE_AUDIO_FORMATS = {".mp3": "mp3", ".wav": "wav"}
+_NATIVE_AUDIO_MAX_BYTES = int(
+    (os.environ.get("TIANGONG_NATIVE_AUDIO_MAX_BYTES") or str(20 * 1024 * 1024)).strip()
+)
 # CC-loop structure: a single LLM streaming call must never wedge a worker
 # thread indefinitely. SSE keepalive pings reset httpx's per-read timeout, so
 # an overall wall-clock deadline is the only hard bound on one call.
@@ -60,6 +65,77 @@ if _LLM_CALL_MAX_SECONDS <= 0:
     _LLM_CALL_MAX_SECONDS = 300.0
 L4_OPTIMIZATION_TRACE_PATH = ZHUIZONG_LUJING / "l4_model_optimization.jsonl"
 _MODEL_ADAPTER_CORE: Any | None = None
+
+
+class NativeAudioModelReply(str):
+    """Text reply carrying a non-user-visible receipt for native audio input."""
+
+    def __new__(cls, value: Any, evidence: dict[str, Any]):
+        obj = super().__new__(cls, str(value or ""))
+        obj.native_audio_evidence = dict(evidence or {})
+        return obj
+
+
+def _inject_native_audio_input(payload: dict[str, Any], paths: tuple[str, ...]) -> dict[str, Any] | None:
+    """Attach one verified local audio object to the active model request."""
+    if not paths:
+        return None
+    path = Path(paths[0]).expanduser().resolve(strict=False)
+    audio_format = _NATIVE_AUDIO_FORMATS.get(path.suffix.lower())
+    if not audio_format:
+        return {
+            "schema": "tiangong.v3.native_audio_receipt.v1",
+            "semantic_visibility": "unavailable",
+            "reason": "unsupported_audio_container",
+            "path": str(path),
+        }
+    try:
+        body = path.read_bytes()
+    except Exception as exc:
+        return {
+            "schema": "tiangong.v3.native_audio_receipt.v1",
+            "semantic_visibility": "unavailable",
+            "reason": f"audio_read_failed:{type(exc).__name__}",
+            "path": str(path),
+        }
+    if not body or len(body) > max(1, _NATIVE_AUDIO_MAX_BYTES):
+        return {
+            "schema": "tiangong.v3.native_audio_receipt.v1",
+            "semantic_visibility": "unavailable",
+            "reason": "audio_size_not_supported",
+            "path": str(path),
+            "size_bytes": len(body),
+        }
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return None
+    user_message = next(
+        (item for item in reversed(messages) if isinstance(item, dict) and item.get("role") == "user"),
+        None,
+    )
+    if user_message is None:
+        return None
+    content = user_message.get("content")
+    text = content if isinstance(content, str) else ""
+    user_message["content"] = [
+        {"type": "text", "text": text},
+        {
+            "type": "input_audio",
+            "input_audio": {
+                "data": base64.b64encode(body).decode("ascii"),
+                "format": audio_format,
+            },
+        },
+    ]
+    return {
+        "schema": "tiangong.v3.native_audio_receipt.v1",
+        "semantic_visibility": "submitted",
+        "reason": "",
+        "path": str(path),
+        "format": audio_format,
+        "size_bytes": len(body),
+        "sha256": hashlib.sha256(body).hexdigest(),
+    }
 
 
 def _learned_skill_context(limit: int = 8) -> str:
@@ -373,6 +449,7 @@ class HttpKehuduan:
         self._kehuduan = httpx.Client(timeout=120.0, follow_redirects=False, trust_env=trust_env)
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
+        self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
 
     @contextmanager
     def scoped_tools(self, allowed_tool_names: list[str] | set[str] | tuple[str, ...] | None = None, disable_tools: bool = False):
@@ -386,6 +463,15 @@ class HttpKehuduan:
         finally:
             self._disable_tools.reset(token_disable)
             self._allowed_tool_names.reset(token_names)
+
+    @contextmanager
+    def scoped_native_audio(self, paths: list[str] | tuple[str, ...] | None = None):
+        clean_paths = tuple(str(path).strip() for path in (paths or []) if str(path or "").strip())
+        token = self._native_audio_paths.set(clean_paths)
+        try:
+            yield
+        finally:
+            self._native_audio_paths.reset(token)
 
     # ── 高层接口 ──────────────
 
@@ -469,6 +555,10 @@ class HttpKehuduan:
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message,
             )
+            native_audio_receipt = _inject_native_audio_input(
+                payload,
+                self._native_audio_paths.get(()),
+            )
             if gongju_dingyi:
                 payload["tool_choice"] = "auto"
             if pid == "minimax_m3":
@@ -486,6 +576,18 @@ class HttpKehuduan:
                 }
         except ValueError as e:
             return f"[LLM错误: {e}]"
+
+        def _native_reply(value: Any, *, visible: bool = False, reason: str = "") -> str:
+            if not isinstance(native_audio_receipt, dict):
+                return str(value or "")
+            evidence = dict(native_audio_receipt)
+            if reason:
+                evidence["semantic_visibility"] = "unavailable"
+                evidence["reason"] = reason[:300]
+            elif visible and evidence.get("semantic_visibility") != "unavailable":
+                evidence["semantic_visibility"] = "visible"
+                evidence["reason"] = ""
+            return NativeAudioModelReply(value, evidence)
 
         # 组装URL和请求头
         url = f"{base_url}/chat/completions"
@@ -525,7 +627,7 @@ class HttpKehuduan:
             pass
         for attempt in range(1, HTTP_RETRY_LIMIT + 1):
             if effective_llm_max_seconds > 0 and (time.perf_counter() - call_started_at) > effective_llm_max_seconds:
-                return _llm_error_text(
+                return _native_reply(_llm_error_text(
                     f"llm_call_wall_clock_deadline exceeded {effective_llm_max_seconds:g}s",
                     provider=pid,
                     model=payload.get("model") or model_name,
@@ -533,7 +635,7 @@ class HttpKehuduan:
                     endpoint=url,
                     retry_count=attempt - 1,
                     hint="A single LLM call exceeded the platform wall-clock deadline; the run stopped instead of waiting forever.",
-                )
+                ), reason="native_audio_model_deadline")
             started = time.perf_counter()
             try:
                 validate_model_endpoint(pid, base_url, resolve_dns=True)
@@ -671,7 +773,7 @@ class HttpKehuduan:
                     retry_count=attempt - 1,
                     error_preview=error_body,
                 )
-                return _llm_error_text(
+                return _native_reply(_llm_error_text(
                     last_error,
                     provider=pid,
                     model=payload.get("model") or model_name,
@@ -681,7 +783,7 @@ class HttpKehuduan:
                     retry_count=attempt - 1,
                     response_preview=error_body,
                     hint=_http_status_hint(status),
-                )
+                ), reason=f"native_audio_http_{status}")
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 last_error = str(e)
                 if effective_llm_max_seconds > 0 and (time.perf_counter() - call_started_at) > effective_llm_max_seconds:
@@ -693,7 +795,7 @@ class HttpKehuduan:
                         retry_count=attempt - 1,
                         error_preview=str(e)[:240],
                     )
-                    return _llm_error_text(
+                    return _native_reply(_llm_error_text(
                         last_error,
                         provider=pid,
                         model=payload.get("model") or model_name,
@@ -701,7 +803,7 @@ class HttpKehuduan:
                         endpoint=url,
                         retry_count=attempt - 1,
                         hint="A single LLM call exceeded the platform wall-clock deadline; the run stopped instead of waiting forever.",
-                    )
+                    ), reason="native_audio_model_deadline")
                 if attempt < HTTP_RETRY_LIMIT:
                     time.sleep(HTTP_RETRY_SLEEP_SECONDS * attempt)
                     continue
@@ -713,7 +815,7 @@ class HttpKehuduan:
                     retry_count=attempt - 1,
                     error_preview=str(e)[:240],
                 )
-                return _llm_error_text(
+                return _native_reply(_llm_error_text(
                     last_error,
                     provider=pid,
                     model=payload.get("model") or model_name,
@@ -721,7 +823,7 @@ class HttpKehuduan:
                     endpoint=url,
                     retry_count=attempt - 1,
                     hint="Network/proxy/DNS failed, or Base URL points to a non-API host.",
-                )
+                ), reason="native_audio_transport_error")
             except Exception as e:
                 last_error = str(e)
                 if attempt < HTTP_RETRY_LIMIT:
@@ -735,23 +837,23 @@ class HttpKehuduan:
                     retry_count=attempt - 1,
                     error_preview=str(e)[:240],
                 )
-                return _llm_error_text(
+                return _native_reply(_llm_error_text(
                     last_error,
                     provider=pid,
                     model=payload.get("model") or model_name,
                     base_url=base_url,
                     endpoint=url,
                     retry_count=attempt - 1,
-                )
+                ), reason="native_audio_model_error")
         if data is None:
-            return _llm_error_text(
+            return _native_reply(_llm_error_text(
                 last_error or "empty_response",
                 provider=pid,
                 model=payload.get("model") or model_name,
                 base_url=base_url,
                 endpoint=url,
                 retry_count=HTTP_RETRY_LIMIT - 1,
-            )
+            ), reason="native_audio_empty_response")
 
         # Redact reasoning from DeepSeek responses — never leak to frontend
         if is_deepseek_provider(pid):
@@ -768,7 +870,7 @@ class HttpKehuduan:
             try:
                 rendered = MINIMAX_M3.render_legacy_reply(data)
                 if rendered:
-                    return rendered
+                    return _native_reply(rendered, visible="<tool_call>" not in rendered)
             except Exception:
                 pass
 
@@ -812,29 +914,38 @@ class HttpKehuduan:
                         f"<tool_call>\n<name>{name}</name>\n<arguments>{str(args)[:500]}</arguments>\n</tool_call>"
                     )
             neirong = "\n".join(tc_parts)
-            return neirong.strip()
+            return _native_reply(neirong.strip(), visible=False)
         
         # 没有结构化 tool_calls → 读 content
         try:
             neirong = data["choices"][0]["message"]["content"]
             finish_reason = str(data["choices"][0].get("finish_reason") or "")
             if neirong:
-                return _qingli_sikao(neirong)
+                return _native_reply(_qingli_sikao(neirong), visible=True)
             if finish_reason == "length":
-                return "[模型本轮达到输出上限但未返回可见内容；系统已启用低思考重试策略，请重新发送。]"
+                return _native_reply(
+                    "[模型本轮达到输出上限但未返回可见内容；系统已启用低思考重试策略，请重新发送。]",
+                    reason="native_audio_empty_response",
+                )
         except (KeyError, IndexError, TypeError):
             pass
         
         try:
             guiyi = MOXING_SHIPEI.jiexi_xiangying(pid, data)
             neirong = guiyi.get("neirong", "")
-            return _qingli_sikao(neirong) if neirong else "[空响应]"
+            return _native_reply(_qingli_sikao(neirong), visible=True) if neirong else _native_reply("[空响应]", reason="native_audio_empty_response")
         except Exception:
-            return f"[解析错误: {str(data)[:200]}]"
+            return _native_reply(
+                f"[解析错误: {str(data)[:200]}]",
+                reason="native_audio_response_parse_error",
+            )
 
         # 最终兜底：空回复
         if not neirong or not neirong.strip():
-            return "[空响应 — 模型未生成回复]"
+            return _native_reply(
+                "[空响应 — 模型未生成回复]",
+                reason="native_audio_empty_response",
+            )
 
     def zuowei_huidiao(
         self, provider_id: str | None = None

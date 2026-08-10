@@ -124,36 +124,26 @@ class ModelAuthorizationBoundaryTests(unittest.TestCase):
 
 
 class OmniToolInvocationCloseoutTests(unittest.TestCase):
-    def test_workspace_absolute_paths_are_safely_relatived_before_tool_execution(self) -> None:
-        from v3.zongdiaodu import _simple_chain_repair_tool_args_before_execution
+    def test_tool_arguments_are_not_silently_rewritten_before_execution(self) -> None:
+        from v3.zongdiaodu import _simple_chain_prepare_tool_call
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir).resolve()
-            inside = root / "project" / "assembled.docx"
-            manifest = root / "project" / "project_manifest.json"
-            outside = root.parent / "outside.docx"
-            with mock.patch(
-                "v3.workspace_settings.duqu_workspace_root",
-                return_value=root,
-            ):
-                repaired = _simple_chain_repair_tool_args_before_execution(
-                    "run QC",
-                    "qc.docx.delivery_check",
-                    {
-                        "action": "qc.docx.delivery_check",
-                        "target": str(inside),
-                        "args": {
-                            "project_manifest": str(manifest),
-                            "untrusted_outside": str(outside),
-                        },
-                    },
-                )
-        self.assertEqual(repaired["target"], str(Path("project") / "assembled.docx"))
-        self.assertEqual(
-            repaired["args"]["project_manifest"],
-            str(Path("project") / "project_manifest.json"),
+        original = {
+            "action": "qc.docx.delivery_check",
+            "target": r"C:\workspace\project\assembled.docx",
+            "args": {
+                "project_manifest": r"C:\workspace\project\project_manifest.json",
+            },
+        }
+        name, prepared, action, _issues, block = _simple_chain_prepare_tool_call(
+            "req-no-rewrite",
+            "run QC",
+            "omni_body",
+            original,
         )
-        self.assertEqual(repaired["args"]["untrusted_outside"], str(outside))
+        self.assertEqual(name, "omni_body")
+        self.assertEqual(action, "qc.docx.delivery_check")
+        self.assertEqual(prepared, original)
+        self.assertIsNone(block)
 
     def test_deterministic_tool_validation_detail_survives_closeout(self) -> None:
         from v3.zongdiaodu import _simple_chain_quality_gate_payload
@@ -194,7 +184,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
 
         prompt = (
-            "创建 proposal.docx，并实际执行 qc.docx.delivery_check 与 file.hash。"
+            "创建 proposal.docx，并严格按顺序实际执行 qc.docx.delivery_check 与 file.hash。"
         )
         tool_result = {
             "success": True,
@@ -261,7 +251,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             _simple_chain_record_observation,
         )
 
-        prompt = "创建 video.mp4，并执行 qc.video.delivery_check 与 file.hash。"
+        prompt = "创建 video.mp4，并严格按顺序执行 qc.video.delivery_check 与 file.hash。"
         failed_acceptance = {
             "ok": True,
             "tool_action": "qc.video.delivery_check",
@@ -382,13 +372,10 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
 
     def test_explicit_action_sequence_advances_after_skill_get(self) -> None:
-        from v3.zongdiaodu import (
-            _simple_chain_explicit_action_sequence,
-            _simple_chain_next_explicit_action,
-        )
+        from v3.zongdiaodu import _simple_chain_explicit_action_sequence
 
         prompt = (
-            "先调用 skill.get 读取 skill_core_actions_reference_v1；"
+            "严格按顺序调用 skill.get 读取 skill_core_actions_reference_v1；"
             "然后在 skill-e2e-all/02-core 实际执行 file.write、file.read、file.hash，"
             "文件名 hello.txt，内容严格为 CORE_ACTIONS_REFERENCE_OK。"
         )
@@ -396,15 +383,6 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             _simple_chain_explicit_action_sequence(prompt),
             ["skill.get", "file.write", "file.read", "file.hash"],
         )
-        history = [{"ok": True, "tool_action": "skill.get"}]
-        self.assertEqual(_simple_chain_next_explicit_action(prompt, history), "file.write")
-        history.append({"ok": True, "tool_action": "file.write"})
-        self.assertEqual(_simple_chain_next_explicit_action(prompt, history), "file.read")
-        history.extend([
-            {"ok": True, "tool_action": "file.read"},
-            {"ok": True, "tool_action": "file.hash"},
-        ])
-        self.assertEqual(_simple_chain_next_explicit_action(prompt, history), "")
 
     def test_explicit_action_sequence_uses_complete_capability_registry(self) -> None:
         from v3.zongdiaodu import (
@@ -421,6 +399,90 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             _simple_chain_explicit_action_sequence(prompt),
             ["docx.create", "word.read", "qc.docx.delivery_check", "file.hash"],
         )
+
+    def test_plain_tool_mentions_are_not_a_strict_sequence(self) -> None:
+        from v3.zongdiaodu import _simple_chain_explicit_action_sequence
+
+        self.assertEqual(
+            _simple_chain_explicit_action_sequence(
+                "可以用 file.read、file.hash 或 qc.docx.delivery_check 来核对。"
+            ),
+            [],
+        )
+
+    def test_skill_context_uses_exact_registered_id_or_name_only(self) -> None:
+        from v3 import zongdiaodu as scheduler
+
+        with tempfile.TemporaryDirectory() as td:
+            index_path = Path(td) / "skill_router_index.json"
+            index_path.write_text(
+                json.dumps(
+                    {
+                        "skills": [
+                            {
+                                "id": "skill_exact_demo_v1",
+                                "mingcheng": "精确演示技能",
+                                "keywords": ["演示", "文档"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(scheduler, "_SKILL_INDEX_PATH", index_path):
+                self.assertEqual(
+                    scheduler._simple_chain_explicit_named_skill_ids(
+                        "请使用 skill_exact_demo_v1 完成任务"
+                    ),
+                    ["skill_exact_demo_v1"],
+                )
+                self.assertEqual(
+                    scheduler._simple_chain_explicit_named_skill_ids(
+                        "请使用精确演示技能完成任务"
+                    ),
+                    ["skill_exact_demo_v1"],
+                )
+                self.assertEqual(
+                    scheduler._simple_chain_explicit_named_skill_ids(
+                        "请做一个演示文档"
+                    ),
+                    [],
+                )
+                self.assertEqual(
+                    scheduler._simple_chain_explicit_named_skill_ids(
+                        "请使用 skill_exact_demo 完成任务"
+                    ),
+                    [],
+                )
+
+    def test_ordinary_task_does_not_preinject_skill_content(self) -> None:
+        from v3 import zongdiaodu as scheduler
+
+        self.assertEqual(
+            scheduler._simple_chain_explicit_skill_context("帮我生成一份 Word 文档"),
+            "",
+        )
+        self.assertFalse(hasattr(scheduler, "_match_and_inject_skills"))
+        self.assertFalse(hasattr(scheduler, "_partial_cjk_match"))
+
+    def test_strict_order_is_checked_only_by_final_gate(self) -> None:
+        from v3.zongdiaodu import _simple_chain_final_hard_gate
+
+        prompt = "请严格按顺序实际执行 file.read、file.hash。"
+        reversed_history = [
+            {"ok": True, "tool_action": "file.hash", "failures": [], "final_requirement_gaps": []},
+            {"ok": True, "tool_action": "file.read", "failures": [], "final_requirement_gaps": []},
+        ]
+        allowed, status, reasons = _simple_chain_final_hard_gate(
+            prompt,
+            reversed_history,
+            [],
+            final_reply="已经核对。",
+        )
+        self.assertFalse(allowed)
+        self.assertEqual(status, "incomplete")
+        self.assertIn("strict action order", "\n".join(reasons))
 
     def test_auto_continuation_control_contract_does_not_become_user_actions(self) -> None:
         from v3.zongdiaodu import (
@@ -443,17 +505,13 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
         self.assertEqual(
             _simple_chain_explicit_action_sequence(compiled),
-            ["docx.create", "qc.docx.delivery_check", "file.hash"],
+            [],
         )
 
     def test_final_gate_requires_every_explicitly_named_action(self) -> None:
-        from v3.zongdiaodu import (
-            _simple_chain_final_hard_gate,
-            _simple_chain_skill_lifecycle_decision,
-            _simple_chain_skill_lifecycle_payload,
-        )
+        from v3.zongdiaodu import _simple_chain_final_hard_gate
 
-        prompt = "Please execute file.hash and qc.docx.delivery_check."
+        prompt = "Strictly in this order, execute file.hash and qc.docx.delivery_check."
         history = [{
             "ok": True,
             "tool_action": "file.hash",
@@ -464,18 +522,6 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual(status, "incomplete")
         self.assertIn("qc.docx.delivery_check", "\n".join(reasons))
-        decision = _simple_chain_skill_lifecycle_decision(prompt, history, [])
-        self.assertFalse(decision["ready_to_deliver"])
-        self.assertTrue(decision["completed_production"])
-        lifecycle = _simple_chain_skill_lifecycle_payload(
-            "req-lifecycle",
-            "skill.get",
-            1,
-            decision,
-            {"delivery": {"requested_actions": ["file.hash", "qc.docx.delivery_check"]}},
-        )
-        self.assertTrue(lifecycle["skill_already_loaded"])
-        self.assertIn("qc.docx.delivery_check", "\n".join(lifecycle["blocking_reasons"]))
         history.append({
             "ok": True,
             "tool_action": "qc.docx.delivery_check",
@@ -484,9 +530,6 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             "final_requirement_gaps": [],
         })
         self.assertEqual(_simple_chain_final_hard_gate(prompt, history, []), (True, "complete", []))
-        self.assertTrue(
-            _simple_chain_skill_lifecycle_decision(prompt, history, [])["ready_to_deliver"]
-        )
 
     def test_final_gate_requires_every_explicitly_named_deliverable(self) -> None:
         from v3.zongdiaodu import (
@@ -717,8 +760,8 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
         self.assertTrue(payload["ok"], payload)
         self.assertIn("learn_observation_test", payload["instruction"])
-        self.assertIn("Do not call skill.route", payload["instruction"])
-        self.assertIn("next requested concrete deliverable", payload["instruction"])
+        self.assertIn("Decide the next step", payload["instruction"])
+        self.assertNotIn("Do not call skill.route", payload["instruction"])
 
     def test_learning_call_dedup_ignores_model_material_rephrasing(self) -> None:
         from v3.zongdiaodu import _gongju_diaoyong_key
@@ -933,18 +976,28 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         ]
         self.assertFalse(_simple_chain_has_post_mutation_verification(history))
 
-    def test_final_gate_feedback_requires_another_concrete_tool_call(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_gap_retry_payload
+    def test_completion_correction_reports_facts_without_selecting_route(self) -> None:
+        from v3.zongdiaodu import _simple_chain_completion_correction_payload
 
-        payload = _simple_chain_final_gap_retry_payload(
+        state = {
+            "completion_correction": {
+                "attempts_used": 1,
+                "attempts_max": 3,
+                "last_blockers": [],
+                "exhausted": False,
+            }
+        }
+        payload = _simple_chain_completion_correction_payload(
             "req-final-gap",
             ["requested verification/test step is missing after the latest mutation"],
-            {"schema": "tiangong.v3.simple_chain.run_state.v1", "run_id": "req-final-gap"},
+            state,
         )
-        self.assertFalse(payload["ok"])
-        self.assertEqual(payload["stage"], "final_gate_feedback")
-        self.assertIn("exactly one concrete omni_body call", payload["instruction"])
-        self.assertIn("do not rewrite it", payload["instruction"].lower())
+        self.assertEqual(payload["schema"], "tiangong.v3.simple_chain.completion_correction.v1")
+        self.assertEqual(payload["attempts_used"], 1)
+        self.assertEqual(payload["attempts_remaining"], 2)
+        serialized = json.dumps(payload, ensure_ascii=False).lower()
+        for forbidden in ("file.write", "file.read", "file.hash", "omni_body", "exactly one", "stop read"):
+            self.assertNotIn(forbidden, serialized)
 
     def test_simple_chain_checkpoint_path_is_durable_and_sanitized(self) -> None:
         from v3.zongdiaodu import _simple_chain_run_state_path
@@ -1455,27 +1508,23 @@ class DeliveryFormatContractTests(unittest.TestCase):
             ["video.info", "qc.video.delivery_check", "file.hash"],
         )
 
-    def test_video_qc_repair_injects_existing_sibling_evidence(self) -> None:
-        from v3.zongdiaodu import _simple_chain_repair_tool_args_before_execution
+    def test_video_qc_arguments_are_not_inferred_from_sibling_files(self) -> None:
+        from v3.zongdiaodu import _simple_chain_prepare_tool_call
 
-        with tempfile.TemporaryDirectory() as temp_root:
-            project = Path(temp_root) / "08-video"
-            project.mkdir()
-            (project / "cover.png").write_bytes(b"png")
-            (project / "脚本.md").write_text("hook", encoding="utf-8")
-            with mock.patch(
-                "v3.workspace_settings.duqu_workspace_root",
-                return_value=Path(temp_root),
-            ):
-                repaired = _simple_chain_repair_tool_args_before_execution(
-                    "执行 qc.video.delivery_check",
-                    "qc.video.delivery_check",
-                    {"action": "qc.video.delivery_check", "target": "08-video/clip.mp4", "args": {}},
-                )
-        self.assertEqual(repaired["args"]["video_path"], "08-video/clip.mp4")
-        self.assertEqual(repaired["args"]["project_root"], "08-video")
-        self.assertEqual(repaired["args"]["cover_path"], str(Path("08-video") / "cover.png"))
-        self.assertEqual(repaired["args"]["script_path"], str(Path("08-video") / "脚本.md"))
+        original = {
+            "action": "qc.video.delivery_check",
+            "target": "08-video/clip.mp4",
+            "args": {},
+        }
+        _name, prepared, action, _issues, block = _simple_chain_prepare_tool_call(
+            "req-video-no-inference",
+            "执行 qc.video.delivery_check",
+            "omni_body",
+            original,
+        )
+        self.assertEqual(action, "qc.video.delivery_check")
+        self.assertEqual(prepared, original)
+        self.assertIsNone(block)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import importlib
-import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,36 +135,7 @@ def test_exact_parallel_read_can_close_from_complete_source_evidence() -> None:
     assert reply.count("---BEGIN EXACT CONTENT---") == 2
 
 
-def test_read_only_missing_target_never_triggers_platform_fallback_write() -> None:
+def test_read_only_missing_target_has_no_platform_write_surface() -> None:
     scheduler = importlib.import_module("v3.zongdiaodu")
-    prompt = (
-        r"Read e2e-targets\missing.txt and return its exact content. "
-        "Do not write or modify anything."
-    )
-    with tempfile.TemporaryDirectory() as temporary, mock.patch.dict(
-        os.environ,
-        {"TIANGONG_FORCE_WORKSPACE_ROOT": temporary},
-        clear=False,
-    ):
-        target = Path(temporary) / "e2e-targets" / "missing.txt"
-        items = scheduler._simple_chain_fallback_write_deliverable(
-            prompt,
-            [],
-            ["requested read coverage is incomplete"],
-            "req_no_write",
-            [],
-        )
-        allowed, delivered = scheduler._simple_chain_try_fallback_delivery(
-            xiaoxi=prompt,
-            quality_history=[],
-            generated_attachments=[],
-            gap_reasons=["requested read coverage is incomplete"],
-            request_id="req_no_write",
-            required_read_paths=None,
-            final_reply="read failed",
-        )
-
-        assert items == []
-        assert allowed is False
-        assert delivered == []
-        assert not target.exists()
+    assert not hasattr(scheduler, "_simple_chain_fallback_write_deliverable")
+    assert not hasattr(scheduler, "_simple_chain_try_fallback_delivery")
