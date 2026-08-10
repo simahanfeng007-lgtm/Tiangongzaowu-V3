@@ -34,31 +34,22 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Record pre-fix generated-source state
-        continue-on-error: true
+      - name: Verify committed generated-source mirrors
         run: python scripts/sync-generated-sources.py --check
 
-      - name: Regenerate existing generated-source mirrors
-        run: python scripts/sync-generated-sources.py --write
-
-      - name: Verify generated-source mirrors after regeneration
-        run: python scripts/sync-generated-sources.py --check
-
-      - name: Show exact regeneration working tree
+      - name: Verify checkout remains clean
         shell: bash
         run: |
-          git status --short --untracked-files=all
-          git diff --stat
-          git diff
           python - <<'PY'
-          from pathlib import Path
           import subprocess
-          changed = subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
-          for name in changed:
-              p = Path(name)
-              if p.name == ".tiangong-generated-source.json" and p.exists():
-                  print(f"--- MARKER {name} ---")
-                  print(p.read_text(encoding="utf-8"))
+          status = subprocess.check_output(
+              ["git", "status", "--porcelain", "--untracked-files=all"],
+              text=True,
+          ).strip()
+          if status:
+              print(status)
+              raise SystemExit("P13 validation must not mutate the committed checkout")
+          print("committed checkout is clean")
           PY
 
       - name: Compile authoritative Python source
