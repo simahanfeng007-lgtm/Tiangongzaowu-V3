@@ -1375,7 +1375,7 @@ console.log(JSON.stringify({version: accepted.release_version, replay}));
 
     def test_generated_source_mirrors_are_in_sync(self) -> None:
         completed = subprocess.run(
-            [sys.executable, "scripts/sync-generated-sources.py", "--check"],
+            [sys.executable, "scripts/sync-generated-sources.py", "--check-committed"],
             cwd=ROOT,
             capture_output=True,
             text=True,
