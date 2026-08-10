@@ -1,6 +1,6 @@
 """Bounded, read-only repository perception adapter for the V3 workspace.
 
-This module is a sensor, not a Runtime or executor.  It never mutates Git and it
+This module is a sensor, not a Runtime or executor. It never mutates Git and it
 never owns WorldState, memory, learning, scheduling, or execution authority.
 """
 from __future__ import annotations
@@ -34,6 +34,7 @@ _GIT_TIMEOUT_SECONDS = 5.0
 _MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024
 _MAX_STATUS_ENTRIES = 2048
 _CONFLICT_CODES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+_READ_ONLY_GIT_COMMANDS = frozenset({"rev-parse", "status", "hash-object", "diff"})
 
 
 class RepositoryObservationError(RuntimeError):
@@ -53,7 +54,7 @@ def _repo_path(value: str) -> str:
 
 
 def _run_git(cwd: Path, args: tuple[str, ...], *, allow_failure: bool = False) -> bytes:
-    if not args or args[0] not in {"rev-parse", "status", "hash-object", "diff"}:
+    if not args or args[0] not in _READ_ONLY_GIT_COMMANDS:
         raise RepositoryObservationError("repository provider command is not read-only allowlisted")
     if args[0] == "hash-object" and any(arg in {"-w", "--write"} for arg in args[1:]):
         raise RepositoryObservationError("git hash-object write mode is forbidden")
@@ -103,7 +104,7 @@ def _change_kind(old_path: str, new_path: str) -> str:
     return "MOVE" if PurePosixPath(old_path).parent != PurePosixPath(new_path).parent else "RENAME"
 
 
-def _current_blob(root: Path, path: str) -> str | None:
+def _working_blob(root: Path, path: str) -> str | None:
     target = root.joinpath(*PurePosixPath(path).parts)
     if not target.is_file():
         return None
@@ -111,8 +112,8 @@ def _current_blob(root: Path, path: str) -> str | None:
     return value or None
 
 
-def _head_blob(root: Path, path: str) -> str | None:
-    value = _decode_line(_run_git(root, ("rev-parse", "--verify", f"HEAD:{path}"), allow_failure=True))
+def _blob_at(root: Path, revision: str, path: str) -> str | None:
+    value = _decode_line(_run_git(root, ("rev-parse", "--verify", f"{revision}:{path}"), allow_failure=True))
     return value or None
 
 
@@ -130,6 +131,8 @@ def _status_records(raw: bytes) -> tuple[tuple[str, str, str, str | None], ...]:
         code = field[:2].decode("ascii", errors="strict")
         path = _decode_path(field[3:])
         origin: str | None = None
+        # In porcelain v1 -z form, rename/copy records contain destination in
+        # the first field and origin in the following NUL-delimited field.
         if "R" in code or "C" in code:
             if index >= len(fields) or not fields[index]:
                 raise RepositoryObservationError("truncated Git rename record")
@@ -170,44 +173,44 @@ def _diff_records(raw: bytes) -> tuple[tuple[str, str, str | None], ...]:
     return tuple(rows)
 
 
-def _overlay_changes(root: Path, records: tuple[tuple[str, str, str, str | None], ...]) -> tuple[RepositoryPathChange, ...]:
+def _overlay_changes(
+    root: Path,
+    records: tuple[tuple[str, str, str, str | None], ...],
+) -> tuple[RepositoryPathChange, ...]:
     changes: dict[tuple[str, str, str], RepositoryPathChange] = {}
     for x, y, path, origin in records:
         code = x + y
         if code in _CONFLICT_CODES:
             continue
         if origin is not None and (x in {"R", "C"} or y in {"R", "C"}):
-            kind = _change_kind(origin, path)
             row = RepositoryPathChange(
-                change_kind=kind,
+                change_kind=_change_kind(origin, path),
                 old_path=origin,
                 new_path=path,
-                old_blob_sha=_head_blob(root, origin),
-                new_blob_sha=_current_blob(root, path),
-                explicit_identity_anchor="git-path:" + origin,
+                old_blob_sha=_blob_at(root, "HEAD", origin),
+                new_blob_sha=_working_blob(root, path),
             )
         elif code == "??" or x == "A":
             row = RepositoryPathChange(
                 change_kind="ADD",
                 new_path=path,
-                new_blob_sha=_current_blob(root, path),
+                new_blob_sha=_working_blob(root, path),
             )
         elif x == "D" or y == "D":
             row = RepositoryPathChange(
                 change_kind="DELETE",
                 old_path=path,
-                old_blob_sha=_head_blob(root, path),
+                old_blob_sha=_blob_at(root, "HEAD", path),
             )
         else:
             row = RepositoryPathChange(
                 change_kind="MODIFY",
                 old_path=path,
                 new_path=path,
-                old_blob_sha=_head_blob(root, path),
-                new_blob_sha=_current_blob(root, path),
+                old_blob_sha=_blob_at(root, "HEAD", path),
+                new_blob_sha=_working_blob(root, path),
             )
-        key = (row.change_kind, row.old_path or "", row.new_path or "")
-        changes[key] = row
+        changes[(row.change_kind, row.old_path or "", row.new_path or "")] = row
     return tuple(sorted(changes.values(), key=lambda item: item.sort_key()))
 
 
@@ -219,28 +222,39 @@ def _commit_changes(root: Path, previous_commit: str, current_commit: str) -> tu
     for status, path, origin in _diff_records(raw):
         code = status[:1]
         if code == "A":
-            rows.append(RepositoryPathChange(change_kind="ADD", new_path=path, new_blob_sha=_current_blob(root, path)))
+            rows.append(RepositoryPathChange(
+                change_kind="ADD",
+                new_path=path,
+                new_blob_sha=_blob_at(root, current_commit, path),
+            ))
         elif code == "D":
-            rows.append(RepositoryPathChange(change_kind="DELETE", old_path=path))
+            rows.append(RepositoryPathChange(
+                change_kind="DELETE",
+                old_path=path,
+                old_blob_sha=_blob_at(root, previous_commit, path),
+            ))
         elif code in {"R", "C"} and origin is not None:
             rows.append(RepositoryPathChange(
                 change_kind=_change_kind(origin, path),
                 old_path=origin,
                 new_path=path,
-                new_blob_sha=_current_blob(root, path),
-                explicit_identity_anchor="git-path:" + origin,
+                old_blob_sha=_blob_at(root, previous_commit, origin),
+                new_blob_sha=_blob_at(root, current_commit, path),
             ))
         else:
             rows.append(RepositoryPathChange(
                 change_kind="MODIFY",
                 old_path=path,
                 new_path=path,
-                new_blob_sha=_current_blob(root, path),
+                old_blob_sha=_blob_at(root, previous_commit, path),
+                new_blob_sha=_blob_at(root, current_commit, path),
             ))
     return tuple(sorted(rows, key=lambda item: item.sort_key()))
 
 
-def _working_tree_state(records: tuple[tuple[str, str, str, str | None], ...]) -> RepositoryWorkingTreeState:
+def _working_tree_state(
+    records: tuple[tuple[str, str, str, str | None], ...],
+) -> RepositoryWorkingTreeState:
     staged: set[str] = set()
     modified: set[str] = set()
     deleted: set[str] = set()
@@ -266,13 +280,21 @@ def _working_tree_state(records: tuple[tuple[str, str, str, str | None], ...]) -
         staged_paths=tuple(sorted(staged)),
         modified_paths=tuple(sorted(modified)),
         deleted_paths=tuple(sorted(deleted)),
-        renamed_paths=tuple(RepositoryPathRename(old_path=old, new_path=new) for old, new in sorted(renamed)),
+        renamed_paths=tuple(
+            RepositoryPathRename(old_path=old, new_path=new)
+            for old, new in sorted(renamed)
+        ),
         untracked_paths=tuple(sorted(untracked)),
         conflicted_paths=tuple(sorted(conflicted)),
     )
 
 
-def _file_observations(root: Path, changes: Iterable[RepositoryPathChange]) -> tuple[RepositoryFileObservation, ...]:
+def _file_observations(
+    root: Path,
+    changes: Iterable[RepositoryPathChange],
+    *,
+    untracked_paths: frozenset[str],
+) -> tuple[RepositoryFileObservation, ...]:
     paths: dict[str, tuple[bool, str | None]] = {}
     for change in changes:
         if change.old_path is not None and change.change_kind in {"DELETE", "RENAME", "MOVE"}:
@@ -280,16 +302,16 @@ def _file_observations(root: Path, changes: Iterable[RepositoryPathChange]) -> t
         if change.new_path is not None:
             paths[change.new_path] = (True, change.new_blob_sha)
     rows: list[RepositoryFileObservation] = []
-    for path, (exists_hint, blob_sha) in sorted(paths.items()):
+    for path, (exists_hint, historical_blob) in sorted(paths.items()):
         target = root.joinpath(*PurePosixPath(path).parts)
-        exists = target.is_file() if exists_hint else False
-        size = target.stat().st_size if exists else None
+        exists = bool(exists_hint and target.is_file())
+        blob_sha = _working_blob(root, path) if exists else historical_blob
         rows.append(RepositoryFileObservation(
             path=path,
             blob_sha=blob_sha,
-            tracked=path not in set(),
+            tracked=path not in untracked_paths,
             exists=exists,
-            size=size,
+            size=target.stat().st_size if exists else None,
         ))
     return tuple(rows)
 
@@ -325,21 +347,22 @@ class LocalGitRepositoryProvider:
 
     def _revision(self, root: Path, observed_at_ms: int) -> RepositoryRevision:
         head = _decode_line(_run_git(root, ("rev-parse", "--verify", "HEAD")))
-        branch_raw = _run_git(root, ("rev-parse", "--abbrev-ref", "HEAD"))
-        branch_name = _decode_line(branch_raw)
+        branch_name = _decode_line(_run_git(root, ("rev-parse", "--abbrev-ref", "HEAD")))
         detached = branch_name == "HEAD"
-        branch = "detached:" + head[:12] if detached else branch_name
         parent_raw = _run_git(root, ("rev-parse", "--verify", "HEAD^"), allow_failure=True)
-        parent = _decode_line(parent_raw) or None
         return RepositoryRevision(
-            branch=branch,
+            branch="detached:" + head[:12] if detached else branch_name,
             head_commit=head,
-            parent_commit=parent,
+            parent_commit=_decode_line(parent_raw) or None,
             detached_head=detached,
             observed_at_ms=observed_at_ms,
         )
 
-    def _observe(self, identity: RepositoryIdentity, previous_revision: RepositoryRevision | None) -> RepositoryObservation:
+    def _observe(
+        self,
+        identity: RepositoryIdentity,
+        previous_revision: RepositoryRevision | None,
+    ) -> RepositoryObservation:
         root = Path(identity.worktree_root_ref).resolve(strict=False)
         observed_at_ms = time.time_ns() // 1_000_000
         revision = self._revision(root, observed_at_ms)
@@ -347,10 +370,18 @@ class LocalGitRepositoryProvider:
         records = _status_records(status_raw)
         state = _working_tree_state(records)
         overlay = _overlay_changes(root, records)
-        committed = () if previous_revision is None else _commit_changes(root, previous_revision.head_commit, revision.head_commit)
+        committed = (
+            ()
+            if previous_revision is None
+            else _commit_changes(root, previous_revision.head_commit, revision.head_commit)
+        )
         merged = {item.sort_key(): item for item in (*committed, *overlay)}
         changes = tuple(merged[key] for key in sorted(merged))
-        files = _file_observations(root, changes)
+        files = _file_observations(
+            root,
+            changes,
+            untracked_paths=frozenset(state.untracked_paths),
+        )
         return RepositoryObservation.build(
             identity=identity,
             revision=revision,
@@ -363,11 +394,17 @@ class LocalGitRepositoryProvider:
     def observe(self, identity: RepositoryIdentity) -> RepositoryObservation:
         return self._observe(identity, None)
 
-    def observe_delta(self, identity: RepositoryIdentity, previous_revision: RepositoryRevision) -> RepositoryObservation:
+    def observe_delta(
+        self,
+        identity: RepositoryIdentity,
+        previous_revision: RepositoryRevision,
+    ) -> RepositoryObservation:
         return self._observe(identity, previous_revision)
 
 
-def observe_active_repository(provider: LocalGitRepositoryProvider | None = None) -> RepositoryObservation | None:
+def observe_active_repository(
+    provider: LocalGitRepositoryProvider | None = None,
+) -> RepositoryObservation | None:
     """Observe the workspace authority once; no scheduler or watcher is created."""
     sensor = provider or LocalGitRepositoryProvider()
     root = duqu_workspace_root()
@@ -375,7 +412,9 @@ def observe_active_repository(provider: LocalGitRepositoryProvider | None = None
     return None if identity is None else sensor.observe(identity)
 
 
-def publish_active_repository_observation(provider: LocalGitRepositoryProvider | None = None) -> object | None:
+def publish_active_repository_observation(
+    provider: LocalGitRepositoryProvider | None = None,
+) -> object | None:
     """Publish one bounded GIT_CODE reality notification through the native ingress."""
     try:
         observation = observe_active_repository(provider)
@@ -384,7 +423,7 @@ def publish_active_repository_observation(provider: LocalGitRepositoryProvider |
     if observation is None:
         return None
     context = current_run_context()
-    identity = {
+    raw_identity = {
         "life_id": context.life_id,
         "principal_scope_hash": context.principal_scope_hash,
         "workspace_id": context.workspace_id,
@@ -393,6 +432,7 @@ def publish_active_repository_observation(provider: LocalGitRepositoryProvider |
         "session_id": context.session_id,
         "conversation_id": context.conversation_id,
     }
+    identity = {key: str(value) for key, value in raw_identity.items() if value}
     return notify_native_post_commit(NativePostCommitEvent(
         source_kind="GIT_CODE",
         source_native_id="repoobs." + observation.observation_sha256[:48],
