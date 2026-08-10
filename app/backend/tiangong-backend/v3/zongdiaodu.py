@@ -2688,6 +2688,113 @@ def _simple_chain_attachment_paths_from_context(dynamic_context: str) -> list[st
 _SIMPLE_CHAIN_IMAGE_SUFFIXES = {
     ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp",
 }
+_SIMPLE_CHAIN_AUDIO_SUFFIXES = {
+    ".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma",
+}
+
+
+def _simple_chain_audio_attachment_paths(paths: list[str] | None) -> list[str]:
+    return [
+        str(path)
+        for path in (paths or [])
+        if Path(str(path or "").split("?", 1)[0]).suffix.lower() in _SIMPLE_CHAIN_AUDIO_SUFFIXES
+    ]
+
+
+def _simple_chain_requests_audio_semantics(user_message: str, attachment_paths: list[str] | None) -> bool:
+    if not _simple_chain_audio_attachment_paths(attachment_paths):
+        return False
+    compact = re.sub(r"\s+", "", str(user_message or "").lower())
+    semantic_markers = (
+        "总结", "摘要", "萃取", "讲了什么", "说了什么", "内容", "分析", "听一下", "听听",
+        "转写", "转录", "识别", "提取文字", "字幕", "transcribe", "transcript", "summarize",
+        "summary", "whatdoesitsay", "whatisbeingsaid",
+    )
+    return any(marker in compact for marker in semantic_markers)
+
+
+def _simple_chain_native_audio_payload(
+    evidence: dict[str, Any],
+    reply: Any,
+) -> dict[str, Any]:
+    path = str(evidence.get("path") or "")
+    text = str(reply or "").strip()
+    return {
+        "schema": "tiangong.v3.native_audio_observation.v1",
+        "ok": True,
+        "tool_status": "success",
+        "tool_execution_ok": True,
+        "tool_name": "active_model",
+        "tool_action": "model.native_audio_understand",
+        "tool_args": {"target": path},
+        "tool_result_contract": {
+            "schema": "tiangong.v3.tool_result.v1",
+            "tool_name": "active_model",
+            "ok": True,
+            "status": "wancheng",
+            "error": "",
+            "summary": "The active model received the verified audio bytes and returned visible text.",
+            "paths": [path] if path else [],
+            "artifacts": [],
+            "may_mutate": False,
+            "write_effect": False,
+            "observed_write_effect": False,
+            "generated_attachments": [],
+        },
+        "codex_evidence": {
+            "schema": "tiangong.v3.codex_evidence.v1",
+            "actual": {
+                "action": "model.native_audio_understand",
+                "paths": [path] if path else [],
+                "write_effect": False,
+                "semantic_visibility": "visible",
+                "audio_sha256": str(evidence.get("sha256") or ""),
+                "audio_size_bytes": int(evidence.get("size_bytes") or 0),
+                "audio_format": str(evidence.get("format") or ""),
+            },
+            "checks": {"ok": True, "audio_bytes_delivered_to_active_model": True},
+        },
+        "source_text_map": {
+            "schema": "tiangong.v3.source_text_map.v1",
+            "instruction": "Visible text returned by the active model after verified native audio input.",
+            "entries": [{"source": "model_native_audio", "path": path, "text": text}],
+        },
+        "failures": [],
+        "final_requirement_gaps": [],
+        "gaps": [],
+        "generated_attachments": [],
+    }
+
+
+def _simple_chain_has_native_audio_evidence(
+    quality_history: list[dict[str, Any]] | None,
+    attachment_paths: list[str] | None,
+) -> bool:
+    expected = _simple_chain_audio_attachment_paths(attachment_paths)
+    for payload in quality_history or []:
+        if not isinstance(payload, dict) or not bool(payload.get("ok")):
+            continue
+        if str(payload.get("tool_action") or "") != "model.native_audio_understand":
+            continue
+        actual = payload.get("codex_evidence", {}).get("actual", {})
+        if not isinstance(actual, dict) or actual.get("semantic_visibility") != "visible":
+            continue
+        observed = [str(item) for item in actual.get("paths") or []]
+        if not expected or all(_simple_chain_paths_match_expected(observed, [path]) for path in expected):
+            return True
+    return False
+
+
+def _simple_chain_safe_audio_unavailable_reply(candidate: Any) -> str:
+    text = _safe_visible_chat_reply(str(candidate or ""), "").strip()
+    compact = re.sub(r"\s+", "", text.lower())
+    honest_markers = (
+        "没有可用的音频识别功能", "无法识别音频", "不能识别音频", "不支持音频识别",
+        "cannotrecognizeaudio", "audioisnotsupported", "noaudiorecognition",
+    )
+    if text and len(text) <= 600 and any(marker in compact for marker in honest_markers):
+        return text
+    return "当前没有可用的音频识别功能，所以我无法可靠分析这个音频的内容，也不会根据文件名或上下文猜测。"
 
 
 def _simple_chain_with_current_image_observations(dynamic_context: str, user_message: str) -> str:
@@ -3446,7 +3553,7 @@ _SIMPLE_CHAIN_READ_ACTIONS = frozenset(
     {
         "file.read", "file.list", "file.search", "file.hash", "code.read",
         "pptx.read", "skill.route", "skill.get", "skill.read", "skill.list",
-        "system.health", "app.adapter.health",
+        "system.health", "app.adapter.health", "model.native_audio_understand",
     }
 )
 
@@ -5260,7 +5367,10 @@ def _simple_chain_read_coverage_issues(
     for payload in quality_history or []:
         if not isinstance(payload, dict) or not bool(payload.get("ok")):
             continue
-        if str(payload.get("tool_action") or "").lower() != "file.read":
+        if str(payload.get("tool_action") or "").lower() not in {
+            "file.read",
+            "model.native_audio_understand",
+        }:
             continue
         read_paths.extend(_simple_chain_payload_paths(payload))
     missing = [
@@ -5516,8 +5626,17 @@ def _simple_chain_final_hard_gate(
     ``final_reply=None`` 的调用点（重试引导）只豁免 write_effect 硬要求。
     """
     reasons: list[str] = []
-    if not _runtime_detects_work_intent(user_message):
+    audio_semantic_request = _simple_chain_requests_audio_semantics(
+        user_message,
+        required_read_paths,
+    )
+    if not _runtime_detects_work_intent(user_message) and not audio_semantic_request:
         return (not reasons, "incomplete" if reasons else "complete", reasons)
+    if (
+        audio_semantic_request
+        and not _simple_chain_has_native_audio_evidence(quality_history, required_read_paths)
+    ):
+        reasons.append("audio_semantic_evidence_missing")
     integrity_reasons = execution_integrity_blockers(
         user_message, quality_history, final_reply=final_reply
     )
@@ -6643,8 +6762,8 @@ class Zongdiaodu:
                 if self.http_kehuduan is not None:
                     with self.http_kehuduan.scoped_tools(
                         allowed_tool_names=allowed_tool_names,
-                        disable_tools=response_only_without_tools,
-                    ):
+                        disable_tools=response_only_without_tools or bool(native_audio_paths),
+                    ), self.http_kehuduan.scoped_native_audio(native_audio_paths):
                         return self.gutong.huanxing(
                             system_tishi,
                             cache_stable_user_message,
@@ -6785,6 +6904,11 @@ class Zongdiaodu:
         generated_media: list[dict[str, str]] = []
         generated_attachments: list[dict[str, str]] = []
         required_read_paths = _simple_chain_attachment_paths_from_context(dynamic_context)
+        native_audio_paths = (
+            _simple_chain_audio_attachment_paths(required_read_paths)
+            if _simple_chain_requests_audio_semantics(xiaoxi, required_read_paths)
+            else []
+        )
         mutation_success_seen = False
         last_quality_payload: dict[str, Any] | None = None
         quality_history: list[dict[str, Any]] = []
@@ -6901,8 +7025,11 @@ class Zongdiaodu:
             run_control.step("llm_call", "model thinking", "running", "First turn with tools enabled.")
             _check_stop("stopped before model call")
         initial_llm_failed = False
+        audio_semantic_unavailable = False
         try:
-            shenti, huifu = _llm_huanxing_scoped(on_chunk=_on_text_chunk)
+            shenti, huifu = _llm_huanxing_scoped(
+                on_chunk=None if native_audio_paths else _on_text_chunk
+            )
         except Exception as exc:
             # 终局模型失败显式化（对抗测试 P1-1）：初始唤醒失败同样归一 force_stopped。
             initial_llm_failed = True
@@ -6921,12 +7048,66 @@ class Zongdiaodu:
                     meta={"error_type": "terminal_model_error"},
                 )
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "cuowu", str(exc)[:500])
+        if native_audio_paths and not initial_llm_failed:
+            native_audio_evidence = getattr(huifu, "native_audio_evidence", None)
+            semantic_visibility = str(
+                native_audio_evidence.get("semantic_visibility")
+                if isinstance(native_audio_evidence, dict)
+                else ""
+            )
+            if semantic_visibility == "visible":
+                native_payload = _simple_chain_native_audio_payload(native_audio_evidence, huifu)
+                quality_history.append(native_payload)
+                last_quality_payload = native_payload
+                _simple_chain_record_observation(run_state, native_payload)
+                if run_control:
+                    run_control.step(
+                        "native_audio_understanding",
+                        "Active model audio understanding",
+                        "done",
+                        "The active model received verified audio bytes and returned visible text.",
+                        meta={
+                            "schema": "tiangong.v3.native_audio_receipt.v1",
+                            "sha256": str(native_audio_evidence.get("sha256") or ""),
+                            "size_bytes": int(native_audio_evidence.get("size_bytes") or 0),
+                            "format": str(native_audio_evidence.get("format") or ""),
+                        },
+                    )
+            else:
+                closeout_payload = {
+                    "schema": "tiangong.v3.audio_capability_unavailable.v1",
+                    "fact": "The active model did not provide verified native audio understanding.",
+                    "response_requirement": (
+                        "Reply briefly that there is currently no available audio recognition capability, "
+                        "so the attachment cannot be analyzed reliably. Do not infer or summarize its content."
+                    ),
+                }
+                try:
+                    shenti, candidate = _llm_closeout_scoped(closeout_payload, on_chunk=None)
+                except Exception:
+                    candidate = ""
+                huifu = _simple_chain_safe_audio_unavailable_reply(candidate)
+                audio_semantic_unavailable = True
+                final_guard_exhausted = True
+                final_chain_status = "incomplete"
+                if isinstance(run_state, dict):
+                    run_state["terminal_reason"] = "audio_recognition_unavailable"
+                    run_state["final_reasons"] = ["audio_semantic_evidence_missing"]
+                    _simple_chain_save_run_state(run_state)
+                if run_control:
+                    run_control.step(
+                        "native_audio_understanding",
+                        "Active model audio understanding",
+                        "incomplete",
+                        "No verified native audio understanding was available; content inference was blocked.",
+                        meta={"terminal_reason": "audio_recognition_unavailable"},
+                    )
         if run_control and not initial_llm_failed:
             run_control.step("llm_call", "model thinking", "done", _llm_reply_progress_summary(huifu))
             _check_stop("stopped after model reply")
 
         while True:
-            if initial_llm_failed:
+            if initial_llm_failed or audio_semantic_unavailable:
                 break
             iteration_count += 1
             if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
