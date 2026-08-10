@@ -133,7 +133,11 @@ class WorldStateMaterializer:
         cut_ref=_cut_ref(data.cut)
         state_id="wst_"+canonical_sha256({"domain":"tiangong.world.state-id.v1","world_scope_hash":scope.world_scope_hash,"world_cut_ref":cut_ref.model_dump(mode="json"),"world_sequence":sequence,"source_transaction_id":data.source_transaction_id})
         state=WorldState(world_state_id=state_id,scope=scope,frame_ref=_frame_ref(data.frame),world_cut_ref=cut_ref,world_sequence=sequence,observation_cutoff_ref=None,entity_head_manifest_ref=entity_manifest.ref,relation_head_manifest_ref=relation_manifest.ref,cognition_head_manifest_ref=None if cognition_manifest is None else cognition_manifest.ref,active_hypothesis_manifest_ref=None if hypothesis_manifest is None else hypothesis_manifest.ref,delta_manifest_ref=delta.ref,unresolved_conflict_refs=conflicts,stale_refs=stale,materialized_at_ms=data.materialized_at_ms,source_transaction_id=data.source_transaction_id,state_sha256="0"*64).with_computed_hash()
-        snapshot=MaterializedWorldSnapshot(state,data.cut,entity_manifest,relation_manifest,cognition_manifest,hypothesis_manifest,uncertainty_manifest,dependencies,delta,data.frame.frame_id)
+        snapshot=MaterializedWorldSnapshot(
+            state,data.cut,entity_manifest,relation_manifest,cognition_manifest,
+            hypothesis_manifest,uncertainty_manifest,dependencies,delta,data.frame.frame_id,
+            tuple(data.graph.entities()),tuple(data.graph.relations()),
+        )
         return self.store.publish(snapshot)
 
 __all__=["WorldStateMaterializerConfig","MaterializationInput","WorldStateMaterializer"]

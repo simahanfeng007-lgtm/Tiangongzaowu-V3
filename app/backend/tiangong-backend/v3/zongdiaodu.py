@@ -75,6 +75,9 @@ from .tool_result_contract import (
     tool_result_status,
     tool_result_write_effect,
 )
+from .world_understanding_production import install_world_understanding_observer
+
+install_world_understanding_observer()
 
 from .execution_integrity import (
     build_action_obligations,
@@ -1937,18 +1940,41 @@ def _tool_dispatch_with_result(meta: dict[str, Any] | None, result: Any) -> dict
     return output
 
 
-def _tool_result_with_contract(tool_name: str, result: Any) -> Any:
+def _tool_result_with_contract(
+    tool_name: str,
+    result: Any,
+    *,
+    source_native_id: str = "",
+) -> Any:
     contract = normalize_tool_result(tool_name, result)
     if isinstance(result, dict):
         output = dict(result)
         output.setdefault("tool_result_contract", contract)
-        return output
-    return {
-        "ok": bool(contract.get("ok")),
-        "zhuangtai": str(contract.get("status") or ""),
-        "value": result,
-        "tool_result_contract": contract,
-    }
+    else:
+        output = {
+            "ok": bool(contract.get("ok")),
+            "zhuangtai": str(contract.get("status") or ""),
+            "value": result,
+            "tool_result_contract": contract,
+        }
+    native_id = str(source_native_id or "").strip() or (
+        "tool.result." + hashlib.sha256(json.dumps(
+            {"tool_name": tool_name, "contract": contract},
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")).hexdigest()[:32]
+    )
+    from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+    notify_native_post_commit(NativePostCommitEvent(
+        source_kind="TOOL_RESULT",
+        source_native_id=native_id,
+        producer_ref="v3.tool_result_contract",
+        payload={"tool_name": str(tool_name or ""), **contract},
+        occurred_at_ms=int(time.time() * 1000),
+    ))
+    return output
 
 
 def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
@@ -7502,7 +7528,7 @@ class Zongdiaodu:
                         raw = self._jineng_zhixing(tn, ta, xiaoxi, call_id=call_id)
                     except Exception as exc:
                         raw = {"ok": False, "error": str(exc)}
-                    raw = _tool_result_with_contract(tn, raw)
+                    raw = _tool_result_with_contract(tn, raw, source_native_id=call_id)
                     return tn, ta, raw, call_id, call_index
 
                 if ordered_batch:
@@ -8341,7 +8367,11 @@ class Zongdiaodu:
                     break
             finally:
                 _tool_executor.shutdown(wait=False, cancel_futures=True)
-            gongju_jieguo = _tool_result_with_contract(tool_name, gongju_jieguo)
+            gongju_jieguo = _tool_result_with_contract(
+                tool_name,
+                gongju_jieguo,
+                source_native_id=tool_call_id,
+            )
             if _gongju_jieguo_xuyao_queren(gongju_jieguo):
                 # 确认通道：暂停本轮，等用户在确认卡片中决定；批准后前端会重放原指令
                 if on_event:
@@ -9315,7 +9345,11 @@ class Zongdiaodu:
                         "confirm_id": str(gongju_jieguo.get("confirm_id") or ""),
                         "cuowu": "[confirm_required_autonomous] 该操作需要用户在场确认，自主任务边界内不允许执行",
                     }
-                gongju_jieguo = _tool_result_with_contract(tool_name, gongju_jieguo)
+                gongju_jieguo = _tool_result_with_contract(
+                    tool_name,
+                    gongju_jieguo,
+                    source_native_id=f"{zhuizong_id}.{gongju_cishu}",
+                )
                 QUANZHUIXIAN.jilu_kuadu(
                     zhuizong_id,
                     f"zizhu_gongju_{tool_name}_jieguo",

@@ -394,6 +394,27 @@ class FactExecutionKernel:
             self._append_event({"fact_transaction": transaction})
             if normalized_key:
                 self._atomic_json(self._idempotency_path(normalized_key), record)
+            from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+            notify_native_post_commit(NativePostCommitEvent(
+                source_kind="FACT_EXECUTION",
+                source_native_id=operation_id,
+                producer_ref="v3.fact_kernel",
+                payload={
+                    "fact_transaction": transaction,
+                    "result": {
+                        "success": success,
+                        "status": str(result.get("status") or transaction["state"]),
+                        "result_sha256": transaction["result_sha256"],
+                    },
+                },
+                occurred_at_ms=completed_at_ms,
+                identity={
+                    "run_id": self.run_id,
+                    "request_id": self.request_id,
+                    "session_id": self.session_id,
+                },
+            ))
             if error is not None and isinstance(error, (KeyboardInterrupt, SystemExit)):
                 raise error
             return returned

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Callable, Protocol
 from contracts.world_understanding.ingress import WorldIngressEnvelope
+from contracts.world_understanding.known import DirectKnownRecord
 from .compiler_boundary import validate_compiler_output
 from .compiler_registry import CompilerRegistry
 from .receipt import IngressReceipt,make_receipt
@@ -10,10 +11,20 @@ class _ContextDisposition(Protocol):
     reason_code: str
     processed: bool
 
+class _SourceDisposition(Protocol):
+    reason_code: str
+    processed: bool
+
 class IngressRouter:
-    def __init__(self,registry:CompilerRegistry,context_request_handler:Callable[[WorldIngressEnvelope],_ContextDisposition]|None=None)->None:
+    def __init__(
+        self,
+        registry: CompilerRegistry,
+        context_request_handler: Callable[[WorldIngressEnvelope], _ContextDisposition] | None = None,
+        source_handler: Callable[[WorldIngressEnvelope, tuple[DirectKnownRecord, ...]], _SourceDisposition] | None = None,
+    ) -> None:
         self._registry=registry
         self._context_request_handler=context_request_handler
+        self._source_handler=source_handler
     def route(self,envelope:WorldIngressEnvelope)->IngressReceipt:
         if envelope.envelope_kind=="CONTEXT_REQUEST":
             if self._context_request_handler is None:
@@ -33,6 +44,16 @@ class IngressRouter:
         compiler=self._registry.resolve(envelope.source_kind)
         if compiler is None:
             return make_receipt(envelope_id=envelope.envelope_id,dedup_key=envelope.dedup_key,correlation_id=envelope.correlation_id,disposition="QUARANTINED",reason_code="NO_COMPILER_REGISTERED",processed=False)
-        validate_compiler_output(envelope,compiler(envelope))
-        return make_receipt(envelope_id=envelope.envelope_id,dedup_key=envelope.dedup_key,correlation_id=envelope.correlation_id,disposition="ACCEPTED",reason_code="SOURCE_ACCEPTED",processed=True)
+        rows=validate_compiler_output(envelope,compiler(envelope))
+        if self._source_handler is None:
+            return make_receipt(envelope_id=envelope.envelope_id,dedup_key=envelope.dedup_key,correlation_id=envelope.correlation_id,disposition="ACCEPTED",reason_code="SOURCE_ACCEPTED",processed=True)
+        outcome=self._source_handler(envelope,rows)
+        return make_receipt(
+            envelope_id=envelope.envelope_id,
+            dedup_key=envelope.dedup_key,
+            correlation_id=envelope.correlation_id,
+            disposition="ACCEPTED",
+            reason_code=str(outcome.reason_code),
+            processed=bool(outcome.processed),
+        )
 __all__=["IngressRouter"]

@@ -4976,6 +4976,36 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["memories"].pop(memory_id, None)
             raise
+        from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+        notify_native_post_commit(NativePostCommitEvent(
+            source_kind="MEMORY",
+            source_native_id=contract_memory_id,
+            producer_ref="life_service.memory",
+            payload={
+                "memory_id": contract_memory_id,
+                "memory_change_seq": change_seq,
+                "memory_type": memory_type,
+                "epistemic_status": epistemic_status,
+                "confidence_milli": confidence_milli,
+                "status": "active",
+                "content_sha256": canonical_sha256(content),
+            },
+            occurred_at_ms=int(time.time() * 1000),
+            identity={
+                key: str(payload.get(key) or "")
+                for key in (
+                    "life_id",
+                    "principal_scope_hash",
+                    "workspace_id",
+                    "run_id",
+                    "request_id",
+                    "session_id",
+                    "conversation_id",
+                )
+                if payload.get(key)
+            },
+        ))
         return {
             "ok": True,
             "duplicate": False,

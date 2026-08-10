@@ -32,6 +32,15 @@ class ToolResultCompiler(DeterministicSourceCompiler):
         if envelope.source_kind!="TOOL_RESULT": raise ValueError("compiler source_kind mismatch")
         payload=envelope.payload_inline or {}
         rows=[make_direct_known(envelope,self.spec)]
+        tool_name=str(payload.get("tool_name") or payload.get("toolName") or "").strip()
+        if tool_name:
+            rows.append(make_direct_known(
+                envelope,self.spec,
+                proposition_type="TOOL_IDENTITY",
+                predicate="tool.identity",
+                subject_ref="tool:"+tool_name,
+                object_text=tool_name,
+            ))
         evidence=payload.get("write_evidence")
         if payload.get("observed_write_effect") is True and isinstance(evidence,dict) and evidence.get("authoritative") is True:
             changed=tuple(str(x).strip() for x in (evidence.get("changed_files") or ()) if str(x).strip())
@@ -43,6 +52,49 @@ class ToolResultCompiler(DeterministicSourceCompiler):
         elif payload.get("write_effect") is True:
             rows.append(make_direct_known(envelope,self.spec,proposition_type="TOOL_WRITE_DECLARED",predicate="tool.write_declared",object_text=payload_text(payload,envelope.payload_sha256),authority_ceiling_milli=0,empirical_evidence_weight_milli=0))
         return tuple(rows)
+
+class FactExecutionCompiler(DeterministicSourceCompiler):
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="FACT_EXECUTION": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline or {}
+        transaction=payload.get("fact_transaction") if isinstance(payload.get("fact_transaction"),dict) else {}
+        action=str(transaction.get("action") or payload.get("action") or "").strip()
+        rows=[make_direct_known(envelope,self.spec)]
+        if action:
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="TOOL_IDENTITY",predicate="execution.action_identity",subject_ref="action:"+action,object_text=action))
+        return tuple(rows)
+
+class RuntimeEnvironmentCompiler(DeterministicSourceCompiler):
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="RUNTIME_ENVIRONMENT": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline or {}
+        machine=str(payload.get("machine") or "runtime").strip()
+        return (
+            make_direct_known(envelope,self.spec),
+            make_direct_known(envelope,self.spec,proposition_type="RUNTIME_IDENTITY",predicate="runtime.identity",subject_ref="runtime:"+machine,object_text=machine),
+        )
+
+class KnowledgeCompiler(DeterministicSourceCompiler):
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="KNOWLEDGE": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline or {}
+        document_id=str(payload.get("document_id") or envelope.source_native_id)
+        metadata=payload.get("metadata") if isinstance(payload.get("metadata"),dict) else {}
+        name=str(metadata.get("file_name") or document_id)
+        return (
+            make_direct_known(envelope,self.spec),
+            make_direct_known(envelope,self.spec,proposition_type="KNOWLEDGE_DOCUMENT_IDENTITY",predicate="knowledge.document_identity",subject_ref=document_id,object_text=name),
+        )
+
+class MemoryCompiler(DeterministicSourceCompiler):
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="MEMORY": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline or {}
+        memory_id=str(payload.get("memory_id") or envelope.source_native_id)
+        return (
+            make_direct_known(envelope,self.spec),
+            make_direct_known(envelope,self.spec,proposition_type="MEMORY_STORE_IDENTITY",predicate="memory.store_identity",subject_ref=memory_id,object_text=str(payload.get("memory_type") or "memory")),
+        )
 
 class FilesystemEvidenceCompiler(DeterministicSourceCompiler):
     def __call__(self,envelope:WorldIngressEnvelope):
@@ -66,8 +118,12 @@ class ChainEventCompiler(DeterministicSourceCompiler):
 def build_p3_compilers()->dict[str,object]:
     compilers={kind:DeterministicSourceCompiler(spec) for kind,spec in SPECS.items()}
     compilers["TOOL_RESULT"]=ToolResultCompiler(SPECS["TOOL_RESULT"])
+    compilers["FACT_EXECUTION"]=FactExecutionCompiler(SPECS["FACT_EXECUTION"])
+    compilers["RUNTIME_ENVIRONMENT"]=RuntimeEnvironmentCompiler(SPECS["RUNTIME_ENVIRONMENT"])
+    compilers["KNOWLEDGE"]=KnowledgeCompiler(SPECS["KNOWLEDGE"])
+    compilers["MEMORY"]=MemoryCompiler(SPECS["MEMORY"])
     compilers["FILESYSTEM"]=FilesystemEvidenceCompiler(SPECS["FILESYSTEM"])
     compilers["CHAIN_EVENT"]=ChainEventCompiler(SPECS["CHAIN_EVENT"])
     return compilers
 
-__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FilesystemEvidenceCompiler","ChainEventCompiler"]
+__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","ChainEventCompiler"]

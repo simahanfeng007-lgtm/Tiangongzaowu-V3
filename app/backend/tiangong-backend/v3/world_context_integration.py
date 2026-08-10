@@ -28,11 +28,18 @@ from .context_compactor import estimate_tokens
 
 _log = logging.getLogger("tiangong.world_context")
 _ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
+_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
 _DEFAULT_TOKEN_BUDGET = 2400
 
 
 def world_understanding_enabled() -> bool:
-    return os.environ.get("TIANGONG_WORLD_UNDERSTANDING_ENABLED", "0").strip().lower() in _ENABLED_VALUES
+    value = os.environ.get("TIANGONG_WORLD_UNDERSTANDING_ENABLED")
+    if value is None or not value.strip():
+        return True
+    normalized = value.strip().lower()
+    if normalized in _DISABLED_VALUES:
+        return False
+    return normalized in _ENABLED_VALUES
 
 
 def _bounded_token_budget() -> int:
@@ -54,17 +61,32 @@ def _state_root() -> Path:
 class WorldContextIntegration:
     """Synchronous, fail-open context consumer over the canonical WU ingress."""
 
-    def __init__(self, *, store: WorldStateStore, token_budget: int = _DEFAULT_TOKEN_BUDGET) -> None:
+    def __init__(
+        self,
+        *,
+        store: WorldStateStore,
+        token_budget: int = _DEFAULT_TOKEN_BUDGET,
+        facade: WorldUnderstandingFacade | None = None,
+        output_port: ContextOutputPort | None = None,
+    ) -> None:
         self.store = store
         self.token_budget = max(128, min(1_000_000, int(token_budget)))
-        self.output_port = ContextOutputPort(max_pending=256)
-        self.projector = WorldContextProjector(token_estimator=estimate_tokens)
-        self.handler = WorldContextRequestHandler(
-            state_resolver=self._resolve_state,
-            projector=self.projector,
-            output_port=self.output_port,
-        )
-        self.facade = WorldUnderstandingFacade(enabled=True, context_request_handler=self.handler)
+        if (facade is None) != (output_port is None):
+            raise ValueError("WORLD_CONTEXT_SHARED_RUNTIME_BINDING_INCOMPLETE")
+        if facade is not None and output_port is not None:
+            self.output_port = output_port
+            self.projector = None
+            self.handler = None
+            self.facade = facade
+        else:
+            self.output_port = ContextOutputPort(max_pending=256)
+            self.projector = WorldContextProjector(token_estimator=estimate_tokens)
+            self.handler = WorldContextRequestHandler(
+                state_resolver=self._resolve_state,
+                projector=self.projector,
+                output_port=self.output_port,
+            )
+            self.facade = WorldUnderstandingFacade(enabled=True, context_request_handler=self.handler)
 
     def _resolve_state(self, query: WorldQuery) -> MaterializedWorldSnapshot | None:
         basis = query.basis_world_state_ref
@@ -159,11 +181,16 @@ def _runtime_instance() -> WorldContextIntegration:
         return _runtime
     with _runtime_lock:
         if _runtime is None:
-            # WorldStateStore construction only reads an existing index. It does not
-            # create the root; P9 guarantees directories appear only on publish.
+            from .world_understanding_production import (
+                production_context_output_port,
+                production_world_understanding_runtime,
+            )
+            production = production_world_understanding_runtime()
             _runtime = WorldContextIntegration(
-                store=WorldStateStore(root=_state_root()),
+                store=production.store,
                 token_budget=_bounded_token_budget(),
+                facade=production.facade,
+                output_port=production_context_output_port(),
             )
         return _runtime
 

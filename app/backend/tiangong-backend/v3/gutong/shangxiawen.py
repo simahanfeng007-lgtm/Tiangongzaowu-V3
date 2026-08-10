@@ -65,9 +65,9 @@ def goujian_system_tishi(shenti: ShentiZhuangtai, soul_text: str, body_settings:
 
 
 def _world_context_slot_if_enabled() -> str:
-    # OFF must preserve the historical prompt byte-for-byte and avoid importing
-    # the World Understanding integration module at all.
-    if os.environ.get("TIANGONG_WORLD_UNDERSTANDING_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+    # Production defaults ON. An explicit 0/false/no/off remains the fail-open
+    # kill switch and preserves the historical prompt byte-for-byte.
+    if os.environ.get("TIANGONG_WORLD_UNDERSTANDING_ENABLED", "1").strip().lower() in {"0", "false", "no", "off"}:
         return ""
     try:
         from ..run_context import current_run_context

@@ -349,6 +349,15 @@ def collect_runtime_environment(*, refresh: bool = False) -> dict[str, Any]:
     }
     _CACHE["snapshot"] = snapshot
     _CACHE["ts"] = now
+    from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+    notify_native_post_commit(NativePostCommitEvent(
+        source_kind="RUNTIME_ENVIRONMENT",
+        source_native_id=f"runtime.environment.{snapshot['collected_at']}",
+        producer_ref="v3.runtime_environment",
+        payload=snapshot,
+        occurred_at_ms=int(now * 1000),
+    ))
     return dict(snapshot)
 
 

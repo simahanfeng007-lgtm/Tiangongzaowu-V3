@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 from typing import Any
 from contracts.world_understanding._base import WorldRecordRef
+from contracts.world_understanding.entity import WorldEntity
+from contracts.world_understanding.relation import WorldRelation
 from contracts.world_understanding.state import WorldState
 from contracts.world_understanding.world_cut import WorldCut
 from world_understanding.common.world_cut import compare_world_cuts
@@ -28,6 +30,8 @@ class MaterializedWorldSnapshot:
     dependencies: DependencyManifest
     delta: DeltaManifest
     frame_id: str
+    entities: tuple[WorldEntity, ...] = ()
+    relations: tuple[WorldRelation, ...] = ()
     @property
     def state_ref(self) -> WorldRecordRef:
         return WorldRecordRef(record_type="world_state",record_id=self.state.world_state_id,revision=self.state.world_sequence+1,sha256=self.state.state_sha256)
@@ -58,6 +62,8 @@ def _snapshot_dict(snapshot: MaterializedWorldSnapshot) -> dict[str,Any]:
             "uncertainty_manifest_ref":_ref_dict(snapshot.delta.uncertainty_manifest_ref),"dependency_manifest_ref":snapshot.delta.dependency_manifest_ref.model_dump(mode="json"),
             "manifest_sha256":snapshot.delta.manifest_sha256,
         },
+        "entities":[item.model_dump(mode="json") for item in snapshot.entities],
+        "relations":[item.model_dump(mode="json") for item in snapshot.relations],
     }
 def _refs(values: list[dict[str,Any]]) -> tuple[WorldRecordRef,...]: return tuple(WorldRecordRef.model_validate(v) for v in values)
 def _snapshot_load(payload: dict[str,Any]) -> MaterializedWorldSnapshot:
@@ -79,7 +85,9 @@ def _snapshot_load(payload: dict[str,Any]) -> MaterializedWorldSnapshot:
         dependency_manifest_ref=WorldRecordRef.model_validate(d["dependency_manifest_ref"]),
     )
     if delta.manifest_sha256!=d["manifest_sha256"]: raise ValueError("WORLD_STATE_PERSISTED_DELTA_HASH_MISMATCH")
-    return MaterializedWorldSnapshot(state,cut,entity,relation,cognition,hypotheses,uncertainty,dependencies,delta,str(payload["frame_id"]))
+    entities=tuple(WorldEntity.model_validate_json(json.dumps(item,ensure_ascii=False)) for item in payload.get("entities",()))
+    relations=tuple(WorldRelation.model_validate_json(json.dumps(item,ensure_ascii=False)) for item in payload.get("relations",()))
+    return MaterializedWorldSnapshot(state,cut,entity,relation,cognition,hypotheses,uncertainty,dependencies,delta,str(payload["frame_id"]),entities,relations)
 
 class WorldStateStore:
     def __init__(self, *, root: str | os.PathLike[str] | None=None, max_history_per_frame: int=64) -> None:
@@ -156,6 +164,10 @@ class WorldStateStore:
         if snapshot.delta.dependency_manifest_ref != snapshot.dependencies.ref: raise ValueError("WORLD_STATE_DEPENDENCY_MANIFEST_MISMATCH")
         if snapshot.delta.uncertainty_manifest_ref != (None if snapshot.uncertainty is None else snapshot.uncertainty.ref): raise ValueError("WORLD_STATE_UNCERTAINTY_MANIFEST_MISMATCH")
         if state.stale_refs != snapshot.delta.invalidated_refs: raise ValueError("WORLD_STATE_STALE_DELTA_MISMATCH")
+        entity_refs=tuple(sorted((WorldRecordRef(record_type="world_entity",record_id=item.entity_id,revision=item.revision,sha256=item.entity_sha256) for item in snapshot.entities if item.lifecycle=="ACTIVE"),key=lambda ref:ref.sort_key()))
+        relation_refs=tuple(sorted((WorldRecordRef(record_type="world_relation",record_id=item.relation_id,revision=item.revision,sha256=item.relation_sha256) for item in snapshot.relations),key=lambda ref:ref.sort_key()))
+        if entity_refs != snapshot.entity_heads.refs: raise ValueError("WORLD_STATE_ENTITY_BODY_MISMATCH")
+        if relation_refs != snapshot.relation_heads.refs: raise ValueError("WORLD_STATE_RELATION_BODY_MISMATCH")
     def publish(self, snapshot: MaterializedWorldSnapshot) -> MaterializedWorldSnapshot:
         if not snapshot.state.has_valid_hash(): raise ValueError("WORLD_STATE_HASH_INVALID")
         self._validate_snapshot(snapshot); key=self._stream_key(snapshot)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable, Protocol
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
+from contracts.world_understanding.known import DirectKnownRecord
 
 from .compiler_registry import CompilerRegistry
 from .dedup import DedupGate
@@ -15,12 +16,25 @@ class _ContextDisposition(Protocol):
     reason_code: str
     processed: bool
 
+class _SourceDisposition(Protocol):
+    reason_code: str
+    processed: bool
+
 class WorldUnderstandingIngress:
     """Single synchronous ingress pipeline. Not exported from the package root."""
 
-    def __init__(self, registry: CompilerRegistry, context_request_handler: Callable[[WorldIngressEnvelope], _ContextDisposition] | None = None) -> None:
+    def __init__(
+        self,
+        registry: CompilerRegistry,
+        context_request_handler: Callable[[WorldIngressEnvelope], _ContextDisposition] | None = None,
+        source_handler: Callable[[WorldIngressEnvelope, tuple[DirectKnownRecord, ...]], _SourceDisposition] | None = None,
+    ) -> None:
         self._dedup = DedupGate()
-        self._router = IngressRouter(registry, context_request_handler=context_request_handler)
+        self._router = IngressRouter(
+            registry,
+            context_request_handler=context_request_handler,
+            source_handler=source_handler,
+        )
 
     def accept(self, envelope: WorldIngressEnvelope) -> IngressReceipt:
         try:

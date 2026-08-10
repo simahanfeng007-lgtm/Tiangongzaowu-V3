@@ -623,7 +623,17 @@ def _import_one(root: Path, path: Path, payload: dict[str, Any] | None = None, *
     documents[document_id] = _public_doc(ctx)
     index["last_document_id"] = document_id
     _save_index(root, index)
-    return _public_doc(ctx)
+    public_document = _public_doc(ctx)
+    from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+    notify_native_post_commit(NativePostCommitEvent(
+        source_kind="KNOWLEDGE",
+        source_native_id=document_id,
+        producer_ref="v3.knowledge_store",
+        payload=public_document,
+        occurred_at_ms=int(time.time() * 1000),
+    ))
+    return public_document
 
 
 def _coerce_paths(payload: dict[str, Any]) -> list[Path]:
