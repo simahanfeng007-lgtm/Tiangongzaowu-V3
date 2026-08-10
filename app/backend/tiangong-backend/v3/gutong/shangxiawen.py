@@ -2,6 +2,8 @@
 天工造物 v3：起源 — 上下文桥接
 身体状态 → LLM 可读的自然语言
 """
+import os
+
 from ..shenti_zhuangtai import ShentiZhuangtai
 
 
@@ -62,17 +64,40 @@ def goujian_system_tishi(shenti: ShentiZhuangtai, soul_text: str, body_settings:
     return "\n".join(neirong)
 
 
+def _world_context_slot_if_enabled() -> str:
+    # OFF must preserve the historical prompt byte-for-byte and avoid importing
+    # the World Understanding integration module at all.
+    if os.environ.get("TIANGONG_WORLD_UNDERSTANDING_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        return ""
+    try:
+        from ..run_context import current_run_context
+        from ..world_context_integration import render_world_context_slot_for_turn
+        context = current_run_context()
+        if not context.request_id or not context.life_id or not context.current_user_text:
+            return ""
+        return render_world_context_slot_for_turn(
+            run_context=context,
+            user_text=context.current_user_text,
+        )
+    except Exception:
+        # WORLD_CONTEXT_SLOT is optional/context-only; no projection failure may
+        # break the existing V3 prompt or execution path.
+        return ""
+
+
 def goujian_shenti_tishi(
     shenti: ShentiZhuangtai,
     *,
     include_legacy_affect: bool = True,
 ) -> str:
-    """构建每轮变化的身体状态提示。"""
-    return _ganzhi_shenti(shenti, include_legacy_affect=include_legacy_affect)
+    """构建每轮变化的身体状态提示，并在授权之后附加独立世界上下文槽。"""
+    body = _ganzhi_shenti(shenti, include_legacy_affect=include_legacy_affect)
+    slot = _world_context_slot_if_enabled()
+    return body if not slot else body + "\n\n" + slot
 
 
 def goujian_yonghu_tishi(shenti: ShentiZhuangtai, xiaoxi: str) -> str:
-    """构建用户消息"""
+    """构建用户消息。WORLD_CONTEXT_SLOT 永远不进入这里。"""
     return xiaoxi
 
 
@@ -85,9 +110,9 @@ def _ganzhi_shenti(
     qinggan = shenti.qinggan
     qudong = shenti.qudong
     chenmo = shenti.chenmo_shichang_miao
-    
+
     parts = ["[身体感受]"]
-    
+
     # 时间感
     if chenmo > 0:
         fenzhong = int(chenmo / 60)
@@ -96,7 +121,7 @@ def _ganzhi_shenti(
             parts.append(f"你已经沉默了{fenzhong}分{miao}秒。")
         else:
             parts.append(f"你刚醒来{chenmo:.0f}秒。")
-    
+
     if include_legacy_affect:
         # Compatibility only.  When the authoritative Life context is present,
         # zongdiaodu disables this detached projection so it cannot contradict
@@ -124,5 +149,5 @@ def _ganzhi_shenti(
             parts.append("你感到精力充沛。")
         else:
             parts.append("你的状态平稳。")
-    
+
     return "\n".join(parts)

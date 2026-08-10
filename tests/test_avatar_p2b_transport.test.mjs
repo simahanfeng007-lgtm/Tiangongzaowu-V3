@@ -39,15 +39,21 @@ const flush = async (rounds = 8) => {
 
 // gate 全量排空：宿主 EOF/final 可能在异步读盘完成后才入队，
 // 循环"排空 → 让出事件轮 → 再查"，直到队列稳定为空。
-async function drainGateFully(gate, rounds = 50) {
-  for (let i = 0; i < rounds; i += 1) {
+async function drainGateFully(gate, { isSettled = null, timeoutMs = 2_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     gate.drainAll();
     await new Promise((resolve) => setImmediate(resolve));
+    if (typeof isSettled === "function") {
+      if (isSettled() && gate.pending === 0) return;
+      continue;
+    }
     if (gate.pending === 0) {
       await new Promise((resolve) => setImmediate(resolve));
       if (gate.pending === 0) return;
     }
   }
+  throw new Error(`gate 未在 ${timeoutMs}ms 内完成排空`);
 }
 
 // 等待 gate 积累至少 count 条消息（宿主的 open/stat/read 是异步 I/O，
@@ -587,7 +593,9 @@ test("背压：高水位后宿主暂停发送，renderer 排空后恢复", async
   await waitForGate(gate, 2);
   assert.equal(controllers[0].stats().chunksSent, 3, "排空一块补发一块");
   assert.equal(gate.pending, 2);
-  await drainGateFully(gate);
+  await drainGateFully(gate, {
+    isSettled: () => controllers[0].stats().state === "final",
+  });
   const buffer = await stream.done;
   assert.deepEqual(new Uint8Array(buffer), new Uint8Array(modelBytes));
 });

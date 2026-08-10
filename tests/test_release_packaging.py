@@ -41,13 +41,18 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertIn("verifyPackagedWindowsRelease", release)
         self.assertIn("finalizeWindowsStage", release)
         self.assertIn("dead frontend module leaked into app.asar", release)
+        self.assertIn("verifyFrontendModuleClosure", release)
+        closure_verifier = (
+            ROOT / "scripts/verify-frontend-module-closure.mjs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("packaged frontend module dependency is missing", closure_verifier)
         for excluded in (
             '"!frontend-v2/renderer/plugins/persona-panel.mjs"',
-            '"!frontend-v2/renderer/plugins/lifecycle-panel.mjs"',
             '"!frontend-v2/renderer/plugins/lifecycle-side-block.mjs"',
             '"!assets/avatars/imported/*.vrm"',
         ):
             self.assertIn(excluded, config)
+        self.assertNotIn('"!frontend-v2/renderer/plugins/lifecycle-panel.mjs"', config)
         self.assertIn(
             'from: path.join(appRoot, "node_modules", "three", "examples", "jsm")',
             config,

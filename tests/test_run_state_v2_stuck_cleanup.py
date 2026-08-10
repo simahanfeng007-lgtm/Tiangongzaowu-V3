@@ -228,32 +228,24 @@ class CleanupStaleRunStateTests(unittest.TestCase):
             self.assertTrue((root / "new.json").exists())
 
 
-class ContinueDecisionResetSemanticsTests(unittest.TestCase):
-    def test_progress_reset_keeps_legit_tasks_and_stops_stuck(self) -> None:
-        from v3.zongdiaodu import (
-            _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES,
-            _simple_chain_progress_fingerprint,
-        )
+class CompletionCorrectionPersistenceTests(unittest.TestCase):
+    def test_correction_count_is_global_and_never_reset_by_progress(self) -> None:
+        from v3.zongdiaodu import _simple_chain_completion_correction_state
 
-        stuck = [_make_payload("C:/x/a.txt", "同一内容", 1, 0) for _ in range(25)]
-        legit = [_make_payload(f"C:/x/f{i}.txt", f"内容{i}", i, 0) for i in range(1, 31)]
-
-        def simulate(seq):
-            last_fp = None
-            count = 0
-            for payload in seq:
-                fp = _simple_chain_progress_fingerprint("请读取文件并核对内容。", [payload], [])
-                if last_fp is not None and fp != last_fp:
-                    count = 0
-                count += 1
-                last_fp = fp
-                if count >= _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES:
-                    return "stopped", count
-            return "never", count
-
-        self.assertEqual(simulate(stuck)[0], "stopped")
-        self.assertEqual(simulate(stuck)[1], _SIMPLE_CHAIN_MAX_FINAL_GAP_RETRIES)
-        self.assertEqual(simulate(legit)[0], "never")
+        state = {
+            "completion_correction": {
+                "attempts_used": 2,
+                "attempts_max": 3,
+                "last_blockers": ["old gap"],
+                "exhausted": False,
+            }
+        }
+        normalized = _simple_chain_completion_correction_state(state)
+        self.assertEqual(normalized["attempts_used"], 2)
+        state["completion_correction"]["last_blockers"] = ["different gap after progress"]
+        normalized = _simple_chain_completion_correction_state(state)
+        self.assertEqual(normalized["attempts_used"], 2)
+        self.assertEqual(normalized["attempts_max"], 3)
 
 
 if __name__ == "__main__":

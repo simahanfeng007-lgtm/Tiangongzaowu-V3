@@ -123,16 +123,12 @@ def main() -> int:
         # automation cannot turn a broken test runner into a false green gate.
         summary["phase"] = "preflight_passed_running_full_tests"
         print(json.dumps(summary, ensure_ascii=False), flush=True)
+        test_roots = ["tests"]
+        bundled_skill_tests = ROOT / "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tests"
+        if bundled_skill_tests.is_dir():
+            test_roots.append(str(bundled_skill_tests.relative_to(ROOT)))
         completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-vv",
-                "--maxfail=1",
-                "tests",
-                "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/tests",
-            ],
+            [sys.executable, "-m", "pytest", "-vv", "--maxfail=1", *test_roots],
             cwd=ROOT,
         )
         return int(completed.returncode)

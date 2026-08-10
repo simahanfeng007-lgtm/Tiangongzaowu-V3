@@ -207,7 +207,6 @@ module.exports = {
     "!assets/avatars/imported/*.vrm",
     "frontend-v2/**/*",
     "!frontend-v2/renderer/plugins/persona-panel.mjs",
-    "!frontend-v2/renderer/plugins/lifecycle-panel.mjs",
     "!frontend-v2/renderer/plugins/lifecycle-side-block.mjs",
     "lib/**/*",
     // three 主模块由依赖收集器打包；保留显式规则并由最终 app.asar 硬门复核。

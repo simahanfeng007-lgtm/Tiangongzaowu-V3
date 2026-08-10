@@ -94,7 +94,7 @@ image action or a configured external action such as `openai_api.image.generate`
 | action | what it does |
 |--------|-------------|
 | learning.ingest | Create a pending learning card from an explicit learning request |
-| skill.list / skill.get / skill.read | Inspect available skills when needed |
+| skill.route / skill.list / skill.get / skill.read | Route or inspect available skills when the model decides they are needed |
 | system.capabilities | List runtime capabilities |
 | system.action_schema | Get the exact schema for an action |
 | system.health | Check tool runtime health |

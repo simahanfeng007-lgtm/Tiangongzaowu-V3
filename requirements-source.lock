@@ -3,6 +3,7 @@ cryptography==48.0.1
 edge-tts==7.2.8
 lark-oapi==1.7.1
 pydantic==2.13.4
+setuptools==81.0.0
 python-docx==1.2.0
 python-pptx==1.0.2
 openpyxl==3.1.5

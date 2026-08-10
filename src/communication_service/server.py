@@ -135,9 +135,53 @@ class CommunicationRequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _discard_body(self) -> None:
+        if str(self.headers.get("Transfer-Encoding") or "").strip().casefold() == "chunked":
+            self._discard_chunked_body()
+            return
         raw = self.headers.get("Content-Length")
         if raw and raw.isdecimal():
             self.rfile.read(min(int(raw), self.communication.runtime.config.max_body_bytes + 1))
+
+    def _discard_chunked_body(self) -> None:
+        """Drain one bounded chunked body without interpreting its JSON payload.
+
+        Windows can reset a TCP connection when the server closes it with unread
+        client bytes, hiding the intended HTTP error response from the caller.
+        The control plane still rejects transfer encoding before JSON parsing;
+        this only consumes framing already sent on the socket, with strict size,
+        line and timeout bounds.
+        """
+
+        connection = self.connection
+        previous_timeout = connection.gettimeout()
+        maximum = self.communication.runtime.config.max_body_bytes + 1
+        consumed = 0
+        try:
+            connection.settimeout(0.25)
+            for _ in range(128):
+                size_line = self.rfile.readline(128)
+                if not size_line.endswith(b"\r\n"):
+                    return
+                size_text = size_line[:-2].split(b";", 1)[0].strip()
+                if not size_text:
+                    return
+                size = int(size_text, 16)
+                if size < 0 or consumed + size > maximum:
+                    return
+                if size == 0:
+                    for _ in range(16):
+                        trailer = self.rfile.readline(1024)
+                        if trailer in {b"", b"\r\n"}:
+                            return
+                    return
+                chunk = self.rfile.read(size + 2)
+                if len(chunk) != size + 2 or not chunk.endswith(b"\r\n"):
+                    return
+                consumed += size
+        except (OSError, ValueError):
+            return
+        finally:
+            connection.settimeout(previous_timeout)
 
     def _control_json(self) -> dict[str, Any]:
         if self.headers.get("Transfer-Encoding"):
@@ -277,6 +321,8 @@ class CommunicationRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {"ok": True, **result})
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            if self.headers.get("Transfer-Encoding"):
+                self._discard_body()
             self._send_json(400, {"ok": False, "reason_code": str(exc)[:160]}, close=True)
         except Exception as exc:
             code = getattr(exc, "code", None) or "communication.control.failed"
