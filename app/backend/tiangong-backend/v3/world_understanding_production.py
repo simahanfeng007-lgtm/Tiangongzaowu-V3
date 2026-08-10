@@ -6,7 +6,6 @@ import platform
 import re
 import threading
 from pathlib import Path
-from typing import Any
 
 from contracts.canonical import canonical_sha256
 from contracts.world_understanding.scope import (
@@ -118,10 +117,13 @@ def _frame_factory(envelope, cut):
         raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_INCOMPLETE")
     git_identity = repository_frame_identity(envelope)
     if git_identity is None:
+        # Preserve the existing non-GIT production frame until repository
+        # binding is explicitly propagated to all source owners. M1 must not
+        # silently migrate unrelated MEMORY/KNOWLEDGE/TOOL_RESULT frame IDs.
         repository = "workspace:" + workspace_id
         worktree = "workspace:" + workspace_id
-        branch = "unversioned"
-        commit = "content-state:unknown"
+        branch = "runtime-current"
+        commit = "runtime-current"
     else:
         repository, worktree, branch, commit = git_identity
     return SoftwareWorldFrame.build(
@@ -189,6 +191,20 @@ def _native_id(value: str) -> str:
     return "native." + canonical_sha256({"value": value})[:48]
 
 
+def _tool_result_requests_repository_refresh(event: NativePostCommitEvent) -> bool:
+    if event.source_kind != "TOOL_RESULT":
+        return False
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    evidence = payload.get("write_evidence")
+    if payload.get("observed_write_effect") is not True or not isinstance(evidence, dict):
+        return False
+    if evidence.get("authoritative") is not True:
+        return False
+    changed = evidence.get("changed_files") or ()
+    deleted = evidence.get("deleted_files") or ()
+    return bool(changed or deleted)
+
+
 def observe_native_post_commit(event: NativePostCommitEvent):
     identity = _identity(event)
     scope = _scope(identity)
@@ -218,7 +234,17 @@ def observe_native_post_commit(event: NativePostCommitEvent):
         conversation_id=identity["conversation_id"] or None,
         workspace_id=identity["workspace_id"],
     )
-    return production_world_understanding_runtime().facade.accept(envelope)
+    disposition = production_world_understanding_runtime().facade.accept(envelope)
+    if _tool_result_requests_repository_refresh(event):
+        # The ToolResult owner has already committed. Repository refresh is a
+        # bounded native sensor notification and is deliberately fail-open.
+        try:
+            from .repository_perception import publish_active_repository_observation
+
+            publish_active_repository_observation()
+        except Exception:
+            pass
+    return disposition
 
 
 def install_world_understanding_observer() -> None:
