@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections import defaultdict
 from contracts.world_understanding.entity import WorldEntity
 from contracts.world_understanding.relation import WorldRelation
-from contracts.world_understanding.scope import WorldScope
 from world_understanding.common.scope import require_exact_scope
 from .frame import SoftwareWorldFrame
 
@@ -127,9 +126,12 @@ class SparseWorldGraph:
         if old is not None: self._unindex_relation(old)
         return old
 
-
     def has_git_delta(self, delta_id: str) -> bool:
         return delta_id in self._applied_git_delta_ids
+
+    def applied_git_delta_ids(self) -> tuple[str, ...]:
+        """Expose immutable dedup state so transaction graph forks retain it."""
+        return tuple(sorted(self._applied_git_delta_ids))
 
     def mark_git_delta(self, delta_id: str) -> None:
         self._applied_git_delta_ids.add(delta_id)
