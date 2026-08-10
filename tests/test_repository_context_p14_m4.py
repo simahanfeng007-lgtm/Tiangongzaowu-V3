@@ -121,6 +121,13 @@ def _snapshot(frame, graph):
     )
 
 
+def _bound_query(frame, snapshot, focus: str) -> WorldQuery:
+    return _query(frame, focus).model_copy(update={
+        "basis_world_state_ref": snapshot.state_ref,
+        "query_sha256": "0" * 64,
+    }).with_computed_hash()
+
+
 def test_m4_repository_focus_returns_committed_entity_and_neighbors() -> None:
     frame, graph, module_a, module_b, function_b, test_a, unrelated = _graph()
     query = _query(frame, "inspect pkg.b.changed impact")
@@ -136,11 +143,7 @@ def test_m4_repository_focus_returns_committed_entity_and_neighbors() -> None:
 def test_m4_projector_reuses_existing_world_context_packet_and_summary_override() -> None:
     frame, graph, _, _, function_b, *_ = _graph()
     snapshot = _snapshot(frame, graph)
-    query = _query(frame, "pkg.b.changed")
-    query = query.model_copy(update={
-        "basis_world_state_ref": snapshot.state_ref,
-        "query_sha256": "0" * 64,
-    }).with_computed_hash()
+    query = _bound_query(frame, snapshot, "pkg.b.changed")
     candidates = build_repository_context_candidates(graph, query)
     result = WorldContextProjector(token_estimator=lambda text: max(1, len(text) // 8)).project(
         query,
@@ -162,14 +165,24 @@ def test_m4_projector_reuses_existing_world_context_packet_and_summary_override(
     assert result.estimated_tokens <= query.token_budget
 
 
+def test_m4_enriched_and_plain_packet_identities_cannot_collide() -> None:
+    frame, graph, *_ = _graph()
+    snapshot = _snapshot(frame, graph)
+    query = _bound_query(frame, snapshot, "pkg.b.changed")
+    candidates = build_repository_context_candidates(graph, query)
+    projector = WorldContextProjector(token_estimator=lambda text: max(1, len(text) // 8))
+    enriched = projector.project(query, snapshot, enrichment_candidates=candidates).packet
+    plain = projector.project(query, snapshot, enrichment_candidates=()).packet
+    assert enriched.packet_id != plain.packet_id
+    assert enriched.projection_policy_sha256 != plain.projection_policy_sha256
+    assert enriched.projection_policy_ref.endswith("repository-p14-m4")
+    assert plain.projection_policy_ref == "policy.world-context.p10.v1"
+
+
 def test_m4_projector_rejects_enrichment_ref_outside_snapshot() -> None:
     frame, graph, *_ = _graph()
     snapshot = _snapshot(frame, graph)
-    query = _query(frame, "pkg.a")
-    query = query.model_copy(update={
-        "basis_world_state_ref": snapshot.state_ref,
-        "query_sha256": "0" * 64,
-    }).with_computed_hash()
+    query = _bound_query(frame, snapshot, "pkg.a")
     alien = WorldRecordRef(
         record_type="world_entity",
         record_id="went_" + "a" * 64,
@@ -215,11 +228,7 @@ def test_m4_runtime_without_live_stream_falls_back_to_plain_context() -> None:
 def test_m4_handler_enricher_failure_is_fail_open() -> None:
     frame, graph, *_ = _graph()
     snapshot = _snapshot(frame, graph)
-    query = _query(frame, "plain world context")
-    query = query.model_copy(update={
-        "basis_world_state_ref": snapshot.state_ref,
-        "query_sha256": "0" * 64,
-    }).with_computed_hash()
+    query = _bound_query(frame, snapshot, "plain world context")
 
     emitted = []
     output = SimpleNamespace(emit=lambda q, packet: emitted.append((q, packet)))
