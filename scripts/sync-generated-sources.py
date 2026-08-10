@@ -25,6 +25,24 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def marker_sha256(path: Path) -> str:
+    """Hash logical text content portably while leaving binary bytes untouched.
+
+    Git may materialize the same tracked text with LF or CRLF depending on EOL
+    attributes and runner platform. Generated-source markers describe logical
+    source identity, so text line endings are normalized for the marker only.
+    Exact source/target mirror comparisons continue to use raw-byte sha256().
+    """
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        canonical = raw
+    else:
+        canonical = text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def included(path: Path) -> bool:
     return not any(part in IGNORED_PARTS for part in path.parts) and path.suffix.lower() not in IGNORED_SUFFIXES and path.name != MARKER
 
@@ -72,7 +90,7 @@ def tree_hash(rows: list[tuple[Path, Path]]) -> str:
     for rel, path in rows:
         h.update(rel.as_posix().encode("utf-8"))
         h.update(b"\0")
-        h.update(bytes.fromhex(sha256(path)))
+        h.update(bytes.fromhex(marker_sha256(path)))
     return h.hexdigest()
 
 
