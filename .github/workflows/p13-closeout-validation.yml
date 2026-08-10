@@ -35,7 +35,7 @@ jobs:
           cache: pip
 
       - name: Verify committed generated-source mirrors
-        run: python scripts/sync-generated-sources.py --check
+        run: python scripts/sync-generated-sources.py --check-committed
 
       - name: Verify checkout remains clean
         shell: bash
