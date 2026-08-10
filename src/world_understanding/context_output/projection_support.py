@@ -66,6 +66,39 @@ def clip(text: str, limit: int) -> str:
     return value if len(value) <= limit else value[: max(1, limit - 3)].rstrip() + "..."
 
 
+def effective_projection_policy(
+    policy: ProjectionPolicy,
+    enrichment_candidates: tuple[ContextProjectionCandidate, ...],
+) -> tuple[str, str]:
+    """Return a packet-identity-safe policy ref/hash for this projection.
+
+    Repository enrichment changes packet content. Its deterministic candidate
+    fingerprint must therefore participate in ``projection_policy_sha256`` so a
+    plain fallback packet can never share a packet_id with an enriched packet.
+    """
+    if not enrichment_candidates:
+        return policy.policy_ref, policy.sha256
+    rows = tuple(
+        {
+            "ref": candidate.ref.model_dump(mode="json"),
+            "item_kind": candidate.item_kind,
+            "summary": candidate.summary,
+            "task_relevance_milli": candidate.task_relevance_milli,
+            "impact_milli": candidate.impact_milli,
+            "freshness_need_milli": candidate.freshness_need_milli,
+        }
+        for candidate in sorted(enrichment_candidates, key=lambda item: item.priority_key())
+    )
+    return (
+        policy.policy_ref + ".repository-p14-m4",
+        canonical_sha256({
+            "domain": "tiangong.world.context-effective-policy.p14.m4.v1",
+            "base_policy_sha256": policy.sha256,
+            "repository_enrichment": rows,
+        }),
+    )
+
+
 def build_item(
     *, kind: str, summary: str, refs: tuple[WorldRecordRef, ...], mandatory: bool,
     task_relevance_milli: int, impact_milli: int, freshness_need_milli: int,
@@ -173,7 +206,6 @@ def build_enriched_ranked_item(
     generated_at_ms: int,
     policy: ProjectionPolicy,
 ) -> tuple[WorldContextItem, ExpansionHandle | None]:
-    """Build one normal WorldContextItem using an internal summary/rank override."""
     expansion = _next_expansion(
         ref=candidate.ref, query=query, generated_at_ms=generated_at_ms, policy=policy
     )
@@ -195,23 +227,26 @@ def build_packet(
     mandatory_items: tuple[WorldContextItem, ...], ranked_items: tuple[WorldContextItem, ...],
     uncertainty_items: tuple[WorldContextItem, ...], prediction_items: tuple[WorldContextItem, ...],
     evidence_digest: tuple[WorldRecordRef, ...], expansion_handles: tuple[ExpansionHandle, ...],
-    overflow_state: str,
+    overflow_state: str, projection_policy_ref: str | None = None,
+    projection_policy_sha256: str | None = None,
 ) -> WorldContextPacket:
+    effective_ref = policy.policy_ref if projection_policy_ref is None else projection_policy_ref
+    effective_sha = policy.sha256 if projection_policy_sha256 is None else projection_policy_sha256
     packet_id = derive_world_packet_id(
         world_scope_hash=query.scope.world_scope_hash, frame_ref=snapshot.state.frame_ref,
         basis_world_state_ref=state_ref(snapshot), task_ref=query.task_ref, task_sha256=query.task_sha256,
-        generated_at_ms=generated_at_ms, projection_policy_sha256=policy.sha256)
+        generated_at_ms=generated_at_ms, projection_policy_sha256=effective_sha)
     packet = WorldContextPacket(
         packet_id=packet_id, scope=query.scope, frame_ref=snapshot.state.frame_ref,
         basis_world_state_ref=state_ref(snapshot), task_ref=query.task_ref, task_sha256=query.task_sha256,
         generated_at_ms=generated_at_ms, token_budget=query.token_budget, mandatory_items=mandatory_items,
         ranked_items=ranked_items, uncertainty_items=uncertainty_items, prediction_items=prediction_items,
         evidence_digest=evidence_digest, expansion_handles=expansion_handles, overflow_state=overflow_state,
-        projection_policy_ref=policy.policy_ref, projection_policy_sha256=policy.sha256, packet_sha256="0" * 64)
+        projection_policy_ref=effective_ref, projection_policy_sha256=effective_sha, packet_sha256="0" * 64)
     return packet.with_computed_hash()
 
 
 __all__ = [
-    "ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "build_item", "build_handle",
-    "diversity_ref_order", "build_ranked_item", "build_enriched_ranked_item", "build_packet"
+    "ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "effective_projection_policy",
+    "build_item", "build_handle", "diversity_ref_order", "build_ranked_item", "build_enriched_ranked_item", "build_packet"
 ]
