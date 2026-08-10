@@ -1,9 +1,9 @@
 """Bounded repository-context enrichment from the committed Software World graph.
 
-No filesystem, Git, network, model, Gateway, scheduler, or mutable repository
-index is consulted here. The function only ranks records that are already in
-the committed Software World graph and delegates traversal to the M3 bounded
-query engine.
+No filesystem, Git, network, model, Gateway, scheduler, mutable repository
+index, or whole-graph seed scan is permitted here. Seed discovery uses the
+Software World token index with strict fanout limits, then delegates traversal
+to the M3 bounded query engine.
 """
 from __future__ import annotations
 
@@ -20,40 +20,72 @@ _TOKEN_RE = re.compile(r"[\w./:@-]+", re.UNICODE)
 _GENERIC_TOKENS = frozenset({
     "the", "this", "that", "with", "from", "into", "about", "code", "repo",
     "repository", "file", "function", "class", "module", "test", "tests",
+    "inspect", "impact", "analyze", "change", "changed",
     "代码", "仓库", "文件", "函数", "模块", "测试", "看看", "分析", "修改", "影响",
 })
+_MAX_FOCUS_TOKENS = 16
+_MAX_TOKEN_MATCHES = 16
 
 
 def _focus_tokens(focus: str) -> tuple[str, ...]:
-    tokens = {
-        token.casefold()
-        for token in _TOKEN_RE.findall(str(focus or ""))
-        if len(token.strip()) >= 3 and token.casefold() not in _GENERIC_TOKENS
-    }
-    return tuple(sorted(tokens))
+    values: set[str] = set()
+    for raw in _TOKEN_RE.findall(str(focus or "")):
+        token = raw.strip()
+        if len(token) < 3 or token.casefold() in _GENERIC_TOKENS:
+            continue
+        values.add(token)
+    # Prefer code-shaped and more specific tokens. Query.focus itself is already
+    # contract-bounded; this additionally caps graph-index probes.
+    ordered = sorted(
+        values,
+        key=lambda token: (
+            0 if any(mark in token for mark in (".", "/", "\\", ":", "@")) else 1,
+            -len(token),
+            token.casefold(),
+            token,
+        ),
+    )
+    return tuple(ordered[:_MAX_FOCUS_TOKENS])
 
 
-def _entity_strings(entity) -> tuple[str, ...]:
-    values = {entity.entity_id.casefold(), entity.canonical_name.casefold()}
-    values.update(str(alias).casefold() for alias in entity.aliases)
-    return tuple(sorted(value for value in values if value))
+def _token_variants(token: str) -> tuple[str, ...]:
+    folded = token.casefold()
+    return (token,) if folded == token else (token, folded)
 
 
-def _entity_focus_score(entity, focus: str, tokens: tuple[str, ...]) -> int:
-    focus_folded = str(focus or "").strip().casefold()
-    values = _entity_strings(entity)
-    if focus_folded and focus_folded in values:
-        return 1000
-    score = 0
+def _resolve_seed_entities(
+    graph: SparseWorldGraph,
+    tokens: tuple[str, ...],
+    *,
+    max_seeds: int,
+) -> tuple[object, ...]:
+    """Resolve only unambiguous exact tokens; never guess or scan all entities."""
+    by_id: dict[str, object] = {}
     for token in tokens:
-        for value in values:
-            if token == value:
-                score = max(score, 980)
-            elif token in value:
-                score = max(score, 820 if len(token) >= 5 else 720)
-            elif value in token and len(value) >= 5:
-                score = max(score, 760)
-    return score
+        resolved_for_token: dict[str, object] = {}
+        overflow = False
+        for variant in _token_variants(token):
+            try:
+                matches = graph.resolve_token_bounded(
+                    variant,
+                    max_matches=_MAX_TOKEN_MATCHES,
+                )
+            except ValueError as exc:
+                if str(exc) != "SOFTWARE_WORLD_TOKEN_MATCH_LIMIT_EXCEEDED":
+                    raise
+                overflow = True
+                break
+            for entity in matches:
+                resolved_for_token[entity.entity_id] = entity
+        if overflow or len(resolved_for_token) != 1:
+            # Ambiguous or excessive fanout requires a more exact query.  Context
+            # enrichment is optional, so it never guesses among identities.
+            continue
+        entity = next(iter(resolved_for_token.values()))
+        by_id.setdefault(entity.entity_id, entity)
+        if len(by_id) >= max_seeds:
+            break
+    return tuple(by_id[key] for key in sorted(by_id))
 
 
 def _entity_summary(entity, *, seed: bool) -> str:
@@ -93,16 +125,7 @@ def build_repository_context_candidates(
     tokens = _focus_tokens(query.focus)
     if not tokens:
         return ()
-
-    scored = []
-    for entity in graph.entities():
-        if entity.lifecycle != "ACTIVE":
-            continue
-        score = _entity_focus_score(entity, query.focus, tokens)
-        if score > 0:
-            scored.append((score, entity.entity_id, entity))
-    scored.sort(key=lambda row: (-row[0], row[1]))
-    seeds = tuple(row[2] for row in scored[:max_seeds])
+    seeds = _resolve_seed_entities(graph, tokens, max_seeds=max_seeds)
     if not seeds:
         return ()
 
