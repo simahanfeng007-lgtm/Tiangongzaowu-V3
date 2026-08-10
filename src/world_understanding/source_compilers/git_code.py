@@ -1,19 +1,18 @@
 """Deterministic GIT_CODE compiler for normalized repository observations.
 
-Only empirical repository facts become strong Known records here.  No parser or
+Only empirical repository facts become strong Known records here. No parser or
 LLM inference is promoted to Git authority, and this compiler cannot authorize
 or execute anything.
 """
 from __future__ import annotations
 
 import json
-from typing import Iterable
 
 from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.repository import RepositoryObservation, RepositoryPathChange
 
-from .base import CompilerSpec, DeterministicSourceCompiler, make_direct_known
+from .base import DeterministicSourceCompiler, make_direct_known
 
 
 def decode_repository_observation(envelope: WorldIngressEnvelope) -> RepositoryObservation:
@@ -46,44 +45,12 @@ class GitCodeCompiler(DeterministicSourceCompiler):
         revision = observation.revision
         state = observation.working_tree_state
         rows = [
+            make_direct_known(envelope,self.spec,proposition_type="REPOSITORY_IDENTITY",predicate="git.repository_identity",subject_ref=repo.repository_id,object_text=repo.repository_root_ref),
+            make_direct_known(envelope,self.spec,proposition_type="WORKTREE_IDENTITY",predicate="git.worktree_identity",subject_ref=repo.worktree_id,object_text=repo.worktree_root_ref),
+            make_direct_known(envelope,self.spec,proposition_type="REPOSITORY_HEAD_AT",predicate="git.head_at",subject_ref=repo.repository_id,object_text=revision.head_commit),
+            make_direct_known(envelope,self.spec,proposition_type="REPOSITORY_BRANCH_AT",predicate="git.branch_at",subject_ref=repo.worktree_id,object_text=revision.branch),
             make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="REPOSITORY_IDENTITY",
-                predicate="git.repository_identity",
-                subject_ref=repo.repository_id,
-                object_text=repo.repository_root_ref,
-            ),
-            make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="WORKTREE_IDENTITY",
-                predicate="git.worktree_identity",
-                subject_ref=repo.worktree_id,
-                object_text=repo.worktree_root_ref,
-            ),
-            make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="REPOSITORY_HEAD_AT",
-                predicate="git.head_at",
-                subject_ref=repo.repository_id,
-                object_text=revision.head_commit,
-            ),
-            make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="REPOSITORY_BRANCH_AT",
-                predicate="git.branch_at",
-                subject_ref=repo.worktree_id,
-                object_text=revision.branch,
-            ),
-            make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="REPOSITORY_DIRTY_STATE",
-                predicate="git.working_tree_state",
-                subject_ref=repo.worktree_id,
+                envelope,self.spec,proposition_type="REPOSITORY_DIRTY_STATE",predicate="git.working_tree_state",subject_ref=repo.worktree_id,
                 object_text=_compact_json({
                     "clean": state.clean,
                     "state_sha256": state.state_sha256,
@@ -96,54 +63,41 @@ class GitCodeCompiler(DeterministicSourceCompiler):
                 }),
             ),
         ]
+        identity_paths = {
+            change.new_path
+            for change in observation.changes
+            if change.change_kind in {"ADD", "MODIFY"} and change.new_path is not None
+        }
         for change in observation.changes:
             path = change.new_path or change.old_path or "unknown"
             rows.append(make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="GIT_PATH_CHANGE_OBSERVED",
-                predicate="git.path_change",
-                subject_ref=_file_subject(repo.repository_id, path),
-                object_text=_path_change_text(change),
+                envelope,self.spec,proposition_type="GIT_PATH_CHANGE_OBSERVED",predicate="git.path_change",
+                subject_ref=_file_subject(repo.repository_id,path),object_text=_path_change_text(change),
             ))
         for file_observation in observation.files:
-            subject = _file_subject(repo.repository_id, file_observation.path)
+            subject = _file_subject(repo.repository_id,file_observation.path)
+            # Rename/delete continuity is owned by GitCommitDelta. Seeding a new
+            # FILE_IDENTITY at the destination before the delta runs would create
+            # a second path-derived File entity and destroy rename continuity.
+            if file_observation.path in identity_paths:
+                rows.append(make_direct_known(
+                    envelope,self.spec,proposition_type="FILE_IDENTITY",predicate="git.file_identity",
+                    subject_ref=subject,object_text=file_observation.path,
+                ))
             rows.append(make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="FILE_IDENTITY",
-                predicate="git.file_identity",
-                subject_ref=subject,
-                object_text=file_observation.path,
-            ))
-            rows.append(make_direct_known(
-                envelope,
-                self.spec,
-                proposition_type="FILE_EXISTS",
-                predicate="git.file_exists",
-                subject_ref=subject,
-                object_text="true" if file_observation.exists else "false",
+                envelope,self.spec,proposition_type="FILE_EXISTS",predicate="git.file_exists",
+                subject_ref=subject,object_text="true" if file_observation.exists else "false",
             ))
             if file_observation.blob_sha is not None:
                 rows.append(make_direct_known(
-                    envelope,
-                    self.spec,
-                    proposition_type="FILE_HASH_AT",
-                    predicate="git.blob_sha",
-                    subject_ref=subject,
-                    object_text=file_observation.blob_sha,
+                    envelope,self.spec,proposition_type="FILE_HASH_AT",predicate="git.blob_sha",
+                    subject_ref=subject,object_text=file_observation.blob_sha,
                 ))
             if file_observation.content_sha256 is not None:
                 rows.append(make_direct_known(
-                    envelope,
-                    self.spec,
-                    proposition_type="FILE_HASH_AT",
-                    predicate="filesystem.sha256",
-                    subject_ref=subject,
-                    object_text=file_observation.content_sha256,
-                    authority_domain="FILESYSTEM_ARTIFACT",
-                    authority_ceiling_milli=1000,
-                    empirical_evidence_weight_milli=1000,
+                    envelope,self.spec,proposition_type="FILE_HASH_AT",predicate="filesystem.sha256",
+                    subject_ref=subject,object_text=file_observation.content_sha256,
+                    authority_domain="FILESYSTEM_ARTIFACT",authority_ceiling_milli=1000,empirical_evidence_weight_milli=1000,
                 ))
         return tuple(rows)
 
