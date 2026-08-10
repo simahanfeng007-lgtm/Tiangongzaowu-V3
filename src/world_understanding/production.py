@@ -12,12 +12,15 @@ from typing import Callable, Protocol
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.known import DirectKnownRecord
+from contracts.world_understanding.query import WorldQuery
 from contracts.world_understanding.repository_query import (
     RepositoryGraphQuery,
     RepositoryGraphQueryResult,
 )
 from contracts.world_understanding.world_cut import SourceWatermark, WorldCut, derive_world_cut_id
 
+from .context_output.enrichment import ContextProjectionCandidate
+from .context_output.repository import build_repository_context_candidates
 from .facade import WorldUnderstandingFacade
 from .known import KnownClosureEngine, RuleRegistry, build_p4_rules
 from .known.closure import ClosureResult
@@ -68,8 +71,8 @@ class ProductionWorldUnderstandingRuntime:
 
     Publication is the commit point. Candidate closure/graph state is built on
     forks and becomes live only after ``WorldStateStore.publish`` succeeds.
-    Repository graph queries are read-only projections over the committed live
-    stream and never become a second WorldState or Runtime.
+    Repository graph queries and context enrichment are read-only projections
+    over that committed live stream, never a second WorldState or Runtime.
     """
 
     def __init__(
@@ -151,6 +154,35 @@ class ProductionWorldUnderstandingRuntime:
                 raise ValueError("REPOSITORY_QUERY_FRAME_NOT_LIVE")
             return execute_repository_graph_query(live.graph, query)
 
+    def repository_context_candidates(
+        self,
+        query: WorldQuery,
+        snapshot: MaterializedWorldSnapshot,
+    ) -> tuple[ContextProjectionCandidate, ...]:
+        """Enrich only when the requested snapshot is the exact live frame revision.
+
+        A historical WorldState, a process restart before the frame becomes live,
+        or any frame revision mismatch returns no enrichment. The ordinary P10
+        packet projection remains authoritative and available in every case.
+        """
+        with self._lock:
+            frame_ref = snapshot.state.frame_ref
+            if query.scope != snapshot.state.scope:
+                return ()
+            if query.frame_ref is not None and query.frame_ref != frame_ref:
+                return ()
+            live = self._streams.get(frame_ref.record_id)
+            if live is None:
+                return ()
+            if live.graph.scope != snapshot.state.scope:
+                return ()
+            if (
+                live.graph.frame_id != frame_ref.record_id
+                or live.graph.frame_revision_hash != frame_ref.sha256
+            ):
+                return ()
+            return build_repository_context_candidates(live.graph, query)
+
     def consume_source(
         self,
         envelope: WorldIngressEnvelope,
@@ -219,9 +251,6 @@ class ProductionWorldUnderstandingRuntime:
                 )
             )
             self._streams[frame.frame_id] = _StreamState(update.graph, closure)
-            # P13.2 is strictly post-publication and fail-open. It may enqueue
-            # one inquiry into the existing Gateway, but cannot roll back or
-            # alter the passive perception transaction that just committed.
             if self._committed_state_observer is not None:
                 try:
                     self._committed_state_observer(envelope, snapshot)
