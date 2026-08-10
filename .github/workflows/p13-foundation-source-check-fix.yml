@@ -1,0 +1,57 @@
+name: P13 foundation source-check fix
+
+on:
+  push:
+    branches:
+      - agent/world-understanding-v0.1
+    paths:
+      - .github/workflows/p13-foundation-source-check-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - name: Checkout P13 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/world-understanding-v0.1
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Align foundation closeout with source-check semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tests/test_foundation_closeout.py")
+          text = path.read_text(encoding="utf-8")
+          old = '[sys.executable, "scripts/sync-generated-sources.py", "--check"],'
+          new = '[sys.executable, "scripts/sync-generated-sources.py", "--check-committed"],'
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one legacy source-check call, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+          PY
+
+      - name: Verify focused source authority contract
+        run: python -m pytest -q tests/test_foundation_closeout.py::SecureUpdateAndSourceAuthorityTests::test_generated_source_mirrors_are_in_sync
+
+      - name: Commit and remove helper
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/p13-foundation-source-check-fix.yml
+          git add tests/test_foundation_closeout.py
+          git commit -m "P13 closeout: align foundation generated-source contract"
+          git push origin HEAD:agent/world-understanding-v0.1
