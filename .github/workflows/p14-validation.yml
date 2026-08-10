@@ -56,6 +56,7 @@ jobs:
           tests/test_repository_structure_p14_m2.py
           tests/test_repository_structure_p14_m2_wiring.py
           tests/test_repository_query_p14_m3.py
+          tests/test_repository_query_p14_m3_coherence.py
           tests/test_repository_query_p14_m3_wiring.py
 
       - name: Run M2-M3 repository regression
@@ -64,6 +65,7 @@ jobs:
           tests/test_repository_structure_p14_m2.py
           tests/test_repository_structure_p14_m2_wiring.py
           tests/test_repository_query_p14_m3.py
+          tests/test_repository_query_p14_m3_coherence.py
           tests/test_repository_query_p14_m3_wiring.py
 
       - name: Run P3-P13 boundary regression
