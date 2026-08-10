@@ -43,6 +43,9 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
           PY
 
+      - name: Install focused test runner
+        run: python -m pip install pytest==9.0.3
+
       - name: Verify focused source authority contract
         run: python -m pytest -q tests/test_foundation_closeout.py::SecureUpdateAndSourceAuthorityTests::test_generated_source_mirrors_are_in_sync
 
