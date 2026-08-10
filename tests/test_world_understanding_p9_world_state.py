@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import pytest
 from contracts.canonical import canonical_sha256
-from contracts.cognition_statement import CognitionStatement, CognitionValue
+from contracts.cognition_statement import CognitionStatement, CognitionValue, derive_cognition_id
 from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.scope import ScopeBinding, WorldScope, derive_world_id, derive_world_scope_hash
 from contracts.world_understanding.time import WorldTime
@@ -56,8 +56,8 @@ def graph_for(c, *, count=2, branch='main'):
 def eref(e): return WorldRecordRef(record_type='world_entity',record_id=e.entity_id,revision=e.revision,sha256=e.entity_sha256)
 
 def cog(scope=None):
-    scope=scope or sc(); cid='cog_'+canonical_sha256({'p9':'cog'})
-    s=CognitionStatement(cognition_id=cid,life_id=scope.life_id,domain='software',world_scope_hash=scope.world_scope_hash,principal_scope_hash=scope.principal_scope_hash,privacy_scope=scope.privacy_scope,claim_kind='boundary',subject_ref='subject.1',predicate='is_boundary',value=CognitionValue(kind='boolean',boolean_value=True),proposal_origin='deterministic_extraction',status='CORE',stability_level='C3',confidence_milli=900,supporting_evidence_ids=('cev_'+'1'*64,'cev_'+'2'*64),valid_from_ms=1,last_verified_at_ms=1,revision=1,statement_sha256='0'*64).with_computed_statement_sha256()
+    scope=scope or sc(); cid=derive_cognition_id(life_id=scope.life_id,domain='software',world_scope_hash=scope.world_scope_hash,principal_scope_hash=scope.principal_scope_hash,claim_kind='boundary',subject_ref='subject.1',predicate='is_boundary',condition_sha256=None)
+    s=CognitionStatement(cognition_id=cid,life_id=scope.life_id,domain='software',world_scope_hash=scope.world_scope_hash,principal_scope_hash=scope.principal_scope_hash,privacy_scope=scope.privacy_scope,claim_kind='boundary',subject_ref='subject.1',predicate='is_boundary',value=CognitionValue(kind='boolean',boolean_value=True),proposal_origin='deterministic_extraction',status='CORE',stability_level='C3',confidence_milli=900,supporting_evidence_ids=('cev_'+'1'*64,'cev_'+'2'*64,'cev_'+'3'*64),valid_from_ms=1,last_verified_at_ms=1,revision=1,statement_sha256='0'*64).with_computed_statement_sha256()
     return to_l5_view(s,scope=scope)
 
 class FakeSupport:

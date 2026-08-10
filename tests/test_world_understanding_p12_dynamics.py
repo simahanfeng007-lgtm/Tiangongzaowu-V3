@@ -121,7 +121,7 @@ def test_stale_hazard_is_monotone_and_deterministic():
 
 def test_transform_feedback_uses_real_cost_and_quality_only():
     obs = tuple(
-        TransformCostObservation("world.semantic.l4", "v1", 1, 1, 10+i, 1, 20+i, 100+i, 10+i, True, None, 1000+i)
+        TransformCostObservation(transform_id="world.semantic.l4", transform_version="v1", input_count=1, output_count=1, token_cost=10+i, cpu_time_ms=1, wall_time_ms=20+i, io_bytes=100+i, llm_latency_ms=10+i, success=True, failure_type=None, created_at_ms=1000+i)
         for i in range(20)
     )
     quality = TransformQualityProfile(

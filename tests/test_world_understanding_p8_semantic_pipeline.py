@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from contracts.canonical import canonical_sha256
-from contracts.cognition_statement import CognitionStatement, CognitionValue
+from contracts.cognition_statement import CognitionStatement, CognitionValue, derive_cognition_id
 from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.ingress import (
     WorldIngressEnvelope,
@@ -143,7 +143,7 @@ def prior_item() -> SemanticInputItem:
 
 
 def cognition_view(sc: WorldScope):
-    cid = "cog_" + canonical_sha256({"p8": "cognition"})
+    cid = derive_cognition_id(life_id=sc.life_id, domain="software", world_scope_hash=sc.world_scope_hash, principal_scope_hash=sc.principal_scope_hash, claim_kind="boundary", subject_ref="subject.1", predicate="is_boundary", condition_sha256=None)
     stmt = CognitionStatement(
         cognition_id=cid,
         life_id=sc.life_id,
