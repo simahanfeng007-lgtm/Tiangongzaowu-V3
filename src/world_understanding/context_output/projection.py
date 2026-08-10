@@ -13,7 +13,7 @@ from .enrichment import ContextProjectionCandidate
 from .mandatory import build_mandatory_items
 from .projection_support import (
     ProjectionPolicy, ProjectionResult, build_enriched_ranked_item, build_packet, build_ranked_item,
-    diversity_ref_order, state_ref, unique_refs,
+    diversity_ref_order, effective_projection_policy, state_ref, unique_refs,
 )
 from .slot import conservative_token_estimate, render_world_context_packet
 
@@ -66,6 +66,9 @@ class WorldContextProjector:
             if key in enrichment_by_key:
                 raise ValueError("WORLD_CONTEXT_ENRICHMENT_REF_DUPLICATE")
             enrichment_by_key[key] = candidate
+        effective_policy_ref, effective_policy_sha256 = effective_projection_policy(
+            self.policy, tuple(enrichment_by_key.values())
+        )
 
         prediction_refs = unique_refs(prediction_refs)
         if any(ref.record_type != "world_prediction" for ref in prediction_refs):
@@ -112,10 +115,6 @@ class WorldContextProjector:
             elif prediction_focus:
                 optional_ref_pairs.append(("prediction", ref))
 
-        # Repository enrichment is a summary/ranking override for existing refs,
-        # never an alternate source of WorldContext records. Enriched refs are
-        # considered first, then the original diversity policy fills the remaining
-        # bounded slots. Token admission below remains the sole packet budget gate.
         enriched_keys = {
             key for key in enrichment_by_key
             if key not in required_keys
@@ -158,17 +157,26 @@ class WorldContextProjector:
                 raise ValueError("WORLD_CONTEXT_EVIDENCE_DIGEST_LIMIT")
             return refs
 
+        def _packet(**kwargs) -> WorldContextPacket:
+            return build_packet(
+                query=query,
+                snapshot=snapshot,
+                generated_at_ms=now_ms,
+                policy=self.policy,
+                projection_policy_ref=effective_policy_ref,
+                projection_policy_sha256=effective_policy_sha256,
+                **kwargs,
+            )
+
         mandatory_digest = _digest(mandatory_tuple)
-        base_packet = build_packet(
-            query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+        base_packet = _packet(
             mandatory_items=mandatory_tuple, ranked_items=(),
             uncertainty_items=(), prediction_items=(),
             evidence_digest=mandatory_digest, expansion_handles=tuple(mandatory_handles), overflow_state="NONE",
         )
         base_tokens = max(0, int(self.token_estimator(render_world_context_packet(base_packet))))
         if base_tokens > query.token_budget:
-            overflow = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            overflow = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=(),
                 uncertainty_items=(), prediction_items=(),
                 evidence_digest=mandatory_digest, expansion_handles=tuple(mandatory_handles),
@@ -187,8 +195,7 @@ class WorldContextProjector:
             trial_predictions = tuple((*selected_predictions, item)) if group == "prediction" else tuple(selected_predictions)
             trial_handles = tuple((*selected_handles, *((handle,) if handle is not None else ())))
             trial_digest = _digest(mandatory_tuple, trial_ranked, trial_predictions)
-            trial = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            trial = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=trial_ranked,
                 uncertainty_items=(), prediction_items=trial_predictions,
                 evidence_digest=trial_digest, expansion_handles=trial_handles,
@@ -210,8 +217,7 @@ class WorldContextProjector:
             ranked_tuple = tuple(selected_ranked)
             prediction_tuple = tuple(selected_predictions)
             digest = _digest(mandatory_tuple, ranked_tuple, prediction_tuple)
-            value = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            value = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=ranked_tuple,
                 uncertainty_items=(), prediction_items=prediction_tuple,
                 evidence_digest=digest, expansion_handles=tuple(selected_handles),
