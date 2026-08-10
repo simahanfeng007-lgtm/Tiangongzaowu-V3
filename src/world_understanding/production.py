@@ -52,6 +52,9 @@ def _fork_graph(
         graph.upsert_entity(entity)
     for relation in previous.relations if isinstance(previous, MaterializedWorldSnapshot) else previous.relations():
         graph.upsert_relation(relation)
+    if isinstance(previous, SparseWorldGraph):
+        for delta_id in previous.applied_git_delta_ids():
+            graph.mark_git_delta(delta_id)
     return graph
 
 
