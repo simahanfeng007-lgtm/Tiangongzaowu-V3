@@ -15,7 +15,7 @@ from world_understanding.context_output.repository import build_repository_conte
 from world_understanding.production import ProductionWorldUnderstandingRuntime
 from world_understanding.world_state import WorldStateStore
 
-from tests.test_repository_query_p14_m3 import _graph
+from tests.test_repository_query_p14_m3 import _entity, _graph
 
 
 def _frame_ref(frame, *, sha: str | None = None) -> WorldRecordRef:
@@ -138,6 +138,33 @@ def test_m4_repository_focus_returns_committed_entity_and_neighbors() -> None:
     assert module_b.entity_id in by_id
     assert unrelated.entity_id not in by_id
     assert any(candidate.item_kind == "repository_relation" for candidate in candidates)
+
+
+def test_m4_seed_discovery_never_scans_all_graph_entities() -> None:
+    frame, graph, _, _, function_b, *_ = _graph()
+    query = _query(frame, "inspect pkg.b.changed")
+    with patch.object(type(graph), "entities", side_effect=AssertionError("whole graph scan forbidden")):
+        candidates = build_repository_context_candidates(graph, query)
+    assert any(candidate.ref.record_id == function_b.entity_id for candidate in candidates)
+
+
+def test_m4_ambiguous_focus_token_never_guesses_identity() -> None:
+    frame, graph, *_ = _graph()
+    first = _entity(frame, "Function", "m4.dup.1", "pkg.duplicate")
+    second = _entity(frame, "Function", "m4.dup.2", "pkg.duplicate")
+    graph.upsert_entity(first)
+    graph.upsert_entity(second)
+    assert build_repository_context_candidates(graph, _query(frame, "pkg.duplicate")) == ()
+
+
+def test_m4_token_index_fanout_is_hard_bounded() -> None:
+    frame, graph, *_ = _graph()
+    first = _entity(frame, "Function", "m4.fanout.1", "pkg.fanout")
+    second = _entity(frame, "Function", "m4.fanout.2", "pkg.fanout")
+    graph.upsert_entity(first)
+    graph.upsert_entity(second)
+    with pytest.raises(ValueError, match="TOKEN_MATCH_LIMIT_EXCEEDED"):
+        graph.resolve_token_bounded("pkg.fanout", max_matches=1)
 
 
 def test_m4_projector_reuses_existing_world_context_packet_and_summary_override() -> None:
