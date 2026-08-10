@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -75,7 +76,30 @@ def tree_hash(rows: list[tuple[Path, Path]]) -> str:
     return h.hexdigest()
 
 
-def process(write: bool) -> list[str]:
+def target_is_build_only_in_source_checkout(target: Path) -> bool:
+    """Return True when an absent generated target is intentionally git-ignored.
+
+    Source closeout must verify every committed mirror without requiring build-time
+    embedded runtimes (for example app/runtime/) to exist in a fresh checkout.
+    Tracked targets are never skipped, even when a parent has an ignore rule.
+    """
+    if target.exists():
+        return False
+    try:
+        relative = target.relative_to(ROOT).as_posix()
+        completed = subprocess.run(
+            ["git", "check-ignore", "-q", "--", relative],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, ValueError):
+        return False
+    return completed.returncode == 0
+
+
+def process(write: bool, *, committed_only: bool = False) -> list[str]:
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
     failures: list[str] = []
     for mapping in config["mappings"]:
@@ -88,6 +112,8 @@ def process(write: bool) -> list[str]:
         digest = tree_hash(rows)
         for target_rel in mapping["targets"]:
             target = ROOT / str(target_rel)
+            if committed_only and target_is_build_only_in_source_checkout(target):
+                continue
             target_is_file = source.is_file()
             if target_is_file:
                 rel_rows = [(Path(target.name), rows[0][1])]
@@ -147,13 +173,20 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--check", action="store_true")
+    mode.add_argument(
+        "--check-committed",
+        action="store_true",
+        help="check committed/source-tree mirrors while excluding absent git-ignored build-runtime targets",
+    )
     args = parser.parse_args()
-    failures = process(write=args.write)
+    committed_only = bool(args.check_committed)
+    failures = process(write=args.write, committed_only=committed_only)
     if failures:
         for item in failures:
             print(item, file=sys.stderr)
         return 1
-    print(json.dumps({"ok": True, "mode": "write" if args.write else "check", "config": str(CONFIG.relative_to(ROOT))}, ensure_ascii=False))
+    mode_name = "write" if args.write else ("check-committed" if committed_only else "check")
+    print(json.dumps({"ok": True, "mode": mode_name, "config": str(CONFIG.relative_to(ROOT))}, ensure_ascii=False))
     return 0
 
 
