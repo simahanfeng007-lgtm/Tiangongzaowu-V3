@@ -933,7 +933,8 @@ class RepositoryStructureIndex:
         retirements: list[RepositoryStructureRetirement] = []
         retired_file_keys: set[str] = set()
         parsed_count = 0
-        renamed_old_paths: set[str] = set()
+        renamed_handled_paths: set[str] = set()
+        renamed_new_paths: set[str] = set()
 
         for change in observation.changes:
             if change.change_kind not in {"RENAME", "MOVE"}:
@@ -945,7 +946,8 @@ class RepositoryStructureIndex:
             old = files.pop(change.old_path, None)
             if old is None:
                 continue
-            renamed_old_paths.add(change.old_path)
+            renamed_handled_paths.update((change.old_path, change.new_path))
+            renamed_new_paths.add(change.new_path)
             target = _bounded_target(root, change.new_path)
             if target is None:
                 raise RepositoryStructureError("renamed structure target is unreadable")
@@ -967,7 +969,7 @@ class RepositoryStructureIndex:
             retirements.extend(_retirements_for_removed(old, new))
 
         for path in changed_paths:
-            if path in renamed_old_paths:
+            if path in renamed_handled_paths:
                 continue
             relevant_change = next(
                 (change for change in observation.changes
@@ -1026,7 +1028,11 @@ class RepositoryStructureIndex:
             candidate_path_count=max(
                 0,
                 previous.candidate_path_count
-                + sum(1 for path in upsert_paths if path not in old_files)
+                + sum(
+                    1
+                    for path in upsert_paths
+                    if path not in old_files and path not in renamed_new_paths
+                )
                 - len(retired_file_keys),
             ),
             files=ordered,

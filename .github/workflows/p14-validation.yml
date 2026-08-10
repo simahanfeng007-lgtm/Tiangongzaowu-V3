@@ -80,16 +80,23 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Report shared-contracts logical tree hash
+      - name: Report generated-source logical tree hashes
         shell: bash
         run: |
           python - <<'PY'
+          import json
           import runpy
           from pathlib import Path
           module = runpy.run_path("scripts/sync-generated-sources.py")
-          rows = module["mapping_files"](Path("src/contracts"))
-          print("shared-contracts-file-count", len(rows))
-          print("shared-contracts-tree-sha256", module["tree_hash"](rows))
+          config = json.loads(Path("source-ownership.json").read_text(encoding="utf-8"))
+          for mapping in config["mappings"]:
+              if not mapping.get("targets"):
+                  continue
+              source = Path(str(mapping["source"]))
+              if not source.exists():
+                  continue
+              rows = module["mapping_files"](source)
+              print(mapping["id"], "file_count", len(rows), "tree_sha256", module["tree_hash"](rows))
           PY
 
       - name: Verify generated-source mirrors
