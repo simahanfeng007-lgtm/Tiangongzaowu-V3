@@ -31,6 +31,9 @@ class RunContext:
     workspace_id: str = ""
     gateway_url: str = "http://127.0.0.1:7184"
     learning_intent_verified: bool = False
+    # Prompt construction input only. Deliberately excluded from audit_metadata()
+    # so raw user text is not copied into run/audit identity surfaces.
+    current_user_text: str = ""
 
     def identity_scope(self) -> str:
         material = {
@@ -92,6 +95,12 @@ def from_conversation_context(value: Mapping[str, Any] | None) -> RunContext:
     )
     if principal and not _SHA256.fullmatch(principal):
         principal = ""
+    current_user_text = _text(
+        context.get("current_user_message"),
+        context.get("raw_user_text"),
+        metadata.get("raw_user_text"),
+        metadata.get("original_user_message"),
+    )
     return RunContext(
         request_id=_text(context.get("request_id"), context.get("active_id"), metadata.get("request_id")),
         run_id=_text(context.get("run_id"), metadata.get("run_id")),
@@ -106,6 +115,7 @@ def from_conversation_context(value: Mapping[str, Any] | None) -> RunContext:
         ),
         workspace_id=_text(context.get("workspace_id"), metadata.get("workspace_id")),
         gateway_url=_text(context.get("gateway_url"), metadata.get("gateway_url"), "http://127.0.0.1:7184"),
+        current_user_text=current_user_text,
     )
 
 
