@@ -63,10 +63,13 @@ class GitCodeCompiler(DeterministicSourceCompiler):
                 }),
             ),
         ]
+        # Only a true ADD seeds a new File identity in Known. Existing-file
+        # MODIFY/RENAME/MOVE/DELETE revisions are owned by GitCommitDelta +
+        # SoftwareWorldUpdater so one observation cannot double-revise a file.
         identity_paths = {
             change.new_path
             for change in observation.changes
-            if change.change_kind in {"ADD", "MODIFY"} and change.new_path is not None
+            if change.change_kind == "ADD" and change.new_path is not None
         }
         for change in observation.changes:
             path = change.new_path or change.old_path or "unknown"
@@ -76,9 +79,6 @@ class GitCodeCompiler(DeterministicSourceCompiler):
             ))
         for file_observation in observation.files:
             subject = _file_subject(repo.repository_id,file_observation.path)
-            # Rename/delete continuity is owned by GitCommitDelta. Seeding a new
-            # FILE_IDENTITY at the destination before the delta runs would create
-            # a second path-derived File entity and destroy rename continuity.
             if file_observation.path in identity_paths:
                 rows.append(make_direct_known(
                     envelope,self.spec,proposition_type="FILE_IDENTITY",predicate="git.file_identity",
