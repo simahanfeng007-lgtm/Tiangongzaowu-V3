@@ -9,11 +9,13 @@ import concurrent.futures
 import contextvars
 from contextlib import contextmanager
 import os
+import queue
 import threading
 import time
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
+from dataclasses import asdict
 
 from contracts import (
     ActionIntent,
@@ -83,6 +85,8 @@ from .skill_selection import (
 )
 from .skill_authority import SkillAuthority
 from .store import ActiveRequestActivation, GatewayStateStore, StoreConflictError
+from contracts.world_understanding.inquiry import WorldInquiry
+from world_understanding.inquiry.self_will_integration import ExistingSelfWillAdapter
 
 
 _WECHAT_POLICY_SHA256 = "d486cbb41e0e95a7b8ac9ea5aed6ef1efe9c74ff13e67cb2d17cd8af93116df7"
@@ -325,6 +329,9 @@ class GatewayOrchestrationWorker:
         self._last_error_lock = threading.Lock()
         self._last_error: str | None = None
         self._processed_count = 0
+        # P13.2 reuses this worker thread.  The bounded queue is only an input
+        # lane; it is neither a scheduler nor a second execution loop.
+        self._world_inquiries: queue.Queue[tuple[WorldInquiry, Callable[[Mapping[str, object]], None]]] = queue.Queue(maxsize=64)
         self._delivery_outbox = GatewayDeliveryOutboxWorker(
             store=store,
             objects=objects,
@@ -520,6 +527,27 @@ class GatewayOrchestrationWorker:
         )
         self._thread.start()
 
+    def submit_world_inquiry(
+        self,
+        inquiry: WorldInquiry,
+        result_sink: Callable[[Mapping[str, object]], None],
+    ) -> bool:
+        """Offer one zero-authority inquiry to the existing worker."""
+        if (
+            not isinstance(inquiry, WorldInquiry)
+            or not inquiry.has_valid_hash()
+            or inquiry.authorization != "NONE"
+            or inquiry.may_execute
+            or inquiry.may_call_tools
+            or not callable(result_sink)
+        ):
+            raise ValueError("WORLD_INQUIRY_GATEWAY_INPUT_INVALID")
+        try:
+            self._world_inquiries.put_nowait((inquiry, result_sink))
+        except queue.Full:
+            return False
+        return True
+
     @property
     def component_manifest(self):
         return self._components
@@ -660,6 +688,8 @@ class GatewayOrchestrationWorker:
         step_id: str,
         action_id: str,
         arguments: Mapping[str, Any],
+        source_inquiry_id: str = "",
+        autonomous_intent_id: str = "",
     ) -> Iterator[dict[str, object]]:
         """Issue the outer ticket required before a learned artifact can act.
 
@@ -759,6 +789,12 @@ class GatewayOrchestrationWorker:
             "step_id": step_id,
             "observed_at_ms": now_ms,
         }
+        if source_inquiry_id:
+            life_evidence_payload.update({
+                "schema": "tiangong.gateway.world-inquiry-life-evidence.v1",
+                "source_inquiry_id": source_inquiry_id,
+                "autonomous_intent_id": autonomous_intent_id,
+            })
         life_evidence_ref = "lev_" + canonical_sha256(life_evidence_payload)
         self._policy_evidence.record("life-event", life_evidence_ref, life_evidence_payload)
         # D-08: a learned capability acts under the Life chain's preauthorized
@@ -930,9 +966,96 @@ class GatewayOrchestrationWorker:
                 "life_id": life_id,
                 "artifact_id": artifact_id,
                 "artifact_sha256": artifact_sha256,
+                "source_inquiry_id": source_inquiry_id,
+                "autonomous_intent_id": autonomous_intent_id,
             }
         finally:
             self._omni_grants.unregister(ticket_payload.ticket_id)
+
+    @staticmethod
+    def _world_observation(arguments: object) -> dict[str, object]:
+        if not isinstance(arguments, Mapping):
+            raise OrchestrationError("world_inquiry.observation_missing")
+        action = str(arguments.get("action") or "").strip()
+        allowed = {
+            "system.health", "system.capabilities", "file.read", "file.list",
+            "file.search", "file.hash", "git.status", "git.diff", "git.log",
+            "web.search", "web.fetch",
+        }
+        if action not in allowed:
+            raise OrchestrationError("world_inquiry.observation_not_read_only")
+        target = str(arguments.get("target") or "").strip()
+        args = arguments.get("args") if isinstance(arguments.get("args"), Mapping) else {}
+        if len(canonical_json_bytes({"action": action, "target": target, "args": dict(args)})) > 64 * 1024:
+            raise OrchestrationError("world_inquiry.observation_too_large")
+        return {"action": action, "target": target, "args": dict(args)}
+
+    def _dispatch_next_world_inquiry(self) -> bool:
+        try:
+            inquiry, sink = self._world_inquiries.get_nowait()
+        except queue.Empty:
+            return False
+        now_ms = time.time_ns() // 1_000_000
+        try:
+            client = self._backend_compat_client
+            if client is None:
+                raise OrchestrationError("world_inquiry.backend_unavailable")
+            status, payload, _ = client.request(
+                "POST",
+                "/api/v1/internal/world-inquiry/decision",
+                {"inquiry": inquiry.model_dump(mode="json")},
+                timeout_seconds=240,
+            )
+            raw_decision = payload.get("decision") if isinstance(payload, Mapping) else None
+            if status >= 400 or payload.get("ok") is not True or not isinstance(raw_decision, Mapping):
+                raise OrchestrationError("world_inquiry.self_will_unavailable")
+            adapter = ExistingSelfWillAdapter(lambda _inquiry: raw_decision)
+            decision, autonomous = adapter.decide(inquiry, decided_at_ms=now_ms)
+            sink({
+                "phase": "DECIDED",
+                "at_ms": now_ms,
+                "decision": decision.decision,
+                "decision_record": asdict(decision),
+                "autonomous_intent": None if autonomous is None else asdict(autonomous),
+            })
+            if autonomous is None:
+                phase = {"DEFER": "DEFERRED", "DISMISS": "DISMISSED", "EXPIRE": "EXPIRED"}[decision.decision]
+                sink({"phase": phase, "at_ms": now_ms, "decision": decision.decision})
+                return True
+            arguments = self._world_observation(raw_decision.get("observation"))
+            with self.authorize_life_capability_action(
+                life_id=inquiry.scope.life_id,
+                artifact_id=inquiry.inquiry_id,
+                artifact_sha256=inquiry.inquiry_sha256,
+                execution_id=autonomous.autonomous_intent_id,
+                step_id="world-inquiry-observation",
+                action_id="omni_body",
+                arguments=arguments,
+                source_inquiry_id=inquiry.inquiry_id,
+                autonomous_intent_id=autonomous.autonomous_intent_id,
+            ) as run_context:
+                sink({
+                    "phase": "STARTED",
+                    "at_ms": time.time_ns() // 1_000_000,
+                    "run_id": run_context["run_id"],
+                    "execution_ticket_id": run_context["execution_ticket_id"],
+                })
+                invoke_status, invoke_payload, _ = client.request(
+                    "POST",
+                    "/api/v1/internal/life-action/invoke",
+                    {"action_id": "omni_body", "arguments": arguments, "run_context": run_context},
+                    timeout_seconds=300,
+                )
+                if invoke_status >= 400 or invoke_payload.get("ok") is False:
+                    raise OrchestrationError("world_inquiry.observation_failed")
+            return True
+        except Exception as exc:
+            sink({
+                "phase": "FAILED",
+                "at_ms": time.time_ns() // 1_000_000,
+                "reason_code": self._safe_error_code(exc),
+            })
+            return True
 
     def _set_error(self, code: str | None) -> None:
         with self._last_error_lock:
@@ -1000,6 +1123,9 @@ class GatewayOrchestrationWorker:
                     continue
                 activation = self._activator.claim_next(now_ms=now_ms)
                 if activation is None:
+                    if self._dispatch_next_world_inquiry():
+                        self._set_error(None)
+                        continue
                     self._closed.wait(self._poll_seconds)
                     continue
                 heartbeat_stop = threading.Event()

@@ -68,6 +68,7 @@ class ProductionWorldUnderstandingRuntime:
         frame_factory: FrameFactory,
         context_request_handler: Callable[[WorldIngressEnvelope], object] | None = None,
         semantic_pipeline: SemanticPipeline | None = None,
+        committed_state_observer: Callable[[WorldIngressEnvelope, MaterializedWorldSnapshot], object] | None = None,
     ) -> None:
         self.store = store
         self.frame_factory = frame_factory
@@ -77,6 +78,7 @@ class ProductionWorldUnderstandingRuntime:
         self._updater = SoftwareWorldUpdater()
         self._semantic = semantic_pipeline or SemanticPipeline(model=None)
         self._materializer = WorldStateMaterializer(store)
+        self._committed_state_observer = committed_state_observer
         self.facade = WorldUnderstandingFacade(
             enabled=True,
             context_request_handler=context_request_handler,
@@ -189,6 +191,14 @@ class ProductionWorldUnderstandingRuntime:
                 )
             )
             self._streams[frame.frame_id] = _StreamState(update.graph, closure)
+            # P13.2 is strictly post-publication and fail-open.  It may enqueue
+            # one inquiry into the existing Gateway, but cannot roll back or
+            # alter the passive perception transaction that just committed.
+            if self._committed_state_observer is not None:
+                try:
+                    self._committed_state_observer(envelope, snapshot)
+                except Exception:
+                    pass
             return SourceMaterializationDisposition(
                 "SOURCE_MATERIALIZED", True, snapshot.state.world_state_id
             )

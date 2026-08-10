@@ -1967,11 +1967,21 @@ def _tool_result_with_contract(
     )
     from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
+    from .run_context import current_run_context
+    run_context = current_run_context()
+    causal = {}
+    if run_context.source_inquiry_id:
+        causal = {
+            "source_inquiry_id": run_context.source_inquiry_id,
+            "autonomous_intent_id": run_context.autonomous_intent_id,
+            "gateway_intent_id": run_context.outer_execution_ticket_id,
+            "terminal_status": "success" if bool(contract.get("ok")) else "failure",
+        }
     notify_native_post_commit(NativePostCommitEvent(
         source_kind="TOOL_RESULT",
         source_native_id=native_id,
         producer_ref="v3.tool_result_contract",
-        payload={"tool_name": str(tool_name or ""), **contract},
+        payload={"tool_name": str(tool_name or ""), **contract, **causal},
         occurred_at_ms=int(time.time() * 1000),
     ))
     return output

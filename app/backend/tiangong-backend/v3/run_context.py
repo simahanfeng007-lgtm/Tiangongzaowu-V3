@@ -31,6 +31,8 @@ class RunContext:
     workspace_id: str = ""
     gateway_url: str = "http://127.0.0.1:7184"
     learning_intent_verified: bool = False
+    source_inquiry_id: str = ""
+    autonomous_intent_id: str = ""
     # Prompt construction input only. Deliberately excluded from audit_metadata()
     # so raw user text is not copied into run/audit identity surfaces.
     current_user_text: str = ""
@@ -58,6 +60,8 @@ class RunContext:
             "outer_execution_ticket_id": self.outer_execution_ticket_id,
             "workspace_id": self.workspace_id,
             "learning_intent_verified": self.learning_intent_verified,
+            "source_inquiry_id": self.source_inquiry_id,
+            "autonomous_intent_id": self.autonomous_intent_id,
         }
 
 
@@ -116,6 +120,8 @@ def from_conversation_context(value: Mapping[str, Any] | None) -> RunContext:
         workspace_id=_text(context.get("workspace_id"), metadata.get("workspace_id")),
         gateway_url=_text(context.get("gateway_url"), metadata.get("gateway_url"), "http://127.0.0.1:7184"),
         current_user_text=current_user_text,
+        source_inquiry_id=_text(context.get("source_inquiry_id"), metadata.get("source_inquiry_id")),
+        autonomous_intent_id=_text(context.get("autonomous_intent_id"), metadata.get("autonomous_intent_id")),
     )
 
 

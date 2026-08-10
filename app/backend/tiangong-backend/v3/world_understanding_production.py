@@ -26,6 +26,7 @@ from world_understanding.context_output import (
     WorldContextRequestHandler,
 )
 from world_understanding.production import ProductionWorldUnderstandingRuntime
+from world_understanding.active_cognition import ActiveWorldCognitionCoordinator
 from world_understanding.software_world import SoftwareWorldFrame
 from world_understanding.source_adapters import build_post_commit_source_envelope
 from world_understanding.world_state import WorldStateStore
@@ -37,6 +38,21 @@ _OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$")
 _runtime_lock = threading.Lock()
 _runtime: ProductionWorldUnderstandingRuntime | None = None
 _context_output: ContextOutputPort | None = None
+_active_dispatcher = None
+_active_coordinator: ActiveWorldCognitionCoordinator | None = None
+
+
+def set_world_inquiry_dispatcher(dispatcher) -> None:
+    """Bind the existing Total Gateway worker; never create a local worker."""
+    if dispatcher is not None and not callable(dispatcher):
+        raise TypeError("world inquiry dispatcher must be callable")
+    global _active_dispatcher
+    _active_dispatcher = dispatcher
+
+
+def _dispatch_world_inquiry(inquiry, result_sink) -> bool:
+    dispatcher = _active_dispatcher
+    return False if dispatcher is None else bool(dispatcher(inquiry, result_sink))
 
 
 def _state_root() -> Path:
@@ -113,7 +129,7 @@ def _frame_factory(envelope, cut):
 
 
 def production_world_understanding_runtime() -> ProductionWorldUnderstandingRuntime:
-    global _runtime, _context_output
+    global _runtime, _context_output, _active_coordinator
     if _runtime is not None:
         return _runtime
     with _runtime_lock:
@@ -137,10 +153,15 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
                 projector=WorldContextProjector(token_estimator=estimate_tokens),
                 output_port=output,
             )
+            _active_coordinator = ActiveWorldCognitionCoordinator(
+                store=store,
+                dispatcher=_dispatch_world_inquiry,
+            )
             _runtime = ProductionWorldUnderstandingRuntime(
                 store=store,
                 frame_factory=_frame_factory,
                 context_request_handler=handler,
+                committed_state_observer=_active_coordinator.observe,
             )
             _context_output = output
     return _runtime
@@ -200,4 +221,5 @@ __all__ = [
     "observe_native_post_commit",
     "production_context_output_port",
     "production_world_understanding_runtime",
+    "set_world_inquiry_dispatcher",
 ]

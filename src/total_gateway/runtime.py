@@ -1125,6 +1125,10 @@ class GatewayRuntime:
                         else retrieve_knowledge
                     ),
                 )
+                if runtime.backend_service is not None:
+                    runtime.backend_service.set_world_inquiry_dispatcher(
+                        runtime.orchestration.submit_world_inquiry
+                    )
                 release_manifest_path = runtime.orchestration.release_manifest_path
                 if config.environment == "production" and release_manifest_path is None:
                     raise RuntimeError("production readiness manifest origin is missing")

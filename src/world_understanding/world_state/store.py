@@ -9,7 +9,9 @@ from collections import defaultdict, deque
 import json
 import os
 from pathlib import Path
+from threading import RLock
 from typing import Any
+from contracts.canonical import canonical_sha256
 from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.entity import WorldEntity
 from contracts.world_understanding.relation import WorldRelation
@@ -90,13 +92,21 @@ def _snapshot_load(payload: dict[str,Any]) -> MaterializedWorldSnapshot:
     return MaterializedWorldSnapshot(state,cut,entity,relation,cognition,hypotheses,uncertainty,dependencies,delta,str(payload["frame_id"]),entities,relations)
 
 class WorldStateStore:
-    def __init__(self, *, root: str | os.PathLike[str] | None=None, max_history_per_frame: int=64) -> None:
+    def __init__(self, *, root: str | os.PathLike[str] | None=None, max_history_per_frame: int=64, max_active_cognition_records: int=4096) -> None:
         if not 2 <= max_history_per_frame <= 4096: raise ValueError("WORLD_STATE_HISTORY_LIMIT_INVALID")
+        if not 8 <= max_active_cognition_records <= 65_536: raise ValueError("WORLD_ACTIVE_COGNITION_HISTORY_LIMIT_INVALID")
         self.root=None if root is None else Path(root).expanduser().resolve(strict=False)
         self.max_history_per_frame=max_history_per_frame
+        self.max_active_cognition_records=max_active_cognition_records
         self._snapshots: dict[str,MaterializedWorldSnapshot]={}
         self._current: dict[tuple[str,str,str,str],str]={}
         self._history: dict[tuple[str,str,str,str],deque[str]]=defaultdict(deque)
+        # P13.2 causal control records live in the canonical WorldState store
+        # index.  This is not a second state database: it is the bounded,
+        # restart-safe lineage needed to prevent one gap from spawning the
+        # same autonomous observation repeatedly.
+        self._active_cognition: dict[str,dict[str,Any]]={}
+        self._lock=RLock()
         self._load_index_if_present()
     @staticmethod
     def _stream_key(snapshot: MaterializedWorldSnapshot) -> tuple[str,str,str,str]:
@@ -117,11 +127,21 @@ class WorldStateStore:
             if len(key)!=4: raise ValueError("WORLD_STATE_INDEX_KEY_INVALID")
             self._current[key]=str(row["current"])
             self._history[key]=deque(str(x) for x in row.get("history",()))
+        for row in payload.get("active_cognition",[]):
+            if not isinstance(row,dict): raise ValueError("WORLD_ACTIVE_COGNITION_RECORD_INVALID")
+            record_id=str(row.get("record_id") or "")
+            record_sha256=str(row.get("record_sha256") or "")
+            if not record_id or record_sha256!=canonical_sha256({k:v for k,v in row.items() if k!="record_sha256"}):
+                raise ValueError("WORLD_ACTIVE_COGNITION_RECORD_HASH_INVALID")
+            self._active_cognition[record_id]=dict(row)
+        if len(self._active_cognition)>self.max_active_cognition_records:
+            raise ValueError("WORLD_ACTIVE_COGNITION_HISTORY_LIMIT_EXCEEDED")
     def _index_payload(self, current: dict[tuple[str,str,str,str],str], history: dict[tuple[str,str,str,str],deque[str]]) -> dict[str,Any]:
         rows=[]
         for key in sorted(current):
             rows.append({"key":key,"current":current[key],"history":tuple(history.get(key,()))})
-        return {"schema":"tiangong.world-state-store.index.v1","streams":rows}
+        cognition=[self._active_cognition[key] for key in sorted(self._active_cognition)]
+        return {"schema":"tiangong.world-state-store.index.v1","streams":rows,"active_cognition":cognition}
     def _persist_index(self) -> None:
         path=self._index_path()
         if path is not None:
@@ -149,6 +169,56 @@ class WorldStateStore:
         snap=_snapshot_load(json.loads(path.read_text(encoding="utf-8"))); self._validate_snapshot(snap)
         if snap.state.world_state_id!=state_id: raise ValueError("WORLD_STATE_PERSISTED_ID_MISMATCH")
         self._snapshots[state_id]=snap; return snap
+    def active_cognition_record(self, record_id: str) -> dict[str,Any] | None:
+        with self._lock:
+            row=self._active_cognition.get(str(record_id))
+            return None if row is None else json.loads(json.dumps(row,ensure_ascii=False))
+    def active_cognition_records(self, *, world_scope_hash: str | None=None) -> tuple[dict[str,Any],...]:
+        with self._lock:
+            rows=(self._active_cognition[key] for key in sorted(self._active_cognition))
+            return tuple(
+                json.loads(json.dumps(row,ensure_ascii=False))
+                for row in rows
+                if world_scope_hash is None or str(row.get("world_scope_hash") or "")==world_scope_hash
+            )
+    def put_active_cognition_record(self, record: dict[str,Any]) -> dict[str,Any]:
+        """Atomically persist one hashed inquiry-cycle record in this store."""
+        if not isinstance(record,dict): raise ValueError("WORLD_ACTIVE_COGNITION_RECORD_INVALID")
+        candidate=dict(record)
+        record_id=str(candidate.get("record_id") or "")
+        if not record_id: raise ValueError("WORLD_ACTIVE_COGNITION_RECORD_ID_REQUIRED")
+        candidate.pop("record_sha256",None)
+        candidate["record_sha256"]=canonical_sha256(candidate)
+        with self._lock:
+            previous=self._active_cognition.get(record_id)
+            if previous is not None and int(candidate.get("revision") or 0)<=int(previous.get("revision") or 0):
+                if candidate["record_sha256"]==previous.get("record_sha256"): return dict(previous)
+                raise ValueError("WORLD_ACTIVE_COGNITION_REVISION_REGRESSION")
+            self._active_cognition[record_id]=candidate
+            evicted: dict[str,dict[str,Any]]={}
+            if len(self._active_cognition)>self.max_active_cognition_records:
+                closed=sorted(
+                    (
+                        row for key,row in self._active_cognition.items()
+                        if key!=record_id and str(row.get("status") or "")=="CLOSED"
+                    ),
+                    key=lambda row:(int(row.get("closed_at_ms") or row.get("created_at_ms") or 0),str(row.get("record_id") or "")),
+                )
+                while len(self._active_cognition)>self.max_active_cognition_records and closed:
+                    victim=closed.pop(0); victim_id=str(victim["record_id"])
+                    evicted[victim_id]=self._active_cognition.pop(victim_id)
+                if len(self._active_cognition)>self.max_active_cognition_records:
+                    if previous is None: self._active_cognition.pop(record_id,None)
+                    else: self._active_cognition[record_id]=previous
+                    raise ValueError("WORLD_ACTIVE_COGNITION_HISTORY_FULL")
+            try:
+                self._persist_index()
+            except Exception:
+                if previous is None: self._active_cognition.pop(record_id,None)
+                else: self._active_cognition[record_id]=previous
+                self._active_cognition.update(evicted)
+                raise
+            return dict(candidate)
     def history(self, *, life_id: str, world_scope_hash: str, principal_scope_hash: str, frame_id: str) -> tuple[MaterializedWorldSnapshot,...]:
         key=(life_id,world_scope_hash,principal_scope_hash,frame_id)
         return tuple(s for sid in self._history.get(key,()) if (s:=self.get(sid)) is not None)
@@ -169,6 +239,11 @@ class WorldStateStore:
         if entity_refs != snapshot.entity_heads.refs: raise ValueError("WORLD_STATE_ENTITY_BODY_MISMATCH")
         if relation_refs != snapshot.relation_heads.refs: raise ValueError("WORLD_STATE_RELATION_BODY_MISMATCH")
     def publish(self, snapshot: MaterializedWorldSnapshot) -> MaterializedWorldSnapshot:
+        # ProductionWorldUnderstandingRuntime serializes publications.  The
+        # store lock additionally excludes concurrent P13.2 outcome updates.
+        with self._lock:
+            return self._publish_locked(snapshot)
+    def _publish_locked(self, snapshot: MaterializedWorldSnapshot) -> MaterializedWorldSnapshot:
         if not snapshot.state.has_valid_hash(): raise ValueError("WORLD_STATE_HASH_INVALID")
         self._validate_snapshot(snapshot); key=self._stream_key(snapshot)
         old=self.current(life_id=key[0],world_scope_hash=key[1],principal_scope_hash=key[2],frame_id=key[3])

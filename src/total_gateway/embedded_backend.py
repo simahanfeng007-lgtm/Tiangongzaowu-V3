@@ -428,6 +428,16 @@ class EmbeddedBackendRuntime:
         setter(provider)
         self._learning_ingest_provider = provider
 
+    def set_world_inquiry_dispatcher(self, dispatcher: Any) -> None:
+        """Wire P13.2 to the one Gateway orchestration worker in-process."""
+        if dispatcher is not None and not callable(dispatcher):
+            raise TypeError("world inquiry dispatcher must be callable")
+        module = importlib.import_module("v3.world_understanding_production")
+        setter = getattr(module, "set_world_inquiry_dispatcher", None)
+        if not callable(setter):
+            raise EmbeddedBackendError("world_inquiry.dispatcher_unsupported")
+        setter(dispatcher)
+
     def _learning_decision(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """Ask the configured model for a bounded learning-path proposal.
 
@@ -654,6 +664,46 @@ class EmbeddedBackendRuntime:
         decision = json.loads(match.group(0))
         if not isinstance(decision, dict):
             raise ValueError("autonomy activity model result is invalid")
+        return {
+            "ok": True,
+            "decision": decision,
+            "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest(),
+        }
+
+    def _world_inquiry_decision(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Existing Self-Will model bridge for one zero-authority inquiry.
+
+        The model can propose one bounded read-only observation, but it cannot
+        authorize it.  Total Gateway independently validates the proposal and
+        issues the normal outer Ticket plus inner Omni Grant.
+        """
+        inquiry = body.get("inquiry")
+        if not isinstance(inquiry, Mapping):
+            raise ValueError("world inquiry is required")
+        encoded = json.dumps(dict(inquiry), ensure_ascii=False, sort_keys=True)
+        if len(encoded.encode("utf-8")) > 128 * 1024:
+            raise ValueError("world inquiry is too large")
+        system_prompt = (
+            "你是天工生命体已有的 Self-Will 决策层。输入是世界理解系统提出的零权限 Inquiry，"
+            "它不是用户命令，也不构成授权。只返回一个 JSON 对象，不要 Markdown。字段："
+            "decision（ACCEPT/DEFER/DISMISS/EXPIRE）、goal、reason_codes（数组），以及 ACCEPT 时的 "
+            "observation={action,target,args}。observation 只能提出一次低风险只读现实观察；action 只能是 "
+            "system.health、system.capabilities、file.read、file.list、file.search、file.hash、git.status、"
+            "git.diff、git.log、web.search、web.fetch。证据不足以安全确定 target/args 时必须 DEFER。"
+            "不得提出写入、删除、执行命令、发消息、登录、授权或多步循环，也不得声称观察已经发生。"
+        )
+        llm = getattr(self.scheduler, "_zhiming_llm", None)
+        if not callable(llm):
+            raise RuntimeError("world inquiry self-will bridge unavailable")
+        raw = str(llm(system_prompt, encoded) or "").strip()
+        if raw.startswith("[LLM"):
+            raise RuntimeError(raw[:240])
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if match is None:
+            raise ValueError("world inquiry self-will did not return JSON")
+        decision = json.loads(match.group(0))
+        if not isinstance(decision, dict):
+            raise ValueError("world inquiry self-will result is invalid")
         return {
             "ok": True,
             "decision": decision,
@@ -896,6 +946,10 @@ class EmbeddedBackendRuntime:
             elif verb == "POST" and path == "/api/v1/internal/autonomy/activity":
                 # Model-only internal work; no core/tool execution lock.
                 result = self._autonomy_activity_decision(body)
+            elif verb == "POST" and path == "/api/v1/internal/world-inquiry/decision":
+                # Model-only Self-Will proposal. Gateway remains the sole
+                # authority and executor for the proposed observation.
+                result = self._world_inquiry_decision(body)
             elif verb == "POST" and path == "/api/v1/internal/life-action/invoke":
                 with core_lock:
                     result = self._invoke_life_bound_action(body)
