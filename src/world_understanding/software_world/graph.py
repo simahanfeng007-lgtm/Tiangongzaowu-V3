@@ -51,6 +51,29 @@ class SparseWorldGraph:
         ids = self._token_index.get(token, ())
         return tuple(self._entities[entity_id] for entity_id in sorted(ids) if entity_id in self._entities and self._entities[entity_id].lifecycle == "ACTIVE")
 
+    def resolve_token_bounded(self, token: str, *, max_matches: int = 16) -> tuple[WorldEntity, ...]:
+        """Resolve one exact graph token without permitting an unbounded alias fanout.
+
+        The token index is already maintained by authoritative entity upserts.  A
+        caller that receives ``SOFTWARE_WORLD_TOKEN_MATCH_LIMIT_EXCEEDED`` must
+        refine or abandon the token; it must not fall back to a whole-graph scan.
+        """
+        if not isinstance(max_matches, int) or isinstance(max_matches, bool) or not 1 <= max_matches <= 512:
+            raise ValueError("SOFTWARE_WORLD_TOKEN_MATCH_LIMIT_INVALID")
+        entity = self._entities.get(token)
+        if entity is not None:
+            return (entity,) if entity.lifecycle == "ACTIVE" else ()
+        ids = self._token_index.get(token)
+        if not ids:
+            return ()
+        if len(ids) > max_matches:
+            raise ValueError("SOFTWARE_WORLD_TOKEN_MATCH_LIMIT_EXCEEDED")
+        return tuple(
+            self._entities[entity_id]
+            for entity_id in sorted(ids)
+            if entity_id in self._entities and self._entities[entity_id].lifecycle == "ACTIVE"
+        )
+
     def file_entities(self, path: str) -> tuple[WorldEntity, ...]:
         ids = self._path_index.get(path, ())
         return tuple(self._entities[entity_id] for entity_id in sorted(ids) if entity_id in self._entities and self._entities[entity_id].lifecycle == "ACTIVE")
