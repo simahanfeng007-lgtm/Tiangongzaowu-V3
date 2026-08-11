@@ -46,6 +46,7 @@ jobs:
           src/world_understanding/source_compilers/p3.py
           src/world_understanding/software_world/git_observation.py
           src/world_understanding/software_world/perception.py
+          src/world_understanding/software_world/graph.py
           src/world_understanding/software_world/relation.py
           src/world_understanding/software_world/query.py
           src/world_understanding/software_world/updater.py
