@@ -51,6 +51,14 @@ def test_m4_does_not_read_repository_structure_cache_for_context() -> None:
     assert "execute_repository_graph_query" in source
 
 
+def test_m4_seed_discovery_uses_bounded_index_not_whole_graph_scan() -> None:
+    source = _text("src/world_understanding/context_output/repository.py")
+    assert "graph.entities()" not in source
+    assert "resolve_token_bounded" in source
+    assert "_MAX_FOCUS_TOKENS = 16" in source
+    assert "_MAX_TOKEN_MATCHES = 16" in source
+
+
 def test_m4_handler_enrichment_is_optional_fail_open_only() -> None:
     source = _text("src/world_understanding/context_output/handler.py")
     assert "projection_enricher" in source
