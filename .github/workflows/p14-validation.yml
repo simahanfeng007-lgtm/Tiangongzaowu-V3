@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  m4-focused:
-    name: m4-focused-${{ matrix.os }}
+  m5-focused:
+    name: m5-focused-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -37,7 +37,7 @@ jobs:
       - name: Install source-runtime dependencies
         run: python -m pip install -r requirements-source.lock
 
-      - name: Compile M2-M4 production surface
+      - name: Compile M2-M5 production surface
         run: >-
           python -m compileall -q
           src/contracts/world_understanding/repository_structure.py
@@ -66,8 +66,9 @@ jobs:
           tests/test_repository_query_p14_m3_wiring.py
           tests/test_repository_context_p14_m4.py
           tests/test_repository_context_p14_m4_wiring.py
+          tests/test_repository_incremental_p14_m5.py
 
-      - name: Run M2-M4 repository regression
+      - name: Run M2-M5 repository regression
         run: >-
           python -m pytest -q
           tests/test_repository_structure_p14_m2.py
@@ -77,6 +78,7 @@ jobs:
           tests/test_repository_query_p14_m3_wiring.py
           tests/test_repository_context_p14_m4.py
           tests/test_repository_context_p14_m4_wiring.py
+          tests/test_repository_incremental_p14_m5.py
 
       - name: Run P3-P13 boundary regression
         run: >-
