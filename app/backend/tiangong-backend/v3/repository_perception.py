@@ -19,6 +19,7 @@ from contracts.world_understanding.repository import (
     RepositoryObservation,
     RepositoryPathChange,
     RepositoryPathRename,
+    RepositoryProvider,
     RepositoryProviderCapabilities,
     RepositoryRevision,
     RepositoryWorkingTreeState,
@@ -368,10 +369,15 @@ class LocalGitRepositoryProvider:
         records = _status_records(status_raw)
         state = _working_tree_state(records)
         overlay = _overlay_changes(root, records)
+        same_branch_frame = (
+            previous_revision is not None
+            and previous_revision.branch == revision.branch
+            and previous_revision.detached_head == revision.detached_head
+        )
         committed = (
-            ()
-            if previous_revision is None
-            else _commit_changes(root, previous_revision.head_commit, revision.head_commit)
+            _commit_changes(root, previous_revision.head_commit, revision.head_commit)
+            if same_branch_frame and previous_revision is not None
+            else ()
         )
         merged = {item.sort_key(): item for item in (*committed, *overlay)}
         changes = tuple(merged[key] for key in sorted(merged))
@@ -401,17 +407,23 @@ class LocalGitRepositoryProvider:
 
 
 def observe_active_repository(
-    provider: LocalGitRepositoryProvider | None = None,
+    provider: RepositoryProvider | None = None,
+    *,
+    previous_revision: RepositoryRevision | None = None,
 ) -> RepositoryObservation | None:
     """Observe the workspace authority once; no scheduler or watcher is created."""
-    sensor = provider or LocalGitRepositoryProvider()
+    sensor: RepositoryProvider = provider or LocalGitRepositoryProvider()
     root = duqu_workspace_root()
     identity = sensor.discover(str(root))
-    return None if identity is None else sensor.observe(identity)
+    if identity is None:
+        return None
+    if previous_revision is not None:
+        return sensor.observe_delta(identity, previous_revision)
+    return sensor.observe(identity)
 
 
 def publish_active_repository_observation(
-    provider: LocalGitRepositoryProvider | None = None,
+    provider: RepositoryProvider | None = None,
 ) -> object | None:
     """Publish one bounded Git + structure reality notification through native ingress."""
     try:
@@ -420,6 +432,27 @@ def publish_active_repository_observation(
         return None
     if observation is None:
         return None
+
+    try:
+        from .world_understanding_production import production_repository_previous_revision
+
+        previous = production_repository_previous_revision(observation)
+        if (
+            previous is not None
+            and previous.branch == observation.revision.branch
+            and previous.detached_head == observation.revision.detached_head
+            and previous.head_commit != observation.revision.head_commit
+        ):
+            delta_observation = observe_active_repository(
+                provider,
+                previous_revision=previous,
+            )
+            if delta_observation is not None:
+                observation = delta_observation
+    except Exception:
+        # Repository sensing is an observer path. Failure to recover a delta
+        # baseline must not block the source owner's already-committed action.
+        pass
 
     payload: dict = observation.model_dump(mode="json")
     native_hash = observation.observation_sha256
