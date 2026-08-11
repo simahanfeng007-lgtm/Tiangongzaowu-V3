@@ -11,6 +11,7 @@ import ast
 import hashlib
 import importlib
 import importlib.metadata
+import json
 import os
 import re
 import threading
@@ -31,8 +32,14 @@ from contracts.world_understanding.repository_structure import (
     RepositoryStructureRetirement,
     RepositoryStructureSnapshot,
 )
+from contracts.world_understanding.repository_tree import (
+    RepositoryTreeFile,
+    RepositoryTreeManifest,
+    RepositoryTreeRetirement,
+    materialize_repository_tree_nodes,
+)
 
-_BUILDER_VERSION = "repository-structure.v0.2"
+_BUILDER_VERSION = "repository-structure.v0.4"
 _MAX_BASELINE_FILES = 256
 _MAX_SHARD_FILES = 128
 _MAX_DISCOVERED_FILES = 100_000
@@ -207,21 +214,84 @@ def _bounded_target(root: Path, path: str) -> Path | None:
         return None
 
 
+def _repository_excluded_prefixes(root: Path) -> frozenset[str]:
+    """Return bounded, deterministic generated/ignored repository prefixes.
+
+    Full Git ignore interpretation remains Git's authority. The structure
+    sensor only consumes literal root-directory exclusions plus declared
+    generated targets, which is enough to prevent embedded runtimes and build
+    mirrors from dominating source perception without inventing ignore rules.
+    """
+
+    prefixes: set[str] = set()
+    ignore_path = root / ".gitignore"
+    try:
+        if ignore_path.is_file() and ignore_path.stat().st_size <= 256 * 1024:
+            for raw in ignore_path.read_text(encoding="utf-8", errors="strict").splitlines():
+                line = raw.strip()
+                if (
+                    line.startswith("/")
+                    and line.endswith("/")
+                    and not line.startswith("!/")
+                    and not any(char in line for char in "*?[\\")
+                ):
+                    value = _repo_path(line.strip("/"))
+                    if value and ".." not in PurePosixPath(value).parts:
+                        prefixes.add(value)
+    except (OSError, UnicodeError):
+        pass
+
+    ownership_path = root / "source-ownership.json"
+    try:
+        if ownership_path.is_file() and ownership_path.stat().st_size <= 1024 * 1024:
+            payload = json.loads(ownership_path.read_text(encoding="utf-8", errors="strict"))
+            for mapping in payload.get("mappings", ()) if isinstance(payload, dict) else ():
+                if not isinstance(mapping, dict):
+                    continue
+                for raw in mapping.get("targets", ()):
+                    value = _repo_path(str(raw or "").strip().strip("/"))
+                    if (
+                        value
+                        and not value.startswith("/")
+                        and ".." not in PurePosixPath(value).parts
+                    ):
+                        prefixes.add(value)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        pass
+    return frozenset(prefixes)
+
+
+def _excluded_repository_path(path: str, prefixes: frozenset[str]) -> bool:
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)
+
+
 def _candidate_paths(root: Path) -> tuple[tuple[str, ...], int, bool]:
     root = root.resolve(strict=False)
+    excluded_prefixes = _repository_excluded_prefixes(root)
     rows: list[str] = []
     candidate_count = 0
     truncated = False
     for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
+        try:
+            current_rel = Path(current).relative_to(root).as_posix()
+        except (OSError, ValueError):
+            current_rel = ""
         dirs[:] = sorted(
             name for name in dirs
-            if name not in _PRUNED_DIRS and not Path(current, name).is_symlink()
+            if name not in _PRUNED_DIRS
+            and not Path(current, name).is_symlink()
+            and not _excluded_repository_path(
+                _repo_path(f"{current_rel}/{name}".strip("/")),
+                excluded_prefixes,
+            )
         )
         for name in sorted(files):
             full = Path(current, name)
             try:
                 rel = _repo_path(full.relative_to(root).as_posix())
             except (OSError, ValueError):
+                continue
+            if _excluded_repository_path(rel, excluded_prefixes):
                 continue
             if _language_for(rel) is None:
                 continue
@@ -988,7 +1058,14 @@ def _assert_no_parser_regression(
 class RepositoryStructureIndex:
     """In-process rebuildable cache keyed by repository/worktree identity."""
 
-    __slots__ = ("_lock", "_snapshots", "_last_deltas")
+    __slots__ = (
+        "_lock",
+        "_snapshots",
+        "_last_deltas",
+        "_candidate_cache",
+        "_active_tree_manifests",
+        "_last_tree_manifests",
+    )
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -996,6 +1073,45 @@ class RepositoryStructureIndex:
         self._last_deltas: dict[
             tuple[str, str], tuple[str, RepositoryStructureDelta]
         ] = {}
+        self._candidate_cache: dict[
+            tuple[str, str, str, str], tuple[tuple[str, ...], int, bool]
+        ] = {}
+        self._active_tree_manifests: dict[
+            tuple[str, str], RepositoryTreeManifest
+        ] = {}
+        self._last_tree_manifests: dict[
+            tuple[str, str], tuple[str, RepositoryTreeManifest]
+        ] = {}
+
+    def _candidate_inventory(
+        self,
+        root: Path,
+        observation: RepositoryObservation,
+    ) -> tuple[tuple[str, ...], int, bool]:
+        """Reuse one deterministic discovery result across baseline shards.
+
+        The cache is rebuildable and bound to Git HEAD plus working-tree state;
+        it is neither persisted reality nor an authority. A new repository
+        observation invalidates the prior inventory for that worktree.
+        """
+
+        identity = observation.identity
+        key = (
+            identity.repository_id,
+            identity.worktree_id,
+            observation.revision.head_commit,
+            observation.working_tree_state.state_sha256,
+        )
+        cached = self._candidate_cache.get(key)
+        if cached is not None:
+            return cached
+        inventory = _candidate_paths(root)
+        prefix = key[:2]
+        for stale in tuple(self._candidate_cache):
+            if stale[:2] == prefix:
+                self._candidate_cache.pop(stale, None)
+        self._candidate_cache[key] = inventory
+        return inventory
 
     def current(
         self, repository_id: str, worktree_id: str
@@ -1003,11 +1119,112 @@ class RepositoryStructureIndex:
         with self._lock:
             return self._snapshots.get((repository_id, worktree_id))
 
+    def tree_manifest(
+        self, observation: RepositoryObservation
+    ) -> RepositoryTreeManifest:
+        """Return one complete deterministic total-part inventory.
+
+        The complete path inventory is emitted on every observation. Parser
+        coverage is layered onto those paths from the rebuildable structure
+        snapshot, so an unexpanded file is never confused with a missing file.
+        """
+        identity = observation.identity
+        key = (identity.repository_id, identity.worktree_id)
+        root = Path(identity.worktree_root_ref).resolve(strict=False)
+        with self._lock:
+            cached = self._last_tree_manifests.get(key)
+            if cached is not None and cached[0] == observation.observation_sha256:
+                return cached[1]
+            paths, candidate_count, discovery_truncated = self._candidate_inventory(
+                root, observation
+            )
+            if candidate_count != len(paths):
+                # The wire contract must never call a truncated prefix "total".
+                # At the hard discovery ceiling, report the inventory as
+                # incomplete while keeping its exact discovered cardinality.
+                candidate_count = len(paths)
+            snapshot = self._snapshots.get(key)
+            expanded = {
+                item.path: item
+                for item in (() if snapshot is None else snapshot.files)
+            }
+            files = []
+            for path in sorted(paths):
+                parsed = expanded.get(path)
+                if parsed is None:
+                    coverage = "UNEXPANDED"
+                    fingerprint = None
+                elif parsed.parse_status in {"PARSED", "SYNTAX_ERROR"}:
+                    coverage = "COMPLETE"
+                    fingerprint = parsed.source_fingerprint
+                else:
+                    coverage = "PARTIAL"
+                    fingerprint = parsed.source_fingerprint
+                files.append(RepositoryTreeFile(
+                    path=path,
+                    coverage_state=coverage,
+                    source_fingerprint=fingerprint,
+                ))
+
+            provisional = RepositoryTreeManifest.build(
+                repository_id=identity.repository_id,
+                worktree_id=identity.worktree_id,
+                head_commit=observation.revision.head_commit,
+                working_tree_state_sha256=(
+                    observation.working_tree_state.state_sha256
+                ),
+                builder_version=_BUILDER_VERSION,
+                inventory_complete=not discovery_truncated,
+                files=tuple(files),
+            )
+            previous = self._active_tree_manifests.get(key)
+            retirements: tuple[RepositoryTreeRetirement, ...] = ()
+            if previous is not None:
+                previous_nodes = {
+                    item.stable_anchor: item
+                    for item in materialize_repository_tree_nodes(previous)
+                }
+                current_anchors = {
+                    item.stable_anchor
+                    for item in materialize_repository_tree_nodes(provisional)
+                }
+                rows = [
+                    RepositoryTreeRetirement(
+                        entity_type=node.entity_type,
+                        stable_anchor=node.stable_anchor,
+                        canonical_name=node.canonical_name,
+                    )
+                    for anchor, node in previous_nodes.items()
+                    if anchor not in current_anchors and node.entity_type != "Repository"
+                ]
+                retirements = tuple(sorted(rows, key=lambda item: item.sort_key()))
+            manifest = RepositoryTreeManifest.build(
+                repository_id=provisional.repository_id,
+                worktree_id=provisional.worktree_id,
+                head_commit=provisional.head_commit,
+                working_tree_state_sha256=provisional.working_tree_state_sha256,
+                builder_version=provisional.builder_version,
+                inventory_complete=provisional.inventory_complete,
+                files=provisional.files,
+                retirements=retirements,
+            )
+            self._active_tree_manifests[key] = manifest
+            self._last_tree_manifests[key] = (
+                observation.observation_sha256,
+                manifest,
+            )
+            return manifest
+
     def discard(self, repository_id: str, worktree_id: str) -> None:
         with self._lock:
             key = (repository_id, worktree_id)
             self._snapshots.pop(key, None)
             self._last_deltas.pop(key, None)
+            self._active_tree_manifests.pop(key, None)
+            self._last_tree_manifests.pop(key, None)
+            for cached in tuple(self._candidate_cache):
+                if cached[:2] == key:
+                    self._candidate_cache.pop(cached, None)
 
     def update(self, observation: RepositoryObservation) -> RepositoryStructureDelta:
         started = time.perf_counter_ns()
@@ -1020,11 +1237,33 @@ class RepositoryStructureIndex:
         with self._lock:
             previous = self._snapshots.get(key)
             last = self._last_deltas.get(key)
+            same_observation = bool(
+                last is not None and last[0] == observation.observation_sha256
+            )
             if (
-                last is not None
-                and last[0] == observation.observation_sha256
+                same_observation
                 and (previous is None or not previous.truncated)
             ):
+                assert last is not None
+                return last[1]
+            if previous is not None and previous.truncated and same_observation:
+                advanced = self._advance_baseline(
+                    root=root,
+                    observation=observation,
+                    previous=previous,
+                    built_at_ms=built_at_ms,
+                    started_ns=started,
+                )
+                if advanced is not None:
+                    self._last_deltas[key] = (
+                        observation.observation_sha256,
+                        advanced,
+                    )
+                    return advanced
+                # The bounded index reached its capacity or has no remaining
+                # candidates. Reuse the last result instead of reprocessing
+                # an already-absorbed dirty overlay forever.
+                assert last is not None
                 return last[1]
             changed_paths = _changed_structure_paths(observation)
             needs_full = previous is None
@@ -1163,7 +1402,7 @@ class RepositoryStructureIndex:
     ) -> tuple[
         RepositoryStructureSnapshot, tuple[RepositoryStructureFile, ...], int, int, bool
     ]:
-        paths, candidate_count, truncated = _candidate_paths(root)
+        paths, candidate_count, truncated = self._candidate_inventory(root, observation)
         files: dict[str, RepositoryStructureFile] = {}
         total_bytes = 0
         total_nodes = 0
@@ -1230,7 +1469,7 @@ class RepositoryStructureIndex:
         previous: RepositoryStructureSnapshot, built_at_ms: int, started_ns: int,
     ) -> RepositoryStructureDelta | None:
         """Advance one deterministic rebuildable shard on an existing refresh."""
-        paths, candidate_count, discovery_truncated = _candidate_paths(root)
+        paths, candidate_count, discovery_truncated = self._candidate_inventory(root, observation)
         old_files = {file.path: file for file in previous.files}
         missing = [path for path in paths if path not in old_files]
         if not missing or len(old_files) >= _MAX_INDEXED_FILES:

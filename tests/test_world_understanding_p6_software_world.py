@@ -9,6 +9,8 @@ from contracts.world_understanding.relation import WorldRelation
 from world_understanding.source_compilers import SPECS
 from world_understanding.source_compilers.base import make_direct_known
 from world_understanding.software_world import SoftwareWorldFrame, SparseWorldGraph, SoftwareWorldUpdater, GitPathChange, GitCommitDelta, FrameMismatch
+from world_understanding.software_world.entity import EntitySeed, build_entity
+from world_understanding.known.set import known_ref
 from world_understanding.software_world.perception import ENTITY_IDENTITY_TYPES, FORBIDDEN_SEMANTIC_RELATIONS
 
 P='a'*64
@@ -54,6 +56,33 @@ def test_rename_preserves_file_identity():
     u.update(frame=f2,graph=g,git_delta=delta(f2,'c1',(GitPathChange('RENAME',old_path='a.py',new_path='b.py',old_blob_sha='1'*64,new_blob_sha='1'*64),)))
     new=g.file_entities('b.py')[0]
     assert new.entity_id==old.entity_id and new.revision==old.revision+1 and 'a.py' in new.aliases
+
+
+def test_git_add_corroborates_existing_tree_file_without_erasing_tree_identity():
+    fr=frame(); anchor='gitfile.tree.add'; graph=SparseWorldGraph(fr)
+    tree_file=build_entity(
+        fr,
+        EntitySeed(
+            entity_type='File',stable_anchor=anchor,canonical_name='src/new.py',
+            basis_ref=known_ref(identity('FILE_IDENTITY','basis.tree.add','basis.tree.add')),
+            time=fr.time,truth_state='TRUE',
+            epistemic_state='CURRENT',attributes=(('coverage_state','UNEXPANDED'),),
+            aliases=(anchor,'new.py'),
+        ),
+    )
+    graph.upsert_entity(tree_file)
+    out=SoftwareWorldUpdater().update(
+        frame=fr,graph=graph,
+        git_delta=delta(fr,None,(GitPathChange(
+            'ADD',new_path='src/new.py',new_blob_sha='1'*64,
+            explicit_identity_anchor=anchor,
+        ),)),
+    )
+    current=out.graph.resolve_token(anchor)
+    assert len(current)==1 and current[0].entity_id==tree_file.entity_id
+    assert 'new.py' in current[0].aliases
+    attrs={item.key:item.value.string_value for item in current[0].attributes}
+    assert attrs['coverage_state']=='UNEXPANDED' and attrs['path']=='src/new.py'
 
 
 def test_delete_then_add_is_not_silent_rename():

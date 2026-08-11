@@ -177,17 +177,22 @@ def test_p14_large_structure_projection_fits_native_ingress_cap(tmp_path: Path) 
         working_tree_state=RepositoryWorkingTreeState.build(),
         provider_version="test-v1",
     )
-    delta = structure.RepositoryStructureIndex().update(observation)
+    index = structure.RepositoryStructureIndex()
+    delta = index.update(observation)
+    tree_manifest = index.tree_manifest(observation)
     assert len(canonical_json_bytes({
         "repository_observation": observation.model_dump(mode="json"),
         "structure_delta": delta.model_dump(mode="json"),
     })) > perception._MAX_INLINE_WORLD_PAYLOAD_BYTES
 
-    bounded = perception._bounded_structure_payload(observation, delta)
+    bounded = perception._bounded_structure_payload(
+        observation, delta, tree_manifest
+    )
 
     assert bounded is not None
     payload, digest = bounded
     assert len(canonical_json_bytes(payload)) <= perception._MAX_INLINE_WORLD_PAYLOAD_BYTES
+    assert payload["repository_tree"]["candidate_path_count"] == 270
     assert payload["structure_delta"]["truncated"] is True
     assert len(payload["structure_delta"]["upsert_files"]) < len(delta.upsert_files)
     assert payload["structure_delta"]["delta_sha256"] == digest

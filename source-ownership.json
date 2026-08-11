@@ -40,6 +40,14 @@
       ]
     },
     {
+      "id": "world-understanding-embedded-python",
+      "source": "src/world_understanding",
+      "targets": [
+        "app/runtime/python312/Lib/site-packages/world_understanding"
+      ],
+      "note": "Generated runtime mirror only. src/world_understanding remains the single human-editable authority."
+    },
+    {
       "id": "communication-service-embedded-python",
       "source": "src/communication_service",
       "targets": [

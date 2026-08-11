@@ -179,7 +179,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_qc_execution_success_does_not_hide_failed_acceptance(self) -> None:
         from v3.zongdiaodu import (
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_quality_gate_payload,
         )
 
@@ -228,7 +228,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             "failures": [],
             "final_requirement_gaps": [],
         }
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        allowed, status, reasons = _simple_chain_evidence_check(
             prompt,
             [qc_payload, hash_payload],
             [{"path": "proposal.docx"}],
@@ -246,7 +246,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_failed_later_qc_attempt_cannot_replace_failed_acceptance(self) -> None:
         from v3.zongdiaodu import (
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_new_run_state,
             _simple_chain_record_observation,
         )
@@ -282,7 +282,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             _simple_chain_record_observation(run_state, hash_payload)
         self.assertNotIn("qc.video.delivery_check", run_state["completed_actions"])
 
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        allowed, status, reasons = _simple_chain_evidence_check(
             prompt,
             [failed_acceptance, transport_failure, hash_payload],
             [{"path": "video.mp4"}],
@@ -334,7 +334,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_learning_only_request_closes_from_authoritative_receipt(self) -> None:
         from v3.zongdiaodu import (
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_is_learning_only_request,
             _simple_chain_learning_completion_reply,
             _simple_chain_learning_material_text,
@@ -367,7 +367,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         self.assertEqual(_simple_chain_learning_receipt(payload)["card_id"], "learn_test_receipt")
         self.assertIn("learn_test_receipt", _simple_chain_learning_completion_reply(payload))
         self.assertEqual(
-            _simple_chain_final_hard_gate(prompt, [payload], []),
+            _simple_chain_evidence_check(prompt, [payload], []),
             (True, "complete", []),
         )
 
@@ -467,14 +467,14 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         self.assertFalse(hasattr(scheduler, "_partial_cjk_match"))
 
     def test_strict_order_is_checked_only_by_final_gate(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+        from v3.zongdiaodu import _simple_chain_evidence_check
 
         prompt = "请严格按顺序实际执行 file.read、file.hash。"
         reversed_history = [
             {"ok": True, "tool_action": "file.hash", "failures": [], "final_requirement_gaps": []},
             {"ok": True, "tool_action": "file.read", "failures": [], "final_requirement_gaps": []},
         ]
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        allowed, status, reasons = _simple_chain_evidence_check(
             prompt,
             reversed_history,
             [],
@@ -509,7 +509,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
 
     def test_final_gate_requires_every_explicitly_named_action(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+        from v3.zongdiaodu import _simple_chain_evidence_check
 
         prompt = "Strictly in this order, execute file.hash and qc.docx.delivery_check."
         history = [{
@@ -518,7 +518,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             "failures": [],
             "final_requirement_gaps": [],
         }]
-        allowed, status, reasons = _simple_chain_final_hard_gate(prompt, history, [])
+        allowed, status, reasons = _simple_chain_evidence_check(prompt, history, [])
         self.assertFalse(allowed)
         self.assertEqual(status, "incomplete")
         self.assertIn("qc.docx.delivery_check", "\n".join(reasons))
@@ -529,12 +529,12 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             "failures": [],
             "final_requirement_gaps": [],
         })
-        self.assertEqual(_simple_chain_final_hard_gate(prompt, history, []), (True, "complete", []))
+        self.assertEqual(_simple_chain_evidence_check(prompt, history, []), (True, "complete", []))
 
     def test_final_gate_requires_every_explicitly_named_deliverable(self) -> None:
         from v3.zongdiaodu import (
             _simple_chain_explicit_deliverable_paths,
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_missing_deliverable_paths,
         )
 
@@ -577,13 +577,13 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             _simple_chain_missing_deliverable_paths(prompt, history, []),
             ["projectmanifest.json"],
         )
-        allowed, status, reasons = _simple_chain_final_hard_gate(prompt, history, [])
+        allowed, status, reasons = _simple_chain_evidence_check(prompt, history, [])
         self.assertFalse(allowed)
         self.assertEqual(status, "incomplete")
         self.assertIn("projectmanifest.json", "\n".join(reasons))
 
         history[0]["tool_result_contract"]["paths"][0] = "project/03-longdoc/projectmanifest.json"
-        self.assertEqual(_simple_chain_final_hard_gate(prompt, history, []), (True, "complete", []))
+        self.assertEqual(_simple_chain_evidence_check(prompt, history, []), (True, "complete", []))
 
     def test_learning_ingest_authority_comes_from_original_user_message_not_model_token(self) -> None:
         from v3.run_context import bind_run_context, current_run_context
@@ -848,7 +848,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_readback_of_the_mutated_path_is_verification(self) -> None:
         from v3.zongdiaodu import (
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_has_post_mutation_verification,
         )
 
@@ -875,7 +875,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             },
         ]
         self.assertTrue(_simple_chain_has_post_mutation_verification(history))
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        allowed, status, reasons = _simple_chain_evidence_check(
             "请修改 project/result.json 并验证",
             history,
             [],
@@ -999,6 +999,25 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         for forbidden in ("file.write", "file.read", "file.hash", "omni_body", "exactly one", "stop read"):
             self.assertNotIn(forbidden, serialized)
 
+    def test_completion_correction_stops_after_unchanged_blockers(self) -> None:
+        from v3.zongdiaodu import _simple_chain_completion_correction_stalled
+
+        correction = {
+            "attempts_used": 1,
+            "last_blockers": ["execution_obligation:observation:missing_evidence"],
+        }
+        self.assertTrue(
+            _simple_chain_completion_correction_stalled(
+                correction,
+                ["execution_obligation:observation:missing_evidence"],
+            )
+        )
+        self.assertFalse(
+            _simple_chain_completion_correction_stalled(
+                correction,
+                ["requested verification/test step is missing"],
+            )
+        )
     def test_simple_chain_checkpoint_path_is_durable_and_sanitized(self) -> None:
         from v3.zongdiaodu import _simple_chain_run_state_path
 
@@ -1399,7 +1418,7 @@ class DeliveryFormatContractTests(unittest.TestCase):
             _simple_chain_codex_evidence,
             _simple_chain_expected_suffixes,
             _simple_chain_explicit_deliverable_paths,
-            _simple_chain_final_hard_gate,
+            _simple_chain_evidence_check,
             _simple_chain_mutation_payload_satisfies_request,
             _simple_chain_preflight_issues,
             _simple_chain_requested_target_paths,
@@ -1471,7 +1490,7 @@ class DeliveryFormatContractTests(unittest.TestCase):
                 self.assertTrue(mutation_ok, mutation_issues)
                 self.assertEqual(mutation_issues, [])
 
-                ready, status, reasons = _simple_chain_final_hard_gate(
+                ready, status, reasons = _simple_chain_evidence_check(
                     prompt,
                     [payload],
                     [{"path": str(target), "suffix": ".docx"}],

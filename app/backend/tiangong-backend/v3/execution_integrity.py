@@ -103,7 +103,7 @@ _RELATIVE_FILE_PATH_RE = re.compile(
 )
 _BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
-_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[，。；：,.;:！!？?])", re.IGNORECASE)
+_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[》〉」』】）)\]}'\"，。；：,.;:！!？?])", re.IGNORECASE)
 
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
@@ -117,6 +117,15 @@ _OBSERVATION_ACTIONS = {
     "directory": frozenset({"file.list"}),
     "file": frozenset({"file.read", "code.read", "sheet.read", "pdf.extract_text"}),
 }
+
+_NEGATIVE_EXISTENCE_RE = re.compile(
+    r"(?:如果|若|如若|假如).{0,24}(?:不存在|没有|找不到|未找到|缺失)"
+    r"|(?:不存在|没有这个文件|找不到|未找到|缺失).{0,24}(?:告诉我|说明|回复|结束|即可)"
+    r"|\bif\s+(?:it\s+|the\s+(?:file|path)\s+)?(?:does\s+not|doesn't)\s+exist\b"
+    r"|\bif\s+(?:the\s+(?:file|path)\s+is\s+)?missing\b"
+    r"|\bif\s+(?:it\s+is\s+)?not\s+found\b",
+    re.IGNORECASE,
+)
 
 _TASK_LEVEL_THREE_ACTIONS = frozenset({
     "file.delete_to_trash",
@@ -338,9 +347,44 @@ def _goal_fact_from_obligation(value: Any, index: int) -> dict[str, Any] | None:
 
 def _required_stability(level: Any) -> int:
     # L0 has no work intention. L1 closes on one factual signal; L2/L3 need
-    # factual coverage plus the existing final hard gate, without adding a new
-    # judge or forcing light work through extra planning rounds.
+    # two independent factual signals.  The life contract owns this decision;
+    # external evidence checks may raise uncertainty but are not another judge.
     return {"L0": 0, "L1": 1, "L2": 2, "L3": 2}[normalize_task_level(level)]
+
+
+def _completion_percentage(
+    *,
+    required_count: int,
+    satisfied_count: int,
+    required_stability: int,
+    stability_count: int,
+    evidence_uncertainty: float,
+    constraint_risk: float,
+) -> float:
+    """Return a transparent progress projection, never a second terminal judge."""
+
+    fact_coverage = (
+        min(1.0, satisfied_count / required_count)
+        if required_count
+        else 1.0
+    )
+    stability_coverage = (
+        min(1.0, stability_count / required_stability)
+        if required_stability
+        else 1.0
+    )
+    evidence_confidence = max(0.0, 1.0 - float(evidence_uncertainty or 0.0))
+    safety = max(0.0, 1.0 - float(constraint_risk or 0.0))
+    return round(
+        100.0
+        * (
+            0.55 * fact_coverage
+            + 0.20 * stability_coverage
+            + 0.15 * evidence_confidence
+            + 0.10 * safety
+        ),
+        1,
+    )
 
 
 def _task_contract_hash_payload(contract: dict[str, Any]) -> dict[str, Any]:
@@ -356,6 +400,7 @@ def _task_contract_hash_payload(contract: dict[str, Any]) -> dict[str, Any]:
         "phase": contract.get("phase"),
         "goal_state": contract.get("goal_state"),
         "acceptance_status": contract.get("acceptance_status"),
+        "clarification_required": contract.get("clarification_required"),
     }
 
 
@@ -366,6 +411,7 @@ def _refresh_task_contract_hash(contract: dict[str, Any]) -> None:
 
 
 def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict[str, Any]:
+    user_value = str(user_text or "")
     constraints = {"forbidden_tools": extract_forbidden_actions(user_text)}
     runtime_obligations = [] if chat_mode else build_action_obligations(user_text)
     desired_facts = [
@@ -373,7 +419,7 @@ def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict
         for index, item in enumerate(runtime_obligations, start=1)
         if (fact := _goal_fact_from_obligation(item, index)) is not None
     ]
-    seed = {"user_text": str(user_text or ""), "constraints": constraints, "desired_facts": desired_facts}
+    seed = {"user_text": user_value, "constraints": constraints, "desired_facts": desired_facts}
     contract_id = "goal_" + hashlib.sha256(_canonical_json(seed).encode("utf-8")).hexdigest()[:24]
     pending = [item for item in desired_facts if item.get("required") and item.get("status") != "satisfied"]
     phase = "INACTIVE" if chat_mode else "ACTIVE"
@@ -398,6 +444,9 @@ def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict
         "advisory_constraints": {},
         "validation_issues": [],
         "acceptance_status": "not_applicable" if chat_mode else "pending",
+        "clarification_required": bool(
+            not chat_mode and any(term in _compact(user_value) for term in _AMBIGUOUS_TARGETS)
+        ),
         "profile_status": "not_applicable" if chat_mode else "optional_not_received",
         "profile_retry_count": 0,
         "profile_required_pending": False,
@@ -410,6 +459,7 @@ def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict
             "evidence_uncertainty": 0.0 if not pending else 1.0,
             "constraint_risk": 0.0,
             "continuation_value": 0.0 if chat_mode else (1.0 if pending else 0.5),
+            "completion_percentage": 100.0 if chat_mode else (35.0 if pending else 80.0),
         },
     }
     _refresh_task_contract_hash(contract)
@@ -674,10 +724,31 @@ def _looks_like_status_or_question(text: str, compact: str) -> bool:
 
 
 def _explanation_only(compact: str) -> bool:
-    return bool(
-        any(marker in compact for marker in _EXPLANATION_MARKERS)
-        and not any(marker in compact for marker in _SEQUENCE_MARKERS)
-    )
+    explanation_positions = [
+        compact.find(marker)
+        for marker in _EXPLANATION_MARKERS
+        if marker in compact
+    ]
+    if not explanation_positions or any(marker in compact for marker in _SEQUENCE_MARKERS):
+        return False
+    action_positions = [
+        compact.find(verb)
+        for verb in (
+            _LOCAL_OBSERVE_VERBS
+            + _SEARCH_VERBS
+            + _MUTATION_VERBS
+            + _ARTIFACT_VERBS
+            + _EXTERNAL_EFFECT_VERBS
+            + _EXECUTION_VERBS
+            + _DELIVERY_STRONG_VERBS
+            + _DELIVERY_ARTIFACT_VERBS
+        )
+        if verb in compact and _has_affirmative(compact, (verb,))
+    ]
+    # "说明如何创建" is discussion; "生成…失败就说明原因" is work with
+    # a fallback explanation.  Relative order is more reliable than the mere
+    # presence of an explanation word.
+    return not action_positions or min(explanation_positions) <= min(action_positions)
 
 
 def _chinese_requested_fact_kinds(text: str) -> list[str]:
@@ -893,6 +964,12 @@ def _extract_explicit_target(user_text: object) -> str:
     return targets[0] if targets else ""
 
 
+def _requests_existence_resolution(user_text: object) -> bool:
+    """Whether absence is an explicitly acceptable observation outcome."""
+
+    return bool(_NEGATIVE_EXISTENCE_RE.search(str(user_text or "")))
+
+
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     """Build factual obligations, never a concrete tool plan.
 
@@ -933,6 +1010,15 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
                 obligation["evidence_predicate"] = "sha256_digest"
                 if "effect" in fact_kinds:
                     obligation["requires_prior_kind"] = "effect"
+            elif (
+                fact_kind == "observation"
+                and object_kind == "file"
+                and _requests_existence_resolution(text)
+            ):
+                # A verified absence is a real observation, not a failed read.
+                # The predicate binds the query pattern and directory to the
+                # requested file before accepting either exists=True or False.
+                obligation["evidence_predicate"] = "existence_resolved"
             obligations.append(obligation)
     return obligations
 
@@ -1056,7 +1142,68 @@ def _observation_object_matches(payload: dict[str, Any], obligation: dict[str, A
     return action in allowed
 
 
-def _payload_has_evidence_predicate(payload: dict[str, Any], predicate: str) -> bool:
+def _payload_nested_args(payload: dict[str, Any]) -> dict[str, Any]:
+    tool_args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
+    nested = tool_args.get("args") if isinstance(tool_args.get("args"), dict) else {}
+    return nested
+
+
+def _payload_result(payload: dict[str, Any]) -> dict[str, Any]:
+    tool_result = payload.get("tool_result") if isinstance(payload.get("tool_result"), dict) else {}
+    result = tool_result.get("result") if isinstance(tool_result.get("result"), dict) else {}
+    return result
+
+
+def _payload_resolves_existence(payload: dict[str, Any], obligation: dict[str, Any]) -> bool:
+    """Accept a positive or negative existence fact only when target-bound."""
+
+    expected = _normalize_path(obligation.get("target_path"))
+    if not expected or not bool(payload.get("ok")):
+        return False
+    action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
+    if action in {"file.read", "code.read", "sheet.read", "pdf.extract_text", "file.exists", "file.stat"}:
+        return _target_matches(payload, obligation)
+    if action != "file.list":
+        return False
+
+    nested = _payload_nested_args(payload)
+    raw_pattern = next(
+        (
+            nested.get(key)
+            for key in ("pattern", "name", "filename")
+            if str(nested.get(key) or "").strip()
+        ),
+        "",
+    )
+    pattern = _normalize_path(raw_pattern)
+    expected_name = expected.rsplit("/", 1)[-1]
+    if not pattern or pattern != expected_name:
+        return False
+
+    # For a relative path such as docs/a.txt, the list root must be docs.
+    if "/" in expected:
+        expected_parent = expected.rsplit("/", 1)[0]
+        actual_roots = [_normalize_path(value) for value in _payload_targets(payload)]
+        if not any(root == expected_parent or root.endswith("/" + expected_parent) for root in actual_roots):
+            return False
+
+    result = _payload_result(payload)
+    count = result.get("count")
+    if isinstance(count, bool):
+        return False
+    try:
+        return int(count) >= 0 and str(count).strip() != ""
+    except (TypeError, ValueError):
+        return False
+
+
+def _payload_has_evidence_predicate(
+    payload: dict[str, Any],
+    predicate: str,
+    obligation: dict[str, Any],
+) -> bool:
+    if predicate == "existence_resolved":
+        return _payload_resolves_existence(payload, obligation)
     if predicate != "sha256_digest":
         return True
     pending: list[Any] = [payload.get("tool_result"), payload.get("tool_result_contract")]
@@ -1086,12 +1233,20 @@ def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
         return False
     if required_kind not in _payload_fact_kinds(payload):
         return False
-    if required_kind == "observation" and not _observation_object_matches(payload, obligation):
-        return False
     evidence_predicate = str(obligation.get("evidence_predicate") or "").strip()
-    if evidence_predicate and not _payload_has_evidence_predicate(payload, evidence_predicate):
+    if (
+        required_kind == "observation"
+        and evidence_predicate != "existence_resolved"
+        and not _observation_object_matches(payload, obligation)
+    ):
         return False
-    if (required_kind in {"observation", "effect"} or evidence_predicate) and not _target_matches(payload, obligation):
+    if evidence_predicate and not _payload_has_evidence_predicate(payload, evidence_predicate, obligation):
+        return False
+    if (
+        evidence_predicate != "existence_resolved"
+        and (required_kind in {"observation", "effect"} or evidence_predicate)
+        and not _target_matches(payload, obligation)
+    ):
         return False
     return True
 
@@ -1353,6 +1508,14 @@ def update_task_contract_evidence(
         "evidence_uncertainty": evidence_uncertainty,
         "constraint_risk": constraint_risk,
         "continuation_value": round(max(outcome_gap, evidence_uncertainty, constraint_risk), 4),
+        "completion_percentage": _completion_percentage(
+            required_count=len(required),
+            satisfied_count=len(satisfied),
+            required_stability=required_stability,
+            stability_count=len(signals),
+            evidence_uncertainty=evidence_uncertainty,
+            constraint_risk=constraint_risk,
+        ),
     }
     if was_deactivated:
         if not payload_ok or pending_count:
@@ -1381,14 +1544,145 @@ def update_task_contract_evidence(
     return updated
 
 
-def transition_task_contract_terminal(contract: Any, status: Any, reasons: Any = None) -> dict[str, Any]:
-    """Project the existing chain terminal result into intention state.
+def decide_task_contract_completion(
+    contract: Any,
+    *,
+    evidence_reasons: Any = None,
+    evidence_status: Any = "complete",
+    final_reply: Any = None,
+    has_real_observation: bool = False,
+) -> tuple[dict[str, Any], bool, str, list[str]]:
+    """Let the life contract make the one authoritative completion decision.
 
-    This is a projection, not a second terminal judge. The existing final hard
-    gate remains authoritative; this function distinguishes satisfaction,
-    waiting, blocking and interruption, and deactivates intention only after a
-    genuine complete result.
+    ``evidence_reasons`` are observations produced by the evidence checker.
+    They can increase uncertainty and keep the intention active, but the
+    checker does not infer task meaning or own a terminal state.
     """
+
+    if not isinstance(contract, dict):
+        return {}, False, "incomplete", ["life_task_contract_missing"]
+
+    updated = dict(contract)
+    reasons: list[str] = []
+    for raw in evidence_reasons if isinstance(evidence_reasons, list) else []:
+        text = str(raw or "").strip()
+        if text and text not in reasons:
+            reasons.append(text)
+
+    evidence_terminal = str(evidence_status or "").strip().lower()
+    if evidence_terminal == "clarify" or bool(updated.get("clarification_required")):
+        updated = transition_task_contract_terminal(
+            updated, "awaiting_user", ["clarification_required"]
+        )
+        return updated, True, "clarify", []
+
+    all_desired = [
+        item
+        for item in updated.get("desired_facts") or []
+        if isinstance(item, dict) and item.get("required") is not False
+    ]
+    clarification_facts = [
+        item
+        for item in all_desired
+        if not bool(item.get("actionable", True))
+        or str(item.get("status") or "").strip().lower() == "needs_clarification"
+    ]
+    if clarification_facts:
+        updated = transition_task_contract_terminal(
+            updated,
+            "awaiting_user",
+            [
+                f"life_goal_needs_clarification:{str(item.get('fact_id') or item.get('kind') or 'fact')}"
+                for item in clarification_facts[:12]
+            ],
+        )
+        return updated, True, "clarify", []
+
+    desired = [
+        item
+        for item in all_desired
+        if bool(item.get("actionable", True))
+    ]
+    satisfied = [item for item in desired if item.get("status") == "satisfied"]
+    pending = [item for item in desired if item.get("status") != "satisfied"]
+    signals = [str(item) for item in updated.get("stability_signals") or [] if str(item).strip()]
+    required_stability = int(updated.get("required_stability") or _required_stability(updated.get("effective_level")))
+    reply_text = str(final_reply or "").strip()
+
+    if reasons:
+        goal_state = dict(updated.get("goal_state") or {})
+        goal_state["evidence_uncertainty"] = 1.0
+        goal_state["continuation_value"] = 1.0
+        goal_state["completion_percentage"] = _completion_percentage(
+            required_count=len(desired),
+            satisfied_count=len(satisfied),
+            required_stability=required_stability,
+            stability_count=len(signals),
+            evidence_uncertainty=1.0,
+            constraint_risk=float(goal_state.get("constraint_risk") or 0.0),
+        )
+        updated["goal_state"] = goal_state
+        updated["acceptance_status"] = "pending"
+        updated["intent_active"] = True
+        _transition_task_phase(updated, "VERIFYING", "evidence_uncertainty_remains")
+        updated["evidence_check"] = {"ok": False, "reasons": reasons[:12]}
+        _refresh_task_contract_hash(updated)
+        status = "failed" if evidence_terminal == "failed" else "incomplete"
+        return updated, False, status, reasons
+
+    if pending:
+        pending_reasons = [
+            f"life_goal_pending:{str(item.get('fact_id') or item.get('kind') or 'fact')}"
+            for item in pending[:12]
+        ]
+        updated["acceptance_status"] = "pending"
+        updated["intent_active"] = True
+        _transition_task_phase(updated, "ACTIVE", "goal_gap_remains")
+        updated["evidence_check"] = {"ok": True, "reasons": []}
+        _refresh_task_contract_hash(updated)
+        return updated, False, "incomplete", pending_reasons
+
+    if required_stability and len(signals) < required_stability:
+        stability_reasons = [
+            f"life_stability_pending:{len(signals)}/{required_stability}"
+        ]
+        updated["acceptance_status"] = "candidate"
+        updated["intent_active"] = True
+        _transition_task_phase(updated, "VERIFYING", "stability_not_yet_reached")
+        updated["evidence_check"] = {"ok": True, "reasons": []}
+        _refresh_task_contract_hash(updated)
+        return updated, False, "incomplete", stability_reasons
+
+    # No explicit Runtime fact means semantic authority stays with the model:
+    # stopping tool selection and producing a substantive reply is its claim
+    # that the subjective goal is satisfied.  Runtime still requires either a
+    # real observation or a direct answer before accepting that claim.
+    if not desired and not (has_real_observation or reply_text):
+        updated["acceptance_status"] = "pending"
+        updated["intent_active"] = True
+        _transition_task_phase(updated, "ACTIVE", "no_outcome_signal")
+        _refresh_task_contract_hash(updated)
+        return updated, False, "incomplete", ["life_outcome_signal_missing"]
+
+    goal_state = dict(updated.get("goal_state") or {})
+    goal_state.update({
+        "outcome_gap": 0.0,
+        "evidence_uncertainty": 0.0,
+        "constraint_risk": 0.0,
+        "continuation_value": 0.0,
+        "completion_percentage": 100.0,
+    })
+    updated["goal_state"] = goal_state
+    updated["acceptance_status"] = "candidate"
+    updated["intent_active"] = True
+    updated["evidence_check"] = {"ok": True, "reasons": []}
+    _transition_task_phase(updated, "SATISFIED", "biological_goal_satisfied")
+    _refresh_task_contract_hash(updated)
+    return updated, True, "complete", []
+
+
+def transition_task_contract_terminal(contract: Any, status: Any, reasons: Any = None) -> dict[str, Any]:
+    """Persist the authoritative life decision into its terminal phase."""
 
     if not isinstance(contract, dict):
         return {}
@@ -1397,15 +1691,20 @@ def transition_task_contract_terminal(contract: Any, status: Any, reasons: Any =
     reason_text = "; ".join(str(item).strip() for item in (reasons or []) if str(item).strip()) if isinstance(reasons, list) else str(reasons or "")
     signals = [str(item) for item in updated.get("stability_signals") or [] if str(item).strip()]
     if terminal in {"complete", "chat_reply"}:
-        if "terminal_gate" not in signals:
-            signals.append("terminal_gate")
+        if "life_terminal_commit" not in signals:
+            signals.append("life_terminal_commit")
         updated["stability_signals"] = signals[-24:]
         updated["intent_active"] = False
         updated["acceptance_status"] = "not_applicable" if terminal == "chat_reply" else "accepted"
         goal_state = dict(updated.get("goal_state") or {})
-        goal_state.update({"outcome_gap": 0.0, "evidence_uncertainty": 0.0, "continuation_value": 0.0})
+        goal_state.update({
+            "outcome_gap": 0.0,
+            "evidence_uncertainty": 0.0,
+            "continuation_value": 0.0,
+            "completion_percentage": 100.0,
+        })
         updated["goal_state"] = goal_state
-        _transition_task_phase(updated, "DEACTIVATED", reason_text or "final_gate_complete")
+        _transition_task_phase(updated, "DEACTIVATED", reason_text or "life_goal_complete")
     elif terminal in {"clarify", "awaiting_user", "confirm_pending"}:
         updated["intent_active"] = True
         updated["acceptance_status"] = "pending"

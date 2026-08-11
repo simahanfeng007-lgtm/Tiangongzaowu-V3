@@ -659,6 +659,72 @@ TIANGONG/P14/LIVE/2026081101
         observation = next(item for item in obligations if item["kind"] == "observation")
         self.assertEqual(observation["object_kind"], "file")
 
+    def test_verified_absence_satisfies_target_bound_observation(self):
+        user = (
+            "请只读查看当前工作区里的 missing-proof.txt。"
+            "如果文件不存在，就直接告诉我不存在并结束；不要创建任何文件。"
+        )
+        obligation = next(
+            item
+            for item in integrity.build_action_obligations(user)
+            if item["kind"] == "observation"
+        )
+        self.assertEqual(obligation["target_path"], "missing-proof.txt")
+        self.assertEqual(obligation["evidence_predicate"], "existence_resolved")
+
+        exact_empty_list = {
+            "ok": True,
+            "tool_action": "file.list",
+            "tool_args": {
+                "action": "file.list",
+                "target": r"C:\workspace",
+                "args": {"pattern": "missing-proof.txt"},
+            },
+            "tool_result": {
+                "result": {"count": 0, "entries": "", "root": r"C:\workspace"},
+                "evidence": {"exists": False},
+            },
+            "tool_result_contract": {"ok": True, "paths": [r"C:\workspace"]},
+        }
+        self.assertTrue(integrity.obligation_is_satisfied(obligation, [exact_empty_list]))
+
+        unfiltered = dict(exact_empty_list)
+        unfiltered["tool_args"] = {
+            "action": "file.list",
+            "target": r"C:\workspace",
+            "args": {"pattern": "*"},
+        }
+        self.assertFalse(integrity.obligation_is_satisfied(obligation, [unfiltered]))
+
+        wrong_name = dict(exact_empty_list)
+        wrong_name["tool_args"] = {
+            "action": "file.list",
+            "target": r"C:\workspace",
+            "args": {"pattern": "another.txt"},
+        }
+        self.assertFalse(integrity.obligation_is_satisfied(obligation, [wrong_name]))
+
+    def test_verified_absence_requires_the_requested_parent_directory(self):
+        user = "请查看 docs/missing.txt，如果不存在就告诉我不存在并结束。"
+        obligation = next(
+            item
+            for item in integrity.build_action_obligations(user)
+            if item["kind"] == "observation"
+        )
+        payload = {
+            "ok": True,
+            "tool_action": "file.list",
+            "tool_args": {
+                "action": "file.list",
+                "target": r"C:\workspace\other",
+                "args": {"pattern": "missing.txt"},
+            },
+            "tool_result": {"result": {"count": 0, "entries": ""}},
+        }
+        self.assertFalse(integrity.obligation_is_satisfied(obligation, [payload]))
+        payload["tool_args"]["target"] = r"C:\workspace\docs"
+        self.assertTrue(integrity.obligation_is_satisfied(obligation, [payload]))
+
     def test_model_plan_actions_never_become_hard_obligations(self):
         contract = integrity.reconcile_task_contract(
             integrity.initialize_task_contract(self.LIVE_TOOL_USER),
@@ -802,6 +868,62 @@ TIANGONG/P14/LIVE/2026081101
         self.assertEqual(reopened["reopen_count"], 1)
         self.assertTrue(reopened["intent_active"])
 
+    def test_done_after_phrase_does_not_invent_a_write_goal(self):
+        user_text = "查看当前代码仓库结构，做完以后告诉我主要模块。"
+        obligations = integrity.build_action_obligations(user_text)
+        self.assertEqual({item["kind"] for item in obligations}, {"observation"})
+
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract(user_text),
+            None,
+            user_text=user_text,
+            action="file.list",
+        )
+        payload = {
+            "ok": True,
+            "tool_action": "file.list",
+            "tool_args": {"args": {"target": "."}},
+            "tool_result": {"success": True, "entries": ["app", "tests"]},
+            "tool_result_contract": {"ok": True, "write_effect": False, "paths": ["."]},
+        }
+        state = {"round": 1, "obligations": obligations}
+        integrity.update_run_state_obligations(state, payload)
+        contract = integrity.update_task_contract_evidence(
+            contract,
+            payload,
+            round_number=1,
+            obligations=obligations,
+        )
+        self.assertEqual(contract["phase"], "SATISFIED")
+
+        contract, allowed, status, reasons = integrity.decide_task_contract_completion(
+            contract,
+            evidence_reasons=[],
+            final_reply="仓库主要由 app 和 tests 两部分组成。",
+            has_real_observation=True,
+        )
+        self.assertTrue(allowed)
+        self.assertEqual(status, "complete")
+        self.assertEqual(reasons, [])
+        self.assertEqual(contract["phase"], "SATISFIED")
+        self.assertEqual(contract["goal_state"]["completion_percentage"], 100.0)
+
+    def test_evidence_checker_only_raises_uncertainty(self):
+        contract = integrity.initialize_task_contract("说明当前状态")
+        contract, allowed, status, reasons = integrity.decide_task_contract_completion(
+            contract,
+            evidence_reasons=["tool_result_signature_invalid"],
+            evidence_status="incomplete",
+            final_reply="当前状态正常。",
+            has_real_observation=True,
+        )
+        self.assertFalse(allowed)
+        self.assertEqual(status, "incomplete")
+        self.assertEqual(reasons, ["tool_result_signature_invalid"])
+        self.assertEqual(contract["phase"], "VERIFYING")
+        self.assertTrue(contract["intent_active"])
+        self.assertLess(contract["goal_state"]["completion_percentage"], 100.0)
+
 
 class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     """Static contracts for the existing V3 wiring.
@@ -832,12 +954,20 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     def test_work_intent_uses_runtime_floor_via_obligations(self):
         self.assertIn("if build_action_obligations(text):", self.zong)
 
-    def test_final_gate_checks_integrity_before_zero_observation_escape(self):
-        start = self.zong.index("def _simple_chain_final_hard_gate(")
+    def test_evidence_check_reports_integrity_before_zero_observation_escape(self):
+        start = self.zong.index("def _simple_chain_evidence_check(")
         end = self.zong.index("\ndef ", start + 10)
         block = self.zong[start:end]
         self.assertIn("execution_integrity_blockers(", block)
         self.assertLess(block.index("execution_integrity_blockers("), block.index("if not quality_history:"))
+
+    def test_runtime_uses_life_completion_not_legacy_hard_gate(self):
+        self.assertIn("def _simple_chain_life_completion_gate(", self.zong)
+        self.assertIn("decide_task_contract_completion(", self.zong)
+        runtime_block = self.zong[self.zong.index("def _huanxing_simple_chain("):]
+        self.assertIn("_simple_chain_life_completion_gate(", runtime_block)
+        self.assertNotIn("_simple_chain_evidence_check(", runtime_block)
+        self.assertNotIn("_simple_chain_final_hard_gate", self.zong)
 
     def test_run_state_contains_and_updates_obligations(self):
         self.assertIn('"obligations": [],', self.zong)

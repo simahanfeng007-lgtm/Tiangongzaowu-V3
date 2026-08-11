@@ -14,7 +14,7 @@ if str(BACKEND) not in sys.path:
 
 from v3.jineng.http_kehuduan import _inject_native_audio_input
 from v3.zongdiaodu import (
-    _simple_chain_final_hard_gate,
+    _simple_chain_evidence_check,
     _simple_chain_native_audio_payload,
     _simple_chain_requests_audio_semantics,
     _simple_chain_safe_audio_unavailable_reply,
@@ -89,7 +89,7 @@ def test_conversion_only_cannot_satisfy_audio_summary_completion() -> None:
         }
     ]
 
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         "帮我总结这个音频讲了什么",
         history,
         [{"path": r"C:\workspace\lesson.wav", "suffix": ".wav"}],
@@ -116,7 +116,7 @@ def test_verified_native_model_audio_reply_can_complete() -> None:
         reply,
     )
 
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         "帮我总结这个音频讲了什么",
         [native],
         [],

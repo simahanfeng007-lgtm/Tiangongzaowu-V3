@@ -40,7 +40,7 @@ def _write_contract_payload(target: str) -> dict:
 def test_b1_chinese_bracketed_deliverable_is_hard_gap() -> None:
     from v3.zongdiaodu import (
         _simple_chain_explicit_deliverable_paths,
-        _simple_chain_final_hard_gate,
+        _simple_chain_evidence_check,
         _simple_chain_no_deliverable_gap,
     )
 
@@ -48,7 +48,7 @@ def test_b1_chinese_bracketed_deliverable_is_hard_gap() -> None:
     assert _simple_chain_explicit_deliverable_paths(message) == ["设计桥可用性.md"]
     gap = _simple_chain_no_deliverable_gap(message, [], [])
     assert gap and "设计桥可用性.md" in gap[0]
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         message,
         [],
         [],
@@ -61,7 +61,7 @@ def test_b1_chinese_bracketed_deliverable_is_hard_gap() -> None:
 
 def test_b1_gap_clears_after_successful_write(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from v3.zongdiaodu import (
-        _simple_chain_final_hard_gate,
+        _simple_chain_evidence_check,
         _simple_chain_no_deliverable_gap,
     )
 
@@ -71,7 +71,7 @@ def test_b1_gap_clears_after_successful_write(monkeypatch: pytest.MonkeyPatch, t
     history = [_write_contract_payload(str(target))]
     message = "生成《设计桥可用性.md》到工作区，环境不可用就说明原因。"
     assert _simple_chain_no_deliverable_gap(message, history, []) == []
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         message,
         history,
         [],
@@ -163,7 +163,7 @@ def test_b4_read_and_execution_never_self_certify() -> None:
 
 def test_b2_strip_tool_markup_and_gate_complete_prerequisite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from v3.zongdiaodu import (
-        _simple_chain_final_hard_gate,
+        _simple_chain_evidence_check,
         _simple_chain_strip_tool_markup,
     )
 
@@ -175,7 +175,7 @@ def test_b2_strip_tool_markup_and_gate_complete_prerequisite(monkeypatch: pytest
     target.write_text("Blender 不可用：PATH 未找到。", encoding="utf-8")
     history = [_write_contract_payload(str(target))]
     # 交付物已齐备且无 gap：这是 B2 提前收尾（不再执行下一个工具）的触发条件。
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         "生成《设计桥可用性.md》到工作区，环境不可用就说明原因。",
         history,
         [],

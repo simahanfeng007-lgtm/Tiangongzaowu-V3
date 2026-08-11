@@ -106,6 +106,31 @@ def test_failed_parallel_read_stays_failed_and_blocks_read_coverage() -> None:
     assert scheduler._simple_chain_verbatim_read_reply(prompt, [success, failure]) == ""
 
 
+def test_read_coverage_accepts_target_bound_verified_absence() -> None:
+    scheduler = importlib.import_module("v3.zongdiaodu")
+    prompt = (
+        "请只读查看 missing-proof.txt，如果文件不存在，就告诉我不存在并结束；"
+        "不要创建、修改或删除文件。"
+    )
+    obligations = scheduler.build_action_obligations(prompt)
+    observation = {
+        "ok": True,
+        "tool_action": "file.list",
+        "tool_args": {
+            "action": "file.list",
+            "target": r"C:\workspace",
+            "args": {"pattern": "missing-proof.txt"},
+        },
+        "tool_result": {"result": {"count": 0, "entries": ""}},
+        "tool_result_contract": {"ok": True, "paths": [r"C:\workspace"]},
+    }
+    assert scheduler._simple_chain_read_coverage_issues(
+        prompt,
+        [observation],
+        task_obligations=obligations,
+    ) == []
+
+
 def test_exact_parallel_read_can_close_from_complete_source_evidence() -> None:
     scheduler = importlib.import_module("v3.zongdiaodu")
     prompt = (

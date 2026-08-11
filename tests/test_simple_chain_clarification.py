@@ -11,9 +11,9 @@ import unittest
 
 class SimpleChainClarificationTests(unittest.TestCase):
     def test_clarification_question_parks_as_clarify_not_failure(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+        from v3.zongdiaodu import _simple_chain_evidence_check
 
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        allowed, status, reasons = _simple_chain_evidence_check(
             "把那个文件改成英文版",
             [],
             [],
@@ -23,18 +23,21 @@ class SimpleChainClarificationTests(unittest.TestCase):
         self.assertEqual(status, "clarify")
         self.assertEqual(reasons, [])
 
-    def test_substantive_non_answer_still_fails(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+    def test_ambiguous_life_goal_waits_even_when_model_does_not_ask(self) -> None:
+        from v3.execution_integrity import initialize_task_contract
+        from v3.zongdiaodu import _simple_chain_life_completion_gate
 
-        allowed, status, reasons = _simple_chain_final_hard_gate(
+        contract, allowed, status, reasons = _simple_chain_life_completion_gate(
             "把那个文件改成英文版",
             [],
             [],
+            task_contract=initialize_task_contract("把那个文件改成英文版"),
             final_reply="我无法完成这个任务。",
         )
-        self.assertFalse(allowed)
-        self.assertEqual(status, "incomplete")
-        self.assertTrue(any("no omni_body observation" in item for item in reasons))
+        self.assertTrue(allowed)
+        self.assertEqual(status, "clarify")
+        self.assertEqual(reasons, [])
+        self.assertEqual(contract["phase"], "WAITING")
 
     def test_tool_call_tag_is_not_a_clarification(self) -> None:
         from v3.zongdiaodu import _simple_chain_is_clarification_question
@@ -54,18 +57,20 @@ class SimpleChainClarificationTests(unittest.TestCase):
         self.assertFalse(_simple_chain_is_clarification_question(""))
         self.assertFalse(_simple_chain_is_clarification_question(None))
 
-    def test_empty_history_with_tools_keeps_old_logic(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+    def test_explicit_work_without_evidence_stays_active(self) -> None:
+        from v3.execution_integrity import initialize_task_contract
+        from v3.zongdiaodu import _simple_chain_life_completion_gate
 
-        # 非澄清的实质短答仍按原失败路径（保护 BUG-9 行为不回退）
-        allowed, status, _ = _simple_chain_final_hard_gate(
+        contract, allowed, status, _ = _simple_chain_life_completion_gate(
             "创建 report.docx",
             [],
             [],
+            task_contract=initialize_task_contract("创建 report.docx"),
             final_reply="好的",
         )
         self.assertFalse(allowed)
         self.assertEqual(status, "incomplete")
+        self.assertEqual(contract["phase"], "VERIFYING")
 
     def test_explicit_learning_card_phrasing_sets_intent(self) -> None:
         from v3.zongdiaodu import _simple_chain_has_explicit_learning_intent

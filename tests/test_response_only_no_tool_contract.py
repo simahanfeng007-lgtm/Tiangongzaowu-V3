@@ -6,7 +6,7 @@ import inspect
 def test_response_only_no_tool_request_is_not_forced_through_omni_body() -> None:
     from v3.zongdiaodu import (
         _runtime_detects_work_intent,
-        _simple_chain_final_hard_gate,
+        _simple_chain_evidence_check,
     )
 
     prompt = (
@@ -14,7 +14,7 @@ def test_response_only_no_tool_request_is_not_forced_through_omni_body() -> None
         "只回复以下唯一文本：MINIMAX_QA_OK_20260730"
     )
     assert not _runtime_detects_work_intent(prompt)
-    assert _simple_chain_final_hard_gate(
+    assert _simple_chain_evidence_check(
         prompt,
         [],
         [],
@@ -41,12 +41,12 @@ def test_renderer_tool_contract_cannot_contaminate_user_intent() -> None:
 def test_real_work_requests_still_require_evidence() -> None:
     from v3.zongdiaodu import (
         _runtime_detects_work_intent,
-        _simple_chain_final_hard_gate,
+        _simple_chain_evidence_check,
     )
 
     prompt = "请执行测试并修复失败项"
     assert _runtime_detects_work_intent(prompt)
-    allowed, status, reasons = _simple_chain_final_hard_gate(
+    allowed, status, reasons = _simple_chain_evidence_check(
         prompt,
         [],
         [],

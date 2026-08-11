@@ -6,12 +6,16 @@ authorize or execute anything.
 """
 from __future__ import annotations
 
+import base64
 import json
 
 from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.repository import RepositoryObservation
 from contracts.world_understanding.repository_structure import RepositoryStructureDelta
+from contracts.world_understanding.repository_tree import (
+    RepositoryTreeManifest,
+)
 
 from .base import DeterministicSourceCompiler, make_direct_known
 
@@ -48,6 +52,20 @@ def decode_repository_structure_delta(
     if not isinstance(raw, dict):
         raise ValueError("structure_delta wrapper must be an object")
     return RepositoryStructureDelta.model_validate_json(canonical_json_bytes(raw))
+
+
+def decode_repository_tree_manifest(
+    envelope: WorldIngressEnvelope,
+) -> RepositoryTreeManifest | None:
+    payload = envelope.payload_inline
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("repository_tree")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("repository_tree wrapper must be an object")
+    return RepositoryTreeManifest.model_validate_json(canonical_json_bytes(raw))
 
 
 def _file_subject(repository_id: str, path: str) -> str:
@@ -272,6 +290,72 @@ def _structure_rows(
     return rows
 
 
+def _tree_rows(
+    compiler: "GitCodeCompiler",
+    envelope: WorldIngressEnvelope,
+    observation: RepositoryObservation,
+) -> list:
+    manifest = decode_repository_tree_manifest(envelope)
+    if manifest is None:
+        return []
+    if (
+        manifest.repository_id != observation.identity.repository_id
+        or manifest.worktree_id != observation.identity.worktree_id
+        or manifest.head_commit != observation.revision.head_commit
+        or manifest.working_tree_state_sha256
+        != observation.working_tree_state.state_sha256
+    ):
+        raise ValueError("repository tree manifest does not match Git observation")
+
+    # Known has a deliberately finite active cut. Publishing one Known per
+    # node would overflow it on ordinary repositories. Carry the already-
+    # validated complete manifest as bounded integrity chunks, then let the
+    # existing SoftwareWorldUpdater deterministically expand it in the same
+    # transaction. The header's provenance hashes the entire ingress payload.
+    raw = canonical_json_bytes(manifest.model_dump(mode="json"))
+    chunk_bytes = 12_000
+    chunks = tuple(
+        raw[offset: offset + chunk_bytes]
+        for offset in range(0, len(raw), chunk_bytes)
+    ) or (b"",)
+    subject = "repotree." + manifest.tree_sha256
+    rows = [make_direct_known(
+        envelope,
+        compiler.spec,
+        proposition_type="REPOSITORY_TREE_MANIFEST_IDENTITY",
+        predicate="filesystem.repository_tree_manifest_identity",
+        subject_ref=subject,
+        object_text=_compact_json({
+            "tree_sha256": manifest.tree_sha256,
+            "chunk_count": len(chunks),
+            "candidate_path_count": manifest.candidate_path_count,
+            "expanded_file_count": manifest.expanded_file_count,
+            "inventory_complete": manifest.inventory_complete,
+        }),
+        authority_domain="FILESYSTEM_ARTIFACT",
+        authority_ceiling_milli=1000,
+        empirical_evidence_weight_milli=1000,
+    )]
+    for index, chunk in enumerate(chunks):
+        rows.append(make_direct_known(
+            envelope,
+            compiler.spec,
+            proposition_type="REPOSITORY_TREE_MANIFEST_CHUNK",
+            predicate="filesystem.repository_tree_manifest_chunk",
+            subject_ref=f"{subject}.{index:05d}",
+            object_text=_compact_json({
+                "tree_sha256": manifest.tree_sha256,
+                "chunk_index": index,
+                "chunk_count": len(chunks),
+                "data_base64": base64.b64encode(chunk).decode("ascii"),
+            }),
+            authority_domain="FILESYSTEM_ARTIFACT",
+            authority_ceiling_milli=1000,
+            empirical_evidence_weight_milli=1000,
+        ))
+    return rows
+
+
 class GitCodeCompiler(DeterministicSourceCompiler):
     """Compile one immutable repository observation into deterministic Known."""
 
@@ -380,6 +464,7 @@ class GitCodeCompiler(DeterministicSourceCompiler):
                     empirical_evidence_weight_milli=1000,
                 ))
 
+        rows.extend(_tree_rows(self, envelope, observation))
         rows.extend(_structure_rows(self, envelope, observation))
         # Repeated equivalent imports/definitions are valid source syntax but
         # Known IDs are semantic identities.  Collapse exact duplicates before
@@ -399,4 +484,5 @@ __all__ = [
     "GitCodeCompiler",
     "decode_repository_observation",
     "decode_repository_structure_delta",
+    "decode_repository_tree_manifest",
 ]

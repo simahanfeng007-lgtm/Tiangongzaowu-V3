@@ -183,20 +183,22 @@ def test_m2_delete_retires_module_and_symbols(tmp_path: Path) -> None:
     path = tmp_path / "gone.py"
     path.write_text("def gone():\n    return 1\n", encoding="utf-8")
     index = STRUCTURE.RepositoryStructureIndex()
-    index.update(_observation(tmp_path))
+    before_observation = _observation(tmp_path)
+    index.update(before_observation)
+    index.tree_manifest(before_observation)
     before = index.current("repo.test", "worktree.test")
     assert before is not None
     old = before.files[0]
     path.unlink()
     change = RepositoryPathChange(change_kind="DELETE", old_path="gone.py")
-    delta = index.update(
-        _observation(
-            tmp_path,
-            changes=(change,),
-            deleted=("gone.py",),
-            observed_at_ms=2000,
-        )
+    after_observation = _observation(
+        tmp_path,
+        changes=(change,),
+        deleted=("gone.py",),
+        observed_at_ms=2000,
     )
+    delta = index.update(after_observation)
+    tree = index.tree_manifest(after_observation)
     after = index.current("repo.test", "worktree.test")
     assert after is not None
     assert not after.files
@@ -205,6 +207,10 @@ def test_m2_delete_retires_module_and_symbols(tmp_path: Path) -> None:
     assert ("Module", old.module_anchor) in retired
     for node in old.nodes:
         assert (node.kind, node.stable_anchor) in retired
+    assert any(
+        item.entity_type == "File" and item.canonical_name == "gone.py"
+        for item in tree.retirements
+    )
 
 
 def test_m2_parser_failure_keeps_previous_coherent_view(
@@ -281,6 +287,80 @@ def test_m2_large_repository_baseline_is_bounded(tmp_path: Path) -> None:
     assert continuation.full_rescan is False
     assert len(completed.files) == 270
     assert completed.truncated is False
+
+
+def test_m2_baseline_shards_reuse_candidate_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for index in range(270):
+        (tmp_path / f"cached{index:03d}.py").write_text(
+            f"value = {index}\n", encoding="utf-8"
+        )
+    calls = 0
+    original = STRUCTURE._candidate_paths
+
+    def counted(root: Path):
+        nonlocal calls
+        calls += 1
+        return original(root)
+
+    monkeypatch.setattr(STRUCTURE, "_candidate_paths", counted)
+    structure_index = STRUCTURE.RepositoryStructureIndex()
+    observation = _observation(tmp_path)
+    structure_index.update(observation)
+    structure_index.update(observation)
+    completed = structure_index.current("repo.test", "worktree.test")
+    assert completed is not None
+    assert completed.truncated is False
+    assert calls == 1
+
+
+def test_m2_dirty_observation_does_not_starve_baseline_continuation(
+    tmp_path: Path,
+) -> None:
+    for index in range(270):
+        (tmp_path / f"dirty{index:03d}.py").write_text(
+            f"value = {index}\n", encoding="utf-8"
+        )
+    changed = RepositoryPathChange(
+        change_kind="MODIFY",
+        old_path="dirty000.py",
+        new_path="dirty000.py",
+    )
+    observation = _observation(tmp_path, changes=(changed,))
+    structure_index = STRUCTURE.RepositoryStructureIndex()
+    first = structure_index.update(observation)
+    assert first.full_rescan is True
+    assert first.truncated is True
+
+    continuation = structure_index.update(observation)
+    completed = structure_index.current("repo.test", "worktree.test")
+    assert continuation.full_rescan is False
+    assert completed is not None
+    assert len(completed.files) == 270
+    assert completed.truncated is False
+
+
+def test_m2_candidate_discovery_excludes_generated_and_literal_ignored_roots(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "core.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated" / "ignored.py").write_text("value = 2\n", encoding="utf-8")
+    (tmp_path / "mirror").mkdir()
+    (tmp_path / "mirror" / "copy.py").write_text("value = 3\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("/generated/\n", encoding="utf-8")
+    (tmp_path / "source-ownership.json").write_text(
+        '{"mappings":[{"source":"src","targets":["mirror"]}]}',
+        encoding="utf-8",
+    )
+
+    paths, count, truncated = STRUCTURE._candidate_paths(tmp_path)
+    assert paths == ("src/core.py",)
+    assert count == 1
+    assert truncated is False
 
 
 def test_m2_python_ast_emits_only_uniquely_resolved_semantic_relations(

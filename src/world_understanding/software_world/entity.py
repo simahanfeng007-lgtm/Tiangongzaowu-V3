@@ -20,6 +20,8 @@ class EntitySeed:
     time: WorldTime
     truth_state: str
     epistemic_state: str
+    attributes: tuple[tuple[str, str], ...] = ()
+    aliases: tuple[str, ...] = ()
 
 
 def entity_ref(entity: WorldEntity) -> WorldRecordRef:
@@ -70,7 +72,8 @@ def build_entity(frame: SoftwareWorldFrame, seed: EntitySeed, *, previous: World
     entity_id = derive_entity_id(life_id=frame.scope.life_id, domain_id=frame.scope.domain_id, identity_anchor_hash=identity_anchor_hash)
     if previous is not None and previous.entity_id != entity_id:
         raise ValueError("ENTITY_IDENTITY_DRIFT")
-    merged_aliases = set(aliases)
+    merged_aliases = set(seed.aliases)
+    merged_aliases.update(aliases)
     source_refs = {seed.basis_ref.sort_key(): seed.basis_ref}
     if previous is not None:
         merged_aliases.update(previous.aliases)
@@ -79,7 +82,14 @@ def build_entity(frame: SoftwareWorldFrame, seed: EntitySeed, *, previous: World
         for ref in previous.source_observation_refs:
             source_refs[ref.sort_key()] = ref
     intended_aliases = tuple(sorted(alias for alias in merged_aliases if alias and alias != seed.canonical_name))
-    intended_attributes = previous.attributes if previous is not None and attributes is None else _attrs(attributes or {})
+    if attributes is not None:
+        intended_attributes = _attrs(attributes)
+    elif seed.attributes:
+        intended_attributes = _attrs(dict(seed.attributes))
+    elif previous is not None:
+        intended_attributes = previous.attributes
+    else:
+        intended_attributes = ()
     intended_locations = () if previous is None else previous.location_refs
     intended_sources = tuple(source_refs[key] for key in sorted(source_refs))
     if previous is not None and (
@@ -127,7 +137,12 @@ def revise_file_entity(frame: SoftwareWorldFrame, previous: WorldEntity, *, new_
     aliases = set(previous.aliases)
     if previous.canonical_name != new_path:
         aliases.add(previous.canonical_name)
-    attrs = {"path": new_path, "commit": commit, "blob_sha": blob_sha}
+    attrs = {
+        item.key: item.value.string_value
+        for item in previous.attributes
+        if item.value.kind == "string" and item.value.string_value is not None
+    }
+    attrs.update({"path": new_path, "commit": commit, "blob_sha": blob_sha})
     source_refs = {ref.sort_key(): ref for ref in previous.source_observation_refs}
     if basis_ref is not None:
         source_refs[basis_ref.sort_key()] = basis_ref

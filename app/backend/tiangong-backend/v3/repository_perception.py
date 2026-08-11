@@ -26,6 +26,7 @@ from contracts.world_understanding.repository import (
     RepositoryWorkingTreeState,
 )
 from contracts.world_understanding.repository_structure import RepositoryStructureDelta
+from contracts.world_understanding.repository_tree import RepositoryTreeManifest
 from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
 from .run_context import current_run_context
@@ -488,10 +489,16 @@ def observe_active_repository(
 def _bounded_structure_payload(
     observation: RepositoryObservation,
     delta: RepositoryStructureDelta,
+    tree_manifest: RepositoryTreeManifest,
 ) -> tuple[dict, str] | None:
-    """Fit a deterministic, whole-file structure slice inside ingress budgets."""
+    """Fit details without ever slicing the complete total-part tree."""
     observation_payload = observation.model_dump(mode="json")
-    if len(canonical_json_bytes(observation_payload)) > _MAX_INLINE_WORLD_PAYLOAD_BYTES:
+    tree_payload = tree_manifest.model_dump(mode="json")
+    base_payload = {
+        "repository_observation": observation_payload,
+        "repository_tree": tree_payload,
+    }
+    if len(canonical_json_bytes(base_payload)) > _MAX_INLINE_WORLD_PAYLOAD_BYTES:
         return None
 
     add_paths = {
@@ -562,6 +569,7 @@ def _bounded_structure_payload(
     def payload_for(candidate: RepositoryStructureDelta) -> dict:
         return {
             "repository_observation": observation_payload,
+            "repository_tree": tree_payload,
             "structure_delta": candidate.model_dump(mode="json"),
         }
 
@@ -654,16 +662,21 @@ def publish_active_repository_observation(
     try:
         from .repository_structure import repository_structure_index
 
-        structure_delta = repository_structure_index().update(observation)
-        bounded = _bounded_structure_payload(observation, structure_delta)
+        structure_index = repository_structure_index()
+        structure_delta = structure_index.update(observation)
+        tree_manifest = structure_index.tree_manifest(observation)
+        bounded = _bounded_structure_payload(
+            observation, structure_delta, tree_manifest
+        )
         if bounded is None:
             return None
         payload, published_structure_hash = bounded
         native_hash = canonical_sha256({
             "repository_observation_sha256": observation.observation_sha256,
             "structure_delta_sha256": published_structure_hash,
+            "repository_tree_sha256": tree_manifest.tree_sha256,
         })
-        producer_ref = "repository.local-git-structure.v0.2"
+        producer_ref = "repository.local-git-structure.v0.4"
     except Exception:
         pass
 

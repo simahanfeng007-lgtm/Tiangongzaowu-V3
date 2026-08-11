@@ -4,14 +4,19 @@ No filesystem/git/network scan is permitted. Repository and parser adapters
 must supply already-observed evidence through Known/GitCommitDelta.
 """
 from __future__ import annotations
+import base64
 import json
 from dataclasses import dataclass
+from contracts.world_understanding.repository_tree import (
+    RepositoryTreeManifest,
+    materialize_repository_tree_nodes,
+)
 from contracts.world_understanding.entity import WorldEntity, EntityResolutionCandidate
 from contracts.world_understanding.relation import WorldRelation
 from world_understanding.common.epistemic import EpistemicPlane
 from world_understanding.known.set import KnownRecord
 from .frame import SoftwareWorldFrame
-from .perception import perceive_known, SoftwarePerception
+from .perception import PerceptionKind, perceive_known, SoftwarePerception
 from .entity import (
     EntitySeed,
     ambiguous_resolution,
@@ -45,6 +50,133 @@ class SoftwareWorldUpdateResult:
     identity_candidates: tuple[EntityResolutionCandidate, ...]
     diagnostics: tuple[str, ...]
     stats: SoftwareWorldUpdateStats
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedRepositoryTree:
+    manifest: RepositoryTreeManifest
+    basis: SoftwarePerception
+
+
+def _decode_repository_trees(
+    perceptions: tuple[SoftwarePerception, ...],
+    diagnostics: list[str],
+) -> tuple[_DecodedRepositoryTree, ...]:
+    headers: dict[str, SoftwarePerception] = {}
+    header_counts: dict[str, int] = {}
+    chunks: dict[str, dict[int, bytes]] = {}
+    chunk_counts: dict[str, int] = {}
+    for perception in perceptions:
+        if perception.proposition_type not in {
+            "REPOSITORY_TREE_MANIFEST_IDENTITY",
+            "REPOSITORY_TREE_MANIFEST_CHUNK",
+        }:
+            continue
+        try:
+            payload = json.loads(perception.object_text or "")
+            tree_sha256 = str(payload["tree_sha256"])
+            count = int(payload["chunk_count"])
+            if len(tree_sha256) != 64 or count < 1:
+                raise ValueError
+            if perception.proposition_type == "REPOSITORY_TREE_MANIFEST_IDENTITY":
+                if tree_sha256 in headers:
+                    raise ValueError
+                headers[tree_sha256] = perception
+                header_counts[tree_sha256] = count
+                continue
+            index = int(payload["chunk_index"])
+            if not 0 <= index < count:
+                raise ValueError
+            data = base64.b64decode(str(payload["data_base64"]), validate=True)
+            if len(data) > 12_000:
+                raise ValueError
+            prior_count = chunk_counts.setdefault(tree_sha256, count)
+            if prior_count != count:
+                raise ValueError
+            bucket = chunks.setdefault(tree_sha256, {})
+            if index in bucket:
+                raise ValueError
+            bucket[index] = data
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            diagnostics.append("REPOSITORY_TREE_CHUNK_INVALID")
+
+    output = []
+    for tree_sha256, basis in sorted(headers.items()):
+        count = header_counts[tree_sha256]
+        bucket = chunks.get(tree_sha256, {})
+        if chunk_counts.get(tree_sha256) != count or set(bucket) != set(range(count)):
+            diagnostics.append("REPOSITORY_TREE_CHUNKS_INCOMPLETE")
+            continue
+        try:
+            manifest = RepositoryTreeManifest.model_validate_json(
+                b"".join(bucket[index] for index in range(count))
+            )
+        except (TypeError, ValueError):
+            diagnostics.append("REPOSITORY_TREE_MANIFEST_INVALID")
+            continue
+        if manifest.tree_sha256 != tree_sha256:
+            diagnostics.append("REPOSITORY_TREE_MANIFEST_HASH_MISMATCH")
+            continue
+        output.append(_DecodedRepositoryTree(manifest=manifest, basis=basis))
+    return tuple(output)
+
+
+def _repository_tree_seeds(
+    decoded: tuple[_DecodedRepositoryTree, ...],
+) -> tuple[EntitySeed, ...]:
+    output = []
+    for item in decoded:
+        for node in materialize_repository_tree_nodes(item.manifest):
+            aliases = {node.stable_anchor}
+            if node.path:
+                aliases.add(node.path)
+                aliases.add(node.path.rsplit("/", 1)[-1])
+            attributes = {
+                "path": node.path,
+                "coverage_state": node.coverage_state,
+                "child_count": str(node.child_count),
+                "descendant_file_count": str(node.descendant_file_count),
+                "subtree_sha256": node.subtree_sha256,
+                "tree_sha256": item.manifest.tree_sha256,
+                "inventory_complete": str(
+                    item.manifest.inventory_complete
+                ).lower(),
+            }
+            output.append(EntitySeed(
+                entity_type=node.entity_type,
+                stable_anchor=node.stable_anchor,
+                canonical_name=node.canonical_name,
+                basis_ref=item.basis.known_ref,
+                time=item.basis.record.time,
+                truth_state=item.basis.record.truth_state,
+                epistemic_state=item.basis.record.epistemic_state,
+                attributes=tuple(sorted(
+                    (key, value)
+                    for key, value in attributes.items()
+                    if value is not None
+                )),
+                aliases=tuple(sorted(aliases)),
+            ))
+    return tuple(output)
+
+
+def _synthetic_tree_perception(
+    basis: SoftwarePerception,
+    *,
+    proposition_type: str,
+    subject_ref: str,
+    object_text: str,
+    kind: PerceptionKind = "STRUCTURE",
+) -> SoftwarePerception:
+    return SoftwarePerception(
+        frame_id=basis.frame_id,
+        kind=kind,
+        proposition_type=proposition_type,
+        subject_ref=subject_ref,
+        object_text=object_text,
+        known_ref=basis.known_ref,
+        record=basis.record,
+    )
 
 class _Journal:
     __slots__ = ("graph", "old_entities", "old_relations", "old_frame_revision")
@@ -107,6 +239,26 @@ class SoftwareWorldUpdater:
     ) -> tuple[int, int]:
         source_ref = change.source_ref
         if change.change_kind == "ADD":
+            anchored = (
+                ()
+                if change.explicit_identity_anchor is None
+                else graph.resolve_token(change.explicit_identity_anchor)
+            )
+            if len(anchored) == 1 and anchored[0].entity_type == "File":
+                previous = anchored[0]
+                entity = revise_file_entity(
+                    frame,
+                    previous,
+                    new_path=change.new_path or previous.canonical_name,
+                    commit=frame.commit,
+                    blob_sha=change.new_blob_sha,
+                    basis_ref=source_ref,
+                    lifecycle="ACTIVE",
+                )
+                journal.entity(entity.entity_id)
+                graph.upsert_entity(entity)
+                touched_entities.add(entity.entity_id)
+                return 1, 0
             entity = new_file_entity(
                 frame,
                 path=change.new_path or "",
@@ -205,7 +357,10 @@ class SoftwareWorldUpdater:
             return 0, 0
         entity_type = str(payload.get("entity_type") or "")
         canonical_name = str(payload.get("canonical_name") or "")
-        if entity_type not in {"Module", "Class", "Function", "Method"} or not canonical_name:
+        if entity_type not in {
+            "Repository", "RepositoryBranch", "File",
+            "Module", "Class", "Function", "Method",
+        } or not canonical_name:
             diagnostics.append("STRUCTURE_RETIREMENT_PAYLOAD_INVALID")
             return 0, 0
 
@@ -283,7 +438,13 @@ class SoftwareWorldUpdater:
                     continue
                 stable_perceptions.append(perception)
 
-            seeds = seeds_from_perceptions(tuple(stable_perceptions))
+            decoded_trees = _decode_repository_trees(
+                tuple(stable_perceptions), diagnostics
+            )
+            seeds = (
+                *seeds_from_perceptions(tuple(stable_perceptions)),
+                *_repository_tree_seeds(decoded_trees),
+            )
             entities_examined += len(seeds)
             from contracts.world_understanding.entity import derive_entity_id
             for seed in seeds:
@@ -328,7 +489,10 @@ class SoftwareWorldUpdater:
                     relation_removals += removals
 
             for perception in stable_perceptions:
-                if perception.proposition_type != "STRUCTURE_ENTITY_RETIRED":
+                if perception.proposition_type not in {
+                    "STRUCTURE_ENTITY_RETIRED",
+                    "REPOSITORY_TREE_NODE_RETIRED",
+                }:
                     continue
                 entities_examined += 1
                 upserts, removals = self._apply_structure_retirement(
@@ -342,6 +506,36 @@ class SoftwareWorldUpdater:
                 )
                 entity_upserts += upserts
                 relation_removals += removals
+
+            for decoded in decoded_trees:
+                for retired in decoded.manifest.retirements:
+                    entities_examined += 1
+                    perception = _synthetic_tree_perception(
+                        decoded.basis,
+                        proposition_type="REPOSITORY_TREE_NODE_RETIRED",
+                        subject_ref=retired.stable_anchor,
+                        object_text=json.dumps(
+                            {
+                                "entity_type": retired.entity_type,
+                                "canonical_name": retired.canonical_name,
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        kind="OBSERVATION",
+                    )
+                    upserts, removals = self._apply_structure_retirement(
+                        frame,
+                        graph,
+                        perception,
+                        journal,
+                        touched_entities,
+                        touched_relations,
+                        diagnostics,
+                    )
+                    entity_upserts += upserts
+                    relation_removals += removals
 
             for perception in stable_perceptions:
                 if perception.kind != "STRUCTURE":
@@ -357,6 +551,28 @@ class SoftwareWorldUpdater:
                 graph.upsert_relation(relation)
                 touched_relations.add(relation.relation_id)
                 relation_upserts += 1
+
+            for decoded in decoded_trees:
+                nodes = materialize_repository_tree_nodes(decoded.manifest)
+                for node in nodes:
+                    if node.parent_anchor is None:
+                        continue
+                    relations_examined += 1
+                    perception = _synthetic_tree_perception(
+                        decoded.basis,
+                        proposition_type="CONTAINS",
+                        subject_ref=node.parent_anchor,
+                        object_text=node.stable_anchor,
+                    )
+                    result = materialize_relation(graph, perception)
+                    if result.relation is None:
+                        diagnostics.append(result.reason_code)
+                        continue
+                    relation = result.relation
+                    journal.relation(relation.relation_id)
+                    graph.upsert_relation(relation)
+                    touched_relations.add(relation.relation_id)
+                    relation_upserts += 1
 
             graph.advance_frame(frame)
             if git_delta is not None and apply_git:

@@ -82,11 +82,13 @@ install_world_understanding_observer()
 from .execution_integrity import (
     build_action_obligations,
     build_task_contract_obligations,
+    decide_task_contract_completion,
     execution_integrity_blockers,
     extract_model_task_profile,
     initialize_task_contract,
     is_execution_discussion_only,
     merge_action_obligations,
+    obligation_is_satisfied,
     reconcile_task_contract,
     requires_evidence_safe_closeout,
     task_contract_forbids_action,
@@ -257,9 +259,11 @@ Work mode rules:
   desired_facts (`fact_id`, `kind`, `target`, `success_condition`), a mutable
   `plan_hint`, and explicit constraints. Keep light L0/L1 work lightweight.
   The profile is advice, not authority: Runtime removes it before execution,
-  derives hard desired facts from the user's request, may only raise risk, and
-  deactivates the task intention only after real evidence passes the existing
-  final gate. Change the plan when observations contradict it; do not preserve
+  derives hard desired facts from the user's request, and may only raise risk.
+  The task deactivates only when the authoritative life-task state reaches its
+  satisfied condition. Evidence checks report facts but never reinterpret the
+  user's intent or own the terminal result. Change the plan when observations
+  contradict it; do not preserve
   an obsolete step merely because it appeared in the first plan.
 
 For file delivery: create a real local file and reply with the absolute path.
@@ -4215,10 +4219,10 @@ def _simple_chain_progress_blocking_reasons(
     quality_history: list[dict[str, Any]],
     generated_attachments: list[dict[str, str]],
 ) -> list[str]:
-    """当前完成门的可观察阻塞集（不含 final_reply 相关判定）。
+    """生命契约的可观察证据缺口（不含终态语义判断）。
 
-    与 _simple_chain_final_hard_gate 同源：缺显式动作、缺交付物、写任务无
-    write_effect、缺验证。阻塞集是否收缩是“距离完成是否缩短”的客观标尺。
+    缺显式动作、缺交付物和缺验证等事实可作为进展标尺，但它们不能
+    独立解释用户意图或决定任务终态。
     """
     if not _runtime_detects_work_intent(user_message):
         return []
@@ -4244,22 +4248,6 @@ def _simple_chain_progress_blocking_reasons(
     )
     if missing_deliverables:
         reasons.append("missing_deliverables:" + ",".join(sorted(missing_deliverables)[:8]))
-    if (
-        _simple_chain_no_deliverable_gap(user_message, quality_history, generated_attachments)
-        or _simple_chain_missing_deliverable_paths(user_message, quality_history, generated_attachments)
-    ):
-        reasons.append("no_deliverable_gap")
-    if (
-        _requires_real_mutation(user_message)
-        and _simple_chain_task_kind(quality_history, user_message) == "write"
-    ):
-        mutation_ok = any(
-            _simple_chain_mutation_payload_satisfies_request(user_message, payload)[0]
-            for payload in reversed(quality_history or [])
-            if isinstance(payload, dict)
-        )
-        if not mutation_ok:
-            reasons.append("no_write_effect")
     if (
         _simple_chain_requires_verification(user_message)
         and not _simple_chain_has_post_mutation_verification(quality_history, user_message)
@@ -5463,6 +5451,7 @@ def _simple_chain_read_coverage_issues(
     user_message: str,
     quality_history: list[dict[str, Any]],
     required_paths: list[str] | None = None,
+    task_obligations: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     expected_paths = _simple_chain_unique_paths(
         _simple_chain_explicit_read_paths(user_message) + list(required_paths or [])
@@ -5493,9 +5482,18 @@ def _simple_chain_read_coverage_issues(
         }:
             continue
         read_paths.extend(_simple_chain_payload_paths(payload))
+    resolved_existence_paths = [
+        str(obligation.get("target_path") or "")
+        for obligation in (task_obligations or [])
+        if isinstance(obligation, dict)
+        and str(obligation.get("kind") or "").strip().lower() == "observation"
+        and str(obligation.get("evidence_predicate") or "").strip() == "existence_resolved"
+        and obligation_is_satisfied(obligation, quality_history)
+    ]
     missing = [
         path for path in expected_paths
         if not _simple_chain_paths_match_expected(read_paths, [path])
+        and not _simple_chain_paths_match_expected(resolved_existence_paths, [path])
     ]
     issues: list[str] = []
     if missing:
@@ -5731,7 +5729,7 @@ def _simple_chain_history_payload_text(payload: dict) -> str:
     return json.dumps(out, ensure_ascii=False, default=str, sort_keys=True)
 
 
-def _simple_chain_final_hard_gate(
+def _simple_chain_evidence_check(
     user_message: str,
     quality_history: list[dict[str, Any]],
     generated_attachments: list[dict[str, str]],
@@ -5739,20 +5737,17 @@ def _simple_chain_final_hard_gate(
     final_reply: Any = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[bool, str, list[str]]:
-    """Return whether final delivery is allowed, status, and blocking reasons.
+    """Inspect recorded evidence without deciding whether the task is done.
 
-    完成门按任务类型分派（BUG-9）：写任务维持 write_effect 判定；纯读取/
-    问答任务（链上只有 read 类成功调用）要求 ``final_reply`` 是实质答案；
-    拿不准按 mixed（宽松放行方向，但答案必须非空且非工具错误复述）。
-    ``final_reply=None`` 的调用点（重试引导）只豁免 write_effect 硬要求。
+    This deliberately contains no write/read/mixed task classifier and no
+    keyword-derived mutation verdict.  It reports only missing or contradictory
+    observations to the authoritative life-task state machine.
     """
     reasons: list[str] = []
     audio_semantic_request = _simple_chain_requests_audio_semantics(
         user_message,
         required_read_paths,
     )
-    if not _runtime_detects_work_intent(user_message) and not audio_semantic_request:
-        return (not reasons, "incomplete" if reasons else "complete", reasons)
     if (
         audio_semantic_request
         and not _simple_chain_has_native_audio_evidence(quality_history, required_read_paths)
@@ -5766,24 +5761,10 @@ def _simple_chain_final_hard_gate(
     )
     if integrity_reasons:
         reasons.extend(reason for reason in integrity_reasons if reason not in reasons)
-        # An actionable explicit observation request cannot terminate as prose-only.
-        # The existing continue-decision loop will return control to the same LLM;
-        # Runtime still does not choose or execute a tool.
-        if not quality_history:
-            return False, "incomplete", reasons
     if not quality_history:
-        # 草案 §4.3：模型未调用任何工具、直接反问澄清时，这是 NEEDS_CLARIFICATION
-        # 终态，不是"零观察值"的任务失败；run 以 awaiting_user 泊车，回复保留原问题。
         if _simple_chain_is_clarification_question(final_reply):
             return True, "clarify", []
-        # 零观察但属纯询问/汇报（非写操作）且回复是实质答案：直接放行，
-        # 避免“整理什么内容了/现在到哪了”这类查询被按“平台预算上限”fail-closed。
-        if _simple_chain_task_kind(quality_history, user_message) != "write":
-            reply_text = str(final_reply or "").strip()
-            if reply_text and not _simple_chain_reply_restates_tool_error(reply_text):
-                return True, "complete", []
-        reasons.append("no omni_body observation exists for this work request")
-        return False, "incomplete", reasons
+        return (not reasons, "incomplete" if reasons else "complete", reasons)
 
     last_payload = quality_history[-1]
     if not bool(last_payload.get("ok")):
@@ -5791,9 +5772,6 @@ def _simple_chain_final_hard_gate(
         return False, "failed", reasons
 
     reasons.extend(_simple_chain_failure_text(last_payload))
-    if _simple_chain_is_learning_only_request(user_message):
-        if any(_simple_chain_learning_receipt(payload) for payload in quality_history):
-            return (not reasons, "incomplete" if reasons else "complete", reasons)
     completed_actions = {
         str(payload.get("tool_action") or "").strip().lower()
         for payload in quality_history
@@ -5876,43 +5854,24 @@ def _simple_chain_final_hard_gate(
             "explicitly named deliverables are missing: "
             + ", ".join(missing_deliverables[:8])
         )
-    no_deliverable_gap = _simple_chain_no_deliverable_gap(
-        user_message,
-        quality_history,
-        generated_attachments,
+    observation_required = any(
+        isinstance(item, dict) and str(item.get("kind") or "").strip().lower() == "observation"
+        for item in task_obligations or []
     )
-    if no_deliverable_gap:
-        reasons.extend(no_deliverable_gap)
-    task_kind = _simple_chain_task_kind(quality_history, user_message)
-    if _requires_real_mutation(user_message) and task_kind == "write":
-        # 写任务：维持 write_effect 判定——已有成功写调用，必须观察到落盘效应。
-        mutation_ok = False
-        mutation_issues: list[str] = []
-        for payload in reversed(quality_history):
-            ok, issues = _simple_chain_mutation_payload_satisfies_request(user_message, payload)
-            if ok:
-                mutation_ok = True
-                break
-            if issues and not mutation_issues:
-                mutation_issues = issues
-        if not mutation_ok:
-            reasons.extend(mutation_issues or ["no successful mutating omni_body result satisfies the request"])
-    if task_kind == "read":
-        # 纯读取/问答任务：完成判据是“最终回复送达实质答案”，不要求 write_effect。
-        if final_reply is not None:
-            answer_ok, answer_code = _simple_chain_substantive_answer(quality_history, final_reply)
-            if not answer_ok:
-                reasons.append(f"final reply is not a substantive answer: {answer_code}")
-    elif task_kind == "mixed" and final_reply is not None:
-        # 拿不准按 mixed：宽松放行方向，但答案必须非空且不能是工具错误复述。
-        reply_text = str(final_reply or "").strip()
-        if not reply_text:
-            reasons.append("final reply is not a substantive answer: final_reply_empty")
-        elif _simple_chain_reply_restates_tool_error(reply_text):
-            reasons.append("final reply is not a substantive answer: final_reply_restates_tool_error")
+    if observation_required and final_reply is not None:
+        answer_ok, answer_code = _simple_chain_substantive_answer(quality_history, final_reply)
+        if not answer_ok:
+            reasons.append(f"observed facts were not delivered in the final reply: {answer_code}")
     if _simple_chain_requires_verification(user_message) and not _simple_chain_has_post_mutation_verification(quality_history, user_message):
         reasons.append("requested verification/test step is missing after the latest mutation")
-    reasons.extend(_simple_chain_read_coverage_issues(user_message, quality_history, required_paths=required_read_paths))
+    reasons.extend(
+        _simple_chain_read_coverage_issues(
+            user_message,
+            quality_history,
+            required_paths=required_read_paths,
+            task_obligations=task_obligations,
+        )
+    )
     if _has_delivery_intent(user_message):
         suffixes = {".zip"} if _requests_zip_delivery(user_message) else _simple_chain_expected_suffixes(user_message)
         if suffixes and not _has_generated_attachment_suffix(generated_attachments, suffixes):
@@ -5924,6 +5883,35 @@ def _simple_chain_final_hard_gate(
         if text and text not in deduped:
             deduped.append(text)
     return (not deduped, "incomplete" if deduped else "complete", deduped)
+
+
+def _simple_chain_life_completion_gate(
+    user_message: str,
+    quality_history: list[dict[str, Any]],
+    generated_attachments: list[dict[str, str]],
+    *,
+    task_contract: dict[str, Any] | None,
+    required_read_paths: list[str] | None = None,
+    final_reply: Any = None,
+    task_obligations: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], bool, str, list[str]]:
+    """Apply evidence observations, then let the life contract decide once."""
+
+    _evidence_ok, evidence_status, evidence_reasons = _simple_chain_evidence_check(
+        user_message,
+        quality_history,
+        generated_attachments,
+        required_read_paths=required_read_paths,
+        final_reply=final_reply,
+        task_obligations=task_obligations,
+    )
+    return decide_task_contract_completion(
+        task_contract,
+        evidence_reasons=evidence_reasons,
+        evidence_status=evidence_status,
+        final_reply=final_reply,
+        has_real_observation=bool(quality_history),
+    )
 
 
 _INCOMPLETE_REASON_RENHUA = (
@@ -6080,6 +6068,25 @@ def _simple_chain_completion_correction_payload(
             "claim completion unless the remaining gaps are resolved."
         ),
     }
+
+
+def _simple_chain_completion_correction_stalled(
+    correction: dict[str, Any],
+    reasons: list[str],
+) -> bool:
+    """Stop when one model correction produced no new route or evidence."""
+
+    current = [str(item).strip() for item in reasons if str(item).strip()][:8]
+    previous = [
+        str(item).strip()
+        for item in (correction.get("last_blockers") or [])
+        if str(item).strip()
+    ][:8]
+    return bool(
+        int(correction.get("attempts_used") or 0) >= 1
+        and current
+        and current == previous
+    )
 
 
 def _simple_chain_completion_fallback_reply(
@@ -7948,31 +7955,45 @@ class Zongdiaodu:
                         pass
             if not tool_name:
                 if quality_history or _runtime_detects_work_intent(xiaoxi):
-                    final_allowed_now, final_status_now, final_reasons_now = _simple_chain_final_hard_gate(
+                    contract_now, final_allowed_now, final_status_now, final_reasons_now = _simple_chain_life_completion_gate(
                         xiaoxi,
                         quality_history,
                         generated_attachments,
+                        task_contract=run_state.get("task_contract") if isinstance(run_state, dict) else None,
                         required_read_paths=required_read_paths,
                         final_reply=huifu,
                         task_obligations=run_state.get("obligations") if isinstance(run_state, dict) else None,
                     )
+                    if isinstance(run_state, dict):
+                        run_state["task_contract"] = contract_now
+                        _simple_chain_save_run_state(run_state)
                     if final_allowed_now:
                         final_chain_status = final_status_now
                         break
 
                     correction_state = _simple_chain_completion_correction_state(run_state)
-                    correction_state["last_blockers"] = [
+                    current_blockers = [
                         str(item).strip()
                         for item in (final_reasons_now or [])
                         if str(item).strip()
                     ][:8]
                     attempts_used = int(correction_state.get("attempts_used") or 0)
-                    if attempts_used >= _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS:
+                    correction_stalled = _simple_chain_completion_correction_stalled(
+                        correction_state,
+                        current_blockers,
+                    )
+                    correction_state["last_blockers"] = current_blockers
+                    if attempts_used >= _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS or correction_stalled:
                         correction_state["exhausted"] = True
                         final_guard_exhausted = True
                         final_chain_status = "incomplete"
+                        terminal_reason = (
+                            "completion_correction_stalled"
+                            if correction_stalled
+                            else "completion_corrections_exhausted"
+                        )
                         if isinstance(run_state, dict):
-                            run_state["terminal_reason"] = "completion_corrections_exhausted"
+                            run_state["terminal_reason"] = terminal_reason
                             run_state["final_reasons"] = list(correction_state["last_blockers"])
                             _simple_chain_save_run_state(run_state)
                         shenti, huifu = _natural_closeout(
@@ -7981,19 +8002,24 @@ class Zongdiaodu:
                             allow_evidence_model=True,
                         )
                         if isinstance(run_state, dict):
-                            run_state["terminal_reason"] = "completion_corrections_exhausted"
+                            run_state["terminal_reason"] = terminal_reason
                             _simple_chain_save_run_state(run_state)
                         if run_control:
                             run_control.step(
                                 "simple_chain_completion_correction",
-                                "Completion correction exhausted",
+                                "Completion correction stalled" if correction_stalled else "Completion correction exhausted",
                                 "incomplete",
-                                "Three evidence corrections were attempted; no execution route was selected by Runtime.",
+                                (
+                                    "The blocker set did not change after a model correction; no new execution route or evidence was produced."
+                                    if correction_stalled
+                                    else "Three evidence corrections were attempted; no execution route was selected by Runtime."
+                                ),
                                 meta={
                                     "attempts_used": attempts_used,
                                     "attempts_max": _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
                                     "blocking_reasons": correction_state["last_blockers"],
                                     "exhausted": True,
+                                    "stalled": correction_stalled,
                                 },
                             )
                         break
@@ -8662,14 +8688,18 @@ class Zongdiaodu:
                 run_control.step("llm_continue", "model integrates tool result", "done", _llm_reply_progress_summary(huifu))
 
         if not final_guard_exhausted:
-            final_allowed, final_chain_status, final_reasons = _simple_chain_final_hard_gate(
+            contract_now, final_allowed, final_chain_status, final_reasons = _simple_chain_life_completion_gate(
                 xiaoxi,
                 quality_history,
                 generated_attachments,
+                task_contract=run_state.get("task_contract") if isinstance(run_state, dict) else None,
                 required_read_paths=required_read_paths,
                 final_reply=huifu,
                 task_obligations=run_state.get("obligations") if isinstance(run_state, dict) else None,
             )
+            if isinstance(run_state, dict):
+                run_state["task_contract"] = contract_now
+                _simple_chain_save_run_state(run_state)
             if final_chain_status == "clarify":
                 # 草案 §4.3 NEEDS_CLARIFICATION：保留模型的澄清原问题，
                 # run 以 awaiting_user 泊车（答复本身不是副作用凭证），不得套失败模板。

@@ -13,7 +13,11 @@ import re
 from contracts.world_understanding.query import WorldQuery
 from contracts.world_understanding.repository_query import RepositoryGraphQuery
 from world_understanding.software_world.graph import SparseWorldGraph
-from world_understanding.software_world.query import execute_repository_graph_query
+from world_understanding.software_world.entity import entity_ref
+from world_understanding.software_world.query import (
+    execute_repository_graph_query,
+    relation_ref,
+)
 
 from .enrichment import ContextProjectionCandidate
 
@@ -98,10 +102,18 @@ def _entity_summary(entity, *, seed: bool, score_milli: int | None = None) -> st
     role = "focus" if seed else "neighbor"
     canonical_name = _untrusted_repository_text(entity.canonical_name)
     ranking = "" if score_milli is None else f" Weighted relevance={score_milli}/1000."
+    attributes = {
+        item.key: item.value.string_value
+        for item in getattr(entity, "attributes", ())
+        if item.value.kind == "string" and item.value.string_value is not None
+    }
+    coverage = attributes.get("coverage_state")
+    coverage_text = "" if coverage is None else f" Tree coverage={coverage}."
     return (
         f"[UNTRUSTED_REPOSITORY_DATA] Repository {role} {entity.entity_type} "
         f"'{canonical_name}' "
         f"is present in the committed software-world frame at revision {entity.revision}."
+        + coverage_text
         + ranking
     )
 
@@ -117,6 +129,50 @@ def _relation_summary(graph: SparseWorldGraph, relation) -> str:
         f"'{_untrusted_repository_text(subject_name)}' "
         f"--{_untrusted_repository_text(relation.predicate)}--> "
         f"'{_untrusted_repository_text(target_name)}'."
+    )
+
+
+def _repository_tree_ancestors(
+    graph: SparseWorldGraph,
+    seeds: tuple[object, ...],
+    *,
+    max_entities: int,
+    max_relations: int,
+) -> tuple[tuple[object, ...], tuple[object, ...]]:
+    """Walk the unique inbound total-part chain before horizontal expansion."""
+    entities: dict[str, object] = {}
+    relations: dict[str, object] = {}
+    for seed in seeds:
+        current = seed
+        visited = {seed.entity_id}
+        while len(entities) < max_entities and len(relations) < max_relations:
+            parents = []
+            for relation in graph.relations_touching(current.entity_id):
+                if (
+                    relation.predicate != "CONTAINS"
+                    or relation.value.kind != "entity_ref"
+                    or relation.value.entity_ref != current.entity_id
+                ):
+                    continue
+                parent = graph.entity(relation.subject_ref.record_id)
+                if (
+                    parent is not None
+                    and parent.lifecycle == "ACTIVE"
+                    and parent.entity_type in {"Repository", "RepositoryBranch"}
+                ):
+                    parents.append((relation, parent))
+            if len(parents) != 1:
+                break
+            relation, parent = parents[0]
+            if parent.entity_id in visited:
+                break
+            visited.add(parent.entity_id)
+            entities[parent.entity_id] = parent
+            relations[relation.relation_id] = relation
+            current = parent
+    return (
+        tuple(entities[key] for key in sorted(entities)),
+        tuple(relations[key] for key in sorted(relations)),
     )
 
 
@@ -144,6 +200,14 @@ def build_repository_context_candidates(
     if not seeds:
         return ()
 
+    tree_entities, tree_relations = _repository_tree_ancestors(
+        graph,
+        seeds,
+        max_entities=max_entities,
+        max_relations=max_relations,
+    )
+    remaining_entities = max(1, max_entities - len(tree_entities))
+    remaining_relations = max(1, max_relations - len(tree_relations))
     repository_query = RepositoryGraphQuery.build(
         scope=graph.scope,
         frame_id=graph.frame_id,
@@ -152,8 +216,8 @@ def build_repository_context_candidates(
         mode="ASSOCIATIVE",
         direction="BOTH",
         max_depth=1,
-        max_entities=max_entities,
-        max_relations=max_relations,
+        max_entities=remaining_entities,
+        max_relations=remaining_relations,
         max_operations=max_operations,
         include_retired=False,
     )
@@ -164,6 +228,24 @@ def build_repository_context_candidates(
     }
 
     candidates: list[ContextProjectionCandidate] = []
+    for entity in tree_entities:
+        candidates.append(ContextProjectionCandidate(
+            ref=entity_ref(entity),
+            item_kind="repository_tree_ancestor",
+            summary=_entity_summary(entity, seed=False, score_milli=980),
+            task_relevance_milli=980,
+            impact_milli=900,
+            freshness_need_milli=900,
+        ))
+    for relation in tree_relations:
+        candidates.append(ContextProjectionCandidate(
+            ref=relation_ref(relation),
+            item_kind="repository_tree_relation",
+            summary=_relation_summary(graph, relation),
+            task_relevance_milli=960,
+            impact_milli=880,
+            freshness_need_milli=900,
+        ))
     for ref in result.entity_refs:
         entity = graph.entity(ref.record_id)
         if entity is None:

@@ -13,9 +13,10 @@ from world_understanding.context_output.handler import WorldContextRequestHandle
 from world_understanding.context_output.projection import WorldContextProjector
 from world_understanding.context_output.repository import build_repository_context_candidates
 from world_understanding.production import ProductionWorldUnderstandingRuntime
+from world_understanding.software_world.entity import EntitySeed, build_entity
 from world_understanding.world_state import WorldStateStore
 
-from tests.test_repository_query_p14_m3 import _entity, _graph
+from tests.test_repository_query_p14_m3 import _basis, _entity, _graph, _relation
 
 
 def _frame_ref(frame, *, sha: str | None = None) -> WorldRecordRef:
@@ -138,6 +139,43 @@ def test_m4_repository_focus_returns_committed_entity_and_neighbors() -> None:
     assert module_b.entity_id in by_id
     assert unrelated.entity_id not in by_id
     assert any(candidate.item_kind == "repository_relation" for candidate in candidates)
+
+
+def test_m4_total_part_ancestors_precede_horizontal_expansion() -> None:
+    frame, graph, *_ = _graph()
+    repository = _entity(frame, "Repository", "tree.repo", "local-repository:repo.m3")
+    src = _entity(frame, "RepositoryBranch", "tree.src", "repository-branch:repo.m3:src")
+    core = _entity(frame, "RepositoryBranch", "tree.core", "repository-branch:repo.m3:src/core")
+    file = build_entity(
+        frame,
+        EntitySeed(
+            entity_type="File",
+            stable_anchor="tree.file",
+            canonical_name="src/core/unique_tree_file.py",
+            basis_ref=_basis("tree.file"),
+            time=frame.time,
+            truth_state="TRUE",
+            epistemic_state="CURRENT",
+            aliases=("unique_tree_file.py",),
+        ),
+    )
+    for entity in (repository, src, core, file):
+        graph.upsert_entity(entity)
+    for relation in (
+        _relation(frame, repository, "CONTAINS", src),
+        _relation(frame, src, "CONTAINS", core),
+        _relation(frame, core, "CONTAINS", file),
+    ):
+        graph.upsert_relation(relation)
+
+    candidates = build_repository_context_candidates(
+        graph, _query(frame, "inspect unique_tree_file.py")
+    )
+    by_id = {item.ref.record_id: item for item in candidates}
+    assert by_id[file.entity_id].item_kind == "repository_focus"
+    assert by_id[core.entity_id].item_kind == "repository_tree_ancestor"
+    assert by_id[src.entity_id].item_kind == "repository_tree_ancestor"
+    assert by_id[repository.entity_id].item_kind == "repository_tree_ancestor"
 
 
 def test_m4_seed_discovery_never_scans_all_graph_entities() -> None:

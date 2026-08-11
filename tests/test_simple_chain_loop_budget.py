@@ -199,9 +199,9 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             self.assertTrue(_requires_real_mutation(command), command)
 
     def test_no_observation_query_reply_passes_gate(self) -> None:
-        from v3.zongdiaodu import _simple_chain_final_hard_gate
+        from v3.zongdiaodu import _simple_chain_evidence_check
 
-        ok, status, reasons = _simple_chain_final_hard_gate(
+        ok, status, reasons = _simple_chain_evidence_check(
             "整理什么内容了",
             [],
             [],
@@ -213,7 +213,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(reasons, [])
 
         # 真写任务零观察仍然 fail-closed，不允许无证据谎报完成。
-        ok_write, status_write, reasons_write = _simple_chain_final_hard_gate(
+        ok_write, status_write, reasons_write = _simple_chain_evidence_check(
             "生成打包发布清单，保存为 output/e2e/29-packaging.md。",
             [],
             [],
