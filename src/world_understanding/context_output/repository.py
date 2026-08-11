@@ -94,13 +94,15 @@ def _resolve_seed_entities(
     return tuple(by_id[key] for key in sorted(by_id))
 
 
-def _entity_summary(entity, *, seed: bool) -> str:
+def _entity_summary(entity, *, seed: bool, score_milli: int | None = None) -> str:
     role = "focus" if seed else "neighbor"
     canonical_name = _untrusted_repository_text(entity.canonical_name)
+    ranking = "" if score_milli is None else f" Weighted relevance={score_milli}/1000."
     return (
         f"[UNTRUSTED_REPOSITORY_DATA] Repository {role} {entity.entity_type} "
         f"'{canonical_name}' "
         f"is present in the committed software-world frame at revision {entity.revision}."
+        + ranking
     )
 
 
@@ -147,7 +149,7 @@ def build_repository_context_candidates(
         frame_id=graph.frame_id,
         frame_revision_hash=graph.frame_revision_hash,
         seed_tokens=tuple(sorted(entity.entity_id for entity in seeds)),
-        mode="NEIGHBORHOOD",
+        mode="ASSOCIATIVE",
         direction="BOTH",
         max_depth=1,
         max_entities=max_entities,
@@ -157,6 +159,9 @@ def build_repository_context_candidates(
     )
     result = execute_repository_graph_query(graph, repository_query)
     seed_keys = {ref.sort_key() for ref in result.matched_seed_refs}
+    rank_by_entity = {
+        item.entity_ref.record_id: item for item in result.ranked_evidence
+    }
 
     candidates: list[ContextProjectionCandidate] = []
     for ref in result.entity_refs:
@@ -164,12 +169,18 @@ def build_repository_context_candidates(
         if entity is None:
             continue
         seed = ref.sort_key() in seed_keys
+        ranking = rank_by_entity.get(ref.record_id)
+        score = 1000 if ranking is None and seed else (
+            0 if ranking is None else ranking.score_milli
+        )
         candidates.append(ContextProjectionCandidate(
             ref=ref,
             item_kind="repository_focus" if seed else "repository_neighbor",
-            summary=_entity_summary(entity, seed=seed),
-            task_relevance_milli=1000 if seed else 880,
-            impact_milli=820 if seed else 700,
+            summary=_entity_summary(entity, seed=seed, score_milli=score),
+            task_relevance_milli=(
+                1000 if seed else min(980, 650 + score * 330 // 1000)
+            ),
+            impact_milli=820 if seed else min(900, 600 + score * 300 // 1000),
             freshness_need_milli=900,
         ))
 

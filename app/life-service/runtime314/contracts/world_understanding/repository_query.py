@@ -22,7 +22,7 @@ from ._base import (
 )
 from .scope import WorldScope
 
-RepositoryQueryMode = Literal["NEIGHBORHOOD", "IMPACT"]
+RepositoryQueryMode = Literal["NEIGHBORHOOD", "IMPACT", "ASSOCIATIVE"]
 RepositoryQueryDirection = Literal["OUTBOUND", "INBOUND", "BOTH"]
 RepositoryTraversalDirection = Literal["OUTBOUND", "INBOUND"]
 RepositoryQueryTruncationReason = Literal[
@@ -200,6 +200,37 @@ class RepositoryTraversalStep(HashedWorldContract):
         )
 
 
+class RepositoryRankedEvidence(HashedWorldContract):
+    """Deterministic explanation for one weighted associative result."""
+
+    _hash_field = "evidence_sha256"
+
+    entity_ref: WorldRecordRef
+    score_milli: int = Field(ge=0, le=1000, strict=True)
+    seed_distance: int = Field(ge=0, le=4, strict=True)
+    matched_seed_count: int = Field(ge=1, le=64, strict=True)
+    strongest_predicate: str | None = Field(default=None, max_length=160)
+    path_relation_refs: tuple[WorldRecordRef, ...] = Field(default=(), max_length=4)
+    evidence_sha256: Sha256
+
+    @field_validator("strongest_predicate")
+    @classmethod
+    def validate_predicate(cls, value: str | None) -> str | None:
+        return None if value is None else normalized_text(value)
+
+    @field_validator("path_relation_refs")
+    @classmethod
+    def validate_path(
+        cls, value: tuple[WorldRecordRef, ...]
+    ) -> tuple[WorldRecordRef, ...]:
+        if len({item.sort_key() for item in value}) != len(value):
+            raise ValueError("ranked evidence path may not repeat relations")
+        return value
+
+    def sort_key(self) -> tuple:
+        return (-self.score_milli, self.seed_distance, self.entity_ref.sort_key())
+
+
 class RepositoryGraphQueryResult(HashedWorldContract):
     _hash_field = "result_sha256"
 
@@ -215,6 +246,7 @@ class RepositoryGraphQueryResult(HashedWorldContract):
     entity_refs: tuple[WorldRecordRef, ...] = Field(default=(), max_length=512)
     relation_refs: tuple[WorldRecordRef, ...] = Field(default=(), max_length=1024)
     traversal_steps: tuple[RepositoryTraversalStep, ...] = Field(default=(), max_length=1024)
+    ranked_evidence: tuple[RepositoryRankedEvidence, ...] = Field(default=(), max_length=512)
     max_depth_reached: int = Field(ge=0, le=4, strict=True)
     operation_count: int = Field(ge=0, le=MAX_SAFE_INTEGER, strict=True)
     truncated: bool
@@ -253,6 +285,18 @@ class RepositoryGraphQueryResult(HashedWorldContract):
             raise ValueError("traversal steps must be sorted and unique")
         return value
 
+    @field_validator("ranked_evidence")
+    @classmethod
+    def validate_ranked_evidence(
+        cls, value: tuple[RepositoryRankedEvidence, ...]
+    ) -> tuple[RepositoryRankedEvidence, ...]:
+        keys = tuple(item.sort_key() for item in value)
+        if keys != tuple(sorted(keys)):
+            raise ValueError("ranked evidence must be in deterministic score order")
+        if len({item.entity_ref.sort_key() for item in value}) != len(value):
+            raise ValueError("ranked evidence entities must be unique")
+        return value
+
     @model_validator(mode="after")
     def validate_result(self) -> Self:
         if self.result_id != derive_repository_graph_result_id(
@@ -264,12 +308,18 @@ class RepositoryGraphQueryResult(HashedWorldContract):
         entity_keys = {ref.sort_key() for ref in self.entity_refs}
         if any(ref.sort_key() not in entity_keys for ref in self.matched_seed_refs):
             raise ValueError("matched seed ref missing from entity result set")
+        if any(
+            item.entity_ref.sort_key() not in entity_keys
+            for item in self.ranked_evidence
+        ):
+            raise ValueError("ranked evidence ref missing from entity result set")
         return self
 
 
 __all__ = [
     "RepositoryGraphQuery",
     "RepositoryGraphQueryResult",
+    "RepositoryRankedEvidence",
     "RepositoryQueryDirection",
     "RepositoryQueryMode",
     "RepositoryQueryTruncationReason",

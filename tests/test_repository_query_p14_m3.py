@@ -83,7 +83,9 @@ def _entity(frame: SoftwareWorldFrame, kind: str, anchor: str, name: str, *, ret
     )
 
 
-def _relation(frame: SoftwareWorldFrame, subject, predicate: str, target):
+def _relation(
+    frame: SoftwareWorldFrame, subject, predicate: str, target, *, weight: int = 1000
+):
     subject_ref = entity_ref(subject)
     value = WorldValue(kind="entity_ref", entity_ref=target.entity_id)
     relation_id = derive_relation_id(
@@ -105,7 +107,7 @@ def _relation(frame: SoftwareWorldFrame, subject, predicate: str, target):
         derivation_refs=(),
         truth_state="TRUE",
         epistemic_state="CURRENT",
-        empirical_evidence_weight_milli=1000,
+        empirical_evidence_weight_milli=weight,
         revision=1,
         time=frame.time,
         relation_sha256="0" * 64,
@@ -201,6 +203,41 @@ def test_m3_reverse_impact_walks_defines_then_importers_then_tests() -> None:
     assert test_a.entity_id in ids
     assert result.max_depth_reached == 3
     assert all(step.direction == "INBOUND" for step in result.traversal_steps)
+
+
+def test_m3_associative_query_ranks_by_semantics_evidence_and_path() -> None:
+    frame = _frame()
+    graph = SparseWorldGraph(frame)
+    seed = _entity(frame, "Module", "rank.seed", "pkg.seed")
+    called = _entity(frame, "Function", "rank.called", "pkg.called")
+    imported = _entity(frame, "Module", "rank.imported", "pkg.imported")
+    weak = _entity(frame, "Function", "rank.weak", "pkg.weak")
+    for entity in (seed, called, imported, weak):
+        graph.upsert_entity(entity)
+    for relation in (
+        _relation(frame, seed, "DIRECT_CALLS", called),
+        _relation(frame, seed, "IMPORTS", imported),
+        _relation(frame, seed, "DIRECT_CALLS", weak, weight=300),
+    ):
+        graph.upsert_relation(relation)
+    result = execute_repository_graph_query(
+        graph,
+        _query(
+            frame,
+            (seed.entity_id,),
+            mode="ASSOCIATIVE",
+            direction="OUTBOUND",
+            max_depth=1,
+        ),
+    )
+    ranked = {item.entity_ref.record_id: item for item in result.ranked_evidence}
+    assert result.ranked_evidence[0].entity_ref.record_id == seed.entity_id
+    assert ranked[called.entity_id].score_milli > ranked[imported.entity_id].score_milli
+    assert ranked[imported.entity_id].score_milli > ranked[weak.entity_id].score_milli
+    assert ranked[called.entity_id].strongest_predicate == "DIRECT_CALLS"
+    assert len(ranked[called.entity_id].path_relation_refs) == 1
+    assert result.may_execute is False
+    assert result.empirical_evidence_weight_milli == 0
 
 
 def test_m3_impact_default_does_not_cross_unrelated_fourth_hop() -> None:

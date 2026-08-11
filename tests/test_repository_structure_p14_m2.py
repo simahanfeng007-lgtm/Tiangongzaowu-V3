@@ -269,10 +269,128 @@ def test_m2_large_repository_baseline_is_bounded(tmp_path: Path) -> None:
     delta = structure_index.update(_observation(tmp_path))
     snapshot = structure_index.current("repo.test", "worktree.test")
     assert snapshot is not None
-    assert snapshot.candidate_path_count == STRUCTURE._MAX_BASELINE_FILES
+    assert snapshot.candidate_path_count == 270
     assert snapshot.truncated is True
     assert len(snapshot.files) <= STRUCTURE._MAX_BASELINE_FILES
     assert len(delta.upsert_files) <= STRUCTURE._MAX_BASELINE_FILES
+    continuation = structure_index.update(
+        _observation(tmp_path, observed_at_ms=2000)
+    )
+    completed = structure_index.current("repo.test", "worktree.test")
+    assert completed is not None
+    assert continuation.full_rescan is False
+    assert len(completed.files) == 270
+    assert completed.truncated is False
+
+
+def test_m2_python_ast_emits_only_uniquely_resolved_semantic_relations(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "semantic.py").write_text(
+        "class Base:\n    pass\n\n"
+        "def target():\n    return 1\n\n"
+        "class Child(Base):\n"
+        "    def run(self):\n        return target()\n",
+        encoding="utf-8",
+    )
+    observation = _observation(tmp_path)
+    delta = STRUCTURE.RepositoryStructureIndex().update(observation)
+    file = delta.upsert_files[0]
+    assert file.parser_kind == "python-ast"
+    facts = {
+        (item.predicate, item.target_token, item.resolution)
+        for item in file.semantic_relations
+        if item.resolution != "UNRESOLVED"
+    }
+    assert ("INHERITS", "Base", "UNIQUE_SYMBOL") in facts
+    assert ("DIRECT_CALLS", "target", "UNIQUE_SYMBOL") in facts
+    assert all(
+        item.resolved_target_name and item.resolved_target_anchor
+        for item in file.semantic_relations
+        if item.resolution != "UNRESOLVED"
+    )
+
+    from contracts.world_understanding.scope import (
+        ScopeBinding, WorldScope, derive_world_id, derive_world_scope_hash,
+    )
+    from contracts.world_understanding.time import WorldTime
+    from world_understanding.source_adapters import build_post_commit_source_envelope
+    from world_understanding.source_compilers.p3 import build_p3_compilers
+    from world_understanding.software_world.frame import SoftwareWorldFrame
+    from world_understanding.software_world.updater import SoftwareWorldUpdater
+
+    bindings = (ScopeBinding(key="repository", value="repo.test"),)
+    world_id = derive_world_id(life_id="life.semantic", namespace_anchor="repo.test")
+    scope = WorldScope(
+        life_id="life.semantic",
+        world_id=world_id,
+        domain_id="software",
+        scope_bindings=bindings,
+        world_scope_hash=derive_world_scope_hash(
+            life_id="life.semantic", world_id=world_id, domain_id="software",
+            scope_bindings=bindings,
+        ),
+        principal_scope_hash="a" * 64,
+        privacy_scope="system",
+    )
+    world_time = WorldTime(valid_from_ms=1, observed_at_ms=1, recorded_at_ms=1)
+    envelope = build_post_commit_source_envelope(
+        source_kind="GIT_CODE",
+        source_native_id="repoobs.semantic",
+        producer_ref="test.repository",
+        payload={
+            "repository_observation": observation.model_dump(mode="json"),
+            "structure_delta": delta.model_dump(mode="json"),
+        },
+        source_time=world_time,
+        scope=scope,
+        correlation_id="corr.semantic",
+    )
+    rows = build_p3_compilers()["GIT_CODE"](envelope)
+    assert {"DIRECT_CALLS", "INHERITS"}.issubset(
+        {row.proposition_type for row in rows}
+    )
+    frame = SoftwareWorldFrame.build(
+        scope=scope,
+        workspace="workspace.semantic",
+        repository="repo.test",
+        worktree="worktree.test",
+        branch="main",
+        commit="a" * 40,
+        environment="test",
+        time=world_time,
+    )
+    result = SoftwareWorldUpdater().update(frame=frame, known_delta=rows)
+    predicates = {relation.predicate for relation in result.graph.relations()}
+    assert {"DIRECT_CALLS", "INHERITS"}.issubset(predicates), result.diagnostics
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "language"),
+    (
+        ("main.go", "package main\nfunc Run() {}\n", "go"),
+        ("lib.rs", "pub struct Engine {}\npub fn run() {}\n", "rust"),
+        ("Main.java", "public class Main {}\n", "java"),
+        ("Worker.kt", "class Worker\nfun run() = 1\n", "kotlin"),
+        ("Core.cs", "public class Core {}\n", "csharp"),
+        ("core.cpp", "class Core {};\nint run() { return 1; }\n", "cpp"),
+        ("worker.rb", "class Worker\nend\ndef run\nend\n", "ruby"),
+        ("worker.php", "<?php\nclass Worker {}\nfunction run() {}\n", "php"),
+        ("main.swift", "struct Engine {}\nfunc run() {}\n", "swift"),
+        ("Main.scala", "class Engine\ndef run() = 1\n", "scala"),
+        ("build.sh", "run() { echo ok; }\n", "shell"),
+    ),
+)
+def test_m2_bounded_cross_language_structure_fallback(
+    tmp_path: Path, name: str, source: str, language: str,
+) -> None:
+    (tmp_path / name).write_text(source, encoding="utf-8")
+    delta = STRUCTURE.RepositoryStructureIndex().update(_observation(tmp_path))
+    file = delta.upsert_files[0]
+    assert file.language == language
+    assert file.parse_status == "PARSED"
+    assert file.parser_kind in {"tree-sitter", "bounded-lexical"}
+    assert file.nodes
 
 
 def test_m2_nested_source_path_compiles_to_opaque_known_subject(tmp_path: Path) -> None:

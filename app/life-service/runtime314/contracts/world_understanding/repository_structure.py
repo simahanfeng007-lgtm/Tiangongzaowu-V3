@@ -18,8 +18,17 @@ from ._base import WorldContractModel
 
 REPOSITORY_STRUCTURE_SCHEMA = "tiangong.repository-structure.v1"
 
-StructureLanguage = Literal["python", "javascript", "typescript", "tsx"]
+StructureLanguage = Literal[
+    "python", "javascript", "typescript", "tsx", "go", "rust", "java",
+    "kotlin", "csharp", "cpp", "ruby", "php", "swift", "scala", "shell",
+]
 StructureNodeKind = Literal["Class", "Function", "Method"]
+StructureSemanticPredicate = Literal[
+    "DIRECT_CALLS", "REFERENCES", "INHERITS", "IMPLEMENTS",
+]
+StructureSemanticResolution = Literal[
+    "UNRESOLVED", "UNIQUE_SYMBOL", "QUALIFIED_SYMBOL",
+]
 StructureParseStatus = Literal[
     "PARSED",
     "SYNTAX_ERROR",
@@ -143,6 +152,47 @@ class RepositoryImportDeclaration(WorldContractModel):
         return (self.span.start_byte, self.span.end_byte, self.import_id)
 
 
+class RepositorySemanticRelation(WorldContractModel):
+    """Rebuildable parser evidence; unresolved targets are never graph facts."""
+
+    semantic_id: str = Field(min_length=1, max_length=160)
+    file_key: str = Field(min_length=1, max_length=160)
+    source_anchor: str = Field(min_length=1, max_length=160)
+    predicate: StructureSemanticPredicate
+    target_token: str = Field(min_length=1, max_length=4096)
+    resolved_target_anchor: str | None = Field(default=None, max_length=160)
+    resolved_target_name: str | None = Field(default=None, max_length=4096)
+    resolution: StructureSemanticResolution = "UNRESOLVED"
+    confidence_milli: int = Field(ge=0, le=1000)
+    span: RepositorySourceSpan
+    syntax_sha256: Sha256
+
+    @field_validator(
+        "semantic_id", "file_key", "source_anchor", "target_token",
+    )
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return _nfc(value, label="semantic relation field")
+
+    @field_validator("resolved_target_anchor", "resolved_target_name")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        return None if value is None else _nfc(value, label="resolved semantic target")
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> "RepositorySemanticRelation":
+        resolved = self.resolution != "UNRESOLVED"
+        if resolved != bool(self.resolved_target_anchor and self.resolved_target_name):
+            raise ValueError("semantic resolution fields are incoherent")
+        return self
+
+    def sort_key(self) -> tuple[int, int, str, str, str]:
+        return (
+            self.span.start_byte, self.span.end_byte, self.predicate,
+            self.target_token, self.semantic_id,
+        )
+
+
 class RepositoryStructureFile(WorldContractModel):
     path: str
     file_key: str = Field(min_length=1, max_length=160)
@@ -157,6 +207,7 @@ class RepositoryStructureFile(WorldContractModel):
     parse_status: StructureParseStatus
     nodes: tuple[RepositoryStructureNode, ...] = ()
     imports: tuple[RepositoryImportDeclaration, ...] = ()
+    semantic_relations: tuple[RepositorySemanticRelation, ...] = ()
 
     _validate_path = field_validator("path")(_repo_path)
 
@@ -185,6 +236,16 @@ class RepositoryStructureFile(WorldContractModel):
         keys = tuple(item.sort_key() for item in value)
         if keys != tuple(sorted(set(keys))):
             raise ValueError("import declarations must be sorted and unique")
+        return value
+
+    @field_validator("semantic_relations")
+    @classmethod
+    def validate_semantic_relations(
+        cls, value: tuple[RepositorySemanticRelation, ...]
+    ) -> tuple[RepositorySemanticRelation, ...]:
+        keys = tuple(item.sort_key() for item in value)
+        if keys != tuple(sorted(set(keys))):
+            raise ValueError("semantic relations must be sorted and unique")
         return value
 
 
@@ -417,6 +478,7 @@ class RepositoryStructureDelta(WorldContractModel):
 __all__ = [
     "REPOSITORY_STRUCTURE_SCHEMA",
     "RepositoryImportDeclaration",
+    "RepositorySemanticRelation",
     "RepositorySourceSpan",
     "RepositoryStructureDelta",
     "RepositoryStructureFile",
@@ -427,4 +489,6 @@ __all__ = [
     "StructureLanguage",
     "StructureNodeKind",
     "StructureParseStatus",
+    "StructureSemanticPredicate",
+    "StructureSemanticResolution",
 ]

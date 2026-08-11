@@ -150,6 +150,7 @@ def _structure_rows(
             continue
 
         anchor_to_name = {file.module_anchor: file.module_name}
+        parser_weight = 900 if file.parser_kind in {"python-ast", "tree-sitter"} else 600
         for node in file.nodes:
             anchor_to_name[node.stable_anchor] = node.qualified_name
             rows.append(
@@ -162,7 +163,7 @@ def _structure_rows(
                     object_text=node.qualified_name,
                     authority_domain="FILESYSTEM_ARTIFACT",
                     authority_ceiling_milli=900,
-                    empirical_evidence_weight_milli=900,
+                    empirical_evidence_weight_milli=parser_weight,
                 )
             )
             parent_name = (
@@ -225,6 +226,27 @@ def _structure_rows(
                     authority_domain="FILESYSTEM_ARTIFACT",
                     authority_ceiling_milli=500,
                     empirical_evidence_weight_milli=250,
+                )
+            )
+
+        for item in file.semantic_relations:
+            # Ambiguous/unresolved parser observations remain rebuildable cache
+            # evidence and are never promoted into the Software World Graph.
+            if item.resolved_target_name is None:
+                continue
+            rows.append(
+                make_direct_known(
+                    envelope,
+                    compiler.spec,
+                    proposition_type=item.predicate,
+                    predicate="parser." + item.predicate.lower(),
+                    subject_ref=anchor_to_name.get(
+                        item.source_anchor, file.module_name
+                    ),
+                    object_text=item.resolved_target_name,
+                    authority_domain="FILESYSTEM_ARTIFACT",
+                    authority_ceiling_milli=min(900, item.confidence_milli),
+                    empirical_evidence_weight_milli=item.confidence_milli,
                 )
             )
 

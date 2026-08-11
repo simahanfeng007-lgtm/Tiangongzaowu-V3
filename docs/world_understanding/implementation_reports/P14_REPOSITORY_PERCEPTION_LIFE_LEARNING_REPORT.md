@@ -66,3 +66,51 @@ not used by production logic.
 - Generated-source synchronization and committed-mirror check.
 - Python compile check and `git diff --check`.
 
+## P14.11 deep semantic and associative retrieval upgrade
+
+This upgrade strengthens the existing RPS -> Known -> Software World -> context
+path. It does not introduce a second index authority, graph, context packet,
+learning store, scheduler, Runtime, Gateway, or executor.
+
+- Python uses the standard AST for deterministic definitions, calls, references,
+  and inheritance. JavaScript/TypeScript tree-sitter paths additionally emit
+  bounded calls and class heritage when the parser is available.
+- A semantic relation remains rebuildable parser evidence until its target is
+  uniquely resolved. Ambiguous and unresolved targets are never materialized as
+  world facts.
+- The existing GIT_CODE compiler now publishes resolved `DIRECT_CALLS`,
+  `REFERENCES`, `INHERITS`, and `IMPLEMENTS` Known records. The existing
+  Software World updater remains their only materialization path.
+- Source coverage expands from Python/JavaScript/TypeScript to 15 parser
+  language identifiers across 13 language families. Languages without an installed concrete parser use a conservative,
+  explicitly labelled `bounded-lexical` structure fallback; it is not presented
+  as compiler-grade semantics.
+- Large repositories report the real bounded candidate count and advance through
+  deterministic 128-file continuation shards on existing repository refreshes.
+  The cache remains rebuildable and capped at 8,192 indexed files; no background
+  crawler or second scheduler is added.
+- `ASSOCIATIVE` graph queries use deterministic predicate weights, empirical
+  evidence weight, hop decay, and traversal direction. Results include a
+  normalized score, strongest predicate, seed distance, and exact relation path.
+  Existing entity, relation, operation, and depth budgets remain hard limits.
+- Repository context uses the ranked result but remains reference-only,
+  untrusted-data labelled, bounded, read-only, and unable to authorize or execute.
+
+### Structural 9/10 acceptance rubric
+
+The 9/10 values below are engineering capability gates, not an unmeasured claim
+that the system beats every external code-search benchmark.
+
+- Exact code semantics — 9/10 gate: stable symbol identity, source spans, syntax
+  hashes, imports, calls, references, inheritance/implementation, unique-target
+  resolution, and existing-world-graph materialization are present. The reserved
+  tenth gate is compiler/SCIP-grade precision for every supported language.
+- Associative retrieval and ranking — 9/10 gate: exact seed resolution,
+  ambiguity refusal, semantic weights, evidence confidence, hop decay, direction,
+  priority traversal, path explanations, and hard query/context budgets are
+  present. The reserved tenth gate is measured task-specific ranking calibration.
+- Language and large-repository coverage — 9/10 gate: 15 parser language identifiers,
+  truthful parser capability labels, accurate candidate accounting, incremental
+  updates, deterministic continuation shards, byte/node/relation limits, an
+  explicit cache ceiling, and refresh-driven convergence are present. The
+  reserved tenth gate is distributed/external compiler index federation.
