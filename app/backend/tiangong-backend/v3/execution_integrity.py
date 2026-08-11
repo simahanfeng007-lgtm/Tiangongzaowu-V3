@@ -14,12 +14,22 @@ Runtime owns factual execution integrity. The LLM still owns semantic
 understanding, planning, tool choice, replanning and answer quality.
 """
 
+import hashlib
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 ACT_REQUIRED = "ACT_REQUIRED"
 ACT_FORBIDDEN = "ACT_FORBIDDEN"
 ACT_UNKNOWN = "UNKNOWN"
+
+TASK_LEVELS = ("L0", "L1", "L2", "L3")
+_TASK_LEVEL_RANK = {level: index for index, level in enumerate(TASK_LEVELS)}
+TASK_PROFILE_ARG_KEY = "_task_profile"
+_TASK_CONTRACT_SCHEMA = "tiangong.v3.life_task_state.v1"
+_TASK_PROFILE_SCHEMA = "tiangong.v3.task_profile.v2"
 
 _HARD_TOOL_BAN_MARKERS = (
     "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
@@ -88,6 +98,9 @@ _COMPLETION_CLAIM_RE = re.compile(
 )
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
+_RELATIVE_FILE_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])"
+)
 _BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[，。；：,.;:！!？?])", re.IGNORECASE)
@@ -104,6 +117,402 @@ _OBSERVATION_ACTIONS = {
     "directory": frozenset({"file.list"}),
     "file": frozenset({"file.read", "code.read", "sheet.read", "pdf.extract_text"}),
 }
+
+_TASK_LEVEL_THREE_ACTIONS = frozenset({
+    "file.delete_to_trash",
+    "rollback.apply",
+    "shell.run",
+    "python.run",
+    "zip.extract",
+})
+_TASK_LEVEL_THREE_TOKENS = frozenset({
+    "delete", "trash", "publish", "deploy", "install", "send", "upload",
+    "submit", "share", "external", "shell", "python", "rollback",
+})
+_TASK_LEVEL_TWO_EXECUTION_PREFIXES = ("quality.", "qc.")
+_TASK_PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
+_TASK_NON_TOOL_STEPS = frozenset({"deliver_result"})
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def normalize_task_level(value: Any, default: str = "L0") -> str:
+    level = str(value or "").strip().upper()
+    return level if level in _TASK_LEVEL_RANK else default
+
+
+def max_task_level(*levels: Any) -> str:
+    normalized = [normalize_task_level(level) for level in levels]
+    return max(normalized, key=lambda item: _TASK_LEVEL_RANK[item], default="L0")
+
+
+def _registry_payloads() -> list[dict[str, Any]]:
+    registry_root = Path(__file__).resolve().parents[1] / "omni_body_skill" / "registry"
+    payloads: list[dict[str, Any]] = []
+    for name in (
+        "actions.json",
+        "actions.appbus.merged.json",
+        "app_actions.json",
+        "professional_app_actions.json",
+    ):
+        try:
+            payload = json.loads((registry_root / name).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+@lru_cache(maxsize=1)
+def declared_action_metadata() -> dict[str, dict[str, Any]]:
+    """Return a compact authoritative action view from the existing registries."""
+
+    metadata: dict[str, dict[str, Any]] = {}
+    container_keys = (
+        "actions", "capabilities", "base_plus_app_actions", "skill_router_actions",
+        "v34_professional_app_actions",
+    )
+    for payload in _registry_payloads():
+        containers: list[Any] = [payload]
+        containers.extend(payload.get(key) for key in container_keys)
+        for container in containers:
+            if isinstance(container, dict):
+                iterator = container.items()
+            elif isinstance(container, list):
+                iterator = (
+                    (item.get("id") or item.get("action") or item.get("name"), item)
+                    for item in container
+                    if isinstance(item, dict)
+                )
+            else:
+                continue
+            for raw_name, raw_meta in iterator:
+                name = str(raw_name or "").strip().lower()
+                if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", name):
+                    continue
+                meta = raw_meta if isinstance(raw_meta, dict) else {}
+                current = metadata.setdefault(name, {})
+                for key in ("risk", "effect", "allowed_effect", "summary", "implemented"):
+                    if key in meta and key not in current:
+                        current[key] = meta[key]
+    return metadata
+
+
+def action_minimum_task_level(action: Any, metadata: dict[str, Any] | None = None) -> tuple[str, list[str]]:
+    """Compute the Runtime floor from a real positive action, never prompt prose."""
+
+    name = str(action or "").strip().lower()
+    if not name or name in _TASK_PREPARATION_ACTIONS:
+        return "L0", []
+    meta = dict(metadata or declared_action_metadata().get(name) or {})
+    risk = str(meta.get("risk") or "").strip().upper()
+    tokens = set(part for part in re.split(r"[._-]+", name) if part)
+    reasons: list[str] = [f"action:{name}"]
+    if name in _TASK_LEVEL_THREE_ACTIONS or tokens.intersection(_TASK_LEVEL_THREE_TOKENS) or risk == "A5":
+        reasons.append("external_or_destructive")
+        if risk:
+            reasons.append(f"tool_risk:{risk}")
+        return "L3", reasons
+    if name.startswith(_TASK_LEVEL_TWO_EXECUTION_PREFIXES):
+        reasons.extend(("bounded_execution", f"tool_risk:{risk or 'unknown'}"))
+        return "L2", reasons
+    if risk in {"A4"}:
+        reasons.extend(("high_risk_tool", f"tool_risk:{risk}"))
+        return "L3", reasons
+    if risk in {"A1", "A2", "A3"}:
+        reasons.extend(("state_mutation", f"tool_risk:{risk}"))
+        return "L2", reasons
+    if risk == "A0" or name:
+        reasons.append(f"tool_risk:{risk or 'unknown'}")
+        return "L1" if risk == "A0" else "L2", reasons
+    return "L2", reasons + ["unknown_action"]
+
+
+def extract_forbidden_actions(user_text: Any) -> list[str]:
+    """Extract only scoped negative tool constraints from registered action names."""
+
+    text = str(user_text or "")
+    lowered = text.lower()
+    forbidden: list[str] = []
+    for action in declared_action_metadata():
+        for match in re.finditer(re.escape(action), lowered):
+            left = lowered[max(0, match.start() - 96):match.start()]
+            # A period is part of every registered action identifier, so it
+            # cannot also be treated as a clause boundary here.
+            clause_left = re.split(r"[，。；：,;:！!？?\n]", left)[-1]
+            if re.search(
+                r"(?:不得|不要|不许|禁止|严禁|别|无需|不用|do\s+not|don't|must\s+not|never)"
+                r"[^，。；：,;:！!？?\n]{0,64}$",
+                clause_left,
+                re.IGNORECASE,
+            ):
+                if action not in forbidden:
+                    forbidden.append(action)
+                break
+    return forbidden
+
+
+def extract_model_task_profile(tool_args: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Remove the model-only profile before the governed tool validates arguments."""
+
+    cleaned = dict(tool_args) if isinstance(tool_args, dict) else {}
+    top_level_profile = cleaned.pop(TASK_PROFILE_ARG_KEY, None)
+    if top_level_profile is None:
+        top_level_profile = cleaned.pop("task_profile", None)
+    nested = dict(cleaned.get("args")) if isinstance(cleaned.get("args"), dict) else {}
+    profile = nested.pop(TASK_PROFILE_ARG_KEY, None)
+    if profile is None:
+        profile = nested.pop("task_profile", None)
+    if profile is None:
+        profile = top_level_profile
+    if isinstance(cleaned.get("args"), dict):
+        cleaned["args"] = nested
+    return cleaned, profile if isinstance(profile, dict) else None
+
+
+def _sanitize_plan_step(value: Any, index: int) -> dict[str, Any] | None:
+    """Keep a model plan as a mutable hint; it never becomes acceptance authority."""
+
+    if not isinstance(value, dict):
+        return None
+    action = str(value.get("action") or "").strip().lower()
+    if not action:
+        return None
+    return {
+        "step_id": str(value.get("step_id") or value.get("id") or f"S{index}").strip()[:48] or f"S{index}",
+        "action": action,
+        "target": str(value.get("target") or "").strip()[:1000],
+        "depends_on": [str(item).strip()[:48] for item in (value.get("depends_on") or []) if str(item).strip()][:12],
+        "acceptance_hint": [
+            str(item).strip()[:120]
+            for item in (value.get("acceptance") or value.get("evidence") or [])
+            if str(item).strip()
+        ][:12],
+        "source": "model_advisory",
+    }
+
+
+def _sanitize_advisory_fact(value: Any, index: int) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    kind = str(value.get("kind") or "").strip().lower()
+    if kind not in {"observation", "effect", "execution", "delivery"}:
+        return None
+    return {
+        "fact_id": str(value.get("fact_id") or value.get("id") or f"M{index}").strip()[:64] or f"M{index}",
+        "kind": kind,
+        "target_path": str(value.get("target_path") or value.get("target") or "").strip()[:1000],
+        "success_condition": str(value.get("success_condition") or value.get("description") or "").strip()[:500],
+        "source": "model_advisory",
+        "authority": "advisory",
+    }
+
+
+def _goal_fact_from_obligation(value: Any, index: int) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    kind = str(value.get("kind") or "").strip().lower()
+    if kind not in {"observation", "effect", "execution", "delivery"}:
+        return None
+    fact = {
+        "fact_id": str(value.get("id") or f"R{index}").strip()[:96] or f"R{index}",
+        "kind": kind,
+        "object_kind": str(value.get("object_kind") or "").strip(),
+        "target_path": str(value.get("target_path") or "").strip()[:1000],
+        "required": True,
+        "actionable": bool(value.get("actionable", True)),
+        "status": str(value.get("status") or "pending"),
+        "evidence_policy": "successful_real_tool_result",
+        "source": "runtime_user_goal",
+        "authority": "runtime",
+    }
+    if str(value.get("evidence_predicate") or "").strip():
+        fact["evidence_predicate"] = str(value.get("evidence_predicate") or "").strip()[:64]
+    if str(value.get("requires_prior_kind") or "").strip():
+        fact["requires_prior_kind"] = str(value.get("requires_prior_kind") or "").strip()[:32]
+    return fact
+
+
+def _required_stability(level: Any) -> int:
+    # L0 has no work intention. L1 closes on one factual signal; L2/L3 need
+    # factual coverage plus the existing final hard gate, without adding a new
+    # judge or forcing light work through extra planning rounds.
+    return {"L0": 0, "L1": 1, "L2": 2, "L3": 2}[normalize_task_level(level)]
+
+
+def _task_contract_hash_payload(contract: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema": contract.get("schema"),
+        "contract_id": contract.get("contract_id"),
+        "plan_version": contract.get("plan_version"),
+        "desired_facts": contract.get("desired_facts"),
+        "advisory_facts": contract.get("advisory_facts"),
+        "plan_hint": contract.get("plan_hint"),
+        "constraints": contract.get("constraints"),
+        "effective_level": contract.get("effective_level"),
+        "phase": contract.get("phase"),
+        "goal_state": contract.get("goal_state"),
+        "acceptance_status": contract.get("acceptance_status"),
+    }
+
+
+def _refresh_task_contract_hash(contract: dict[str, Any]) -> None:
+    contract["plan_sha256"] = hashlib.sha256(
+        _canonical_json(_task_contract_hash_payload(contract)).encode("utf-8")
+    ).hexdigest()
+
+
+def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict[str, Any]:
+    constraints = {"forbidden_tools": extract_forbidden_actions(user_text)}
+    runtime_obligations = [] if chat_mode else build_action_obligations(user_text)
+    desired_facts = [
+        fact
+        for index, item in enumerate(runtime_obligations, start=1)
+        if (fact := _goal_fact_from_obligation(item, index)) is not None
+    ]
+    seed = {"user_text": str(user_text or ""), "constraints": constraints, "desired_facts": desired_facts}
+    contract_id = "goal_" + hashlib.sha256(_canonical_json(seed).encode("utf-8")).hexdigest()[:24]
+    pending = [item for item in desired_facts if item.get("required") and item.get("status") != "satisfied"]
+    phase = "INACTIVE" if chat_mode else "ACTIVE"
+    contract = {
+        "schema": _TASK_CONTRACT_SCHEMA,
+        "profile_schema": _TASK_PROFILE_SCHEMA,
+        "contract_id": contract_id,
+        "plan_id": contract_id,
+        "plan_version": 1,
+        "source": "runtime_user_goal",
+        "proposed_level": "L0",
+        "runtime_minimum_level": "L0",
+        "effective_level": "L0",
+        "level_reasons": ["chat_mode"] if chat_mode else ["runtime_user_goal"],
+        "phase": phase,
+        "intent_active": not chat_mode,
+        "desired_facts": desired_facts,
+        "advisory_facts": [],
+        "plan_hint": [],
+        "steps": [],  # compatibility projection; advisory only
+        "constraints": constraints,
+        "advisory_constraints": {},
+        "validation_issues": [],
+        "acceptance_status": "not_applicable" if chat_mode else "pending",
+        "profile_status": "not_applicable" if chat_mode else "optional_not_received",
+        "profile_retry_count": 0,
+        "profile_required_pending": False,
+        "required_stability": 0,
+        "stability_signals": [],
+        "reopen_count": 0,
+        "transition_history": [{"from": None, "to": phase, "reason": "chat_mode" if chat_mode else "goal_registered"}],
+        "goal_state": {
+            "outcome_gap": 0.0 if not pending else 1.0,
+            "evidence_uncertainty": 0.0 if not pending else 1.0,
+            "constraint_risk": 0.0,
+            "continuation_value": 0.0 if chat_mode else (1.0 if pending else 0.5),
+        },
+    }
+    _refresh_task_contract_hash(contract)
+    return contract
+
+
+def reconcile_task_contract(
+    existing: Any,
+    model_profile: Any,
+    *,
+    user_text: Any,
+    action: Any,
+    target: Any = "",
+    record_action: bool = True,
+) -> dict[str, Any]:
+    """Merge optional model advice while Runtime keeps fact and risk authority."""
+
+    contract = dict(existing) if isinstance(existing, dict) else initialize_task_contract(user_text)
+    profile = model_profile if isinstance(model_profile, dict) else {}
+    action_name = str(action or "").strip().lower()
+    prior_effective = normalize_task_level(contract.get("effective_level"))
+    raw_proposed = str(profile.get("proposed_level") or "").strip().upper()
+    proposed = normalize_task_level(raw_proposed, prior_effective if prior_effective != "L0" else ("L1" if action_name else "L0"))
+    current_level, current_reasons = action_minimum_task_level(action_name)
+    runtime_level = max_task_level(contract.get("runtime_minimum_level"), current_level)
+    effective = max_task_level(prior_effective, proposed, runtime_level)
+
+    plan_hint = [
+        step
+        for index, raw in enumerate(profile.get("plan_hint") or profile.get("steps") or [], start=1)
+        if (step := _sanitize_plan_step(raw, index)) is not None
+    ][:24]
+    advisory_facts = [
+        fact
+        for index, raw in enumerate(profile.get("desired_facts") or [], start=1)
+        if (fact := _sanitize_advisory_fact(raw, index)) is not None
+    ][:24]
+    previous_core = _canonical_json({
+        "plan_hint": contract.get("plan_hint") or [],
+        "advisory_facts": contract.get("advisory_facts") or [],
+    })
+    plan_supplied = "plan_hint" in profile or "steps" in profile
+    facts_supplied = "desired_facts" in profile
+    next_plan = (
+        plan_hint
+        if plan_supplied
+        else [dict(item) for item in contract.get("plan_hint") or [] if isinstance(item, dict)]
+    )
+    next_advisory = (
+        advisory_facts
+        if facts_supplied
+        else [dict(item) for item in contract.get("advisory_facts") or [] if isinstance(item, dict)]
+    )
+    next_core = _canonical_json({"plan_hint": next_plan, "advisory_facts": next_advisory})
+
+    constraints = {"forbidden_tools": extract_forbidden_actions(user_text)}
+    advisory_constraints = profile.get("constraints") if isinstance(profile.get("constraints"), dict) else {}
+    validation_issues: list[str] = []
+    known_actions = declared_action_metadata()
+    for step in next_plan:
+        step_action = str(step.get("action") or "").strip().lower()
+        if step_action and step_action not in known_actions and step_action not in _TASK_NON_TOOL_STEPS:
+            validation_issues.append(f"advisory_unknown_action:{step_action}")
+
+    level_reasons = [str(item) for item in contract.get("level_reasons") or [] if str(item).strip()]
+    for reason in current_reasons:
+        if reason not in level_reasons:
+            level_reasons.append(reason)
+    if _TASK_LEVEL_RANK[effective] > _TASK_LEVEL_RANK[proposed]:
+        level_reasons.append("runtime_prevented_downgrade")
+    contract.update({
+        "schema": _TASK_CONTRACT_SCHEMA,
+        "profile_schema": _TASK_PROFILE_SCHEMA,
+        "plan_version": int(contract.get("plan_version") or 1) + (1 if previous_core != next_core else 0),
+        "source": "runtime_user_goal_with_model_advice" if profile else str(contract.get("source") or "runtime_user_goal"),
+        "proposed_level": proposed,
+        "runtime_minimum_level": runtime_level,
+        "effective_level": effective,
+        "level_reasons": list(dict.fromkeys(level_reasons)),
+        "plan_hint": next_plan,
+        "steps": next_plan,
+        "advisory_facts": next_advisory,
+        "constraints": constraints,
+        "advisory_constraints": advisory_constraints,
+        "validation_issues": list(dict.fromkeys(validation_issues)),
+        "profile_status": "model_advice_received" if profile else "optional_not_received",
+        "profile_retry_count": 0,
+        "profile_required_pending": False,
+        "required_stability": _required_stability(effective),
+    })
+    _refresh_task_contract_hash(contract)
+    return contract
+
+
+def task_contract_forbids_action(contract: Any, action: Any) -> bool:
+    if not isinstance(contract, dict):
+        return False
+    forbidden = {
+        str(item).strip().lower()
+        for item in (contract.get("constraints") or {}).get("forbidden_tools") or []
+        if str(item).strip()
+    }
+    return str(action or "").strip().lower() in forbidden
 
 
 def _compact(text: Any) -> str:
@@ -414,10 +823,17 @@ def runtime_execution_floor(user_text: object) -> str:
     return ACT_UNKNOWN
 
 
-def _requested_object_kind(user_text: object, fact_kind: str) -> str:
+def _requested_object_kind(user_text: object, fact_kind: str, target: Any = "") -> str:
     compact = _compact(user_text)
     text = str(user_text or "")
     if fact_kind == "observation":
+        target_text = str(target or "").strip()
+        if target_text:
+            normalized = _normalize_path(target_text)
+            if normalized.endswith("/"):
+                return "directory"
+            if _BARE_ASCII_FILE_RE.fullmatch(target_text) or re.search(r"\.[A-Za-z0-9]{1,8}$", normalized):
+                return "file"
         if any(term in compact for term in _DIRECTORY_TERMS):
             return "directory"
         if (
@@ -431,6 +847,7 @@ def _requested_object_kind(user_text: object, fact_kind: str) -> str:
 
 def _extract_explicit_targets(user_text: object) -> list[str]:
     text = str(user_text or "")
+    declared_actions = declared_action_metadata()
     candidates: list[tuple[int, str]] = []
     path_spans: list[tuple[int, int]] = []
     for match in _LOCAL_PATH_RE.finditer(text):
@@ -438,13 +855,28 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
         if value:
             candidates.append((match.start(), value))
             path_spans.append(match.span())
+    for match in _RELATIVE_FILE_PATH_RE.finditer(text):
+        if any(start <= match.start(1) and match.end(1) <= end for start, end in path_spans):
+            continue
+        value = match.group(1).strip()
+        if value:
+            candidates.append((match.start(1), value))
+            path_spans.append(match.span(1))
     for match in _BARE_ASCII_FILE_RE.finditer(text):
         if any(start <= match.start() and match.end() <= end for start, end in path_spans):
             continue
-        prefix = text[max(0, match.start(1) - 24):match.start(1)]
-        if re.search(r"(?:调用|执行|运行|call|invoke|execute)\s*$", prefix, re.IGNORECASE):
+        candidate = match.group(1).strip()
+        if candidate.lower() in declared_actions:
             continue
-        candidates.append((match.start(1), match.group(1).strip()))
+        prefix = text[max(0, match.start(1) - 24):match.start(1)]
+        if re.search(
+            r"(?:(?:不得|不要|不许|禁止|严禁|别|无需|不用)\s*)?"
+            r"(?:调用|执行|运行|使用|改用|call|invoke|execute|use)\s*$",
+            prefix,
+            re.IGNORECASE,
+        ):
+            continue
+        candidates.append((match.start(1), candidate))
 
     targets: list[str] = []
     seen: set[str] = set()
@@ -474,14 +906,19 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
     explicit_targets = _extract_explicit_targets(text)
+    requires_sha256 = bool(re.search(r"sha\s*[-_]?\s*256|sha256|计算.{0,12}(?:哈希|hash)|(?:哈希|hash).{0,12}计算", text, re.IGNORECASE))
     obligations: list[dict[str, Any]] = []
     obligation_index = 0
-    for fact_kind in _requested_fact_kinds(text):
-        object_kind = _requested_object_kind(text, fact_kind)
-        targets = explicit_targets if fact_kind in {"observation", "effect"} and explicit_targets else [""]
+    fact_kinds = _requested_fact_kinds(text)
+    if requires_sha256 and "execution" not in fact_kinds:
+        fact_kinds.append("execution")
+    for fact_kind in fact_kinds:
+        use_explicit_target = fact_kind in {"observation", "effect"} or (fact_kind == "execution" and requires_sha256)
+        targets = explicit_targets if use_explicit_target and explicit_targets else [""]
         for target in targets:
+            object_kind = _requested_object_kind(text, fact_kind, target)
             obligation_index += 1
-            obligations.append({
+            obligation = {
                 "id": f"execution:{fact_kind}:{obligation_index}",
                 "kind": fact_kind,
                 "object_kind": object_kind,
@@ -491,7 +928,12 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
                 "target_path": target,
                 "evidence_policy": "successful_real_tool_result",
                 "source": "current_user_message",
-            })
+            }
+            if fact_kind == "execution" and requires_sha256:
+                obligation["evidence_predicate"] = "sha256_digest"
+                if "effect" in fact_kinds:
+                    obligation["requires_prior_kind"] = "effect"
+            obligations.append(obligation)
     return obligations
 
 
@@ -537,7 +979,9 @@ def _target_matches(payload: dict[str, Any], obligation: dict[str, Any]) -> bool
     for actual in actual_targets:
         if actual == expected:
             return True
-        if "/" not in expected and actual.endswith("/" + expected):
+        # Governed tools may report an absolute workspace path while the user
+        # names the same target relative to that workspace.
+        if actual.endswith("/" + expected):
             return True
     return False
 
@@ -612,15 +1056,42 @@ def _observation_object_matches(payload: dict[str, Any], obligation: dict[str, A
     return action in allowed
 
 
+def _payload_has_evidence_predicate(payload: dict[str, Any], predicate: str) -> bool:
+    if predicate != "sha256_digest":
+        return True
+    pending: list[Any] = [payload.get("tool_result"), payload.get("tool_result_contract")]
+    seen = 0
+    while pending and seen < 256:
+        current = pending.pop()
+        seen += 1
+        if isinstance(current, dict):
+            for key, value in current.items():
+                normalized_key = str(key or "").strip().lower().replace("-", "").replace("_", "")
+                if normalized_key == "sha256" and re.fullmatch(r"[a-fA-F0-9]{64}", str(value or "").strip()):
+                    return True
+                if isinstance(value, (dict, list, tuple)):
+                    pending.append(value)
+        elif isinstance(current, (list, tuple)):
+            pending.extend(current)
+    return False
+
+
 def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
     required_kind = str(obligation.get("kind") or "action").strip().lower() or "action"
+    required_action = str(obligation.get("required_action") or "").strip().lower()
+    actual_action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
+    if required_action and actual_action != required_action:
+        return False
     if required_kind not in _payload_fact_kinds(payload):
         return False
     if required_kind == "observation" and not _observation_object_matches(payload, obligation):
         return False
-    if required_kind in {"observation", "effect"} and not _target_matches(payload, obligation):
+    evidence_predicate = str(obligation.get("evidence_predicate") or "").strip()
+    if evidence_predicate and not _payload_has_evidence_predicate(payload, evidence_predicate):
+        return False
+    if (required_kind in {"observation", "effect"} or evidence_predicate) and not _target_matches(payload, obligation):
         return False
     return True
 
@@ -628,7 +1099,21 @@ def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
 def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[dict[str, Any]] | None) -> bool:
     if not bool(obligation.get("actionable", True)):
         return False
-    return any(_successful_fact(payload, obligation) for payload in (quality_history or []))
+    history = [item for item in (quality_history or []) if isinstance(item, dict)]
+    prior_kind = str(obligation.get("requires_prior_kind") or "").strip().lower()
+    for index, payload in enumerate(history):
+        if not _successful_fact(payload, obligation):
+            continue
+        if not prior_kind:
+            return True
+        prior_obligation = {
+            "kind": prior_kind,
+            "target_path": obligation.get("target_path"),
+            "actionable": True,
+        }
+        if any(_successful_fact(prior, prior_obligation) for prior in history[:index]):
+            return True
+    return False
 
 
 def requires_evidence_safe_closeout(reasons: list[str] | None) -> bool:
@@ -644,12 +1129,17 @@ def execution_integrity_blockers(
     quality_history: list[dict[str, Any]] | None,
     *,
     final_reply: Any = None,
+    obligations: list[dict[str, Any]] | None = None,
 ) -> list[str]:
-    obligations = [item for item in build_action_obligations(user_text) if bool(item.get("actionable", True))]
-    if not obligations:
+    active_obligations = obligations if isinstance(obligations, list) else build_action_obligations(user_text)
+    active_obligations = [
+        item for item in active_obligations
+        if isinstance(item, dict) and bool(item.get("actionable", True))
+    ]
+    if not active_obligations:
         return []
     blockers: list[str] = []
-    for obligation in obligations:
+    for obligation in active_obligations:
         if not obligation_is_satisfied(obligation, quality_history):
             blockers.append(f"execution_obligation:{obligation.get('kind')}:missing_evidence")
     if blockers and has_execution_completion_claim(final_reply):
@@ -672,7 +1162,18 @@ def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict
             continue
         if not bool(obligation.get("actionable", True)):
             continue
-        if _successful_fact(payload, obligation):
+        prior_kind = str(obligation.get("requires_prior_kind") or "").strip().lower()
+        prior_round_ok = True
+        if prior_kind:
+            current_round = int(run_state.get("round") or 0)
+            prior_round_ok = any(
+                isinstance(item, dict)
+                and str(item.get("kind") or "").strip().lower() == prior_kind
+                and item.get("status") == "satisfied"
+                and int(item.get("evidence_round") or 0) < current_round
+                for item in obligations
+            )
+        if prior_round_ok and _successful_fact(payload, obligation):
             obligation["status"] = "satisfied"
             obligation["satisfied_by_action"] = action
             obligation["llm_submission_action"] = action
@@ -685,3 +1186,237 @@ def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict
             obligation["last_attempt_target"] = target
             obligation["last_attempt_fact_kinds"] = fact_kinds
             obligation["last_attempt_ok"] = bool(payload.get("ok"))
+
+
+def _action_fact_kind(action: Any) -> str:
+    name = str(action or "").strip().lower()
+    tokens = set(part for part in re.split(r"[._-]+", name) if part)
+    if name in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or tokens.intersection(
+        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan", "open", "health", "status", "get", "show", "describe"}
+    ):
+        return "observation"
+    if tokens.intersection({"send", "upload", "submit", "deliver", "export", "post", "publish", "share"}):
+        return "delivery"
+    if name.startswith(("quality.", "qc.")) or tokens.intersection(
+        {"run", "execute", "test", "verify", "start", "compile", "build", "syntax", "lint", "hash"}
+    ):
+        return "execution"
+    return "effect"
+
+
+def build_task_contract_obligations(contract: Any) -> list[dict[str, Any]]:
+    """Project only Runtime-owned desired facts into the existing hard gate.
+
+    Model plan hints and advisory facts are deliberately excluded: a suggested
+    action sequence may change as observations arrive and is never a reason to
+    reject otherwise sufficient real-world evidence.
+    """
+
+    if not isinstance(contract, dict):
+        return []
+    obligations: list[dict[str, Any]] = []
+    for index, fact in enumerate(contract.get("desired_facts") or [], start=1):
+        if not isinstance(fact, dict) or fact.get("required") is False:
+            continue
+        if str(fact.get("authority") or "runtime") != "runtime":
+            continue
+        kind = str(fact.get("kind") or "").strip().lower()
+        if kind not in {"observation", "effect", "execution", "delivery"}:
+            continue
+        obligation = {
+            "id": str(fact.get("fact_id") or f"goal:{index}:{kind}"),
+            "kind": kind,
+            "object_kind": str(fact.get("object_kind") or ""),
+            "floor": ACT_REQUIRED,
+            "status": str(fact.get("status") or "pending"),
+            "actionable": bool(fact.get("actionable", True)),
+            "target_path": str(fact.get("target_path") or ""),
+            "evidence_policy": "successful_real_tool_result",
+            "source": "runtime_user_goal",
+        }
+        if str(fact.get("evidence_predicate") or "").strip():
+            obligation["evidence_predicate"] = str(fact.get("evidence_predicate") or "").strip()
+        if str(fact.get("requires_prior_kind") or "").strip():
+            obligation["requires_prior_kind"] = str(fact.get("requires_prior_kind") or "").strip()
+        obligations.append(obligation)
+    return obligations
+
+
+def merge_action_obligations(*groups: Any) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for group in groups:
+        for raw in group if isinstance(group, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            key = (
+                str(item.get("kind") or "").strip().lower(),
+                _normalize_path(item.get("target_path")),
+                str(item.get("required_action") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
+def _transition_task_phase(contract: dict[str, Any], phase: str, reason: str) -> None:
+    previous = str(contract.get("phase") or "ACTIVE")
+    if previous == phase:
+        return
+    contract["phase"] = phase
+    history = [dict(item) for item in contract.get("transition_history") or [] if isinstance(item, dict)]
+    history.append({"from": previous, "to": phase, "reason": str(reason or "")[:200]})
+    contract["transition_history"] = history[-24:]
+
+
+def _sync_goal_facts_from_obligations(contract: dict[str, Any], obligations: Any) -> list[dict[str, Any]]:
+    current = [dict(item) for item in contract.get("desired_facts") or [] if isinstance(item, dict)]
+    if not isinstance(obligations, list):
+        return current
+    prior = {str(item.get("fact_id") or ""): item for item in current if str(item.get("fact_id") or "")}
+    synced: list[dict[str, Any]] = []
+    for index, obligation in enumerate(obligations, start=1):
+        fact = _goal_fact_from_obligation(obligation, index)
+        if fact is None:
+            continue
+        old = prior.get(str(fact.get("fact_id") or ""), {})
+        for key in ("evidence_round", "evidence_action", "evidence_target", "observed_fact_kinds"):
+            if key in old:
+                fact[key] = old[key]
+        if str(obligation.get("status") or "") == "satisfied":
+            fact["status"] = "satisfied"
+            fact["evidence_round"] = int(obligation.get("evidence_round") or old.get("evidence_round") or 0)
+            fact["evidence_action"] = str(obligation.get("satisfied_by_action") or old.get("evidence_action") or "")
+            fact["evidence_target"] = str(obligation.get("llm_submission_target") or old.get("evidence_target") or "")
+            fact["observed_fact_kinds"] = list(obligation.get("observed_fact_kinds") or old.get("observed_fact_kinds") or [])
+        synced.append(fact)
+    return synced or current
+
+
+def update_task_contract_evidence(
+    contract: Any,
+    payload: Any,
+    *,
+    round_number: int = 0,
+    obligations: Any = None,
+) -> dict[str, Any]:
+    if not isinstance(contract, dict) or not isinstance(payload, dict):
+        return contract if isinstance(contract, dict) else {}
+    updated = dict(contract)
+    was_deactivated = str(updated.get("phase") or "") == "DEACTIVATED"
+    desired_facts = _sync_goal_facts_from_obligations(updated, obligations)
+    if not isinstance(obligations, list):
+        for fact in desired_facts:
+            obligation = {
+                "kind": fact.get("kind"),
+                "object_kind": fact.get("object_kind"),
+                "target_path": fact.get("target_path"),
+                "actionable": fact.get("actionable", True),
+                "evidence_predicate": fact.get("evidence_predicate"),
+            }
+            prior_kind = str(fact.get("requires_prior_kind") or "").strip().lower()
+            prior_round_ok = not prior_kind or any(
+                str(item.get("kind") or "").strip().lower() == prior_kind
+                and item.get("status") == "satisfied"
+                and int(item.get("evidence_round") or 0) < int(round_number or 0)
+                for item in desired_facts
+            )
+            if fact.get("status") != "satisfied" and prior_round_ok and _successful_fact(payload, obligation):
+                fact["status"] = "satisfied"
+                fact["evidence_round"] = int(round_number or 0)
+                fact["evidence_action"] = str(payload.get("tool_action") or payload.get("action") or "")
+                fact["evidence_target"] = _payload_target(payload)
+                fact["observed_fact_kinds"] = sorted(_payload_fact_kinds(payload))
+
+    required = [item for item in desired_facts if item.get("required") is not False and bool(item.get("actionable", True))]
+    satisfied = [item for item in required if item.get("status") == "satisfied"]
+    pending_count = max(0, len(required) - len(satisfied))
+    outcome_gap = round(pending_count / len(required), 4) if required else 0.0
+    evidence_uncertainty = outcome_gap
+    payload_ok = bool(payload.get("ok"))
+    constraint_risk = 0.0 if payload_ok else 1.0
+    signals = [str(item) for item in updated.get("stability_signals") or [] if str(item).strip()]
+    if payload_ok and str(payload.get("tool_action") or payload.get("action") or "").strip():
+        signal = f"evidence_round:{int(round_number or 0)}"
+        if signal not in signals:
+            signals.append(signal)
+    required_stability = _required_stability(updated.get("effective_level"))
+
+    updated["desired_facts"] = desired_facts
+    updated["stability_signals"] = signals[-24:]
+    updated["required_stability"] = required_stability
+    updated["goal_state"] = {
+        "outcome_gap": outcome_gap,
+        "evidence_uncertainty": evidence_uncertainty,
+        "constraint_risk": constraint_risk,
+        "continuation_value": round(max(outcome_gap, evidence_uncertainty, constraint_risk), 4),
+    }
+    if was_deactivated:
+        if not payload_ok or pending_count:
+            updated["reopen_count"] = int(updated.get("reopen_count") or 0) + 1
+            updated["intent_active"] = True
+            updated["acceptance_status"] = "pending"
+            _transition_task_phase(updated, "REOPENED", "contradictory_evidence")
+        else:
+            updated["intent_active"] = False
+            updated["acceptance_status"] = "accepted"
+    elif pending_count:
+        updated["intent_active"] = True
+        updated["acceptance_status"] = "pending"
+        _transition_task_phase(updated, "ACTIVE", "goal_gap_remains")
+    elif required and len(signals) < required_stability:
+        updated["intent_active"] = True
+        updated["acceptance_status"] = "candidate"
+        _transition_task_phase(updated, "VERIFYING", "facts_covered_waiting_for_stability")
+    elif required:
+        updated["intent_active"] = True
+        updated["acceptance_status"] = "candidate"
+        _transition_task_phase(updated, "SATISFIED", "facts_covered_by_real_evidence")
+    else:
+        updated["acceptance_status"] = "not_applicable"
+    _refresh_task_contract_hash(updated)
+    return updated
+
+
+def transition_task_contract_terminal(contract: Any, status: Any, reasons: Any = None) -> dict[str, Any]:
+    """Project the existing chain terminal result into intention state.
+
+    This is a projection, not a second terminal judge. The existing final hard
+    gate remains authoritative; this function distinguishes satisfaction,
+    waiting, blocking and interruption, and deactivates intention only after a
+    genuine complete result.
+    """
+
+    if not isinstance(contract, dict):
+        return {}
+    updated = dict(contract)
+    terminal = str(status or "").strip().lower()
+    reason_text = "; ".join(str(item).strip() for item in (reasons or []) if str(item).strip()) if isinstance(reasons, list) else str(reasons or "")
+    signals = [str(item) for item in updated.get("stability_signals") or [] if str(item).strip()]
+    if terminal in {"complete", "chat_reply"}:
+        if "terminal_gate" not in signals:
+            signals.append("terminal_gate")
+        updated["stability_signals"] = signals[-24:]
+        updated["intent_active"] = False
+        updated["acceptance_status"] = "not_applicable" if terminal == "chat_reply" else "accepted"
+        goal_state = dict(updated.get("goal_state") or {})
+        goal_state.update({"outcome_gap": 0.0, "evidence_uncertainty": 0.0, "continuation_value": 0.0})
+        updated["goal_state"] = goal_state
+        _transition_task_phase(updated, "DEACTIVATED", reason_text or "final_gate_complete")
+    elif terminal in {"clarify", "awaiting_user", "confirm_pending"}:
+        updated["intent_active"] = True
+        updated["acceptance_status"] = "pending"
+        _transition_task_phase(updated, "WAITING", reason_text or terminal)
+    elif terminal in {"interrupted", "force_stopped"}:
+        updated["intent_active"] = False
+        updated["acceptance_status"] = "interrupted"
+        _transition_task_phase(updated, "INTERRUPTED", reason_text or terminal)
+    elif terminal in {"failed", "incomplete"}:
+        updated["intent_active"] = False
+        updated["acceptance_status"] = "blocked"
+        _transition_task_phase(updated, "BLOCKED", reason_text or terminal)
+    _refresh_task_contract_hash(updated)
+    return updated

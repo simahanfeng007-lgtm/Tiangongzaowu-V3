@@ -81,10 +81,18 @@ install_world_understanding_observer()
 
 from .execution_integrity import (
     build_action_obligations,
+    build_task_contract_obligations,
     execution_integrity_blockers,
+    extract_model_task_profile,
+    initialize_task_contract,
     is_execution_discussion_only,
+    merge_action_obligations,
+    reconcile_task_contract,
     requires_evidence_safe_closeout,
+    task_contract_forbids_action,
+    transition_task_contract_terminal,
     update_run_state_obligations,
+    update_task_contract_evidence,
 )
 
 _ACTION_REGISTRY_DIR = Path(__file__).resolve().parents[1] / "omni_body_skill" / "registry"
@@ -244,6 +252,15 @@ Work mode rules:
 - Before each `omni_body` call, write one short user-facing progress sentence.
 - Choose Skills, actions, ordering, retries, and verification steps from the task and observations.
 - Do not claim completion beyond successful recorded evidence; Runtime checks facts only at completion.
+- You may include an optional top-level `_task_profile` on any `omni_body` call:
+  schema=`tiangong.v3.task_profile.v2`, proposed_level (`L1`, `L2`, or `L3`),
+  desired_facts (`fact_id`, `kind`, `target`, `success_condition`), a mutable
+  `plan_hint`, and explicit constraints. Keep light L0/L1 work lightweight.
+  The profile is advice, not authority: Runtime removes it before execution,
+  derives hard desired facts from the user's request, may only raise risk, and
+  deactivates the task intention only after real evidence passes the existing
+  final gate. Change the plan when observations contradict it; do not preserve
+  an obsolete step merely because it appeared in the first plan.
 
 For file delivery: create a real local file and reply with the absolute path.
 """
@@ -690,6 +707,11 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "round": run_state.get("round"),
         "work_intent": run_state.get("work_intent") if isinstance(run_state.get("work_intent"), dict) else {},
         "plan_version": run_state.get("plan_version"),
+        "task_contract": (
+            run_state.get("task_contract")
+            if isinstance(run_state.get("task_contract"), dict)
+            else {}
+        ),
         "skill_loaded": run_state.get("skill_loaded"),
         "loaded_skill_ids": list(run_state.get("loaded_skill_ids") or [])[:8],
         "completed_actions": list(run_state.get("completed_actions") or [])[-24:],
@@ -804,6 +826,10 @@ def _simple_chain_mark_terminal(request_id: str, status: str, reason: str) -> di
     run_state["status"] = str(status or "interrupted")
     run_state["stage"] = str(status or "interrupted")
     run_state["terminal_reason"] = str(reason or "")[:500]
+    if isinstance(run_state.get("task_contract"), dict):
+        run_state["task_contract"] = transition_task_contract_terminal(
+            run_state.get("task_contract"), status, [reason]
+        )
     run_state["last_transition"] = {
         "type": str(status or "interrupted"),
         "reason": str(reason or "")[:500],
@@ -844,6 +870,10 @@ def _simple_chain_closeout_record(
             "failed": "任务执行失败",
         }.get(str(status or ""), str(status or "incomplete"))]
     run_state["terminal_reason"] = "; ".join(clean_reasons)[:500]
+    if isinstance(run_state.get("task_contract"), dict):
+        run_state["task_contract"] = transition_task_contract_terminal(
+            run_state.get("task_contract"), status, clean_reasons
+        )
     run_state["last_transition"] = {
         "type": str(status or "incomplete"),
         "reason": "; ".join(clean_reasons)[:500],
@@ -949,6 +979,14 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
     })
     run_state.setdefault("observations", []).append(_run_state_safe_value(payload, limit=5000))
     update_run_state_obligations(run_state, payload)
+    if isinstance(run_state.get("task_contract"), dict):
+        run_state["task_contract"] = update_task_contract_evidence(
+            run_state.get("task_contract"),
+            payload,
+            round_number=int(run_state.get("round") or 0),
+            obligations=run_state.get("obligations"),
+        )
+        run_state["plan_version"] = run_state["task_contract"].get("plan_version")
     if action not in {"skill.route", "skill.get", "skill.read"}:
         for item in payload.get("generated_attachments") or []:
             if isinstance(item, dict) and item not in run_state.setdefault("generated_attachments", []):
@@ -4817,12 +4855,26 @@ def _simple_chain_prepare_tool_call(
     user_message: str,
     tool_name: str,
     tool_args: Any,
+    task_contract: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any], str, list[str], dict[str, Any] | None]:
     args = tool_args if isinstance(tool_args, dict) else {}
     name = str(tool_name or "").strip()
     if name not in SIMPLE_CHAIN_TOOL_NAMES:
         return name, args, "", [], _simple_chain_tool_block_payload(request_id, name, args)
     action = _simple_chain_tool_action(name, args)
+    if task_contract_forbids_action(task_contract, action):
+        return name, args, action, [], {
+            "schema": "tiangong.v3.task_contract.forbidden_action.v1",
+            "request_id": str(request_id or ""),
+            "ok": False,
+            "stage": "task_contract",
+            "action": action,
+            "effective_level": str((task_contract or {}).get("effective_level") or ""),
+            "instruction": (
+                f"The accepted task contract forbids `{action}`. "
+                "Do not execute or substitute it; use only a positive allowed plan step or report the blocker."
+            ),
+        }
     if action == "learning.ingest":
         nested = args.get("args") if isinstance(args.get("args"), dict) else {}
         nested = dict(nested)
@@ -4839,6 +4891,38 @@ def _simple_chain_prepare_tool_call(
     if project_block is not None:
         return name, args, action, [], project_block
     return name, args, action, _simple_chain_preflight_issues(user_message, action, args), None
+
+
+def _simple_chain_accept_task_profile(
+    run_state: dict[str, Any] | None,
+    user_message: str,
+    tool_name: str,
+    tool_args: Any,
+) -> dict[str, Any]:
+    """Store optional model advice in the existing run-state and strip it from tool args."""
+
+    cleaned_args, model_profile = extract_model_task_profile(tool_args)
+    if not isinstance(run_state, dict):
+        return cleaned_args
+    action = _simple_chain_tool_action(str(tool_name or ""), cleaned_args)
+    target = _gongju_arg_path(cleaned_args)
+    contract = reconcile_task_contract(
+        run_state.get("task_contract"),
+        model_profile,
+        user_text=user_message,
+        action=action,
+        target=target,
+        record_action=False,
+    )
+    run_state["task_contract"] = contract
+    run_state["plan_version"] = contract.get("plan_version")
+    raw_obligations = [item for item in run_state.get("obligations") or [] if isinstance(item, dict)]
+    run_state["obligations"] = merge_action_obligations(
+        raw_obligations,
+        build_task_contract_obligations(contract),
+    )
+    _simple_chain_save_run_state(run_state)
+    return cleaned_args
 
 
 def _simple_chain_project_dir_block(
@@ -5653,6 +5737,7 @@ def _simple_chain_final_hard_gate(
     generated_attachments: list[dict[str, str]],
     required_read_paths: list[str] | None = None,
     final_reply: Any = None,
+    task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[bool, str, list[str]]:
     """Return whether final delivery is allowed, status, and blocking reasons.
 
@@ -5674,7 +5759,10 @@ def _simple_chain_final_hard_gate(
     ):
         reasons.append("audio_semantic_evidence_missing")
     integrity_reasons = execution_integrity_blockers(
-        user_message, quality_history, final_reply=final_reply
+        user_message,
+        quality_history,
+        final_reply=final_reply,
+        obligations=task_obligations,
     )
     if integrity_reasons:
         reasons.extend(reason for reason in integrity_reasons if reason not in reasons)
@@ -6769,6 +6857,11 @@ class Zongdiaodu:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
+        run_state["task_contract"] = initialize_task_contract(
+            xiaoxi,
+            chat_mode=response_only_without_tools,
+        )
+        run_state["plan_version"] = run_state["task_contract"].get("plan_version")
         try:
             run_state.setdefault("work_intent", {}).update({
                 "requirements": _simple_chain_parse_requirements(xiaoxi),
@@ -7243,11 +7336,13 @@ class Zongdiaodu:
                 prepared_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
                 blocked_parallel: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
                 for tn, ta in tools:
+                    ta = _simple_chain_accept_task_profile(run_state, xiaoxi, tn, ta)
                     prepared_name, prepared_args, prepared_action, prepared_issues, block_payload = _simple_chain_prepare_tool_call(
                         request_id,
                         xiaoxi,
                         tn,
                         ta,
+                        task_contract=run_state.get("task_contract") if isinstance(run_state, dict) else None,
                     )
                     if block_payload is not None:
                         blocked_parallel.append((prepared_name, prepared_args, block_payload))
@@ -7859,6 +7954,7 @@ class Zongdiaodu:
                         generated_attachments,
                         required_read_paths=required_read_paths,
                         final_reply=huifu,
+                        task_obligations=run_state.get("obligations") if isinstance(run_state, dict) else None,
                     )
                     if final_allowed_now:
                         final_chain_status = final_status_now
@@ -7984,11 +8080,13 @@ class Zongdiaodu:
 
             if run_control:
                 _check_stop("stopped before tool call")
+            tool_args = _simple_chain_accept_task_profile(run_state, xiaoxi, tool_name, tool_args)
             prepared_name, prepared_args, attempted_action, preflight_issues, block_payload = _simple_chain_prepare_tool_call(
                 request_id,
                 xiaoxi,
                 tool_name,
                 tool_args,
+                task_contract=run_state.get("task_contract") if isinstance(run_state, dict) else None,
             )
             if block_payload is not None:
                 guard_payload = (
@@ -8075,6 +8173,7 @@ class Zongdiaodu:
                             "source": "simple_chain.learning_only_after_skill_get",
                         },
                     },
+                    task_contract=run_state.get("task_contract") if isinstance(run_state, dict) else None,
                 )
                 if learning_block is not None:
                     raise RuntimeError("learning follow-up call was unexpectedly blocked")
@@ -8569,6 +8668,7 @@ class Zongdiaodu:
                 generated_attachments,
                 required_read_paths=required_read_paths,
                 final_reply=huifu,
+                task_obligations=run_state.get("obligations") if isinstance(run_state, dict) else None,
             )
             if final_chain_status == "clarify":
                 # 草案 §4.3 NEEDS_CLARIFICATION：保留模型的澄清原问题，
@@ -8578,6 +8678,10 @@ class Zongdiaodu:
                     run_state["status"] = "awaiting_user"
                     run_state["stage"] = "awaiting_user"
                     run_state["unresolved_question"] = huifu.strip()[:500]
+                    if isinstance(run_state.get("task_contract"), dict):
+                        run_state["task_contract"] = transition_task_contract_terminal(
+                            run_state.get("task_contract"), "awaiting_user", ["clarification_required"]
+                        )
                     _simple_chain_save_run_state(run_state)
             elif not final_allowed:
                 final_guard_exhausted = True
@@ -8614,6 +8718,12 @@ class Zongdiaodu:
                 run_state["stage"] = "chat_reply"
             else:
                 run_state["stage"] = "delivery"
+            if isinstance(run_state.get("task_contract"), dict):
+                run_state["task_contract"] = transition_task_contract_terminal(
+                    run_state.get("task_contract"),
+                    final_chain_status,
+                    run_state.get("final_reasons") or [run_state.get("terminal_reason") or final_chain_status],
+                )
             _simple_chain_save_run_state(run_state)
             if run_state.get("last_transition") is None:
                 default_reason = {

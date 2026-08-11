@@ -129,7 +129,58 @@ def _omni_parameters_schema(strict: bool = False) -> Dict[str, Any]:
         "properties": {
             "action": {"type": "string", "description": "要执行的 Omni Body 动作。直接从已实现 action 中选择，例如 file.write/file.read/file.list/code.read/code.write/code.patch_replace/shell.run/quality.run_tests/qc.*/deliverable.package/docx.create/pptx.create/sheet.create/pdf.extract_text/web.search。优先直接调用生产 action。"},
             "target": {"type": "string", "description": "主目标：文件路径、URL、对象ID、输出路径或空字符串。"},
-            "args": {"type": "object", "description": "动作专用参数。例如 content(文件内容)、query(搜索词)、command(shell命令)、job(任务描述)等。"},
+            "args": {
+                "type": "object",
+                "description": (
+                    "动作专用参数。例如 content(文件内容)、query(搜索词)、command(shell命令)、job(任务描述)等。"
+                ),
+            },
+            "_task_profile": {
+                "type": "object",
+                "description": "可选的任务理解建议。轻量任务可省略；Runtime 会在工具执行前移除，并只把用户目标与真实证据作为验收权威。",
+                "properties": {
+                    "schema": {"type": "string", "enum": ["tiangong.v3.task_profile.v2"]},
+                    "proposed_level": {"type": "string", "enum": ["L1", "L2", "L3"]},
+                    "desired_facts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "fact_id": {"type": "string"},
+                                "kind": {"type": "string", "enum": ["observation", "effect", "execution", "delivery"]},
+                                "target": {"type": "string"},
+                                "success_condition": {"type": "string"},
+                            },
+                            "required": ["fact_id", "kind"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "plan_hint": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "step_id": {"type": "string"},
+                                "action": {"type": "string"},
+                                "target": {"type": "string"},
+                                "depends_on": {"type": "array", "items": {"type": "string"}},
+                                "acceptance": {"type": "array", "items": {"type": "string"}},
+                            },
+                            "required": ["step_id", "action"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "constraints": {
+                        "type": "object",
+                        "properties": {
+                            "forbidden_tools": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["schema", "proposed_level"],
+                "additionalProperties": False,
+            },
         },
         "required": ["action"],
         "additionalProperties": True,
@@ -157,7 +208,9 @@ def _tool_description() -> str:
     return (
         "强类型契约：Windows shell.run 使用 cmd.exe，禁止 head/cat/grep/bash/mkdir -p；文件操作与语法检查优先使用结构化 action。"
         "路径类 action 的 target 必须非空且位于工作区内；code.patch_replace 必须提供 args.find。参数错误后禁止原样重试。\n"
-        "天工 Omni Body 唯一工具入口。只传 action/target/args；风险等级由 Runtime 独立裁决。\n"
+        "天工 Omni Body 唯一工具入口。只传 action/target/args；风险等级由 Runtime 独立裁决。"
+        "可在顶层 _task_profile 提供建议级别、目标事实和可变 plan_hint；轻量任务可省略。"
+        "Runtime 只从用户目标建立硬事实义务，计划不会成为额外验收项。\n"
         "可用 action 及能力：\n"
         "文件: file.read(读文本)/file.write(写文件)/file.list(列目录)/file.mkdir(建目录)/file.copy/file.move/file.delete_to_trash/file.search/file.hash.\n"
         "文档: docx.create(生成Word)/pptx.create(生成PPT)/pptx.read(检查PPT结构与视觉证据)/sheet.create(生成Excel)/sheet.read(读Excel)/pdf.extract_text(提取PDF文字)/pdf.create_from_text(文字转PDF)/mindmap.create(思维导图).\n"
@@ -192,6 +245,8 @@ def render_tool_schema(profile_id: str | None = None, provider: str | None = Non
             "可用工具：omni_body。按以下 XML 输出工具调用：\n"
             "<tool_call><name>omni_body</name><arguments>{\"action\":\"file.write\",\"target\":\"output.txt\",\"args\":{\"content\":\"...\"}}</arguments></tool_call>\n"
             "arguments 必须是 JSON；不要把完整交付流程藏在一个请求里。"
+            "可选在顶层 _task_profile 给出 schema、proposed_level、desired_facts、"
+            "可变 plan_hint 与 constraints；轻量任务可省略，计划不参与硬验收。"
         )
         return {"profile": prof, "tool_schema": prompt}
     # OpenAI-compatible: GPT/DeepSeek/MiniMax/GLM/MiMo/Kimi/Doubao

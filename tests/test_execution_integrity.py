@@ -494,6 +494,315 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         )
 
 
+class TaskContractLevelTests(unittest.TestCase):
+    LIVE_TOOL_USER = """【测试编号：LIVE-TOOL-01】
+请在当前工作区内创建文件：
+p14-live-test/tool-proof.txt
+
+文件内容必须严格为：
+TIANGONG/P14/LIVE/2026081101
+
+创建后必须重新读取文件，并计算 SHA-256。
+
+如果受控 file.write 失败，请如实报告失败并停止，不得改用 shell.run 或 python.run 绕过权限边界。
+不得根据我的描述直接回答。"""
+
+    @staticmethod
+    def _live_profile(proposed_level="L1"):
+        target = "p14-live-test/tool-proof.txt"
+        return {
+            "schema": "tiangong.v3.task_profile.v2",
+            "proposed_level": proposed_level,
+            "desired_facts": [
+                {"fact_id": "F1", "kind": "effect", "target": target, "success_condition": "file exists with requested content"},
+                {"fact_id": "F2", "kind": "observation", "target": target, "success_condition": "content is read back"},
+                {"fact_id": "F3", "kind": "execution", "target": target, "success_condition": "SHA-256 is computed"},
+            ],
+            "plan_hint": [
+                {"step_id": "S1", "action": "file.write", "target": target},
+                {"step_id": "S2", "action": "file.read", "target": target, "depends_on": ["S1"]},
+                {"step_id": "S3", "action": "file.hash", "target": target, "depends_on": ["S2"]},
+                {"step_id": "S4", "action": "deliver_result", "depends_on": ["S3"]},
+            ],
+            "constraints": {"forbidden_tools": ["shell.run", "python.run"]},
+        }
+
+    def test_l0_chat_contract_has_no_execution_obligation(self):
+        contract = integrity.initialize_task_contract("你好", chat_mode=True)
+        self.assertEqual(contract["effective_level"], "L0")
+        self.assertEqual(contract["acceptance_status"], "not_applicable")
+        self.assertEqual(integrity.build_task_contract_obligations(contract), [])
+
+    def test_single_read_only_action_is_l1(self):
+        profile = {
+            "proposed_level": "L1",
+            "steps": [{"action": "file.read", "target": "README.md"}],
+        }
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract("读取 README.md"),
+            profile,
+            user_text="读取 README.md",
+            action="file.read",
+            target="README.md",
+        )
+        self.assertEqual(contract["runtime_minimum_level"], "L1")
+        self.assertEqual(contract["effective_level"], "L1")
+
+    def test_runtime_raises_underclassified_mutating_multistep_task_to_l2(self):
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            self._live_profile("L1"),
+            user_text=self.LIVE_TOOL_USER,
+            action="file.write",
+            target="p14-live-test/tool-proof.txt",
+        )
+        self.assertEqual(contract["proposed_level"], "L1")
+        self.assertEqual(contract["runtime_minimum_level"], "L2")
+        self.assertEqual(contract["effective_level"], "L2")
+        self.assertIn("runtime_prevented_downgrade", contract["level_reasons"])
+        self.assertEqual(contract["validation_issues"], [])
+
+    def test_missing_l2_profile_does_not_block_or_add_planning_round(self):
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract("创建 result.txt"),
+            None,
+            user_text="创建 result.txt",
+            action="file.write",
+            target="result.txt",
+        )
+        self.assertEqual(contract["effective_level"], "L2")
+        self.assertEqual(contract["profile_status"], "optional_not_received")
+        self.assertFalse(contract["profile_required_pending"])
+        self.assertEqual(contract["profile_retry_count"], 0)
+        self.assertEqual(contract["plan_hint"], [])
+        self.assertTrue(contract["desired_facts"])
+
+    def test_l1_missing_profile_stays_lightweight_without_retry(self):
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract("读取 README.md"),
+            None,
+            user_text="读取 README.md",
+            action="file.read",
+            target="README.md",
+        )
+        self.assertEqual(contract["effective_level"], "L1")
+        self.assertEqual(contract["profile_status"], "optional_not_received")
+        self.assertFalse(contract["profile_required_pending"])
+        self.assertEqual(contract["profile_retry_count"], 0)
+
+    def test_high_risk_action_is_l3(self):
+        level, reasons = integrity.action_minimum_task_level("shell.run")
+        self.assertEqual(level, "L3")
+        self.assertIn("external_or_destructive", reasons)
+
+    def test_effective_level_is_monotonic(self):
+        initial = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract("运行命令"),
+            {"proposed_level": "L3", "steps": [{"action": "shell.run"}]},
+            user_text="运行命令",
+            action="shell.run",
+        )
+        later = integrity.reconcile_task_contract(
+            initial,
+            {"proposed_level": "L0", "steps": [{"action": "file.read", "target": "README.md"}]},
+            user_text="运行命令",
+            action="file.read",
+            target="README.md",
+        )
+        self.assertEqual(later["effective_level"], "L3")
+
+    def test_deliver_result_is_not_treated_as_a_tool(self):
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            self._live_profile(),
+            user_text=self.LIVE_TOOL_USER,
+            action="file.write",
+            target="p14-live-test/tool-proof.txt",
+        )
+        self.assertNotIn("unknown_action:deliver_result", contract["validation_issues"])
+        self.assertEqual(
+            {(item["kind"], item["target_path"]) for item in integrity.build_task_contract_obligations(contract)},
+            {(item["kind"], item["target_path"]) for item in integrity.build_action_obligations(self.LIVE_TOOL_USER)},
+        )
+
+    def test_model_profile_is_removed_before_governed_tool_validation(self):
+        cleaned, profile = integrity.extract_model_task_profile({
+            "action": "file.read",
+            "args": {"target": "README.md", "_task_profile": self._live_profile()},
+        })
+        self.assertNotIn("_task_profile", cleaned["args"])
+        self.assertEqual(profile["proposed_level"], "L1")
+
+        top_cleaned, top_profile = integrity.extract_model_task_profile({
+            "action": "file.write",
+            "target": "result.txt",
+            "args": {"content": "ok"},
+            "_task_profile": self._live_profile("L2"),
+        })
+        self.assertNotIn("_task_profile", top_cleaned)
+        self.assertEqual(top_profile["proposed_level"], "L2")
+
+    def test_negative_tool_names_are_constraints_not_file_targets(self):
+        self.assertEqual(
+            integrity._extract_explicit_targets(self.LIVE_TOOL_USER),
+            ["p14-live-test/tool-proof.txt"],
+        )
+        self.assertEqual(
+            set(integrity.extract_forbidden_actions(self.LIVE_TOOL_USER)),
+            {"shell.run", "python.run"},
+        )
+        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
+        self.assertEqual(
+            {item["target_path"] for item in obligations if item["target_path"]},
+            {"p14-live-test/tool-proof.txt"},
+        )
+        observation = next(item for item in obligations if item["kind"] == "observation")
+        self.assertEqual(observation["object_kind"], "file")
+
+    def test_model_plan_actions_never_become_hard_obligations(self):
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            self._live_profile(),
+            user_text=self.LIVE_TOOL_USER,
+            action="file.write",
+            target="p14-live-test/tool-proof.txt",
+        )
+        obligations = integrity.build_task_contract_obligations(contract)
+        self.assertTrue(obligations)
+        self.assertTrue(all("required_action" not in item for item in obligations))
+        self.assertTrue(all(item["source"] == "runtime_user_goal" for item in obligations))
+        self.assertNotIn("file.mkdir", [item.get("required_action") for item in obligations])
+
+    def test_sha256_goal_requires_a_real_digest_not_only_readback(self):
+        target = "p14-live-test/tool-proof.txt"
+        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
+        sha_goal = next(item for item in obligations if item.get("evidence_predicate") == "sha256_digest")
+        self.assertEqual(sha_goal["target_path"], target)
+        self.assertEqual(sha_goal["requires_prior_kind"], "effect")
+        write_payload = {
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"action": "file.write", "target": target, "args": {}},
+            "tool_result": {"success": True, "path": target, "sha256": "b" * 64},
+            "tool_result_contract": {
+                "ok": True,
+                "write_effect": True,
+                "observed_write_effect": True,
+                "paths": [target],
+            },
+        }
+        read_payload = {
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"action": "file.read", "target": target, "args": {}},
+            "tool_result": {"success": True, "path": target, "content": "TIANGONG/P14/LIVE/2026081101"},
+            "tool_result_contract": {"ok": True, "write_effect": False, "paths": [target]},
+        }
+        self.assertFalse(integrity.obligation_is_satisfied(sha_goal, [write_payload, read_payload]))
+        hash_payload = {
+            "ok": True,
+            "tool_action": "file.hash",
+            "tool_args": {"action": "file.hash", "target": target, "args": {}},
+            "tool_result": {"success": True, "path": target, "sha256": "a" * 64},
+            "tool_result_contract": {"ok": True, "paths": [target]},
+        }
+        self.assertTrue(integrity.obligation_is_satisfied(sha_goal, [write_payload, read_payload, hash_payload]))
+
+    def test_live_tool_history_satisfies_goal_then_terminal_gate_deactivates_intention(self):
+        target = "p14-live-test/tool-proof.txt"
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            self._live_profile(),
+            user_text=self.LIVE_TOOL_USER,
+            action="file.write",
+            target=target,
+        )
+        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
+        history = [{
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"args": {"target": target}},
+            "tool_result_contract": {
+                "ok": True,
+                "write_effect": True,
+                "paths": [target],
+                "observed_write_effect": True,
+                "write_evidence": {"authoritative": True, "changed_files": [target]},
+            },
+        }, {
+            "ok": True,
+            "tool_action": "file.read",
+            "tool_args": {"args": {"target": target}},
+            "tool_result_contract": {"ok": True, "write_effect": False, "paths": [target]},
+        }, {
+            "ok": True,
+            "tool_action": "file.hash",
+            "tool_args": {"args": {"target": target}},
+            "tool_result": {"success": True, "path": target, "sha256": "a" * 64},
+        }]
+        self.assertEqual(
+            integrity.execution_integrity_blockers(
+                self.LIVE_TOOL_USER,
+                history,
+                obligations=obligations,
+            ),
+            [],
+        )
+        for round_number, payload in enumerate(history, start=1):
+            state = {"round": round_number, "obligations": obligations}
+            integrity.update_run_state_obligations(state, payload)
+            contract = integrity.update_task_contract_evidence(
+                contract, payload, round_number=round_number, obligations=obligations
+            )
+        self.assertEqual(contract["phase"], "SATISFIED")
+        self.assertEqual(contract["acceptance_status"], "candidate")
+        contract = integrity.transition_task_contract_terminal(contract, "complete", [])
+        self.assertEqual(contract["phase"], "DEACTIVATED")
+        self.assertEqual(contract["acceptance_status"], "accepted")
+        self.assertFalse(contract["intent_active"])
+
+    def test_terminal_meanings_are_distinct(self):
+        initial = integrity.initialize_task_contract("创建 result.txt")
+        waiting = integrity.transition_task_contract_terminal(initial, "awaiting_user", ["need target"])
+        blocked = integrity.transition_task_contract_terminal(initial, "failed", ["write denied"])
+        interrupted = integrity.transition_task_contract_terminal(initial, "interrupted", ["user_cancel"])
+        self.assertEqual(waiting["phase"], "WAITING")
+        self.assertEqual(blocked["phase"], "BLOCKED")
+        self.assertEqual(interrupted["phase"], "INTERRUPTED")
+        self.assertNotEqual(blocked["acceptance_status"], "accepted")
+
+    def test_contradictory_evidence_reopens_deactivated_goal(self):
+        target = "result.txt"
+        contract = integrity.reconcile_task_contract(
+            integrity.initialize_task_contract("创建 result.txt"),
+            None,
+            user_text="创建 result.txt",
+            action="file.write",
+            target=target,
+        )
+        success = {
+            "ok": True,
+            "tool_action": "file.write",
+            "tool_args": {"args": {"target": target}},
+            "tool_result_contract": {
+                "ok": True,
+                "write_effect": True,
+                "paths": [target],
+                "observed_write_effect": True,
+            },
+        }
+        contract = integrity.update_task_contract_evidence(contract, success, round_number=1)
+        contract = integrity.transition_task_contract_terminal(contract, "complete", [])
+        reopened = integrity.update_task_contract_evidence(
+            contract,
+            {"ok": False, "tool_action": "file.read", "tool_args": {"args": {"target": target}}},
+            round_number=2,
+        )
+        self.assertEqual(reopened["phase"], "REOPENED")
+        self.assertEqual(reopened["reopen_count"], 1)
+        self.assertTrue(reopened["intent_active"])
+
+
 class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     """Static contracts for the existing V3 wiring.
 
@@ -533,6 +842,15 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
     def test_run_state_contains_and_updates_obligations(self):
         self.assertIn('"obligations": [],', self.zong)
         self.assertIn("update_run_state_obligations(run_state, payload)", self.zong)
+
+    def test_existing_run_state_owns_life_task_state_and_terminal_projection(self):
+        self.assertIn('run_state["task_contract"] = initialize_task_contract(', self.zong)
+        self.assertIn("_simple_chain_accept_task_profile(", self.zong)
+        self.assertIn("update_task_contract_evidence(", self.zong)
+        self.assertIn("transition_task_contract_terminal(", self.zong)
+        self.assertIn('task_obligations=run_state.get("obligations")', self.zong)
+        self.assertNotIn("tiangong.v3.task_profile.retry_required.v1", self.zong)
+        self.assertIn("The profile is advice, not authority", self.zong)
 
     def test_history_does_not_promote_prose_claim_to_fact(self):
         self.assertIn("assistant_claim_unverified", self.xujie)
