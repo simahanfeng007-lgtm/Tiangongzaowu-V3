@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 from contracts.canonical import canonical_sha256
+from contracts.world_understanding.repository import RepositoryObservation, RepositoryRevision
 from contracts.world_understanding.repository_query import (
     RepositoryGraphQuery,
     RepositoryGraphQueryResult,
@@ -77,6 +78,19 @@ def _identity(event: NativePostCommitEvent) -> dict[str, str]:
         "request_id": supplied.get("request_id") or str(context.request_id or "").strip(),
         "session_id": supplied.get("session_id") or str(context.session_id or "").strip(),
         "conversation_id": supplied.get("conversation_id") or str(context.conversation_id or "").strip(),
+    }
+
+
+def _current_identity() -> dict[str, str]:
+    context = current_run_context()
+    return {
+        "life_id": str(context.life_id or "").strip(),
+        "principal_scope_hash": str(context.principal_scope_hash or "").strip(),
+        "workspace_id": str(context.workspace_id or "").strip(),
+        "run_id": str(context.run_id or "").strip(),
+        "request_id": str(context.request_id or "").strip(),
+        "session_id": str(context.session_id or "").strip(),
+        "conversation_id": str(context.conversation_id or "").strip(),
     }
 
 
@@ -199,6 +213,35 @@ def production_repository_graph_query(
     return production_world_understanding_runtime().query_repository_graph(query)
 
 
+def production_repository_previous_revision(
+    observation: RepositoryObservation,
+) -> RepositoryRevision | None:
+    """Resolve the last committed revision from the existing live WU frame.
+
+    The lookup is exact on scope/repository/worktree/branch.  Branch switches
+    therefore produce a different frame and intentionally return no baseline.
+    No process-global repository revision cache is introduced.
+    """
+    scope = _scope(_current_identity())
+    if scope is None:
+        return None
+    frame = production_world_understanding_runtime().live_repository_frame(
+        scope=scope,
+        repository=observation.identity.repository_id,
+        worktree=observation.identity.worktree_id,
+        branch=observation.revision.branch,
+    )
+    if frame is None:
+        return None
+    return RepositoryRevision(
+        branch=frame.branch,
+        head_commit=frame.commit,
+        parent_commit=None,
+        detached_head=frame.branch.startswith("detached:"),
+        observed_at_ms=max(0, int(frame.time.observed_at_ms)),
+    )
+
+
 def _native_id(value: str) -> str:
     value = str(value or "").strip()
     if _OPAQUE.fullmatch(value):
@@ -269,6 +312,7 @@ __all__ = [
     "observe_native_post_commit",
     "production_context_output_port",
     "production_repository_graph_query",
+    "production_repository_previous_revision",
     "production_world_understanding_runtime",
     "set_world_inquiry_dispatcher",
 ]
