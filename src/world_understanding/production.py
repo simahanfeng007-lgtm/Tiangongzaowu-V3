@@ -17,6 +17,7 @@ from contracts.world_understanding.repository_query import (
     RepositoryGraphQuery,
     RepositoryGraphQueryResult,
 )
+from contracts.world_understanding.scope import WorldScope
 from contracts.world_understanding.world_cut import SourceWatermark, WorldCut, derive_world_cut_id
 
 from .context_output.enrichment import ContextProjectionCandidate
@@ -45,6 +46,7 @@ class SourceMaterializationDisposition:
 
 @dataclass(slots=True)
 class _StreamState:
+    frame: SoftwareWorldFrame
     graph: SparseWorldGraph
     closure: ClosureResult | None
 
@@ -143,6 +145,31 @@ class ProductionWorldUnderstandingRuntime:
             principal_scope_hash=scope.principal_scope_hash,
             frame_id=frame.frame_id,
         )
+
+    def live_repository_frame(
+        self,
+        *,
+        scope: WorldScope,
+        repository: str,
+        worktree: str,
+        branch: str,
+    ) -> SoftwareWorldFrame | None:
+        """Return the exact committed live frame for one repository branch.
+
+        This is a read-only view over the existing WU stream map.  It deliberately
+        does not create a repository revision cache or resolve across branch frames.
+        """
+        with self._lock:
+            for live in self._streams.values():
+                frame = live.frame
+                if (
+                    frame.scope == scope
+                    and frame.repository == repository
+                    and frame.worktree == worktree
+                    and frame.branch == branch
+                ):
+                    return frame
+        return None
 
     def query_repository_graph(
         self, query: RepositoryGraphQuery
@@ -250,7 +277,7 @@ class ProductionWorldUnderstandingRuntime:
                     materialized_at_ms=envelope.source_time.recorded_at_ms,
                 )
             )
-            self._streams[frame.frame_id] = _StreamState(update.graph, closure)
+            self._streams[frame.frame_id] = _StreamState(frame, update.graph, closure)
             if self._committed_state_observer is not None:
                 try:
                     self._committed_state_observer(envelope, snapshot)
