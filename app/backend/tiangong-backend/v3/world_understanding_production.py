@@ -6,9 +6,13 @@ import platform
 import re
 import threading
 from pathlib import Path
-from typing import Any
 
 from contracts.canonical import canonical_sha256
+from contracts.world_understanding.repository import RepositoryObservation, RepositoryRevision
+from contracts.world_understanding.repository_query import (
+    RepositoryGraphQuery,
+    RepositoryGraphQueryResult,
+)
 from contracts.world_understanding.scope import (
     ScopeBinding,
     WorldScope,
@@ -28,6 +32,7 @@ from world_understanding.context_output import (
 from world_understanding.production import ProductionWorldUnderstandingRuntime
 from world_understanding.active_cognition import ActiveWorldCognitionCoordinator
 from world_understanding.software_world import SoftwareWorldFrame
+from world_understanding.software_world.git_observation import repository_frame_identity
 from world_understanding.source_adapters import build_post_commit_source_envelope
 from world_understanding.world_state import WorldStateStore
 
@@ -76,6 +81,19 @@ def _identity(event: NativePostCommitEvent) -> dict[str, str]:
     }
 
 
+def _current_identity() -> dict[str, str]:
+    context = current_run_context()
+    return {
+        "life_id": str(context.life_id or "").strip(),
+        "principal_scope_hash": str(context.principal_scope_hash or "").strip(),
+        "workspace_id": str(context.workspace_id or "").strip(),
+        "run_id": str(context.run_id or "").strip(),
+        "request_id": str(context.request_id or "").strip(),
+        "session_id": str(context.session_id or "").strip(),
+        "conversation_id": str(context.conversation_id or "").strip(),
+    }
+
+
 def _scope(identity: dict[str, str]) -> WorldScope | None:
     life_id = identity["life_id"]
     principal = identity["principal_scope_hash"]
@@ -115,13 +133,21 @@ def _frame_factory(envelope, cut):
     workspace_id = str(bindings.get("workspace_id") or "").strip()
     if not workspace_id:
         raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_INCOMPLETE")
+    git_identity = repository_frame_identity(envelope)
+    if git_identity is None:
+        repository = "workspace:" + workspace_id
+        worktree = "workspace:" + workspace_id
+        branch = "runtime-current"
+        commit = "runtime-current"
+    else:
+        repository, worktree, branch, commit = git_identity
     return SoftwareWorldFrame.build(
         scope=envelope.scope_hint,
         workspace=workspace_id,
-        repository="workspace:" + workspace_id,
-        worktree="workspace:" + workspace_id,
-        branch="runtime-current",
-        commit="runtime-current",
+        repository=repository,
+        worktree=worktree,
+        branch=branch,
+        commit=commit,
         environment=platform.system().lower() or "unknown-platform",
         time=envelope.source_time,
         world_cut=cut,
@@ -148,10 +174,17 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
                     return None
                 return snapshot
 
+            def enrich_context(query, snapshot):
+                runtime = _runtime
+                if runtime is None:
+                    return ()
+                return runtime.repository_context_candidates(query, snapshot)
+
             handler = WorldContextRequestHandler(
                 state_resolver=resolve_state,
                 projector=WorldContextProjector(token_estimator=estimate_tokens),
                 output_port=output,
+                projection_enricher=enrich_context,
             )
             _active_coordinator = ActiveWorldCognitionCoordinator(
                 store=store,
@@ -173,11 +206,74 @@ def production_context_output_port() -> ContextOutputPort:
     return _context_output
 
 
+def production_repository_graph_query(
+    query: RepositoryGraphQuery,
+) -> RepositoryGraphQueryResult:
+    """Use the one production WU runtime; never instantiate a query runtime."""
+    return production_world_understanding_runtime().query_repository_graph(query)
+
+
+def production_repository_evidence_snapshot(
+    identity: dict[str, str],
+) -> dict[str, object] | None:
+    """Read bounded repository references for an exact Life/principal/workspace scope."""
+    scope = _scope(identity)
+    if scope is None:
+        return None
+    return production_world_understanding_runtime().repository_evidence_snapshot(
+        scope=scope,
+        max_entities=32,
+    )
+
+
+def production_repository_previous_revision(
+    observation: RepositoryObservation,
+) -> RepositoryRevision | None:
+    """Resolve the last committed revision from the existing live WU frame.
+
+    The lookup is exact on scope/repository/worktree/branch.  Branch switches
+    therefore produce a different frame and intentionally return no baseline.
+    No process-global repository revision cache is introduced.
+    """
+    scope = _scope(_current_identity())
+    if scope is None:
+        return None
+    frame = production_world_understanding_runtime().live_repository_frame(
+        scope=scope,
+        repository=observation.identity.repository_id,
+        worktree=observation.identity.worktree_id,
+        branch=observation.revision.branch,
+    )
+    if frame is None:
+        return None
+    return RepositoryRevision(
+        branch=frame.branch,
+        head_commit=frame.commit,
+        parent_commit=None,
+        detached_head=frame.branch.startswith("detached:"),
+        observed_at_ms=max(0, int(frame.time.observed_at_ms)),
+    )
+
+
 def _native_id(value: str) -> str:
     value = str(value or "").strip()
     if _OPAQUE.fullmatch(value):
         return value
     return "native." + canonical_sha256({"value": value})[:48]
+
+
+def _tool_result_requests_repository_refresh(event: NativePostCommitEvent) -> bool:
+    if event.source_kind != "TOOL_RESULT":
+        return False
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    evidence = payload.get("write_evidence")
+    if payload.get("observed_write_effect") is not True or not isinstance(evidence, dict):
+        return False
+    if evidence.get("authoritative") is not True:
+        return False
+    changed = evidence.get("changed_files") or ()
+    deleted = evidence.get("deleted_files") or ()
+    return bool(changed or deleted)
 
 
 def observe_native_post_commit(event: NativePostCommitEvent):
@@ -209,7 +305,15 @@ def observe_native_post_commit(event: NativePostCommitEvent):
         conversation_id=identity["conversation_id"] or None,
         workspace_id=identity["workspace_id"],
     )
-    return production_world_understanding_runtime().facade.accept(envelope)
+    disposition = production_world_understanding_runtime().facade.accept(envelope)
+    if _tool_result_requests_repository_refresh(event):
+        try:
+            from .repository_perception import publish_active_repository_observation
+
+            publish_active_repository_observation()
+        except Exception:
+            pass
+    return disposition
 
 
 def install_world_understanding_observer() -> None:
@@ -220,6 +324,9 @@ __all__ = [
     "install_world_understanding_observer",
     "observe_native_post_commit",
     "production_context_output_port",
+    "production_repository_graph_query",
+    "production_repository_evidence_snapshot",
+    "production_repository_previous_revision",
     "production_world_understanding_runtime",
     "set_world_inquiry_dispatcher",
 ]

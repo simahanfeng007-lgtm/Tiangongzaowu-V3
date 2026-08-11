@@ -28,8 +28,12 @@ ENTITY_IDENTITY_TYPES = {
 RELATION_TYPES = frozenset({
     "CONTAINS", "DEFINES", "IMPORTS", "DIRECT_CALLS", "CALL_REACHABLE",
     "USES", "READS", "WRITES", "REGISTERED_AS", "BELONGS_TO", "LOCATED_IN",
+    "REFERENCES", "INHERITS", "IMPLEMENTS", "DEPENDS_ON", "BUILDS", "TESTS",
+    "COVERS", "INSTRUCTS_SCOPE",
 })
-FORBIDDEN_SEMANTIC_RELATIONS = frozenset({"GUARDED_BY", "AUTHORITATIVE_FOR", "IS_BOUNDARY_OF"})
+FORBIDDEN_SEMANTIC_RELATIONS = frozenset({
+    "GUARDED_BY", "AUTHORITATIVE_FOR", "IS_BOUNDARY_OF"
+})
 
 @dataclass(frozen=True, slots=True)
 class SoftwarePerception:
@@ -56,14 +60,22 @@ def _object_text(record: KnownRecord) -> str | None:
 def classify_known(record: KnownRecord) -> PerceptionKind:
     if record.proposition_type in ENTITY_IDENTITY_TYPES:
         return "IDENTITY"
-    if record.proposition_type in RELATION_TYPES or record.proposition_type in FORBIDDEN_SEMANTIC_RELATIONS:
+    if (
+        record.proposition_type in RELATION_TYPES
+        or record.proposition_type in FORBIDDEN_SEMANTIC_RELATIONS
+    ):
         return "STRUCTURE"
-    if record.proposition_type in {"CHAIN_EVENT_RECORDED", "EVENT_PRECEDES", "FILE_CREATED", "FILE_DELETED", "FILE_CONTENT_CHANGED"}:
+    if record.proposition_type in {
+        "CHAIN_EVENT_RECORDED", "EVENT_PRECEDES", "FILE_CREATED",
+        "FILE_DELETED", "FILE_CONTENT_CHANGED",
+    }:
         return "EVENT"
     return "OBSERVATION"
 
 
-def perceive_known(frame: SoftwareWorldFrame, records: tuple[KnownRecord, ...]) -> tuple[SoftwarePerception, ...]:
+def perceive_known(
+    frame: SoftwareWorldFrame, records: tuple[KnownRecord, ...]
+) -> tuple[SoftwarePerception, ...]:
     output = []
     for record in records:
         require_exact_scope(frame.scope, record.world_scope)
@@ -78,7 +90,9 @@ def perceive_known(frame: SoftwareWorldFrame, records: tuple[KnownRecord, ...]) 
         ))
     return tuple(output)
 
+
 __all__ = [
-    "PerceptionKind", "ENTITY_IDENTITY_TYPES", "RELATION_TYPES", "FORBIDDEN_SEMANTIC_RELATIONS",
-    "SoftwarePerception", "classify_known", "perceive_known",
+    "PerceptionKind", "ENTITY_IDENTITY_TYPES", "RELATION_TYPES",
+    "FORBIDDEN_SEMANTIC_RELATIONS", "SoftwarePerception", "classify_known",
+    "perceive_known",
 ]

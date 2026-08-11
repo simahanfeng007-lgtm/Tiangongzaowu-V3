@@ -9,11 +9,14 @@ from contracts.world_understanding.query import WorldQuery
 from world_understanding.common.scope import require_exact_scope
 from world_understanding.world_state.store import MaterializedWorldSnapshot
 
+from .enrichment import ContextProjectionCandidate
 from .mandatory import build_mandatory_items
 from .projection_support import (
-    ProjectionPolicy, ProjectionResult, build_packet, build_ranked_item, diversity_ref_order, state_ref, unique_refs,
+    ProjectionPolicy, ProjectionResult, build_enriched_ranked_item, build_packet, build_ranked_item,
+    diversity_ref_order, effective_projection_policy, state_ref, unique_refs,
 )
 from .slot import conservative_token_estimate, render_world_context_packet
+
 
 class WorldContextProjector:
     def __init__(
@@ -32,6 +35,7 @@ class WorldContextProjector:
         *,
         generated_at_ms: int | None = None,
         prediction_refs: tuple[WorldRecordRef, ...] = (),
+        enrichment_candidates: tuple[ContextProjectionCandidate, ...] = (),
     ) -> ProjectionResult:
         if not query.has_valid_hash():
             raise ValueError("WORLD_QUERY_HASH_INVALID")
@@ -52,6 +56,19 @@ class WorldContextProjector:
         if snapshot.active_hypotheses is not None:
             manifests.append(snapshot.active_hypotheses)
         all_ranked_refs = unique_refs(ref for manifest in manifests for ref in manifest.refs)
+        ranked_keys = {ref.sort_key() for ref in all_ranked_refs}
+
+        enrichment_by_key: dict[tuple, ContextProjectionCandidate] = {}
+        for candidate in enrichment_candidates:
+            key = candidate.ref.sort_key()
+            if key not in ranked_keys:
+                raise ValueError("WORLD_CONTEXT_ENRICHMENT_REF_OUTSIDE_SNAPSHOT")
+            if key in enrichment_by_key:
+                raise ValueError("WORLD_CONTEXT_ENRICHMENT_REF_DUPLICATE")
+            enrichment_by_key[key] = candidate
+        effective_policy_ref, effective_policy_sha256 = effective_projection_policy(
+            self.policy, tuple(enrichment_by_key.values())
+        )
 
         prediction_refs = unique_refs(prediction_refs)
         if any(ref.record_type != "world_prediction" for ref in prediction_refs):
@@ -62,7 +79,7 @@ class WorldContextProjector:
         mandatory_ref_keys = {
             ref.sort_key() for item in mandatory for ref in item.referenced_world_records
         }
-        available_keys = mandatory_ref_keys | {ref.sort_key() for ref in all_ranked_refs} | {
+        available_keys = mandatory_ref_keys | ranked_keys | {
             ref.sort_key() for ref in prediction_refs
         }
         if required_keys - available_keys:
@@ -98,14 +115,29 @@ class WorldContextProjector:
             elif prediction_focus:
                 optional_ref_pairs.append(("prediction", ref))
 
-        # Preselect refs cheaply before constructing hashed items/handles. This keeps
-        # projection latency bounded for large sparse graphs while preserving one-
-        # per-kind diversity before repeats.
-        chosen_refs = diversity_ref_order(
-            tuple(optional_ref_pairs), query=query, limit=self.policy.max_ranked_items
+        enriched_keys = {
+            key for key in enrichment_by_key
+            if key not in required_keys
+        }
+        enriched = tuple(sorted(
+            (candidate for key, candidate in enrichment_by_key.items() if key in enriched_keys),
+            key=lambda candidate: candidate.priority_key(),
+        ))[: self.policy.max_ranked_items]
+        remaining_limit = self.policy.max_ranked_items - len(enriched)
+        generic_pairs = tuple(
+            pair for pair in optional_ref_pairs if pair[1].sort_key() not in enriched_keys
         )
+        chosen_generic = diversity_ref_order(
+            generic_pairs, query=query, limit=remaining_limit
+        )
+
         optional_pairs: list[tuple[str, WorldContextItem, ExpansionHandle | None]] = []
-        for group, ref in chosen_refs:
+        for candidate in enriched:
+            item, handle = build_enriched_ranked_item(
+                candidate, query=query, generated_at_ms=now_ms, policy=self.policy
+            )
+            optional_pairs.append(("ranked", item, handle))
+        for group, ref in chosen_generic:
             binding = dependency_map.get(ref.sort_key())
             item, handle = build_ranked_item(
                 ref, query=query,
@@ -125,19 +157,26 @@ class WorldContextProjector:
                 raise ValueError("WORLD_CONTEXT_EVIDENCE_DIGEST_LIMIT")
             return refs
 
-        # Mandatory facts are never silently squeezed. If mandatory material alone
-        # exceeds the requested budget, the packet advertises MANDATORY_OVERFLOW.
+        def _packet(**kwargs) -> WorldContextPacket:
+            return build_packet(
+                query=query,
+                snapshot=snapshot,
+                generated_at_ms=now_ms,
+                policy=self.policy,
+                projection_policy_ref=effective_policy_ref,
+                projection_policy_sha256=effective_policy_sha256,
+                **kwargs,
+            )
+
         mandatory_digest = _digest(mandatory_tuple)
-        base_packet = build_packet(
-            query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+        base_packet = _packet(
             mandatory_items=mandatory_tuple, ranked_items=(),
             uncertainty_items=(), prediction_items=(),
             evidence_digest=mandatory_digest, expansion_handles=tuple(mandatory_handles), overflow_state="NONE",
         )
         base_tokens = max(0, int(self.token_estimator(render_world_context_packet(base_packet))))
         if base_tokens > query.token_budget:
-            overflow = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            overflow = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=(),
                 uncertainty_items=(), prediction_items=(),
                 evidence_digest=mandatory_digest, expansion_handles=tuple(mandatory_handles),
@@ -146,20 +185,17 @@ class WorldContextProjector:
             tokens = max(0, int(self.token_estimator(render_world_context_packet(overflow))))
             return ProjectionResult(overflow, tokens)
 
-        ordered_pairs = tuple(optional_pairs)
-
         selected_ranked: list[WorldContextItem] = []
         selected_predictions: list[WorldContextItem] = []
         selected_handles: list[ExpansionHandle] = list(mandatory_handles)
         accepted_pairs: list[tuple[str, WorldContextItem, ExpansionHandle | None]] = []
         truncated = False
-        for group, item, handle in ordered_pairs:
+        for group, item, handle in tuple(optional_pairs):
             trial_ranked = tuple((*selected_ranked, item)) if group == "ranked" else tuple(selected_ranked)
             trial_predictions = tuple((*selected_predictions, item)) if group == "prediction" else tuple(selected_predictions)
             trial_handles = tuple((*selected_handles, *((handle,) if handle is not None else ())))
             trial_digest = _digest(mandatory_tuple, trial_ranked, trial_predictions)
-            trial = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            trial = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=trial_ranked,
                 uncertainty_items=(), prediction_items=trial_predictions,
                 evidence_digest=trial_digest, expansion_handles=trial_handles,
@@ -181,8 +217,7 @@ class WorldContextProjector:
             ranked_tuple = tuple(selected_ranked)
             prediction_tuple = tuple(selected_predictions)
             digest = _digest(mandatory_tuple, ranked_tuple, prediction_tuple)
-            value = build_packet(
-                query=query, snapshot=snapshot, generated_at_ms=now_ms, policy=self.policy,
+            value = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=ranked_tuple,
                 uncertainty_items=(), prediction_items=prediction_tuple,
                 evidence_digest=digest, expansion_handles=tuple(selected_handles),
@@ -192,9 +227,6 @@ class WorldContextProjector:
             return value, tokens
 
         packet, estimated = _final_packet()
-        # Changing NONE -> BUDGET_TRUNCATED slightly lengthens the rendered header.
-        # If that boundary pushes the final rendering over budget, remove only the
-        # last accepted optional item(s); mandatory context is never squeezed.
         while estimated > query.token_budget and accepted_pairs:
             truncated = True
             group, item, handle = accepted_pairs.pop()

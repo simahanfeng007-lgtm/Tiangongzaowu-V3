@@ -438,6 +438,18 @@ class EmbeddedBackendRuntime:
             raise EmbeddedBackendError("world_inquiry.dispatcher_unsupported")
         setter(dispatcher)
 
+    def repository_evidence_snapshot(
+        self,
+        identity: Mapping[str, Any],
+    ) -> dict[str, object] | None:
+        """Read the existing WU graph; never trigger repository sensing here."""
+        module = importlib.import_module("v3.world_understanding_production")
+        reader = getattr(module, "production_repository_evidence_snapshot", None)
+        if not callable(reader):
+            return None
+        result = reader({key: str(value or "") for key, value in identity.items()})
+        return dict(result) if isinstance(result, Mapping) else None
+
     def _learning_decision(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """Ask the configured model for a bounded learning-path proposal.
 

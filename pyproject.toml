@@ -14,6 +14,14 @@ dependencies = [
   "pydantic==2.13.4",
 ]
 
+[project.optional-dependencies]
+repository-structure = [
+  "tree-sitter==0.26.0",
+  "tree-sitter-python==0.25.0",
+  "tree-sitter-javascript==0.25.0",
+  "tree-sitter-typescript==0.23.2",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["contracts*", "total_gateway*", "communication_service*", "runtime_security*", "life_service*", "world_understanding*"]

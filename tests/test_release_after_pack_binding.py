@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "electron-builder.config.cjs"
 BINDING = ROOT / "app" / "lib" / "release-binding.js"
-RELEASE_PYTHON = ROOT / "app" / "runtime" / "python312" / "python.exe"
+_BUNDLED_RELEASE_PYTHON = ROOT / "app" / "runtime" / "python312" / "python.exe"
+RELEASE_PYTHON = _BUNDLED_RELEASE_PYTHON if _BUNDLED_RELEASE_PYTHON.is_file() else Path(sys.executable)
 
 
 class ReleaseAfterPackBindingTests(unittest.TestCase):

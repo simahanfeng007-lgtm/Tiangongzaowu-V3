@@ -19,7 +19,15 @@ def scope(life:str)->WorldScope:
     return WorldScope(life_id=life,world_id=wid,domain_id='software',scope_bindings=b,world_scope_hash=derive_world_scope_hash(life_id=life,world_id=wid,domain_id='software',scope_bindings=b),principal_scope_hash=P,privacy_scope='system')
 def wt()->WorldTime: return WorldTime(valid_from_ms=1,observed_at_ms=1,recorded_at_ms=2)
 def env(kind:str='FACT_EXECUTION',life:str='life.A',native:str='n1',payload=None,principal=P)->WorldIngressEnvelope:
-    sc=scope(life); payload=payload or {'text':'hello'}; sha=canonical_sha256(payload); dd=derive_ingress_dedup_key(envelope_kind='SOURCE_RECORD',source_kind=kind,source_native_id=native,payload_sha256=sha,world_scope_hash=sc.world_scope_hash)
+    sc=scope(life)
+    if payload is None and kind=='LIFE_LEARNING':
+        from contracts.world_understanding.life_learning import LifeLearningObservation
+        payload=LifeLearningObservation(
+            life_id=life,artifact_id='art.test',artifact_kind='knowledge',lineage_id='lineage.test',
+            status='published',confidence_milli=1000,epistemic_status='verified',
+            prior_revision=0,new_revision=1,occurred_at_ms=1,observation_sha256='0'*64,
+        ).with_computed_hash().model_dump(mode='json')
+    payload=payload or {'text':'hello'}; sha=canonical_sha256(payload); dd=derive_ingress_dedup_key(envelope_kind='SOURCE_RECORD',source_kind=kind,source_native_id=native,payload_sha256=sha,world_scope_hash=sc.world_scope_hash)
     return WorldIngressEnvelope(envelope_id=derive_ingress_envelope_id(dedup_key=dd),envelope_kind='SOURCE_RECORD',source_kind=kind,source_native_id=native,producer_ref='p3.test',payload_inline=payload,payload_sha256=sha,source_time=wt(),life_id=life,principal_scope_hash=principal,scope_hint=sc,correlation_id='corr.1',dedup_key=dd)
 
 @pytest.mark.parametrize('kind', sorted(SPECS))

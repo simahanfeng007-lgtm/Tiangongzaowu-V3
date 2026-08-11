@@ -9,6 +9,8 @@ from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.context_packet import ExpansionHandle, WorldContextItem, WorldContextPacket, derive_expansion_handle_id, derive_world_packet_id
 from contracts.world_understanding.query import WorldQuery
 
+from .enrichment import ContextProjectionCandidate
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectionPolicy:
@@ -62,6 +64,39 @@ def state_ref(snapshot: object) -> WorldRecordRef:
 def clip(text: str, limit: int) -> str:
     value = " ".join(str(text or "").split())
     return value if len(value) <= limit else value[: max(1, limit - 3)].rstrip() + "..."
+
+
+def effective_projection_policy(
+    policy: ProjectionPolicy,
+    enrichment_candidates: tuple[ContextProjectionCandidate, ...],
+) -> tuple[str, str]:
+    """Return a packet-identity-safe policy ref/hash for this projection.
+
+    Repository enrichment changes packet content. Its deterministic candidate
+    fingerprint must therefore participate in ``projection_policy_sha256`` so a
+    plain fallback packet can never share a packet_id with an enriched packet.
+    """
+    if not enrichment_candidates:
+        return policy.policy_ref, policy.sha256
+    rows = tuple(
+        {
+            "ref": candidate.ref.model_dump(mode="json"),
+            "item_kind": candidate.item_kind,
+            "summary": candidate.summary,
+            "task_relevance_milli": candidate.task_relevance_milli,
+            "impact_milli": candidate.impact_milli,
+            "freshness_need_milli": candidate.freshness_need_milli,
+        }
+        for candidate in sorted(enrichment_candidates, key=lambda item: item.priority_key())
+    )
+    return (
+        policy.policy_ref + ".repository-p14-m4",
+        canonical_sha256({
+            "domain": "tiangong.world.context-effective-policy.p14.m4.v1",
+            "base_policy_sha256": policy.sha256,
+            "repository_enrichment": rows,
+        }),
+    )
 
 
 def build_item(
@@ -130,6 +165,15 @@ def diversity_ref_order(pairs: tuple[tuple[str, WorldRecordRef], ...], *, query:
     return tuple(ordered)
 
 
+def _next_expansion(
+    *, ref: WorldRecordRef, query: WorldQuery, generated_at_ms: int, policy: ProjectionPolicy
+) -> ExpansionHandle | None:
+    next_depth = {"L0": "L1", "L1": "L2", "L2": None}[query.requested_depth]
+    return None if next_depth is None else build_handle(
+        refs=(ref,), query=query, depth=next_depth, expires_at_ms=generated_at_ms + policy.expansion_ttl_ms
+    )
+
+
 def build_ranked_item(
     ref: WorldRecordRef, *, query: WorldQuery, source_keys: tuple[str, ...],
     evidence_ids: tuple[str, ...], generated_at_ms: int, policy: ProjectionPolicy,
@@ -141,9 +185,7 @@ def build_ranked_item(
     relevance = 1000 if required else (760 if lexical_hit else 520)
     impact = {"world_entity": 620, "world_relation": 580, "world_cognition": 820,
               "world_hypothesis": 560, "world_prediction": 600}.get(ref.record_type, 500)
-    next_depth = {"L0": "L1", "L1": "L2", "L2": None}[query.requested_depth]
-    expansion = None if next_depth is None else build_handle(
-        refs=(ref,), query=query, depth=next_depth, expires_at_ms=generated_at_ms + policy.expansion_ttl_ms)
+    expansion = _next_expansion(ref=ref, query=query, generated_at_ms=generated_at_ms, policy=policy)
     detail = f"{ref.record_type} {ref.record_id}"
     if query.requested_depth in {"L1", "L2"}:
         detail += f" revision={ref.revision or 0}; dependency_roots={len(source_keys)}"
@@ -157,25 +199,54 @@ def build_ranked_item(
     return context_item, expansion
 
 
+def build_enriched_ranked_item(
+    candidate: ContextProjectionCandidate,
+    *,
+    query: WorldQuery,
+    generated_at_ms: int,
+    policy: ProjectionPolicy,
+) -> tuple[WorldContextItem, ExpansionHandle | None]:
+    expansion = _next_expansion(
+        ref=candidate.ref, query=query, generated_at_ms=generated_at_ms, policy=policy
+    )
+    item = build_item(
+        kind=candidate.item_kind,
+        summary=clip(candidate.summary, policy.ranked_summary_chars),
+        refs=(candidate.ref,),
+        mandatory=False,
+        task_relevance_milli=candidate.task_relevance_milli,
+        impact_milli=candidate.impact_milli,
+        freshness_need_milli=candidate.freshness_need_milli,
+        expansion_handle_id=None if expansion is None else expansion.handle_id,
+    )
+    return item, expansion
+
+
 def build_packet(
     *, query: WorldQuery, snapshot: object, generated_at_ms: int, policy: ProjectionPolicy,
     mandatory_items: tuple[WorldContextItem, ...], ranked_items: tuple[WorldContextItem, ...],
     uncertainty_items: tuple[WorldContextItem, ...], prediction_items: tuple[WorldContextItem, ...],
     evidence_digest: tuple[WorldRecordRef, ...], expansion_handles: tuple[ExpansionHandle, ...],
-    overflow_state: str,
+    overflow_state: str, projection_policy_ref: str | None = None,
+    projection_policy_sha256: str | None = None,
 ) -> WorldContextPacket:
+    effective_ref = policy.policy_ref if projection_policy_ref is None else projection_policy_ref
+    effective_sha = policy.sha256 if projection_policy_sha256 is None else projection_policy_sha256
     packet_id = derive_world_packet_id(
         world_scope_hash=query.scope.world_scope_hash, frame_ref=snapshot.state.frame_ref,
         basis_world_state_ref=state_ref(snapshot), task_ref=query.task_ref, task_sha256=query.task_sha256,
-        generated_at_ms=generated_at_ms, projection_policy_sha256=policy.sha256)
+        generated_at_ms=generated_at_ms, projection_policy_sha256=effective_sha)
     packet = WorldContextPacket(
         packet_id=packet_id, scope=query.scope, frame_ref=snapshot.state.frame_ref,
         basis_world_state_ref=state_ref(snapshot), task_ref=query.task_ref, task_sha256=query.task_sha256,
         generated_at_ms=generated_at_ms, token_budget=query.token_budget, mandatory_items=mandatory_items,
         ranked_items=ranked_items, uncertainty_items=uncertainty_items, prediction_items=prediction_items,
         evidence_digest=evidence_digest, expansion_handles=expansion_handles, overflow_state=overflow_state,
-        projection_policy_ref=policy.policy_ref, projection_policy_sha256=policy.sha256, packet_sha256="0" * 64)
+        projection_policy_ref=effective_ref, projection_policy_sha256=effective_sha, packet_sha256="0" * 64)
     return packet.with_computed_hash()
 
 
-__all__ = ["ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "build_item", "build_handle", "diversity_ref_order", "build_ranked_item", "build_packet"]
+__all__ = [
+    "ProjectionPolicy", "ProjectionResult", "unique_refs", "state_ref", "clip", "effective_projection_policy",
+    "build_item", "build_handle", "diversity_ref_order", "build_ranked_item", "build_enriched_ranked_item", "build_packet"
+]

@@ -2,7 +2,9 @@
 from __future__ import annotations
 from typing import Any
 from contracts.world_understanding.ingress import WorldIngressEnvelope
+from contracts.world_understanding.life_learning import LifeLearningObservation
 from .base import CompilerSpec,DeterministicSourceCompiler,make_direct_known,payload_text
+from .git_code import GitCodeCompiler
 
 SPECS={
 "RUN_CONTEXT":CompilerSpec("RUN_CONTEXT","wu.compiler.run-context","v0.1","RUN_CONTEXT_OBSERVED","runtime.run_context","IDENTITY_RUN_CONTEXT",1000,1000),
@@ -18,6 +20,7 @@ SPECS={
 "DESKTOP_UI":CompilerSpec("DESKTOP_UI","wu.compiler.desktop-ui","v0.1","DESKTOP_UI_OBSERVED","desktop.observation","DESKTOP_UI_PROCESS",800,800),
 "MEMORY":CompilerSpec("MEMORY","wu.compiler.memory","v0.1","MEMORY_RECORDED","memory.record","MEMORY_EXPERIENCE",0,0),
 "KNOWLEDGE":CompilerSpec("KNOWLEDGE","wu.compiler.knowledge","v0.1","DOCUMENT_CLAIMS","knowledge.claim","KNOWLEDGE_DOCUMENT",0,0),
+"LIFE_LEARNING":CompilerSpec("LIFE_LEARNING","wu.compiler.life-learning","v0.1","LIFE_CAPABILITY_STATE_OBSERVED","life.capability_state","LIFE_CAPABILITY_STATE",1000,1000),
 "CONTEXT_CONTINUITY":CompilerSpec("CONTEXT_CONTINUITY","wu.compiler.context-continuity","v0.1","CONTEXT_CONTINUITY_RECORDED","context.continuity","CONTEXT_CONTINUITY",0,0),
 "AUTONOMY":CompilerSpec("AUTONOMY","wu.compiler.autonomy","v0.1","SELF_WILL_DECISION_RECORDED","autonomy.decision","AUTONOMY_SELF_WILL",0,0),
 "CHAIN_EVENT":CompilerSpec("CHAIN_EVENT","wu.compiler.chain-event","v0.1","CHAIN_EVENT_RECORDED","chain.event","TASK_RUN_LIFECYCLE",1000,1000),
@@ -96,6 +99,24 @@ class MemoryCompiler(DeterministicSourceCompiler):
             make_direct_known(envelope,self.spec,proposition_type="MEMORY_STORE_IDENTITY",predicate="memory.store_identity",subject_ref=memory_id,object_text=str(payload.get("memory_type") or "memory")),
         )
 
+class LifeLearningCompiler(DeterministicSourceCompiler):
+    """Compile only the bounded, validated post-commit Life projection."""
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="LIFE_LEARNING": raise ValueError("compiler source_kind mismatch")
+        observation=LifeLearningObservation.model_validate(envelope.payload_inline,strict=False)
+        if not observation.has_valid_hash(): raise ValueError("life learning observation hash mismatch")
+        if observation.life_id!=envelope.scope_hint.life_id: raise ValueError("life learning observation scope mismatch")
+        rows=[
+            make_direct_known(envelope,self.spec,proposition_type="LIFE_ARTIFACT_IDENTITY",predicate="life.artifact_identity",subject_ref=observation.artifact_id,object_text=observation.artifact_kind),
+            make_direct_known(envelope,self.spec,proposition_type="LIFE_CAPABILITY_STATUS",predicate="life.capability_status",subject_ref=observation.artifact_id,object_text=observation.status),
+            make_direct_known(envelope,self.spec,proposition_type="LIFE_CAPABILITY_LINEAGE",predicate="life.capability_lineage",subject_ref=observation.artifact_id,object_text=observation.lineage_id),
+        ]
+        if observation.learning_id is not None:
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="LIFE_LEARNING_IDENTITY",predicate="life.learning_identity",subject_ref=observation.learning_id,object_text=observation.artifact_id))
+        for subject_ref in observation.learned_subject_refs:
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="LIFE_LEARNED_SUBJECT",predicate="life.learned_subject",subject_ref=observation.artifact_id,object_text=subject_ref))
+        return tuple(rows)
+
 class FilesystemEvidenceCompiler(DeterministicSourceCompiler):
     def __call__(self,envelope:WorldIngressEnvelope):
         if envelope.source_kind!="FILESYSTEM": raise ValueError("compiler source_kind mismatch")
@@ -115,6 +136,27 @@ class ChainEventCompiler(DeterministicSourceCompiler):
         event=str(payload.get("event") or payload.get("event_kind") or payload.get("kind") or "unknown")
         return (make_direct_known(envelope,self.spec,proposition_type="CHAIN_EVENT_RECORDED",predicate="chain.event",object_text=event),)
 
+_REPOSITORY_OBSERVATION_KEYS=frozenset({
+    "identity","revision","working_tree_state","observation_sha256","observed_at_ms","provider_version"
+})
+
+class CompatibleGitCodeCompiler(GitCodeCompiler):
+    """Preserve the legacy generic GIT_CODE contract while recognizing repository reality.
+
+    A payload with no repository-observation keys remains a generic GIT_CODE fact.
+    Once any repository key is present, the strict RepositoryObservation compiler
+    owns validation so malformed repository-shaped input cannot silently downgrade.
+    """
+    def __call__(self,envelope:WorldIngressEnvelope):
+        if envelope.source_kind!="GIT_CODE": raise ValueError("compiler source_kind mismatch")
+        payload=envelope.payload_inline
+        if isinstance(payload,dict):
+            nested=payload.get("repository_observation")
+            candidate=nested if isinstance(nested,dict) else payload
+            if _REPOSITORY_OBSERVATION_KEYS.isdisjoint(candidate):
+                return (make_direct_known(envelope,self.spec),)
+        return super().__call__(envelope)
+
 def build_p3_compilers()->dict[str,object]:
     compilers={kind:DeterministicSourceCompiler(spec) for kind,spec in SPECS.items()}
     compilers["TOOL_RESULT"]=ToolResultCompiler(SPECS["TOOL_RESULT"])
@@ -122,8 +164,10 @@ def build_p3_compilers()->dict[str,object]:
     compilers["RUNTIME_ENVIRONMENT"]=RuntimeEnvironmentCompiler(SPECS["RUNTIME_ENVIRONMENT"])
     compilers["KNOWLEDGE"]=KnowledgeCompiler(SPECS["KNOWLEDGE"])
     compilers["MEMORY"]=MemoryCompiler(SPECS["MEMORY"])
+    compilers["LIFE_LEARNING"]=LifeLearningCompiler(SPECS["LIFE_LEARNING"])
     compilers["FILESYSTEM"]=FilesystemEvidenceCompiler(SPECS["FILESYSTEM"])
+    compilers["GIT_CODE"]=CompatibleGitCodeCompiler(SPECS["GIT_CODE"])
     compilers["CHAIN_EVENT"]=ChainEventCompiler(SPECS["CHAIN_EVENT"])
     return compilers
 
-__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","FilesystemEvidenceCompiler","ChainEventCompiler"]
+__all__=["SPECS","build_p3_compilers","ToolResultCompiler","FactExecutionCompiler","RuntimeEnvironmentCompiler","KnowledgeCompiler","MemoryCompiler","LifeLearningCompiler","FilesystemEvidenceCompiler","GitCodeCompiler","CompatibleGitCodeCompiler","ChainEventCompiler"]

@@ -51,7 +51,7 @@ from .complete_core import CompleteLifeSystem, LifeCoreError, atomic_json, utc_n
 from .complete_scheduler import EmbeddedLifeScheduler
 from .context_api import LifeContextApiError, LifeContextCompileAuthorizeApi, LifeProjectionInputs
 from .identity_migration import migrate_legacy_identities
-from .activity_scope import build_activity_scope
+from .activity_scope import build_activity_scope, normalize_repository_evidence
 from .legacy_fusion import default_body, default_schedule, normalize_body, normalize_schedule, relationship_projection
 from .panel_projection import (
     action_value_projection,
@@ -439,6 +439,7 @@ class EmbeddedLifeRuntime:
         self._learning_researcher: Any = None
         self._learning_synthesizer: Any = None
         self._learning_share_writer: Any = None
+        self._world_identity_provider: Any = None
         try:
             self._lease = LifeWriterLease.acquire(data_root, mode=mode)
             self.system = CompleteLifeSystem(data_root, device_id=device_id)
@@ -2629,6 +2630,111 @@ class EmbeddedLifeRuntime:
             raise ValueError("artifact publisher must be callable")
         with self._lock:
             self._artifact_publisher = publisher
+
+    def set_world_identity_provider(self, provider: Any) -> None:
+        """Bind the Gateway-owned scope projection used by WU post-commit events."""
+        if provider is not None and not callable(provider):
+            raise ValueError("world identity provider must be callable")
+        with self._lock:
+            self._world_identity_provider = provider
+
+    def _notify_life_learning_post_commit(
+        self,
+        *,
+        life_id: str,
+        event: Mapping[str, Any],
+        artifact: Mapping[str, Any],
+        status: str,
+        learning: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Project one already-committed Life transition into the native WU ingress."""
+        try:
+            from contracts.world_understanding.life_learning import LifeLearningObservation
+            from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
+
+            artifact_id = str(artifact.get("artifact_id") or "")
+            artifact_kind = str(artifact.get("kind") or artifact.get("target") or "")
+            lineage_id = str(artifact.get("lineage_id") or artifact_id)
+            learning_id = str(
+                (learning or {}).get("learning_id")
+                or artifact.get("learning_id")
+                or ""
+            )
+            sequence = int(event.get("sequence") or 0)
+            if not all(_OPAQUE.fullmatch(value) for value in (life_id, artifact_id, lineage_id)):
+                return
+            if artifact_kind not in {"knowledge", "skill", "tool"} or sequence < 1:
+                return
+            source = (
+                (learning or {}).get("learning_evidence")
+                if isinstance((learning or {}).get("learning_evidence"), Mapping)
+                else artifact.get("learning_evidence")
+            )
+            source = source if isinstance(source, Mapping) else {}
+            source_detail = source.get("source") if isinstance(source.get("source"), Mapping) else {}
+            learned_refs: set[str] = {
+                str(value)
+                for value in source_detail.get("memory_refs") or ()
+                if _OPAQUE.fullmatch(str(value))
+            }
+            for repository in source_detail.get("repository_evidence") or ():
+                if not isinstance(repository, Mapping):
+                    continue
+                frame_id = str(repository.get("frame_id") or "")
+                if _OPAQUE.fullmatch(frame_id):
+                    learned_refs.add(frame_id)
+                for entity in repository.get("entity_refs") or ():
+                    if isinstance(entity, Mapping):
+                        record_id = str(entity.get("record_id") or "")
+                        if _OPAQUE.fullmatch(record_id):
+                            learned_refs.add(record_id)
+            evidence_refs = {
+                str(value)
+                for value in (
+                    event.get("event_id"),
+                    event.get("event_sha256"),
+                    artifact.get("artifact_sha256"),
+                    source.get("evidence_sha256"),
+                )
+                if _OPAQUE.fullmatch(str(value or ""))
+            }
+            summary = self._redact_sensitive_text(
+                str((learning or {}).get("summary") or artifact.get("summary") or artifact.get("title") or "")
+            )[:1000]
+            observation = LifeLearningObservation(
+                life_id=life_id,
+                learning_id=learning_id or None,
+                artifact_id=artifact_id,
+                artifact_kind=artifact_kind,
+                lineage_id=lineage_id,
+                status=status,
+                learned_subject_refs=tuple(sorted(learned_refs))[:64],
+                safe_summary=summary,
+                evidence_refs=tuple(sorted(evidence_refs))[:256],
+                confidence_milli=1000,
+                epistemic_status="verified",
+                prior_revision=sequence - 1,
+                new_revision=sequence,
+                occurred_at_ms=time.time_ns() // 1_000_000,
+                observation_sha256="0" * 64,
+            ).with_computed_hash()
+            identity: dict[str, str] = {"life_id": life_id}
+            provider = self._world_identity_provider
+            if callable(provider):
+                supplied = provider(life_id)
+                if isinstance(supplied, Mapping):
+                    identity.update({key: str(value or "") for key, value in supplied.items()})
+            notify_native_post_commit(NativePostCommitEvent(
+                source_kind="LIFE_LEARNING",
+                source_native_id="lifelearn." + observation.observation_sha256[:48],
+                producer_ref="life_service.learning.post_commit",
+                payload=observation.model_dump(mode="json"),
+                occurred_at_ms=observation.occurred_at_ms,
+                identity=identity,
+            ))
+        except Exception:
+            # Projection failure cannot rewrite the authoritative Life outcome.
+            return
 
     def set_capability_workspace_mapper(self, mapper: Any) -> None:
         """Bind the gateway-owned workspace-zone mapper for life skills/tools."""
@@ -5779,6 +5885,12 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=artifact,
+            status="activated",
+        )
         return {"ok": True, "capability": deepcopy(artifact), "pointer": deepcopy(next_pointer), "event": event}
 
     def _capability_rollback(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -5822,6 +5934,12 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=previous,
+            status="rolled_back",
+        )
         return {"ok": True, "rollback": rollback, "pointer": deepcopy(next_pointer), "event": event}
 
     def _capability_discard(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -5866,6 +5984,12 @@ class EmbeddedLifeRuntime:
             scope["capability_pointers"] = pointers_before
             scope["capabilities"] = capabilities_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=artifact,
+            status="disabled",
+        )
         try:
             bundle_deleted = delete_artifact_bundle(self.paths.artifact_root, artifact)
         except (ArtifactExecutorError, OSError):
@@ -6075,6 +6199,13 @@ class EmbeddedLifeRuntime:
             scope["capabilities"] = capabilities_before
             scope["capability_pointers"] = pointers_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=published_patch,
+            status="patched",
+            learning=learning,
+        )
         return {
             "ok": True,
             "patch_artifact": deepcopy(published_patch),
@@ -6142,6 +6273,13 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        if degraded:
+            self._notify_life_learning_post_commit(
+                life_id=life_id,
+                event=event,
+                artifact=artifact,
+                status="degraded",
+            )
         return {
             "ok": False,
             "error_code": error_code[:240],
@@ -6282,6 +6420,12 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=patched if applied else artifact,
+            status="degraded" if reason == "degraded" else "patch_settled",
+        )
         return {
             "ok": True,
             "applied": applied,
@@ -6326,6 +6470,12 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=artifact,
+            status="activated",
+        )
         return {"ok": True, "capability": deepcopy(artifact), "pointer": deepcopy(updated), "event": event}
 
     def _capability_outcome_report(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -6376,6 +6526,13 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["capability_pointers"] = pointers_before
             raise
+        if event is not None and str(updated.get("status") or "") == "degraded":
+            self._notify_life_learning_post_commit(
+                life_id=life_id,
+                event=event,
+                artifact=artifact,
+                status="degraded",
+            )
         return {"ok": True, "action": action, "reason": reason, "pointer": deepcopy(updated), "event": event}
 
     def _schedule_capability_health_decision(self, *, life_id: str) -> None:
@@ -6725,6 +6882,13 @@ class EmbeddedLifeRuntime:
             scope["capability_pointers"] = capability_pointers_before
             scope["knowledge"] = knowledge_before
             raise
+        self._notify_life_learning_post_commit(
+            life_id=life_id,
+            event=event,
+            artifact=artifact,
+            status="published" if artifact["kind"] == "knowledge" else "pending_activation",
+            learning=published,
+        )
         return {"ok": True, "learning": deepcopy(published), "artifact": artifact, "report": report, "event": event}
 
     def _learning_confirm(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -7508,6 +7672,7 @@ class EmbeddedLifeRuntime:
                     user_goal_sha256 = str(body.get("user_goal_sha256") or "").strip()
                     final_result_sha256 = str(body.get("final_result_sha256") or "").strip()
                     fact_ids_raw = body.get("fact_ids")
+                    repository_evidence_raw = body.get("repository_evidence")
                     sha256_re = re.compile(r"^[0-9a-f]{64}$")
                     if schema != "tiangong.life.execution-terminal.v1":
                         raise EmbeddedLifeError("life.execution.schema_invalid", status=400)
@@ -7541,6 +7706,13 @@ class EmbeddedLifeRuntime:
                             raise EmbeddedLifeError("life.execution.fact_id_invalid", status=400)
                         if fact_id not in fact_ids:
                             fact_ids.append(fact_id)
+                    repository_evidence = (
+                        None
+                        if repository_evidence_raw is None
+                        else normalize_repository_evidence(repository_evidence_raw)
+                    )
+                    if repository_evidence_raw is not None and repository_evidence is None:
+                        raise EmbeddedLifeError("life.execution.repository_evidence_invalid", status=400)
                     stable_payload = {
                         "schema": schema,
                         "request_id": request_id,
@@ -7554,6 +7726,8 @@ class EmbeddedLifeRuntime:
                         "fact_ids": fact_ids,
                         "completed_at_ms": completed_at_ms,
                     }
+                    if repository_evidence is not None:
+                        stable_payload["repository_evidence"] = repository_evidence
                     key = request_id
                     commit_sha256 = canonical_sha256(
                         {

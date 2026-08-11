@@ -12,13 +12,23 @@ from typing import Callable, Protocol
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.known import DirectKnownRecord
+from contracts.world_understanding.query import WorldQuery
+from contracts.world_understanding.repository_query import (
+    RepositoryGraphQuery,
+    RepositoryGraphQueryResult,
+)
+from contracts.world_understanding.scope import WorldScope
 from contracts.world_understanding.world_cut import SourceWatermark, WorldCut, derive_world_cut_id
 
+from .context_output.enrichment import ContextProjectionCandidate
+from .context_output.repository import build_repository_context_candidates
 from .facade import WorldUnderstandingFacade
 from .known import KnownClosureEngine, RuleRegistry, build_p4_rules
 from .known.closure import ClosureResult
 from .semantic import SemanticFactors, SemanticPipeline, build_semantic_input
 from .software_world import SoftwareWorldFrame, SoftwareWorldUpdater, SparseWorldGraph
+from .software_world.git_observation import repository_observation_to_git_delta
+from .software_world.query import execute_repository_graph_query
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
 
@@ -36,6 +46,7 @@ class SourceMaterializationDisposition:
 
 @dataclass(slots=True)
 class _StreamState:
+    frame: SoftwareWorldFrame
     graph: SparseWorldGraph
     closure: ClosureResult | None
 
@@ -51,6 +62,9 @@ def _fork_graph(
         graph.upsert_entity(entity)
     for relation in previous.relations if isinstance(previous, MaterializedWorldSnapshot) else previous.relations():
         graph.upsert_relation(relation)
+    if isinstance(previous, SparseWorldGraph):
+        for delta_id in previous.applied_git_delta_ids():
+            graph.mark_git_delta(delta_id)
     return graph
 
 
@@ -59,6 +73,8 @@ class ProductionWorldUnderstandingRuntime:
 
     Publication is the commit point. Candidate closure/graph state is built on
     forks and becomes live only after ``WorldStateStore.publish`` succeeds.
+    Repository graph queries and context enrichment are read-only projections
+    over that committed live stream, never a second WorldState or Runtime.
     """
 
     def __init__(
@@ -130,6 +146,127 @@ class ProductionWorldUnderstandingRuntime:
             frame_id=frame.frame_id,
         )
 
+    def live_repository_frame(
+        self,
+        *,
+        scope: WorldScope,
+        repository: str,
+        worktree: str,
+        branch: str,
+    ) -> SoftwareWorldFrame | None:
+        """Return the exact committed live frame for one repository branch.
+
+        This is a read-only view over the existing WU stream map.  It deliberately
+        does not create a repository revision cache or resolve across branch frames.
+        """
+        with self._lock:
+            for live in self._streams.values():
+                frame = live.frame
+                if (
+                    frame.scope == scope
+                    and frame.repository == repository
+                    and frame.worktree == worktree
+                    and frame.branch == branch
+                ):
+                    return frame
+        return None
+
+    def query_repository_graph(
+        self, query: RepositoryGraphQuery
+    ) -> RepositoryGraphQueryResult:
+        """Run one bounded read-only query against the committed live graph."""
+        with self._lock:
+            live = self._streams.get(query.frame_id)
+            if live is None:
+                raise ValueError("REPOSITORY_QUERY_FRAME_NOT_LIVE")
+            return execute_repository_graph_query(live.graph, query)
+
+    def repository_evidence_snapshot(
+        self,
+        *,
+        scope: WorldScope,
+        max_entities: int = 32,
+    ) -> dict[str, object] | None:
+        """Return a bounded reference-only view of the newest exact-scope repo frame.
+
+        This reads the already committed Software World graph.  It performs no
+        filesystem/Git/parser work and exposes no source text or host paths.
+        """
+        if isinstance(max_entities, bool) or not isinstance(max_entities, int) or not 1 <= max_entities <= 128:
+            raise ValueError("REPOSITORY_EVIDENCE_ENTITY_BUDGET_INVALID")
+        with self._lock:
+            candidates = [
+                live
+                for live in self._streams.values()
+                if live.frame.scope == scope
+                and any(entity.entity_type == "File" for entity in live.graph.entities())
+            ]
+            if not candidates:
+                return None
+            live = max(
+                candidates,
+                key=lambda item: (
+                    item.frame.time.recorded_at_ms,
+                    item.frame.frame_revision_hash,
+                    item.frame.frame_id,
+                ),
+            )
+            entities = sorted(
+                (
+                    entity
+                    for entity in live.graph.entities()
+                    if entity.lifecycle == "ACTIVE"
+                ),
+                key=lambda entity: (-entity.revision, entity.entity_id),
+            )[:max_entities]
+            return {
+                "schema": "tiangong.life.repository-evidence.v1",
+                "frame_id": live.frame.frame_id,
+                "frame_revision_hash": live.frame.frame_revision_hash,
+                "repository_id": live.frame.repository,
+                "worktree_id": live.frame.worktree,
+                "branch": live.frame.branch[:240],
+                "commit": live.frame.commit,
+                "observed_at_ms": live.frame.time.recorded_at_ms,
+                "entity_refs": [
+                    {
+                        "record_id": entity.entity_id,
+                        "revision": entity.revision,
+                        "sha256": entity.entity_sha256,
+                    }
+                    for entity in entities
+                ],
+            }
+
+    def repository_context_candidates(
+        self,
+        query: WorldQuery,
+        snapshot: MaterializedWorldSnapshot,
+    ) -> tuple[ContextProjectionCandidate, ...]:
+        """Enrich only when the requested snapshot is the exact live frame revision.
+
+        A historical WorldState, a process restart before the frame becomes live,
+        or any frame revision mismatch returns no enrichment. The ordinary P10
+        packet projection remains authoritative and available in every case.
+        """
+        with self._lock:
+            frame_ref = snapshot.state.frame_ref
+            if query.scope != snapshot.state.scope:
+                return ()
+            if query.frame_ref is not None and query.frame_ref != frame_ref:
+                return ()
+            live = self._streams.get(frame_ref.record_id)
+            if live is None:
+                return ()
+            if live.graph.scope != snapshot.state.scope:
+                return ()
+            if (
+                live.graph.frame_id != frame_ref.record_id
+                or live.graph.frame_revision_hash != frame_ref.sha256
+            ):
+                return ()
+            return build_repository_context_candidates(live.graph, query)
+
     def consume_source(
         self,
         envelope: WorldIngressEnvelope,
@@ -158,14 +295,21 @@ class ProductionWorldUnderstandingRuntime:
             prior_closure = None if live is None else live.closure
             closure = self._closure.close(rows, prior=prior_closure)
             graph = _fork_graph(frame, previous if live is None else live.graph)
+            git_delta = repository_observation_to_git_delta(
+                envelope=envelope,
+                frame=frame,
+                rows=rows,
+            ) if envelope.source_kind == "GIT_CODE" else None
+            added_hashes = set(closure.added_record_hashes)
             update = self._updater.update(
                 frame=frame,
                 graph=graph,
                 known_delta=tuple(
                     item
                     for item in closure.known.records()
-                    if item.record_hash in set(closure.added_record_hashes)
+                    if item.record_hash in added_hashes
                 ),
+                git_delta=git_delta,
             )
             semantic_input = build_semantic_input(
                 scope=frame.scope,
@@ -190,10 +334,7 @@ class ProductionWorldUnderstandingRuntime:
                     materialized_at_ms=envelope.source_time.recorded_at_ms,
                 )
             )
-            self._streams[frame.frame_id] = _StreamState(update.graph, closure)
-            # P13.2 is strictly post-publication and fail-open.  It may enqueue
-            # one inquiry into the existing Gateway, but cannot roll back or
-            # alter the passive perception transaction that just committed.
+            self._streams[frame.frame_id] = _StreamState(frame, update.graph, closure)
             if self._committed_state_observer is not None:
                 try:
                     self._committed_state_observer(envelope, snapshot)
