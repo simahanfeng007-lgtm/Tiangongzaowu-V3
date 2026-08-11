@@ -126,8 +126,8 @@ def _structure_rows(
                 subject_ref=file.module_anchor,
                 object_text=file.module_name,
                 authority_domain="FILESYSTEM_ARTIFACT",
-                authority_ceiling_milli=1000,
-                empirical_evidence_weight_milli=1000,
+                authority_ceiling_milli=700,
+                empirical_evidence_weight_milli=650,
             )
         )
         rows.append(
@@ -136,11 +136,13 @@ def _structure_rows(
                 compiler.spec,
                 proposition_type="DEFINES",
                 predicate="parser.defines",
-                subject_ref=file.path,
+                subject_ref=_file_subject(
+                    observation.identity.repository_id, file.path
+                ),
                 object_text=file.module_name,
                 authority_domain="FILESYSTEM_ARTIFACT",
-                authority_ceiling_milli=1000,
-                empirical_evidence_weight_milli=1000,
+                authority_ceiling_milli=700,
+                empirical_evidence_weight_milli=650,
             )
         )
 
@@ -159,8 +161,8 @@ def _structure_rows(
                     subject_ref=node.stable_anchor,
                     object_text=node.qualified_name,
                     authority_domain="FILESYSTEM_ARTIFACT",
-                    authority_ceiling_milli=1000,
-                    empirical_evidence_weight_milli=1000,
+                    authority_ceiling_milli=900,
+                    empirical_evidence_weight_milli=900,
                 )
             )
             parent_name = (
@@ -178,8 +180,8 @@ def _structure_rows(
                         subject_ref=parent_name,
                         object_text=node.qualified_name,
                         authority_domain="FILESYSTEM_ARTIFACT",
-                        authority_ceiling_milli=1000,
-                        empirical_evidence_weight_milli=1000,
+                        authority_ceiling_milli=800,
+                        empirical_evidence_weight_milli=750,
                     )
                 )
             rows.append(
@@ -191,8 +193,8 @@ def _structure_rows(
                     subject_ref=node.stable_anchor,
                     object_text=_compact_json(node.span.model_dump(mode="json")),
                     authority_domain="FILESYSTEM_ARTIFACT",
-                    authority_ceiling_milli=1000,
-                    empirical_evidence_weight_milli=1000,
+                    authority_ceiling_milli=900,
+                    empirical_evidence_weight_milli=900,
                 )
             )
             rows.append(
@@ -221,8 +223,8 @@ def _structure_rows(
                     subject_ref=file.module_name,
                     object_text=item.resolved_module_name,
                     authority_domain="FILESYSTEM_ARTIFACT",
-                    authority_ceiling_milli=1000,
-                    empirical_evidence_weight_milli=1000,
+                    authority_ceiling_milli=500,
+                    empirical_evidence_weight_milli=250,
                 )
             )
 
@@ -241,8 +243,8 @@ def _structure_rows(
                     }
                 ),
                 authority_domain="FILESYSTEM_ARTIFACT",
-                authority_ceiling_milli=1000,
-                empirical_evidence_weight_milli=1000,
+                authority_ceiling_milli=800,
+                empirical_evidence_weight_milli=750,
             )
         )
     return rows
@@ -262,14 +264,14 @@ class GitCodeCompiler(DeterministicSourceCompiler):
                 proposition_type="REPOSITORY_IDENTITY",
                 predicate="git.repository_identity",
                 subject_ref=repo.repository_id,
-                object_text=repo.repository_root_ref,
+                object_text="local-repository:" + repo.repository_id,
             ),
             make_direct_known(
                 envelope, self.spec,
                 proposition_type="WORKTREE_IDENTITY",
                 predicate="git.worktree_identity",
                 subject_ref=repo.worktree_id,
-                object_text=repo.worktree_root_ref,
+                object_text="local-worktree:" + repo.worktree_id,
             ),
             make_direct_known(
                 envelope, self.spec,
@@ -357,7 +359,18 @@ class GitCodeCompiler(DeterministicSourceCompiler):
                 ))
 
         rows.extend(_structure_rows(self, envelope, observation))
-        return tuple(rows)
+        # Repeated equivalent imports/definitions are valid source syntax but
+        # Known IDs are semantic identities.  Collapse exact duplicates before
+        # the uniform compiler boundary, while rejecting any hash collision.
+        unique = {}
+        for row in rows:
+            prior = unique.get(row.known_id)
+            if prior is not None:
+                if prior.record_hash != row.record_hash:
+                    raise ValueError("repository compiler known-id collision")
+                continue
+            unique[row.known_id] = row
+        return tuple(unique.values())
 
 
 __all__ = [

@@ -23,6 +23,8 @@ from .panel_projection import (
 ACTIVITY_SCOPE_SCHEMA = "tiangong.life.activity-scope.v1"
 _TERM = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}")
 _SECRET_KEYS = {"api_key", "apikey", "token", "password", "secret", "credential"}
+_OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _terms(value: Any, *, limit: int = 24) -> list[str]:
@@ -56,6 +58,83 @@ def _canonical_safe(value: Any) -> Any:
     if isinstance(value, list):
         return [_canonical_safe(item) for item in value]
     return deepcopy(value)
+
+
+def normalize_repository_evidence(value: Any) -> dict[str, Any] | None:
+    """Validate the reference-only WU projection accepted by Life.
+
+    Source text, host paths, remotes, credentials, and arbitrary extension
+    fields are intentionally impossible to preserve through this boundary.
+    """
+    if not isinstance(value, Mapping) or value.get("schema") != "tiangong.life.repository-evidence.v1":
+        return None
+    frame_id = str(value.get("frame_id") or "")
+    repository_id = str(value.get("repository_id") or "")
+    worktree_id = str(value.get("worktree_id") or "")
+    frame_revision_hash = str(value.get("frame_revision_hash") or "")
+    commit = str(value.get("commit") or "")
+    branch = str(value.get("branch") or "")[:240]
+    observed_at_ms = value.get("observed_at_ms")
+    if (
+        not all(_OPAQUE.fullmatch(item) for item in (frame_id, repository_id, worktree_id))
+        or not _SHA256.fullmatch(frame_revision_hash)
+        or not _SHA256.fullmatch(commit)
+        or "\x00" in branch
+        or isinstance(observed_at_ms, bool)
+        or not isinstance(observed_at_ms, int)
+        or observed_at_ms < 0
+    ):
+        return None
+    raw_entities = value.get("entity_refs")
+    if not isinstance(raw_entities, list) or len(raw_entities) > 32:
+        return None
+    entities: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in raw_entities:
+        if not isinstance(raw, Mapping):
+            return None
+        record_id = str(raw.get("record_id") or "")
+        digest = str(raw.get("sha256") or "")
+        revision = raw.get("revision")
+        if (
+            not _OPAQUE.fullmatch(record_id)
+            or not _SHA256.fullmatch(digest)
+            or isinstance(revision, bool)
+            or not isinstance(revision, int)
+            or revision < 1
+        ):
+            return None
+        if record_id not in seen:
+            seen.add(record_id)
+            entities.append({"record_id": record_id, "revision": revision, "sha256": digest})
+    return {
+        "schema": "tiangong.life.repository-evidence.v1",
+        "frame_id": frame_id,
+        "frame_revision_hash": frame_revision_hash,
+        "repository_id": repository_id,
+        "worktree_id": worktree_id,
+        "branch": branch,
+        "commit": commit,
+        "observed_at_ms": observed_at_ms,
+        "entity_refs": sorted(entities, key=lambda item: item["record_id"]),
+    }
+
+
+def _repository_evidence(scope: Mapping[str, Any]) -> list[dict[str, Any]]:
+    executions = scope.get("executions") if isinstance(scope.get("executions"), Mapping) else {}
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for execution in reversed(list(executions.values())[-32:]):
+        if not isinstance(execution, Mapping):
+            continue
+        evidence = normalize_repository_evidence(execution.get("repository_evidence"))
+        if evidence is None or evidence["frame_revision_hash"] in seen:
+            continue
+        seen.add(evidence["frame_revision_hash"])
+        rows.append(evidence)
+        if len(rows) >= 8:
+            break
+    return rows
 
 
 def _memory_refs(scope: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -137,6 +216,7 @@ def build_activity_scope(*, life_id: str, soul: Mapping[str, Any] | None, scope:
         if str(value).strip()
     ]
     boundaries = _canonical_safe(boundary_projection(settings, declared_boundaries))
+    repository_evidence = _repository_evidence(scope)
     terms = memory_terms + _terms(str(soul_view.get("prompt") or ""))
     for task in active_tasks:
         terms.extend(_terms(task["objective"]))
@@ -156,11 +236,20 @@ def build_activity_scope(*, life_id: str, soul: Mapping[str, Any] | None, scope:
         "preferences": preferences,
         "boundaries": boundaries,
         "rejected_learning_fingerprints": sorted(set(item for item in rejected if item)),
+        "repository_evidence": repository_evidence,
         "topics": list(dict.fromkeys(terms))[:64],
         "source_refs": {
             "memory_ids": [row["memory_id"] for row in memory_rows],
             "task_ids": [row["task_id"] for row in active_tasks],
             "capability_ids": [row["artifact_id"] for row in capabilities],
+            "repository_evidence_refs": sorted({
+                evidence["frame_id"]
+                for evidence in repository_evidence
+            } | {
+                entity["record_id"]
+                for evidence in repository_evidence
+                for entity in evidence["entity_refs"]
+            }),
         },
     }
     # Sanity check prevents future additions from accidentally putting runtime
@@ -172,4 +261,4 @@ def build_activity_scope(*, life_id: str, soul: Mapping[str, Any] | None, scope:
     return result
 
 
-__all__ = ["ACTIVITY_SCOPE_SCHEMA", "build_activity_scope"]
+__all__ = ["ACTIVITY_SCOPE_SCHEMA", "build_activity_scope", "normalize_repository_evidence"]

@@ -96,7 +96,7 @@ def test_m5_branch_switch_never_replays_cross_branch_commit_diff(tmp_path: Path)
     alternate = provider.observe_delta(identity, main_observation.revision)
     assert alternate.revision.branch == "alternate"
     assert alternate.revision.head_commit != main_observation.revision.head_commit
-    assert alternate.working_tree_state.dirty is False
+    assert alternate.working_tree_state.clean is True
     assert alternate.changes == ()
 
 

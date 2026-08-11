@@ -21,6 +21,7 @@ from contracts import (
     ComponentReadinessEvidence,
     ReadinessDecision,
     ReadinessExpectation,
+    canonical_sha256,
     evaluate_readiness_contract,
 )
 
@@ -938,6 +939,16 @@ class GatewayRuntime:
 
                 runtime.life_service.set_artifact_action_catalog_provider(artifact_action_catalog)
                 runtime.life_service.set_artifact_publisher(publish_learning_artifact)
+                runtime.life_service.set_world_identity_provider(
+                    lambda life_id: {
+                        "life_id": str(life_id),
+                        "principal_scope_hash": canonical_sha256({
+                            "domain": "tiangong.life.self-reality-principal.v1",
+                            "life_id": str(life_id),
+                        }),
+                        "workspace_id": "workspace-" + canonical_sha256(str(config.workspace_root)),
+                    }
+                )
                 runtime.life_service.set_capability_workspace_mapper(
                     life_capability_workspace_mapper(config.workspace_root)
                 )
@@ -1118,6 +1129,11 @@ class GatewayRuntime:
                         None
                         if runtime.life_service is None
                         else runtime.life_service.commit_execution
+                    ),
+                    repository_evidence_provider=(
+                        None
+                        if runtime.backend_service is None
+                        else runtime.backend_service.repository_evidence_snapshot
                     ),
                     knowledge_retriever=(
                         None

@@ -269,10 +269,54 @@ def test_m2_large_repository_baseline_is_bounded(tmp_path: Path) -> None:
     delta = structure_index.update(_observation(tmp_path))
     snapshot = structure_index.current("repo.test", "worktree.test")
     assert snapshot is not None
-    assert snapshot.candidate_path_count == 270
+    assert snapshot.candidate_path_count == STRUCTURE._MAX_BASELINE_FILES
     assert snapshot.truncated is True
     assert len(snapshot.files) <= STRUCTURE._MAX_BASELINE_FILES
     assert len(delta.upsert_files) <= STRUCTURE._MAX_BASELINE_FILES
+
+
+def test_m2_nested_source_path_compiles_to_opaque_known_subject(tmp_path: Path) -> None:
+    nested = tmp_path / "package" / "feature.py"
+    nested.parent.mkdir()
+    nested.write_text("import os\nimport os\n\ndef run():\n    return True\n", encoding="utf-8")
+    observation = _observation(tmp_path)
+    delta = STRUCTURE.RepositoryStructureIndex().update(observation)
+
+    from contracts.world_understanding.scope import ScopeBinding, WorldScope, derive_world_id, derive_world_scope_hash
+    from contracts.world_understanding.time import WorldTime
+    from world_understanding.source_adapters import build_post_commit_source_envelope
+    from world_understanding.source_compilers.p3 import build_p3_compilers
+
+    bindings = (ScopeBinding(key="repository", value="repo.test"),)
+    world_id = derive_world_id(life_id="life.test", namespace_anchor="repo.test")
+    scope = WorldScope(
+        life_id="life.test",
+        world_id=world_id,
+        domain_id="software",
+        scope_bindings=bindings,
+        world_scope_hash=derive_world_scope_hash(
+            life_id="life.test", world_id=world_id, domain_id="software", scope_bindings=bindings
+        ),
+        principal_scope_hash="a" * 64,
+        privacy_scope="system",
+    )
+    envelope = build_post_commit_source_envelope(
+        source_kind="GIT_CODE",
+        source_native_id="repoobs.nested",
+        producer_ref="test.repository",
+        payload={
+            "repository_observation": observation.model_dump(mode="json"),
+            "structure_delta": delta.model_dump(mode="json"),
+        },
+        source_time=WorldTime(valid_from_ms=1, observed_at_ms=1, recorded_at_ms=1),
+        scope=scope,
+        correlation_id="corr.nested",
+    )
+    rows = build_p3_compilers()["GIT_CODE"](envelope)
+    defines = [row for row in rows if row.predicate == "parser.defines"]
+    assert defines
+    assert all("/" not in row.subject_ref and "\\" not in row.subject_ref for row in defines)
+    assert len({row.known_id for row in rows}) == len(rows)
 
 
 def test_m2_secret_and_binary_source_are_not_structurally_parsed(

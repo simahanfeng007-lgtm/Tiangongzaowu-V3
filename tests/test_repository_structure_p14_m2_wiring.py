@@ -12,8 +12,11 @@ def text(rel: str) -> str:
 def test_m2_production_publisher_enriches_existing_git_ingress() -> None:
     source = text("app/backend/tiangong-backend/v3/repository_perception.py")
     assert "repository_structure_index().update(observation)" in source
-    assert '"repository_observation": observation.model_dump(mode="json")' in source
-    assert '"structure_delta": structure_delta.model_dump(mode="json")' in source
+    assert "_bounded_structure_payload(observation, structure_delta)" in source
+    assert '"repository_observation": observation_payload' in source
+    assert '"structure_delta": candidate.model_dump(mode="json")' in source
+    assert "_MAX_STRUCTURE_KNOWN_ROWS" in source
+    assert "_MAX_INLINE_WORLD_PAYLOAD_BYTES" in source
     assert "notify_native_post_commit(NativePostCommitEvent(" in source
     assert 'source_kind="GIT_CODE"' in source
     assert "repository.local-git-structure.v0.2" in source

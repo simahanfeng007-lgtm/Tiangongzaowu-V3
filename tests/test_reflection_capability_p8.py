@@ -83,6 +83,10 @@ class ReflectionCapabilityP8Tests(unittest.TestCase):
         self.assertEqual(result.reflection.failure_dimensions, ("tool_error",))
         self.assertEqual(result.reflection.next_minimal_experiment, "执行只读探针。")
         self.assertTrue(result.reflection.counterfactual_actions)
+        self.assertEqual(
+            result.reflection.capability_evidence_refs,
+            outcome(status="failure").terminal_fact_hashes,
+        )
 
     def test_success_without_supported_cause_is_treated_as_correlation(self) -> None:
         evidence = outcome(supported=False)

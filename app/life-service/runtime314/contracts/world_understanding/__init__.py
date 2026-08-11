@@ -26,6 +26,7 @@ from .repository_query import (
     derive_repository_graph_query_id,
     derive_repository_graph_result_id,
 )
+from .life_learning import LifeArtifactKind, LifeLearningEpistemicStatus, LifeLearningObservation, LifeLearningStatus
 from .context_packet import ExpansionHandle, WorldContextItem, WorldContextPacket, derive_expansion_handle_id, derive_world_packet_id
 from .curiosity import KnowledgeGap, WorldCuriosity, derive_knowledge_gap_id, derive_curiosity_id
 from .inquiry import InquiryOutcome, InquiryStatus, SelfWillDecision, WorldInquiry, derive_inquiry_id, derive_inquiry_outcome_id
@@ -42,6 +43,7 @@ __all__ = [
 "WorldAttribute","WorldEntity","EntityResolutionCandidate","EntityResolutionState","derive_entity_id","WorldRelation","RelationMaterializationClass","RelationExtractionMode","derive_relation_id",
 "WorldHypothesis","HypothesisOrigin","WorldState","WorldPrediction","PredictionOutcome","PredictionStatus","PredictionOutcomeKind","derive_prediction_id","WorldQuery","WorldContextPacket","WorldContextItem","ExpansionHandle",
 "RepositoryGraphQuery","RepositoryGraphQueryResult","RepositoryQueryDirection","RepositoryQueryMode","RepositoryQueryTruncationReason","RepositoryTraversalDirection","RepositoryTraversalStep",
+"LifeArtifactKind","LifeLearningEpistemicStatus","LifeLearningObservation","LifeLearningStatus",
 "WorldCuriosity","KnowledgeGap","WorldInquiry","InquiryOutcome","InquiryStatus","SelfWillDecision","derive_inquiry_id","DerivationRef","DerivationEdge","TransformCostObservation","TransformQualityProfile",
 "WorldContextOutputPort","WorldInquiryOutputPort","CognitionStatementRef","derive_world_event_id","derive_entity_candidate_id","derive_prediction_outcome_id","derive_world_query_id","derive_repository_graph_query_id","derive_repository_graph_result_id","derive_expansion_handle_id","derive_world_packet_id",
 "derive_knowledge_gap_id","derive_curiosity_id","derive_inquiry_outcome_id","derive_derivation_id","derive_derivation_edge_id"]

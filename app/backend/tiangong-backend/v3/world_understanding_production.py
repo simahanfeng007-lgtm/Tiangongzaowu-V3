@@ -213,6 +213,19 @@ def production_repository_graph_query(
     return production_world_understanding_runtime().query_repository_graph(query)
 
 
+def production_repository_evidence_snapshot(
+    identity: dict[str, str],
+) -> dict[str, object] | None:
+    """Read bounded repository references for an exact Life/principal/workspace scope."""
+    scope = _scope(identity)
+    if scope is None:
+        return None
+    return production_world_understanding_runtime().repository_evidence_snapshot(
+        scope=scope,
+        max_entities=32,
+    )
+
+
 def production_repository_previous_revision(
     observation: RepositoryObservation,
 ) -> RepositoryRevision | None:
@@ -312,6 +325,7 @@ __all__ = [
     "observe_native_post_commit",
     "production_context_output_port",
     "production_repository_graph_query",
+    "production_repository_evidence_snapshot",
     "production_repository_previous_revision",
     "production_world_understanding_runtime",
     "set_world_inquiry_dispatcher",

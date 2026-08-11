@@ -209,7 +209,10 @@ def close_episode_and_reflect(
         next_minimal_experiment=outcome.next_minimal_experiment,
         lessons=lessons,
         memory_candidate_refs=(outcome.outcome_evidence_id,),
-        capability_evidence_refs=(),
+        # Terminal facts include authoritative ToolResult/GIT/WU evidence.
+        # Reflection may reference them, but remains the sole owner of deciding
+        # whether they support a learning or capability candidate.
+        capability_evidence_refs=outcome.terminal_fact_hashes,
         user_question=reflection_question,
         user_question_value_of_information_milli=reflection_question_voi,
         confidence_milli=confidence,

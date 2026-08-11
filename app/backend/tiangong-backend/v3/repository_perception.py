@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import time
 import unicodedata
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-from contracts.canonical import canonical_sha256
+from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.world_understanding.repository import (
     RepositoryFileObservation,
     RepositoryIdentity,
@@ -24,6 +25,7 @@ from contracts.world_understanding.repository import (
     RepositoryRevision,
     RepositoryWorkingTreeState,
 )
+from contracts.world_understanding.repository_structure import RepositoryStructureDelta
 from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
 from .run_context import current_run_context
@@ -36,6 +38,23 @@ _MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024
 _MAX_STATUS_ENTRIES = 2048
 _CONFLICT_CODES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
 _READ_ONLY_GIT_COMMANDS = frozenset({"rev-parse", "status", "hash-object", "diff"})
+_GIT_POLL_SECONDS = 0.01
+_MAX_INLINE_WORLD_PAYLOAD_BYTES = 262_144
+_MAX_STRUCTURE_KNOWN_ROWS = 64
+_GIT_CONFIG_OVERRIDES = (
+    "core.fsmonitor=false",
+    "core.untrackedCache=false",
+)
+_UNSAFE_GIT_ENVIRONMENT = frozenset({
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_DIFF_OPTS",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+})
 
 
 class RepositoryObservationError(RuntimeError):
@@ -54,37 +73,81 @@ def _repo_path(value: str) -> str:
     return _nfc(value.replace("\\", "/"))
 
 
-def _run_git(cwd: Path, args: tuple[str, ...], *, allow_failure: bool = False) -> bytes:
-    if not args or args[0] not in _READ_ONLY_GIT_COMMANDS:
-        raise RepositoryObservationError("repository provider command is not read-only allowlisted")
-    if args[0] == "hash-object" and any(arg in {"-w", "--write"} for arg in args[1:]):
-        raise RepositoryObservationError("git hash-object write mode is forbidden")
-    env = os.environ.copy()
+def _git_environment() -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _UNSAFE_GIT_ENVIRONMENT
+        and not key.startswith("GIT_CONFIG_")
+    }
     env.update({
+        "GIT_OPTIONAL_LOCKS": "0",
         "GIT_TERMINAL_PROMPT": "0",
         "GCM_INTERACTIVE": "Never",
         "LC_ALL": "C.UTF-8",
         "LANG": "C.UTF-8",
     })
+    return env
+
+
+def _git_argv(args: tuple[str, ...]) -> list[str]:
+    command = ["git"]
+    for override in _GIT_CONFIG_OVERRIDES:
+        command.extend(("-c", override))
+    if args[0] == "diff":
+        args = (args[0], "--no-ext-diff", *args[1:])
+    command.extend(args)
+    return command
+
+
+def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        process.kill()
     try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=str(cwd),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
-            check=False,
-            timeout=_GIT_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        process.wait(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_git(cwd: Path, args: tuple[str, ...], *, allow_failure: bool = False) -> bytes:
+    if not args or args[0] not in _READ_ONLY_GIT_COMMANDS:
+        raise RepositoryObservationError("repository provider command is not read-only allowlisted")
+    if args[0] == "hash-object" and any(arg in {"-w", "--write"} for arg in args[1:]):
+        raise RepositoryObservationError("git hash-object write mode is forbidden")
+    try:
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                _git_argv(args),
+                cwd=str(cwd),
+                env=_git_environment(),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                shell=False,
+            )
+            deadline = time.monotonic() + _GIT_TIMEOUT_SECONDS
+            while process.poll() is None:
+                stdout_size = os.fstat(stdout_file.fileno()).st_size
+                stderr_size = os.fstat(stderr_file.fileno()).st_size
+                if max(stdout_size, stderr_size) > _MAX_GIT_OUTPUT_BYTES:
+                    _stop_process(process)
+                    raise RepositoryObservationError("Git observation exceeded bounded output")
+                if time.monotonic() >= deadline:
+                    _stop_process(process)
+                    raise RepositoryObservationError("bounded Git observation timed out")
+                time.sleep(_GIT_POLL_SECONDS)
+            returncode = int(process.returncode or 0)
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout = stdout_file.read(_MAX_GIT_OUTPUT_BYTES + 1)
+            stderr = stderr_file.read(_MAX_GIT_OUTPUT_BYTES + 1)
+    except OSError as exc:
         raise RepositoryObservationError("bounded Git observation failed") from exc
-    if len(completed.stdout) > _MAX_GIT_OUTPUT_BYTES or len(completed.stderr) > _MAX_GIT_OUTPUT_BYTES:
+    if len(stdout) > _MAX_GIT_OUTPUT_BYTES or len(stderr) > _MAX_GIT_OUTPUT_BYTES:
         raise RepositoryObservationError("Git observation exceeded bounded output")
-    if completed.returncode != 0 and not allow_failure:
+    if returncode != 0 and not allow_failure:
         raise RepositoryObservationError("Git read command failed")
-    return completed.stdout if completed.returncode == 0 else b""
+    return stdout if returncode == 0 else b""
 
 
 def _decode_line(value: bytes) -> str:
@@ -422,6 +485,137 @@ def observe_active_repository(
     return sensor.observe(identity)
 
 
+def _bounded_structure_payload(
+    observation: RepositoryObservation,
+    delta: RepositoryStructureDelta,
+) -> tuple[dict, str] | None:
+    """Fit a deterministic, whole-file structure slice inside ingress budgets."""
+    observation_payload = observation.model_dump(mode="json")
+    if len(canonical_json_bytes(observation_payload)) > _MAX_INLINE_WORLD_PAYLOAD_BYTES:
+        return None
+
+    add_paths = {
+        change.new_path
+        for change in observation.changes
+        if change.change_kind == "ADD" and change.new_path is not None
+    }
+
+    def file_row_cost(file) -> int:
+        cost = int(delta.full_rescan and file.path not in add_paths)
+        if file.parse_status in {
+            "SKIPPED_SECRET",
+            "SKIPPED_BINARY",
+            "SKIPPED_LARGE",
+            "PARSER_UNAVAILABLE",
+        }:
+            return cost
+        cost += 2  # module identity + file defines module
+        if file.parse_status == "PARSED":
+            cost += 4 * len(file.nodes)
+            cost += sum(item.resolved_module_name is not None for item in file.imports)
+        return cost
+
+    retirement_limit = min(len(delta.retirements), _MAX_STRUCTURE_KNOWN_ROWS)
+    retirements = delta.retirements[:retirement_limit]
+    remaining_rows = _MAX_STRUCTURE_KNOWN_ROWS - len(retirements)
+    selected_upserts = []
+    for file in delta.upsert_files:
+        cost = file_row_cost(file)
+        if cost <= remaining_rows:
+            selected_upserts.append(file)
+            remaining_rows -= cost
+
+    def build(
+        upserts,
+        retirement_rows,
+        changed_paths=(),
+        retired_file_keys=(),
+    ) -> RepositoryStructureDelta:
+        return RepositoryStructureDelta.build(
+            repository_id=delta.repository_id,
+            worktree_id=delta.worktree_id,
+            head_commit=delta.head_commit,
+            working_tree_state_sha256=delta.working_tree_state_sha256,
+            builder_version=delta.builder_version,
+            status=delta.status,
+            base_view_sha256=delta.base_view_sha256,
+            new_view_sha256=delta.new_view_sha256,
+            full_rescan=delta.full_rescan,
+            truncated=(
+                delta.truncated
+                or len(upserts) < len(delta.upsert_files)
+                or len(retirement_rows) < len(delta.retirements)
+                or len(changed_paths) < len(delta.changed_paths)
+                or len(retired_file_keys) < len(delta.retired_file_keys)
+            ),
+            candidate_path_count=delta.candidate_path_count,
+            changed_paths=tuple(changed_paths),
+            parsed_file_count=delta.parsed_file_count,
+            reused_file_count=delta.reused_file_count,
+            upsert_files=tuple(upserts),
+            retirements=tuple(retirement_rows),
+            retired_file_keys=tuple(retired_file_keys),
+            built_at_ms=delta.built_at_ms,
+            build_ms=delta.build_ms,
+        )
+
+    def payload_for(candidate: RepositoryStructureDelta) -> dict:
+        return {
+            "repository_observation": observation_payload,
+            "structure_delta": candidate.model_dump(mode="json"),
+        }
+
+    def fitting_prefix(items, candidate_for):
+        low, high = 0, len(items)
+        best = ()
+        while low <= high:
+            middle = (low + high) // 2
+            candidate = candidate_for(items[:middle])
+            if (
+                len(canonical_json_bytes(payload_for(candidate)))
+                <= _MAX_INLINE_WORLD_PAYLOAD_BYTES
+            ):
+                best = items[:middle]
+                low = middle + 1
+            else:
+                high = middle - 1
+        return best
+
+    empty = build((), ())
+    if len(canonical_json_bytes(payload_for(empty))) > _MAX_INLINE_WORLD_PAYLOAD_BYTES:
+        return None
+    fitted_retirements = fitting_prefix(
+        retirements,
+        lambda rows: build((), rows),
+    )
+    fitted_upserts = fitting_prefix(
+        tuple(selected_upserts),
+        lambda rows: build(rows, fitted_retirements),
+    )
+    fitted_changed_paths = fitting_prefix(
+        delta.changed_paths,
+        lambda rows: build(fitted_upserts, fitted_retirements, rows),
+    )
+    retired_file_keys = delta.retired_file_keys[:_MAX_STRUCTURE_KNOWN_ROWS]
+    fitted_retired_file_keys = fitting_prefix(
+        retired_file_keys,
+        lambda rows: build(
+            fitted_upserts,
+            fitted_retirements,
+            fitted_changed_paths,
+            rows,
+        ),
+    )
+    bounded = build(
+        fitted_upserts,
+        fitted_retirements,
+        fitted_changed_paths,
+        fitted_retired_file_keys,
+    )
+    payload = payload_for(bounded)
+    return payload, bounded.delta_sha256
+
+
 def publish_active_repository_observation(
     provider: RepositoryProvider | None = None,
 ) -> object | None:
@@ -461,13 +655,13 @@ def publish_active_repository_observation(
         from .repository_structure import repository_structure_index
 
         structure_delta = repository_structure_index().update(observation)
-        payload = {
-            "repository_observation": observation.model_dump(mode="json"),
-            "structure_delta": structure_delta.model_dump(mode="json"),
-        }
+        bounded = _bounded_structure_payload(observation, structure_delta)
+        if bounded is None:
+            return None
+        payload, published_structure_hash = bounded
         native_hash = canonical_sha256({
             "repository_observation_sha256": observation.observation_sha256,
-            "structure_delta_sha256": structure_delta.delta_sha256,
+            "structure_delta_sha256": published_structure_hash,
         })
         producer_ref = "repository.local-git-structure.v0.2"
     except Exception:

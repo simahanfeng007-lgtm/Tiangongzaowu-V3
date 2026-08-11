@@ -45,12 +45,37 @@ def _source(learning: Mapping[str, Any], activity_scope: Mapping[str, Any]) -> d
         for row in memory_rows if isinstance(row, Mapping) and row.get("content")
     ][:12]
     combined = "\n\n".join(part for part in (direct, material, *(row["content"] for row in memories)) if part)
+    repository_rows = activity_scope.get("repository_evidence") if isinstance(activity_scope.get("repository_evidence"), list) else []
+    repository_evidence = [
+        {
+            "frame_id": _text(row.get("frame_id"), limit=160),
+            "frame_revision_hash": _text(row.get("frame_revision_hash"), limit=64),
+            "commit": _text(row.get("commit"), limit=64),
+            "entity_refs": [
+                {
+                    "record_id": _text(item.get("record_id"), limit=160),
+                    "revision": item.get("revision"),
+                    "sha256": _text(item.get("sha256"), limit=64),
+                }
+                for item in (row.get("entity_refs") or [])
+                if isinstance(item, Mapping)
+            ][:32],
+        }
+        for row in repository_rows
+        if isinstance(row, Mapping)
+    ][:8]
     return {
-        "kind": "user_and_memory",
+        "kind": "user_memory_and_repository" if repository_evidence else "user_and_memory",
         "topic": _text(learning.get("title") or direct, limit=240, fallback="life learning"),
         "content": combined[:32_000],
         "memory_refs": [row["memory_id"] for row in memories if row["memory_id"]],
-        "source_sha256": canonical_sha256({"request": direct, "material": material, "memories": memories}),
+        "repository_evidence": repository_evidence,
+        "source_sha256": canonical_sha256({
+            "request": direct,
+            "material": material,
+            "memories": memories,
+            "repository_evidence": repository_evidence,
+        }),
     }
 
 

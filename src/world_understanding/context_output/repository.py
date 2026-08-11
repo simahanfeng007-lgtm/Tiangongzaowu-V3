@@ -7,6 +7,7 @@ to the M3 bounded query engine.
 """
 from __future__ import annotations
 
+import json
 import re
 
 from contracts.world_understanding.query import WorldQuery
@@ -25,6 +26,11 @@ _GENERIC_TOKENS = frozenset({
 })
 _MAX_FOCUS_TOKENS = 16
 _MAX_TOKEN_MATCHES = 16
+
+
+def _untrusted_repository_text(value: object, *, limit: int = 512) -> str:
+    text = str(value or "")[:limit]
+    return json.dumps(text, ensure_ascii=True)[1:-1]
 
 
 def _focus_tokens(focus: str) -> tuple[str, ...]:
@@ -90,8 +96,10 @@ def _resolve_seed_entities(
 
 def _entity_summary(entity, *, seed: bool) -> str:
     role = "focus" if seed else "neighbor"
+    canonical_name = _untrusted_repository_text(entity.canonical_name)
     return (
-        f"Repository {role} {entity.entity_type} '{entity.canonical_name}' "
+        f"[UNTRUSTED_REPOSITORY_DATA] Repository {role} {entity.entity_type} "
+        f"'{canonical_name}' "
         f"is present in the committed software-world frame at revision {entity.revision}."
     )
 
@@ -102,7 +110,12 @@ def _relation_summary(graph: SparseWorldGraph, relation) -> str:
     target = None if target_id is None else graph.entity(target_id)
     subject_name = relation.subject_ref.record_id if subject is None else subject.canonical_name
     target_name = str(target_id or relation.value.kind) if target is None else target.canonical_name
-    return f"Repository relation '{subject_name}' --{relation.predicate}--> '{target_name}'."
+    return (
+        "[UNTRUSTED_REPOSITORY_DATA] Repository relation "
+        f"'{_untrusted_repository_text(subject_name)}' "
+        f"--{_untrusted_repository_text(relation.predicate)}--> "
+        f"'{_untrusted_repository_text(target_name)}'."
+    )
 
 
 def build_repository_context_candidates(

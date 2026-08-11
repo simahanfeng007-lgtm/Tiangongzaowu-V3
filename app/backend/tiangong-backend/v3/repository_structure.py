@@ -202,7 +202,7 @@ def _candidate_paths(root: Path) -> tuple[tuple[str, ...], int, bool]:
             candidate_count += 1
             if len(rows) >= _MAX_BASELINE_FILES:
                 truncated = True
-                continue
+                return tuple(rows), candidate_count - 1, truncated
             rows.append(rel)
     return tuple(rows), candidate_count, truncated
 
@@ -454,13 +454,17 @@ def _materialize_file(
     language = _language_for(path)
     if language is None:
         raise RepositoryStructureError("unsupported structure language")
-    data = target.read_bytes()
-    content_hash = _sha256_bytes(data)
     key = prior_file_key or _file_key(repository_id, worktree_id, path)
     module_anchor = _module_anchor(key)
     module_name = _module_name(path, language)
 
-    def skipped(status: str, version: str) -> RepositoryStructureFile:
+    def skipped(
+        status: str,
+        version: str,
+        *,
+        content_hash: str,
+        size: int,
+    ) -> RepositoryStructureFile:
         return RepositoryStructureFile(
             path=path,
             file_key=key,
@@ -472,7 +476,7 @@ def _materialize_file(
                 "builder": _BUILDER_VERSION,
                 "status": status,
             }),
-            size=len(data),
+            size=size,
             language=language,
             parser_kind="none" if status != "PARSER_UNAVAILABLE" else "tree-sitter",
             parser_version=version,
@@ -480,13 +484,40 @@ def _materialize_file(
         )
 
     if _is_secret_path(path):
-        return skipped("SKIPPED_SECRET", "secret-redaction")
+        size = max(0, target.stat().st_size)
+        return skipped(
+            "SKIPPED_SECRET",
+            "secret-redaction",
+            content_hash=canonical_sha256({"path": path, "redacted": True}),
+            size=size,
+        )
+    size = max(0, target.stat().st_size)
+    if size > _MAX_FILE_BYTES:
+        return skipped(
+            "SKIPPED_LARGE",
+            "bounded-size",
+            content_hash=canonical_sha256({"path": path, "size": size, "bounded": True}),
+            size=size,
+        )
+    with target.open("rb") as handle:
+        data = handle.read(_MAX_FILE_BYTES + 1)
     if len(data) > _MAX_FILE_BYTES:
-        return skipped("SKIPPED_LARGE", "bounded-size")
+        return skipped(
+            "SKIPPED_LARGE",
+            "bounded-size",
+            content_hash=canonical_sha256({"path": path, "size": len(data), "bounded": True}),
+            size=max(size, len(data)),
+        )
+    content_hash = _sha256_bytes(data)
     try:
         data.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
-        return skipped("SKIPPED_BINARY", "utf8-required")
+        return skipped(
+            "SKIPPED_BINARY",
+            "utf8-required",
+            content_hash=content_hash,
+            size=len(data),
+        )
 
     raw_nodes, raw_imports, syntax_error, parser_version = _tree_sitter_raw(language, data)
     parser_kind = "tree-sitter"
@@ -494,7 +525,12 @@ def _materialize_file(
         raw_nodes, raw_imports, syntax_error, parser_version = _python_ast_fallback(data)
         parser_kind = "python-ast-fallback"
     elif parser_version == "unavailable":
-        return skipped("PARSER_UNAVAILABLE", "unavailable")
+        return skipped(
+            "PARSER_UNAVAILABLE",
+            "unavailable",
+            content_hash=content_hash,
+            size=len(data),
+        )
 
     offsets = _line_offsets(data)
     local_paths: list[str] = []

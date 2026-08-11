@@ -181,6 +181,63 @@ class ProductionWorldUnderstandingRuntime:
                 raise ValueError("REPOSITORY_QUERY_FRAME_NOT_LIVE")
             return execute_repository_graph_query(live.graph, query)
 
+    def repository_evidence_snapshot(
+        self,
+        *,
+        scope: WorldScope,
+        max_entities: int = 32,
+    ) -> dict[str, object] | None:
+        """Return a bounded reference-only view of the newest exact-scope repo frame.
+
+        This reads the already committed Software World graph.  It performs no
+        filesystem/Git/parser work and exposes no source text or host paths.
+        """
+        if isinstance(max_entities, bool) or not isinstance(max_entities, int) or not 1 <= max_entities <= 128:
+            raise ValueError("REPOSITORY_EVIDENCE_ENTITY_BUDGET_INVALID")
+        with self._lock:
+            candidates = [
+                live
+                for live in self._streams.values()
+                if live.frame.scope == scope
+                and any(entity.entity_type == "File" for entity in live.graph.entities())
+            ]
+            if not candidates:
+                return None
+            live = max(
+                candidates,
+                key=lambda item: (
+                    item.frame.time.recorded_at_ms,
+                    item.frame.frame_revision_hash,
+                    item.frame.frame_id,
+                ),
+            )
+            entities = sorted(
+                (
+                    entity
+                    for entity in live.graph.entities()
+                    if entity.lifecycle == "ACTIVE"
+                ),
+                key=lambda entity: (-entity.revision, entity.entity_id),
+            )[:max_entities]
+            return {
+                "schema": "tiangong.life.repository-evidence.v1",
+                "frame_id": live.frame.frame_id,
+                "frame_revision_hash": live.frame.frame_revision_hash,
+                "repository_id": live.frame.repository,
+                "worktree_id": live.frame.worktree,
+                "branch": live.frame.branch[:240],
+                "commit": live.frame.commit,
+                "observed_at_ms": live.frame.time.recorded_at_ms,
+                "entity_refs": [
+                    {
+                        "record_id": entity.entity_id,
+                        "revision": entity.revision,
+                        "sha256": entity.entity_sha256,
+                    }
+                    for entity in entities
+                ],
+            }
+
     def repository_context_candidates(
         self,
         query: WorldQuery,

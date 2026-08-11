@@ -261,6 +261,7 @@ class GatewayOrchestrationWorker:
         backend_compat_client: object | None = None,
         life_compat_client: object | None = None,
         life_execution_commit: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
         skill_selection: SkillSelectionService | None = None,
         skill_capabilities: CapabilityManifest | None = None,
@@ -286,6 +287,7 @@ class GatewayOrchestrationWorker:
         self._backend_compat_client = backend_compat_client
         self._life_compat_client = life_compat_client
         self._life_execution_commit = life_execution_commit
+        self._repository_evidence_provider = repository_evidence_provider
         self._knowledge_retriever = knowledge_retriever
         self._communication = (
             communication_control
@@ -380,6 +382,7 @@ class GatewayOrchestrationWorker:
         backend_compat_client: object | None = None,
         life_compat_client: object | None = None,
         life_execution_commit: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
     ) -> "GatewayOrchestrationWorker":
         release_candidates = tuple(
@@ -494,6 +497,7 @@ class GatewayOrchestrationWorker:
             backend_compat_client=backend_compat_client,
             life_compat_client=life_compat_client,
             life_execution_commit=life_execution_commit,
+            repository_evidence_provider=repository_evidence_provider,
             knowledge_retriever=knowledge_retriever,
             skill_selection=skill_selection,
             skill_capabilities=skill_capabilities,
@@ -1035,6 +1039,13 @@ class GatewayOrchestrationWorker:
         if not isinstance(arguments, Mapping):
             raise OrchestrationError("world_inquiry.observation_missing")
         action = str(arguments.get("action") or "").strip()
+        repository_aliases = {
+            "repository.status": "git.status",
+            "repository.head": "git.log",
+            "repository.diff": "git.diff",
+            "repository.read_source_window": "file.read",
+        }
+        action = repository_aliases.get(action, action)
         allowed = {
             "system.health", "system.capabilities", "file.read", "file.list",
             "file.search", "file.hash", "git.status", "git.diff", "git.log",
@@ -1044,9 +1055,12 @@ class GatewayOrchestrationWorker:
             raise OrchestrationError("world_inquiry.observation_not_read_only")
         target = str(arguments.get("target") or "").strip()
         args = arguments.get("args") if isinstance(arguments.get("args"), Mapping) else {}
-        if len(canonical_json_bytes({"action": action, "target": target, "args": dict(args)})) > 64 * 1024:
+        args = dict(args)
+        if str(arguments.get("action") or "").strip() == "repository.head":
+            args["limit"] = 1
+        if len(canonical_json_bytes({"action": action, "target": target, "args": args})) > 64 * 1024:
             raise OrchestrationError("world_inquiry.observation_too_large")
-        return {"action": action, "target": target, "args": dict(args)}
+        return {"action": action, "target": target, "args": args}
 
     def _dispatch_next_world_inquiry(self) -> bool:
         try:
@@ -1343,6 +1357,8 @@ class GatewayOrchestrationWorker:
         generation: int,
         life_id: str,
         session_scope_hash: str,
+        principal_scope_hash: str,
+        workspace_id: str,
         user_goal: str,
         final_result: str,
         fact_ids: tuple[str, ...],
@@ -1351,6 +1367,25 @@ class GatewayOrchestrationWorker:
         commit = self._life_execution_commit
         if commit is None:
             return None
+        repository_evidence = None
+        provider = self._repository_evidence_provider
+        if callable(provider):
+            try:
+                candidate = provider({
+                    "life_id": life_id,
+                    "principal_scope_hash": principal_scope_hash,
+                    "workspace_id": workspace_id,
+                    "run_id": run_id,
+                    "request_id": request_id,
+                })
+                if isinstance(candidate, Mapping):
+                    encoded = canonical_json_bytes(candidate)
+                    if len(encoded) <= 64 * 1024:
+                        repository_evidence = dict(candidate)
+            except Exception:
+                # Repository evidence enriches the terminal experience but may
+                # never block the authoritative Life outcome commit.
+                repository_evidence = None
         payload = {
             "schema": "tiangong.life.execution-terminal.v1",
             "request_id": request_id,
@@ -1362,6 +1397,7 @@ class GatewayOrchestrationWorker:
             "user_goal_sha256": canonical_sha256(user_goal),
             "final_result_sha256": canonical_sha256(final_result),
             "fact_ids": list(sorted(set(fact_ids))),
+            "repository_evidence": repository_evidence,
             "completed_at_ms": completed_at_ms,
         }
         try:
@@ -2397,6 +2433,8 @@ class GatewayOrchestrationWorker:
                 generation=generation.generation,
                 life_id=life.snapshot.identity_ref,
                 session_scope_hash=activation.entry.session_scope_hash,
+                principal_scope_hash=envelope.principal_scope_hash,
+                workspace_id=workspace_id,
                 user_goal=envelope.text,
                 final_result=reply,
                 fact_ids=(desktop_fact_id, *tuple(response.result.fact_ids)),

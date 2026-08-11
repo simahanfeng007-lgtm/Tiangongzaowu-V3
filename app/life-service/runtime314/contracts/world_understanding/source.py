@@ -20,6 +20,7 @@ SourceKind = Literal[
     "DESKTOP_UI",
     "MEMORY",
     "KNOWLEDGE",
+    "LIFE_LEARNING",
     "CONTEXT_CONTINUITY",
     "AUTONOMY",
     "CHAIN_EVENT",
