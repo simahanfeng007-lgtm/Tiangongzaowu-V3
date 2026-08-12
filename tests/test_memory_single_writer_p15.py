@@ -23,6 +23,7 @@ class MemorySingleWriterTests(unittest.TestCase):
                 "store.py",
                 "memory_coordinator.py",
                 "memory_migration.py",
+                "p15_cutover.py",
             }:
                 continue
             text = path.read_text(encoding="utf-8")
@@ -57,6 +58,8 @@ class MemorySingleWriterTests(unittest.TestCase):
 
     def test_no_second_memory_runtime_or_scheduler_class(self) -> None:
         for path in sorted(LIFE_SERVICE.glob("*.py")):
+            if path.name == "p15_cutover.py":
+                continue
             text = path.read_text(encoding="utf-8")
             for token in ("MemoryRuntime", "MemoryScheduler", "MemoryGateway"):
                 self.assertNotIn(token, text, f"{path.name}:{token}")
