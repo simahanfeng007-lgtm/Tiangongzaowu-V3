@@ -171,6 +171,18 @@ def _normalize_roots(value: Any) -> list[str]:
     return roots
 
 
+def _workspace_mode() -> str:
+    """Return the path-scope authority injected by the desktop main process.
+
+    ``permission_mode`` controls autonomous A0-A4 execution policy.  It is not
+    the filesystem scope.  The desktop workspace transaction owns
+    ``TIANGONG_WORKSPACE_MODE`` and restarts the gateway/backend with the same
+    value, so prompts and policy diagnostics must read that exact authority
+    rather than reconstructing an independent workspace gate.
+    """
+    return "full" if str(os.environ.get("TIANGONG_WORKSPACE_MODE") or "").strip().lower() == "full" else "workspace"
+
+
 def duqu_permission_settings() -> dict[str, Any]:
     raw = _load_raw()
     merged = {**DEFAULT_SETTINGS, **raw}
@@ -228,6 +240,7 @@ def permission_status(*, refresh: bool = False) -> dict[str, Any]:
         "downloads": env.get("downloads") or "",
         "documents": env.get("documents") or "",
         "workspace": env.get("workspace") or "",
+        "workspace_mode": _workspace_mode(),
         "drive_roots": env.get("drive_roots") or [],
     }
 
@@ -237,16 +250,37 @@ def runtime_context_needed(message: str) -> bool:
     return any(item.lower() in lowered for item in RUNTIME_CONTEXT_KEYWORDS)
 
 
+def _runtime_path_policy_lines(status: dict[str, Any]) -> list[str]:
+    workspace = status.get("workspace") or ""
+    workspace_mode = "full" if status.get("workspace_mode") == "full" else "workspace"
+    hard_deny = (
+        "- \u786c\u7981\u533a\u59cb\u7ec8\u62d2\u7edd\uff1aWindows \u6838\u5fc3\u7cfb\u7edf\u76ee\u5f55\u3001\u78c1\u76d8\u6839\u3001"
+        "\u51ed\u636e\u76ee\u5f55\uff08.ssh/.aws/.gnupg/.azure/.config\uff09\u4e0e\u4efb\u4f55 .env \u6587\u4ef6\uff1b"
+        "\u8fd9\u4e9b\u8fb9\u754c\u4e0d\u56e0 full/full_access \u653e\u5bbd\u3002"
+    )
+    if workspace_mode == "full":
+        return [
+            "[\u8def\u5f84\u89c4\u5219]",
+            f"- \u5199\u5165\u8303\u56f4: \u5168\u76d8 (full)\uff1b\u5de5\u4f5c\u533a {workspace} \u53ea\u662f\u76f8\u5bf9\u8def\u5f84\u7684\u89e3\u6790\u57fa\u51c6\uff0c\u4e0d\u662f\u8bbf\u95ee\u6743\u9650\u8fb9\u754c\u3002",
+            "- \u9664\u786c\u7981\u533a/A5 \u5916\uff0c\u5141\u8bb8\u4f7f\u7528\u7edd\u5bf9\u8def\u5f84\u8bfb\u53d6\u3001\u5199\u5165\u3001\u79fb\u52a8\u3001\u91cd\u547d\u540d\u548c\u5220\u9664\u5230 trash\uff1b\u4e0d\u8981\u81ea\u884c\u9000\u56de\u5de5\u4f5c\u533a\u3002",
+            "- A1-A4 \u4e0d\u4f7f\u7528\u65e7 confirmation \u6d41\u7a0b\u3002file.delete_to_trash \u662f A4 \u53ef\u56de\u6eda\u5220\u9664\uff0c\u76f4\u63a5\u8c03\u7528\uff1b\u4e0d\u8981\u6784\u9020 confirmed/confirmation \u7b49\u6388\u6743\u5b57\u6bb5\u3002",
+            hard_deny,
+        ]
+    return [
+        "[\u8def\u5f84\u89c4\u5219]",
+        f"- \u5199\u5165\u8303\u56f4: \u5de5\u4f5c\u533a (workspace)\uff1b\u5de5\u4f5c\u533a {workspace} \u662f\u9ed8\u8ba4\u8def\u5f84\u8fb9\u754c\uff0c\u76f8\u5bf9\u8def\u5f84\u4ee5\u6b64\u89e3\u6790\u3002",
+        "- \u7528\u6237\u672c\u8f6e\u660e\u786e\u6307\u5b9a\u7684\u5de5\u4f5c\u533a\u5916\u8def\u5f84\u53ef\u7531\u7f51\u5173 object grant \u6388\u6743\u540e\u539f\u6837\u4f20\u9012\uff1b\u4e0d\u8981\u81ea\u884c\u6269\u5c55\u5230\u5176\u4ed6\u533a\u5916\u8def\u5f84\u3002",
+        "- A1-A4 \u4e0d\u4f7f\u7528\u65e7 confirmation \u6d41\u7a0b\uff1b\u672a\u83b7\u5f97 object grant \u7684\u533a\u5916\u8def\u5f84\u7531\u6267\u884c contract \u62d2\u7edd\uff0c\u4e0d\u8981\u751f\u6210\u65e0\u6cd5\u5151\u4ed8\u7684\u786e\u8ba4\u5361\u3002",
+        hard_deny,
+    ]
+
+
 def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> str:
     status = permission_status()
-    # 常驻边界（不依赖关键词触发，保持简短防 token 挤压）：
-    # 工作区边界 / 用户指定直通 / 区外写需确认 / 禁区。
-    policy_lines = [
-        "[\u8def\u5f84\u89c4\u5219]",
-        f"- \u5de5\u4f5c\u533a: {status.get('workspace') or ''}\uff1b\u9ed8\u8ba4\u53ea\u5728\u5de5\u4f5c\u533a\u5185\u8bfb\u5199\uff0c\u7edd\u5bf9\u8def\u5f84\u539f\u6837\u4f20\u9012\u4e0d\u505a\u6539\u5199\u3002",
-        "- \u7528\u6237\u672c\u8f6e\u6d88\u606f\u91cc\u660e\u786e\u7ed9\u51fa\u7684\u8def\u5f84\uff08\u7edd\u5bf9\u8def\u5f84/\u76d8\u7b26/\u684c\u9762\u7b49\u522b\u540d/\u6587\u4ef6\u540d\uff09\u89c6\u4e3a\u7528\u6237\u6307\u5b9a\uff0c\u53ef\u76f4\u901a\u3002",
-        "- \u5de5\u4f5c\u533a\u5916\u4e14\u7528\u6237\u672a\u6307\u5b9a\u7684\u5199\u5165\u5fc5\u987b\u5148\u5411\u7528\u6237\u786e\u8ba4\uff1b\u51ed\u636e\u76ee\u5f55\uff08.ssh/.aws/.gnupg\uff09\u4e0e\u4efb\u4f55 .env \u6587\u4ef6\u8bfb\u5199\u7686\u62d2\u3002",
-    ]
+    # Path scope is owned by the desktop workspace authority.  Do not recreate
+    # the retired workspace/outside-confirm gate in prompt text: doing so can
+    # make a healthy full-disk capability look workspace-only to the model.
+    policy_lines = _runtime_path_policy_lines(status)
     if not force and not runtime_context_needed(message):
         return "\n".join(policy_lines)
     lowered_message = str(message or "").lower()
@@ -256,6 +290,8 @@ def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> s
     mode_label = status.get("mode_label") or status.get("permission_mode") or ""
     mode_value = status.get("permission_mode") or ""
     mode_text = mode_label if not mode_value or mode_value == mode_label else f"{mode_label} ({mode_value})"
+    workspace_mode = "full" if status.get("workspace_mode") == "full" else "workspace"
+    workspace_mode_text = "\u5168\u76d8 (full)" if workspace_mode == "full" else "\u5de5\u4f5c\u533a (workspace)"
     lines = [
         "[\u8fd0\u884c\u73af\u5883\u4e8b\u5b9e]",
         f"- \u5f53\u524d\u7528\u6237: {user.get('whoami') or user.get('username') or ''}",
@@ -264,10 +300,11 @@ def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> s
         f"- \u4e0b\u8f7d: {status.get('downloads') or ''}",
         f"- \u6587\u6863: {status.get('documents') or ''}",
         f"- \u5de5\u4f5c\u533a: {status.get('workspace') or ''}",
+        f"- \u5199\u5165\u8303\u56f4: {workspace_mode_text}",
         f"- \u53ef\u7528\u76d8: {drives}",
-        f"- \u6743\u9650\u6a21\u5f0f: {mode_text}",
+        f"- \u52a8\u4f5c\u6743\u9650\u6a21\u5f0f: {mode_text}",
         "- \u8def\u5f84\u89e3\u6790: \u4e0d\u731c\u7528\u6237\u76ee\u5f55\u6216\u76d8\u7b26\uff1b\u6d89\u53ca\u8def\u5f84\u65f6\u5148\u6309\u8fd0\u884c\u65f6\u4e8b\u5b9e\u89e3\u6790\u3002",
-        "- \u6743\u9650\u8fb9\u754c: full_access/\u5b8c\u5168\u8bbf\u95ee\u6743\u9650\u53ea\u8868\u793a\u666e\u901a\u8bfb\u5199\u548c\u5de5\u5177\u8c03\u7528\u53ef\u81ea\u52a8\u653e\u884c\uff1bA5\u3001\u9ad8\u5371\u3001\u7cfb\u7edf\u6839\u76ee\u5f55\u6216\u76d8\u7b26\u6839\u76ee\u5f55\u7684\u7834\u574f\u6027\u64cd\u4f5c\u4ecd\u5fc5\u987b\u963b\u65ad\uff0c\u4e0d\u56e0 full_access \u653e\u884c\u3002",
+        "- \u6743\u9650\u5206\u5c42: permission_mode \u51b3\u5b9a A0-A4 \u52a8\u4f5c\u662f\u5426\u81ea\u4e3b\u6267\u884c\uff1bworkspace_mode \u51b3\u5b9a\u8def\u5f84\u8303\u56f4\u3002A5/\u786c\u7981\u533a\u59cb\u7ec8\u7531\u4e3b\u6743\u95f8\u95e8\u62d2\u7edd\u3002",
         *policy_lines[1:],
     ]
     if "\u684c\u9762" in lowered_message or "desktop" in lowered_message:
@@ -291,7 +328,7 @@ def _action_kind(tool_name: str, args: dict[str, Any]) -> str:
     if name != "omni_body":
         return "execute"
     action = str((args or {}).get("action") or "").strip().lower()
-    if action in NETWORK_ACTIONS or action.startswith("browser."):
+    if action in NETWORK_ACTIONS or action.startswith(("browser.")):
         return "network"
     if action in TERMINAL_ACTIONS:
         return "terminal"
@@ -424,6 +461,7 @@ def check_tool_permission(tool_name: str, tool_args: dict[str, Any] | None, ying
     action = _action_kind(tool_name, rewritten)
     details = {
         "permission_mode": settings.get("permission_mode"),
+        "workspace_mode": _workspace_mode(),
         "mode_label": settings.get("mode_label"),
         "rewritten_args": rewritten,
         "resolved_paths": paths,
@@ -452,6 +490,7 @@ def check_tool_permission(tool_name: str, tool_args: dict[str, Any] | None, ying
         action=action,
         details=details,
     )
+
 
 def policy_check_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
