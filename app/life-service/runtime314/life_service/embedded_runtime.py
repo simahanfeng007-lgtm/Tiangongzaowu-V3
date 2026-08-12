@@ -5515,6 +5515,16 @@ class EmbeddedLifeRuntime:
                 journal_event=event,
                 record=previous,
             )
+            # P15 I17: privacy deletion invalidates the memory's derivation
+            # descendants so nothing survives in Context/Learning/World.
+            self._memory_coordinator().delete_memory_with_privacy_cascade(
+                life_id=life_id,
+                memory_id=contract_memory_id,
+                deleted_at_ms=(
+                    self._iso_ms(updated_at)
+                    or time.time_ns() // 1_000_000
+                ),
+            )
             self._persist(life_id)
         except Exception:
             scope["memories"][memory_id] = previous

@@ -96,7 +96,7 @@ def invalidate_cascade(
         for child in store.list_derivation_children(current.derivation_id):
             if child.derivation_id in invalidated:
                 continue
-            if _still_supported(
+            if reason != "privacy_erasure" and _still_supported(
                 store, child, invalidated_ids=invalidated
             ):
                 continue

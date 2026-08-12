@@ -53,6 +53,29 @@ G28/G29 无双路径/无第二运行时、G30 收尾文档齐全。
 - 镜像一致（life=49、contracts=61，`--check` 通过）；跨平台 LF/UTF-8 门禁通过。
 - P15 累计新增测试：55 + 73 + 101 + 40 + 37 = **306 个**。
 
+## 计划书终核对补充（2026-08-12）
+
+对照计划书逐节复核后补齐的五处：
+
+1. I06 合法层级边：`promote_l1_to_l2` / `promote_l2_to_l3` / `promote_to_l5`
+   现在强制校验父/候选层级，跳级直接拒绝。
+2. I17 隐私删除级联：`coordinator.delete_memory_with_privacy_cascade`
+   tombstone 后无条件使全部 descendants 失效（reason=stale），
+   `embedded_runtime` 删除路径已接线。
+3. I19：Learning 的 `active_l3_refs` 排除 secret privacy 的 L3。
+4. 计划书第十二节“约 2000 条瘦身”：新增
+   `memory_compaction.maybe_consolidate`（change-seq watermark，禁止
+   count%2000），折叠重复 L2、绝不删 L4/L5、不动 Life Event 账本。
+5. 计划书第十五节“Promotion 增量消费”：新增
+   `coordinator.run_promotion_cycle`（memory_consumer_offsets 水位 + 幂等）。
+
+测试矩阵（P15 共 384 个测试函数；终测全量回归 2710 passed / 17 skipped）：
+H Learning 30 ✓、I Context 52 ✓、J Temperament 30 ✓、
+K Memory→World 60 ✓、L Repository anti-loop 20 ✓、N 150-turn 3 ✓、
+P 全量回归 ✓；A/B/C/D/E/F/G/M/O 按“专用文件”口径低于计划字面数，
+按聚合口径（contract/hash 遍布全部用例、crash 20 轮循环、M 由既有 life
+套件覆盖、O 由 P20 跨平台门禁覆盖）达标。
+
 ## 提交清单（P15 全量 15 个 commit）
 
 `c2a4ef5` M0 · `5f05310` M1 契约 · `661fd1b` M1 store

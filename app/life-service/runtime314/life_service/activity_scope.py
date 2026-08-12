@@ -193,6 +193,8 @@ def build_activity_scope(
             active_only=True,
             limit=16,
         ):
+            if str(derivation.privacy_scope).casefold() == "secret":
+                continue
             active_l3_refs.append(
                 {
                     "derivation_id": derivation.derivation_id,

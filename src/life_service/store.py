@@ -3495,6 +3495,19 @@ class LifeShadowStore:
         ).fetchone()
         return row is not None
 
+    def list_derivations_for_memory(
+        self, memory_id: str
+    ) -> tuple[MemoryDerivationV1, ...]:
+        rows = self._connection.execute(
+            """
+            SELECT payload FROM memory_derivations
+            WHERE memory_id = ?
+            ORDER BY created_at_ms, derivation_id
+            """,
+            (memory_id,),
+        ).fetchall()
+        return tuple(self._derivation_from_row(row) for row in rows)
+
     def get_derivation_promotion_key(self, derivation_id: str) -> str | None:
         row = self._connection.execute(
             "SELECT promotion_key FROM memory_derivations WHERE derivation_id = ?",

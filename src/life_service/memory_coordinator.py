@@ -788,6 +788,7 @@ class MemoryCoordinator:
         created_at_ms: int,
         policy_version: str = L2_POLICY_VERSION,
         episode_boundary: bool = True,
+        causal_utility_milli: int = 0,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool] | None:
         l1s = tuple(
             self._store.get_memory_derivation(derivation_id)
@@ -796,6 +797,10 @@ class MemoryCoordinator:
         if any(item is None for item in l1s):
             raise MemoryCoordinatorError("L2 promotion references a missing L1")
         typed = tuple(item for item in l1s if item is not None)
+        if any(item.layer != "L1_STREAM" for item in typed):
+            raise MemoryCoordinatorError(
+                "L1->L2 promotion requires L1 parents only"
+            )
         disposition = memory_promotion.evaluate_l2(
             l1_derivations=typed,
             life_id=life_id,
@@ -817,6 +822,7 @@ class MemoryCoordinator:
             plaintext=plaintext,
             created_at_ms=created_at_ms,
             policy_version=policy_version,
+            assertion_causal_utility_milli=causal_utility_milli,
         )
 
     def promote_l2_to_l3(
@@ -843,6 +849,10 @@ class MemoryCoordinator:
         if any(item is None for item in l2s):
             raise MemoryCoordinatorError("L3 promotion references a missing L2")
         typed = tuple(item for item in l2s if item is not None)
+        if any(item.layer != "L2_DIARY" for item in typed):
+            raise MemoryCoordinatorError(
+                "L2->L3 promotion requires L2 parents only"
+            )
         disposition = memory_promotion.evaluate_l3(
             l2_derivations=typed,
             support_weights=support_weights,
@@ -892,6 +902,13 @@ class MemoryCoordinator:
         if any(item is None for item in candidates):
             raise MemoryCoordinatorError("L5 promotion references a missing candidate")
         typed = tuple(item for item in candidates if item is not None)
+        if any(
+            item.layer not in {"L3_EXPERIENCE", "L4_EXPLICIT"}
+            for item in typed
+        ):
+            raise MemoryCoordinatorError(
+                "L3/L4->L5 promotion requires L3 or L4 candidates only"
+            )
         disposition = memory_promotion.evaluate_l5(
             candidates=typed,
             support_weights=support_weights,
@@ -927,6 +944,7 @@ class MemoryCoordinator:
         plaintext: bytes,
         created_at_ms: int,
         policy_version: str,
+        assertion_causal_utility_milli: int = 0,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool]:
         parents = tuple(
             sorted(parents, key=lambda item: item.derivation_id)
@@ -1032,9 +1050,11 @@ class MemoryCoordinator:
             if disposition.target_layer == "L5_CORE"
             else "CHECKPOINT",
             source_event_ids=source_events,
-            causal_utility_milli=700
-            if disposition.target_layer == "L3_EXPERIENCE"
-            else 0,
+            causal_utility_milli=(
+                max(700, assertion_causal_utility_milli)
+                if disposition.target_layer == "L3_EXPERIENCE"
+                else assertion_causal_utility_milli
+            ),
             verification_strength_milli=disposition.support_milli,
             valid_from_ms=disposition.valid_from_ms,
             created_at_ms=disposition.created_at_ms,
@@ -1450,6 +1470,189 @@ class MemoryCoordinator:
             "skipped_count": skipped,
             "migration_ids": tuple(migrated_ids),
         }
+
+    # ------------------------------------------------------------------
+    # Incremental promotion consumer (M8 / plan section 15)
+    # ------------------------------------------------------------------
+
+    def run_promotion_cycle(
+        self,
+        *,
+        life_id: str,
+        now_ms: int,
+        limit: int = 32,
+        consumer_id: str = "p15-promotion",
+    ) -> dict[str, object]:
+        """Consume the memory change watermark and promote active heads.
+
+        Only active L2/L3/L4 heads are evaluated; promotion keys keep the
+        cycle idempotent, and the consumer offset advances only after the
+        pass succeeds.  This is the incremental consumer the plan requires
+        (never a full-table scan per query).
+        """
+
+        if not 1 <= limit <= 4096:
+            raise MemoryCoordinatorError(
+                "promotion cycle limit is invalid"
+            )
+        last = self._store.get_memory_consumer_offset(consumer_id, life_id)
+        head = self._store.memory_change_head(life_id)
+        if head <= last:
+            return {
+                "consumed": 0,
+                "promotions": (),
+                "last_watermark": last,
+                "head": head,
+            }
+
+        def weight(assertion: MemoryAssertionV3) -> int:
+            return min(
+                1000,
+                {
+                    "verified": 1000,
+                    "observed": 1000,
+                    "user_asserted": 750,
+                }.get(assertion.epistemic_status, 0),
+            )
+
+        promotions: list[tuple[str, str]] = []
+        for derivation in self._store.list_memory_derivations(
+            life_id=life_id, layer="L2_DIARY", active_only=True, limit=limit
+        ):
+            assertion = self._store.get_memory_assertion(
+                derivation.memory_id, derivation.memory_revision
+            )
+            if assertion is None:
+                continue
+            result = self.promote_l2_to_l3(
+                life_id=life_id,
+                principal_ref=derivation.principal_ref,
+                privacy_scope=derivation.privacy_scope,
+                l2_derivation_ids=(derivation.derivation_id,),
+                claim_key=derivation.claim_key,
+                semantic_domain=derivation.semantic_domain,
+                plaintext=canonical_json_bytes(
+                    {
+                        "schema": "tiangong.life.promotion-cycle.v1",
+                        "claim_key": derivation.claim_key,
+                        "source": derivation.memory_assertion_sha256,
+                    }
+                ),
+                created_at_ms=now_ms,
+                support_weights={derivation.derivation_id: weight(assertion)},
+                counter_weights={},
+                causal_utility_milli={
+                    derivation.derivation_id: assertion.causal_utility_milli
+                },
+                recurrence_count=assertion.recurrence_count,
+            )
+            if result is not None and result[2]:
+                promotions.append(("L3", result[1].derivation_id))
+
+        candidates = tuple(
+            derivation
+            for derivation in self._store.list_memory_derivations(
+                life_id=life_id, active_only=True, limit=4096
+            )
+            if derivation.layer in {"L3_EXPERIENCE", "L4_EXPLICIT"}
+        )
+        by_claim: dict[str, list[MemoryDerivationV1]] = {}
+        for derivation in candidates:
+            by_claim.setdefault(derivation.claim_key, []).append(derivation)
+        for claim_key in sorted(by_claim):
+            members = tuple(by_claim[claim_key])
+            if len(members) > limit:
+                members = members[:limit]
+            assertions = tuple(
+                self._store.get_memory_assertion(
+                    item.memory_id, item.memory_revision
+                )
+                for item in members
+            )
+            if any(item is None for item in assertions):
+                continue
+            weights = {
+                item.derivation_id: weight(assertion)
+                for item, assertion in zip(members, assertions, strict=True)
+                if assertion is not None
+            }
+            result = self.promote_to_l5(
+                life_id=life_id,
+                principal_ref=members[0].principal_ref,
+                privacy_scope=members[0].privacy_scope,
+                candidate_derivation_ids=tuple(
+                    item.derivation_id for item in members
+                ),
+                claim_key=claim_key,
+                semantic_domain=members[0].semantic_domain,
+                plaintext=canonical_json_bytes(
+                    {
+                        "schema": "tiangong.life.promotion-cycle-l5.v1",
+                        "claim_key": claim_key,
+                    }
+                ),
+                created_at_ms=now_ms,
+                support_weights=weights,
+                counter_weights={},
+                recurrence_count=1,
+            )
+            if result is not None and result[2]:
+                promotions.append(("L5", result[1].derivation_id))
+
+        self._store.advance_memory_consumer_offset(
+            consumer_id, life_id, head, updated_at_ms=now_ms
+        )
+        return {
+            "consumed": head - last,
+            "promotions": tuple(promotions),
+            "last_watermark": head,
+            "head": head,
+        }
+
+    # ------------------------------------------------------------------
+    # Privacy deletion cascade (M8 / I17)
+    # ------------------------------------------------------------------
+
+    def delete_memory_with_privacy_cascade(
+        self,
+        *,
+        life_id: str,
+        memory_id: str,
+        deleted_at_ms: int,
+    ) -> int:
+        """Tombstone one memory and invalidate every derivation descendant.
+
+        Safe to call after the assertion is already tombstoned (idempotent):
+        only the cascade runs in that case.  Returns the number of
+        invalidation records written.
+        """
+
+        latest = self._store.get_latest_memory_assertion(memory_id)
+        if latest is None or latest.life_id != life_id:
+            raise MemoryCoordinatorError(
+                "memory deletion target is missing"
+            )
+        if latest.lifecycle_status != "deleted":
+            self._store.delete_memory(
+                memory_id,
+                expected_revision=latest.revision,
+                deleted_at_ms=deleted_at_ms,
+            )
+        invalidations = 0
+        for derivation in self._store.list_derivations_for_memory(memory_id):
+            if not self._store.is_derivation_active(
+                derivation.derivation_id
+            ):
+                continue
+            records = invalidate_cascade(
+                self._store,
+                derivation_id=derivation.derivation_id,
+                reason="privacy_erasure",
+                invalidated_at_ms=deleted_at_ms,
+                source_trigger_ref="privacy_delete:" + memory_id,
+            )
+            invalidations += len(records)
+        return invalidations
 
 
 __all__ = [
