@@ -25,7 +25,7 @@ are complete.
 | file.mkdir | Create a directory |
 | file.copy | Copy; destination in `args.destination` |
 | file.move / file.rename | Move or rename; destination in `args.destination` |
-| file.delete_to_trash | Move file/directory to trash; confirmation may be required |
+| file.delete_to_trash | Move file/directory into governed trash; A4 reversible action, no legacy confirmation |
 
 There is no `file.exists` action. Use `file.list`, `file.read`, or
 `system.action_schema` and treat a successful result as evidence.
@@ -50,7 +50,7 @@ and `git.diff`.
 | action | what it does |
 |--------|-------------|
 | docx.create | Create a Word `.docx` from structured content |
-| pptx.create | Create a PowerPoint `.pptx` from slide specs |
+| pptx.create | Create a PowerPoint `.pptx` deck from slide specs |
 | pptx.read | Inspect slide text, 16:9 dimensions, placeholders, fonts, and meaningful visuals |
 | sheet.create / sheet.read | Create or read Excel workbooks |
 | pdf.extract_text | Extract text from PDF |
@@ -108,6 +108,7 @@ There is no `knowledge.search` action in the current registry.
 3. **Real artifacts.** Deliveries must produce real local files; package large multi-file output with `deliverable.package`.
 4. **Long-chain continuity.** At lease checkpoints, state a concise visible continuation reason and immediately issue the next tool call.
 5. **Repair before finish.** Failed tests/QC require repair and rerun, not narrative completion.
+6. **Authorization stays host-owned.** A1-A4 actions do not use the retired confirmation flow; never invent `confirmed`, `confirmation`, or capability-grant fields. A5 and hard-deny paths remain blocked by the host/gateway.
 
 ## Call shape
 
