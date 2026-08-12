@@ -111,22 +111,22 @@ class RuntimePromptWorkspaceModeTests(unittest.TestCase):
 
 
 class ToolContractFullDiskTests(unittest.TestCase):
-    def _validate(self, target: str, mode: str, action: str = "file.write"):
+    def _validate(self, target: str | Path, mode: str, workspace: str | Path, action: str = "file.write"):
         from omni_body_skill.tool_contracts import validate_tool_request
 
         args = {"action": action}
         if action == "file.write":
             args["content"] = "hello"
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+        with mock.patch.dict(
             os.environ,
             {"TIANGONG_WORKSPACE_MODE": mode},
             clear=False,
         ):
             return validate_tool_request(
                 action,
-                target,
+                str(target),
                 args,
-                workspace=tmp,
+                workspace=str(workspace),
             )
 
     def _has_outside_workspace(self, result: dict) -> bool:
@@ -135,40 +135,84 @@ class ToolContractFullDiskTests(unittest.TestCase):
             for issue in (result.get("issues") or [])
         )
 
-    def test_workspace_mode_blocks_desktop(self) -> None:
-        result = self._validate(r"C:\Users\someone\Desktop\a.md", "workspace")
+    def test_workspace_mode_blocks_native_outside_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / "outside" / "a.md"
+            result = self._validate(target, "workspace", workspace)
         self.assertTrue(self._has_outside_workspace(result))
 
-    def test_full_mode_allows_desktop(self) -> None:
-        result = self._validate(r"C:\Users\someone\Desktop\a.md", "full")
+    def test_full_mode_allows_native_outside_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / "outside" / "a.md"
+            result = self._validate(target, "full", workspace)
         self.assertFalse(self._has_outside_workspace(result))
         self.assertTrue(bool(result.get("ok")))
 
-    def test_workspace_mode_blocks_outside_delete(self) -> None:
-        result = self._validate(r"D:\outside\delete-me.txt", "workspace", "file.delete_to_trash")
+    def test_workspace_mode_blocks_native_outside_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / "outside" / "delete-me.txt"
+            result = self._validate(target, "workspace", workspace, "file.delete_to_trash")
         self.assertTrue(self._has_outside_workspace(result))
 
-    def test_full_mode_allows_outside_delete_to_trash(self) -> None:
-        result = self._validate(r"D:\outside\delete-me.txt", "full", "file.delete_to_trash")
+    def test_full_mode_allows_native_outside_delete_to_trash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / "outside" / "delete-me.txt"
+            result = self._validate(target, "full", workspace, "file.delete_to_trash")
         self.assertFalse(self._has_outside_workspace(result))
         self.assertTrue(bool(result.get("ok")))
 
+    def test_full_mode_still_blocks_credential_dir_cross_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / ".ssh" / "id_rsa"
+            result = self._validate(target, "full", workspace)
+        self.assertTrue(self._has_outside_workspace(result))
+
+    def test_full_mode_still_blocks_env_file_cross_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = root / "outside" / "service.env"
+            result = self._validate(target, "full", workspace)
+        self.assertTrue(self._has_outside_workspace(result))
+
+    @unittest.skipUnless(os.name == "nt", "Windows core-path contract is Windows-specific")
     def test_full_mode_still_blocks_windows_core(self) -> None:
-        result = self._validate(r"C:\Windows\System32\drivers\etc\hosts", "full")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._validate(
+                r"C:\Windows\System32\drivers\etc\hosts",
+                "full",
+                Path(tmp) / "workspace",
+            )
         self.assertTrue(self._has_outside_workspace(result))
 
-    def test_full_mode_still_blocks_credential_dir(self) -> None:
-        result = self._validate(r"C:\Users\someone\.ssh\id_rsa", "full")
-        self.assertTrue(self._has_outside_workspace(result))
-
+    @unittest.skipUnless(os.name == "nt", "Windows core-path contract is Windows-specific")
     def test_full_mode_still_blocks_delete_in_windows_core(self) -> None:
-        result = self._validate(
-            r"C:\Windows\System32\drivers\etc\hosts",
-            "full",
-            "file.delete_to_trash",
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._validate(
+                r"C:\Windows\System32\drivers\etc\hosts",
+                "full",
+                Path(tmp) / "workspace",
+                "file.delete_to_trash",
+            )
         self.assertTrue(self._has_outside_workspace(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows shell hard-deny contract is Windows-specific")
     def test_full_mode_blocks_hard_deny_in_shell_command(self) -> None:
         from omni_body_skill.tool_contracts import validate_tool_request
 
