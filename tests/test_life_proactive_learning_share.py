@@ -8,9 +8,12 @@ from life_service.embedded_runtime import EmbeddedLifeRuntime
 
 
 class ProactiveLearningShareTests(unittest.TestCase):
-    """Regression: learning reports must reach the proactive-chat queue with
-    model-written copy when a share writer is installed, and degrade to the
-    deterministic template otherwise."""
+    """Post-P15 contract: legacy learning chat delivery is frozen.
+
+    The learning report remains deterministic journal/report metadata, while
+    proactive-chat pending/ack stays available as neutral delivery substrate
+    for the future native Life initiative path.
+    """
 
     def _runtime(self, temporary: str) -> EmbeddedLifeRuntime:
         root = Path(temporary)
@@ -32,56 +35,57 @@ class ProactiveLearningShareTests(unittest.TestCase):
             "life_id": life_id,
         }
 
-    def test_report_falls_back_to_template_without_writer(self) -> None:
+    def test_report_is_suppressed_metadata_without_queue_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(temporary)
             try:
                 life_id = str(life._active()["life_id"])
                 message = life._learning_report(self._record(life_id))
                 self.assertEqual(message["kind"], "learning_report")
+                self.assertEqual(message["text"], "学习完成：光合作用机制。已写入知识库。")
+                self.assertEqual(message["delivery"], "legacy_proactive_frozen")
+                self.assertTrue(message["suppressed"])
                 self.assertEqual(
-                    message["text"],
-                    "学习完成：光合作用机制。已写入知识库，想听的话我跟你说说。",
+                    message["reason_code"],
+                    "life.proactive.legacy_producer_frozen",
                 )
-                queued = life._scope_state(life_id)["proactive_chats"]
-                self.assertEqual([row["message_id"] for row in queued], [message["message_id"]])
+                self.assertEqual(life._scope_state(life_id)["proactive_chats"], [])
             finally:
                 life.close()
 
-    def test_report_uses_installed_model_writer(self) -> None:
+    def test_installed_legacy_share_writer_is_not_invoked(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(temporary)
             try:
                 life_id = str(life._active()["life_id"])
-                seen_materials = []
+                seen_materials: list[dict] = []
 
                 def writer(material: dict) -> str:
                     seen_materials.append(dict(material))
-                    return "我刚研究了光合作用机制，把光反应和碳反应的要点整理进了知识库，随时可以讲给你听。"
+                    return "旧学习分享"
 
                 life.set_learning_share_writer(writer)
                 message = life._learning_report(self._record(life_id))
-                self.assertEqual(
-                    message["text"],
-                    "我刚研究了光合作用机制，把光反应和碳反应的要点整理进了知识库，随时可以讲给你听。",
-                )
-                self.assertEqual(seen_materials[0]["share_request"], True)
-                self.assertEqual(seen_materials[0]["title"], "光合作用机制")
+                self.assertEqual(seen_materials, [])
+                self.assertEqual(message["delivery"], "legacy_proactive_frozen")
+                self.assertEqual(life._scope_state(life_id)["proactive_chats"], [])
             finally:
                 life.close()
 
-    def test_report_writer_failure_and_empty_output_fall_back(self) -> None:
+    def test_writer_failure_or_empty_output_is_irrelevant_when_frozen(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(temporary)
             try:
                 life_id = str(life._active()["life_id"])
-                template = "学习完成：光合作用机制。已写入知识库，想听的话我跟你说说。"
-
-                life.set_learning_share_writer(lambda _material: (_ for _ in ()).throw(RuntimeError("model down")))
-                self.assertEqual(life._learning_report(self._record(life_id))["text"], template)
-
+                life.set_learning_share_writer(
+                    lambda _material: (_ for _ in ()).throw(RuntimeError("model down"))
+                )
+                first = life._learning_report(self._record(life_id))
                 life.set_learning_share_writer(lambda _material: "   ")
-                self.assertEqual(life._learning_report(self._record(life_id))["text"], template)
+                second = life._learning_report(self._record(life_id))
+                self.assertEqual(first["text"], "学习完成：光合作用机制。已写入知识库。")
+                self.assertEqual(second["text"], first["text"])
+                self.assertEqual(life._scope_state(life_id)["proactive_chats"], [])
             finally:
                 life.close()
 
@@ -94,17 +98,30 @@ class ProactiveLearningShareTests(unittest.TestCase):
             finally:
                 life.close()
 
-    def test_pending_endpoint_then_ack_roundtrip(self) -> None:
+    def test_pending_ack_substrate_remains_available_for_native_message(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(temporary)
             try:
                 life_id = str(life._active()["life_id"])
-                message = life._learning_report(self._record(life_id))
+                message = {
+                    "message_id": "native_test_message",
+                    "kind": "life_initiative",
+                    "text": "native initiative test",
+                    "created_at": "2026-08-12T00:00:00Z",
+                    "read": False,
+                    "delivery": "normal_conversation_pending",
+                }
+                life._scope_state(life_id)["proactive_chats"].append(message)
 
-                status, payload, _ = life.request("GET", "/api/v1/v3/life/proactive-chat/pending")
+                status, payload, _ = life.request(
+                    "GET", "/api/v1/v3/life/proactive-chat/pending"
+                )
                 self.assertEqual(status, 200)
                 self.assertTrue(payload["ok"])
-                self.assertEqual([row["message_id"] for row in payload["messages"]], [message["message_id"]])
+                self.assertEqual(
+                    [row["message_id"] for row in payload["messages"]],
+                    [message["message_id"]],
+                )
 
                 status, ack, _ = life.request(
                     "POST",
@@ -115,7 +132,9 @@ class ProactiveLearningShareTests(unittest.TestCase):
                 self.assertTrue(ack["ok"])
                 self.assertTrue(ack["found"])
 
-                status, payload, _ = life.request("GET", "/api/v1/v3/life/proactive-chat/pending")
+                status, payload, _ = life.request(
+                    "GET", "/api/v1/v3/life/proactive-chat/pending"
+                )
                 self.assertEqual(status, 200)
                 self.assertEqual(payload["messages"], [])
             finally:
