@@ -23,6 +23,10 @@ MEMORY_SOURCE_FILES = (
     LIFE_SERVICE / "memory_classification.py",
     LIFE_SERVICE / "memory_lifecycle.py",
     LIFE_SERVICE / "memory_migration.py",
+    LIFE_SERVICE / "memory_coordinator.py",
+    LIFE_SERVICE / "memory_promotion.py",
+    LIFE_SERVICE / "explicit_memory.py",
+    LIFE_SERVICE / "memory_invalidation.py",
     CONTRACTS / "memory_layers.py",
 )
 
@@ -108,11 +112,12 @@ def test_future_memory_authority_modules_would_also_fail_closed() -> None:
         assert "LifeShadowStore.open" not in text
 
 
-def test_shadow_schema_is_v14_with_derivation_tables() -> None:
-    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 14
+def test_shadow_schema_is_v15_with_derivation_tables() -> None:
+    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 15
     assert {
         "memory_derivations",
         "memory_derivation_parents",
+        "memory_derivation_invalidations",
         "memory_active_heads",
         "memory_consumer_offsets",
     } <= life_store_module._EXPECTED_TABLES

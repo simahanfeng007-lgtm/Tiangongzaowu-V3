@@ -91,6 +91,7 @@ from .capability_health import (
 )
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
+from .memory_coordinator import MemoryCoordinator
 from .store import LifeShadowStore, LifeShadowStoreError
 from .cognition import CognitionTrigger, UnifiedCognitionShadow
 from .temperament import (
@@ -4230,6 +4231,9 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.memory.authority_unavailable", status=503)
         return store
 
+    def _memory_coordinator(self) -> MemoryCoordinator:
+        return MemoryCoordinator(self._contract_store())
+
     def _contract_store_assert(
         self,
         life_id: str,
@@ -4270,10 +4274,12 @@ class EmbeddedLifeRuntime:
             confidence = 0
         created_ms = self._iso_ms(record.get("created_at"))
         updated_ms = self._iso_ms(updated_at or record.get("updated_at")) or created_ms
-        _assertion, change_seq, _created = store.put_live_memory_assertion(
-            self._memory_contract_plaintext(record),
+        _assertion, change_seq, _created = (
+            self._memory_coordinator().commit_contract_assertion(
+            plaintext=self._memory_contract_plaintext(record),
             memory_id=contract_id,
             life_id=life_id,
+            principal_ref=life_id,
             assertion_kind=assertion_kind,
             epistemic_status=epistemic_status,
             lifecycle_status=lifecycle_status,
@@ -4290,6 +4296,7 @@ class EmbeddedLifeRuntime:
             ),
             valid_from_ms=created_ms or updated_ms,
             created_at_ms=updated_ms,
+            )
         )
         return contract_id, change_seq
 

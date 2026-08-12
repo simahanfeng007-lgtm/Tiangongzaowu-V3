@@ -1,0 +1,947 @@
+"""P15 M2/M3 single memory-write coordinator.
+
+Every production memory write (assert, turn, correct, promotion, migration)
+must enter through this coordinator.  It owns:
+
+- deterministic LifeEvent -> L1 STREAM derivation (atomic, idempotent);
+- L4 EXPLICIT creation bound to a real user_message span;
+- promotion materialization (L1->L2, L2->L3, L3/L4->L5) with the integer
+  evidence math from :mod:`memory_promotion` and promotion-key idempotency;
+- correction cascades through :mod:`memory_invalidation`.
+
+The coordinator never opens its own connection: ``LifeShadowStore`` remains
+the single persistence authority and every write below delegates to it.
+"""
+
+from __future__ import annotations
+
+from typing import Mapping
+
+from contracts import (
+    LifeEventEnvelope,
+    MemoryAssertionV3,
+    MemoryDerivationV1,
+    MemoryParentRef,
+    canonical_json_bytes,
+    canonical_sha256,
+)
+
+from . import memory_promotion
+from .explicit_memory import detect_explicit_intent, expiry_deadline_ms
+from .memory_invalidation import invalidate_cascade
+from .store import LifeShadowStore, LifeShadowStoreError
+
+
+L1_POLICY_VERSION = "p15-l1-v1"
+L2_POLICY_VERSION = "p15-l2-v1"
+L3_POLICY_VERSION = "p15-l3-v1"
+L4_POLICY_VERSION = "p15-l4-v1"
+L5_POLICY_VERSION = "p15-l5-v1"
+
+_SELF_COGNITION_DOMAINS = frozenset(
+    {"SELF_IDENTITY", "CAPABILITY_SELF", "LONG_TERM_GOAL", "OPERATING_RULE"}
+)
+_DOMAIN_BY_ASSERTION_KIND = {
+    "observation": "SYSTEM",
+    "user_preference": "USER_PREFERENCE",
+    "hard_constraint": "OPERATING_RULE",
+    "goal": "LONG_TERM_GOAL",
+    "relationship": "RELATIONSHIP",
+    "skill": "CAPABILITY_SELF",
+    "causal_summary": "OTHER",
+    "legacy": "OTHER",
+}
+_ASSERTION_KIND_BY_DOMAIN = {
+    "SELF_IDENTITY": "observation",
+    "SELF_BEHAVIOR_PATTERN": "observation",
+    "USER_PROFILE": "observation",
+    "USER_PREFERENCE": "user_preference",
+    "RELATIONSHIP": "relationship",
+    "OPERATING_RULE": "hard_constraint",
+    "LONG_TERM_GOAL": "goal",
+    "TASK": "observation",
+    "CAPABILITY_SELF": "skill",
+    "CAPABILITY_KNOWLEDGE": "observation",
+    "WORLD": "observation",
+    "REPOSITORY": "observation",
+    "SYSTEM": "observation",
+    "OTHER": "observation",
+}
+
+
+class MemoryCoordinatorError(RuntimeError):
+    pass
+
+
+def l1_memory_id(
+    *, life_id: str, source_event_id: str, policy_version: str = L1_POLICY_VERSION
+) -> str:
+    return "mem_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.l1-memory.v1",
+            "life_id": life_id,
+            "source_event_id": source_event_id,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def l1_derivation_id(
+    *, life_id: str, source_event_id: str, policy_version: str = L1_POLICY_VERSION
+) -> str:
+    return "mdr_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.l1-derivation.v1",
+            "life_id": life_id,
+            "source_event_id": source_event_id,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def l4_memory_id(
+    *,
+    life_id: str,
+    user_message_event_id: str,
+    claim_key: str,
+    policy_version: str = L4_POLICY_VERSION,
+) -> str:
+    return "mem_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.l4-memory.v1",
+            "life_id": life_id,
+            "user_message_event_id": user_message_event_id,
+            "claim_key": claim_key,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def l4_derivation_id(
+    *,
+    life_id: str,
+    user_message_event_id: str,
+    claim_key: str,
+    policy_version: str = L4_POLICY_VERSION,
+) -> str:
+    return "mdr_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.l4-derivation.v1",
+            "life_id": life_id,
+            "user_message_event_id": user_message_event_id,
+            "claim_key": claim_key,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def promotion_memory_id(
+    *, promotion_key: str, target_layer: str, policy_version: str
+) -> str:
+    return "mem_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.promotion-memory.v1",
+            "promotion_key": promotion_key,
+            "target_layer": target_layer,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def promotion_derivation_id(
+    *, promotion_key: str, target_layer: str, policy_version: str
+) -> str:
+    return "mdr_" + canonical_sha256(
+        {
+            "domain": "tiangong.life.promotion-derivation.v1",
+            "promotion_key": promotion_key,
+            "target_layer": target_layer,
+            "policy_version": policy_version,
+        }
+    )
+
+
+def _semantic_domain_for_assertion_kind(assertion_kind: str) -> str:
+    return _DOMAIN_BY_ASSERTION_KIND.get(
+        assertion_kind, "OTHER"
+    )
+
+
+def _assertion_kind_for_domain(semantic_domain: str) -> str:
+    return _ASSERTION_KIND_BY_DOMAIN.get(semantic_domain, "observation")
+
+
+def _parent_ref(parent: MemoryDerivationV1) -> MemoryParentRef:
+    return MemoryParentRef(
+        parent_derivation_id=parent.derivation_id,
+        memory_id=parent.memory_id,
+        memory_revision=parent.memory_revision,
+        assertion_sha256=parent.memory_assertion_sha256,
+        parent_ref_sha256="0" * 64,
+    ).with_computed_parent_ref_sha256()
+
+
+class MemoryCoordinator:
+    """Single write authority over one LifeShadowStore."""
+
+    def __init__(self, store: LifeShadowStore) -> None:
+        self._store = store
+
+    @property
+    def store(self) -> LifeShadowStore:
+        return self._store
+
+    # ------------------------------------------------------------------
+    # LifeEvent -> L1
+    # ------------------------------------------------------------------
+
+    def commit_life_event_l1(
+        self,
+        event: LifeEventEnvelope,
+        *,
+        event_payload: bytes | None = None,
+        policy_version: str = L1_POLICY_VERSION,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool]:
+        """Persist one LifeEvent as an L1 stream record atomically.
+
+        Deterministic memory/derivation ids make retries idempotent; the
+        assertion, protected payload, outbox row and derivation commit in a
+        single store transaction.
+        """
+
+        if not isinstance(event, LifeEventEnvelope):
+            raise MemoryCoordinatorError(
+                "LifeEvent->L1 requires a LifeEventEnvelope"
+            )
+        derivation_id = l1_derivation_id(
+            life_id=event.life_id,
+            source_event_id=event.event_id,
+            policy_version=policy_version,
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError("L1 assertion is missing")
+            return assertion, existing, False
+        memory_id = l1_memory_id(
+            life_id=event.life_id,
+            source_event_id=event.event_id,
+            policy_version=policy_version,
+        )
+        plaintext = (
+            event_payload
+            if event_payload is not None
+            else canonical_json_bytes(
+                {
+                    "schema": "tiangong.life.l1-record.v1",
+                    "event_id": event.event_id,
+                    "event_kind": event.event_kind,
+                    "source_kind": event.source_kind,
+                    "occurred_at_ms": event.occurred_at_ms,
+                }
+            )
+        )
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=event.life_id,
+            memory_id=memory_id,
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer="L1_STREAM",
+            semantic_domain="SYSTEM",
+            origin="LIFE_EVENT",
+            principal_ref=event.principal_ref,
+            workspace_ref=None,
+            privacy_scope=event.privacy_scope,
+            claim_key="l1:" + event.event_id,
+            parent_memory_refs=(),
+            source_event_ids=(event.event_id,),
+            lineage_root_event_ids=(event.event_id,),
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=(),
+            valid_from_ms=event.observed_at_ms,
+            expires_at_ms=None,
+            context_eligible=True,
+            learning_eligible=False,
+            temperament_eligible=False,
+            self_cognition_eligible=False,
+            world_candidate_eligible=False,
+            created_at_ms=event.observed_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        _assertion, _seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=event.life_id,
+            assertion_kind="observation",
+            epistemic_status="observed",
+            lifecycle_status="active",
+            privacy_scope=event.privacy_scope,
+            retention_class="ACTIVE_WORKING",
+            source_event_ids=(event.event_id,),
+            verification_strength_milli=event.source_credibility_milli,
+            valid_from_ms=event.observed_at_ms,
+            created_at_ms=event.observed_at_ms,
+            derivation=derivation,
+        )
+        stored = self._store.get_memory_derivation(derivation_id)
+        if stored is None:
+            raise MemoryCoordinatorError("L1 derivation commit failed")
+        return _assertion, stored, created
+
+    # ------------------------------------------------------------------
+    # L4 explicit
+    # ------------------------------------------------------------------
+
+    def commit_user_explicit(
+        self,
+        *,
+        l1_parent_derivation_id: str,
+        user_message_event_id: str,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        user_text: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        claim_key: str | None = None,
+        semantic_domain: str | None = None,
+        policy_version: str = L4_POLICY_VERSION,
+        expires_at_ms: int | None = None,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, object, bool]:
+        """Create L4 EXPLICIT bound to a real user_message event.
+
+        Explicit authority comes from the provided user span; the detector
+        only classifies it.  The L4 assertion is always ``user_asserted``
+        (I14: persistence authority, never external truth).
+        """
+
+        detection = detect_explicit_intent(user_text)
+        if not detection.triggered:
+            raise MemoryCoordinatorError(
+                "user span carries no explicit persistence intent"
+            )
+        parent = self._store.get_memory_derivation(l1_parent_derivation_id)
+        if parent is None or parent.layer != "L1_STREAM":
+            raise MemoryCoordinatorError("L4 requires an existing L1 parent")
+        claim = claim_key or ("explicit:" + user_message_event_id)
+        domain = semantic_domain or _semantic_domain_for_assertion_kind(
+            "user_preference"
+        )
+        memory_id = l4_memory_id(
+            life_id=life_id,
+            user_message_event_id=user_message_event_id,
+            claim_key=claim,
+            policy_version=policy_version,
+        )
+        derivation_id = l4_derivation_id(
+            life_id=life_id,
+            user_message_event_id=user_message_event_id,
+            claim_key=claim,
+            policy_version=policy_version,
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError("L4 assertion is missing")
+            return assertion, existing, detection, False
+        deadline = (
+            expires_at_ms
+            if expires_at_ms is not None
+            else expiry_deadline_ms(detection.expiry_kind, created_at_ms)
+        )
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=life_id,
+            memory_id=memory_id,
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer="L4_EXPLICIT",
+            semantic_domain=domain,
+            origin="USER_EXPLICIT",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=privacy_scope,
+            claim_key=claim,
+            parent_memory_refs=(_parent_ref(parent),),
+            source_event_ids=(user_message_event_id,),
+            lineage_root_event_ids=parent.lineage_root_event_ids,
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=detection.reason_codes,
+            valid_from_ms=created_at_ms,
+            expires_at_ms=deadline,
+            context_eligible=True,
+            learning_eligible=False,
+            temperament_eligible=False,
+            self_cognition_eligible=False,
+            world_candidate_eligible=(domain == "WORLD"),
+            created_at_ms=created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        assertion, _seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=life_id,
+            assertion_kind=_assertion_kind_for_domain(domain),
+            epistemic_status="user_asserted",
+            lifecycle_status="active",
+            privacy_scope=privacy_scope,
+            retention_class="LONG_TERM_MEMORY",
+            source_event_ids=(user_message_event_id,),
+            verification_strength_milli=750,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+            expires_at_ms=deadline,
+            derivation=derivation,
+            activate_head=True,
+        )
+        stored = self._store.get_memory_derivation(derivation_id)
+        if stored is None:
+            raise MemoryCoordinatorError("L4 derivation commit failed")
+        return assertion, stored, detection, created
+
+    # ------------------------------------------------------------------
+    # Runtime contract-record adapter (keeps API compatibility)
+    # ------------------------------------------------------------------
+
+    def commit_contract_assertion(
+        self,
+        *,
+        plaintext: bytes,
+        memory_id: str,
+        life_id: str,
+        principal_ref: str,
+        assertion_kind: str,
+        epistemic_status: str,
+        lifecycle_status: str,
+        privacy_scope: str,
+        retention_class: str,
+        source_event_ids: tuple[str, ...],
+        causal_utility_milli: int = 0,
+        user_importance_milli: int = 0,
+        verification_strength_milli: int = 0,
+        future_dependency_milli: int = 0,
+        valid_from_ms: int,
+        created_at_ms: int,
+        search_terms: tuple[str, ...] = (),
+        expires_at_ms: int | None = None,
+    ) -> tuple[MemoryAssertionV3, int, bool]:
+        """Adapter for legacy projection writes: assertion + L1 derivation."""
+
+        source_event_id = source_event_ids[0] if source_event_ids else None
+        derivation = None
+        if source_event_id is not None:
+            derivation = MemoryDerivationV1(
+                derivation_id=l1_derivation_id(
+                    life_id=life_id,
+                    source_event_id=source_event_id,
+                ),
+                life_id=life_id,
+                memory_id=memory_id,
+                memory_revision=1,
+                memory_assertion_sha256="0" * 64,
+                layer="L1_STREAM",
+                semantic_domain=_semantic_domain_for_assertion_kind(
+                    assertion_kind
+                ),
+                origin="LIFE_EVENT",
+                principal_ref=principal_ref,
+                workspace_ref=None,
+                privacy_scope=privacy_scope,
+                claim_key="l1:" + source_event_id,
+                parent_memory_refs=(),
+                source_event_ids=(source_event_id,),
+                lineage_root_event_ids=(source_event_id,),
+                external_evidence_refs=(),
+                promotion_policy_version=L1_POLICY_VERSION,
+                promotion_reason_codes=(),
+                valid_from_ms=valid_from_ms,
+                expires_at_ms=None,
+                context_eligible=True,
+                learning_eligible=False,
+                temperament_eligible=False,
+                self_cognition_eligible=False,
+                world_candidate_eligible=False,
+                created_at_ms=created_at_ms,
+                derivation_sha256="0" * 64,
+            ).with_computed_derivation_sha256()
+        assertion, change_seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=life_id,
+            assertion_kind=assertion_kind,
+            epistemic_status=epistemic_status,
+            lifecycle_status=lifecycle_status,
+            privacy_scope=privacy_scope,
+            retention_class=retention_class,
+            source_event_ids=source_event_ids,
+            causal_utility_milli=causal_utility_milli,
+            user_importance_milli=user_importance_milli,
+            verification_strength_milli=verification_strength_milli,
+            future_dependency_milli=future_dependency_milli,
+            valid_from_ms=valid_from_ms,
+            created_at_ms=created_at_ms,
+            search_terms=search_terms,
+            expires_at_ms=expires_at_ms,
+            derivation=derivation,
+        )
+        if source_event_id is not None:
+            self._ensure_l1_derivation(
+                assertion=assertion,
+                source_event_id=source_event_id,
+                principal_ref=principal_ref,
+            )
+        return assertion, change_seq, created
+
+    def _ensure_l1_derivation(
+        self,
+        *,
+        assertion: MemoryAssertionV3,
+        source_event_id: str,
+        principal_ref: str,
+    ) -> MemoryDerivationV1 | None:
+        derivation_id = l1_derivation_id(
+            life_id=assertion.life_id,
+            source_event_id=source_event_id,
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            return existing
+        slot = self._store.find_derivation(
+            memory_id=assertion.memory_id,
+            memory_revision=assertion.revision,
+            layer="L1_STREAM",
+        )
+        if slot is not None:
+            return slot
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=assertion.life_id,
+            memory_id=assertion.memory_id,
+            memory_revision=assertion.revision,
+            memory_assertion_sha256=assertion.assertion_sha256,
+            layer="L1_STREAM",
+            semantic_domain=_semantic_domain_for_assertion_kind(
+                assertion.assertion_kind
+            ),
+            origin="LIFE_EVENT",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=assertion.privacy_scope,
+            claim_key="l1:" + source_event_id,
+            parent_memory_refs=(),
+            source_event_ids=(source_event_id,),
+            lineage_root_event_ids=(source_event_id,),
+            external_evidence_refs=(),
+            promotion_policy_version=L1_POLICY_VERSION,
+            promotion_reason_codes=(),
+            valid_from_ms=assertion.valid_from_ms,
+            expires_at_ms=None,
+            context_eligible=True,
+            learning_eligible=False,
+            temperament_eligible=False,
+            self_cognition_eligible=False,
+            world_candidate_eligible=False,
+            created_at_ms=assertion.created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        self._store.put_memory_derivation(derivation)
+        return derivation
+
+    # ------------------------------------------------------------------
+    # Promotion materialization
+    # ------------------------------------------------------------------
+
+    def promote_l1_to_l2(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        l1_derivation_ids: tuple[str, ...],
+        claim_key: str,
+        semantic_domain: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        policy_version: str = L2_POLICY_VERSION,
+        episode_boundary: bool = True,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool] | None:
+        l1s = tuple(
+            self._store.get_memory_derivation(derivation_id)
+            for derivation_id in l1_derivation_ids
+        )
+        if any(item is None for item in l1s):
+            raise MemoryCoordinatorError("L2 promotion references a missing L1")
+        typed = tuple(item for item in l1s if item is not None)
+        disposition = memory_promotion.evaluate_l2(
+            l1_derivations=typed,
+            life_id=life_id,
+            principal_ref=principal_ref,
+            claim_key=claim_key,
+            semantic_domain=semantic_domain,
+            policy_version=policy_version,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+            episode_boundary=episode_boundary,
+        )
+        if not disposition.allowed:
+            return None
+        return self._materialize_promotion(
+            disposition=disposition,
+            parents=typed,
+            principal_ref=principal_ref,
+            privacy_scope=privacy_scope,
+            plaintext=plaintext,
+            created_at_ms=created_at_ms,
+            policy_version=policy_version,
+        )
+
+    def promote_l2_to_l3(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        l2_derivation_ids: tuple[str, ...],
+        claim_key: str,
+        semantic_domain: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        support_weights: Mapping[str, int],
+        counter_weights: Mapping[str, int],
+        causal_utility_milli: Mapping[str, int],
+        recurrence_count: int,
+        policy_version: str = L3_POLICY_VERSION,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool] | None:
+        l2s = tuple(
+            self._store.get_memory_derivation(derivation_id)
+            for derivation_id in l2_derivation_ids
+        )
+        if any(item is None for item in l2s):
+            raise MemoryCoordinatorError("L3 promotion references a missing L2")
+        typed = tuple(item for item in l2s if item is not None)
+        disposition = memory_promotion.evaluate_l3(
+            l2_derivations=typed,
+            support_weights=support_weights,
+            counter_weights=counter_weights,
+            causal_utility_milli=causal_utility_milli,
+            recurrence_count=recurrence_count,
+            life_id=life_id,
+            principal_ref=principal_ref,
+            claim_key=claim_key,
+            semantic_domain=semantic_domain,
+            policy_version=policy_version,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+        )
+        if not disposition.allowed:
+            return None
+        return self._materialize_promotion(
+            disposition=disposition,
+            parents=typed,
+            principal_ref=principal_ref,
+            privacy_scope=privacy_scope,
+            plaintext=plaintext,
+            created_at_ms=created_at_ms,
+            policy_version=policy_version,
+        )
+
+    def promote_to_l5(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        candidate_derivation_ids: tuple[str, ...],
+        claim_key: str,
+        semantic_domain: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        support_weights: Mapping[str, int],
+        counter_weights: Mapping[str, int],
+        recurrence_count: int,
+        policy_version: str = L5_POLICY_VERSION,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool] | None:
+        candidates = tuple(
+            self._store.get_memory_derivation(derivation_id)
+            for derivation_id in candidate_derivation_ids
+        )
+        if any(item is None for item in candidates):
+            raise MemoryCoordinatorError("L5 promotion references a missing candidate")
+        typed = tuple(item for item in candidates if item is not None)
+        disposition = memory_promotion.evaluate_l5(
+            candidates=typed,
+            support_weights=support_weights,
+            counter_weights=counter_weights,
+            recurrence_count=recurrence_count,
+            life_id=life_id,
+            principal_ref=principal_ref,
+            claim_key=claim_key,
+            semantic_domain=semantic_domain,
+            policy_version=policy_version,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+        )
+        if not disposition.allowed:
+            return None
+        return self._materialize_promotion(
+            disposition=disposition,
+            parents=typed,
+            principal_ref=principal_ref,
+            privacy_scope=privacy_scope,
+            plaintext=plaintext,
+            created_at_ms=created_at_ms,
+            policy_version=policy_version,
+        )
+
+    def _materialize_promotion(
+        self,
+        *,
+        disposition,
+        parents: tuple[MemoryDerivationV1, ...],
+        principal_ref: str,
+        privacy_scope: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        policy_version: str,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool]:
+        parents = tuple(
+            sorted(parents, key=lambda item: item.derivation_id)
+        )
+        memory_id = promotion_memory_id(
+            promotion_key=disposition.promotion_key,
+            target_layer=disposition.target_layer,
+            policy_version=policy_version,
+        )
+        derivation_id = promotion_derivation_id(
+            promotion_key=disposition.promotion_key,
+            target_layer=disposition.target_layer,
+            policy_version=policy_version,
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError("promotion assertion is missing")
+            return assertion, existing, False
+        parent_refs = tuple(_parent_ref(parent) for parent in parents)
+        source_events = tuple(
+            sorted(
+                {
+                    event_id
+                    for parent in parents
+                    for event_id in parent.source_event_ids
+                }
+            )
+        )
+        parent_assertions = tuple(
+            self._store.get_memory_assertion(
+                parent.memory_id, parent.memory_revision
+            )
+            for parent in parents
+        )
+        if any(item is None for item in parent_assertions):
+            raise MemoryCoordinatorError("promotion parent assertion is missing")
+        verified = all(
+            item.epistemic_status in {"verified", "observed"}
+            for item in parent_assertions
+            if item is not None
+        )
+        domain = disposition.semantic_domain
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=disposition.life_id,
+            memory_id=memory_id,
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer=disposition.target_layer,
+            semantic_domain=domain,
+            origin="PROMOTION",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=privacy_scope,
+            claim_key=disposition.claim_key,
+            parent_memory_refs=parent_refs,
+            source_event_ids=source_events,
+            lineage_root_event_ids=disposition.lineage_root_event_ids,
+            external_evidence_refs=(),
+            promotion_policy_version=disposition.policy_version,
+            promotion_reason_codes=disposition.reason_codes,
+            valid_from_ms=disposition.valid_from_ms,
+            expires_at_ms=None,
+            context_eligible=True,
+            learning_eligible=disposition.target_layer
+            in {"L3_EXPERIENCE", "L5_CORE"},
+            temperament_eligible=(
+                disposition.target_layer == "L5_CORE"
+                and domain == "SELF_BEHAVIOR_PATTERN"
+            ),
+            self_cognition_eligible=(
+                disposition.target_layer == "L5_CORE"
+                and domain in _SELF_COGNITION_DOMAINS
+            ),
+            world_candidate_eligible=(
+                disposition.target_layer
+                in {"L3_EXPERIENCE", "L4_EXPLICIT", "L5_CORE"}
+                and domain == "WORLD"
+            ),
+            created_at_ms=disposition.created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        assertion, _seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=disposition.life_id,
+            assertion_kind=_assertion_kind_for_domain(domain),
+            epistemic_status="verified" if verified else "user_asserted",
+            lifecycle_status="active",
+            privacy_scope=privacy_scope,
+            retention_class="LONG_TERM_MEMORY"
+            if disposition.target_layer == "L5_CORE"
+            else "CHECKPOINT",
+            source_event_ids=source_events,
+            causal_utility_milli=700
+            if disposition.target_layer == "L3_EXPERIENCE"
+            else 0,
+            verification_strength_milli=disposition.support_milli,
+            valid_from_ms=disposition.valid_from_ms,
+            created_at_ms=disposition.created_at_ms,
+            derivation=derivation,
+            activate_head=True,
+        )
+        stored = self._store.get_memory_derivation(derivation_id)
+        if stored is None:
+            raise MemoryCoordinatorError("promotion derivation commit failed")
+        return assertion, stored, created
+
+    # ------------------------------------------------------------------
+    # Correction / invalidation closure
+    # ------------------------------------------------------------------
+
+    def correct_claim(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        target_derivation_id: str,
+        user_message_event_id: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        policy_version: str = L4_POLICY_VERSION,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, tuple, bool]:
+        """Correct one active claim head and cascade-invalidate descendants."""
+
+        target = self._store.get_memory_derivation(target_derivation_id)
+        if target is None:
+            raise MemoryCoordinatorError("correction target is missing")
+        if not self._store.is_derivation_active(target_derivation_id):
+            raise MemoryCoordinatorError("correction target is already inactive")
+        memory_id = "mem_" + canonical_sha256(
+            {
+                "domain": "tiangong.life.correction-memory.v1",
+                "target_derivation_id": target_derivation_id,
+                "user_message_event_id": user_message_event_id,
+                "policy_version": policy_version,
+            }
+        )
+        derivation_id = "mdr_" + canonical_sha256(
+            {
+                "domain": "tiangong.life.correction-derivation.v1",
+                "target_derivation_id": target_derivation_id,
+                "user_message_event_id": user_message_event_id,
+                "policy_version": policy_version,
+            }
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError("correction assertion is missing")
+            return assertion, existing, (), False
+        domain = target.semantic_domain
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=life_id,
+            memory_id=memory_id,
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer=target.layer,
+            semantic_domain=domain,
+            origin="USER_EXPLICIT",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=privacy_scope,
+            claim_key=target.claim_key,
+            parent_memory_refs=(_parent_ref(target),),
+            source_event_ids=(user_message_event_id,),
+            lineage_root_event_ids=target.lineage_root_event_ids,
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=("corrected",),
+            valid_from_ms=created_at_ms,
+            expires_at_ms=None,
+            context_eligible=target.context_eligible,
+            learning_eligible=target.learning_eligible,
+            temperament_eligible=target.temperament_eligible,
+            self_cognition_eligible=target.self_cognition_eligible,
+            world_candidate_eligible=target.world_candidate_eligible,
+            created_at_ms=created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        invalidations = invalidate_cascade(
+            self._store,
+            derivation_id=target_derivation_id,
+            reason="corrected",
+            invalidated_at_ms=created_at_ms,
+            source_trigger_ref=user_message_event_id,
+        )
+        assertion, _seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=life_id,
+            assertion_kind=_assertion_kind_for_domain(domain),
+            epistemic_status="user_asserted",
+            lifecycle_status="active",
+            privacy_scope=privacy_scope,
+            retention_class="LONG_TERM_MEMORY",
+            source_event_ids=(user_message_event_id,),
+            verification_strength_milli=750,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+            derivation=derivation,
+            activate_head=True,
+        )
+        stored = self._store.get_memory_derivation(derivation_id)
+        if stored is None:
+            raise MemoryCoordinatorError("correction derivation commit failed")
+        return assertion, stored, invalidations, created
+
+
+__all__ = [
+    "L1_POLICY_VERSION",
+    "L2_POLICY_VERSION",
+    "L3_POLICY_VERSION",
+    "L4_POLICY_VERSION",
+    "L5_POLICY_VERSION",
+    "MemoryCoordinator",
+    "MemoryCoordinatorError",
+    "l1_derivation_id",
+    "l1_memory_id",
+    "l4_derivation_id",
+    "l4_memory_id",
+    "promotion_derivation_id",
+    "promotion_memory_id",
+]

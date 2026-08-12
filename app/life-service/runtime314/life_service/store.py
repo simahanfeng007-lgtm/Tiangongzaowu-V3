@@ -47,6 +47,7 @@ from contracts import (
     RunLifeBinding,
     MemoryAssertionV3,
     MemoryDerivationV1,
+    MemoryInvalidationRecord,
     MemoryParentRef,
     MemoryRelationV3,
     PrivacyDeletionTombstone,
@@ -64,7 +65,7 @@ from contracts import (
 from .replay import LifeReplaySummary, advance_replay_sha256, replay_life_events
 
 
-SHADOW_STORE_SCHEMA_VERSION = 14
+SHADOW_STORE_SCHEMA_VERSION = 15
 SHADOW_STORE_APPLICATION_ID = 0x54474C53
 
 _LIFE_TURN_STAGE_PRECEDENCE = {
@@ -996,11 +997,43 @@ _P14_MEMORY_DERIVATION_SQL = ";\n".join(
 _P14_MEMORY_DERIVATION_SHA256 = hashlib.sha256(
     _P14_MEMORY_DERIVATION_SQL.encode("utf-8")
 ).hexdigest()
+_P15_MEMORY_INVALIDATION_MIGRATION_ID = "p15-memory-invalidation-records"
+_P15_MEMORY_INVALIDATION_STATEMENTS = (
+    """CREATE TABLE memory_derivation_invalidations (
+        invalidation_id TEXT PRIMARY KEY CHECK(invalidation_id LIKE 'miv_%'),
+        life_id TEXT NOT NULL,
+        principal_ref TEXT NOT NULL,
+        derivation_id TEXT NOT NULL
+            REFERENCES memory_derivations(derivation_id) ON DELETE RESTRICT,
+        memory_id TEXT NOT NULL,
+        memory_revision INTEGER NOT NULL CHECK(memory_revision >= 1),
+        assertion_sha256 TEXT NOT NULL CHECK(length(assertion_sha256) = 64),
+        reason TEXT NOT NULL CHECK(reason IN (
+            'corrected','superseded','stale','privacy_erasure','invalidated'
+        )),
+        source_trigger_ref TEXT,
+        invalidated_at_ms INTEGER NOT NULL CHECK(invalidated_at_ms >= 0),
+        descendant_derivation_ids_json TEXT NOT NULL
+            CHECK(json_valid(descendant_derivation_ids_json)),
+        invalidation_sha256 TEXT NOT NULL UNIQUE CHECK(length(invalidation_sha256) = 64),
+        payload BLOB NOT NULL
+    ) STRICT""",
+    """CREATE INDEX memory_derivation_invalidations_derivation_idx
+    ON memory_derivation_invalidations(derivation_id)""",
+    """CREATE INDEX memory_derivation_invalidations_life_idx
+    ON memory_derivation_invalidations(life_id, invalidated_at_ms)""",
+)
+_P15_MEMORY_INVALIDATION_SQL = ";\n".join(
+    statement.strip() for statement in _P15_MEMORY_INVALIDATION_STATEMENTS
+) + ";\n"
+_P15_MEMORY_INVALIDATION_SHA256 = hashlib.sha256(
+    _P15_MEMORY_INVALIDATION_SQL.encode("utf-8")
+).hexdigest()
 _SCHEMA_SQL = (
     _P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n"
     + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n"
     + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL
-    + "\n" + _P14_MEMORY_DERIVATION_SQL
+    + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL
 )
 _SCHEMA_SHA256 = hashlib.sha256(_SCHEMA_SQL.encode("utf-8")).hexdigest()
 _EXPECTED_TABLES = frozenset(
@@ -1043,6 +1076,7 @@ _EXPECTED_TABLES = frozenset(
         "memory_outbox",
         "memory_derivations",
         "memory_derivation_parents",
+        "memory_derivation_invalidations",
         "memory_active_heads",
         "memory_consumer_offsets",
         "life_authority_heads",
@@ -1321,6 +1355,10 @@ class LifeShadowStore:
                 (_P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256, now_ms),
             )
             connection.execute(
+                "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (15, ?, ?, ?)",
+                (_P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256, now_ms),
+            )
+            connection.execute(
                 "INSERT INTO schema_metadata(key, value) VALUES ('purpose', 'life-shadow-only')"
             )
             connection.execute(
@@ -1342,7 +1380,7 @@ class LifeShadowStore:
             raise LifeShadowStoreError("shadow store application identity is invalid")
         if user_version == SHADOW_STORE_SCHEMA_VERSION:
             return
-        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}:
+        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}:
             raise LifeShadowStoreError("shadow store schema version cannot be migrated")
         tables = {
             str(row["name"])
@@ -1393,8 +1431,11 @@ class LifeShadowStore:
             "memory_active_heads",
             "memory_consumer_offsets",
         }
+        p15_tables = {"memory_derivation_invalidations"}
         p2_tables = {"life_ingress_dedupe", "life_ingress_receipts"}
         expected_tables = set(_EXPECTED_TABLES)
+        if user_version < 15:
+            expected_tables -= p15_tables
         if user_version < 14:
             expected_tables -= p14_tables
         if user_version < 13:
@@ -1490,6 +1531,9 @@ class LifeShadowStore:
         if user_version >= 14:
             expected_migrations.append((14, _P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256))
             expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL).encode("utf-8")).hexdigest()
+        if user_version >= 15:
+            expected_migrations.append((15, _P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256))
+            expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL).encode("utf-8")).hexdigest()
         if (
             len(migration) != len(expected_migrations)
             or any(
@@ -1610,6 +1654,10 @@ class LifeShadowStore:
                 for statement in _P14_MEMORY_DERIVATION_STATEMENTS:
                     connection.execute(statement)
                 connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (14, ?, ?, ?)", (_P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256, now_ms))
+            if user_version < 15:
+                for statement in _P15_MEMORY_INVALIDATION_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (15, ?, ?, ?)", (_P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256, now_ms))
             connection.execute(
                 "UPDATE schema_metadata SET value = ? WHERE key = 'schema_sha256'",
                 (_SCHEMA_SHA256,),
@@ -2804,6 +2852,9 @@ class LifeShadowStore:
         valid_from_ms: int,
         created_at_ms: int,
         search_terms: tuple[str, ...] = (),
+        expires_at_ms: int | None = None,
+        derivation: MemoryDerivationV1 | None = None,
+        activate_head: bool = False,
     ) -> tuple[MemoryAssertionV3, int, bool]:
         """Commit one live user-fact assertion with its payload atomically.
 
@@ -2812,7 +2863,12 @@ class LifeShadowStore:
         transaction.  Repeating the same call (same memory, same latest
         revision, same plaintext, same lifecycle status) is an idempotent
         no-op that returns the existing assertion and its original change
-        seq instead of opening a new revision.
+        seq instead of opening a new revision.  When ``derivation`` is
+        supplied, the P15 derivation row and optional active head commit in
+        the same transaction as the assertion it describes.  The derivation's
+        ``memory_assertion_sha256`` is rebound to the actual committed
+        assertion digest and its derivation digest recomputed inside the
+        transaction, so the caller may pass a placeholder assertion digest.
         """
 
         if lifecycle_status == "deleted":
@@ -2916,7 +2972,7 @@ class LifeShadowStore:
                     contradiction_penalty_milli=0,
                     staleness_milli=0,
                     valid_from_ms=valid_from_ms,
-                    expires_at_ms=None,
+                    expires_at_ms=expires_at_ms,
                     created_at_ms=created_at_ms,
                     assertion_sha256="0" * 64,
                 ).with_computed_assertion_sha256()
@@ -2927,6 +2983,19 @@ class LifeShadowStore:
                 assertion, payload, search_terms=search_terms
             )
             assert created and change_seq is not None
+            if derivation is not None:
+                derivation, _payload = _revalidate_contract(
+                    derivation, MemoryDerivationV1, "memory derivation"
+                )
+                derivation = derivation.model_copy(
+                    update={
+                        "memory_assertion_sha256": assertion.assertion_sha256,
+                        "memory_revision": assertion.revision,
+                    }
+                ).with_computed_derivation_sha256()
+                self._put_memory_derivation_locked(
+                    derivation, activate_head=activate_head
+                )
             connection.execute("COMMIT")
             return assertion, change_seq, True
         except Exception:
@@ -3317,12 +3386,35 @@ class LifeShadowStore:
         ).fetchone()
         return None if row is None else self._derivation_from_row(row)
 
+    def find_derivation(
+        self, *, memory_id: str, memory_revision: int, layer: str
+    ) -> MemoryDerivationV1 | None:
+        """Return the derivation occupying one assertion layer slot, if any."""
+
+        row = self._connection.execute(
+            """
+            SELECT payload FROM memory_derivations
+            WHERE memory_id = ? AND memory_revision = ? AND layer = ?
+            LIMIT 1
+            """,
+            (memory_id, memory_revision, layer),
+        ).fetchone()
+        return None if row is None else self._derivation_from_row(row)
+
+    def get_derivation_promotion_key(self, derivation_id: str) -> str | None:
+        row = self._connection.execute(
+            "SELECT promotion_key FROM memory_derivations WHERE derivation_id = ?",
+            (derivation_id,),
+        ).fetchone()
+        return None if row is None else str(row["promotion_key"])
+
     def list_memory_derivations(
         self,
         *,
         life_id: str | None = None,
         principal_ref: str | None = None,
         layer: str | None = None,
+        active_only: bool = False,
         limit: int = 1024,
     ) -> tuple[MemoryDerivationV1, ...]:
         if not 1 <= limit <= 65536:
@@ -3338,6 +3430,11 @@ class LifeShadowStore:
         if layer is not None:
             clauses.append("layer = ?")
             values.append(layer)
+        if active_only:
+            clauses.append(
+                "NOT EXISTS (SELECT 1 FROM memory_derivation_invalidations AS i "
+                "WHERE i.derivation_id = memory_derivations.derivation_id)"
+            )
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = self._connection.execute(
             f"""
@@ -3411,6 +3508,10 @@ class LifeShadowStore:
               ON d.derivation_id = h.derivation_id
             WHERE h.life_id = ? AND h.principal_ref = ?
               AND h.claim_key = ? AND h.layer = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM memory_derivation_invalidations AS i
+                  WHERE i.derivation_id = h.derivation_id
+              )
             """,
             (life_id, principal_ref, claim_key, layer),
         ).fetchone()
@@ -3430,6 +3531,10 @@ class LifeShadowStore:
         if principal_ref is not None:
             clauses.append("h.principal_ref = ?")
             values.append(principal_ref)
+        clauses.append(
+            "NOT EXISTS (SELECT 1 FROM memory_derivation_invalidations AS i "
+            "WHERE i.derivation_id = h.derivation_id)"
+        )
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = self._connection.execute(
             f"""
@@ -3515,6 +3620,187 @@ class LifeShadowStore:
                 connection.execute("ROLLBACK")
             raise
 
+    def is_derivation_active(self, derivation_id: str) -> bool:
+        if not isinstance(derivation_id, str) or not derivation_id.startswith(
+            "mdr_"
+        ):
+            raise ValueError("memory derivation id is invalid")
+        row = self._connection.execute(
+            """
+            SELECT 1 FROM memory_derivations AS d
+            WHERE d.derivation_id = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM memory_derivation_invalidations AS i
+                  WHERE i.derivation_id = d.derivation_id
+              )
+            """,
+            (derivation_id,),
+        ).fetchone()
+        return row is not None
+
+    def put_memory_invalidation(
+        self, record: MemoryInvalidationRecord
+    ) -> bool:
+        """Append one derivation-invalidation audit record atomically."""
+
+        record, payload = _revalidate_contract(
+            record, MemoryInvalidationRecord, "memory invalidation"
+        )
+        if not record.has_valid_invalidation_sha256():
+            raise LifeShadowStoreError("memory invalidation digest is invalid")
+        connection = self._connection
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """
+                SELECT invalidation_id FROM memory_derivation_invalidations
+                WHERE invalidation_id = ?
+                """,
+                (record.invalidation_id,),
+            ).fetchone()
+            if existing is not None:
+                connection.execute("COMMIT")
+                return False
+            duplicate = connection.execute(
+                """
+                SELECT invalidation_id FROM memory_derivation_invalidations
+                WHERE invalidation_sha256 = ?
+                """,
+                (record.invalidation_sha256,),
+            ).fetchone()
+            if duplicate is not None:
+                raise LifeShadowStoreError(
+                    "memory invalidation digest collides with another id"
+                )
+            derivation = connection.execute(
+                "SELECT * FROM memory_derivations WHERE derivation_id = ?",
+                (record.derivation_id,),
+            ).fetchone()
+            if derivation is None:
+                raise LifeShadowStoreError(
+                    "memory invalidation targets a missing derivation"
+                )
+            parsed = self._derivation_from_row(derivation)
+            if (
+                parsed.life_id != record.life_id
+                or parsed.principal_ref != record.principal_ref
+                or parsed.memory_id != record.memory_id
+                or parsed.memory_revision != record.memory_revision
+                or parsed.memory_assertion_sha256 != record.assertion_sha256
+            ):
+                raise LifeShadowStoreError(
+                    "memory invalidation binding is inconsistent"
+                )
+            connection.execute(
+                """
+                INSERT INTO memory_derivation_invalidations(
+                    invalidation_id, life_id, principal_ref, derivation_id,
+                    memory_id, memory_revision, assertion_sha256, reason,
+                    source_trigger_ref, invalidated_at_ms,
+                    descendant_derivation_ids_json, invalidation_sha256, payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.invalidation_id,
+                    record.life_id,
+                    record.principal_ref,
+                    record.derivation_id,
+                    record.memory_id,
+                    record.memory_revision,
+                    record.assertion_sha256,
+                    record.reason,
+                    record.source_trigger_ref,
+                    record.invalidated_at_ms,
+                    canonical_json_bytes(
+                        record.descendant_derivation_ids
+                    ).decode("utf-8"),
+                    record.invalidation_sha256,
+                    payload,
+                ),
+            )
+            connection.execute("COMMIT")
+            return True
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+
+    def list_memory_invalidations(
+        self,
+        *,
+        derivation_id: str | None = None,
+        life_id: str | None = None,
+    ) -> tuple[MemoryInvalidationRecord, ...]:
+        clauses: list[str] = []
+        values: list[object] = []
+        if derivation_id is not None:
+            clauses.append("derivation_id = ?")
+            values.append(derivation_id)
+        if life_id is not None:
+            clauses.append("life_id = ?")
+            values.append(life_id)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self._connection.execute(
+            f"""
+            SELECT payload FROM memory_derivation_invalidations
+            {where}
+            ORDER BY invalidated_at_ms, invalidation_id
+            """,
+            values,
+        ).fetchall()
+        records: list[MemoryInvalidationRecord] = []
+        for row in rows:
+            records.append(
+                _parse_stored_contract(
+                    bytes(row["payload"]),
+                    MemoryInvalidationRecord,
+                    "memory invalidation",
+                )
+            )
+        return tuple(records)
+
+    def clear_active_head(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        claim_key: str,
+        layer: str,
+        derivation_id: str | None = None,
+    ) -> bool:
+        connection = self._connection
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            if derivation_id is None:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM memory_active_heads
+                    WHERE life_id = ? AND principal_ref = ? AND claim_key = ? AND layer = ?
+                    """,
+                    (life_id, principal_ref, claim_key, layer),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM memory_active_heads
+                    WHERE life_id = ? AND principal_ref = ? AND claim_key = ? AND layer = ?
+                      AND derivation_id = ?
+                    """,
+                    (
+                        life_id,
+                        principal_ref,
+                        claim_key,
+                        layer,
+                        derivation_id,
+                    ),
+                )
+            connection.execute("COMMIT")
+            return cursor.rowcount > 0
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+
     def ack_memory_outbox(
         self,
         change_seq: int,
@@ -3593,6 +3879,27 @@ class LifeShadowStore:
             WHERE a.memory_id = ? ORDER BY a.revision DESC LIMIT 1
             """,
             (memory_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _parse_stored_contract(
+            bytes(row["payload"]),
+            MemoryAssertionV3,
+            "memory assertion",
+        )
+
+    def get_memory_assertion(
+        self, memory_id: str, revision: int
+    ) -> MemoryAssertionV3 | None:
+        row = self._connection.execute(
+            """
+            SELECT a.memory_id, a.revision, c.payload
+            FROM memory_assertions AS a
+            JOIN memory_assertion_contracts AS c
+              ON c.memory_id = a.memory_id AND c.revision = a.revision
+            WHERE a.memory_id = ? AND a.revision = ?
+            """,
+            (memory_id, revision),
         ).fetchone()
         if row is None:
             return None
@@ -7799,6 +8106,7 @@ class LifeShadowStore:
             (12, _P12_V21_LIFE_TURN_COMMIT_MIGRATION_ID, _P12_V21_LIFE_TURN_COMMIT_SHA256),
             (13, _P13_V21_CAPABILITY_LIFECYCLE_MIGRATION_ID, _P13_V21_CAPABILITY_LIFECYCLE_SHA256),
             (14, _P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256),
+            (15, _P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256),
         )
         if len(migration) != len(expected_migrations) or any(
             (
