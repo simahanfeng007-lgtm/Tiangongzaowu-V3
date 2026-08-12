@@ -1,8 +1,8 @@
 {
-  "file_count": 59,
+  "file_count": 60,
   "mapping_id": "shared-contracts",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "src/contracts",
-  "tree_sha256": "810195be037b110806d0d1c2e18a436d2f0bc8cd4c93a274aa37ecca15c1afa1",
+  "tree_sha256": "6434d68ff68eb6c53d9e83065273953d37fc07ab30387f1a1c7d646717237baf",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

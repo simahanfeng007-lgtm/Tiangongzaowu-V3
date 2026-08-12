@@ -103,6 +103,20 @@ from .memory import (
     PrivacyDeletionTombstone,
     retention_priority,
 )
+from .memory_layers import (
+    MEMORY_DERIVATION_SCHEMA_VERSION,
+    MemoryDerivationId,
+    MemoryDerivationOrigin,
+    MemoryDerivationV1,
+    MemoryInvalidationId,
+    MemoryInvalidationReason,
+    MemoryInvalidationRecord,
+    MemoryLayer,
+    MemoryParentRef,
+    MemoryPromotionDisposition,
+    MemorySemanticDomain,
+    derive_promotion_key,
+)
 from .affect import (
     AffectCandidateDimensions,
     AffectExpressionCase,
