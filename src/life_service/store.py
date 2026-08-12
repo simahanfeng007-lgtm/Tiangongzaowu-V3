@@ -3482,6 +3482,19 @@ class LifeShadowStore:
         ).fetchone()
         return None if row is None else self._derivation_from_row(row)
 
+    def has_derivation_for_assertion(
+        self, memory_id: str, memory_revision: int
+    ) -> bool:
+        row = self._connection.execute(
+            """
+            SELECT 1 FROM memory_derivations
+            WHERE memory_id = ? AND memory_revision = ?
+            LIMIT 1
+            """,
+            (memory_id, memory_revision),
+        ).fetchone()
+        return row is not None
+
     def get_derivation_promotion_key(self, derivation_id: str) -> str | None:
         row = self._connection.execute(
             "SELECT promotion_key FROM memory_derivations WHERE derivation_id = ?",

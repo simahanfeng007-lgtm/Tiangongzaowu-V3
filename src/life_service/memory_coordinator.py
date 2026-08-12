@@ -37,6 +37,11 @@ from . import temperament as temperament_module
 from .explicit_memory import detect_explicit_intent, expiry_deadline_ms
 from .memory_invalidation import invalidate_cascade
 from .memory_context import is_injection_marked
+from .legacy_layer_migration import (
+    LEGACY_MIGRATION_POLICY,
+    build_legacy_derivation,
+    legacy_layer_for_assertion,
+)
 from .store import LifeShadowStore, LifeShadowStoreError
 
 
@@ -1377,6 +1382,74 @@ class MemoryCoordinator:
             if len(candidates) >= limit:
                 break
         return created, skipped, tuple(candidates)
+
+    # ------------------------------------------------------------------
+    # Legacy migration (M8)
+    # ------------------------------------------------------------------
+
+    def migrate_legacy_memories(
+        self,
+        *,
+        life_id: str,
+        now_ms: int,
+        policy_version: str = LEGACY_MIGRATION_POLICY,
+        limit: int = 512,
+    ) -> dict[str, object]:
+        """Attach conservative legacy-layer derivations to old assertions.
+
+        The migration is additive, idempotent and never upgrades legacy rows
+        to L5.  Assertions that already carry any derivation are skipped.
+        """
+
+        if not 1 <= limit <= 4096:
+            raise MemoryCoordinatorError(
+                "legacy migration limit is invalid"
+            )
+        counts = {
+            "L1_STREAM": 0,
+            "L2_DIARY": 0,
+            "L3_EXPERIENCE": 0,
+            "L4_EXPLICIT": 0,
+        }
+        skipped = 0
+        migrated_ids: list[str] = []
+        assertions = self._store.list_latest_memory_assertions(
+            life_id, recallable_only=False
+        )
+        for assertion in assertions[:limit]:
+            if assertion.lifecycle_status == "deleted":
+                skipped += 1
+                continue
+            if self._store.has_derivation_for_assertion(
+                assertion.memory_id, assertion.revision
+            ):
+                skipped += 1
+                continue
+            layer = legacy_layer_for_assertion(assertion)
+            derivation = build_legacy_derivation(
+                assertion,
+                layer=layer,
+                created_at_ms=now_ms,
+                policy_version=policy_version,
+            )
+            try:
+                created = self._store.put_memory_derivation(derivation)
+            except LifeShadowStoreError:
+                skipped += 1
+                continue
+            if created:
+                counts[layer] += 1
+                migrated_ids.append(derivation.derivation_id)
+            else:
+                skipped += 1
+        return {
+            "life_id": life_id,
+            "policy_version": policy_version,
+            "migrated_by_layer": counts,
+            "migrated_count": sum(counts.values()),
+            "skipped_count": skipped,
+            "migration_ids": tuple(migrated_ids),
+        }
 
 
 __all__ = [

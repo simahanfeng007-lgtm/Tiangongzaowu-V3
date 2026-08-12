@@ -1,8 +1,8 @@
 {
-  "file_count": 47,
+  "file_count": 49,
   "mapping_id": "life-service-runtime",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "src/life_service",
-  "tree_sha256": "89cb92709a654c0535187abbe765e9682c46d1aba471d653b013083efaddf7b1",
+  "tree_sha256": "9b7e26df0fcfffe281f5244a5840911df64e496446cd49426af2c4516800c63d",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

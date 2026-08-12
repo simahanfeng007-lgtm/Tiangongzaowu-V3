@@ -287,10 +287,12 @@ class MemoryDerivationV1(ContractModel):
                 "(or a MIGRATION origin)"
             )
         if self.layer == "L4_EXPLICIT" and (
-            self.origin != "USER_EXPLICIT" or not self.source_event_ids
+            self.origin not in {"USER_EXPLICIT", "MIGRATION"}
+            or not self.source_event_ids
         ):
             raise ValueError(
-                "L4 explicit requires USER_EXPLICIT origin bound to a user message event"
+                "L4 explicit requires USER_EXPLICIT or MIGRATION origin "
+                "bound to a user message event"
             )
         if self.origin != "MIGRATION" and not self.lineage_root_event_ids:
             raise ValueError(
