@@ -25,6 +25,9 @@ EXPLICIT_PATTERNS = (
     (re.compile(r"以后一直"), "ongoing_behavior"),
     (re.compile(r"请一直"), "ongoing_behavior"),
     (re.compile(r"(?:请)?(?:叫我|称呼我|喊我)"), "address_alias"),
+    (re.compile(r"我(?:的)?名字(?:是|叫)"), "identity_introduction"),
+    (re.compile(r"我叫"), "identity_introduction"),
+    (re.compile(r"名字叫"), "identity_introduction"),
 )
 
 EXPIRY_PATTERNS = (

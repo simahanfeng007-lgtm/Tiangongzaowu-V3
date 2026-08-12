@@ -424,6 +424,97 @@ class MemoryCoordinator:
             raise MemoryCoordinatorError("L4 derivation commit failed")
         return assertion, stored, detection, created
 
+    def attach_explicit_l4(
+        self,
+        *,
+        life_id: str,
+        memory_id: str,
+        user_text: str,
+        created_at_ms: int,
+        principal_ref: str,
+        policy_version: str = L4_POLICY_VERSION,
+    ) -> MemoryDerivationV1 | None:
+        """Attach an L4 EXPLICIT derivation to an already-committed assertion.
+
+        The assertion (and its L1 stream record) were written through
+        ``/memory/assert`` or the contract adapter.  When the real user span
+        carries explicit persistence intent, this adds the L4 derivation bound
+        to that span, with ``user_asserted`` authority and no truth upgrade.
+        Idempotent: re-attaching the same span is a no-op.
+        """
+
+        detection = detect_explicit_intent(user_text)
+        if not detection.triggered:
+            return None
+        assertion = self._store.get_latest_memory_assertion(memory_id)
+        if assertion is None or assertion.life_id != life_id:
+            raise MemoryCoordinatorError(
+                "explicit L4 memory assertion is missing"
+            )
+        l1 = None
+        for derivation in self._store.list_derivations_for_memory(memory_id):
+            if derivation.layer == "L1_STREAM":
+                l1 = derivation
+                break
+        if l1 is None:
+            raise MemoryCoordinatorError(
+                "explicit L4 requires an L1 stream record"
+            )
+        source_event_id = (
+            assertion.source_event_ids[0]
+            if assertion.source_event_ids
+            else "lev_"
+            + canonical_sha256(
+                {
+                    "domain": "tiangong.life.memory-source-anchor.v1",
+                    "memory_id": memory_id,
+                }
+            )
+        )
+        claim = "explicit:" + source_event_id
+        derivation_id = l4_derivation_id(
+            life_id=life_id,
+            user_message_event_id=source_event_id,
+            claim_key=claim,
+            policy_version=policy_version,
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            return existing
+        source_events = assertion.source_event_ids or (source_event_id,)
+        domain = _semantic_domain_for_assertion_kind(assertion.assertion_kind)
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=life_id,
+            memory_id=assertion.memory_id,
+            memory_revision=assertion.revision,
+            memory_assertion_sha256=assertion.assertion_sha256,
+            layer="L4_EXPLICIT",
+            semantic_domain=domain,
+            origin="USER_EXPLICIT",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=assertion.privacy_scope,
+            claim_key=claim,
+            parent_memory_refs=(_parent_ref(l1),),
+            source_event_ids=source_events,
+            lineage_root_event_ids=l1.lineage_root_event_ids,
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=detection.reason_codes,
+            valid_from_ms=assertion.valid_from_ms,
+            expires_at_ms=None,
+            context_eligible=True,
+            learning_eligible=False,
+            temperament_eligible=False,
+            self_cognition_eligible=False,
+            world_candidate_eligible=(domain == "WORLD"),
+            created_at_ms=created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        self._store.put_memory_derivation(derivation, activate_head=True)
+        return derivation
+
     # ------------------------------------------------------------------
     # Learning -> Memory closure (M4)
     # ------------------------------------------------------------------

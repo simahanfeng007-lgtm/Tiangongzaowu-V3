@@ -5118,6 +5118,27 @@ class EmbeddedLifeRuntime:
                 if payload.get(key)
             },
         ))
+        # P15: user-explicit spans ("记住/以后记得/我的名字是...") must land as
+        # L4 user_asserted even when the model phrase differs.  The assertion is
+        # already durable above; attaching L4 is idempotent and recoverable.
+        try:
+            explicit_text = (
+                content
+                if isinstance(content, str)
+                else str(content.get("text") or content.get("content") or "")
+                if isinstance(content, Mapping)
+                else ""
+            )
+            if str(explicit_text).strip():
+                self._memory_coordinator().attach_explicit_l4(
+                    life_id=life_id,
+                    memory_id=contract_memory_id,
+                    user_text=str(explicit_text),
+                    created_at_ms=time.time_ns() // 1_000_000,
+                    principal_ref=life_id,
+                )
+        except Exception:
+            pass
         return {
             "ok": True,
             "duplicate": False,
