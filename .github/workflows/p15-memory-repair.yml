@@ -1,0 +1,819 @@
+name: P15 memory QA repair
+
+on:
+  push:
+    branches:
+      - agent/p15-memory-ssot-life-world-closure-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout P15 head
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p15-memory-ssot-life-world-closure-v0.1
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Apply P15 QA repairs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def rewrite(path: str, transform) -> None:
+              p = Path(path)
+              before = p.read_text(encoding="utf-8")
+              after = transform(before)
+              if after == before:
+                  raise SystemExit(f"repair produced no change: {path}")
+              p.write_text(after, encoding="utf-8", newline="\n")
+
+          def patch_coordinator(text: str) -> str:
+              start = text.index("    def attach_explicit_l4(")
+              end = text.index("    # ------------------------------------------------------------------\n    # Learning -> Memory closure", start)
+              block = text[start:end]
+              old = "        source_events = assertion.source_event_ids or (source_event_id,)\n        domain = _semantic_domain_for_assertion_kind(assertion.assertion_kind)\n"
+              new = "        source_events = assertion.source_event_ids or (source_event_id,)\n        deadline = expiry_deadline_ms(detection.expiry_kind, created_at_ms)\n        domain = _semantic_domain_for_assertion_kind(assertion.assertion_kind)\n"
+              if old not in block:
+                  raise SystemExit("attach_explicit_l4 source anchor changed")
+              block = block.replace(old, new, 1)
+              if "            expires_at_ms=None," not in block:
+                  raise SystemExit("attach_explicit_l4 expiry anchor changed")
+              block = block.replace("            expires_at_ms=None,", "            expires_at_ms=deadline,", 1)
+              text = text[:start] + block + text[end:]
+
+              method = '''    def commit_contract_assertion(
+        self,
+        *,
+        plaintext: bytes,
+        memory_id: str,
+        life_id: str,
+        principal_ref: str,
+        assertion_kind: str,
+        epistemic_status: str,
+        lifecycle_status: str,
+        privacy_scope: str,
+        retention_class: str,
+        source_event_ids: tuple[str, ...],
+        causal_utility_milli: int = 0,
+        user_importance_milli: int = 0,
+        verification_strength_milli: int = 0,
+        future_dependency_milli: int = 0,
+        valid_from_ms: int,
+        created_at_ms: int,
+        search_terms: tuple[str, ...] = (),
+        expires_at_ms: int | None = None,
+    ) -> tuple[MemoryAssertionV3, int, bool]:
+        """Adapter for legacy projection writes with recoverable state closure.
+
+        New active assertions receive one L1 derivation. Lifecycle-only
+        revisions never mint an L1 from the same journal event, preventing a
+        correction event from aliasing the replacement L1. Corrected and
+        superseded revisions also resume derivation invalidation on every
+        retry, so a crash between the status revision and cascade converges.
+        """
+
+        source_event_id = source_event_ids[0] if source_event_ids else None
+        derivation = None
+        if source_event_id is not None and lifecycle_status == "active":
+            derivation = MemoryDerivationV1(
+                derivation_id=l1_derivation_id(
+                    life_id=life_id,
+                    source_event_id=source_event_id,
+                ),
+                life_id=life_id,
+                memory_id=memory_id,
+                memory_revision=1,
+                memory_assertion_sha256="0" * 64,
+                layer="L1_STREAM",
+                semantic_domain=_semantic_domain_for_assertion_kind(
+                    assertion_kind
+                ),
+                origin="LIFE_EVENT",
+                principal_ref=principal_ref,
+                workspace_ref=None,
+                privacy_scope=privacy_scope,
+                claim_key="l1:" + source_event_id,
+                parent_memory_refs=(),
+                source_event_ids=(source_event_id,),
+                lineage_root_event_ids=(source_event_id,),
+                external_evidence_refs=(),
+                promotion_policy_version=L1_POLICY_VERSION,
+                promotion_reason_codes=(),
+                valid_from_ms=valid_from_ms,
+                expires_at_ms=expires_at_ms,
+                context_eligible=True,
+                learning_eligible=False,
+                temperament_eligible=False,
+                self_cognition_eligible=False,
+                world_candidate_eligible=False,
+                created_at_ms=created_at_ms,
+                derivation_sha256="0" * 64,
+            ).with_computed_derivation_sha256()
+        assertion, change_seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=life_id,
+            assertion_kind=assertion_kind,
+            epistemic_status=epistemic_status,
+            lifecycle_status=lifecycle_status,
+            privacy_scope=privacy_scope,
+            retention_class=retention_class,
+            source_event_ids=source_event_ids,
+            causal_utility_milli=causal_utility_milli,
+            user_importance_milli=user_importance_milli,
+            verification_strength_milli=verification_strength_milli,
+            future_dependency_milli=future_dependency_milli,
+            valid_from_ms=valid_from_ms,
+            created_at_ms=created_at_ms,
+            search_terms=search_terms,
+            expires_at_ms=expires_at_ms,
+            derivation=derivation,
+        )
+        if source_event_id is not None and lifecycle_status == "active":
+            self._ensure_l1_derivation(
+                assertion=assertion,
+                source_event_id=source_event_id,
+                principal_ref=principal_ref,
+            )
+        if lifecycle_status in {"corrected", "superseded"}:
+            for target in self._store.list_derivations_for_memory(memory_id):
+                if not self._store.is_derivation_active(target.derivation_id):
+                    continue
+                invalidate_cascade(
+                    self._store,
+                    derivation_id=target.derivation_id,
+                    reason=lifecycle_status,
+                    invalidated_at_ms=created_at_ms,
+                    source_trigger_ref=source_event_id,
+                )
+        return assertion, change_seq, created
+
+'''
+              pattern = re.compile(
+                  r"(?ms)^    def commit_contract_assertion\(.*?^        return assertion, change_seq, created\n\n(?=    def _ensure_l1_derivation)"
+              )
+              text, count = pattern.subn(method, text, count=1)
+              if count != 1:
+                  raise SystemExit("commit_contract_assertion replacement failed")
+
+              correction = '''    def correct_claim(
+        self,
+        *,
+        life_id: str,
+        principal_ref: str,
+        privacy_scope: str,
+        target_derivation_id: str,
+        user_message_event_id: str,
+        plaintext: bytes,
+        created_at_ms: int,
+        policy_version: str = L4_POLICY_VERSION,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, tuple, bool]:
+        """Correct one active claim with crash-recoverable invalidation.
+
+        The replacement assertion/derivation is committed before the old DAG
+        is invalidated. If the process dies after replacement commit, retry
+        finds that deterministic replacement and resumes the cascade. This
+        prefers a recoverable short overlap over irreversible memory loss.
+        """
+
+        target = self._store.get_memory_derivation(target_derivation_id)
+        if target is None:
+            raise MemoryCoordinatorError("correction target is missing")
+        memory_id = "mem_" + canonical_sha256(
+            {
+                "domain": "tiangong.life.correction-memory.v1",
+                "target_derivation_id": target_derivation_id,
+                "user_message_event_id": user_message_event_id,
+                "policy_version": policy_version,
+            }
+        )
+        derivation_id = "mdr_" + canonical_sha256(
+            {
+                "domain": "tiangong.life.correction-derivation.v1",
+                "target_derivation_id": target_derivation_id,
+                "user_message_event_id": user_message_event_id,
+                "policy_version": policy_version,
+            }
+        )
+        existing = self._store.get_memory_derivation(derivation_id)
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError("correction assertion is missing")
+            invalidations = ()
+            if self._store.is_derivation_active(target_derivation_id):
+                invalidations = invalidate_cascade(
+                    self._store,
+                    derivation_id=target_derivation_id,
+                    reason="corrected",
+                    invalidated_at_ms=created_at_ms,
+                    source_trigger_ref=user_message_event_id,
+                )
+            return assertion, existing, invalidations, False
+        if not self._store.is_derivation_active(target_derivation_id):
+            raise MemoryCoordinatorError("correction target is already inactive")
+        domain = target.semantic_domain
+        derivation = MemoryDerivationV1(
+            derivation_id=derivation_id,
+            life_id=life_id,
+            memory_id=memory_id,
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer=target.layer,
+            semantic_domain=domain,
+            origin="USER_EXPLICIT",
+            principal_ref=principal_ref,
+            workspace_ref=None,
+            privacy_scope=privacy_scope,
+            claim_key=target.claim_key,
+            parent_memory_refs=(_parent_ref(target),),
+            source_event_ids=(user_message_event_id,),
+            lineage_root_event_ids=target.lineage_root_event_ids,
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=("corrected",),
+            valid_from_ms=created_at_ms,
+            expires_at_ms=None,
+            context_eligible=target.context_eligible,
+            learning_eligible=target.learning_eligible,
+            temperament_eligible=target.temperament_eligible,
+            self_cognition_eligible=target.self_cognition_eligible,
+            world_candidate_eligible=target.world_candidate_eligible,
+            created_at_ms=created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        assertion, _seq, created = self._store.put_live_memory_assertion(
+            plaintext,
+            memory_id=memory_id,
+            life_id=life_id,
+            assertion_kind=_assertion_kind_for_domain(domain),
+            epistemic_status="user_asserted",
+            lifecycle_status="active",
+            privacy_scope=privacy_scope,
+            retention_class="LONG_TERM_MEMORY",
+            source_event_ids=(user_message_event_id,),
+            verification_strength_milli=750,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+            derivation=derivation,
+            activate_head=True,
+        )
+        stored = self._store.get_memory_derivation(derivation_id)
+        if stored is None:
+            raise MemoryCoordinatorError("correction derivation commit failed")
+        invalidations = invalidate_cascade(
+            self._store,
+            derivation_id=target_derivation_id,
+            reason="corrected",
+            invalidated_at_ms=created_at_ms,
+            source_trigger_ref=user_message_event_id,
+        )
+        return assertion, stored, invalidations, created
+
+'''
+              pattern = re.compile(
+                  r"(?ms)^    def correct_claim\(.*?^        return assertion, stored, invalidations, created\n\n(?=    # ------------------------------------------------------------------\n    # Temperament / Self Cognition)"
+              )
+              text, count = pattern.subn(correction, text, count=1)
+              if count != 1:
+                  raise SystemExit("correct_claim replacement failed")
+              return text
+
+          def patch_invalidation(text: str) -> str:
+              function = '''def invalidate_cascade(
+    store: LifeShadowStore,
+    *,
+    derivation_id: str,
+    reason: str = "corrected",
+    invalidated_at_ms: int,
+    source_trigger_ref: str | None = None,
+) -> tuple[MemoryInvalidationRecord, ...]:
+    """Invalidate a derivation DAG and resume safely after partial crashes.
+
+    Already-invalidated nodes remain traversal anchors rather than forcing an
+    early no-op. Active descendants that lost all surviving independent parent
+    support are therefore still invalidated on retry. Fully completed replays
+    remain idempotent and append no duplicate invalidation records.
+    """
+
+    if reason not in {
+        "corrected",
+        "superseded",
+        "stale",
+        "privacy_erasure",
+        "invalidated",
+    }:
+        raise ValueError("invalidation reason is invalid")
+    root = store.get_memory_derivation(derivation_id)
+    if root is None:
+        raise ValueError("invalidation target derivation does not exist")
+    invalidated: dict[str, MemoryDerivationV1] = {}
+    queue: list[MemoryDerivationV1] = [root]
+    while queue:
+        current = queue.pop(0)
+        if current.derivation_id in invalidated:
+            continue
+        invalidated[current.derivation_id] = current
+        for child in store.list_derivation_children(current.derivation_id):
+            if child.derivation_id in invalidated:
+                continue
+            if reason != "privacy_erasure" and _still_supported(
+                store, child, invalidated_ids=invalidated
+            ):
+                continue
+            queue.append(child)
+
+    records: list[MemoryInvalidationRecord] = []
+    invalidated_ids = set(invalidated)
+    for current_id, derivation in invalidated.items():
+        if not store.is_derivation_active(current_id):
+            continue
+        current_reason = (
+            reason if current_id == root.derivation_id else "stale"
+        )
+        descendants = tuple(
+            sorted(
+                child_id
+                for child_id in invalidated_ids
+                if child_id != current_id
+            )
+        )
+        record = MemoryInvalidationRecord(
+            invalidation_id=_invalidation_id(
+                life_id=derivation.life_id,
+                derivation_id=derivation.derivation_id,
+                invalidated_at_ms=invalidated_at_ms,
+                reason=current_reason,
+                source_trigger_ref=source_trigger_ref,
+            ),
+            life_id=derivation.life_id,
+            principal_ref=derivation.principal_ref,
+            derivation_id=derivation.derivation_id,
+            memory_id=derivation.memory_id,
+            memory_revision=derivation.memory_revision,
+            assertion_sha256=derivation.memory_assertion_sha256,
+            reason=current_reason,
+            source_trigger_ref=source_trigger_ref,
+            invalidated_at_ms=invalidated_at_ms,
+            descendant_derivation_ids=descendants,
+            invalidation_sha256="0" * 64,
+        ).with_computed_invalidation_sha256()
+        store.put_memory_invalidation(record)
+        store.clear_active_head(
+            life_id=derivation.life_id,
+            principal_ref=derivation.principal_ref,
+            claim_key=derivation.claim_key,
+            layer=derivation.layer,
+            derivation_id=derivation.derivation_id,
+        )
+        records.append(record)
+    return tuple(records)
+'''
+              pattern = re.compile(
+                  r"(?ms)^def invalidate_cascade\(.*?^    return tuple\(records\)\n"
+              )
+              text, count = pattern.subn(function, text, count=1)
+              if count != 1:
+                  raise SystemExit("invalidate_cascade replacement failed")
+              return text
+
+          def patch_gateway(text: str) -> str:
+              if "from datetime import datetime, timezone\n" not in text:
+                  text = text.replace(
+                      "from dataclasses import dataclass\n",
+                      "from dataclasses import dataclass\nfrom datetime import datetime, timezone\n",
+                      1,
+                  )
+              function = '''def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
+    """Return bounded, non-expired long-term memory for chat context (P15)."""
+
+    try:
+        from life_service.explicit_memory import (
+            detect_explicit_intent,
+            expiry_deadline_ms,
+        )
+
+        text = str(user_text or "").strip()
+        life_service = getattr(runtime, "life_service", None)
+        if life_service is None:
+            return ""
+        active = (
+            life_service._active()
+            if hasattr(life_service, "_active")
+            else {}
+        )
+        life_id = str(active.get("life_id") or "")
+        if not life_id:
+            return ""
+        memory_markers = (
+            "名字", "我叫", "我是谁", "称呼", "记住", "记得", "之前", "上次",
+            "偏好", "习惯", "忘了", "长期", "以后",
+        )
+        lines: list[str] = []
+        seen: set[str] = set()
+        now_ms = time.time_ns() // 1_000_000
+
+        def created_at_ms(row: Mapping[str, object]) -> int | None:
+            raw = str(row.get("created_at") or "").strip()
+            if not raw:
+                return None
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return int(parsed.timestamp() * 1000)
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        def recallable(row: Mapping[str, object], snippet: str) -> bool:
+            try:
+                detection = detect_explicit_intent(snippet)
+            except ValueError:
+                return True
+            if not detection.triggered or detection.expiry_kind is None:
+                return True
+            created_ms = created_at_ms(row)
+            if created_ms is None:
+                return False
+            deadline = expiry_deadline_ms(detection.expiry_kind, created_ms)
+            return deadline is None or now_ms < deadline
+
+        def collect(query: str, limit: int = 10) -> None:
+            status, payload, _ = life_service.request(
+                "POST",
+                "/api/v1/v3/life/memory/search",
+                {"life_id": life_id, "query": query, "limit": limit},
+            )
+            if status >= 400 or not isinstance(payload, Mapping) or payload.get("ok") is not True:
+                return
+            for row in (payload.get("results") or [])[:limit]:
+                if not isinstance(row, Mapping):
+                    continue
+                content = row.get("content")
+                if isinstance(content, str):
+                    snippet = content
+                elif isinstance(content, Mapping):
+                    snippet = str(content.get("text") or content.get("content") or "")
+                else:
+                    snippet = ""
+                snippet = str(snippet).strip()
+                if (
+                    snippet
+                    and snippet not in seen
+                    and recallable(row, snippet)
+                ):
+                    seen.add(snippet)
+                    lines.append(snippet[:1200])
+
+        collect(text)
+        if not lines and any(marker in text for marker in memory_markers):
+            collect("")
+        return "\n".join(lines[:10])
+    except Exception:
+        return ""
+
+'''
+              pattern = re.compile(
+                  r"(?ms)^def _gateway_p15_memory_recall\(.*?^    except Exception:\n        return \"\"\n\n(?=def _gateway_body_state_query)"
+              )
+              text, count = pattern.subn(function, text, count=1)
+              if count != 1:
+                  raise SystemExit("gateway recall replacement failed")
+              return text
+
+          rewrite("src/life_service/memory_coordinator.py", patch_coordinator)
+          rewrite("src/life_service/memory_invalidation.py", patch_invalidation)
+          rewrite("src/total_gateway/runtime.py", patch_gateway)
+
+          test = r'''"""P15 QA repairs: correction recovery and temporary-memory expiry."""
+          from __future__ import annotations
+
+          import tempfile
+          import unittest
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from unittest import mock
+
+          from life_service.explicit_memory import expiry_deadline_ms
+          from life_service.memory_coordinator import MemoryCoordinator
+          from life_service.memory_invalidation import invalidate_cascade
+          from life_service.store import LifeShadowStore
+          from tests.life_contract_support import event
+
+          LIFE = "life_p15_qa_repair"
+          PRINCIPAL = "principal_test"
+          PRIVACY = "private"
+
+
+          class P15MemoryQARepairTests(unittest.TestCase):
+              def setUp(self) -> None:
+                  self.temporary = tempfile.TemporaryDirectory()
+                  self.path = Path(self.temporary.name) / "repair.shadow.sqlite3"
+                  self.store = LifeShadowStore.open(self.path, create=True, now_ms=500)
+                  self.coordinator = MemoryCoordinator(self.store)
+
+              def tearDown(self) -> None:
+                  self.store.close()
+                  self.temporary.cleanup()
+
+              def _l2(self, suffix: str = "01" * 32):
+                  value = event(1, None, life_id=LIFE, suffix=suffix)
+                  _a, l1, _c = self.coordinator.commit_life_event_l1(value)
+                  l2 = self.coordinator.promote_l1_to_l2(
+                      life_id=LIFE,
+                      principal_ref=value.principal_ref,
+                      privacy_scope=value.privacy_scope,
+                      l1_derivation_ids=(l1.derivation_id,),
+                      claim_key="claim:repair:diary",
+                      semantic_domain="SYSTEM",
+                      plaintext=b"diary",
+                      created_at_ms=2_000,
+                  )
+                  self.assertIsNotNone(l2)
+                  return value, l1, l2[1]
+
+              def test_attach_explicit_l4_carries_expiry(self) -> None:
+                  value = event(1, None, life_id=LIFE)
+                  _a, l1, _c = self.coordinator.commit_life_event_l1(value)
+                  created_at_ms = 86_400_000 + 1_000
+                  l4 = self.coordinator.attach_explicit_l4(
+                      life_id=LIFE,
+                      memory_id=l1.memory_id,
+                      user_text="今天先记住，我叫临时名。",
+                      created_at_ms=created_at_ms,
+                      principal_ref=value.principal_ref,
+                  )
+                  self.assertIsNotNone(l4)
+                  self.assertEqual(
+                      l4.expires_at_ms,
+                      expiry_deadline_ms("today", created_at_ms),
+                  )
+
+              def test_runtime_correction_event_does_not_alias_l1_and_invalidates_target(self) -> None:
+                  event_a = "lev_" + "a" * 64
+                  event_b = "lev_" + "b" * 64
+                  target_id = "mem_" + "1" * 64
+                  replacement_id = "mem_" + "2" * 64
+                  common = dict(
+                      life_id=LIFE,
+                      principal_ref=PRINCIPAL,
+                      assertion_kind="user_preference",
+                      epistemic_status="user_asserted",
+                      privacy_scope=PRIVACY,
+                      retention_class="LONG_TERM_MEMORY",
+                      valid_from_ms=1_000,
+                  )
+                  self.coordinator.commit_contract_assertion(
+                      plaintext=b"target",
+                      memory_id=target_id,
+                      lifecycle_status="active",
+                      source_event_ids=(event_a,),
+                      created_at_ms=1_000,
+                      **common,
+                  )
+                  target_l1 = self.store.find_derivation(
+                      memory_id=target_id, memory_revision=1, layer="L1_STREAM"
+                  )
+                  self.assertIsNotNone(target_l1)
+                  self.coordinator.commit_contract_assertion(
+                      plaintext=b"replacement",
+                      memory_id=replacement_id,
+                      lifecycle_status="active",
+                      source_event_ids=(event_b,),
+                      created_at_ms=2_000,
+                      **common,
+                  )
+                  replacement_l1 = self.store.find_derivation(
+                      memory_id=replacement_id, memory_revision=1, layer="L1_STREAM"
+                  )
+                  self.assertIsNotNone(replacement_l1)
+                  _a2, _seq2, created = self.coordinator.commit_contract_assertion(
+                      plaintext=b"target",
+                      memory_id=target_id,
+                      lifecycle_status="corrected",
+                      source_event_ids=(event_b,),
+                      created_at_ms=3_000,
+                      **common,
+                  )
+                  self.assertTrue(created)
+                  self.assertFalse(self.store.is_derivation_active(target_l1.derivation_id))
+                  self.assertTrue(self.store.is_derivation_active(replacement_l1.derivation_id))
+                  latest = self.store.get_latest_memory_assertion(target_id)
+                  self.assertEqual(latest.lifecycle_status, "corrected")
+                  _a3, _seq3, created_again = self.coordinator.commit_contract_assertion(
+                      plaintext=b"target",
+                      memory_id=target_id,
+                      lifecycle_status="corrected",
+                      source_event_ids=(event_b,),
+                      created_at_ms=3_000,
+                      **common,
+                  )
+                  self.assertFalse(created_again)
+
+              def test_correct_claim_recovers_after_replacement_commit(self) -> None:
+                  value, _l1, l2 = self._l2()
+                  correction_event = "lev_" + "c" * 64
+                  with mock.patch(
+                      "life_service.memory_coordinator.invalidate_cascade",
+                      side_effect=RuntimeError("simulated crash after replacement"),
+                  ):
+                      with self.assertRaises(RuntimeError):
+                          self.coordinator.correct_claim(
+                              life_id=LIFE,
+                              principal_ref=value.principal_ref,
+                              privacy_scope=value.privacy_scope,
+                              target_derivation_id=l2.derivation_id,
+                              user_message_event_id=correction_event,
+                              plaintext=b"corrected diary",
+                              created_at_ms=3_000,
+                          )
+                  self.assertTrue(self.store.is_derivation_active(l2.derivation_id))
+                  assertion, replacement, invalidations, created = self.coordinator.correct_claim(
+                      life_id=LIFE,
+                      principal_ref=value.principal_ref,
+                      privacy_scope=value.privacy_scope,
+                      target_derivation_id=l2.derivation_id,
+                      user_message_event_id=correction_event,
+                      plaintext=b"corrected diary",
+                      created_at_ms=3_000,
+                  )
+                  self.assertFalse(created)
+                  self.assertTrue(invalidations)
+                  self.assertFalse(self.store.is_derivation_active(l2.derivation_id))
+                  self.assertTrue(self.store.is_derivation_active(replacement.derivation_id))
+                  self.assertEqual(assertion.memory_id, replacement.memory_id)
+
+              def test_partial_cascade_resumes_from_inactive_root(self) -> None:
+                  value, _l1, l2 = self._l2("11" * 32)
+                  l3 = self.coordinator.promote_l2_to_l3(
+                      life_id=LIFE,
+                      principal_ref=value.principal_ref,
+                      privacy_scope=value.privacy_scope,
+                      l2_derivation_ids=(l2.derivation_id,),
+                      claim_key="claim:repair",
+                      semantic_domain="SYSTEM",
+                      plaintext=b"experience",
+                      created_at_ms=3_000,
+                      support_weights={l2.derivation_id: 1000},
+                      counter_weights={},
+                      causal_utility_milli={l2.derivation_id: 800},
+                      recurrence_count=2,
+                  )
+                  self.assertIsNotNone(l3)
+                  child = l3[1]
+                  original = self.store.put_memory_invalidation
+                  calls = {"n": 0}
+
+                  def flaky(record):
+                      calls["n"] += 1
+                      if calls["n"] == 2:
+                          raise RuntimeError("simulated cascade crash")
+                      return original(record)
+
+                  with mock.patch.object(
+                      self.store, "put_memory_invalidation", side_effect=flaky
+                  ):
+                      with self.assertRaises(RuntimeError):
+                          invalidate_cascade(
+                              self.store,
+                              derivation_id=l2.derivation_id,
+                              reason="corrected",
+                              invalidated_at_ms=4_000,
+                          )
+                  self.assertFalse(self.store.is_derivation_active(l2.derivation_id))
+                  self.assertTrue(self.store.is_derivation_active(child.derivation_id))
+                  resumed = invalidate_cascade(
+                      self.store,
+                      derivation_id=l2.derivation_id,
+                      reason="corrected",
+                      invalidated_at_ms=4_000,
+                  )
+                  self.assertTrue(resumed)
+                  self.assertFalse(self.store.is_derivation_active(child.derivation_id))
+
+
+          class _FakeLife:
+              def __init__(self, rows):
+                  self.rows = rows
+
+              def _active(self):
+                  return {"life_id": LIFE}
+
+              def request(self, verb, path, payload):
+                  return 200, {"ok": True, "results": self.rows}, None
+
+
+          class _FakeRuntime:
+              def __init__(self, rows):
+                  self.life_service = _FakeLife(rows)
+
+
+          class GatewayExpiryRepairTests(unittest.TestCase):
+              def test_expired_temporary_memory_is_not_reinjected(self) -> None:
+                  from total_gateway.runtime import _gateway_p15_memory_recall
+
+                  rows = [
+                      {
+                          "content": {"text": "暂时记住，我叫临时名。"},
+                          "created_at": "2026-08-01T00:00:00Z",
+                      },
+                      {
+                          "content": {"text": "记住，我叫长期名。"},
+                          "created_at": "2026-08-01T00:00:00Z",
+                      },
+                  ]
+                  now = datetime(2026, 8, 12, tzinfo=timezone.utc)
+                  with mock.patch(
+                      "total_gateway.runtime.time.time_ns",
+                      return_value=int(now.timestamp() * 1_000_000_000),
+                  ):
+                      result = _gateway_p15_memory_recall(
+                          _FakeRuntime(rows), "我叫什么？"
+                      )
+                  self.assertNotIn("临时名", result)
+                  self.assertIn("长期名", result)
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          '''
+          lines = test.splitlines()
+          # Strip the workflow's visual indentation from the generated test.
+          if any(line.startswith("          ") for line in lines if line):
+              lines = [line[10:] if line.startswith("          ") else line for line in lines]
+          Path("tests/test_memory_qa_repair_p15.py").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+          )
+          PY
+
+      - name: Sync generated mirrors
+        run: python scripts/sync-generated-sources.py --write
+
+      - name: Install source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+
+      - name: Compile repaired production surface
+        run: >-
+          python -m compileall -q
+          src/life_service/memory_coordinator.py
+          src/life_service/memory_invalidation.py
+          src/total_gateway/runtime.py
+          tests/test_memory_qa_repair_p15.py
+
+      - name: Run P15 repair regression
+        run: >-
+          python -m pytest -q
+          tests/test_memory_qa_repair_p15.py
+          tests/test_memory_correction_invalidation_p15.py
+          tests/test_memory_crash_atomicity_p15.py
+          tests/test_memory_explicit_l4_p15.py
+          tests/test_memory_legacy_endpoint_adapter_p15.py
+          tests/test_p15_chat_memory_wiring.py
+          tests/test_p15_acceptance_gate.py
+
+      - name: Verify generated mirrors
+        run: python scripts/sync-generated-sources.py --check-committed
+
+      - name: Commit repaired sources and generated mirrors
+        shell: bash
+        run: |
+          if git diff --quiet && git status --porcelain | grep -q '^$'; then
+            echo "No repair diff to commit."
+            exit 0
+          fi
+          git config user.name "tiangong-p15-repair"
+          git config user.email "tiangong-p15-repair@users.noreply.github.com"
+          git add src/life_service/memory_coordinator.py \
+                  src/life_service/memory_invalidation.py \
+                  src/total_gateway/runtime.py \
+                  tests/test_memory_qa_repair_p15.py \
+                  app/life-service/runtime314 \
+                  app/runtime/python312/Lib/site-packages/total_gateway \
+                  app/backend/tiangong-backend/omni_body_skill \
+                  app/backend/tiangong-backend/_internal/omni_body_skill \
+                  app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill \
+                  app/backend/tiangong-backend/_internal/v3/bundled_skills/omni_body_skill \
+                  app/backend/tiangong-backend/_internal/v3/bundled_skills/novel-creation || true
+          git add -u
+          git commit -m "fix P15 memory QA blockers"
+          git push origin HEAD:agent/p15-memory-ssot-life-world-closure-v0.1
