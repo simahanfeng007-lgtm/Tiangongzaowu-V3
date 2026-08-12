@@ -1,7 +1,7 @@
 """P16 native proactive initiative projection and deterministic hard gates.
 
 This module is deliberately pure: it owns no persistence, scheduler, transport,
-or model.  The Life runtime supplies a bounded projection of already-authoritative
+or model. The Life runtime supplies a bounded projection of already-authoritative
 facts; the model may propose an initiative, but this module recomputes every
 score and decides whether speaking is admissible.
 
@@ -12,13 +12,11 @@ Unknown/stale/low-confidence evidence cannot authorize a proactive utterance.
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Mapping
 
 from .agency import compute_agency_score
 
 _ALLOWED_KINDS = frozenset({"respond", "ask_user", "wait", "no_op"})
-_SPEAK_KINDS = frozenset({"respond", "ask_user"})
 _SCORE_FIELDS = (
     "goal_gain_milli",
     "viability_gain_milli",
@@ -29,6 +27,7 @@ _SCORE_FIELDS = (
     "uncertainty_penalty_milli",
     "irreversibility_penalty_milli",
 )
+_WORLD_AUTHORITY = "world_understanding_committed"
 
 
 def _strict_int(value: object, *, default: int = 0, low: int = 0, high: int = 1000) -> int:
@@ -41,6 +40,12 @@ def _strict_nonnegative_int(value: object, *, default: int = 0) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return default
     return value
+
+
+def _strict_bounded_int(value: object, *, default: int, low: int, high: int) -> tuple[int, bool]:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        return default, False
+    return value, True
 
 
 def _hour_in_window(hour: int, start: int, end: int) -> bool:
@@ -56,8 +61,13 @@ def normalize_observations(
     *,
     now_ms: int,
     stale_after_ms: int = 24 * 60 * 60 * 1000,
+    future_skew_ms: int = 5 * 60 * 1000,
 ) -> tuple[dict[str, Any], ...]:
-    """Normalize evidence into explicit KNOWN/STALE/UNKNOWN epistemic states."""
+    """Normalize evidence into explicit KNOWN/STALE/UNKNOWN epistemic states.
+
+    Timestamps materially ahead of the decision clock fail closed to UNKNOWN.
+    A small configured skew is tolerated for distributed-clock jitter only.
+    """
 
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -71,9 +81,11 @@ def normalize_observations(
         seen.add(source_ref)
         observed_at_ms = _strict_nonnegative_int(raw.get("observed_at_ms"))
         confidence_milli = _strict_int(raw.get("confidence_milli"), default=0)
-        age_ms = max(0, now_ms - observed_at_ms) if observed_at_ms else None
+        future_invalid = bool(observed_at_ms and observed_at_ms > now_ms + max(0, future_skew_ms))
+        effective_observed_at_ms = min(observed_at_ms, now_ms) if observed_at_ms else 0
+        age_ms = now_ms - effective_observed_at_ms if effective_observed_at_ms else None
         explicit_state = str(raw.get("epistemic_state") or "").strip().upper()
-        if explicit_state == "UNKNOWN" or observed_at_ms <= 0:
+        if explicit_state == "UNKNOWN" or observed_at_ms <= 0 or future_invalid:
             state = "UNKNOWN"
         elif explicit_state == "STALE" or (age_ms is not None and age_ms > stale_after_ms):
             state = "STALE"
@@ -86,7 +98,9 @@ def normalize_observations(
                 "age_ms": age_ms,
                 "confidence_milli": confidence_milli,
                 "epistemic_state": state,
+                "timestamp_state": "FUTURE_INVALID" if future_invalid else "VALID",
                 "kind": str(raw.get("kind") or "fact")[:80],
+                "authority": str(raw.get("authority") or "")[:120],
                 "summary": str(raw.get("summary") or "")[:1200],
             }
         )
@@ -124,8 +138,10 @@ def evaluate_proactive_candidate(
 ) -> dict[str, Any]:
     """Recompute one model proposal and apply deterministic proactive gates.
 
-    The model cannot set delivery policy, freshness, quotas, or final utility.
-    Only evidence already present in ``context.observations`` can support speech.
+    The model cannot set delivery policy, freshness, quotas, timezone, or final
+    utility. Only evidence already present in ``context.observations`` can
+    support speech, and World evidence additionally requires committed WU
+    authority.
     """
 
     if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:
@@ -151,28 +167,61 @@ def evaluate_proactive_candidate(
     if mode not in {"shadow", "live"}:
         return _decision(kind="no_op", reason_code="life.proactive.mode_invalid", allowed=False)
 
-    local_hour = datetime.fromtimestamp(now_ms / 1000).hour
+    future_skew_seconds = _strict_nonnegative_int(
+        settings.get("proactive_max_future_skew_seconds"), default=300
+    )
+    future_skew_ms = future_skew_seconds * 1000
+
+    timezone_offset_minutes, timezone_valid = _strict_bounded_int(
+        settings.get("proactive_timezone_offset_minutes", 0),
+        default=0,
+        low=-14 * 60,
+        high=14 * 60,
+    )
+    if settings.get("proactive_dnd_enabled") is True and not timezone_valid:
+        return _decision(kind="no_op", reason_code="life.proactive.timezone_invalid", allowed=False)
+    local_hour = ((now_ms + timezone_offset_minutes * 60_000) // 3_600_000) % 24
     if settings.get("proactive_dnd_enabled") is True:
         start = _strict_int(settings.get("proactive_dnd_start_hour"), default=22, high=23)
         end = _strict_int(settings.get("proactive_dnd_end_hour"), default=7, high=23)
-        if _hour_in_window(local_hour, start, end):
+        if _hour_in_window(int(local_hour), start, end):
             return _decision(kind="no_op", reason_code="life.proactive.dnd", allowed=False)
 
     last_user_ms = _strict_nonnegative_int(context.get("last_user_activity_at_ms"))
+    if last_user_ms > now_ms + future_skew_ms:
+        return _decision(
+            kind="no_op",
+            reason_code="life.proactive.user_activity_clock_invalid",
+            allowed=False,
+        )
+    effective_last_user_ms = min(last_user_ms, now_ms) if last_user_ms else 0
     active_window_ms = _strict_nonnegative_int(
         settings.get("proactive_user_active_window_seconds"), default=180
     ) * 1000
     if (
         settings.get("proactive_respect_user_activity") is not False
-        and last_user_ms
+        and effective_last_user_ms
         and active_window_ms
-        and 0 <= now_ms - last_user_ms < active_window_ms
+        and now_ms - effective_last_user_ms < active_window_ms
     ):
         return _decision(kind="no_op", reason_code="life.proactive.user_active", allowed=False)
 
+    raw_deliveries = context.get("recent_delivery_times_ms") or []
+    if any(
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > now_ms + future_skew_ms
+        for value in raw_deliveries
+    ):
+        return _decision(
+            kind="no_op",
+            reason_code="life.proactive.delivery_clock_invalid",
+            allowed=False,
+        )
     deliveries = [
-        value for value in (context.get("recent_delivery_times_ms") or [])
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= now_ms
+        min(value, now_ms)
+        for value in raw_deliveries
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
     ]
     last_delivery_ms = max(deliveries, default=0)
     min_interval_ms = _strict_nonnegative_int(
@@ -192,7 +241,10 @@ def evaluate_proactive_candidate(
         settings.get("proactive_evidence_stale_after_seconds"), default=86_400
     ) * 1000
     observations = normalize_observations(
-        context.get("observations"), now_ms=now_ms, stale_after_ms=stale_after_ms
+        context.get("observations"),
+        now_ms=now_ms,
+        stale_after_ms=stale_after_ms,
+        future_skew_ms=future_skew_ms,
     )
     by_ref = {row["source_ref"]: row for row in observations}
     requested_refs: list[str] = []
@@ -210,6 +262,16 @@ def evaluate_proactive_candidate(
         return _decision(kind="no_op", reason_code="life.proactive.evidence_unknown", allowed=False)
     if any(row["epistemic_state"] == "STALE" for row in selected):
         return _decision(kind="no_op", reason_code="life.proactive.evidence_stale", allowed=False)
+    if any(
+        str(row.get("kind") or "").startswith("world:")
+        and str(row.get("authority") or "") != _WORLD_AUTHORITY
+        for row in selected
+    ):
+        return _decision(
+            kind="no_op",
+            reason_code="life.proactive.world_authority_invalid",
+            allowed=False,
+        )
     min_confidence = _strict_int(
         settings.get("proactive_min_evidence_confidence_milli"), default=350
     )
@@ -218,8 +280,6 @@ def evaluate_proactive_candidate(
 
     raw_score = proposal.get("score") if isinstance(proposal.get("score"), Mapping) else proposal
     score_inputs = {field: _strict_int(raw_score.get(field), default=0) for field in _SCORE_FIELDS}
-    # Evidence uncertainty is a deterministic floor. A model cannot claim more
-    # certainty than the least-confident fact it cites.
     score_inputs["uncertainty_penalty_milli"] = max(
         score_inputs["uncertainty_penalty_milli"],
         1000 - min(row["confidence_milli"] for row in selected),
@@ -227,7 +287,7 @@ def evaluate_proactive_candidate(
     score = compute_agency_score(**score_inputs).model_dump(mode="json")
     threshold = _strict_nonnegative_int(settings.get("proactive_min_utility_lcb_milli"), default=120)
     margin = _strict_nonnegative_int(settings.get("proactive_min_margin_milli"), default=80)
-    required = max(threshold, margin)  # no-op baseline utility is zero
+    required = max(threshold, margin)
     if int(score.get("utility_lcb_milli") or 0) < required:
         return _decision(
             kind="no_op",
