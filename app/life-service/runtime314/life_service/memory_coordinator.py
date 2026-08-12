@@ -482,6 +482,7 @@ class MemoryCoordinator:
         if existing is not None:
             return existing
         source_events = assertion.source_event_ids or (source_event_id,)
+        deadline = expiry_deadline_ms(detection.expiry_kind, created_at_ms)
         domain = _semantic_domain_for_assertion_kind(assertion.assertion_kind)
         derivation = MemoryDerivationV1(
             derivation_id=derivation_id,
@@ -503,7 +504,7 @@ class MemoryCoordinator:
             promotion_policy_version=policy_version,
             promotion_reason_codes=detection.reason_codes,
             valid_from_ms=assertion.valid_from_ms,
-            expires_at_ms=None,
+            expires_at_ms=deadline,
             context_eligible=True,
             learning_eligible=False,
             temperament_eligible=False,
@@ -740,11 +741,18 @@ class MemoryCoordinator:
         search_terms: tuple[str, ...] = (),
         expires_at_ms: int | None = None,
     ) -> tuple[MemoryAssertionV3, int, bool]:
-        """Adapter for legacy projection writes: assertion + L1 derivation."""
+        """Adapter for legacy projection writes with correction closure.
+
+        Only active assertion creation owns a LifeEvent->L1 derivation.
+        Lifecycle-only revisions therefore cannot alias another assertion's L1
+        when the same correction journal event drives both rows. Corrected and
+        superseded revisions also resume derivation invalidation on every retry,
+        so journal reconciliation closes a crash window deterministically.
+        """
 
         source_event_id = source_event_ids[0] if source_event_ids else None
         derivation = None
-        if source_event_id is not None:
+        if source_event_id is not None and lifecycle_status == "active":
             derivation = MemoryDerivationV1(
                 derivation_id=l1_derivation_id(
                     life_id=life_id,
@@ -755,9 +763,7 @@ class MemoryCoordinator:
                 memory_revision=1,
                 memory_assertion_sha256="0" * 64,
                 layer="L1_STREAM",
-                semantic_domain=_semantic_domain_for_assertion_kind(
-                    assertion_kind
-                ),
+                semantic_domain=_semantic_domain_for_assertion_kind(assertion_kind),
                 origin="LIFE_EVENT",
                 principal_ref=principal_ref,
                 workspace_ref=None,
@@ -770,7 +776,7 @@ class MemoryCoordinator:
                 promotion_policy_version=L1_POLICY_VERSION,
                 promotion_reason_codes=(),
                 valid_from_ms=valid_from_ms,
-                expires_at_ms=None,
+                expires_at_ms=expires_at_ms,
                 context_eligible=True,
                 learning_eligible=False,
                 temperament_eligible=False,
@@ -799,12 +805,23 @@ class MemoryCoordinator:
             expires_at_ms=expires_at_ms,
             derivation=derivation,
         )
-        if source_event_id is not None:
+        if source_event_id is not None and lifecycle_status == "active":
             self._ensure_l1_derivation(
                 assertion=assertion,
                 source_event_id=source_event_id,
                 principal_ref=principal_ref,
             )
+        if lifecycle_status in {"corrected", "superseded"}:
+            for target in self._store.list_derivations_for_memory(memory_id):
+                if not self._store.is_derivation_active(target.derivation_id):
+                    continue
+                invalidate_cascade(
+                    self._store,
+                    derivation_id=target.derivation_id,
+                    reason=lifecycle_status,
+                    invalidated_at_ms=created_at_ms,
+                    source_trigger_ref=source_event_id,
+                )
         return assertion, change_seq, created
 
     def _ensure_l1_derivation(
@@ -1173,13 +1190,17 @@ class MemoryCoordinator:
         created_at_ms: int,
         policy_version: str = L4_POLICY_VERSION,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, tuple, bool]:
-        """Correct one active claim head and cascade-invalidate descendants."""
+        """Correct one active claim with crash-recoverable invalidation.
+
+        The deterministic replacement is committed before the old DAG is
+        invalidated. A retry therefore recovers a crash after replacement commit
+        without losing the prior claim. The replacement is preserved from this
+        correction cascade; privacy erasure intentionally ignores preservation.
+        """
 
         target = self._store.get_memory_derivation(target_derivation_id)
         if target is None:
             raise MemoryCoordinatorError("correction target is missing")
-        if not self._store.is_derivation_active(target_derivation_id):
-            raise MemoryCoordinatorError("correction target is already inactive")
         memory_id = "mem_" + canonical_sha256(
             {
                 "domain": "tiangong.life.correction-memory.v1",
@@ -1203,7 +1224,24 @@ class MemoryCoordinator:
             )
             if assertion is None:
                 raise MemoryCoordinatorError("correction assertion is missing")
-            return assertion, existing, (), False
+            target_was_active = self._store.is_derivation_active(
+                target_derivation_id
+            )
+            invalidations = invalidate_cascade(
+                self._store,
+                derivation_id=target_derivation_id,
+                reason="corrected",
+                invalidated_at_ms=created_at_ms,
+                source_trigger_ref=user_message_event_id,
+                preserve_derivation_ids=(existing.derivation_id,),
+            )
+            if not target_was_active and not invalidations:
+                raise MemoryCoordinatorError(
+                    "correction target is already inactive"
+                )
+            return assertion, existing, invalidations, False
+        if not self._store.is_derivation_active(target_derivation_id):
+            raise MemoryCoordinatorError("correction target is already inactive")
         domain = target.semantic_domain
         derivation = MemoryDerivationV1(
             derivation_id=derivation_id,
@@ -1234,13 +1272,6 @@ class MemoryCoordinator:
             created_at_ms=created_at_ms,
             derivation_sha256="0" * 64,
         ).with_computed_derivation_sha256()
-        invalidations = invalidate_cascade(
-            self._store,
-            derivation_id=target_derivation_id,
-            reason="corrected",
-            invalidated_at_ms=created_at_ms,
-            source_trigger_ref=user_message_event_id,
-        )
         assertion, _seq, created = self._store.put_live_memory_assertion(
             plaintext,
             memory_id=memory_id,
@@ -1260,6 +1291,14 @@ class MemoryCoordinator:
         stored = self._store.get_memory_derivation(derivation_id)
         if stored is None:
             raise MemoryCoordinatorError("correction derivation commit failed")
+        invalidations = invalidate_cascade(
+            self._store,
+            derivation_id=target_derivation_id,
+            reason="corrected",
+            invalidated_at_ms=created_at_ms,
+            source_trigger_ref=user_message_event_id,
+            preserve_derivation_ids=(stored.derivation_id,),
+        )
         return assertion, stored, invalidations, created
 
     # ------------------------------------------------------------------

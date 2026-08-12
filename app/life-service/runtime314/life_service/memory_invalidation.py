@@ -65,12 +65,14 @@ def invalidate_cascade(
     reason: str = "corrected",
     invalidated_at_ms: int,
     source_trigger_ref: str | None = None,
+    preserve_derivation_ids: tuple[str, ...] = (),
 ) -> tuple[MemoryInvalidationRecord, ...]:
-    """Invalidate a derivation and every descendant that loses support.
+    """Invalidate a derivation DAG and resume safely after partial crashes.
 
-    The target receives ``reason``; descendants that lose all independent
-    parent support receive ``stale``.  Already-invalidated targets are an
-    idempotent no-op.  Returns the persisted invalidation records.
+    Already-invalidated nodes remain traversal anchors instead of forcing an
+    early no-op, so a partial cascade can continue after restart. Correction
+    replacements can be preserved explicitly; privacy erasure deliberately
+    ignores that exemption and traverses the complete privacy lineage.
     """
 
     if reason not in {
@@ -84,8 +86,7 @@ def invalidate_cascade(
     root = store.get_memory_derivation(derivation_id)
     if root is None:
         raise ValueError("invalidation target derivation does not exist")
-    if not store.is_derivation_active(derivation_id):
-        return ()
+    preserved = set() if reason == "privacy_erasure" else set(preserve_derivation_ids)
     invalidated: dict[str, MemoryDerivationV1] = {}
     queue: list[MemoryDerivationV1] = [root]
     while queue:
@@ -94,7 +95,13 @@ def invalidate_cascade(
             continue
         invalidated[current.derivation_id] = current
         for child in store.list_derivation_children(current.derivation_id):
-            if child.derivation_id in invalidated:
+            if child.derivation_id in invalidated or child.derivation_id in preserved:
+                continue
+            if (
+                reason == "corrected"
+                and child.origin == "USER_EXPLICIT"
+                and "corrected" in child.promotion_reason_codes
+            ):
                 continue
             if reason != "privacy_erasure" and _still_supported(
                 store, child, invalidated_ids=invalidated
@@ -105,9 +112,9 @@ def invalidate_cascade(
     records: list[MemoryInvalidationRecord] = []
     invalidated_ids = set(invalidated)
     for current_id, derivation in invalidated.items():
-        current_reason = (
-            reason if current_id == root.derivation_id else "stale"
-        )
+        if current_id in preserved or not store.is_derivation_active(current_id):
+            continue
+        current_reason = reason if current_id == root.derivation_id else "stale"
         descendants = tuple(
             sorted(
                 child_id
