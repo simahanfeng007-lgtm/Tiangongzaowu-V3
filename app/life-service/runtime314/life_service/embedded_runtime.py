@@ -2948,6 +2948,14 @@ class EmbeddedLifeRuntime:
         _ = (life_id, freeze_reason)
         return
 
+    _UPGRADE_OPEN_STATUSES = frozenset({"awaiting_user", "confirmed", "executing"})
+    _UPGRADE_PATH_SUFFIXES = frozenset(
+        {".py", ".mjs", ".cjs", ".js", ".html", ".css", ".json", ".md", ".yaml", ".yml"}
+    )
+    _UPGRADE_PATH_FORBIDDEN_PARTS = frozenset(
+        {"__pycache__", ".git", "_internal", "node_modules", "site-packages"}
+    )
+
     def _normalize_upgrade_changes(self, value: Any) -> list[dict[str, Any]]:
         """Bound and validate self-code patch operations from an untrusted model."""
         if value in (None, ""):
