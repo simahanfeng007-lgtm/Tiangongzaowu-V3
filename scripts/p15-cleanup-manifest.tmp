@@ -1,0 +1,7 @@
+remove: .github/workflows/p15-memory-repair.yml
+remove: scripts/p15-memory-qa-repair.py
+remove: scripts/p15-memory-qa-repair-v2.py
+remove: scripts/p15-memory-qa-repair-v3.py
+remove: scripts/p15-memory-qa-repair-v4.py
+remove: scripts/p15-cleanup-marker.tmp
+remove: scripts/p15-cleanup-manifest.tmp
