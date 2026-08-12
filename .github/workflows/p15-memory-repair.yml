@@ -31,7 +31,7 @@ jobs:
           cache: pip
 
       - name: Apply targeted repair
-        run: python scripts/p15-memory-qa-repair-v3.py
+        run: python scripts/p15-memory-qa-repair-v4.py
 
       - name: Sync generated mirrors
         run: python scripts/sync-generated-sources.py --write
