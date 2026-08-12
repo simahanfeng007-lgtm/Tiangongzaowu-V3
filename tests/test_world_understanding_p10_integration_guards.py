@@ -19,6 +19,24 @@ def test_v3_integration_selects_one_current_snapshot_and_refuses_ambiguous_frame
     assert integ.render_for_turn(run_context=RC(),user_text='current state?',now_ms=5001)==''
 
 
+def test_repository_refresher_selects_exact_snapshot_when_runtime_frames_are_ambiguous():
+    mod=importlib.import_module('v3.world_context_integration')
+    store=p9.WorldStateStore(); c=p9.cut(); f,g=p9.graph_for(c); repository=p9.materialize(store,c,g,f)
+    c2=p9.cut(git='other',gseq=1,t=2); f2,g2=p9.graph_for(c2,branch='feature'); p9.materialize(store,c2,g2,f2)
+    integ=mod.WorldContextIntegration(
+        store=store,
+        token_budget=4000,
+        repository_snapshot_refresher=lambda _context: repository,
+    )
+    text=integ.render_for_turn(
+        run_context=RC(),
+        user_text='inspect the repository total tree',
+        now_ms=5002,
+    )
+    assert text.startswith('[WORLD_CONTEXT_SLOT]\n[WORLD_CONTEXT]')
+    assert integ.repository_snapshot_refresher(object()) is repository
+
+
 def test_run_context_current_user_text_is_isolated_and_not_audit_metadata():
     rc=importlib.import_module('v3.run_context'); outer=rc.current_run_context()
     with rc.bind_run_context({'request_id':'a','life_id':'life.A','principal_scope_hash':'a'*64,'current_user_message':'one'}):

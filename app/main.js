@@ -92,7 +92,7 @@ function configureSourceIsolation() {
   return Object.freeze({ profileRoot, userData, runtimeRoot, workspaceRoot });
 }
 
-configureSourceIsolation();
+const SOURCE_ISOLATION = configureSourceIsolation();
 
 // 工作区写入模式：workspace（默认，写边界=工作区）/ full（全盘，硬禁区除外）。
 // 由后端保存在 workspace_settings.json，启动时注入子进程；切换模式后重启应用生效。
@@ -1040,23 +1040,48 @@ function writeWorkspacePreference(workspace, workspaceMode = "") {
 
 function applyWorkspacePreference() {
   const configured = String(process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT || "").trim();
+  const persisted = readWorkspacePreference();
+  // Source mode installs a safe bootstrap workspace before Electron starts.
+  // That bootstrap is only a default; a user-committed repository must survive
+  // an application restart. Explicit non-bootstrap environments keep priority.
+  const sourceBootstrap = (
+    typeof SOURCE_MODE !== "undefined"
+    && SOURCE_MODE
+    && typeof SOURCE_ISOLATION !== "undefined"
+    && SOURCE_ISOLATION
+    && configured
+    && sameWindowsPath(configured, SOURCE_ISOLATION.workspaceRoot)
+  );
+  if (sourceBootstrap && persisted) {
+    process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_FORCE_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_OMNI_BODY_WORKSPACE = persisted;
+    workspaceCommittedRoot = persisted;
+    return;
+  }
   if (configured) {
     try {
       const validated = validateWorkspaceRoot(configured);
       process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = validated;
+      process.env.TIANGONG_WORKSPACE_ROOT = validated;
+      process.env.TIANGONG_FORCE_WORKSPACE_ROOT = validated;
       process.env.TIANGONG_OMNI_BODY_WORKSPACE = validated;
       workspaceCommittedRoot = validated;
       return;
     } catch (error) {
       writeDesktopDiagnostic("workspace-environment-invalid", error?.message || error);
       delete process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT;
+      delete process.env.TIANGONG_WORKSPACE_ROOT;
+      delete process.env.TIANGONG_FORCE_WORKSPACE_ROOT;
       delete process.env.TIANGONG_OMNI_BODY_WORKSPACE;
       workspaceCommittedRoot = "";
     }
   }
-  const persisted = readWorkspacePreference();
   if (persisted) {
     process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_FORCE_WORKSPACE_ROOT = persisted;
     process.env.TIANGONG_OMNI_BODY_WORKSPACE = persisted;
     workspaceCommittedRoot = persisted;
   }
@@ -1068,17 +1093,25 @@ function committedWorkspaceRoot() {
   if (configured) {
     try {
       workspaceCommittedRoot = validateWorkspaceRoot(configured);
+      process.env.TIANGONG_WORKSPACE_ROOT = workspaceCommittedRoot;
+      process.env.TIANGONG_FORCE_WORKSPACE_ROOT = workspaceCommittedRoot;
       process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspaceCommittedRoot;
       return workspaceCommittedRoot;
     } catch (error) {
       writeDesktopDiagnostic("workspace-environment-invalid", error?.message || error);
       delete process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT;
+      delete process.env.TIANGONG_WORKSPACE_ROOT;
+      delete process.env.TIANGONG_FORCE_WORKSPACE_ROOT;
       delete process.env.TIANGONG_OMNI_BODY_WORKSPACE;
     }
   }
   const persisted = readWorkspacePreference();
   if (persisted) {
     workspaceCommittedRoot = persisted;
+    process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_FORCE_WORKSPACE_ROOT = persisted;
+    process.env.TIANGONG_OMNI_BODY_WORKSPACE = persisted;
     return workspaceCommittedRoot;
   }
   // 默认工作区收窄：用户 Documents 下的专用目录，而不是应用运行时状态目录。
@@ -1087,6 +1120,8 @@ function committedWorkspaceRoot() {
   fs.mkdirSync(fallback, { recursive: true });
   workspaceCommittedRoot = validateWorkspaceRoot(fallback);
   process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = workspaceCommittedRoot;
+  process.env.TIANGONG_WORKSPACE_ROOT = workspaceCommittedRoot;
+  process.env.TIANGONG_FORCE_WORKSPACE_ROOT = workspaceCommittedRoot;
   process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspaceCommittedRoot;
   return workspaceCommittedRoot;
 }
@@ -1194,6 +1229,12 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
 
   await stopServicesForWorkspaceChange("workspace-root-change");
   process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = workspace;
+  // The embedded tool/grant path resolves FORCE/WORKSPACE before the desktop
+  // aliases.  Keep every execution authority on the same committed root
+  // before restarting 7184, otherwise the gateway issues a grant for the new
+  // workspace while the tool executor validates it against the old one.
+  process.env.TIANGONG_WORKSPACE_ROOT = workspace;
+  process.env.TIANGONG_FORCE_WORKSPACE_ROOT = workspace;
   process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspace;
   process.env.TIANGONG_WORKSPACE_MODE = nextMode;
   try {
@@ -1223,6 +1264,8 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
   } catch (error) {
     await stopServicesForWorkspaceChange("workspace-root-rollback");
     process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = previousWorkspace;
+    process.env.TIANGONG_WORKSPACE_ROOT = previousWorkspace;
+    process.env.TIANGONG_FORCE_WORKSPACE_ROOT = previousWorkspace;
     process.env.TIANGONG_OMNI_BODY_WORKSPACE = previousWorkspace;
     process.env.TIANGONG_WORKSPACE_MODE = previousMode;
     const rollbackServices = await startServicesForWorkspaceChange();

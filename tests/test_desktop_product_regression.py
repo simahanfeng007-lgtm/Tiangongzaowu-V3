@@ -677,6 +677,26 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
         self.assertIn("!services.totalGatewayReady", workspace_apply)
         self.assertNotIn("!services.lifeReady", workspace_apply)
         self.assertNotIn("!services.communicationReady", workspace_apply)
+        self.assertEqual(
+            workspace_apply.count("process.env.TIANGONG_WORKSPACE_ROOT = workspace"),
+            1,
+        )
+        self.assertEqual(
+            workspace_apply.count("process.env.TIANGONG_FORCE_WORKSPACE_ROOT = workspace"),
+            1,
+        )
+        self.assertEqual(
+            workspace_apply.count(
+                "process.env.TIANGONG_WORKSPACE_ROOT = previousWorkspace"
+            ),
+            1,
+        )
+        self.assertEqual(
+            workspace_apply.count(
+                "process.env.TIANGONG_FORCE_WORKSPACE_ROOT = previousWorkspace"
+            ),
+            1,
+        )
 
         choose_start = runtime.index("async chooseWorkspaceRoot(root)")
         choose_end = runtime.index("async chooseStorageRoot()", choose_start)
@@ -864,6 +884,41 @@ console.log(JSON.stringify({
         self.assertEqual(payload["omni"], "C:/persisted")
         self.assertEqual(payload["committed"], "C:/persisted")
         self.assertEqual(payload["diagnostics"][0][0], "workspace-environment-invalid")
+
+    def test_source_restart_restores_committed_workspace_to_every_authority(self):
+        main = source("app/main.js")
+        start = main.index("function applyWorkspacePreference")
+        end = main.index("function committedWorkspaceRoot", start)
+        production_function = main[start:end]
+        script = """
+let workspaceCommittedRoot = "";
+const SOURCE_MODE = true;
+const SOURCE_ISOLATION = { workspaceRoot: "C:/source-default" };
+process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = "C:/source-default";
+process.env.TIANGONG_WORKSPACE_ROOT = "C:/source-default";
+process.env.TIANGONG_FORCE_WORKSPACE_ROOT = "C:/source-default";
+process.env.TIANGONG_OMNI_BODY_WORKSPACE = "C:/source-default";
+function sameWindowsPath(left, right) { return String(left).toLowerCase() === String(right).toLowerCase(); }
+function validateWorkspaceRoot(value) { return String(value); }
+function readWorkspacePreference() { return "C:/committed-repository"; }
+function writeDesktopDiagnostic() {}
+""" + production_function + """
+applyWorkspacePreference();
+console.log(JSON.stringify({
+  desktop: process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT,
+  workspace: process.env.TIANGONG_WORKSPACE_ROOT,
+  force: process.env.TIANGONG_FORCE_WORKSPACE_ROOT,
+  omni: process.env.TIANGONG_OMNI_BODY_WORKSPACE,
+  committed: workspaceCommittedRoot,
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script], cwd=ROOT, check=False, capture_output=True,
+            text=True, encoding="utf-8",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout.strip())
+        self.assertEqual(set(payload.values()), {"C:/committed-repository"})
 
     def test_model_updates_are_serialized_and_desktop_retries_are_idempotent(self):
         main = source("app/main.js")

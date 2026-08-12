@@ -88,6 +88,13 @@ def test_repository_evidence_is_reference_only_and_enters_life_learning_scope() 
     assert source["repository_evidence"][0]["frame_revision_hash"] == "1" * 64
 
 
+def test_repository_evidence_accepts_real_git_sha1_and_rejects_malformed_oid() -> None:
+    sha1 = {**_repository_evidence(), "commit": "a" * 40}
+    assert normalize_repository_evidence(sha1)["commit"] == "a" * 40
+    malformed = {**_repository_evidence(), "commit": "a" * 39}
+    assert normalize_repository_evidence(malformed) is None
+
+
 def test_life_learning_observation_has_dedicated_deterministic_compiler() -> None:
     observation = LifeLearningObservation(
         life_id="life.main",

@@ -79,6 +79,8 @@ const snapshotExpression = `(() => {
     assistantCount: messages.filter((node) => node.classList.contains('assistant') && !node.dataset.progressBubble).length,
     lastUserId: lastUser?.dataset?.messageId || '',
     lastAssistantId: lastAssistant?.dataset?.messageId || '',
+    lastAssistantRequestId: lastAssistant?.dataset?.requestId || '',
+    lastAssistantTerminalRunId: lastAssistant?.dataset?.terminalRunId || '',
     lastUserText: lastUser?.querySelector('.message-content')?.innerText?.trim() || '',
     lastAssistantText: lastAssistant?.querySelector('.message-content')?.innerText?.trim() || '',
     lastRole: last?.dataset?.messageRole || '',
@@ -152,7 +154,10 @@ async function main() {
           && current.lastAssistantId !== before.lastAssistantId)
         || (current.lastAssistantText
           && current.lastAssistantText !== before.lastAssistantText);
-      if (userAccepted && assistantChanged && !current.busy) {
+      const terminalDelivered = Boolean(current.lastAssistantTerminalRunId)
+        && current.lastAssistantTerminalRunId !== before.lastAssistantTerminalRunId;
+      const composerReady = !current.sendDisabled && current.status === '就绪';
+      if (userAccepted && assistantChanged && terminalDelivered && composerReady && !current.busy) {
         console.log(JSON.stringify({ ok: true, elapsedMs: Date.now() - startedAt, observedBusy, before, after: current }));
         return;
       }

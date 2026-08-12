@@ -77,6 +77,21 @@ def test_m5_clean_head_advance_emits_commit_modify_delta(tmp_path: Path) -> None
     assert change.old_blob_sha != change.new_blob_sha
 
 
+def test_git_inventory_is_tracked_plus_untracked_and_excludes_ignored(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    (tmp_path / "tracked.py").write_text("value = 1\n", encoding="utf-8")
+    _commit(tmp_path, "baseline")
+    (tmp_path / "untracked.py").write_text("value = 2\n", encoding="utf-8")
+    (tmp_path / "ignored.py").write_text("secret = 3\n", encoding="utf-8")
+
+    assert perception.list_repository_paths(tmp_path) == (
+        ".gitignore",
+        "tracked.py",
+        "untracked.py",
+    )
+
+
 def test_m5_branch_switch_never_replays_cross_branch_commit_diff(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     target = tmp_path / "alpha.py"

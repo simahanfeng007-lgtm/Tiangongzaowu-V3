@@ -98,6 +98,18 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
             [],
         )
 
+    def test_coordinated_prohibition_never_creates_effect_obligations(self):
+        text = (
+            "请只读查看 src/query/answer.py 和 tests/test_query.py，"
+            "不得创建、修改或删除任何文件。"
+        )
+        items = integrity.build_action_obligations(text)
+        self.assertEqual({item["kind"] for item in items}, {"observation"})
+        self.assertEqual(
+            {item["target_path"] for item in items},
+            {"src/query/answer.py", "tests/test_query.py"},
+        )
+
     def test_scoped_negation_preserves_other_explicit_actions(self):
         cases = {
             "先别读这个文件，查看一下当前目录": ["observation"],
@@ -659,6 +671,18 @@ TIANGONG/P14/LIVE/2026081101
         observation = next(item for item in obligations if item["kind"] == "observation")
         self.assertEqual(observation["object_kind"], "file")
 
+    def test_dotted_code_symbol_is_not_a_second_file_target(self):
+        user = (
+            "请真实读取 src/core/world.py，说明 WorldModel.summary 返回什么。"
+            "不得创建、修改或删除文件。"
+        )
+        obligations = integrity.build_action_obligations(user)
+        self.assertEqual(
+            [item["target_path"] for item in obligations if item["kind"] == "observation"],
+            ["src/core/world.py"],
+        )
+        self.assertNotIn("effect", {item["kind"] for item in obligations})
+
     def test_verified_absence_satisfies_target_bound_observation(self):
         user = (
             "请只读查看当前工作区里的 missing-proof.txt。"
@@ -724,6 +748,46 @@ TIANGONG/P14/LIVE/2026081101
         self.assertFalse(integrity.obligation_is_satisfied(obligation, [payload]))
         payload["tool_args"]["target"] = r"C:\workspace\docs"
         self.assertTrue(integrity.obligation_is_satisfied(obligation, [payload]))
+
+    def test_directory_listing_binds_named_file_observation(self):
+        user = "请只读查看 tests/test_query.py，不得修改或删除文件。"
+        obligation = next(
+            item
+            for item in integrity.build_action_obligations(user)
+            if item["kind"] == "observation"
+        )
+        payload = {
+            "ok": True,
+            "tool_action": "file.list",
+            "tool_args": {
+                "action": "file.list",
+                "target": r"C:\workspace\tests",
+                "args": {},
+            },
+            "tool_result": {
+                "result": {
+                    "root": r"C:\workspace\tests",
+                    "count": 1,
+                    "entries": [{
+                        "name": "test_query.py",
+                        "path": r"C:\workspace\tests\test_query.py",
+                        "rel_path": "tests/test_query.py",
+                        "type": "file",
+                    }],
+                }
+            },
+        }
+        self.assertTrue(integrity.obligation_is_satisfied(obligation, [payload]))
+
+        wrong = dict(payload)
+        wrong["tool_result"] = {
+            "result": {
+                "root": r"C:\workspace\tests",
+                "count": 1,
+                "entries": [{"name": "other.py", "type": "file"}],
+            }
+        }
+        self.assertFalse(integrity.obligation_is_satisfied(obligation, [wrong]))
 
     def test_model_plan_actions_never_become_hard_obligations(self):
         contract = integrity.reconcile_task_contract(

@@ -1125,6 +1125,9 @@ export const conversationPanelPlugin = {
       node.dataset.messageAt = String(item.at || "");
       node.dataset.messageId = String(item.id || "");
       if (item.requestId) node.dataset.requestId = String(item.requestId);
+      if (item.meta?.runId || item.meta?.gatewayRequestId) {
+        node.dataset.terminalRunId = String(item.meta?.runId || item.meta?.gatewayRequestId);
+      }
       if (item.progress) node.dataset.progressBubble = "1";
 
       const avatar = document.createElement("div");

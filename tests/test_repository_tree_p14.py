@@ -26,7 +26,9 @@ from contracts.world_understanding.scope import (
 from contracts.world_understanding.time import WorldTime
 from world_understanding.software_world.frame import SoftwareWorldFrame
 from world_understanding.software_world.updater import SoftwareWorldUpdater
+from world_understanding.production import ProductionWorldUnderstandingRuntime
 from world_understanding.source_compilers import build_p3_compilers
+from world_understanding.world_state import WorldStateStore
 
 
 def _scope() -> WorldScope:
@@ -205,6 +207,54 @@ def test_tree_compiles_and_materializes_in_existing_software_world_graph() -> No
     }
     assert attrs["coverage_state"] == "COMPLETE"
     assert graph.resolve_token("a.py") == (file_entity,)
+
+
+def test_duplicate_repository_source_rehydrates_live_graph_after_restart(tmp_path) -> None:
+    observation = _observation()
+    manifest = _manifest((RepositoryTreeFile(
+        path="src/core/a.py",
+        coverage_state="COMPLETE",
+        source_fingerprint="2" * 64,
+    ),))
+    envelope = _envelope(observation, manifest)
+
+    def frame_factory(source, cut):
+        return SoftwareWorldFrame.build(
+            scope=source.scope_hint,
+            workspace="workspace.tree",
+            repository="repo.tree",
+            worktree="worktree.tree",
+            branch="main",
+            commit="a" * 40,
+            environment="test",
+            time=source.source_time,
+            world_cut=cut,
+        )
+
+    state_root = tmp_path / "world-state"
+    first = ProductionWorldUnderstandingRuntime(
+        store=WorldStateStore(root=state_root),
+        frame_factory=frame_factory,
+    )
+    assert first.facade.accept(envelope).reason_code == "SOURCE_MATERIALIZED"
+
+    restarted = ProductionWorldUnderstandingRuntime(
+        store=WorldStateStore(root=state_root),
+        frame_factory=frame_factory,
+    )
+    duplicate = restarted.facade.accept(envelope)
+    assert duplicate.reason_code == "SOURCE_ALREADY_MATERIALIZED"
+    frame = restarted.live_repository_frame(
+        scope=_scope(),
+        repository="repo.tree",
+        worktree="worktree.tree",
+        branch="main",
+    )
+    assert frame is not None
+    evidence = restarted.repository_evidence_snapshot(scope=_scope())
+    assert evidence is not None
+    assert evidence["commit"] == "a" * 40
+    assert evidence["entity_refs"]
 
 
 def test_tree_manifest_chunks_fail_closed_when_incomplete() -> None:

@@ -268,6 +268,34 @@ def _excluded_repository_path(path: str, prefixes: frozenset[str]) -> bool:
 def _candidate_paths(root: Path) -> tuple[tuple[str, ...], int, bool]:
     root = root.resolve(strict=False)
     excluded_prefixes = _repository_excluded_prefixes(root)
+    try:
+        from .repository_perception import list_repository_paths
+
+        git_paths = list_repository_paths(root)
+    except Exception:
+        git_paths = ()
+    if git_paths:
+        rows: list[str] = []
+        candidate_count = 0
+        for raw in git_paths:
+            rel = _repo_path(raw)
+            if not rel or ".." in PurePosixPath(rel).parts:
+                continue
+            if _excluded_repository_path(rel, excluded_prefixes):
+                continue
+            if _language_for(rel) is None:
+                continue
+            target = root.joinpath(*PurePosixPath(rel).parts)
+            if not target.is_file() or target.is_symlink():
+                continue
+            candidate_count += 1
+            if len(rows) >= _MAX_DISCOVERED_FILES:
+                return tuple(rows), candidate_count, True
+            rows.append(rel)
+        return tuple(rows), candidate_count, False
+
+    # Non-Git test fixtures and transient Git failures retain the bounded,
+    # deterministic filesystem fallback; production repositories use Git.
     rows: list[str] = []
     candidate_count = 0
     truncated = False

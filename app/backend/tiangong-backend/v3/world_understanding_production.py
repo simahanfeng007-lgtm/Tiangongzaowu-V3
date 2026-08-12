@@ -35,6 +35,7 @@ from world_understanding.software_world import SoftwareWorldFrame
 from world_understanding.software_world.git_observation import repository_frame_identity
 from world_understanding.source_adapters import build_post_commit_source_envelope
 from world_understanding.world_state import WorldStateStore
+from world_understanding.world_state.store import MaterializedWorldSnapshot
 
 from .run_context import current_run_context
 from .context_compactor import estimate_tokens
@@ -82,7 +83,10 @@ def _identity(event: NativePostCommitEvent) -> dict[str, str]:
 
 
 def _current_identity() -> dict[str, str]:
-    context = current_run_context()
+    return _run_identity(current_run_context())
+
+
+def _run_identity(context) -> dict[str, str]:
     return {
         "life_id": str(context.life_id or "").strip(),
         "principal_scope_hash": str(context.principal_scope_hash or "").strip(),
@@ -255,6 +259,57 @@ def production_repository_previous_revision(
     )
 
 
+def refresh_active_repository_snapshot(run_context=None) -> MaterializedWorldSnapshot | None:
+    """Refresh and return the exact active Git frame for the current turn.
+
+    Repository sensing remains a read-only producer feeding the one production
+    facade/store.  The returned snapshot is selected by exact
+    repository/worktree/branch identity, never by guessing among current world
+    streams.
+    """
+
+    from .repository_perception import (
+        RepositoryObservationError,
+        observe_active_repository,
+        publish_active_repository_observation,
+    )
+
+    identity = _run_identity(run_context or current_run_context())
+    if _scope(identity) is None:
+        return None
+    try:
+        observation = observe_active_repository()
+    except RepositoryObservationError:
+        return None
+    if observation is None:
+        return None
+    receipt = publish_active_repository_observation(
+        observation=observation,
+        identity_override=identity,
+    )
+    if receipt is None or not bool(getattr(receipt, "processed", False)):
+        return None
+
+    scope = _scope(identity)
+    if scope is None:
+        return None
+    runtime = production_world_understanding_runtime()
+    frame = runtime.live_repository_frame(
+        scope=scope,
+        repository=observation.identity.repository_id,
+        worktree=observation.identity.worktree_id,
+        branch=observation.revision.branch,
+    )
+    if frame is None or frame.commit != observation.revision.head_commit:
+        return None
+    return runtime.store.current(
+        life_id=scope.life_id,
+        world_scope_hash=scope.world_scope_hash,
+        principal_scope_hash=scope.principal_scope_hash,
+        frame_id=frame.frame_id,
+    )
+
+
 def _native_id(value: str) -> str:
     value = str(value or "").strip()
     if _OPAQUE.fullmatch(value):
@@ -327,6 +382,7 @@ __all__ = [
     "production_repository_graph_query",
     "production_repository_evidence_snapshot",
     "production_repository_previous_revision",
+    "refresh_active_repository_snapshot",
     "production_world_understanding_runtime",
     "set_world_inquiry_dispatcher",
 ]

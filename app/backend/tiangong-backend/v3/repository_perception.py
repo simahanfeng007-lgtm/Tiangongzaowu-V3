@@ -10,8 +10,9 @@ import subprocess
 import tempfile
 import time
 import unicodedata
+from collections import OrderedDict
 from pathlib import Path, PurePosixPath
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.world_understanding.repository import (
@@ -38,7 +39,7 @@ _GIT_TIMEOUT_SECONDS = 5.0
 _MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024
 _MAX_STATUS_ENTRIES = 2048
 _CONFLICT_CODES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
-_READ_ONLY_GIT_COMMANDS = frozenset({"rev-parse", "status", "hash-object", "diff"})
+_READ_ONLY_GIT_COMMANDS = frozenset({"rev-parse", "status", "hash-object", "diff", "ls-files"})
 _GIT_POLL_SECONDS = 0.01
 _MAX_INLINE_WORLD_PAYLOAD_BYTES = 262_144
 _MAX_STRUCTURE_KNOWN_ROWS = 64
@@ -56,6 +57,8 @@ _UNSAFE_GIT_ENVIRONMENT = frozenset({
     "GIT_OBJECT_DIRECTORY",
     "GIT_WORK_TREE",
 })
+_PUBLISH_CACHE_LIMIT = 64
+_publish_cache: OrderedDict[tuple[str, str, str, str], object] = OrderedDict()
 
 
 class RepositoryObservationError(RuntimeError):
@@ -163,6 +166,29 @@ def _decode_path(value: bytes) -> str:
         return _repo_path(value.decode("utf-8", errors="strict"))
     except UnicodeDecodeError as exc:
         raise RepositoryObservationError("Git path is not valid UTF-8") from exc
+
+
+def list_repository_paths(root: Path) -> tuple[str, ...]:
+    """Return Git's deterministic tracked + untracked, non-ignored inventory.
+
+    This follows the same repository-authority boundary used by the perception
+    provider.  It neither reads source contents nor mutates the index/worktree.
+    """
+
+    raw = _run_git(
+        root.resolve(strict=False),
+        ("ls-files", "--cached", "--others", "--exclude-standard", "-z"),
+    )
+    rows: list[str] = []
+    seen: set[str] = set()
+    for field in raw.split(b"\x00"):
+        if not field:
+            continue
+        path = _decode_path(field)
+        if path and path not in seen:
+            seen.add(path)
+            rows.append(path)
+    return tuple(sorted(rows))
 
 
 def _change_kind(old_path: str, new_path: str) -> str:
@@ -626,12 +652,16 @@ def _bounded_structure_payload(
 
 def publish_active_repository_observation(
     provider: RepositoryProvider | None = None,
+    *,
+    observation: RepositoryObservation | None = None,
+    identity_override: Mapping[str, object] | None = None,
 ) -> object | None:
     """Publish one bounded Git + structure reality notification through native ingress."""
-    try:
-        observation = observe_active_repository(provider)
-    except RepositoryObservationError:
-        return None
+    if observation is None:
+        try:
+            observation = observe_active_repository(provider)
+        except RepositoryObservationError:
+            return None
     if observation is None:
         return None
 
@@ -680,18 +710,45 @@ def publish_active_repository_observation(
     except Exception:
         pass
 
-    context = current_run_context()
-    raw_identity = {
-        "life_id": context.life_id,
-        "principal_scope_hash": context.principal_scope_hash,
-        "workspace_id": context.workspace_id,
-        "run_id": context.run_id,
-        "request_id": context.request_id,
-        "session_id": context.session_id,
-        "conversation_id": context.conversation_id,
-    }
+    if identity_override is None:
+        context = current_run_context()
+        raw_identity = {
+            "life_id": context.life_id,
+            "principal_scope_hash": context.principal_scope_hash,
+            "workspace_id": context.workspace_id,
+            "run_id": context.run_id,
+            "request_id": context.request_id,
+            "session_id": context.session_id,
+            "conversation_id": context.conversation_id,
+        }
+    else:
+        raw_identity = {
+            key: identity_override.get(key)
+            for key in (
+                "life_id",
+                "principal_scope_hash",
+                "workspace_id",
+                "run_id",
+                "request_id",
+                "session_id",
+                "conversation_id",
+            )
+        }
     identity = {key: str(value) for key, value in raw_identity.items() if value}
-    return notify_native_post_commit(NativePostCommitEvent(
+    cache_key = (
+        str(identity.get("life_id") or ""),
+        str(identity.get("principal_scope_hash") or ""),
+        str(identity.get("workspace_id") or ""),
+        native_hash,
+    )
+    # This cache is only a bounded fast path. The canonical ingress remains the
+    # deduplication authority, so a benign race may repeat an idempotent notify
+    # but can never create a second state owner or corrupt repository truth.
+    cached = _publish_cache.get(cache_key)
+    if cached is not None:
+        _publish_cache.move_to_end(cache_key)
+        return cached
+    receipt = notify_native_post_commit(NativePostCommitEvent(
         source_kind="GIT_CODE",
         source_native_id="repoobs." + native_hash[:48],
         producer_ref=producer_ref,
@@ -699,11 +756,18 @@ def publish_active_repository_observation(
         occurred_at_ms=observation.observed_at_ms,
         identity=identity,
     ))
+    if receipt is not None:
+        _publish_cache[cache_key] = receipt
+        _publish_cache.move_to_end(cache_key)
+        while len(_publish_cache) > _PUBLISH_CACHE_LIMIT:
+            _publish_cache.popitem(last=False)
+    return receipt
 
 
 __all__ = [
     "LocalGitRepositoryProvider",
     "RepositoryObservationError",
+    "list_repository_paths",
     "observe_active_repository",
     "publish_active_repository_observation",
 ]

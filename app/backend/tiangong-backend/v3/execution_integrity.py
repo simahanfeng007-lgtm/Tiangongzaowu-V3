@@ -104,10 +104,17 @@ _RELATIVE_FILE_PATH_RE = re.compile(
 _BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[》〉」』】）)\]}'\"，。；：,.;:！!？?])", re.IGNORECASE)
+_COMMON_FILE_SUFFIXES = frozenset({
+    "bash", "bat", "c", "cc", "cfg", "conf", "cpp", "cs", "css", "csv",
+    "doc", "docx", "env", "go", "h", "hh", "hpp", "html", "ini", "java",
+    "js", "json", "jsx", "kt", "kts", "less", "lock", "md", "mjs", "pdf",
+    "php", "ps1", "py", "rb", "rs", "scss", "sh", "sql", "swift", "toml",
+    "ts", "tsx", "txt", "xml", "yaml", "yml", "zip", "xlsx", "pptx",
+})
 
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
-    "不要", "别", "先别", "先不要", "不用", "无需", "禁止", "严禁", "绝不", "暂不", "暂时不要",
+    "不要", "不得", "不许", "别", "先别", "先不要", "不用", "无需", "禁止", "严禁", "绝不", "暂不", "暂时不要",
     "别再", "不要再", "不是让你", "不是叫你",
 )
 _EXTERNAL_EFFECT_TOKENS = frozenset({
@@ -673,12 +680,40 @@ def is_execution_discussion_only(user_text: object) -> bool:
 
 
 def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
+    action_verbs = tuple(sorted(set(
+        _LOCAL_OBSERVE_VERBS
+        + _SEARCH_VERBS
+        + _MUTATION_VERBS
+        + _ARTIFACT_VERBS
+        + _EXTERNAL_EFFECT_VERBS
+        + _EXECUTION_VERBS
+        + _DELIVERY_STRONG_VERBS
+        + _DELIVERY_ARTIFACT_VERBS
+    ), key=len, reverse=True))
     for match in re.finditer(re.escape(verb), compact):
         left = compact[max(0, match.start() - 14):match.start()]
         clause_left = re.split(r"[，。；：,.;:！!？?]", left)[-1]
         if any(left.endswith(prefix) for prefix in _NEGATION_PREFIXES):
             continue
         if any(re.search(re.escape(prefix) + r"[^，。；：,.;:！!？?]{0,8}$", clause_left) for prefix in _NEGATION_PREFIXES):
+            continue
+        # A prohibition commonly scopes over a coordinated verb list:
+        # "不得创建、修改或删除".  Commas alone cannot terminate that scope,
+        # while a new object/cue ("不要运行测试，只修改代码") does.
+        coordinated_left = compact[max(0, match.start() - 32):match.start()]
+        negated = False
+        for prefix in _NEGATION_PREFIXES:
+            prefix_at = coordinated_left.rfind(prefix)
+            if prefix_at < 0:
+                continue
+            tail = coordinated_left[prefix_at + len(prefix):]
+            for action_verb in action_verbs:
+                tail = tail.replace(action_verb, "")
+            tail = re.sub(r"[\s、，,/和或及与并且同时]+", "", tail)
+            if not tail:
+                negated = True
+                break
+        if negated:
             continue
         return True
     return False
@@ -937,6 +972,12 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
         if any(start <= match.start() and match.end() <= end for start, end in path_spans):
             continue
         candidate = match.group(1).strip()
+        stem, suffix = candidate.rsplit(".", 1)
+        if suffix.lower() not in _COMMON_FILE_SUFFIXES and any(char.isupper() for char in stem):
+            # Dotted code symbols such as WorldModel.summary are semantic
+            # subjects, not filesystem paths. Slash-qualified paths are
+            # already captured by _RELATIVE_FILE_PATH_RE above.
+            continue
         if candidate.lower() in declared_actions:
             continue
         prefix = text[max(0, match.start(1) - 24):match.start(1)]
@@ -1069,6 +1110,38 @@ def _target_matches(payload: dict[str, Any], obligation: dict[str, Any]) -> bool
         # names the same target relative to that workspace.
         if actual.endswith("/" + expected):
             return True
+    if _file_list_mentions_target(payload, expected):
+        return True
+    return False
+
+
+def _file_list_mentions_target(payload: dict[str, Any], expected: str) -> bool:
+    action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
+    if action != "file.list" or not expected:
+        return False
+    result = _payload_result(payload)
+    rows = result.get("entries")
+    if not isinstance(rows, list):
+        return False
+    expected_name = expected.rsplit("/", 1)[-1]
+    expected_parent = expected.rsplit("/", 1)[0] if "/" in expected else ""
+    roots = [_normalize_path(value) for value in _payload_targets(payload)]
+    result_root = _normalize_path(result.get("root"))
+    if result_root:
+        roots.append(result_root)
+    parent_matches = not expected_parent or any(
+        root == expected_parent or root.endswith("/" + expected_parent)
+        for root in roots
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in ("path", "rel_path"):
+            value = _normalize_path(row.get(key))
+            if value == expected or value.endswith("/" + expected):
+                return True
+        if parent_matches and _normalize_path(row.get("name")) == expected_name:
+            return True
     return False
 
 
@@ -1139,6 +1212,10 @@ def _observation_object_matches(payload: dict[str, Any], obligation: dict[str, A
     allowed = _OBSERVATION_ACTIONS.get(object_kind)
     if allowed is None:
         return True
+    if object_kind == "file" and action == "file.list":
+        return _file_list_mentions_target(
+            payload, _normalize_path(obligation.get("target_path"))
+        )
     return action in allowed
 
 

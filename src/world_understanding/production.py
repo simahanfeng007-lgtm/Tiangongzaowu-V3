@@ -146,6 +146,34 @@ class ProductionWorldUnderstandingRuntime:
             frame_id=frame.frame_id,
         )
 
+    def _restore_live_stream(
+        self,
+        envelope: WorldIngressEnvelope,
+        snapshot: MaterializedWorldSnapshot,
+    ) -> _StreamState | None:
+        """Rebuild the live query cache from canonical persisted WorldState.
+
+        A duplicate source after process restart is already committed reality,
+        but the in-process graph cache starts empty. Rehydration makes that
+        persisted frame queryable again without creating a second authority or
+        replaying the source effect.
+        """
+
+        historical_envelope = envelope.model_copy(
+            update={"source_time": snapshot.cut.time}
+        )
+        frame = self.frame_factory(historical_envelope, snapshot.cut)
+        if (
+            frame.frame_id != snapshot.frame_id
+            or frame.scope != snapshot.state.scope
+            or frame.frame_revision_hash != snapshot.state.frame_ref.sha256
+        ):
+            return None
+        graph = _fork_graph(frame, snapshot)
+        restored = _StreamState(frame, graph, None)
+        self._streams[frame.frame_id] = restored
+        return restored
+
     def live_repository_frame(
         self,
         *,
@@ -283,6 +311,8 @@ class ProductionWorldUnderstandingRuntime:
                 and item.watermark_value == envelope.envelope_id
                 for item in previous.cut.source_watermarks
             ):
+                if probe.frame_id not in self._streams:
+                    self._restore_live_stream(envelope, previous)
                 return SourceMaterializationDisposition(
                     "SOURCE_ALREADY_MATERIALIZED", True, previous.state.world_state_id
                 )

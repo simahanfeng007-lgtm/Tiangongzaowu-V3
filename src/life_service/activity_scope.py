@@ -25,6 +25,7 @@ _TERM = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}")
 _SECRET_KEYS = {"api_key", "apikey", "token", "password", "secret", "credential"}
 _OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_GIT_OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 def _terms(value: Any, *, limit: int = 24) -> list[str]:
@@ -78,7 +79,9 @@ def normalize_repository_evidence(value: Any) -> dict[str, Any] | None:
     if (
         not all(_OPAQUE.fullmatch(item) for item in (frame_id, repository_id, worktree_id))
         or not _SHA256.fullmatch(frame_revision_hash)
-        or not _SHA256.fullmatch(commit)
+        # Git repositories may use SHA-1 (40 hex) or SHA-256 (64 hex).
+        # This field is a Git object id, not a canonical payload SHA-256.
+        or not _GIT_OBJECT_ID.fullmatch(commit)
         or "\x00" in branch
         or isinstance(observed_at_ms, bool)
         or not isinstance(observed_at_ms, int)

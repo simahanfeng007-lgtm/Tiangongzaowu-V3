@@ -10,7 +10,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from contracts.canonical import canonical_sha256
 from contracts.world_understanding.query import WorldQuery, derive_world_query_id
@@ -68,9 +68,11 @@ class WorldContextIntegration:
         token_budget: int = _DEFAULT_TOKEN_BUDGET,
         facade: WorldUnderstandingFacade | None = None,
         output_port: ContextOutputPort | None = None,
+        repository_snapshot_refresher: Callable[[Any], MaterializedWorldSnapshot | None] | None = None,
     ) -> None:
         self.store = store
         self.token_budget = max(128, min(1_000_000, int(token_budget)))
+        self.repository_snapshot_refresher = repository_snapshot_refresher
         if (facade is None) != (output_port is None):
             raise ValueError("WORLD_CONTEXT_SHARED_RUNTIME_BINDING_INCOMPLETE")
         if facade is not None and output_port is not None:
@@ -112,7 +114,14 @@ class WorldContextIntegration:
         return candidates[0] if len(candidates) == 1 else None
 
     def render_for_turn(self, *, run_context: Any, user_text: str, now_ms: int | None = None) -> str:
-        snapshot = self._select_current(run_context)
+        snapshot = None
+        if self.repository_snapshot_refresher is not None:
+            try:
+                snapshot = self.repository_snapshot_refresher(run_context)
+            except Exception as exc:
+                _log.warning("repository context refresh unavailable: %s", str(exc)[:240])
+        if snapshot is None:
+            snapshot = self._select_current(run_context)
         if snapshot is None:
             return ""
         text = str(user_text or "").strip()
@@ -184,6 +193,7 @@ def _runtime_instance() -> WorldContextIntegration:
             from .world_understanding_production import (
                 production_context_output_port,
                 production_world_understanding_runtime,
+                refresh_active_repository_snapshot,
             )
             production = production_world_understanding_runtime()
             _runtime = WorldContextIntegration(
@@ -191,6 +201,7 @@ def _runtime_instance() -> WorldContextIntegration:
                 token_budget=_bounded_token_budget(),
                 facade=production.facade,
                 output_port=production_context_output_port(),
+                repository_snapshot_refresher=refresh_active_repository_snapshot,
             )
         return _runtime
 
