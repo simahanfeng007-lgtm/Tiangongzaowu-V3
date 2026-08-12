@@ -1,8 +1,7 @@
-"""Greeting scheduler and desire-aware activity selection tests."""
+"""Desire selection plus post-P15 legacy greeting freeze tests."""
 from __future__ import annotations
 
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -18,7 +17,7 @@ class DesireSelectionTests(unittest.TestCase):
         self.assertTrue(cls._activity_window_open("白天", 10))
         self.assertFalse(cls._activity_window_open("晚间", 10))
         self.assertTrue(cls._activity_window_open("空闲时", 3))
-        self.assertTrue(cls._activity_window_open("", 12))  # 未知窗口不挡路
+        self.assertTrue(cls._activity_window_open("", 12))
 
     def test_desire_affinity_follows_strongest_emotions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -30,12 +29,12 @@ class DesireSelectionTests(unittest.TestCase):
             try:
                 scope = life._scope_state()
                 scope["affect"]["emotions"] = {
-                    "vigilance": 900, "interest": 300, "calm": 0,
+                    "vigilance": 900,
+                    "interest": 300,
+                    "calm": 0,
                 }
                 affinity = life._desire_affinity(scope)
-                # vigilance 900 → system_health 90*0.9=81
                 self.assertEqual(affinity.get("system_health"), 81)
-                # interest 300 → creative_exploration 90*0.3=27
                 self.assertEqual(affinity.get("creative_exploration"), 27)
                 self.assertNotIn("relationship_care", affinity)
             finally:
@@ -44,84 +43,70 @@ class DesireSelectionTests(unittest.TestCase):
 
 class GreetingSchedulerTests(unittest.TestCase):
     def _runtime(self, root: Path) -> EmbeddedLifeRuntime:
-        return EmbeddedLifeRuntime(
+        life = EmbeddedLifeRuntime(
             data_root=root / "life-data",
             runtime_root=root / "runtime",
             mode="embedded",
         )
+        life.scheduler.stop(timeout_seconds=2)
+        return life
 
-    def test_disabled_when_share_off(self) -> None:
+    def test_legacy_greeting_is_hard_frozen_independent_of_share_setting(self) -> None:
+        for share_enabled in (False, True):
+            with self.subTest(share_enabled=share_enabled):
+                with tempfile.TemporaryDirectory() as temporary:
+                    life = self._runtime(Path(temporary))
+                    try:
+                        scope = life._scope_state()
+                        scope["settings"]["share_enabled"] = share_enabled
+                        before_scheduler = dict(scope["scheduler"])
+                        life._schedule_greeting(
+                            life_id=str(life._active()["life_id"])
+                        )
+                        self.assertEqual(scope["proactive_chats"], [])
+                        self.assertEqual(scope["scheduler"], before_scheduler)
+                    finally:
+                        life.close()
+
+    def test_legacy_greeting_does_not_schedule_random_slot(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(Path(temporary))
             try:
                 scope = life._scope_state()
-                scope["settings"]["share_enabled"] = False
                 life._schedule_greeting(life_id=str(life._active()["life_id"]))
-                scheduler = scope["scheduler"]
-                self.assertEqual(scheduler["last_greeting_decision_reason"], "life.greeting.disabled")
-            finally:
-                life.close()
-
-    def test_first_call_only_sets_random_slot(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            life = self._runtime(Path(temporary))
-            try:
-                scope = life._scope_state()
-                life._schedule_greeting(life_id=str(life._active()["life_id"])
+                self.assertEqual(
+                    int(scope["scheduler"].get("next_greeting_at_ms") or 0),
+                    0,
                 )
-                next_at = int(scope["scheduler"].get("next_greeting_at_ms") or 0)
-                now_ms = time.time_ns() // 1_000_000
-                self.assertGreater(next_at, now_ms + 40 * 60_000)
-                self.assertLess(next_at, now_ms + 125 * 60_000)
+                self.assertEqual(scope["proactive_chats"], [])
             finally:
                 life.close()
 
-    def test_due_greeting_publishes_fallback_message(self) -> None:
+    def test_due_legacy_greeting_does_not_publish(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(Path(temporary))
             try:
                 scope = life._scope_state()
-                now_ms = time.time_ns() // 1_000_000
-                scheduler = scope["scheduler"]
-                # 直接放到到期状态，且无写手 → 走情绪回退文案
-                scheduler["next_greeting_at_ms"] = now_ms - 1000
-                # 该用例验证发布路径，不应随执行机器的本地时钟落入
-                # 产品默认 23:00–08:00 免打扰窗口而变成夜间必失败。
-                scope["settings"]["share_dnd_start"] = "00:00"
-                scope["settings"]["share_dnd_end"] = "00:00"
+                scope["scheduler"]["next_greeting_at_ms"] = 1
                 scope["affect"]["emotions"] = {"interest": 900, "calm": 0}
+                before = dict(scope["scheduler"])
                 life._schedule_greeting(life_id=str(life._active()["life_id"]))
-                deadline = time.monotonic() + 5.0
-                while time.monotonic() < deadline and not scope["proactive_chats"]:
-                    time.sleep(0.05)
-                self.assertEqual(len(scope["proactive_chats"]), 1)
-                message = scope["proactive_chats"][0]
-                self.assertEqual(message["kind"], "greeting")
-                self.assertIn("有意思", message["text"])
-                self.assertEqual(
-                    scheduler["last_greeting_decision_reason"], "life.greeting.published"
-                )
+                self.assertEqual(scope["proactive_chats"], [])
+                self.assertEqual(scope["scheduler"], before)
             finally:
                 life.close()
 
-    def test_greeting_writer_text_is_used(self) -> None:
+    def test_legacy_greeting_writer_is_never_called(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             life = self._runtime(Path(temporary))
-            life.set_greeting_writer(lambda material: "嘿，我刚巡检完，心情不错，来跟你打个招呼！")
+            calls: list[dict] = []
+            life.set_greeting_writer(lambda material: calls.append(dict(material)) or "旧问候")
             try:
                 scope = life._scope_state()
-                now_ms = time.time_ns() // 1_000_000
-                scope["scheduler"]["next_greeting_at_ms"] = now_ms - 1000
-                scope["settings"]["share_dnd_start"] = "00:00"
-                scope["settings"]["share_dnd_end"] = "00:00"
+                scope["scheduler"]["next_greeting_at_ms"] = 1
                 life._schedule_greeting(life_id=str(life._active()["life_id"]))
-                deadline = time.monotonic() + 5.0
-                while time.monotonic() < deadline and not scope["proactive_chats"]:
-                    time.sleep(0.05)
-                self.assertEqual(
-                    scope["proactive_chats"][0]["text"],
-                    "嘿，我刚巡检完，心情不错，来跟你打个招呼！",
-                )
+                self.assertEqual(calls, [])
+                self.assertEqual(scope["proactive_chats"], [])
             finally:
                 life.close()
 
