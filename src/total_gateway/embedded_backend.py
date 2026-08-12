@@ -106,6 +106,8 @@ class EmbeddedBackendRuntime:
         self._life_activity_query_provider: Any = None
         self._body_state_query_provider: Any = None
         self._learning_ingest_provider: Any = None
+        self._p15_memory_remember_provider: Any = None
+        self._p15_memory_recall_provider: Any = None
         # The authoritative LifeKernel is hosted by Total Gateway.  Disable the
         # legacy Runtime's second LifeOrchestrator/context source before any
         # request can observe it; otherwise one process would still contain two
@@ -120,6 +122,8 @@ class EmbeddedBackendRuntime:
         self.qiaojie = self._module.QIAOJIE
         self.scheduler = scheduler_module.Zongdiaodu()
         self.scheduler.life_orchestrator = None
+        self.scheduler.p15_memory_remember_provider = None
+        self.scheduler.p15_memory_recall_provider = None
         knowledge_store = importlib.import_module("v3.knowledge_store")
         knowledge_store.set_card_enricher(self._extract_knowledge_card)
         self._legacy_life_scheduler_disabled = True
@@ -413,6 +417,25 @@ class EmbeddedBackendRuntime:
             raise EmbeddedBackendError("omni_body.body_state_provider_unsupported")
         setter(provider)
         self._body_state_query_provider = provider
+
+    def set_p15_memory_provider(
+        self,
+        *,
+        remember_provider: Any = None,
+        recall_provider: Any = None,
+    ) -> None:
+        """Bind the chat scheduler to the single in-process Life memory."""
+
+        for name, provider in (
+            ("remember", remember_provider),
+            ("recall", recall_provider),
+        ):
+            if provider is not None and not callable(provider):
+                raise TypeError(f"p15 memory {name} provider must be callable")
+        self._p15_memory_remember_provider = remember_provider
+        self._p15_memory_recall_provider = recall_provider
+        self.scheduler.p15_memory_remember_provider = remember_provider
+        self.scheduler.p15_memory_recall_provider = recall_provider
 
     def set_learning_ingest_provider(self, provider: Any) -> None:
         if not callable(provider):

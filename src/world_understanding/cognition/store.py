@@ -447,6 +447,31 @@ class WorldCognitionStore:
         finally:
             connection.close()
 
+    def find_evidence_by_lineage_root(
+        self, lineage_root_hash: str
+    ) -> tuple[CognitionEvidence, ...]:
+        """Return every evidence row carrying one lineage root hash."""
+
+        connection = self._connect_existing()
+        if connection is None:
+            return ()
+        try:
+            rows = connection.execute(
+                "SELECT payload_json FROM evidence"
+            ).fetchall()
+            return tuple(
+                CognitionEvidence.model_validate_json(str(row[0]))
+                for row in rows
+                if lineage_root_hash in {
+                    str(item)
+                    for item in CognitionEvidence.model_validate_json(
+                        str(row[0])
+                    ).lineage_root_hashes
+                }
+            )
+        finally:
+            connection.close()
+
     def get_statement_by_sha(self, sha256: str) -> CognitionStatement | None:
         connection = self._connect_existing()
         if connection is None:

@@ -91,10 +91,10 @@ from .capability_health import (
 )
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
+from .memory_coordinator import MemoryCoordinator
 from .store import LifeShadowStore, LifeShadowStoreError
 from .cognition import CognitionTrigger, UnifiedCognitionShadow
 from .temperament import (
-    adapt_from_completed_turn,
     normalize_temperament_state,
     public_temperament_projection,
 )
@@ -4230,6 +4230,9 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.memory.authority_unavailable", status=503)
         return store
 
+    def _memory_coordinator(self) -> MemoryCoordinator:
+        return MemoryCoordinator(self._contract_store())
+
     def _contract_store_assert(
         self,
         life_id: str,
@@ -4270,10 +4273,12 @@ class EmbeddedLifeRuntime:
             confidence = 0
         created_ms = self._iso_ms(record.get("created_at"))
         updated_ms = self._iso_ms(updated_at or record.get("updated_at")) or created_ms
-        _assertion, change_seq, _created = store.put_live_memory_assertion(
-            self._memory_contract_plaintext(record),
+        _assertion, change_seq, _created = (
+            self._memory_coordinator().commit_contract_assertion(
+            plaintext=self._memory_contract_plaintext(record),
             memory_id=contract_id,
             life_id=life_id,
+            principal_ref=life_id,
             assertion_kind=assertion_kind,
             epistemic_status=epistemic_status,
             lifecycle_status=lifecycle_status,
@@ -4290,6 +4295,7 @@ class EmbeddedLifeRuntime:
             ),
             valid_from_ms=created_ms or updated_ms,
             created_at_ms=updated_ms,
+            )
         )
         return contract_id, change_seq
 
@@ -5112,6 +5118,27 @@ class EmbeddedLifeRuntime:
                 if payload.get(key)
             },
         ))
+        # P15: user-explicit spans ("记住/以后记得/我的名字是...") must land as
+        # L4 user_asserted even when the model phrase differs.  The assertion is
+        # already durable above; attaching L4 is idempotent and recoverable.
+        try:
+            explicit_text = (
+                content
+                if isinstance(content, str)
+                else str(content.get("text") or content.get("content") or "")
+                if isinstance(content, Mapping)
+                else ""
+            )
+            if str(explicit_text).strip():
+                self._memory_coordinator().attach_explicit_l4(
+                    life_id=life_id,
+                    memory_id=contract_memory_id,
+                    user_text=str(explicit_text),
+                    created_at_ms=time.time_ns() // 1_000_000,
+                    principal_ref=life_id,
+                )
+        except Exception:
+            pass
         return {
             "ok": True,
             "duplicate": False,
@@ -5311,16 +5338,21 @@ class EmbeddedLifeRuntime:
             return result
         scope = self._scope_state(life_id)
         innate = self._innate_temperament(life_id)
-        adapted, changed = adapt_from_completed_turn(
-            innate,
-            scope.get("temperament"),
-            evidence_id=turn_id,
-            user_text=user_text,
-            assistant_text=assistant_text,
-            affect=scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {},
-            updated_at=utc_now(),
-        )
-        if changed:
+        # P15 M6: a plain completed turn never changes long-term temperament.
+        # Only temperament-eligible active L5 core memory adapts, exactly once
+        # per derivation through durable adaptation receipts.
+        adapted = scope.get("temperament")
+        if self.authority_store is not None:
+            try:
+                adapted, _receipts = self._memory_coordinator().adapt_temperament_from_core(
+                    life_id=life_id,
+                    innate=innate,
+                    current_temperament=adapted,
+                    now_ms=time.time_ns() // 1_000_000,
+                )
+            except Exception:
+                adapted = scope.get("temperament")
+        if isinstance(adapted, Mapping) and adapted != scope.get("temperament"):
             scope["temperament"] = adapted
             self._persist(life_id)
         result["temperament"] = public_temperament_projection(innate, adapted)
@@ -5503,6 +5535,16 @@ class EmbeddedLifeRuntime:
                 updated_at=updated_at,
                 journal_event=event,
                 record=previous,
+            )
+            # P15 I17: privacy deletion invalidates the memory's derivation
+            # descendants so nothing survives in Context/Learning/World.
+            self._memory_coordinator().delete_memory_with_privacy_cascade(
+                life_id=life_id,
+                memory_id=contract_memory_id,
+                deleted_at_ms=(
+                    self._iso_ms(updated_at)
+                    or time.time_ns() // 1_000_000
+                ),
             )
             self._persist(life_id)
         except Exception:
@@ -6763,7 +6805,16 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.identity.id_invalid", status=409)
         decision = payload.get("decision") if isinstance(payload.get("decision"), Mapping) else payload
         scope = self._scope_state(life_id)
-        activity_scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=scope)
+        activity_scope = build_activity_scope(
+            life_id=life_id,
+            soul=self._soul(),
+            scope=scope,
+            derivation_store=(
+                self.authority_store
+                if self.authority_store is not None
+                else None
+            ),
+        )
         try:
             draft = build_draft(life_id=life_id, scope=activity_scope, decision=decision, source=source)
         except ValueError as exc:

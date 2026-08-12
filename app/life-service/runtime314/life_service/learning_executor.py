@@ -39,10 +39,36 @@ def _source(learning: Mapping[str, Any], activity_scope: Mapping[str, Any]) -> d
     draft = learning.get("draft_artifact") if isinstance(learning.get("draft_artifact"), Mapping) else {}
     direct = _text(learning.get("request") or learning.get("title"), limit=4_000)
     material = _text(draft.get("content") or draft.get("markdown") or draft.get("text"), limit=16_000)
-    memory_rows = activity_scope.get("recent_memories") if isinstance(activity_scope.get("recent_memories"), list) else []
+    active_l3 = (
+        activity_scope.get("active_l3_refs")
+        if isinstance(activity_scope.get("active_l3_refs"), list)
+        else None
+    )
+    if active_l3 is None:
+        # Legacy callers without the layered scope still work, but production
+        # paths always supply active_l3_refs so learning never ingests every
+        # memory layer.
+        active_l3 = [
+            {
+                "memory_id": row.get("memory_id"),
+                "content": row.get("content"),
+            }
+            for row in activity_scope.get("recent_memories") or []
+            if isinstance(row, Mapping)
+        ]
     memories = [
-        {"memory_id": _text(row.get("memory_id"), limit=160), "content": _text(row.get("content"), limit=4_000)}
-        for row in memory_rows if isinstance(row, Mapping) and row.get("content")
+        {
+            "derivation_id": _text(row.get("derivation_id"), limit=160),
+            "memory_id": _text(row.get("memory_id"), limit=160),
+            "content": _text(
+                row.get("content")
+                or row.get("summary")
+                or row.get("plaintext"),
+                limit=4_000,
+            ),
+        }
+        for row in active_l3
+        if isinstance(row, Mapping) and row.get("memory_id")
     ][:12]
     combined = "\n\n".join(part for part in (direct, material, *(row["content"] for row in memories)) if part)
     repository_rows = activity_scope.get("repository_evidence") if isinstance(activity_scope.get("repository_evidence"), list) else []
@@ -68,7 +94,12 @@ def _source(learning: Mapping[str, Any], activity_scope: Mapping[str, Any]) -> d
         "kind": "user_memory_and_repository" if repository_evidence else "user_and_memory",
         "topic": _text(learning.get("title") or direct, limit=240, fallback="life learning"),
         "content": combined[:32_000],
-        "memory_refs": [row["memory_id"] for row in memories if row["memory_id"]],
+        "memory_refs": [
+            row["memory_id"] for row in memories if row["memory_id"]
+        ],
+        "derivation_refs": [
+            row["derivation_id"] for row in memories if row["derivation_id"]
+        ],
         "repository_evidence": repository_evidence,
         "source_sha256": canonical_sha256({
             "request": direct,

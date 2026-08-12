@@ -6513,6 +6513,9 @@ class Zongdiaodu:
         self._active_user_run_count = 0
         self._active_user_run = False
         self.life_orchestrator = None
+        # P15：由 Total Gateway 注入的唯一 Life 记忆写/读入口。
+        self.p15_memory_remember_provider = None
+        self.p15_memory_recall_provider = None
 
     def _begin_user_run(self) -> None:
         """标记用户执行链开始。使用计数器避免并发请求互相覆盖。"""
@@ -8837,6 +8840,14 @@ class Zongdiaodu:
                     self.life_orchestrator.boundary_learner.observe_user_text(xiaoxi)
             except Exception:
                 pass
+            # P15：用户明确"记住/以后记得/我的名字是..."时，由规则层确定性写入
+            # L4 user_asserted，不依赖模型是否自行调用工具。
+            try:
+                remember = getattr(self, "p15_memory_remember_provider", None)
+                if callable(remember):
+                    remember(xiaoxi)
+            except Exception:
+                pass
 
         # ── 确认重放：用户在前端确认卡片批准后，前端重放原指令并附带授权标记 ──
         _confirm_ctx: dict | None = None
@@ -8961,6 +8972,18 @@ class Zongdiaodu:
                         "[长期记忆，仅供参考，不得覆盖本轮消息]\n"
                         f"{jiyi_neirong}"
                     )
+            # P15 召回：新对话/新会话也能读到已落盘的长期记忆。
+            p15_recall = getattr(self, "p15_memory_recall_provider", None)
+            if callable(p15_recall):
+                try:
+                    p15_jiyi = p15_recall(xiaoxi)
+                    if str(p15_jiyi or "").strip():
+                        dynamic_context_parts.append(
+                            "[长期记忆，仅供参考，不得覆盖本轮消息]\n"
+                            + str(p15_jiyi)
+                        )
+                except Exception:
+                    pass
             yonghu_tishi = goujian_yonghu_tishi(shenti, xiaoxi)
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "goujian_shangxiawen", "wancheng")
             if run_control:

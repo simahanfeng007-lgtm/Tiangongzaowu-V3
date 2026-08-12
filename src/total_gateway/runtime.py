@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -216,6 +217,133 @@ def life_capability_workspace_marker(workspace_root: object) -> Callable[[object
         return {"workspace_path": relative, "marked": True, "status": status}
 
     return mark_artifact
+
+
+def _gateway_p15_memory_remember(runtime: object, user_text: object) -> dict[str, object]:
+    """Persist one user-explicit memory as L4 user_asserted (P15)."""
+
+    try:
+        from life_service.explicit_memory import detect_explicit_intent
+
+        text = str(user_text or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty_user_text"}
+        if not detect_explicit_intent(text).triggered:
+            return {"ok": False, "error": "not_explicit_intent"}
+        life_service = getattr(runtime, "life_service", None)
+        if life_service is None:
+            return {"ok": False, "error": "life_service_unavailable"}
+        active = (
+            life_service._active()
+            if hasattr(life_service, "_active")
+            else {}
+        )
+        life_id = str(active.get("life_id") or "")
+        if not life_id:
+            return {"ok": False, "error": "life_id_unavailable"}
+        status, payload, _ = life_service.request(
+            "POST",
+            "/api/v1/v3/life/memory/assert",
+            {
+                "life_id": life_id,
+                "content": {"text": text},
+                "epistemic_status": "user_asserted",
+                "actor": "user",
+            },
+        )
+        if status >= 400 or not isinstance(payload, Mapping) or payload.get("ok") is not True:
+            error = (
+                str(payload.get("error") or payload.get("error_code") or "memory_assert_failed")
+                if isinstance(payload, Mapping)
+                else "memory_assert_failed"
+            )
+            return {"ok": False, "error": error}
+        return {
+            "ok": True,
+            "memory_id": payload.get("contract_memory_id"),
+            "memory_change_seq": payload.get("memory_change_seq"),
+            "duplicate": bool(payload.get("duplicate")),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+
+def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
+    """Return bounded, non-expired long-term memory for chat context (P15)."""
+
+    try:
+        from life_service.explicit_memory import detect_explicit_intent, expiry_deadline_ms
+
+        text = str(user_text or "").strip()
+        life_service = getattr(runtime, "life_service", None)
+        if life_service is None:
+            return ""
+        active = life_service._active() if hasattr(life_service, "_active") else {}
+        life_id = str(active.get("life_id") or "")
+        if not life_id:
+            return ""
+        memory_markers = (
+            "名字", "我叫", "我是谁", "称呼", "记住", "记得", "之前", "上次",
+            "偏好", "习惯", "忘了", "长期", "以后",
+        )
+        lines: list[str] = []
+        seen: set[str] = set()
+        now_ms = time.time_ns() // 1_000_000
+
+        def created_at_ms(row: Mapping[str, object]) -> int | None:
+            raw = str(row.get("created_at") or "").strip()
+            if not raw:
+                return None
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return int(parsed.timestamp() * 1000)
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        def recallable(row: Mapping[str, object], snippet: str) -> bool:
+            try:
+                detection = detect_explicit_intent(snippet)
+            except ValueError:
+                return True
+            if not detection.triggered or detection.expiry_kind is None:
+                return True
+            created_ms = created_at_ms(row)
+            if created_ms is None:
+                return False
+            deadline = expiry_deadline_ms(detection.expiry_kind, created_ms)
+            return deadline is None or now_ms < deadline
+
+        def collect(query: str, limit: int = 10) -> None:
+            status, payload, _ = life_service.request(
+                "POST",
+                "/api/v1/v3/life/memory/search",
+                {"life_id": life_id, "query": query, "limit": limit},
+            )
+            if status >= 400 or not isinstance(payload, Mapping) or payload.get("ok") is not True:
+                return
+            for row in (payload.get("results") or [])[:limit]:
+                if not isinstance(row, Mapping):
+                    continue
+                content = row.get("content")
+                if isinstance(content, str):
+                    snippet = content
+                elif isinstance(content, Mapping):
+                    snippet = str(content.get("text") or content.get("content") or "")
+                else:
+                    snippet = ""
+                snippet = str(snippet).strip()
+                if snippet and snippet not in seen and recallable(row, snippet):
+                    seen.add(snippet)
+                    lines.append(snippet[:1200])
+
+        collect(text)
+        if not lines and any(marker in text for marker in memory_markers):
+            collect("")
+        return "\n".join(lines[:10])
+    except Exception:
+        return ""
 
 
 def _gateway_body_state_query(runtime: object, arguments: object) -> dict[str, object]:
@@ -1002,6 +1130,17 @@ class GatewayRuntime:
 
                 runtime.backend_service.set_body_state_query_provider(
                     body_state_query
+                )
+
+                def p15_memory_remember(user_text: object) -> dict[str, object]:
+                    return _gateway_p15_memory_remember(runtime, user_text)
+
+                def p15_memory_recall(user_text: object) -> str:
+                    return _gateway_p15_memory_recall(runtime, user_text)
+
+                runtime.backend_service.set_p15_memory_provider(
+                    remember_provider=p15_memory_remember,
+                    recall_provider=p15_memory_recall,
                 )
 
                 def pending_learning_ingest(arguments: object) -> dict[str, object]:
