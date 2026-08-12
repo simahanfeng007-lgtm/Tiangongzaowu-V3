@@ -2938,153 +2938,15 @@ class EmbeddedLifeRuntime:
     }
 
     def _schedule_greeting(self, *, life_id: str) -> None:
-        """随机问候：在一个随机间隔后，主动给用户发一条带当下情绪的消息。
+        """Legacy random-greeting producer is frozen after the P15 cutover.
 
-        复用分享策略（开关、免打扰、最小间隔、时/日限额、用户活跃静默），
-        文案优先走模型人格口吻通道，失败回退到按情绪选择的固定句。
+        Delivery infrastructure remains available for the future native Life
+        initiative path; this producer intentionally performs no queue write,
+        model generation, journal publication, or scheduler retry mutation.
         """
-        scope_state = self._scope_state(life_id)
-        scheduler = scope_state.setdefault("scheduler", {})
-        settings = scope_state["settings"]
-        now_ms = time.time_ns() // 1_000_000
-        if not bool(settings.get("share_enabled")):
-            scheduler["last_greeting_decision_reason"] = "life.greeting.disabled"
-            return
-        if bool(scheduler.get("greeting_inflight")):
-            return
-        # 随机节奏：每条问候之后抽取下一条的间隔（45–120 分钟）。
-        next_at = int(scheduler.get("next_greeting_at_ms") or 0)
-        if not next_at:
-            scheduler["next_greeting_at_ms"] = now_ms + random.randint(45, 120) * 60_000
-            self._persist(life_id)
-            return
-        if now_ms < next_at:
-            return
-        reason = ""
-        local = time.localtime(now_ms / 1000)
-        minute = local.tm_hour * 60 + local.tm_min
-        try:
-            start_hour, start_minute = (int(part) for part in str(settings["share_dnd_start"]).split(":", 1))
-            end_hour, end_minute = (int(part) for part in str(settings["share_dnd_end"]).split(":", 1))
-        except (KeyError, TypeError, ValueError):
-            start_hour, start_minute, end_hour, end_minute = 23, 0, 8, 0
-        if self._minute_is_in_window(minute, start_hour * 60 + start_minute, end_hour * 60 + end_minute):
-            reason = "life.greeting.do_not_disturb"
-        last_share_ms = int(scheduler.get("last_share_at_ms") or 0)
-        minimum_interval_ms = int(settings.get("share_min_interval_seconds") or 0) * 1000
-        if not reason and last_share_ms and now_ms - last_share_ms < minimum_interval_ms:
-            reason = "life.greeting.minimum_interval"
-        last_user_ms = int(scheduler.get("last_user_activity_at_ms") or 0)
-        if (
-            not reason
-            and bool(settings.get("share_quiet_if_user_active"))
-            and last_user_ms
-            and now_ms - last_user_ms < 180_000
-        ):
-            reason = "life.greeting.user_active"
-        greeting_times = [
-            int(value) for value in scheduler.get("greeting_times") or []
-            if isinstance(value, int) and now_ms - int(value) < 86_400_000
-        ]
-        today_start = now_ms - ((local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) * 1000)
-        hour_start = now_ms - ((local.tm_min * 60 + local.tm_sec) * 1000)
-        if not reason and sum(1 for value in greeting_times if value >= hour_start) >= int(settings.get("share_hourly_limit") or 0):
-            reason = "life.greeting.hourly_limit"
-        if not reason and sum(1 for value in greeting_times if value >= today_start) >= int(settings.get("share_daily_limit") or 0):
-            reason = "life.greeting.daily_limit"
-        if reason:
-            # 被策略挡住时顺延到下一个随机窗口，而不是每个心跳都重试。
-            scheduler["next_greeting_at_ms"] = now_ms + random.randint(20, 45) * 60_000
-            scheduler["last_greeting_decision_reason"] = reason
-            self._persist(life_id)
-            return
-        scheduler["greeting_inflight"] = True
-        scheduler["next_greeting_at_ms"] = now_ms + random.randint(45, 120) * 60_000
-        scheduler["last_greeting_decision_reason"] = ""
-        self._persist(life_id)
-
-        def worker() -> None:
-            try:
-                with self._lock:
-                    scope = self._scope_state(life_id)
-                    affect = scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {}
-                    primary = str(affect.get("primary_emotion") or "calm")
-                    material = {
-                        "occasion": "greeting",
-                        "emotion": {
-                            "primary": primary,
-                            "primary_zh": str(affect.get("primary_emotion_zh") or "平静"),
-                            "intensity_milli": int(affect.get("intensity_milli") or 0),
-                        },
-                    }
-                    material["familiarity"] = self._familiarity_material(scope)
-                    try:
-                        soul = self._soul()
-                        material["persona_name"] = str(soul.get("name") or soul.get("display_name") or "")
-                    except Exception:
-                        pass
-                    recent = [
-                        str(task.get("title") or "")[:60]
-                        for task in list((scope.get("autonomy") or {}).get("tasks", {}).values())[:40]
-                        if isinstance(task, Mapping)
-                        and str(task.get("status") or "") == "completed"
-                        and str(task.get("title") or "").strip()
-                    ][-3:]
-                    if recent:
-                        material["recent_activity"] = recent
-                text = ""
-                writer = getattr(self, "_greeting_writer", None)
-                if callable(writer):
-                    try:
-                        text = str(writer(material) or "").strip()
-                    except Exception:
-                        text = ""
-                if not text:
-                    text = self._GREETING_FALLBACK_BY_EMOTION.get(
-                        primary, self._GREETING_FALLBACK_BY_EMOTION["warmth"]
-                    )
-                text = self._redact_sensitive_text(text)[:500].strip()
-                if not text:
-                    return
-                with self._lock:
-                    scope = self._scope_state(life_id)
-                    message = {
-                        "message_id": "greet_" + canonical_sha256(
-                            {"domain": "tiangong.life.greeting.v1", "life_id": life_id, "at_ms": now_ms}
-                        )[:40],
-                        "kind": "greeting",
-                        "text": text,
-                        "created_at": utc_now(),
-                        "read": False,
-                        "delivery": "normal_conversation_pending",
-                    }
-                    scope["proactive_chats"].append(message)
-                    scheduler_state = scope.setdefault("scheduler", {})
-                    times = [
-                        int(value) for value in scheduler_state.get("greeting_times") or []
-                        if isinstance(value, int) and now_ms - int(value) < 86_400_000
-                    ]
-                    times.append(now_ms)
-                    scheduler_state["greeting_times"] = times[-40:]
-                    scheduler_state["last_share_at_ms"] = now_ms
-                    scheduler_state["last_greeting_decision_reason"] = "life.greeting.published"
-                    self.system.journal.append(
-                        life_id, "life.greeting_published", {"message_id": message["message_id"], "emotion": primary},
-                        actor="life_greeting", idempotency_key=f"greeting:{message['message_id']}",
-                    )
-                    self._persist(life_id)
-            except Exception as exc:
-                detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
-                with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})[
-                        "last_greeting_decision_reason"
-                    ] = f"life.greeting.failed:{type(exc).__name__}:{detail}"
-            finally:
-                with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})["greeting_inflight"] = False
-                    self._persist(life_id)
-
-        threading.Thread(target=worker, name="tiangong-life-greeting", daemon=True).start()
+        freeze_reason = "life.proactive.legacy_producer_frozen"
+        _ = (life_id, freeze_reason)
+        return
 
     _UPGRADE_OPEN_STATUSES = frozenset({"awaiting_user", "confirmed", "executing"})
     _UPGRADE_PATH_SUFFIXES = frozenset(
@@ -6782,22 +6644,30 @@ class EmbeddedLifeRuntime:
         return text or fallback
 
     def _learning_report(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        """Create a durable, user-visible report without pretending it is chat output."""
+        """Return a durable publication report without legacy proactive delivery.
+
+        Learning publication still records deterministic metadata in the
+        journal, but the pre-P15 producer no longer writes a chat message.
+        """
         target = str(record.get("target") or "knowledge")
         title = str(record.get("title") or "learning")
-        detail = f"学习完成：{title}。已写入{'知识库' if target == 'knowledge' else target}，想听的话我跟你说说。"
-        detail = self._compose_learning_share_text(record, fallback=detail)
-        message = {
-            "message_id": "learnmsg_" + canonical_sha256({"learning_id": record.get("learning_id"), "status": record.get("status")})[:40],
+        detail = f"学习完成：{title}。已写入{'知识库' if target == 'knowledge' else target}。"
+        return {
+            "message_id": "learnmsg_" + canonical_sha256(
+                {
+                    "learning_id": record.get("learning_id"),
+                    "status": record.get("status"),
+                }
+            )[:40],
             "kind": "learning_report",
             "learning_id": record.get("learning_id"),
             "text": detail,
             "created_at": utc_now(),
-            "read": False,
-            "delivery": "normal_conversation_pending",
+            "read": True,
+            "delivery": "legacy_proactive_frozen",
+            "suppressed": True,
+            "reason_code": "life.proactive.legacy_producer_frozen",
         }
-        self._scope_state(str(record.get("life_id") or ""))["proactive_chats"].append(message)
-        return message
 
     def _learning_draft(self, payload: Mapping[str, Any], *, source: str = "autonomous") -> dict[str, Any]:
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
