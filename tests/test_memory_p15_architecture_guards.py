@@ -80,7 +80,10 @@ def test_memory_modules_do_not_open_their_own_store() -> None:
 def test_memory_modules_do_not_touch_world_authority() -> None:
     for path in MEMORY_SOURCE_FILES:
         text = _source(path)
-        assert "world_understanding" not in text
+        # Memory modules may consume the memory-world candidate *contract*
+        # (data exchange), but never the World Understanding runtime.
+        assert "from world_understanding" not in text
+        assert "import world_understanding" not in text
         assert "WorldStateStore" not in text
         assert "MemoryCompiler" not in text
 
@@ -108,12 +111,13 @@ def test_future_memory_authority_modules_would_also_fail_closed() -> None:
         assert "threading.Thread" not in text
         assert "sqlite3.connect" not in text
         assert "http.server" not in text
-        assert "world_understanding" not in text
+        assert "from world_understanding" not in text
+        assert "import world_understanding" not in text
         assert "LifeShadowStore.open" not in text
 
 
-def test_shadow_schema_is_v16_with_derivation_tables() -> None:
-    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 16
+def test_shadow_schema_is_v17_with_derivation_tables() -> None:
+    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 17
     assert {
         "memory_derivations",
         "memory_derivation_parents",
@@ -121,6 +125,7 @@ def test_shadow_schema_is_v16_with_derivation_tables() -> None:
         "memory_active_heads",
         "memory_consumer_offsets",
         "temperament_adaptation_receipts",
+        "memory_world_candidate_outbox",
     } <= life_store_module._EXPECTED_TABLES
 
 

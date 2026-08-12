@@ -61,11 +61,12 @@ from contracts import (
     canonical_sha256,
     retention_priority,
 )
+from contracts.world_understanding.memory_candidate import MemoryWorldCandidate
 
 from .replay import LifeReplaySummary, advance_replay_sha256, replay_life_events
 
 
-SHADOW_STORE_SCHEMA_VERSION = 16
+SHADOW_STORE_SCHEMA_VERSION = 17
 SHADOW_STORE_APPLICATION_ID = 0x54474C53
 
 _LIFE_TURN_STAGE_PRECEDENCE = {
@@ -1050,12 +1051,40 @@ _P16_TEMPERAMENT_RECEIPT_SQL = ";\n".join(
 _P16_TEMPERAMENT_RECEIPT_SHA256 = hashlib.sha256(
     _P16_TEMPERAMENT_RECEIPT_SQL.encode("utf-8")
 ).hexdigest()
+_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID = "p15-memory-world-candidate-outbox"
+_P17_MEMORY_WORLD_CANDIDATE_STATEMENTS = (
+    """CREATE TABLE memory_world_candidate_outbox (
+        candidate_id TEXT PRIMARY KEY CHECK(candidate_id LIKE 'wmc_%'),
+        life_id TEXT NOT NULL,
+        derivation_id TEXT NOT NULL
+            REFERENCES memory_derivations(derivation_id) ON DELETE RESTRICT,
+        candidate_sha256 TEXT NOT NULL UNIQUE CHECK(length(candidate_sha256) = 64),
+        status TEXT NOT NULL CHECK(status IN ('pending','delivered','failed')),
+        receipt_id TEXT,
+        receipt_sha256 TEXT CHECK(receipt_sha256 IS NULL OR length(receipt_sha256) = 64),
+        delivered_at_ms INTEGER,
+        enqueued_at_ms INTEGER NOT NULL CHECK(enqueued_at_ms >= 0),
+        payload BLOB NOT NULL,
+        CHECK((receipt_id IS NULL) = (receipt_sha256 IS NULL)),
+        CHECK((receipt_id IS NULL) = (delivered_at_ms IS NULL))
+    ) STRICT""",
+    """CREATE INDEX memory_world_candidate_outbox_status_idx
+    ON memory_world_candidate_outbox(status, life_id, enqueued_at_ms)""",
+)
+_P17_MEMORY_WORLD_CANDIDATE_SQL = ";\n".join(
+    statement.strip()
+    for statement in _P17_MEMORY_WORLD_CANDIDATE_STATEMENTS
+) + ";\n"
+_P17_MEMORY_WORLD_CANDIDATE_SHA256 = hashlib.sha256(
+    _P17_MEMORY_WORLD_CANDIDATE_SQL.encode("utf-8")
+).hexdigest()
 _SCHEMA_SQL = (
     _P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n"
     + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n"
     + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL
     + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL
     + "\n" + _P16_TEMPERAMENT_RECEIPT_SQL
+    + "\n" + _P17_MEMORY_WORLD_CANDIDATE_SQL
 )
 _SCHEMA_SHA256 = hashlib.sha256(_SCHEMA_SQL.encode("utf-8")).hexdigest()
 _EXPECTED_TABLES = frozenset(
@@ -1102,6 +1131,7 @@ _EXPECTED_TABLES = frozenset(
         "memory_active_heads",
         "memory_consumer_offsets",
         "temperament_adaptation_receipts",
+        "memory_world_candidate_outbox",
         "life_authority_heads",
         "run_life_bindings",
         "root_experience_heads",
@@ -1386,6 +1416,10 @@ class LifeShadowStore:
                 (_P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256, now_ms),
             )
             connection.execute(
+                "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (17, ?, ?, ?)",
+                (_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256, now_ms),
+            )
+            connection.execute(
                 "INSERT INTO schema_metadata(key, value) VALUES ('purpose', 'life-shadow-only')"
             )
             connection.execute(
@@ -1407,7 +1441,7 @@ class LifeShadowStore:
             raise LifeShadowStoreError("shadow store application identity is invalid")
         if user_version == SHADOW_STORE_SCHEMA_VERSION:
             return
-        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
+        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}:
             raise LifeShadowStoreError("shadow store schema version cannot be migrated")
         tables = {
             str(row["name"])
@@ -1460,8 +1494,11 @@ class LifeShadowStore:
         }
         p15_tables = {"memory_derivation_invalidations"}
         p16_tables = {"temperament_adaptation_receipts"}
+        p17_tables = {"memory_world_candidate_outbox"}
         p2_tables = {"life_ingress_dedupe", "life_ingress_receipts"}
         expected_tables = set(_EXPECTED_TABLES)
+        if user_version < 17:
+            expected_tables -= p17_tables
         if user_version < 16:
             expected_tables -= p16_tables
         if user_version < 15:
@@ -1567,6 +1604,9 @@ class LifeShadowStore:
         if user_version >= 16:
             expected_migrations.append((16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256))
             expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL + "\n" + _P16_TEMPERAMENT_RECEIPT_SQL).encode("utf-8")).hexdigest()
+        if user_version >= 17:
+            expected_migrations.append((17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256))
+            expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL + "\n" + _P16_TEMPERAMENT_RECEIPT_SQL + "\n" + _P17_MEMORY_WORLD_CANDIDATE_SQL).encode("utf-8")).hexdigest()
         if (
             len(migration) != len(expected_migrations)
             or any(
@@ -1695,6 +1735,10 @@ class LifeShadowStore:
                 for statement in _P16_TEMPERAMENT_RECEIPT_STATEMENTS:
                     connection.execute(statement)
                 connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (16, ?, ?, ?)", (_P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256, now_ms))
+            if user_version < 17:
+                for statement in _P17_MEMORY_WORLD_CANDIDATE_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (17, ?, ?, ?)", (_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256, now_ms))
             connection.execute(
                 "UPDATE schema_metadata SET value = ? WHERE key = 'schema_sha256'",
                 (_SCHEMA_SHA256,),
@@ -3948,6 +3992,205 @@ class LifeShadowStore:
                 (life_id,),
             ).fetchall()
         return tuple(dict(row) for row in rows)
+
+    # ------------------------------------------------------------------
+    # Memory -> World candidate outbox (M7)
+    # ------------------------------------------------------------------
+
+    def put_world_candidate_outbox(
+        self,
+        candidate: MemoryWorldCandidate,
+        *,
+        derivation_id: str,
+        enqueued_at_ms: int,
+    ) -> bool:
+        """Enqueue one memory world candidate durably and idempotently."""
+
+        candidate, payload = _revalidate_contract(
+            candidate,
+            MemoryWorldCandidate,
+            "memory world candidate",
+        )
+        if not candidate.has_valid_candidate_sha256():
+            raise LifeShadowStoreError(
+                "memory world candidate digest is invalid"
+            )
+        if (
+            isinstance(enqueued_at_ms, bool)
+            or not isinstance(enqueued_at_ms, int)
+            or enqueued_at_ms < 0
+        ):
+            raise ValueError("world candidate enqueue timestamp is invalid")
+        connection = self._connection
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """
+                SELECT candidate_id FROM memory_world_candidate_outbox
+                WHERE candidate_id = ?
+                """,
+                (candidate.candidate_id,),
+            ).fetchone()
+            if existing is not None:
+                connection.execute("COMMIT")
+                return False
+            derivation = connection.execute(
+                """
+                SELECT life_id, principal_ref, privacy_scope
+                FROM memory_derivations WHERE derivation_id = ?
+                """,
+                (derivation_id,),
+            ).fetchone()
+            if derivation is None:
+                raise LifeShadowStoreError(
+                    "world candidate references a missing derivation"
+                )
+            if str(derivation["life_id"]) != candidate.life_id:
+                raise LifeShadowStoreError(
+                    "world candidate derivation binding is inconsistent"
+                )
+            connection.execute(
+                """
+                INSERT INTO memory_world_candidate_outbox(
+                    candidate_id, life_id, derivation_id, candidate_sha256,
+                    status, enqueued_at_ms, payload
+                ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (
+                    candidate.candidate_id,
+                    candidate.life_id,
+                    derivation_id,
+                    candidate.candidate_sha256,
+                    enqueued_at_ms,
+                    payload,
+                ),
+            )
+            connection.execute("COMMIT")
+            return True
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+
+    def list_world_candidate_outbox(
+        self,
+        *,
+        status: str = "pending",
+        life_id: str | None = None,
+        limit: int = 256,
+    ) -> tuple[tuple[MemoryWorldCandidate, str], ...]:
+        if status not in {"pending", "delivered", "failed"}:
+            raise ValueError("world candidate outbox status is invalid")
+        if not 1 <= limit <= 4096:
+            raise ValueError("world candidate outbox limit is invalid")
+        clauses = ["status = ?"]
+        values: list[object] = [status]
+        if life_id is not None:
+            clauses.append("life_id = ?")
+            values.append(life_id)
+        where = " AND ".join(clauses)
+        rows = self._connection.execute(
+            f"""
+            SELECT payload, derivation_id FROM memory_world_candidate_outbox
+            WHERE {where}
+            ORDER BY enqueued_at_ms, candidate_id
+            LIMIT ?
+            """,
+            (*values, limit),
+        ).fetchall()
+        return tuple(
+            (
+                _parse_stored_contract(
+                    bytes(row["payload"]),
+                    MemoryWorldCandidate,
+                    "memory world candidate",
+                ),
+                str(row["derivation_id"]),
+            )
+            for row in rows
+        )
+
+    def ack_world_candidate_outbox(
+        self,
+        candidate_id: str,
+        *,
+        receipt_id: str,
+        delivered_at_ms: int,
+    ) -> bool:
+        """Record an idempotent delivery receipt for one candidate."""
+
+        if (
+            not candidate_id.startswith("wmc_")
+            or not receipt_id
+            or len(receipt_id) > 160
+            or isinstance(delivered_at_ms, bool)
+            or not isinstance(delivered_at_ms, int)
+            or delivered_at_ms < 0
+        ):
+            raise ValueError("world candidate outbox receipt is invalid")
+        receipt_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.world.memory-candidate-receipt.v1",
+                "candidate_id": candidate_id,
+                "receipt_id": receipt_id,
+            }
+        )
+        connection = self._connection
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT status, receipt_id FROM memory_world_candidate_outbox
+                WHERE candidate_id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if row is None:
+                raise LifeShadowStoreError(
+                    "world candidate outbox row does not exist"
+                )
+            if row["receipt_id"] is not None:
+                if str(row["receipt_id"]) != receipt_id:
+                    raise LifeShadowStoreError(
+                        "world candidate outbox receipt conflict"
+                    )
+                connection.execute("COMMIT")
+                return False
+            connection.execute(
+                """
+                UPDATE memory_world_candidate_outbox
+                SET status = 'delivered', receipt_id = ?, receipt_sha256 = ?,
+                    delivered_at_ms = ?
+                WHERE candidate_id = ?
+                """,
+                (receipt_id, receipt_sha256, delivered_at_ms, candidate_id),
+            )
+            connection.execute("COMMIT")
+            return True
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+
+    def count_pending_world_candidates(
+        self, life_id: str | None = None
+    ) -> int:
+        if life_id is None:
+            row = self._connection.execute(
+                """
+                SELECT count(*) AS n FROM memory_world_candidate_outbox
+                WHERE status = 'pending'
+                """
+            ).fetchone()
+        else:
+            row = self._connection.execute(
+                """
+                SELECT count(*) AS n FROM memory_world_candidate_outbox
+                WHERE status = 'pending' AND life_id = ?
+                """,
+                (life_id,),
+            ).fetchone()
+        return int(row["n"])
 
     def ack_memory_outbox(
         self,
@@ -8256,6 +8499,7 @@ class LifeShadowStore:
             (14, _P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256),
             (15, _P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256),
             (16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256),
+            (17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256),
         )
         if len(migration) != len(expected_migrations) or any(
             (

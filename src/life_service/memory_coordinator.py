@@ -25,12 +25,18 @@ from contracts import (
     canonical_json_bytes,
     canonical_sha256,
 )
+from contracts.world_understanding.memory_candidate import (
+    MemoryWorldCandidate,
+    derive_memory_lineage_root_hash,
+    derive_memory_world_candidate_id,
+)
 
 from . import memory_promotion
 from . import life_learning_memory
 from . import temperament as temperament_module
 from .explicit_memory import detect_explicit_intent, expiry_deadline_ms
 from .memory_invalidation import invalidate_cascade
+from .memory_context import is_injection_marked
 from .store import LifeShadowStore, LifeShadowStoreError
 
 
@@ -1219,6 +1225,158 @@ class MemoryCoordinator:
                 }
             )
         return state, tuple(receipts)
+
+    # ------------------------------------------------------------------
+    # Memory -> World candidate projection (M7)
+    # ------------------------------------------------------------------
+
+    def project_memory_world_candidates(
+        self,
+        *,
+        life_id: str,
+        now_ms: int,
+        policy_version: str = "p15-world-candidate-v1",
+        world_scope_hash: str | None = None,
+        limit: int = 64,
+    ) -> tuple[int, int, tuple[MemoryWorldCandidate, ...]]:
+        """Project eligible mature WORLD memories into the durable outbox.
+
+        Only active, non-secret, non-expired, non-injection-marked L3/L4/L5
+        WORLD-domain memories become candidates.  Memory never creates a
+        WorldPatch here; this is candidate evidence intake only.
+        """
+
+        if not 1 <= limit <= 4096:
+            raise MemoryCoordinatorError(
+                "world candidate projection limit is invalid"
+            )
+        scope_hash = world_scope_hash or canonical_sha256(
+            {
+                "domain": "tiangong.world.memory-scope.v1",
+                "life_id": life_id,
+            }
+        )
+        candidates: list[MemoryWorldCandidate] = []
+        created = 0
+        skipped = 0
+        for derivation in self._store.list_memory_derivations(
+            life_id=life_id, active_only=True, limit=4096
+        ):
+            if not derivation.world_candidate_eligible:
+                skipped += 1
+                continue
+            if derivation.layer not in {
+                "L3_EXPERIENCE",
+                "L4_EXPLICIT",
+                "L5_CORE",
+            }:
+                skipped += 1
+                continue
+            if derivation.semantic_domain != "WORLD":
+                skipped += 1
+                continue
+            if str(derivation.privacy_scope).casefold() == "secret":
+                skipped += 1
+                continue
+            if (
+                derivation.expires_at_ms is not None
+                and derivation.expires_at_ms < now_ms
+            ):
+                skipped += 1
+                continue
+            assertion = self._store.get_memory_assertion(
+                derivation.memory_id, derivation.memory_revision
+            )
+            if assertion is None or assertion.protected_payload_id is None:
+                skipped += 1
+                continue
+            if assertion.epistemic_status in {
+                "model_inference",
+                "reflection",
+                "prospective",
+            }:
+                skipped += 1
+                continue
+            try:
+                summary = self._store.read_protected_payload(
+                    assertion.protected_payload_id
+                ).decode("utf-8", errors="strict")
+            except Exception:
+                skipped += 1
+                continue
+            if is_injection_marked(summary):
+                skipped += 1
+                continue
+            candidate_id = derive_memory_world_candidate_id(
+                life_id=life_id,
+                derivation_id=derivation.derivation_id,
+                policy_version=policy_version,
+            )
+            confidence = max(
+                0,
+                min(
+                    1000,
+                    int(assertion.verification_strength_milli),
+                ),
+            )
+            epistemic = str(assertion.epistemic_status)
+            if epistemic not in {"observed", "user_asserted", "verified"}:
+                epistemic = "user_asserted"
+            if epistemic == "user_asserted":
+                confidence = min(750, confidence)
+            candidate = MemoryWorldCandidate(
+                candidate_id=candidate_id,
+                life_id=life_id,
+                world_scope_hash=scope_hash,
+                principal_scope_hash=canonical_sha256(
+                    {
+                        "domain": "tiangong.world.memory-principal.v1",
+                        "principal_ref": derivation.principal_ref,
+                    }
+                ),
+                source_memory_id=derivation.memory_id,
+                source_memory_revision=derivation.memory_revision,
+                source_assertion_sha256=derivation.memory_assertion_sha256,
+                source_derivation_id=derivation.derivation_id,
+                source_layer=derivation.layer,
+                claim_key=derivation.claim_key,
+                semantic_payload=summary[:20_000],
+                evidence_refs=(),
+                lineage_root_hashes=tuple(
+                    sorted(
+                        derive_memory_lineage_root_hash(event_id)
+                        for event_id in derivation.lineage_root_event_ids
+                    )
+                ),
+                epistemic_status=epistemic,
+                confidence_milli=confidence,
+                volatility_class=(
+                    "short"
+                    if derivation.expires_at_ms is not None
+                    else "medium"
+                ),
+                valid_from_ms=assertion.valid_from_ms,
+                valid_until_ms=derivation.expires_at_ms,
+                privacy_scope="private",
+                candidate_sha256="0" * 64,
+            ).with_computed_candidate_sha256()
+            try:
+                enqueued = self._store.put_world_candidate_outbox(
+                    candidate,
+                    derivation_id=derivation.derivation_id,
+                    enqueued_at_ms=now_ms,
+                )
+            except LifeShadowStoreError:
+                skipped += 1
+                continue
+            if enqueued:
+                created += 1
+                candidates.append(candidate)
+            else:
+                skipped += 1
+            if len(candidates) >= limit:
+                break
+        return created, skipped, tuple(candidates)
 
 
 __all__ = [
