@@ -37,6 +37,9 @@ jobs:
       - name: Apply P16 source patch
         run: python scripts/p16_native_proactive_patch.py
 
+      - name: Repair P16 patch output
+        run: python scripts/p16_native_proactive_repair.py
+
       - name: Sync generated source mirrors
         run: python scripts/sync-generated-sources.py --write
 
