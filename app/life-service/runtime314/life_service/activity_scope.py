@@ -176,9 +176,32 @@ def _memory_refs(scope: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[s
     return rows[-24:], list(dict.fromkeys(terms))[:48]
 
 
-def build_activity_scope(*, life_id: str, soul: Mapping[str, Any] | None, scope: Mapping[str, Any]) -> dict[str, Any]:
+def build_activity_scope(
+    *,
+    life_id: str,
+    soul: Mapping[str, Any] | None,
+    scope: Mapping[str, Any],
+    derivation_store: Any | None = None,
+) -> dict[str, Any]:
     """Build a bounded, canonical evidence projection for one learning turn."""
     memory_rows, memory_terms = _memory_refs(scope)
+    active_l3_refs: list[dict[str, Any]] = []
+    if derivation_store is not None:
+        for derivation in derivation_store.list_memory_derivations(
+            life_id=life_id,
+            layer="L3_EXPERIENCE",
+            active_only=True,
+            limit=16,
+        ):
+            active_l3_refs.append(
+                {
+                    "derivation_id": derivation.derivation_id,
+                    "memory_id": derivation.memory_id,
+                    "claim_key": derivation.claim_key,
+                    "semantic_domain": derivation.semantic_domain,
+                    "lineage_root_event_ids": derivation.lineage_root_event_ids,
+                }
+            )
     autonomy = scope.get("autonomy") if isinstance(scope.get("autonomy"), Mapping) else {}
     active_tasks = [
         {
@@ -233,6 +256,7 @@ def build_activity_scope(*, life_id: str, soul: Mapping[str, Any] | None, scope:
         "life_id": str(life_id),
         "soul": soul_view,
         "recent_memories": memory_rows,
+        "active_l3_refs": active_l3_refs,
         "active_tasks": active_tasks,
         "capabilities": capabilities,
         "long_term_goals": goals,

@@ -436,6 +436,7 @@ class CausalMemoryStoreTests(unittest.TestCase):
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")
             for table in (
+                "temperament_adaptation_receipts",
                 "memory_derivation_invalidations",
                 "memory_derivation_parents",
                 "memory_active_heads",

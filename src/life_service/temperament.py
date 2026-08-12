@@ -234,6 +234,12 @@ def normalize_temperament_state(
         for item in (evidence if isinstance(evidence, list) else [])
         if str(item)
     ][-_MAX_RECENT_EVIDENCE:]
+    core_evidence = state.get("core_memory_evidence_ids")
+    state["core_memory_evidence_ids"] = [
+        str(item)
+        for item in (core_evidence if isinstance(core_evidence, list) else [])
+        if str(item)
+    ][-_MAX_RECENT_EVIDENCE:]
     return state
 
 
@@ -349,6 +355,71 @@ def adapt_from_completed_turn(
     return state, True
 
 
+def adapt_from_core_memory(
+    innate: Mapping[str, Any],
+    raw_state: Mapping[str, Any] | None,
+    *,
+    evidence_refs: tuple[str, ...],
+    trait_delta_micro: Mapping[str, int],
+    updated_at: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply one bounded adaptation from a temperament-eligible L5 core record.
+
+    The caller guarantees exactly-once consumption (adaptation receipts); this
+    function stays idempotent per evidence ref and never exceeds the signed
+    innate per-evidence delta bound.  Emotions and single turns never reach
+    this path.
+    """
+
+    state = normalize_temperament_state(innate, raw_state)
+    evidence_refs = tuple(
+        str(ref) for ref in evidence_refs if str(ref)
+    )
+    if not evidence_refs:
+        raise ValueError("core-memory adaptation requires evidence refs")
+    if any(
+        ref in state["core_memory_evidence_ids"] for ref in evidence_refs
+    ):
+        return state, {"applied": False, "trait_delta_sha256": None}
+    policy = dict(innate.get("adaptation_policy") or {})
+    max_step = min(
+        100,
+        max(1, int(policy.get("max_trait_delta_micro_per_turn") or 100)),
+    )
+    applied: dict[str, int] = {}
+    for key in TRAIT_KEYS:
+        try:
+            raw_delta = int(trait_delta_micro.get(key) or 0)
+        except (TypeError, ValueError):
+            raw_delta = 0
+        delta = max(-max_step, min(max_step, raw_delta))
+        if delta == 0:
+            continue
+        current = int(state["traits_micro"][key])
+        state["traits_micro"][key] = _clamp(
+            current + delta, 0, 1_000_000
+        )
+        applied[key] = delta
+    state["revision"] = int(state["revision"]) + 1
+    state["core_memory_evidence_ids"] = [
+        *state["core_memory_evidence_ids"],
+        *evidence_refs,
+    ][-_MAX_RECENT_EVIDENCE:]
+    state["updated_at"] = str(updated_at or _utc_now())
+    trait_delta_sha256 = canonical_sha256(
+        {
+            "trait_delta_micro": {
+                key: applied[key] for key in TRAIT_KEYS if key in applied
+            }
+        }
+    )
+    return state, {
+        "applied": True,
+        "trait_delta_sha256": trait_delta_sha256,
+        "evidence_refs": evidence_refs,
+    }
+
+
 def public_temperament_projection(
     innate: Mapping[str, Any],
     raw_state: Mapping[str, Any] | None,
@@ -387,6 +458,7 @@ __all__ = [
     "TEMPERAMENT_STATE_SCHEMA",
     "TRAIT_KEYS",
     "adapt_from_completed_turn",
+    "adapt_from_core_memory",
     "generate_innate_temperament",
     "initial_temperament_state",
     "normalize_temperament_state",

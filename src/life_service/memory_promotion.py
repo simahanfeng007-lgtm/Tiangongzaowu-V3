@@ -77,19 +77,57 @@ def fold_independence(
     derivations: tuple[MemoryDerivationV1, ...],
     weights: Mapping[str, int],
 ) -> tuple[EvidenceGroup, ...]:
-    """Fold derivations that share any lineage root into one group."""
+    """Fold derivations that share ANY lineage root into one group (I11).
 
-    buckets: dict[str, list[MemoryDerivationV1]] = {}
-    for derivation in derivations:
-        key = lineage_root_sha256(derivation.lineage_root_event_ids)
-        buckets.setdefault(key, []).append(derivation)
+    Two derivations are in the same independence group whenever their root
+    sets intersect, so re-summarizing an event never creates a second group
+    even when the summary adds new derived roots.
+    """
+
+    derivations = tuple(derivations)
+    count = len(derivations)
+    root_sets = tuple(
+        set(item.lineage_root_event_ids) for item in derivations
+    )
+    parent = list(range(count))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(first: int, second: int) -> None:
+        root_first = find(first)
+        root_second = find(second)
+        if root_first != root_second:
+            parent[root_second] = root_first
+
+    for first in range(count):
+        for second in range(first + 1, count):
+            if root_sets[first] & root_sets[second]:
+                union(first, second)
+    buckets: dict[int, list[MemoryDerivationV1]] = {}
+    for index, derivation in enumerate(derivations):
+        buckets.setdefault(find(index), []).append(derivation)
     groups: list[EvidenceGroup] = []
-    for key in sorted(buckets):
-        members = tuple(buckets[key])
-        member_weights = tuple(weights.get(item.derivation_id, 0) for item in members)
+    for members in buckets.values():
+        members = tuple(members)
+        union_roots = tuple(
+            sorted(
+                {
+                    root
+                    for member in members
+                    for root in member.lineage_root_event_ids
+                }
+            )
+        )
+        member_weights = tuple(
+            weights.get(item.derivation_id, 0) for item in members
+        )
         groups.append(
             EvidenceGroup(
-                lineage_root_sha256=key,
+                lineage_root_sha256="|".join(union_roots),
                 member_derivation_ids=tuple(
                     item.derivation_id for item in members
                 ),
@@ -97,7 +135,9 @@ def fold_independence(
                 direct=any(weight >= 1000 for weight in member_weights),
             )
         )
-    return tuple(groups)
+    return tuple(
+        sorted(groups, key=lambda group: group.lineage_root_sha256)
+    )
 
 
 def _lineage_roots(

@@ -124,9 +124,9 @@ class MemoryDerivationStoreTests(unittest.TestCase):
         self.store.close()
         self.temporary.cleanup()
 
-    def test_fresh_store_is_schema_15_with_derivation_tables(self) -> None:
+    def test_fresh_store_is_schema_16_with_derivation_tables(self) -> None:
         health = self.store.health()
-        self.assertEqual(health["schema_version"], 15)
+        self.assertEqual(health["schema_version"], 16)
         self.assertEqual(health["schema_version"], SHADOW_STORE_SCHEMA_VERSION)
         for table in (
             "memory_derivations",
@@ -134,6 +134,7 @@ class MemoryDerivationStoreTests(unittest.TestCase):
             "memory_derivation_invalidations",
             "memory_active_heads",
             "memory_consumer_offsets",
+            "temperament_adaptation_receipts",
         ):
             self.assertIsNotNone(
                 self.store._connection.execute(  # noqa: SLF001
@@ -142,13 +143,13 @@ class MemoryDerivationStoreTests(unittest.TestCase):
                 ).fetchone()
             )
 
-    def test_migration_from_v14_adds_invalidation_table(self) -> None:
+    def test_migration_from_v15_adds_receipt_table(self) -> None:
         self.store.close()
         connection = sqlite3.connect(self.path)
         connection.execute("PRAGMA foreign_keys=OFF")
-        connection.execute("DROP TABLE memory_derivation_invalidations")
-        connection.execute("DELETE FROM schema_migrations WHERE version = 15")
-        v14_sql = (
+        connection.execute("DROP TABLE temperament_adaptation_receipts")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 16")
+        v15_sql = (
             life_store_module._P7_SCHEMA_SQL  # noqa: SLF001
             + "\n"
             + life_store_module._P8_MEMORY_CHANGE_SQL  # noqa: SLF001
@@ -164,24 +165,26 @@ class MemoryDerivationStoreTests(unittest.TestCase):
             + life_store_module._P13_V21_CAPABILITY_LIFECYCLE_SQL  # noqa: SLF001
             + "\n"
             + life_store_module._P14_MEMORY_DERIVATION_SQL  # noqa: SLF001
+            + "\n"
+            + life_store_module._P15_MEMORY_INVALIDATION_SQL  # noqa: SLF001
         )
-        v14_sha = hashlib.sha256(v14_sql.encode("utf-8")).hexdigest()
+        v15_sha = hashlib.sha256(v15_sql.encode("utf-8")).hexdigest()
         connection.execute(
             "UPDATE schema_metadata SET value = ? WHERE key = 'schema_sha256'",
-            (v14_sha,),
+            (v15_sha,),
         )
-        connection.execute("PRAGMA user_version = 14")
+        connection.execute("PRAGMA user_version = 15")
         connection.execute("PRAGMA foreign_keys=ON")
         connection.commit()
         connection.close()
         with LifeShadowStore.open(self.path, create=False, now_ms=1_000) as migrated:
             health = migrated.health()
-            self.assertEqual(health["schema_version"], 15)
+            self.assertEqual(health["schema_version"], 16)
             rows = migrated._connection.execute(  # noqa: SLF001
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
             self.assertEqual(
-                [int(row["version"]) for row in rows], list(range(1, 16))
+                [int(row["version"]) for row in rows], list(range(1, 17))
             )
 
     def test_put_l1_derivation_round_trip_and_idempotent(self) -> None:

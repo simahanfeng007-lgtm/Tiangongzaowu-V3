@@ -15,7 +15,7 @@ the single persistence authority and every write below delegates to it.
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Callable, Mapping
 
 from contracts import (
     LifeEventEnvelope,
@@ -27,6 +27,8 @@ from contracts import (
 )
 
 from . import memory_promotion
+from . import life_learning_memory
+from . import temperament as temperament_module
 from .explicit_memory import detect_explicit_intent, expiry_deadline_ms
 from .memory_invalidation import invalidate_cascade
 from .store import LifeShadowStore, LifeShadowStoreError
@@ -186,6 +188,9 @@ class MemoryCoordinator:
 
     def __init__(self, store: LifeShadowStore) -> None:
         self._store = store
+        self._open_learning: dict[str, set[str]] = {}
+        self._zero_gain: dict[tuple[str, str], int] = {}
+        self._last_zero_gain_at: dict[tuple[str, str], int] = {}
 
     @property
     def store(self) -> LifeShadowStore:
@@ -407,6 +412,205 @@ class MemoryCoordinator:
         if stored is None:
             raise MemoryCoordinatorError("L4 derivation commit failed")
         return assertion, stored, detection, created
+
+    # ------------------------------------------------------------------
+    # Learning -> Memory closure (M4)
+    # ------------------------------------------------------------------
+
+    def can_open_learning(
+        self, *, life_id: str, subject: str, now_ms: int
+    ) -> tuple[bool, int]:
+        open_subjects = self._open_learning.setdefault(life_id, set())
+        if len(open_subjects) >= life_learning_memory.MAX_OPEN_LEARNING:
+            return False, 0
+        key = (life_id, subject)
+        zero_gain = self._zero_gain.get(key, 0)
+        backoff = life_learning_memory.zero_gain_backoff_ms(zero_gain)
+        last = self._last_zero_gain_at.get(key, 0)
+        if backoff and now_ms < last + backoff:
+            return False, last + backoff - now_ms
+        return True, 0
+
+    def open_learning(
+        self, *, life_id: str, subject: str, now_ms: int
+    ) -> bool:
+        allowed, _retry = self.can_open_learning(
+            life_id=life_id, subject=subject, now_ms=now_ms
+        )
+        if not allowed:
+            return False
+        self._open_learning.setdefault(life_id, set()).add(subject)
+        return True
+
+    def close_learning(self, *, life_id: str, subject: str) -> None:
+        self._open_learning.get(life_id, set()).discard(subject)
+
+    def record_zero_gain(
+        self, *, life_id: str, subject: str, now_ms: int
+    ) -> int:
+        key = (life_id, subject)
+        count = self._zero_gain.get(key, 0) + 1
+        self._zero_gain[key] = count
+        self._last_zero_gain_at[key] = now_ms
+        self.close_learning(life_id=life_id, subject=subject)
+        return count
+
+    def reset_zero_gain(self, *, life_id: str, subject: str) -> None:
+        self._zero_gain.pop((life_id, subject), None)
+        self._last_zero_gain_at.pop((life_id, subject), None)
+
+    def commit_learning_result(
+        self,
+        *,
+        learning_event: LifeEventEnvelope,
+        learning_id: str,
+        subject: str,
+        result_sha256: str,
+        source_l3_derivation_ids: tuple[str, ...],
+        refined_plaintext: bytes,
+        created_at_ms: int,
+        policy_version: str = life_learning_memory.LEARNING_REFINED_POLICY,
+    ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, tuple, bool]:
+        """Close one Learning Result into L1 audit + refined L3 experience.
+
+        The result becomes a LifeEvent (L1 audit) and a new L3 refined
+        experience that inherits every parent evidence root.  It never writes
+        L5 or Temperament and never adds a new independence group by itself
+        (the refined record shares its parents' lineage roots).
+        """
+
+        if not source_l3_derivation_ids:
+            raise MemoryCoordinatorError(
+                "learning result requires active L3 refs"
+            )
+        if (
+            len(source_l3_derivation_ids)
+            > life_learning_memory.MAX_LEARNING_L3_REFS
+        ):
+            raise MemoryCoordinatorError("learning L3 refs exceed the bound")
+        ids = life_learning_memory.derive_learning_result_ids(
+            life_id=learning_event.life_id,
+            learning_id=learning_id,
+            result_sha256=result_sha256,
+        )
+        existing = self._store.get_memory_derivation(
+            ids["refined_derivation_id"]
+        )
+        if existing is not None:
+            assertion = self._store.get_memory_assertion(
+                existing.memory_id, existing.memory_revision
+            )
+            if assertion is None:
+                raise MemoryCoordinatorError(
+                    "learning refined assertion is missing"
+                )
+            return assertion, existing, (), False
+        _l1_assertion, l1_derivation, _l1_created = self.commit_life_event_l1(
+            learning_event,
+            event_payload=canonical_json_bytes(
+                {
+                    "schema": "tiangong.life.learning-result.v1",
+                    "learning_id": learning_id,
+                    "subject": subject,
+                    "result_sha256": result_sha256,
+                }
+            ),
+        )
+        source_l3s: list[MemoryDerivationV1] = []
+        for derivation_id in source_l3_derivation_ids:
+            derivation = self._store.get_memory_derivation(derivation_id)
+            if derivation is None or derivation.layer != "L3_EXPERIENCE":
+                raise MemoryCoordinatorError(
+                    "learning source must be an active L3"
+                )
+            if not self._store.is_derivation_active(derivation_id):
+                raise MemoryCoordinatorError("learning source L3 is inactive")
+            source_l3s.append(derivation)
+        parents = tuple(
+            sorted(
+                (*source_l3s, l1_derivation),
+                key=lambda item: item.derivation_id,
+            )
+        )
+        roots = tuple(
+            sorted(
+                {
+                    root
+                    for parent in parents
+                    for root in parent.lineage_root_event_ids
+                }
+            )
+        )
+        source_events = tuple(
+            sorted(
+                {
+                    event_id
+                    for parent in parents
+                    for event_id in parent.source_event_ids
+                }
+            )
+        )
+        domain = source_l3s[0].semantic_domain
+        derivation = MemoryDerivationV1(
+            derivation_id=ids["refined_derivation_id"],
+            life_id=learning_event.life_id,
+            memory_id=ids["refined_memory_id"],
+            memory_revision=1,
+            memory_assertion_sha256="0" * 64,
+            layer="L3_EXPERIENCE",
+            semantic_domain=domain,
+            origin="LEARNING_RESULT",
+            principal_ref=learning_event.principal_ref,
+            workspace_ref=None,
+            privacy_scope=learning_event.privacy_scope,
+            claim_key="learned:" + learning_id,
+            parent_memory_refs=tuple(_parent_ref(parent) for parent in parents),
+            source_event_ids=source_events,
+            lineage_root_event_ids=roots,
+            external_evidence_refs=(),
+            promotion_policy_version=policy_version,
+            promotion_reason_codes=("learning_refined",),
+            valid_from_ms=created_at_ms,
+            expires_at_ms=None,
+            context_eligible=True,
+            learning_eligible=True,
+            temperament_eligible=False,
+            self_cognition_eligible=False,
+            world_candidate_eligible=(domain == "WORLD"),
+            created_at_ms=created_at_ms,
+            derivation_sha256="0" * 64,
+        ).with_computed_derivation_sha256()
+        assertion, _seq, created = self._store.put_live_memory_assertion(
+            refined_plaintext,
+            memory_id=ids["refined_memory_id"],
+            life_id=learning_event.life_id,
+            assertion_kind=_assertion_kind_for_domain(domain),
+            epistemic_status="user_asserted",
+            lifecycle_status="active",
+            privacy_scope=learning_event.privacy_scope,
+            retention_class="CHECKPOINT",
+            source_event_ids=source_events,
+            verification_strength_milli=750,
+            valid_from_ms=created_at_ms,
+            created_at_ms=created_at_ms,
+            derivation=derivation,
+            activate_head=True,
+        )
+        stored = self._store.get_memory_derivation(
+            ids["refined_derivation_id"]
+        )
+        if stored is None:
+            raise MemoryCoordinatorError(
+                "learning refined derivation commit failed"
+            )
+        self.reset_zero_gain(life_id=learning_event.life_id, subject=subject)
+        self.close_learning(life_id=learning_event.life_id, subject=subject)
+        return (
+            assertion,
+            stored,
+            (_l1_assertion, l1_derivation),
+            created,
+        )
 
     # ------------------------------------------------------------------
     # Runtime contract-record adapter (keeps API compatibility)
@@ -789,6 +993,13 @@ class MemoryCoordinator:
             self_cognition_eligible=(
                 disposition.target_layer == "L5_CORE"
                 and domain in _SELF_COGNITION_DOMAINS
+                and not (
+                    domain == "SELF_IDENTITY"
+                    and any(
+                        parent.origin == "USER_EXPLICIT"
+                        for parent in parents
+                    )
+                )
             ),
             world_candidate_eligible=(
                 disposition.target_layer
@@ -928,6 +1139,86 @@ class MemoryCoordinator:
         if stored is None:
             raise MemoryCoordinatorError("correction derivation commit failed")
         return assertion, stored, invalidations, created
+
+    # ------------------------------------------------------------------
+    # Temperament / Self Cognition (M6)
+    # ------------------------------------------------------------------
+
+    def adapt_temperament_from_core(
+        self,
+        *,
+        life_id: str,
+        innate: Mapping[str, object],
+        current_temperament: Mapping[str, object] | None,
+        now_ms: int,
+        trait_delta_provider: Callable[
+            [MemoryDerivationV1], Mapping[str, int]
+        ]
+        | None = None,
+    ) -> tuple[dict[str, object], tuple[dict[str, object], ...]]:
+        """Exactly-once temperament adaptation from eligible active L5 core.
+
+        Only ``temperament_eligible`` active L5 derivations participate; each
+        is consumed at most once through a durable adaptation receipt.  Plain
+        turns and emotions never enter this path.
+        """
+
+        if (
+            isinstance(now_ms, bool)
+            or not isinstance(now_ms, int)
+            or now_ms < 0
+        ):
+            raise MemoryCoordinatorError("temperament timestamp is invalid")
+        eligible = tuple(
+            derivation
+            for derivation in self._store.list_memory_derivations(
+                life_id=life_id, active_only=True, limit=4096
+            )
+            if derivation.layer == "L5_CORE"
+            and derivation.temperament_eligible
+        )
+        state: dict[str, object] = dict(current_temperament or {})
+        receipts: list[dict[str, object]] = []
+        for derivation in sorted(
+            eligible, key=lambda item: item.derivation_id
+        ):
+            if self._store.has_temperament_receipt(
+                life_id, derivation.derivation_id
+            ):
+                continue
+            deltas = (
+                trait_delta_provider(derivation)
+                if trait_delta_provider is not None
+                else {
+                    key: 2 for key in temperament_module.TRAIT_KEYS
+                }
+            )
+            state, outcome = temperament_module.adapt_from_core_memory(
+                innate,
+                state,
+                evidence_refs=(derivation.derivation_id,),
+                trait_delta_micro=deltas,
+                updated_at=str(now_ms),
+            )
+            delta_sha256 = str(outcome.get("trait_delta_sha256") or "")
+            self._store.put_temperament_receipt(
+                life_id=life_id,
+                derivation_id=derivation.derivation_id,
+                trait_delta_sha256=delta_sha256,
+                adapted_at_ms=now_ms,
+                receipt_payload={
+                    "evidence_refs": outcome.get("evidence_refs") or (),
+                    "derivation_id": derivation.derivation_id,
+                },
+            )
+            receipts.append(
+                {
+                    "derivation_id": derivation.derivation_id,
+                    "trait_delta_sha256": delta_sha256,
+                    "adapted_at_ms": now_ms,
+                }
+            )
+        return state, tuple(receipts)
 
 
 __all__ = [

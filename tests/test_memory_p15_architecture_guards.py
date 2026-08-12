@@ -112,14 +112,15 @@ def test_future_memory_authority_modules_would_also_fail_closed() -> None:
         assert "LifeShadowStore.open" not in text
 
 
-def test_shadow_schema_is_v15_with_derivation_tables() -> None:
-    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 15
+def test_shadow_schema_is_v16_with_derivation_tables() -> None:
+    assert life_store_module.SHADOW_STORE_SCHEMA_VERSION == 16
     assert {
         "memory_derivations",
         "memory_derivation_parents",
         "memory_derivation_invalidations",
         "memory_active_heads",
         "memory_consumer_offsets",
+        "temperament_adaptation_receipts",
     } <= life_store_module._EXPECTED_TABLES
 
 

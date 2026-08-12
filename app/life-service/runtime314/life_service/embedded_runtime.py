@@ -95,7 +95,6 @@ from .memory_coordinator import MemoryCoordinator
 from .store import LifeShadowStore, LifeShadowStoreError
 from .cognition import CognitionTrigger, UnifiedCognitionShadow
 from .temperament import (
-    adapt_from_completed_turn,
     normalize_temperament_state,
     public_temperament_projection,
 )
@@ -5318,16 +5317,21 @@ class EmbeddedLifeRuntime:
             return result
         scope = self._scope_state(life_id)
         innate = self._innate_temperament(life_id)
-        adapted, changed = adapt_from_completed_turn(
-            innate,
-            scope.get("temperament"),
-            evidence_id=turn_id,
-            user_text=user_text,
-            assistant_text=assistant_text,
-            affect=scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {},
-            updated_at=utc_now(),
-        )
-        if changed:
+        # P15 M6: a plain completed turn never changes long-term temperament.
+        # Only temperament-eligible active L5 core memory adapts, exactly once
+        # per derivation through durable adaptation receipts.
+        adapted = scope.get("temperament")
+        if self.authority_store is not None:
+            try:
+                adapted, _receipts = self._memory_coordinator().adapt_temperament_from_core(
+                    life_id=life_id,
+                    innate=innate,
+                    current_temperament=adapted,
+                    now_ms=time.time_ns() // 1_000_000,
+                )
+            except Exception:
+                adapted = scope.get("temperament")
+        if isinstance(adapted, Mapping) and adapted != scope.get("temperament"):
             scope["temperament"] = adapted
             self._persist(life_id)
         result["temperament"] = public_temperament_projection(innate, adapted)
@@ -6770,7 +6774,16 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.identity.id_invalid", status=409)
         decision = payload.get("decision") if isinstance(payload.get("decision"), Mapping) else payload
         scope = self._scope_state(life_id)
-        activity_scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=scope)
+        activity_scope = build_activity_scope(
+            life_id=life_id,
+            soul=self._soul(),
+            scope=scope,
+            derivation_store=(
+                self.authority_store
+                if self.authority_store is not None
+                else None
+            ),
+        )
         try:
             draft = build_draft(life_id=life_id, scope=activity_scope, decision=decision, source=source)
         except ValueError as exc:

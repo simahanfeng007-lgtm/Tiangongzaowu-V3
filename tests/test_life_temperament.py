@@ -110,7 +110,7 @@ class LifeTemperamentTests(unittest.TestCase):
         self.assertEqual(duplicate, adapted)
         self.assertNotIn("user_text", json.dumps(adapted))
 
-    def test_completed_runtime_turn_adapts_only_its_identity_scope(self) -> None:
+    def test_completed_runtime_turn_never_changes_long_term_temperament(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             runtime = EmbeddedLifeRuntime(
@@ -142,9 +142,9 @@ class LifeTemperamentTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(status, 200, turn)
-                self.assertEqual(turn["temperament"]["completed_turn_evidence"], 1)
+                self.assertEqual(turn["temperament"]["completed_turn_evidence"], 0)
                 self.assertEqual(runtime._scope_state(first_id)["temperament"], first_before)
-                self.assertNotEqual(runtime._scope_state(second_id)["temperament"], second_before)
+                self.assertEqual(runtime._scope_state(second_id)["temperament"], second_before)
 
                 status, duplicate, _ = runtime.request(
                     "POST",
@@ -159,7 +159,7 @@ class LifeTemperamentTests(unittest.TestCase):
                 )
                 self.assertEqual(status, 200, duplicate)
                 self.assertTrue(duplicate["duplicate"])
-                self.assertEqual(duplicate["temperament"]["completed_turn_evidence"], 1)
+                self.assertEqual(duplicate["temperament"]["completed_turn_evidence"], 0)
 
                 status, payload, _ = runtime.request(
                     "GET",

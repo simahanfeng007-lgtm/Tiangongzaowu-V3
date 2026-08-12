@@ -10,7 +10,7 @@ import sqlite3
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -65,7 +65,7 @@ from contracts import (
 from .replay import LifeReplaySummary, advance_replay_sha256, replay_life_events
 
 
-SHADOW_STORE_SCHEMA_VERSION = 15
+SHADOW_STORE_SCHEMA_VERSION = 16
 SHADOW_STORE_APPLICATION_ID = 0x54474C53
 
 _LIFE_TURN_STAGE_PRECEDENCE = {
@@ -1029,11 +1029,33 @@ _P15_MEMORY_INVALIDATION_SQL = ";\n".join(
 _P15_MEMORY_INVALIDATION_SHA256 = hashlib.sha256(
     _P15_MEMORY_INVALIDATION_SQL.encode("utf-8")
 ).hexdigest()
+_P16_TEMPERAMENT_RECEIPT_MIGRATION_ID = "p15-temperament-adaptation-receipts"
+_P16_TEMPERAMENT_RECEIPT_STATEMENTS = (
+    """CREATE TABLE temperament_adaptation_receipts (
+        life_id TEXT NOT NULL,
+        derivation_id TEXT NOT NULL
+            REFERENCES memory_derivations(derivation_id) ON DELETE RESTRICT,
+        trait_delta_sha256 TEXT NOT NULL CHECK(length(trait_delta_sha256) = 64),
+        adapted_at_ms INTEGER NOT NULL CHECK(adapted_at_ms >= 0),
+        receipt_sha256 TEXT NOT NULL UNIQUE CHECK(length(receipt_sha256) = 64),
+        payload BLOB NOT NULL,
+        PRIMARY KEY(life_id, derivation_id)
+    ) STRICT""",
+    """CREATE INDEX temperament_adaptation_receipts_life_idx
+    ON temperament_adaptation_receipts(life_id, adapted_at_ms)""",
+)
+_P16_TEMPERAMENT_RECEIPT_SQL = ";\n".join(
+    statement.strip() for statement in _P16_TEMPERAMENT_RECEIPT_STATEMENTS
+) + ";\n"
+_P16_TEMPERAMENT_RECEIPT_SHA256 = hashlib.sha256(
+    _P16_TEMPERAMENT_RECEIPT_SQL.encode("utf-8")
+).hexdigest()
 _SCHEMA_SQL = (
     _P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n"
     + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n"
     + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL
     + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL
+    + "\n" + _P16_TEMPERAMENT_RECEIPT_SQL
 )
 _SCHEMA_SHA256 = hashlib.sha256(_SCHEMA_SQL.encode("utf-8")).hexdigest()
 _EXPECTED_TABLES = frozenset(
@@ -1079,6 +1101,7 @@ _EXPECTED_TABLES = frozenset(
         "memory_derivation_invalidations",
         "memory_active_heads",
         "memory_consumer_offsets",
+        "temperament_adaptation_receipts",
         "life_authority_heads",
         "run_life_bindings",
         "root_experience_heads",
@@ -1359,6 +1382,10 @@ class LifeShadowStore:
                 (_P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256, now_ms),
             )
             connection.execute(
+                "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (16, ?, ?, ?)",
+                (_P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256, now_ms),
+            )
+            connection.execute(
                 "INSERT INTO schema_metadata(key, value) VALUES ('purpose', 'life-shadow-only')"
             )
             connection.execute(
@@ -1380,7 +1407,7 @@ class LifeShadowStore:
             raise LifeShadowStoreError("shadow store application identity is invalid")
         if user_version == SHADOW_STORE_SCHEMA_VERSION:
             return
-        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}:
+        if user_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
             raise LifeShadowStoreError("shadow store schema version cannot be migrated")
         tables = {
             str(row["name"])
@@ -1432,8 +1459,11 @@ class LifeShadowStore:
             "memory_consumer_offsets",
         }
         p15_tables = {"memory_derivation_invalidations"}
+        p16_tables = {"temperament_adaptation_receipts"}
         p2_tables = {"life_ingress_dedupe", "life_ingress_receipts"}
         expected_tables = set(_EXPECTED_TABLES)
+        if user_version < 16:
+            expected_tables -= p16_tables
         if user_version < 15:
             expected_tables -= p15_tables
         if user_version < 14:
@@ -1534,6 +1564,9 @@ class LifeShadowStore:
         if user_version >= 15:
             expected_migrations.append((15, _P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256))
             expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL).encode("utf-8")).hexdigest()
+        if user_version >= 16:
+            expected_migrations.append((16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256))
+            expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\n" + _P8_MEMORY_CHANGE_SQL + "\n" + _P9_V21_LIFE_BINDING_SQL + "\n" + _P10_V21_CAUSAL_CHILD_SQL + "\n" + _P11_V21_COGNITION_SHADOW_SQL + "\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\n" + _P14_MEMORY_DERIVATION_SQL + "\n" + _P15_MEMORY_INVALIDATION_SQL + "\n" + _P16_TEMPERAMENT_RECEIPT_SQL).encode("utf-8")).hexdigest()
         if (
             len(migration) != len(expected_migrations)
             or any(
@@ -1658,6 +1691,10 @@ class LifeShadowStore:
                 for statement in _P15_MEMORY_INVALIDATION_STATEMENTS:
                     connection.execute(statement)
                 connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (15, ?, ?, ?)", (_P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256, now_ms))
+            if user_version < 16:
+                for statement in _P16_TEMPERAMENT_RECEIPT_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (16, ?, ?, ?)", (_P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256, now_ms))
             connection.execute(
                 "UPDATE schema_metadata SET value = ? WHERE key = 'schema_sha256'",
                 (_SCHEMA_SHA256,),
@@ -3800,6 +3837,117 @@ class LifeShadowStore:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
             raise
+
+    def put_temperament_receipt(
+        self,
+        *,
+        life_id: str,
+        derivation_id: str,
+        trait_delta_sha256: str,
+        adapted_at_ms: int,
+        receipt_payload: Mapping[str, object],
+    ) -> bool:
+        """Persist one exactly-once core-memory temperament adaptation."""
+
+        if (
+            isinstance(adapted_at_ms, bool)
+            or not isinstance(adapted_at_ms, int)
+            or adapted_at_ms < 0
+        ):
+            raise ValueError("temperament receipt timestamp is invalid")
+        payload = canonical_json_bytes(receipt_payload)
+        receipt_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.life.temperament-receipt.v1",
+                "life_id": life_id,
+                "derivation_id": derivation_id,
+                "trait_delta_sha256": trait_delta_sha256,
+                "adapted_at_ms": adapted_at_ms,
+            }
+        )
+        connection = self._connection
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """
+                SELECT receipt_sha256 FROM temperament_adaptation_receipts
+                WHERE life_id = ? AND derivation_id = ?
+                """,
+                (life_id, derivation_id),
+            ).fetchone()
+            if existing is not None:
+                connection.execute("COMMIT")
+                return False
+            derivation = connection.execute(
+                """
+                SELECT derivation_id FROM memory_derivations
+                WHERE derivation_id = ?
+                """,
+                (derivation_id,),
+            ).fetchone()
+            if derivation is None:
+                raise LifeShadowStoreError(
+                    "temperament receipt targets a missing derivation"
+                )
+            connection.execute(
+                """
+                INSERT INTO temperament_adaptation_receipts(
+                    life_id, derivation_id, trait_delta_sha256,
+                    adapted_at_ms, receipt_sha256, payload
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    life_id,
+                    derivation_id,
+                    trait_delta_sha256,
+                    adapted_at_ms,
+                    receipt_sha256,
+                    payload,
+                ),
+            )
+            connection.execute("COMMIT")
+            return True
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+
+    def has_temperament_receipt(
+        self, life_id: str, derivation_id: str
+    ) -> bool:
+        row = self._connection.execute(
+            """
+            SELECT 1 FROM temperament_adaptation_receipts
+            WHERE life_id = ? AND derivation_id = ?
+            """,
+            (life_id, derivation_id),
+        ).fetchone()
+        return row is not None
+
+    def list_temperament_receipts(
+        self, life_id: str | None = None
+    ) -> tuple[dict[str, Any], ...]:
+        if life_id is None:
+            rows = self._connection.execute(
+                """
+                SELECT life_id, derivation_id, trait_delta_sha256,
+                       adapted_at_ms, receipt_sha256
+                FROM temperament_adaptation_receipts
+                ORDER BY adapted_at_ms, derivation_id
+                """
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                """
+                SELECT life_id, derivation_id, trait_delta_sha256,
+                       adapted_at_ms, receipt_sha256
+                FROM temperament_adaptation_receipts
+                WHERE life_id = ?
+                ORDER BY adapted_at_ms, derivation_id
+                """,
+                (life_id,),
+            ).fetchall()
+        return tuple(dict(row) for row in rows)
 
     def ack_memory_outbox(
         self,
@@ -8107,6 +8255,7 @@ class LifeShadowStore:
             (13, _P13_V21_CAPABILITY_LIFECYCLE_MIGRATION_ID, _P13_V21_CAPABILITY_LIFECYCLE_SHA256),
             (14, _P14_MEMORY_DERIVATION_MIGRATION_ID, _P14_MEMORY_DERIVATION_SHA256),
             (15, _P15_MEMORY_INVALIDATION_MIGRATION_ID, _P15_MEMORY_INVALIDATION_SHA256),
+            (16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256),
         )
         if len(migration) != len(expected_migrations) or any(
             (

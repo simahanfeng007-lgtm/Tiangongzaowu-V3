@@ -172,6 +172,7 @@ class AtomicContextP10Tests(unittest.TestCase):
         self.store.close()
         connection = sqlite3.connect(self.path)
         try:
+            connection.execute("DROP TABLE temperament_adaptation_receipts")
             connection.execute("DROP TABLE memory_derivation_invalidations")
             connection.execute("DROP TABLE memory_derivation_parents")
             connection.execute("DROP TABLE memory_active_heads")
