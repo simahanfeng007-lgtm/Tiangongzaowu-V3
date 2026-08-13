@@ -45,3 +45,6 @@ jobs:
 
       - name: Run P17 M1 source-authority regression
         run: python tests/test_source_authority_p17_m1.py -v
+
+      - name: Run P17 M1-03 V3 boundary regression
+        run: python tests/test_source_authority_p17_m1_03.py -v
