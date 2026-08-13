@@ -1,0 +1,47 @@
+name: Architecture gate
+
+on:
+  push:
+    branches:
+      - main
+      - "agent/p17-*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-authority:
+    name: source-authority-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate source-authority topology
+        run: python scripts/check-source-authority.py
+
+      - name: Verify generated-source mirrors
+        run: python scripts/sync-generated-sources.py --check-committed
+
+      - name: Run P17 M1 source-authority regression
+        run: python tests/test_source_authority_p17_m1.py -v

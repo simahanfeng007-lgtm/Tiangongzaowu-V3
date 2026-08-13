@@ -1,10 +1,11 @@
 {
-  "schema": "tiangong.source-ownership.v1",
-  "principle": "Only the source paths are human-editable. Targets are deterministic generated mirrors checked before release.",
+  "schema": "tiangong.source-ownership.v2",
+  "principle": "Only authoritative or frozen_authoritative source paths are human-editable. authoritative_alias entries are documentation-only aliases. Targets are deterministic generated mirrors checked before release.",
   "mappings": [
     {
       "id": "shared-contracts",
       "source": "src/contracts",
+      "source_role": "authoritative",
       "targets": [
         "app/life-service/runtime314/contracts",
         "app/runtime/python312/Lib/site-packages/contracts"
@@ -13,6 +14,7 @@
     {
       "id": "life-service-runtime",
       "source": "src/life_service",
+      "source_role": "authoritative",
       "targets": [
         "app/life-service/runtime314/life_service",
         "app/runtime/python312/Lib/site-packages/life_service"
@@ -21,6 +23,7 @@
     {
       "id": "life-bootstrap-runtime",
       "source": "readable-python-source/life-bootstrap/tiangong_life_bootstrap.py",
+      "source_role": "authoritative",
       "targets": [
         "app/life-service/runtime314/tiangong_life_bootstrap.py"
       ]
@@ -28,6 +31,7 @@
     {
       "id": "life-runtime-fixes",
       "source": "readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py",
+      "source_role": "authoritative",
       "targets": [
         "app/life-service/runtime314/tiangong_life_runtime_fixes.py"
       ]
@@ -35,6 +39,7 @@
     {
       "id": "total-gateway-embedded-python",
       "source": "src/total_gateway",
+      "source_role": "authoritative",
       "targets": [
         "app/runtime/python312/Lib/site-packages/total_gateway"
       ]
@@ -42,6 +47,7 @@
     {
       "id": "world-understanding-embedded-python",
       "source": "src/world_understanding",
+      "source_role": "authoritative",
       "targets": [
         "app/runtime/python312/Lib/site-packages/world_understanding"
       ],
@@ -50,6 +56,7 @@
     {
       "id": "communication-service-embedded-python",
       "source": "src/communication_service",
+      "source_role": "authoritative",
       "targets": [
         "app/runtime/python312/Lib/site-packages/communication_service"
       ]
@@ -57,6 +64,7 @@
     {
       "id": "omni-body-runtime",
       "source": "readable-python-source/omni_body_skill",
+      "source_role": "authoritative",
       "targets": [
         "app/backend/tiangong-backend/omni_body_skill",
         "app/backend/tiangong-backend/_internal/omni_body_skill",
@@ -67,6 +75,7 @@
     {
       "id": "managed-novel-skill-runtime",
       "source": "readable-python-source/bundled-skills/novel-creation",
+      "source_role": "authoritative",
       "targets": [
         "app/backend/tiangong-backend/_internal/v3/bundled_skills/novel-creation"
       ]
@@ -74,6 +83,7 @@
     {
       "id": "legacy-execution-confirmation-bridge",
       "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/confirmation_bridge.py",
+      "source_role": "frozen_authoritative",
       "targets": [
         "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/confirmation_bridge.py"
       ]
@@ -81,6 +91,7 @@
     {
       "id": "legacy-execution-orchestrator",
       "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/orchestrator.py",
+      "source_role": "frozen_authoritative",
       "targets": [
         "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/orchestrator.py"
       ]
@@ -88,6 +99,7 @@
     {
       "id": "legacy-execution-tool-scheduler",
       "source": "app/backend/tiangong-backend/_internal/frozen_modules/v3/execution_kernel/tool_scheduler.py",
+      "source_role": "frozen_authoritative",
       "targets": [
         "app/backend/tiangong-backend/_internal/legacy_pyz_modules/v3/execution_kernel/tool_scheduler.py"
       ]
@@ -95,6 +107,7 @@
     {
       "id": "legacy-life-permissions",
       "source": "app/backend/tiangong-backend/_internal/frozen_modules/tiangong_life/permissions.py",
+      "source_role": "frozen_authoritative",
       "targets": [
         "app/backend/tiangong-backend/_internal/legacy_pyz_modules/tiangong_life/permissions.py"
       ]
@@ -102,6 +115,7 @@
     {
       "id": "model-endpoint-security",
       "source": "src/runtime_security/model_endpoint.py",
+      "source_role": "authoritative",
       "targets": [
         "app/backend/tiangong-backend/v3/endpoint_security.py"
       ]
@@ -109,17 +123,26 @@
     {
       "id": "v3-backend-main",
       "source": "app/backend/tiangong-backend/v3",
+      "source_role": "authoritative",
+      "generated_exclusions": [
+        "bundled_skills/omni_body_skill",
+        "endpoint_security.py"
+      ],
       "targets": [],
       "note": "事实 single-source（无生成器）。例外：v3/bundled_skills/omni_body_skill 与 v3/endpoint_security.py 已由 omni-body-runtime / model-endpoint-security 两条 mapping 覆盖（generated-owned）。含 zongdiaodu.py、context_compactor.py、confirmation_store.py、duihua_qiaojie.py、permission_settings.py、path_resolver.py、peizhi.py、gutong/、jineng/ 等 v3 主树。"
     },
     {
       "id": "backend-context-compactor",
       "source": "app/backend/tiangong-backend/v3/context_compactor.py",
-      "targets": []
+      "source_role": "authoritative_alias",
+      "authority_parent": "v3-backend-main",
+      "targets": [],
+      "note": "Documentation/search alias only. Authority is inherited from v3-backend-main; this entry must never become an independent editable authority."
     },
     {
       "id": "tiangong-kernel",
       "source": "app/backend/tiangong-backend/tiangong_kernel",
+      "source_role": "authoritative",
       "targets": [],
       "note": "事实 single-source（l0_primitives、l4_action_grounding 等）。"
     }
