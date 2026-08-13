@@ -5,7 +5,7 @@ import base64
 import os
 
 source = base64.b64decode(
-    Path("scripts/p17-m2-02-candidate-patch.b64").read_text(encoding="ascii")
+    Path("scripts/p17-m2-02-candidate-patch-original.b64").read_text(encoding="ascii")
 ).decode("utf-8")
 
 old = '''old_guard = \'\'\'                    guard_count = repeat_observation_counts.get(guard_key, 0) + 1
