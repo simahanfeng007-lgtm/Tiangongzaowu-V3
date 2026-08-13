@@ -10,15 +10,20 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GUARD_PATH = REPO_ROOT / "scripts" / "check-source-authority.py"
+SYNC_PATH = REPO_ROOT / "scripts" / "sync-generated-sources.py"
 
 
-def _load_guard():
-    spec = importlib.util.spec_from_file_location("p17_source_authority_guard", GUARD_PATH)
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load source-authority guard")
+        raise RuntimeError(f"cannot load {path.name}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_guard():
+    return _load_module(GUARD_PATH, "p17_source_authority_guard")
 
 
 def _mapping(
@@ -47,6 +52,7 @@ class SourceAuthorityGuardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.guard = _load_guard()
+        cls.sync = _load_module(SYNC_PATH, "p17_generated_source_sync")
 
     def _validate(self, mappings: list[dict[str, Any]]) -> list[str]:
         config = {
@@ -144,6 +150,30 @@ class SourceAuthorityGuardTests(unittest.TestCase):
             any("is inside generated target" in error for error in errors),
             errors,
         )
+
+    def test_marker_tree_hash_uses_portable_windows_order(self) -> None:
+        names = [
+            Path("SOURCE_OWNERSHIP.md"),
+            Path("__init__.py"),
+            Path("store.py"),
+        ]
+        ordered = sorted(names, key=self.sync.logical_tree_path_sort_key)
+        self.assertEqual(
+            ["__init__.py", "SOURCE_OWNERSHIP.md", "store.py"],
+            [item.as_posix() for item in ordered],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = []
+            for index, name in enumerate(names):
+                target = root / name
+                target.write_text(f"fixture-{index}\n", encoding="utf-8")
+                rows.append((name, target))
+            self.assertEqual(
+                self.sync.tree_hash(rows),
+                self.sync.tree_hash(list(reversed(rows))),
+            )
 
     def test_alias_cannot_own_generated_targets(self) -> None:
         errors = self._validate(
