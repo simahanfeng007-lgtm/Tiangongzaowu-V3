@@ -1,0 +1,68 @@
+name: P17 M2-02 candidate readonly
+
+on:
+  push:
+    branches:
+      - agent/p17-m2-god-module-decomposition
+    paths:
+      - .github/workflows/p17-m2-02-candidate-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      TEST_BLOB_SHA: 200c41db4feb9cef052b51f0c9b37a0e120d39f4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m2-god-module-decomposition
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Patch candidate workspace
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          import json, os, runpy, urllib.request
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs/{os.environ['TEST_BLOB_SHA']}",
+              headers={"Accept":"application/vnd.github+json","Authorization":f"Bearer {os.environ['GH_TOKEN']}","X-GitHub-Api-Version":"2022-11-28"},
+          )
+          with urllib.request.urlopen(request) as response:
+              body = json.load(response)
+          os.environ["M202_TEST_B64"] = str(body["content"]).replace("\n", "")
+          runpy.run_path("scripts/p17-m2-02-candidate-runner.py", run_name="__main__")
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+      - name: Compile M2 seams
+        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+      - name: Collect candidate artifact
+        shell: bash
+        run: |
+          mkdir -p p17-m2-02-candidate/.github/workflows p17-m2-02-candidate/app/backend/tiangong-backend/v3 p17-m2-02-candidate/tests
+          cp .github/workflows/architecture-gate.yml p17-m2-02-candidate/.github/workflows/architecture-gate.yml
+          cp app/backend/tiangong-backend/v3/runtime_turn_orchestration.py p17-m2-02-candidate/app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+          cp app/backend/tiangong-backend/v3/zongdiaodu.py p17-m2-02-candidate/app/backend/tiangong-backend/v3/zongdiaodu.py
+          cp source-ownership.json p17-m2-02-candidate/source-ownership.json
+          cp tests/test_zongdiaodu_p17_m2_02.py p17-m2-02-candidate/tests/test_zongdiaodu_p17_m2_02.py
+          git diff e307a90aa9d33756a58fdc7a8a38e3c04845a618 -- app/backend/tiangong-backend/v3/zongdiaodu.py > p17-m2-02-candidate/zongdiaodu.diff
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p17-m2-02-candidate-readonly
+          path: p17-m2-02-candidate
+          include-hidden-files: true
+          retention-days: 3
