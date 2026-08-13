@@ -4520,6 +4520,41 @@ def _simple_chain_tool_batch_requires_order(tools: Any) -> bool:
     return False
 
 
+_SIMPLE_CHAIN_CALLER_THREAD_ACTIONS = frozenset({"life.body.state.query"})
+
+
+def _simple_chain_tool_requires_caller_thread(tool_name: str, tool_args: Any) -> bool:
+    """Keep core-lock-dependent tools on the chat thread that owns the RLock."""
+
+    return _simple_chain_tool_action(tool_name, tool_args) in _SIMPLE_CHAIN_CALLER_THREAD_ACTIONS
+
+
+def _simple_chain_execute_tool_with_timeout(
+    execute: Any,
+    *,
+    tool_name: str,
+    tool_args: Any,
+    timeout_seconds: float,
+) -> Any:
+    """Execute a tool without moving core-lane reads onto a foreign thread.
+
+    The outer chat call owns a thread-bound RLock.  ``life.body.state.query``
+    re-enters that lock, so dispatching it through a worker creates a parent ↔
+    child deadlock.  Other actions retain the existing worker timeout boundary.
+    """
+
+    if _simple_chain_tool_requires_caller_thread(tool_name, tool_args):
+        return execute()
+    from concurrent.futures import ThreadPoolExecutor
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(contextvars.copy_context().run, execute)
+        return future.result(timeout=max(0.1, timeout_seconds))
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _authorize_user_local_readonly_path(tool_name: str, tool_args: dict, user_message: str) -> dict:
     if not isinstance(tool_args, dict):
         return {}
@@ -7741,9 +7776,12 @@ class Zongdiaodu:
                 # A single model reply does not provide a trustworthy dependency
                 # graph.  Preserve model-declared order for every batch that can
                 # mutate state; only a completely read-only batch may run in
-                # parallel.  This closes write->rename->move->read and
-                # write->append races while retaining safe read concurrency.
-                ordered_batch = _simple_chain_tool_batch_requires_order(tools)
+                # parallel.  Core-lane reads also preserve caller-thread order
+                # because they must re-enter the chat thread's RLock.
+                ordered_batch = (
+                    _simple_chain_tool_batch_requires_order(tools)
+                    or any(_simple_chain_tool_requires_caller_thread(tn, ta) for tn, ta, _, _ in tools)
+                )
                 deadline_reached = False
 
                 def _execute_batch_item(
@@ -7789,36 +7827,29 @@ class Zongdiaodu:
                             _simple_chain_remaining_deadline_seconds(),
                             _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
                         )
-                        item_executor = ThreadPoolExecutor(max_workers=1)
                         try:
-                            item_future = item_executor.submit(
-                                contextvars.copy_context().run,
-                                _execute_batch_item,
+                            parallel_results.append(
+                                _simple_chain_execute_tool_with_timeout(
+                                    lambda: _execute_batch_item(tn, ta, call_index, call_id),
+                                    tool_name=tn,
+                                    tool_args=ta,
+                                    timeout_seconds=item_deadline_seconds,
+                                )
+                            )
+                        except TimeoutError:
+                            deadline_reached = True
+                            parallel_results.append((
                                 tn,
                                 ta,
-                                call_index,
+                                {
+                                    "ok": False,
+                                    "cuowu": "[EXECUTION_DEADLINE] tool exceeded the gateway effect deadline",
+                                    "status": "deadline",
+                                    "tool_name": tn,
+                                },
                                 call_id,
-                            )
-                            try:
-                                parallel_results.append(
-                                    item_future.result(timeout=max(0.1, item_deadline_seconds))
-                                )
-                            except TimeoutError:
-                                deadline_reached = True
-                                parallel_results.append((
-                                    tn,
-                                    ta,
-                                    {
-                                        "ok": False,
-                                        "cuowu": "[EXECUTION_DEADLINE] tool exceeded the gateway effect deadline",
-                                        "status": "deadline",
-                                        "tool_name": tn,
-                                    },
-                                    call_id,
-                                    call_index,
-                                ))
-                        finally:
-                            item_executor.shutdown(wait=False, cancel_futures=True)
+                                call_index,
+                            ))
                         if deadline_reached:
                             break
                 else:
@@ -8585,66 +8616,61 @@ class Zongdiaodu:
                         meta={"deadline_reached": True},
                     )
                 break
-            from concurrent.futures import ThreadPoolExecutor as _ToolCallPool
-
             _tool_timeout_seconds = min(
                 _simple_chain_remaining_deadline_seconds(),
                 _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
             )
-            _tool_executor = _ToolCallPool(max_workers=1)
             try:
-                _tool_future = _tool_executor.submit(
-                    contextvars.copy_context().run,
+                gongju_jieguo = _simple_chain_execute_tool_with_timeout(
                     lambda: self._jineng_zhixing(tool_name, tool_args, xiaoxi, call_id=tool_call_id),
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    timeout_seconds=_tool_timeout_seconds,
                 )
-                try:
-                    gongju_jieguo = _tool_future.result(timeout=max(0.1, _tool_timeout_seconds))
-                except TimeoutError:
-                    gongju_jieguo = {
+            except TimeoutError:
+                gongju_jieguo = {
+                    "ok": False,
+                    "cuowu": "[EXECUTION_DEADLINE] tool exceeded the platform tool-execution deadline",
+                    "status": "deadline",
+                    "tool_name": tool_name,
+                    "timeout_seconds": round(_tool_timeout_seconds, 1),
+                }
+                recovery_record = _simple_chain_record_execution_deadline(
+                    run_state,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    tool_call_id=tool_call_id,
+                    timeout_seconds=_tool_timeout_seconds,
+                )
+                if on_event:
+                    on_event({
+                        "type": "tool_result",
+                        "call_id": tool_call_id,
+                        "tool_index": gongju_cishu,
+                        "name": tool_name,
                         "ok": False,
-                        "cuowu": "[EXECUTION_DEADLINE] tool exceeded the platform tool-execution deadline",
                         "status": "deadline",
-                        "tool_name": tool_name,
-                        "timeout_seconds": round(_tool_timeout_seconds, 1),
-                    }
-                    recovery_record = _simple_chain_record_execution_deadline(
-                        run_state,
-                        tool_name=tool_name,
-                        tool_args=tool_args,
-                        tool_call_id=tool_call_id,
-                        timeout_seconds=_tool_timeout_seconds,
-                    )
-                    if on_event:
-                        on_event({
-                            "type": "tool_result",
-                            "call_id": tool_call_id,
-                            "tool_index": gongju_cishu,
-                            "name": tool_name,
-                            "ok": False,
-                            "status": "deadline",
+                        "ambiguous_effect": bool(recovery_record.get("ambiguous_effect")),
+                    })
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout(
+                    "force_stopped",
+                    ["[effect_deadline_exhausted] tool exceeded the platform tool-execution deadline"],
+                )
+                if run_control:
+                    run_control.step(
+                        "simple_chain_effect_deadline",
+                        "Gateway effect deadline",
+                        "incomplete",
+                        "Stopped waiting after the platform deadline; the action effect is unknown and must be reconciled before retry.",
+                        meta={
+                            "deadline_reached": True,
+                            "tool_timeout_seconds": round(_tool_timeout_seconds, 1),
                             "ambiguous_effect": bool(recovery_record.get("ambiguous_effect")),
-                        })
-                    final_guard_exhausted = True
-                    final_chain_status = "force_stopped"
-                    shenti, huifu = _natural_closeout(
-                        "force_stopped",
-                        ["[effect_deadline_exhausted] tool exceeded the platform tool-execution deadline"],
+                        },
                     )
-                    if run_control:
-                        run_control.step(
-                            "simple_chain_effect_deadline",
-                            "Gateway effect deadline",
-                            "incomplete",
-                            "Stopped waiting after the platform deadline; the action effect is unknown and must be reconciled before retry.",
-                            meta={
-                                "deadline_reached": True,
-                                "tool_timeout_seconds": round(_tool_timeout_seconds, 1),
-                                "ambiguous_effect": bool(recovery_record.get("ambiguous_effect")),
-                            },
-                        )
-                    break
-            finally:
-                _tool_executor.shutdown(wait=False, cancel_futures=True)
+                break
             gongju_jieguo = _tool_result_with_contract(
                 tool_name,
                 gongju_jieguo,

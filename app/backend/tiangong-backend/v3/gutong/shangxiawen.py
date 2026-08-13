@@ -50,6 +50,7 @@ def goujian_system_tishi(shenti: ShentiZhuangtai, soul_text: str, body_settings:
         "- 当前主链只暴露一个模型可见工具：omni_body。",
         "- 直接调用 omni_body 的对应 action 执行任务，无需路由。",
         "- 每次工具返回后根据实际结果决定下一步。",
+        "- 用户询问今天/昨天的日常计划、做了什么、完成进度或自主活动记录时，优先调用 life.activity.query（relative_day=today/yesterday）；不要用文件搜索猜测计划，也不要用 life.body.state.query 代替活动台账。",
         "- 需要核对自己的生命、身体、情绪、驱动、上下文压力或自主状态时，调用 life.body.state.query，以工具返回的当前权威快照为准。",
         "- 如果不需要工具，就正常聊天回复。",
         "- 文件操作授权范围：工作区内可自由读写；用户明确指定的位置可直接操作。",

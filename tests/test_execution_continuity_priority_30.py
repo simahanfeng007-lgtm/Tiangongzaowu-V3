@@ -34,7 +34,9 @@ from v3.zongdiaodu import (
     _gongju_chongfu_zhenduan_huifu,
     _simple_chain_repeat_guard_step_meta,
     _simple_chain_natural_closeout_payload,
+    _simple_chain_execute_tool_with_timeout,
     _simple_chain_tool_batch_requires_order,
+    _simple_chain_tool_requires_caller_thread,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -507,6 +509,43 @@ def test_c25_independent_read_only_tools_remain_parallelizable() -> None:
         ("omni_body", {"action": "file.hash", "target": "b.txt", "args": {}}, 2, "c2"),
     ]
     assert _simple_chain_tool_batch_requires_order(tools) is False
+
+
+def test_c25_body_state_query_stays_on_core_lock_owner_thread() -> None:
+    core_lock = threading.RLock()
+    caller_thread_id = threading.get_ident()
+
+    def nested_body_read() -> dict[str, int]:
+        with core_lock:
+            return {"thread_id": threading.get_ident()}
+
+    with core_lock:
+        result = _simple_chain_execute_tool_with_timeout(
+            nested_body_read,
+            tool_name="omni_body",
+            tool_args={"action": "life.body.state.query", "args": {"sections": ["summary"]}},
+            timeout_seconds=0.25,
+        )
+
+    assert result["thread_id"] == caller_thread_id
+    assert _simple_chain_tool_requires_caller_thread(
+        "omni_body", {"action": "life.body.state.query"}
+    ) is True
+    assert _simple_chain_tool_requires_caller_thread(
+        "omni_body", {"action": "life.activity.query"}
+    ) is False
+
+
+def test_c25_regular_read_only_tool_keeps_worker_timeout_boundary() -> None:
+    caller_thread_id = threading.get_ident()
+    result = _simple_chain_execute_tool_with_timeout(
+        lambda: {"thread_id": threading.get_ident()},
+        tool_name="omni_body",
+        tool_args={"action": "file.list", "target": "."},
+        timeout_seconds=1,
+    )
+
+    assert result["thread_id"] != caller_thread_id
 
 
 def test_c25_repeat_guard_reports_misspelled_leaf_without_requesting_a_new_workspace() -> None:
