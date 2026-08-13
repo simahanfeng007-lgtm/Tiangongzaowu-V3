@@ -31,7 +31,9 @@ jobs:
           python-version: "3.12"
 
       - name: Build exact M2-03 candidate
-        run: python scripts/p17-m2-03-candidate.py
+        run: |
+          python scripts/p17-m2-03-candidate.py
+          python scripts/p17-m2-03-preserve-ownership-format.py
 
       - name: Validate candidate
         run: |
