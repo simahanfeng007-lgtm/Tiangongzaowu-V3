@@ -24,6 +24,11 @@ class EvidenceCheckPort(Protocol):
     ) -> tuple[bool, str, list[str]]: ...
 
 
+def canonical_tool_result(tool_name: str, result: object) -> dict[str, object]:
+    """Return the one canonical ToolResult contract; this boundary owns no schema."""
+    return normalize_tool_result(tool_name, result)
+
+
 def project_tool_dispatch(
     meta: dict[str, object] | None,
     result: object,
@@ -33,7 +38,7 @@ def project_tool_dispatch(
         return None
     output = dict(meta)
     tool_name = str(output.get("toolName") or output.get("tool_name") or "")
-    contract = normalize_tool_result(tool_name, result)
+    contract = canonical_tool_result(tool_name, result)
     ok = bool(contract.get("ok"))
     output["status"] = "done" if ok else "failed"
     output["resultStatus"] = str(contract.get("status") or "")
@@ -50,7 +55,7 @@ def attach_tool_result_contract(
     source_native_id: str = "",
 ) -> object:
     """Attach the canonical v3 ToolResult contract and publish one post-commit fact."""
-    contract = normalize_tool_result(tool_name, result)
+    contract = canonical_tool_result(tool_name, result)
     if isinstance(result, dict):
         output: object = dict(result)
         output.setdefault("tool_result_contract", contract)
@@ -75,7 +80,7 @@ def attach_tool_result_contract(
     )
 
     # Keep World Understanding publication downstream of the canonical
-    # ToolResult contract.  This module does not execute tools and cannot
+    # ToolResult contract. This module does not execute tools and cannot
     # manufacture a successful observation.
     from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
@@ -126,7 +131,7 @@ def contract_observed_write(contract: dict[str, object] | None) -> bool:
 
 def tool_write_verified(tool_name: str, result: object) -> bool:
     """Verify the write completion signal without becoming a second executor."""
-    contract = normalize_tool_result(tool_name, result)
+    contract = canonical_tool_result(tool_name, result)
     if not contract.get("ok"):
         return False
     evidence = contract.get("write_evidence")
@@ -183,7 +188,7 @@ def decide_simple_chain_completion(
     """Apply evidence observations, then delegate the single terminal decision.
 
     Semantic/task terminal authority remains in execution_integrity's existing
-    decide_task_contract_completion().  This boundary only connects the
+    decide_task_contract_completion(). This boundary only connects the
     evidence port to that authority; it does not create another completion
     engine.
     """
