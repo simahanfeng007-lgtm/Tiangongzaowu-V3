@@ -1,0 +1,145 @@
+name: P17 M2-02 candidate
+
+on:
+  push:
+    branches:
+      - agent/p17-m2-god-module-decomposition
+    paths:
+      - .github/workflows/p17-m2-02-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      TEST_BLOB_SHA: 200c41db4feb9cef052b51f0c9b37a0e120d39f4
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m2-god-module-decomposition
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact candidate workspace
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          patch_source = base64.b64decode(
+              Path("scripts/p17-m2-02-candidate-patch.b64").read_text(encoding="ascii")
+          ).decode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs/{os.environ['TEST_BLOB_SHA']}",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request) as response:
+              test_blob = json.load(response)
+          os.environ["M202_TEST_B64"] = str(test_blob["content"]).replace("\n", "")
+          exec(compile(patch_source, "p17_m2_02_patch.py", "exec"), {"__name__": "__main__"})
+
+      - name: Validate source ownership before compile
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+
+      - name: Compile M2 seams
+        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+
+      - name: Collect candidate
+        shell: bash
+        run: |
+          mkdir -p p17-m2-02-candidate/.github/workflows
+          mkdir -p p17-m2-02-candidate/app/backend/tiangong-backend/v3
+          mkdir -p p17-m2-02-candidate/tests
+          cp .github/workflows/architecture-gate.yml p17-m2-02-candidate/.github/workflows/architecture-gate.yml
+          cp app/backend/tiangong-backend/v3/runtime_turn_orchestration.py p17-m2-02-candidate/app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+          cp app/backend/tiangong-backend/v3/zongdiaodu.py p17-m2-02-candidate/app/backend/tiangong-backend/v3/zongdiaodu.py
+          cp source-ownership.json p17-m2-02-candidate/source-ownership.json
+          cp tests/test_zongdiaodu_p17_m2_02.py p17-m2-02-candidate/tests/test_zongdiaodu_p17_m2_02.py
+          git diff e307a90aa9d33756a58fdc7a8a38e3c04845a618 -- app/backend/tiangong-backend/v3/zongdiaodu.py > p17-m2-02-candidate/zongdiaodu.diff
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root = Path("p17-m2-02-candidate")
+          rows = []
+          for path in sorted(root.rglob("*")):
+              if path.is_file():
+                  rows.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root).as_posix()}")
+          (root / "SHA256SUMS.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
+          PY
+
+      - name: Materialize verified files as unreferenced blobs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          root = Path("p17-m2-02-candidate")
+          paths = [
+              ".github/workflows/architecture-gate.yml",
+              "app/backend/tiangong-backend/v3/runtime_turn_orchestration.py",
+              "app/backend/tiangong-backend/v3/zongdiaodu.py",
+              "source-ownership.json",
+              "tests/test_zongdiaodu_p17_m2_02.py",
+          ]
+          result = {}
+          for relative in paths:
+              payload = json.dumps({
+                  "content": base64.b64encode((root / relative).read_bytes()).decode("ascii"),
+                  "encoding": "base64",
+              }).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs",
+                  data=payload,
+                  method="POST",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  result[relative] = json.load(response)["sha"]
+          (root / "GIT_BLOBS.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(result, sort_keys=True))
+
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p17-m2-02-candidate
+          path: p17-m2-02-candidate
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
