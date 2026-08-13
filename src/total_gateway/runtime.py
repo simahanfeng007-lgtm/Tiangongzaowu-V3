@@ -905,6 +905,43 @@ class GatewayRuntime:
 
                 runtime.life_service.set_greeting_writer(write_greeting)
 
+                # P16 native proactive cognition. Decision and expression are
+                # injected in-process through the one 7184 assembly point; Life
+                # retains gating/journal/queue authority and Backend only uses
+                # the existing model/dialogue engine.
+                def decide_proactive_initiative(material: object) -> dict[str, object]:
+                    scoped = dict(material) if isinstance(material, dict) else {}
+                    status, payload, _ = runtime.backend_service.request(
+                        "POST",
+                        "/api/v1/internal/proactive/decision",
+                        {"initiative_context": scoped},
+                        timeout_seconds=120,
+                    )
+                    if status >= 400 or payload.get("ok") is not True:
+                        raise RuntimeError(str(payload.get("error") or "proactive decision failed"))
+                    decision = payload.get("decision")
+                    if not isinstance(decision, dict):
+                        raise RuntimeError("proactive decision is invalid")
+                    return decision
+
+                def write_proactive_expression(material: object) -> dict[str, object]:
+                    scoped = dict(material) if isinstance(material, dict) else {}
+                    status, payload, _ = runtime.backend_service.request(
+                        "POST",
+                        "/api/v1/internal/proactive/compose",
+                        {"material": scoped},
+                        timeout_seconds=120,
+                    )
+                    if status >= 400 or payload.get("ok") is not True:
+                        raise RuntimeError(str(payload.get("error") or "proactive expression failed"))
+                    preview = payload.get("preview")
+                    if not isinstance(preview, dict):
+                        raise RuntimeError("proactive expression is invalid")
+                    return preview
+
+                runtime.life_service.set_proactive_decider(decide_proactive_initiative)
+                runtime.life_service.set_proactive_expression_writer(write_proactive_expression)
+
                 # Self-iteration reviewer: the model proposes bounded self-code
                 # upgrade cards on a slow cadence.  Every card waits for the
                 # user; the backend-owned apply lane only runs after an
@@ -1076,6 +1113,11 @@ class GatewayRuntime:
                         }),
                         "workspace_id": "workspace-" + canonical_sha256(str(config.workspace_root)),
                     }
+                )
+                # P16 reads World only through the existing committed WU projection.
+                # This callback performs no sensing and creates no second World runtime.
+                runtime.life_service.set_proactive_world_provider(
+                    runtime.backend_service.repository_evidence_snapshot
                 )
                 runtime.life_service.set_capability_workspace_mapper(
                     life_capability_workspace_mapper(config.workspace_root)

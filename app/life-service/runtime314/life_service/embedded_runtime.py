@@ -92,6 +92,7 @@ from .capability_health import (
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
 from .memory_coordinator import MemoryCoordinator
+from .proactive_initiative import evaluate_proactive_candidate
 from .store import LifeShadowStore, LifeShadowStoreError
 from .cognition import CognitionTrigger, UnifiedCognitionShadow
 from .temperament import (
@@ -439,6 +440,9 @@ class EmbeddedLifeRuntime:
         self._learning_researcher: Any = None
         self._learning_synthesizer: Any = None
         self._learning_share_writer: Any = None
+        self._proactive_decider: Any = None
+        self._proactive_expression_writer: Any = None
+        self._proactive_world_provider: Any = None
         self._world_identity_provider: Any = None
         try:
             self._lease = LifeWriterLease.acquire(data_root, mode=mode)
@@ -470,6 +474,7 @@ class EmbeddedLifeRuntime:
                         "learning_decision_inflight",
                         "self_iteration_decision_inflight",
                         "greeting_inflight",
+                        "proactive_decision_inflight",
                     ):
                         if scheduler_state.get(key) is True:
                             scheduler_state[key] = False
@@ -739,6 +744,26 @@ class EmbeddedLifeRuntime:
                 "share_daily_limit": 5,
                 "share_dnd_start": "23:00",
                 "share_dnd_end": "08:00",
+                # P16 native proactive cognition. Legacy share/greeting settings
+                # remain compatibility-only and cannot authorize this producer.
+                "proactive_enabled": True,
+                "proactive_mode": "shadow",
+                "proactive_decision_interval_seconds": 900,
+                "proactive_min_interval_seconds": 3600,
+                "proactive_max_messages_per_hour": 2,
+                "proactive_max_messages_per_day": 6,
+                "proactive_dnd_enabled": False,
+                "proactive_dnd_start_hour": 22,
+                "proactive_dnd_end_hour": 7,
+                # Explicit timezone keeps DND independent of host locale.
+                "proactive_timezone_offset_minutes": 0,
+                "proactive_max_future_skew_seconds": 300,
+                "proactive_respect_user_activity": True,
+                "proactive_user_active_window_seconds": 180,
+                "proactive_min_evidence_confidence_milli": 350,
+                "proactive_evidence_stale_after_seconds": 86400,
+                "proactive_min_utility_lcb_milli": 120,
+                "proactive_min_margin_milli": 80,
                 "learned_boundary_rules": [],
             },
             "inbox": [],
@@ -776,6 +801,11 @@ class EmbeddedLifeRuntime:
                 "last_user_activity_at_ms": 0,
                 "last_share_at_ms": 0,
                 "last_share_decision_reason": "",
+                "last_proactive_decision_at_ms": 0,
+                "proactive_decision_inflight": False,
+                "last_proactive_delivery_at_ms": 0,
+                "last_proactive_reason": "",
+                "last_user_run_id": "",
             },
             "updated_at": utc_now(),
         }
@@ -1985,6 +2015,7 @@ class EmbeddedLifeRuntime:
             self._schedule_capability_health_decision(life_id=life_id)
             self._schedule_self_iteration_decision(life_id=life_id)
             self._schedule_greeting(life_id=life_id)
+            self._schedule_native_proactive(life_id=life_id)
             self._cognition_shadow_tick(life_id=life_id)
             return {
                 "ok": True,
@@ -2251,6 +2282,27 @@ class EmbeddedLifeRuntime:
             raise TypeError("learning share writer must be callable")
         with self._lock:
             self._learning_share_writer = writer
+
+    def set_proactive_decider(self, decider: Any) -> None:
+        """Install the gateway-owned model-only P16 initiative decider."""
+        if decider is not None and not callable(decider):
+            raise TypeError("proactive decider must be callable")
+        with self._lock:
+            self._proactive_decider = decider
+
+    def set_proactive_expression_writer(self, writer: Any) -> None:
+        """Install the normal-dialogue-backed P16 expression writer."""
+        if writer is not None and not callable(writer):
+            raise TypeError("proactive expression writer must be callable")
+        with self._lock:
+            self._proactive_expression_writer = writer
+
+    def set_proactive_world_provider(self, provider: Any) -> None:
+        """Bind a read-only provider backed by committed World Understanding state."""
+        if provider is not None and not callable(provider):
+            raise TypeError("proactive world provider must be callable")
+        with self._lock:
+            self._proactive_world_provider = provider
 
     def set_self_iteration_decider(self, decider: Any) -> None:
         """Install the gateway-owned model-only self-iteration decider.
@@ -2936,6 +2988,471 @@ class EmbeddedLifeRuntime:
         "vigilance": "我保持着警觉在巡检呢，一切正常，顺便问候你一下。",
         "fatigue": "有点累了，来你这儿歇口气。",
     }
+
+    @staticmethod
+    def _proactive_timestamp_ms(value: object) -> int:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        raw = str(value or "").strip()
+        if not raw:
+            return 0
+        try:
+            return max(0, int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp() * 1000))
+        except (TypeError, ValueError, OSError):
+            return 0
+
+    def _project_proactive_relationships(self, *, life_id: str) -> list[dict[str, Any]]:
+        """Return bounded relationship metrics without raw promises/obligations/text."""
+        scope = self._scope_state(life_id)
+        raw = scope.get("relationships") if isinstance(scope.get("relationships"), Mapping) else {}
+        rows: list[dict[str, Any]] = []
+        for key, relation in sorted(raw.items(), key=lambda item: str(item[0])):
+            if len(rows) >= 16 or not isinstance(relation, Mapping):
+                continue
+            target = str(relation.get("target_life_id") or key or "")[:240]
+            metrics: dict[str, Any] = {
+                "relationship_ref": "relationship_" + canonical_sha256({
+                    "domain": "tiangong.life.proactive-relationship.v1",
+                    "life_id": life_id,
+                    "target": target,
+                })[:24],
+                "direction": str(relation.get("direction") or "")[:32],
+                "updated_at": str(relation.get("updated_at") or "")[:48],
+            }
+            for field in (
+                "trust_milli",
+                "familiarity_milli",
+                "liking_milli",
+                "attachment_milli",
+                "cooperation_milli",
+            ):
+                value = relation.get(field)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    metrics[field] = max(0, min(1000, value))
+            for source_field, count_field in (
+                ("obligations", "obligation_count"),
+                ("promises", "promise_count"),
+                ("relationship_tags", "tag_count"),
+            ):
+                value = relation.get(source_field)
+                metrics[count_field] = min(64, len(value)) if isinstance(value, (list, tuple, set)) else 0
+            rows.append(metrics)
+        return rows
+
+    def _proactive_world_observations(self, *, life_id: str, now_ms: int) -> list[dict[str, Any]]:
+        """Project only committed WU evidence; unavailable/invalid authority yields no facts."""
+        provider = self._proactive_world_provider
+        identity_provider = self._world_identity_provider
+        if not callable(provider) or not callable(identity_provider):
+            return []
+        try:
+            supplied_identity = identity_provider(life_id)
+            if not isinstance(supplied_identity, Mapping):
+                return []
+            identity = {
+                key: str(value or "")
+                for key, value in supplied_identity.items()
+                if str(key) in {"life_id", "principal_scope_hash", "workspace_id"}
+            }
+            if not identity.get("life_id") or not identity.get("principal_scope_hash") or not identity.get("workspace_id"):
+                return []
+            snapshot = provider(identity)
+        except Exception:
+            return []
+        if not isinstance(snapshot, Mapping):
+            return []
+        if str(snapshot.get("schema") or "") != "tiangong.life.repository-evidence.v1":
+            return []
+        observed_at_ms = self._proactive_timestamp_ms(snapshot.get("observed_at_ms"))
+        frame_id = str(snapshot.get("frame_id") or "").strip()[:240]
+        revision_hash = str(snapshot.get("frame_revision_hash") or "").strip()[:128]
+        if not observed_at_ms or not frame_id or not revision_hash:
+            return []
+        entity_refs = snapshot.get("entity_refs") if isinstance(snapshot.get("entity_refs"), list) else []
+        bounded_entities: list[dict[str, str]] = []
+        for entity in entity_refs[:24]:
+            if not isinstance(entity, Mapping):
+                continue
+            record_id = str(entity.get("record_id") or entity.get("entity_id") or "")[:160]
+            sha256 = str(entity.get("sha256") or "")[:128]
+            if record_id and sha256:
+                bounded_entities.append({"record_id": record_id, "sha256": sha256})
+        summary = {
+            "frame_id": frame_id,
+            "frame_revision_hash": revision_hash,
+            "branch": str(snapshot.get("branch") or "")[:160],
+            "commit": str(snapshot.get("commit") or "")[:160],
+            "entity_refs": bounded_entities,
+        }
+        return [{
+            "source_ref": f"world:repository:{frame_id}:{revision_hash[:24]}",
+            "observed_at_ms": observed_at_ms,
+            "confidence_milli": 1000,
+            "epistemic_state": "KNOWN",
+            "authority": "world_understanding_committed",
+            "kind": "world:repository_evidence",
+            "summary": json.dumps(summary, ensure_ascii=False, sort_keys=True)[:1600],
+        }]
+
+    def _build_proactive_context(self, *, life_id: str, now_ms: int) -> dict[str, Any]:
+        """Build a bounded, rebuildable P16 projection from existing authorities."""
+        scope = self._scope_state(life_id)
+        scheduler = scope.setdefault("scheduler", {})
+        observations: list[dict[str, Any]] = []
+        memories = scope.get("memories") if isinstance(scope.get("memories"), Mapping) else {}
+        for memory_id, row in reversed(list(memories.items())):
+            if len(observations) >= 24 or not isinstance(row, Mapping):
+                continue
+            if str(row.get("status") or "active") != "active":
+                continue
+            classification = row.get("classification") if isinstance(row.get("classification"), Mapping) else {}
+            memory_type = str(classification.get("memory_type") or row.get("memory_type") or "")
+            if memory_type not in {"goal", "user_preference", "hard_constraint", "relationship", "causal_summary", "observation"}:
+                continue
+            observed_at_ms = self._proactive_timestamp_ms(
+                row.get("created_at_ms") or row.get("created_at") or ""
+            )
+            content = json.dumps(row.get("content"), ensure_ascii=False, sort_keys=True)
+            if not content.strip():
+                continue
+            privacy = scope.get("settings", {}).get("privacy") if isinstance(scope.get("settings"), Mapping) else {}
+            if isinstance(privacy, Mapping) and bool(privacy.get("redact_llm", True)):
+                content = self._redact_sensitive_text(content)
+            observations.append({
+                "source_ref": f"memory:{memory_id}",
+                "observed_at_ms": observed_at_ms,
+                "confidence_milli": max(0, min(1000, int(row.get("confidence_milli") or 800))),
+                "epistemic_state": "KNOWN" if observed_at_ms else "UNKNOWN",
+                "kind": f"memory:{memory_type or 'unknown'}",
+                "summary": content[:1600],
+            })
+
+        autonomy = self._autonomy_state(life_id)
+        task_projection: list[dict[str, Any]] = []
+        for task in autonomy.get("tasks", {}).values():
+            if len(task_projection) >= 16 or not isinstance(task, Mapping):
+                continue
+            result = task.get("result") if isinstance(task.get("result"), Mapping) else {}
+            task_row = {
+                "task_id": str(task.get("task_id") or ""),
+                "activity_id": str(task.get("activity_id") or task.get("task_kind") or ""),
+                "title": str(task.get("title") or task.get("objective") or "")[:240],
+                "status": str(task.get("status") or ""),
+                "summary": str(result.get("summary") or "")[:800],
+                "updated_at_ms": int(task.get("updated_at_ms") or 0),
+            }
+            task_projection.append(task_row)
+            if task_row["updated_at_ms"] and (task_row["title"] or task_row["summary"]):
+                observations.append({
+                    "source_ref": f"life-task:{task_row['task_id']}",
+                    "observed_at_ms": task_row["updated_at_ms"],
+                    "confidence_milli": 1000,
+                    "epistemic_state": "KNOWN",
+                    "kind": "life_task",
+                    "summary": json.dumps(task_row, ensure_ascii=False, sort_keys=True)[:1600],
+                })
+
+        observations.extend(self._proactive_world_observations(life_id=life_id, now_ms=now_ms))
+
+        deliveries = [
+            int(row.get("created_at_ms") or 0)
+            for row in scope.get("proactive_chats", [])
+            if isinstance(row, Mapping)
+            and str(row.get("reason") or "") == "life.proactive.native"
+            and int(row.get("created_at_ms") or 0) > 0
+        ]
+        affect = scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {}
+        return {
+            "schema": "tiangong.life.initiative-context.v1",
+            "life_id": life_id,
+            "observed_at_ms": now_ms,
+            "authority": "embedded_life_runtime",
+            "epistemic_rule": "missing_source_is_UNKNOWN",
+            "last_user_activity_at_ms": int(scheduler.get("last_user_activity_at_ms") or 0),
+            "last_user_run_id": str(scheduler.get("last_user_run_id") or ""),
+            "recent_delivery_times_ms": deliveries[-64:],
+            "observations": observations[:40],
+            "recent_tasks": task_projection,
+            "relationships": self._project_proactive_relationships(life_id=life_id),
+            "affect": {
+                "primary_emotion": str(affect.get("primary_emotion") or "calm"),
+                "primary_emotion_zh": str(affect.get("primary_emotion_zh") or "平静"),
+                "intensity_milli": int(affect.get("intensity_milli") or 0),
+                "expression_directive": str(affect.get("expression_directive") or "")[:800],
+            },
+        }
+
+    def _reset_proactive_model_budget_if_needed(self, scheduler: dict[str, Any]) -> None:
+        budget_day = utc_now()[:10]
+        if str(scheduler.get("model_budget_date") or "") == budget_day:
+            return
+        scheduler.update({
+            "model_budget_date": budget_day,
+            "model_attempts": 0,
+            "model_successes": 0,
+            "model_failures": 0,
+            "model_timeouts": 0,
+            "model_skipped": 0,
+        })
+
+    def _reserve_proactive_model_call_locked(
+        self,
+        *,
+        scheduler: dict[str, Any],
+        settings: Mapping[str, Any],
+    ) -> bool:
+        """Reserve exactly one LLM call before invoking it."""
+        self._reset_proactive_model_budget_if_needed(scheduler)
+        success_limit = max(0, int(settings.get("llm_daily_budget") or 20))
+        attempt_limit = max(0, int(settings.get("llm_daily_attempt_budget") or 30))
+        if (
+            (success_limit and int(scheduler.get("model_successes") or 0) >= success_limit)
+            or (attempt_limit and int(scheduler.get("model_attempts") or 0) >= attempt_limit)
+        ):
+            scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
+            return False
+        scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
+        return True
+
+    def _schedule_native_proactive(self, *, life_id: str) -> None:
+        """Schedule the sole post-P15 proactive producer without blocking heartbeat."""
+        scope = self._scope_state(life_id)
+        settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        scheduler = scope.setdefault("scheduler", {})
+        now_ms = time.time_ns() // 1_000_000
+        if not bool(settings.get("proactive_enabled", True)):
+            scheduler["last_proactive_reason"] = "life.proactive.disabled"
+            return
+        if not callable(self._proactive_decider):
+            scheduler["last_proactive_reason"] = "life.proactive.decider_unavailable"
+            return
+        if scheduler.get("proactive_decision_inflight") is True:
+            return
+        interval_ms = max(60, int(settings.get("proactive_decision_interval_seconds") or 900)) * 1000
+        last_ms = int(scheduler.get("last_proactive_decision_at_ms") or 0)
+        if last_ms and now_ms - last_ms < interval_ms:
+            return
+        if not self._reserve_proactive_model_call_locked(scheduler=scheduler, settings=settings):
+            scheduler["last_proactive_decision_at_ms"] = now_ms
+            scheduler["last_proactive_reason"] = "life.proactive.model_budget_exhausted"
+            self._persist(life_id)
+            return
+
+        context = self._build_proactive_context(life_id=life_id, now_ms=now_ms)
+        scheduler["proactive_decision_inflight"] = True
+        scheduler["last_proactive_decision_at_ms"] = now_ms
+        scheduler["last_proactive_reason"] = "life.proactive.decision_started"
+        self._persist(life_id)
+        slot = now_ms // max(60_000, interval_ms)
+        threading.Thread(
+            target=self._proactive_worker,
+            args=(life_id, context, slot),
+            daemon=True,
+            name="life-native-proactive",
+        ).start()
+
+    def _proactive_worker(self, life_id: str, context: Mapping[str, Any], slot: int) -> None:
+        """Run one P16 decision/compose turn; each actual model call is budgeted."""
+        try:
+            value = self._proactive_decider(deepcopy(dict(context)))
+            if not isinstance(value, Mapping):
+                raise ValueError("proactive model decision is invalid")
+            proposal = dict(value)
+        except Exception as exc:
+            with self._lock:
+                scope = self._scope_state(life_id)
+                scheduler = scope.setdefault("scheduler", {})
+                scheduler["proactive_decision_inflight"] = False
+                scheduler["last_proactive_reason"] = "life.proactive.decision_failed"
+                scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.suppressed",
+                    {"reason_code": "life.proactive.decision_failed", "error_type": type(exc).__name__},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.decision-failed:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+            return
+
+        with self._lock:
+            scope = self._scope_state(life_id)
+            settings = deepcopy(scope.get("settings") or {})
+            scheduler = scope.setdefault("scheduler", {})
+            self._reset_proactive_model_budget_if_needed(scheduler)
+            scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+            now_ms = time.time_ns() // 1_000_000
+            decision = evaluate_proactive_candidate(
+                proposal,
+                context=context,
+                settings=settings,
+                now_ms=now_ms,
+            )
+            scheduler["last_proactive_reason"] = str(decision.get("reason_code") or "")
+            if decision.get("allowed") is not True:
+                scheduler["proactive_decision_inflight"] = False
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.suppressed",
+                    {"decision": decision, "context_observed_at_ms": int(context.get("observed_at_ms") or 0)},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.suppressed:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+                return
+            if str(settings.get("proactive_mode") or "shadow").casefold() != "live":
+                scheduler["proactive_decision_inflight"] = False
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.decision",
+                    {"decision": decision, "delivery": "shadow"},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.shadow:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+                return
+
+            writer = self._proactive_expression_writer
+            if not callable(writer):
+                scheduler["proactive_decision_inflight"] = False
+                scheduler["last_proactive_reason"] = "life.proactive.expression_unavailable"
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.suppressed",
+                    {"reason_code": "life.proactive.expression_unavailable", "decision": decision},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.compose-unavailable:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+                return
+            if not self._reserve_proactive_model_call_locked(scheduler=scheduler, settings=settings):
+                scheduler["proactive_decision_inflight"] = False
+                scheduler["last_proactive_reason"] = "life.proactive.expression_budget_exhausted"
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.suppressed",
+                    {"reason_code": "life.proactive.expression_budget_exhausted", "decision": decision},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.compose-budget:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+                return
+            self._persist(life_id)
+
+        try:
+            expression_result: object = writer({
+                "schema": "tiangong.life.proactive-expression-material.v1",
+                "life_id": life_id,
+                "decision": deepcopy(decision),
+                "initiative_context": deepcopy(dict(context)),
+            })
+        except Exception:
+            expression_result = None
+
+        if isinstance(expression_result, Mapping):
+            text_value = str(expression_result.get("text") or expression_result.get("summary") or "").strip()
+            conversation_id = str(expression_result.get("conversation_id") or "")[:240]
+        else:
+            text_value = str(expression_result or "").strip()
+            conversation_id = ""
+        text_value = text_value[:4000]
+
+        with self._lock:
+            scope = self._scope_state(life_id)
+            scheduler = scope.setdefault("scheduler", {})
+            scheduler["proactive_decision_inflight"] = False
+            if not text_value:
+                scheduler["last_proactive_reason"] = "life.proactive.expression_unavailable"
+                scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+                self.system.journal.append(
+                    life_id,
+                    "life.proactive.suppressed",
+                    {"reason_code": "life.proactive.expression_unavailable", "decision": decision},
+                    actor="life_proactive",
+                    idempotency_key=f"life.proactive.compose-failed:{life_id}:{slot}",
+                )
+                self._persist(life_id)
+                return
+            scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+            privacy = scope.get("settings", {}).get("privacy") if isinstance(scope.get("settings"), Mapping) else {}
+            if isinstance(privacy, Mapping) and bool(privacy.get("redact_share", True)):
+                text_value = self._redact_sensitive_text(text_value)
+            initiative_id = "initiative_" + canonical_sha256({
+                "domain": "tiangong.life.proactive-initiative.v1",
+                "life_id": life_id,
+                "slot": int(slot),
+                "candidate_kind": decision.get("candidate_kind"),
+                "evidence_refs": decision.get("evidence_refs") or [],
+            })[:40]
+            message_id = "proactive_" + canonical_sha256({"initiative_id": initiative_id})[:40]
+            if any(
+                isinstance(row, Mapping) and row.get("initiative_id") == initiative_id
+                for row in scope.get("proactive_chats", [])
+            ):
+                scheduler["last_proactive_reason"] = "life.proactive.duplicate"
+                self._persist(life_id)
+                return
+            created_at_ms = time.time_ns() // 1_000_000
+            row = {
+                "message_id": message_id,
+                "initiative_id": initiative_id,
+                "text": text_value,
+                "created_at": utc_now(),
+                "created_at_ms": created_at_ms,
+                "reason": "life.proactive.native",
+                "candidate_kind": str(decision.get("candidate_kind") or "respond"),
+                "trigger_event_refs": list(decision.get("evidence_refs") or [])[:24],
+                "conversation_id": conversation_id,
+                "acked": False,
+                "replied": False,
+            }
+            scope["proactive_chats"].append(row)
+            del scope["proactive_chats"][:-100]
+            scheduler["last_proactive_delivery_at_ms"] = created_at_ms
+            scheduler["last_proactive_reason"] = "life.proactive.delivered"
+            self.system.journal.append(
+                life_id,
+                "life.proactive.delivered",
+                {"message_id": message_id, "initiative_id": initiative_id, "decision": decision},
+                actor="life_proactive",
+                idempotency_key=f"life.proactive.delivered:{initiative_id}",
+            )
+            self._persist(life_id)
+
+    def _mark_latest_proactive_replied(
+        self,
+        *,
+        life_id: str,
+        user_activity_at_ms: int,
+        run_id: str,
+    ) -> bool:
+        """Link a real later user turn to the latest delivered initiative."""
+        scope = self._scope_state(life_id)
+        for row in reversed(scope.get("proactive_chats", [])):
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("reason") or "") != "life.proactive.native" or row.get("replied") is True:
+                continue
+            created_at_ms = int(row.get("created_at_ms") or 0)
+            if not created_at_ms or created_at_ms > int(user_activity_at_ms):
+                continue
+            row["replied"] = True
+            row["replied_at_ms"] = int(user_activity_at_ms)
+            row["reply_run_id"] = str(run_id or "")[:160]
+            initiative_id = str(row.get("initiative_id") or "")
+            self.system.journal.append(
+                life_id,
+                "life.proactive.replied",
+                {
+                    "initiative_id": initiative_id,
+                    "message_id": str(row.get("message_id") or ""),
+                    "reply_run_id": row["reply_run_id"],
+                },
+                actor="user",
+                idempotency_key=f"life.proactive.replied:{initiative_id}",
+            )
+            return True
+        return False
 
     def _schedule_greeting(self, *, life_id: str) -> None:
         """Legacy random-greeting producer is frozen after the P15 cutover.
@@ -7546,9 +8063,16 @@ class EmbeddedLifeRuntime:
                     except Exception:
                         scope["affect"] = prior_affect
                         raise
-                    scope.setdefault("scheduler", {})["last_user_activity_at_ms"] = int(
-                        body.get("issued_at_ms") or 0
+                    scheduler_state = scope.setdefault("scheduler", {})
+                    scheduler_state["last_user_activity_at_ms"] = int(body.get("issued_at_ms") or 0)
+                    scheduler_state["last_user_run_id"] = str(body.get("run_id") or "")[:160]
+                    replied = self._mark_latest_proactive_replied(
+                        life_id=life_id,
+                        user_activity_at_ms=scheduler_state["last_user_activity_at_ms"],
+                        run_id=scheduler_state["last_user_run_id"],
                     )
+                    if replied:
+                        self._persist(life_id)
                     if changed:
                         state = scope["affect"]
                         self.system.journal.append(
@@ -7715,17 +8239,38 @@ class EmbeddedLifeRuntime:
                             break
                     self._persist()
                     result = {"ok": True, "message_id": message_id, "found": found}
+                elif verb == "GET" and path == "/api/v1/v3/life/proactive/status":
+                    proactive_scope = self._scope_state()
+                    result = {
+                        "ok": True,
+                        "settings": {key: deepcopy(value) for key, value in proactive_scope["settings"].items() if str(key).startswith("proactive_")},
+                        "scheduler": {key: deepcopy(value) for key, value in proactive_scope["scheduler"].items() if "proactive" in str(key)},
+                        "pending": sum(1 for row in proactive_scope["proactive_chats"] if not row.get("acked")),
+                    }
                 elif verb == "GET" and path == "/api/v1/v3/life/proactive-chat/pending":
                     result = {"ok": True, "messages": [deepcopy(row) for row in self._scope_state()["proactive_chats"] if not row.get("acked")]}
                 elif verb == "POST" and path == "/api/v1/v3/life/proactive-chat/ack":
                     message_id = str(body.get("message_id") or "")
                     found = False
-                    for row in self._scope_state()["proactive_chats"]:
+                    scope = self._scope_state()
+                    life_id = str(self._active()["life_id"])
+                    for row in scope["proactive_chats"]:
                         if row.get("message_id") == message_id:
-                            row["acked"] = True
+                            if row.get("acked") is not True:
+                                row["acked"] = True
+                                row["acked_at_ms"] = time.time_ns() // 1_000_000
+                                initiative_id = str(row.get("initiative_id") or "")
+                                if initiative_id:
+                                    self.system.journal.append(
+                                        life_id,
+                                        "life.proactive.acked",
+                                        {"initiative_id": initiative_id, "message_id": message_id},
+                                        actor="delivery",
+                                        idempotency_key=f"life.proactive.acked:{initiative_id}",
+                                    )
                             found = True
                             break
-                    self._persist()
+                    self._persist(life_id)
                     result = {"ok": True, "message_id": message_id, "found": found}
                 elif verb == "POST" and path == "/api/v1/v3/life/settings":
                     settings = body.get("settings") if isinstance(body.get("settings"), Mapping) else {}
@@ -7746,6 +8291,23 @@ class EmbeddedLifeRuntime:
                         "share_daily_limit",
                         "share_dnd_start",
                         "share_dnd_end",
+                        "proactive_enabled",
+                        "proactive_mode",
+                        "proactive_decision_interval_seconds",
+                        "proactive_min_interval_seconds",
+                        "proactive_max_messages_per_hour",
+                        "proactive_max_messages_per_day",
+                        "proactive_dnd_enabled",
+                        "proactive_dnd_start_hour",
+                        "proactive_dnd_end_hour",
+                        "proactive_timezone_offset_minutes",
+                        "proactive_max_future_skew_seconds",
+                        "proactive_respect_user_activity",
+                        "proactive_user_active_window_seconds",
+                        "proactive_min_evidence_confidence_milli",
+                        "proactive_evidence_stale_after_seconds",
+                        "proactive_min_utility_lcb_milli",
+                        "proactive_min_margin_milli",
                     }
                     # Preserve namespaced/extension settings used by plugins and
                     # tests.  Known safety-sensitive keys are strongly typed;
@@ -7762,7 +8324,11 @@ class EmbeddedLifeRuntime:
                     for key in ("autonomy_enabled", "autonomy_task_generation_enabled", "heartbeat_enabled"):
                         if key in updates and not isinstance(updates[key], bool):
                             raise EmbeddedLifeError("life.settings.boolean_invalid")
-                    for key in ("share_enabled", "share_quiet_if_user_active"):
+                    for key in (
+                        "share_enabled", "share_quiet_if_user_active",
+                        "proactive_enabled", "proactive_dnd_enabled",
+                        "proactive_respect_user_activity",
+                    ):
                         if key in updates and not isinstance(updates[key], bool):
                             raise EmbeddedLifeError("life.settings.boolean_invalid")
                     permission_labels = {
@@ -7791,6 +8357,19 @@ class EmbeddedLifeRuntime:
                         "share_min_interval_seconds": (60, 604800),
                         "share_hourly_limit": (0, 60),
                         "share_daily_limit": (0, 1000),
+                        "proactive_decision_interval_seconds": (60, 86400),
+                        "proactive_min_interval_seconds": (0, 604800),
+                        "proactive_max_messages_per_hour": (0, 60),
+                        "proactive_max_messages_per_day": (0, 1000),
+                        "proactive_dnd_start_hour": (0, 23),
+                        "proactive_dnd_end_hour": (0, 23),
+                        "proactive_timezone_offset_minutes": (-840, 840),
+                        "proactive_max_future_skew_seconds": (0, 3600),
+                        "proactive_user_active_window_seconds": (0, 3600),
+                        "proactive_min_evidence_confidence_milli": (0, 1000),
+                        "proactive_evidence_stale_after_seconds": (60, 604800),
+                        "proactive_min_utility_lcb_milli": (0, 4000),
+                        "proactive_min_margin_milli": (0, 4000),
                     }
                     for key, (minimum, maximum) in limits.items():
                         if key not in updates:
@@ -7800,6 +8379,10 @@ class EmbeddedLifeRuntime:
                             raise EmbeddedLifeError("life.settings.integer_invalid")
                         if value < minimum or value > maximum:
                             raise EmbeddedLifeError("life.settings.integer_out_of_range")
+                    if "proactive_mode" in updates and str(updates["proactive_mode"]).casefold() not in {"shadow", "live"}:
+                        raise EmbeddedLifeError("life.settings.proactive_mode_invalid")
+                    if "proactive_mode" in updates:
+                        updates["proactive_mode"] = str(updates["proactive_mode"]).casefold()
                     for key in ("share_dnd_start", "share_dnd_end"):
                         if key in updates and not re.fullmatch(
                             r"(?:[01]\d|2[0-3]):[0-5]\d",

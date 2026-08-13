@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 from life_service.embedded_runtime import EmbeddedLifeRuntime
 
 
-NOW = 1_800_000_000_000
+NOW = int(time.time() * 1000)
 
 
 def runtime(root: Path) -> EmbeddedLifeRuntime:
@@ -159,3 +160,133 @@ def test_native_proactive_is_only_queue_producer_after_legacy_freeze():
     learning_report = text.split("def _learning_report", 1)[1].split("\n    def ", 1)[0]
     assert 'proactive_chats"].append' not in learning_report
     assert text.count('proactive_chats"].append') == 1
+
+
+
+def test_relationship_projection_is_bounded_and_does_not_leak_raw_text():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            life_id = str(life._active()["life_id"])
+            scope = life._scope_state(life_id)
+            scope["relationships"] = {
+                f"person-{index}": {
+                    "target_life_id": f"target-{index}",
+                    "direction": "outbound",
+                    "trust_milli": 700,
+                    "familiarity_milli": 500,
+                    "obligations": [f"SECRET-OBLIGATION-{index}"],
+                    "promises": [f"SECRET-PROMISE-{index}"],
+                    "relationship_tags": [f"SECRET-TAG-{index}"],
+                }
+                for index in range(24)
+            }
+            rows = life._project_proactive_relationships(life_id=life_id)
+            assert len(rows) == 16
+            serialized = repr(rows)
+            assert "SECRET-" not in serialized
+            assert all("relationship_ref" in row for row in rows)
+            assert all(row["obligation_count"] == 1 for row in rows)
+        finally:
+            life.close()
+
+
+def test_world_projection_accepts_only_committed_wu_snapshot_shape():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            life_id = str(life._active()["life_id"])
+            life.set_world_identity_provider(lambda life_id: {"life_id": life_id, "principal_scope_hash": "p" * 64, "workspace_id": "workspace-test"})
+            life.set_proactive_world_provider(lambda _identity: {"schema": "untrusted", "observed_at_ms": NOW})
+            assert life._proactive_world_observations(life_id=life_id, now_ms=NOW) == []
+
+            life.set_proactive_world_provider(lambda _identity: {
+                "schema": "tiangong.life.repository-evidence.v1",
+                "frame_id": "frame-1",
+                "frame_revision_hash": "a" * 64,
+                "observed_at_ms": NOW - 1_000,
+                "branch": "main",
+                "commit": "b" * 40,
+                "entity_refs": [{"record_id": "file:1", "sha256": "c" * 64}],
+            })
+            rows = life._proactive_world_observations(life_id=life_id, now_ms=NOW)
+            assert len(rows) == 1
+            assert rows[0]["authority"] == "world_understanding_committed"
+            assert rows[0]["kind"] == "world:repository_evidence"
+        finally:
+            life.close()
+
+
+def test_live_turn_counts_decision_and_expression_as_two_model_calls():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            configure(life, mode="live")
+            scope = life._scope_state()
+            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 30})
+            scheduler = scope["scheduler"]
+            scheduler.update({
+                "model_budget_date": "",
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_failures": 0,
+                "model_skipped": 0,
+            })
+            life.set_proactive_decider(lambda _context: proposal())
+            life.set_proactive_expression_writer(lambda _material: {"text": "继续处理方案吗？"})
+            life_id = str(life._active()["life_id"])
+            # Simulate the scheduler's pre-call reservation for decision LLM #1.
+            assert life._reserve_proactive_model_call_locked(
+                scheduler=scheduler, settings=scope["settings"]
+            ) is True
+            life._proactive_worker(life_id, initiative_context(life_id), NOW // 900_000)
+            assert scheduler["model_attempts"] == 2
+            assert scheduler["model_successes"] == 2
+            assert scheduler["model_failures"] == 0
+        finally:
+            life.close()
+
+
+def test_expression_call_is_not_made_when_second_model_budget_is_exhausted():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            configure(life, mode="live")
+            scope = life._scope_state()
+            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 1})
+            scheduler = scope["scheduler"]
+            scheduler.update({
+                "model_budget_date": "",
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_failures": 0,
+                "model_skipped": 0,
+            })
+            life.set_proactive_decider(lambda _context: proposal())
+            writer_calls: list[dict] = []
+            life.set_proactive_expression_writer(lambda material: writer_calls.append(dict(material)) or {"text": "x"})
+            life_id = str(life._active()["life_id"])
+            assert life._reserve_proactive_model_call_locked(
+                scheduler=scheduler, settings=scope["settings"]
+            ) is True
+            life._proactive_worker(life_id, initiative_context(life_id), NOW // 900_000)
+            assert writer_calls == []
+            assert scheduler["model_attempts"] == 1
+            assert scheduler["model_successes"] == 1
+            assert scheduler["model_skipped"] == 1
+            assert scheduler["last_proactive_reason"] == "life.proactive.expression_budget_exhausted"
+            assert scope["proactive_chats"] == []
+        finally:
+            life.close()
+
+
+
+def test_gateway_wires_proactive_world_to_existing_committed_wu_reader():
+    source = Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "runtime.py"
+    gateway = source.read_text(encoding="utf-8")
+    assert "set_proactive_world_provider" in gateway
+    assert "runtime.backend_service.repository_evidence_snapshot" in gateway
+    backend = (Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "embedded_backend.py").read_text(encoding="utf-8")
+    reader = backend.split("def repository_evidence_snapshot", 1)[1].split("\n    def ", 1)[0]
+    assert "production_repository_evidence_snapshot" in reader
+    assert "world_understanding_production" in reader

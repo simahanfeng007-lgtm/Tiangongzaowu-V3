@@ -199,3 +199,87 @@ def test_normalize_observations_fails_closed_without_timestamp():
         [{"source_ref": "world:x", "confidence_milli": 1000}], now_ms=NOW
     )
     assert rows[0]["epistemic_state"] == "UNKNOWN"
+
+
+
+def test_future_evidence_timestamp_fails_closed():
+    rows = normalize_observations(
+        [{
+            "source_ref": "memory:future",
+            "observed_at_ms": NOW + 301_000,
+            "confidence_milli": 1000,
+        }],
+        now_ms=NOW,
+        future_skew_ms=300_000,
+    )
+    assert rows[0]["epistemic_state"] == "UNKNOWN"
+    assert rows[0]["timestamp_state"] == "FUTURE_INVALID"
+
+
+def test_dnd_uses_explicit_timezone_not_host_timezone():
+    # NOW is 08:00 UTC. +08:00 projects to 16:00, which is inside 15:00-17:00 DND.
+    result = evaluate_proactive_candidate(
+        proposal(),
+        context=context(),
+        settings=settings(
+            proactive_dnd_enabled=True,
+            proactive_dnd_start_hour=15,
+            proactive_dnd_end_hour=17,
+            proactive_timezone_offset_minutes=480,
+        ),
+        now_ms=NOW,
+    )
+    assert result["reason_code"] == "life.proactive.dnd"
+
+    invalid = evaluate_proactive_candidate(
+        proposal(),
+        context=context(),
+        settings=settings(proactive_dnd_enabled=True, proactive_timezone_offset_minutes="+08:00"),
+        now_ms=NOW,
+    )
+    assert invalid["reason_code"] == "life.proactive.timezone_invalid"
+
+
+def test_future_activity_and_delivery_clocks_fail_closed():
+    activity = evaluate_proactive_candidate(
+        proposal(),
+        context=context(last_user_activity_at_ms=NOW + 301_000),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert activity["reason_code"] == "life.proactive.user_activity_clock_invalid"
+
+    delivery = evaluate_proactive_candidate(
+        proposal(),
+        context=context(recent_delivery_times_ms=[NOW + 301_000]),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert delivery["reason_code"] == "life.proactive.delivery_clock_invalid"
+
+
+def test_world_evidence_requires_committed_world_authority():
+    world = [{
+        "source_ref": "world:repo:frame-1",
+        "observed_at_ms": NOW - 1_000,
+        "confidence_milli": 1000,
+        "kind": "world:repository_evidence",
+        "authority": "model_claim",
+        "summary": "repo changed",
+    }]
+    blocked = evaluate_proactive_candidate(
+        proposal(evidence_refs=["world:repo:frame-1"]),
+        context=context(observations=world),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert blocked["reason_code"] == "life.proactive.world_authority_invalid"
+
+    world[0]["authority"] = "world_understanding_committed"
+    allowed = evaluate_proactive_candidate(
+        proposal(evidence_refs=["world:repo:frame-1"]),
+        context=context(observations=world),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert allowed["allowed"] is True
