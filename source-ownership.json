@@ -1,6 +1,19 @@
 {
   "schema": "tiangong.source-ownership.v2",
-  "principle": "Only authoritative or frozen_authoritative source paths are human-editable. authoritative_alias entries are documentation-only aliases. Targets are deterministic generated mirrors checked before release.",
+  "principle": "Human-editable production authorities are converged under src/ except the existing v3 backend main tree, tiangong_kernel, and frozen compatibility authorities. readable-python-source/ is compatibility-mirror only. Targets are deterministic generated mirrors checked before release.",
+  "authority_policy": {
+    "editable_roots": [
+      "src",
+      "app/backend/tiangong-backend/v3",
+      "app/backend/tiangong-backend/tiangong_kernel"
+    ],
+    "frozen_roots": [
+      "app/backend/tiangong-backend/_internal/frozen_modules"
+    ],
+    "compatibility_mirror_roots": [
+      "readable-python-source"
+    ]
+  },
   "mappings": [
     {
       "id": "shared-contracts",
@@ -22,19 +35,23 @@
     },
     {
       "id": "life-bootstrap-runtime",
-      "source": "readable-python-source/life-bootstrap/tiangong_life_bootstrap.py",
+      "source": "src/life_bootstrap/tiangong_life_bootstrap.py",
       "source_role": "authoritative",
       "targets": [
+        "readable-python-source/life-bootstrap/tiangong_life_bootstrap.py",
         "app/life-service/runtime314/tiangong_life_bootstrap.py"
-      ]
+      ],
+      "note": "P17-M1-02 authority moved into src/. readable-python-source/life-bootstrap is retained only as a deterministic compatibility mirror."
     },
     {
       "id": "life-runtime-fixes",
-      "source": "readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py",
+      "source": "src/life_bootstrap/tiangong_life_runtime_fixes.py",
       "source_role": "authoritative",
       "targets": [
+        "readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py",
         "app/life-service/runtime314/tiangong_life_runtime_fixes.py"
-      ]
+      ],
+      "note": "P17-M1-02 authority moved into src/. readable-python-source/life-bootstrap is retained only as a deterministic compatibility mirror."
     },
     {
       "id": "total-gateway-embedded-python",
@@ -63,22 +80,26 @@
     },
     {
       "id": "omni-body-runtime",
-      "source": "readable-python-source/omni_body_skill",
+      "source": "src/omni_body_skill",
       "source_role": "authoritative",
       "targets": [
+        "readable-python-source/omni_body_skill",
         "app/backend/tiangong-backend/omni_body_skill",
         "app/backend/tiangong-backend/_internal/omni_body_skill",
         "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill",
         "app/backend/tiangong-backend/_internal/v3/bundled_skills/omni_body_skill"
-      ]
+      ],
+      "note": "P17-M1-02 authority moved into src/omni_body_skill. All readable/app copies are deterministic mirrors."
     },
     {
       "id": "managed-novel-skill-runtime",
-      "source": "readable-python-source/bundled-skills/novel-creation",
+      "source": "src/bundled_skills/novel-creation",
       "source_role": "authoritative",
       "targets": [
+        "readable-python-source/bundled-skills/novel-creation",
         "app/backend/tiangong-backend/_internal/v3/bundled_skills/novel-creation"
-      ]
+      ],
+      "note": "P17-M1-02 authority moved into src/bundled_skills. readable-python-source remains a compatibility mirror only."
     },
     {
       "id": "legacy-execution-confirmation-bridge",

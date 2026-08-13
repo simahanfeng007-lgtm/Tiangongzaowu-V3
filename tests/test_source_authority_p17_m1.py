@@ -67,10 +67,13 @@ class SourceAuthorityGuardTests(unittest.TestCase):
                 require_sources=False,
             )
 
-    def test_repository_ownership_graph_is_valid(self) -> None:
-        config = json.loads(
+    def _repository_config(self) -> dict[str, Any]:
+        return json.loads(
             (REPO_ROOT / "source-ownership.json").read_text(encoding="utf-8")
         )
+
+    def test_repository_ownership_graph_is_valid(self) -> None:
+        config = self._repository_config()
         errors = self.guard.validate_source_authority(
             config, repo_root=REPO_ROOT, require_sources=True
         )
@@ -192,6 +195,109 @@ class SourceAuthorityGuardTests(unittest.TestCase):
             any("authoritative_alias must not own" in error for error in errors),
             errors,
         )
+
+    def test_readable_python_source_has_no_independent_authority(self) -> None:
+        config = self._repository_config()
+        offenders = [
+            row["id"]
+            for row in config["mappings"]
+            if row.get("source_role") in self.guard.INDEPENDENT_ROLES
+            and (
+                row.get("source") == "readable-python-source"
+                or str(row.get("source", "")).startswith("readable-python-source/")
+            )
+        ]
+        self.assertEqual([], offenders)
+
+    def test_p17_m1_02_migrated_authorities_live_under_src(self) -> None:
+        config = self._repository_config()
+        by_id = {row["id"]: row for row in config["mappings"]}
+        expected = {
+            "life-bootstrap-runtime": "src/life_bootstrap/tiangong_life_bootstrap.py",
+            "life-runtime-fixes": "src/life_bootstrap/tiangong_life_runtime_fixes.py",
+            "omni-body-runtime": "src/omni_body_skill",
+            "managed-novel-skill-runtime": "src/bundled_skills/novel-creation",
+        }
+        for mapping_id, expected_source in expected.items():
+            with self.subTest(mapping_id=mapping_id):
+                self.assertEqual(expected_source, by_id[mapping_id]["source"])
+                self.assertTrue((REPO_ROOT / expected_source).exists())
+
+    def test_p17_m1_02_legacy_readable_paths_are_generated_targets(self) -> None:
+        config = self._repository_config()
+        by_id = {row["id"]: row for row in config["mappings"]}
+        expected_targets = {
+            "life-bootstrap-runtime":
+                "readable-python-source/life-bootstrap/tiangong_life_bootstrap.py",
+            "life-runtime-fixes":
+                "readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py",
+            "omni-body-runtime": "readable-python-source/omni_body_skill",
+            "managed-novel-skill-runtime":
+                "readable-python-source/bundled-skills/novel-creation",
+        }
+        for mapping_id, expected_target in expected_targets.items():
+            with self.subTest(mapping_id=mapping_id):
+                self.assertIn(expected_target, by_id[mapping_id]["targets"])
+
+    def test_authority_policy_roots_match_converged_layout(self) -> None:
+        config = self._repository_config()
+        policy = config.get("authority_policy", {})
+        self.assertEqual(
+            [
+                "src",
+                "app/backend/tiangong-backend/v3",
+                "app/backend/tiangong-backend/tiangong_kernel",
+            ],
+            policy.get("editable_roots"),
+        )
+        self.assertEqual(
+            ["app/backend/tiangong-backend/_internal/frozen_modules"],
+            policy.get("frozen_roots"),
+        )
+        self.assertEqual(
+            ["readable-python-source"],
+            policy.get("compatibility_mirror_roots"),
+        )
+
+        def at_or_below(path: str, root: str) -> bool:
+            return path == root or path.startswith(root + "/")
+
+        for row in config["mappings"]:
+            role = row.get("source_role")
+            source = str(row.get("source", ""))
+            if role == "authoritative":
+                self.assertTrue(
+                    any(at_or_below(source, root) for root in policy["editable_roots"]),
+                    (row["id"], source),
+                )
+            elif role == "frozen_authoritative":
+                self.assertTrue(
+                    any(at_or_below(source, root) for root in policy["frozen_roots"]),
+                    (row["id"], source),
+                )
+
+    def test_directory_markers_record_current_authority_source(self) -> None:
+        config = self._repository_config()
+        for row in config["mappings"]:
+            source = REPO_ROOT / row["source"]
+            if not source.is_dir():
+                continue
+            source_rows = self.sync.mapping_files(source)
+            expected_hash = self.sync.tree_hash(source_rows)
+            expected_count = len(source_rows)
+            for target_rel in row.get("targets", []):
+                target = REPO_ROOT / target_rel
+                if not target.is_dir():
+                    continue
+                marker = target / self.sync.MARKER
+                with self.subTest(mapping_id=row["id"], target=target_rel):
+                    self.assertTrue(marker.is_file())
+                    payload = json.loads(marker.read_text(encoding="utf-8"))
+                    self.assertEqual("tiangong.generated-source-marker.v1", payload.get("schema"))
+                    self.assertEqual(row["id"], payload.get("mapping_id"))
+                    self.assertEqual(row["source"], payload.get("source"))
+                    self.assertEqual(expected_count, payload.get("file_count"))
+                    self.assertEqual(expected_hash, payload.get("tree_sha256"))
 
 
 if __name__ == "__main__":

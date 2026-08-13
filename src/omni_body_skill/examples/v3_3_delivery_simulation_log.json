@@ -1,0 +1,819 @@
+[
+  {
+    "action": "writing.chapter.plan.create",
+    "target": "webnovel_plan.md",
+    "args": {
+      "title": "第一章：旧城来信",
+      "premise": "主角收到十年前已故父亲的短信",
+      "target_words": "3000"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "webnovel_plan.md",
+        "exists": true,
+        "bytes": 828
+      },
+      "op_id": "20260705_020158_924_writing.chapter.plan.create",
+      "action": "writing.chapter.plan.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.novel.chapter_check",
+    "target": "webnovel_plan.md",
+    "args": {},
+    "success": true,
+    "score": 84,
+    "grade": "delivery_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "webnovel_chapter",
+        "score": 84,
+        "grade": "delivery_ready",
+        "issues": [
+          {
+            "code": "too_short",
+            "severity": "high",
+            "message": "章节长度不足，难形成完整阅读节奏。",
+            "repair": "补足至少两个场景节拍和一次情绪升级。"
+          }
+        ],
+        "warnings": [
+          {
+            "code": "weak_cliffhanger",
+            "severity": "low",
+            "message": "结尾悬念或翻页动力不足。",
+            "repair": "用信息差、反转或未解决危险收束。"
+          }
+        ],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "webnovel_plan.md",
+        "exists": true,
+        "bytes": 829,
+        "score": 84
+      },
+      "op_id": "20260705_020158_928_qc.novel.chapter_check",
+      "action": "qc.novel.chapter_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "poster.brief.create",
+    "target": "poster_brief.md",
+    "args": {
+      "audience": "企业老板",
+      "headline": "AI培训不是听课，是让团队能交付",
+      "cta": "预约诊断"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "poster_brief.md",
+        "exists": true,
+        "bytes": 678
+      },
+      "op_id": "20260705_020158_929_poster.brief.create",
+      "action": "poster.brief.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "qc.poster.commercial_check",
+    "target": "poster_brief.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "poster_campaign",
+        "score": 100,
+        "grade": "world_class_ready",
+        "image_info": {},
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "poster_brief.md",
+        "exists": true,
+        "bytes": 678,
+        "score": 100
+      },
+      "op_id": "20260705_020158_930_qc.poster.commercial_check",
+      "action": "qc.poster.commercial_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "spreadsheet.analysis.plan.create",
+    "target": "spreadsheet_analysis.md",
+    "args": {
+      "questions": [
+        "线索从哪里来？",
+        "哪个渠道转化最高？",
+        "下周应该投入哪里？"
+      ]
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "spreadsheet_analysis.md",
+        "exists": true,
+        "bytes": 609
+      },
+      "op_id": "20260705_020158_931_spreadsheet.analysis.plan.create",
+      "action": "spreadsheet.analysis.plan.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "qc.sheet.analysis_report_check",
+    "target": "spreadsheet_analysis.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "spreadsheet_analysis",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "spreadsheet_analysis.md",
+        "exists": true,
+        "bytes": 609,
+        "score": 100
+      },
+      "op_id": "20260705_020158_933_qc.sheet.analysis_report_check",
+      "action": "qc.sheet.analysis_report_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "meeting.minutes.create",
+    "target": "meeting_minutes.md",
+    "args": {
+      "topic": "AI培训客户推进会",
+      "attendees": [
+        "销售",
+        "产品",
+        "交付"
+      ],
+      "decisions": [
+        "下周三前提交10页方案"
+      ],
+      "action_items": [
+        "老于负责报价，截止2026-07-10",
+        "交付组准备案例，截止2026-07-09"
+      ]
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "meeting_minutes.md",
+        "exists": true,
+        "bytes": 477
+      },
+      "op_id": "20260705_020158_935_meeting.minutes.create",
+      "action": "meeting.minutes.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.meeting.minutes_check",
+    "target": "meeting_minutes.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "meeting_minutes",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "meeting_minutes.md",
+        "exists": true,
+        "bytes": 477,
+        "score": 100
+      },
+      "op_id": "20260705_020158_937_qc.meeting.minutes_check",
+      "action": "qc.meeting.minutes_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "sales.script.create",
+    "target": "sales_script.md",
+    "args": {
+      "icp": "制造业/连锁服务HR负责人",
+      "objective": "约30分钟需求诊断"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "sales_script.md",
+        "exists": true,
+        "bytes": 852
+      },
+      "op_id": "20260705_020158_938_sales.script.create",
+      "action": "sales.script.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "qc.sales.script_check",
+    "target": "sales_script.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "sales_script",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "sales_script.md",
+        "exists": true,
+        "bytes": 852,
+        "score": 100
+      },
+      "op_id": "20260705_020158_939_qc.sales.script_check",
+      "action": "qc.sales.script_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "course.lesson_plan.create",
+    "target": "course_plan.md",
+    "args": {
+      "topic": "企业AI办公提效",
+      "learners": "企业中高层和骨干员工",
+      "duration": "90分钟"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "course_plan.md",
+        "exists": true,
+        "bytes": 683
+      },
+      "op_id": "20260705_020158_941_course.lesson_plan.create",
+      "action": "course.lesson_plan.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.course.plan_check",
+    "target": "course_plan.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "course_plan",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "course_plan.md",
+        "exists": true,
+        "bytes": 683,
+        "score": 100
+      },
+      "op_id": "20260705_020158_942_qc.course.plan_check",
+      "action": "qc.course.plan_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "kb.ingestion_manifest.create",
+    "target": "kb_manifest.json",
+    "args": {
+      "sources": [
+        {
+          "id": "doc1",
+          "title": "课程方案",
+          "owner": "前哨科技"
+        },
+        {
+          "id": "doc2",
+          "title": "客户问答",
+          "owner": "销售组"
+        }
+      ]
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "kb_manifest.json",
+        "exists": true,
+        "bytes": 943,
+        "sources": 2
+      },
+      "op_id": "20260705_020158_944_kb.ingestion_manifest.create",
+      "action": "kb.ingestion_manifest.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.kb.ingestion_check",
+    "target": "kb_manifest.json",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "kb_ingestion",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "kb_manifest.json",
+        "exists": true,
+        "bytes": 943,
+        "score": 100
+      },
+      "op_id": "20260705_020158_945_qc.kb.ingestion_check",
+      "action": "qc.kb.ingestion_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "voice.consent_pack.create",
+    "target": "voice_consent.md",
+    "args": {
+      "speaker": "本人已授权讲师",
+      "usage": "课程片头配音",
+      "valid_until": "2026-12-31"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "voice_consent.md",
+        "exists": true,
+        "bytes": 609
+      },
+      "op_id": "20260705_020158_947_voice.consent_pack.create",
+      "action": "voice.consent_pack.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "qc.voice_authorized.delivery_check",
+    "target": "voice_consent.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "authorized_voice_audio",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "voice_consent.md",
+        "exists": true,
+        "bytes": 609,
+        "score": 100
+      },
+      "op_id": "20260705_020158_948_qc.voice_authorized.delivery_check",
+      "action": "qc.voice_authorized.delivery_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "seo.content.brief.create",
+    "target": "seo_brief.md",
+    "args": {
+      "audience": "想做AI转型的企业负责人",
+      "query": "企业AI培训怎么落地",
+      "intent": "比较/购买"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "seo_brief.md",
+        "exists": true,
+        "bytes": 613
+      },
+      "op_id": "20260705_020158_950_seo.content.brief.create",
+      "action": "seo.content.brief.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "qc.seo.people_first_check",
+    "target": "seo_brief.md",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "seo_people_first",
+        "score": 100,
+        "grade": "world_class_ready",
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "seo_brief.md",
+        "exists": true,
+        "bytes": 613,
+        "score": 100
+      },
+      "op_id": "20260705_020158_951_qc.seo.people_first_check",
+      "action": "qc.seo.people_first_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  },
+  {
+    "action": "content.calendar.create",
+    "target": "content_calendar.csv",
+    "args": {
+      "topics": [
+        "AI培训客户案例",
+        "销售怎么用AI",
+        "HR如何做AI普及",
+        "老板最关心的ROI"
+      ],
+      "audience": "企业负责人"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "content_calendar.csv",
+        "exists": true,
+        "bytes": 1004,
+        "rows": 4
+      },
+      "op_id": "20260705_020158_952_content.calendar.create",
+      "action": "content.calendar.create",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "qc.content.calendar_check",
+    "target": "content_calendar.csv",
+    "args": {},
+    "success": true,
+    "score": 100,
+    "grade": "world_class_ready",
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "type": "content_calendar",
+        "score": 100,
+        "grade": "world_class_ready",
+        "rows_estimate": 4,
+        "issues": [],
+        "warnings": [],
+        "acceptance": true
+      },
+      "evidence": {
+        "path": "content_calendar.csv",
+        "exists": true,
+        "bytes": 1004,
+        "score": 100
+      },
+      "op_id": "20260705_020158_953_qc.content.calendar_check",
+      "action": "qc.content.calendar_check",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "deliverable.package",
+    "target": "v33_expanded_skill_sample_package.zip",
+    "args": {
+      "items": [
+        "webnovel_plan.md",
+        "webnovel_plan.md.qc.json",
+        "poster_brief.md",
+        "poster_brief.md.qc.json",
+        "spreadsheet_analysis.md",
+        "spreadsheet_analysis.md.qc.json",
+        "meeting_minutes.md",
+        "meeting_minutes.md.qc.json",
+        "sales_script.md",
+        "sales_script.md.qc.json",
+        "course_plan.md",
+        "course_plan.md.qc.json",
+        "kb_manifest.json",
+        "kb_manifest.json.qc.json",
+        "voice_consent.md",
+        "voice_consent.md.qc.json",
+        "seo_brief.md",
+        "seo_brief.md.qc.json",
+        "content_calendar.csv",
+        "content_calendar.csv.qc.json"
+      ],
+      "notes": "v3.3 expanded skill pack sample deliverables"
+    },
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "output": {
+        "path": "v33_expanded_skill_sample_package.zip",
+        "exists": true,
+        "bytes": 10467,
+        "item_count": 20
+      },
+      "op_id": "20260705_020158_954_deliverable.package",
+      "action": "deliverable.package",
+      "risk_level": "A2",
+      "elapsed_seconds": 0.016
+    }
+  },
+  {
+    "action": "delivery.v33.info",
+    "target": null,
+    "args": {},
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.delivery_expansion.v33.v1",
+        "version": "3.3.0",
+        "principle": "tool-only expanded skill pack: create/check/package; model still controls workflow.",
+        "rubrics": [
+          "authorized_voice_audio",
+          "content_calendar",
+          "course_plan",
+          "kb_ingestion",
+          "meeting_minutes",
+          "poster_campaign",
+          "sales_script",
+          "seo_people_first",
+          "spreadsheet_analysis",
+          "webnovel_chapter"
+        ],
+        "quality_gates": [
+          "qc.content.calendar_check",
+          "qc.course.plan_check",
+          "qc.kb.ingestion_check",
+          "qc.meeting.minutes_check",
+          "qc.novel.chapter_check",
+          "qc.poster.commercial_check",
+          "qc.sales.script_check",
+          "qc.seo.people_first_check",
+          "qc.sheet.analysis_report_check",
+          "qc.voice_authorized.delivery_check"
+        ],
+        "create_actions": [
+          "content.calendar.create",
+          "course.lesson_plan.create",
+          "kb.ingestion_manifest.create",
+          "meeting.minutes.create",
+          "poster.brief.create",
+          "sales.script.create",
+          "seo.content.brief.create",
+          "spreadsheet.analysis.plan.create",
+          "voice.consent_pack.create",
+          "writing.chapter.plan.create"
+        ]
+      },
+      "evidence": {
+        "path": "delivery_v33",
+        "exists": true,
+        "bytes": 0
+      },
+      "op_id": "20260705_020158_970_delivery.v33.info",
+      "action": "delivery.v33.info",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.0
+    }
+  },
+  {
+    "action": "template.list",
+    "target": null,
+    "args": {},
+    "success": true,
+    "score": null,
+    "grade": null,
+    "message": null,
+    "result": {
+      "success": true,
+      "result": {
+        "schema": "tiangong.v3.delivery_templates.v1",
+        "version": "3.3.0",
+        "templates": [
+          {
+            "id": "business_proposal",
+            "name": "商业级 Word 方案模板",
+            "rubric": "business_proposal",
+            "file": "templates/business_proposal.md"
+          },
+          {
+            "id": "executive_ppt",
+            "name": "商业汇报 PPT 故事线模板",
+            "rubric": "executive_ppt",
+            "file": "templates/executive_ppt.md"
+          },
+          {
+            "id": "code_project",
+            "name": "代码工程交付模板",
+            "rubric": "code_project",
+            "file": "templates/code_project.md"
+          },
+          {
+            "id": "research_review",
+            "name": "资料/论文综述模板",
+            "rubric": "research_review",
+            "file": "templates/research_review.md"
+          },
+          {
+            "id": "short_video",
+            "name": "短视频交付模板",
+            "rubric": "short_video",
+            "file": "templates/short_video.md"
+          },
+          {
+            "id": "webnovel_chapter",
+            "name": "网文章节交付模板",
+            "rubric": "webnovel_chapter",
+            "file": "templates/webnovel_chapter.md"
+          },
+          {
+            "id": "poster_campaign",
+            "name": "商业海报/视觉交付模板",
+            "rubric": "poster_campaign",
+            "file": "templates/poster_campaign.md"
+          },
+          {
+            "id": "spreadsheet_analysis",
+            "name": "表格分析报告交付模板",
+            "rubric": "spreadsheet_analysis",
+            "file": "templates/spreadsheet_analysis.md"
+          },
+          {
+            "id": "meeting_minutes",
+            "name": "会议纪要与行动跟进模板",
+            "rubric": "meeting_minutes",
+            "file": "templates/meeting_minutes.md"
+          },
+          {
+            "id": "sales_script",
+            "name": "B2B销售话术交付模板",
+            "rubric": "sales_script",
+            "file": "templates/sales_script.md"
+          },
+          {
+            "id": "course_plan",
+            "name": "课程/教案交付模板",
+            "rubric": "course_plan",
+            "file": "templates/course_plan.md"
+          },
+          {
+            "id": "kb_ingestion",
+            "name": "知识库入库交付模板",
+            "rubric": "kb_ingestion",
+            "file": "templates/kb_ingestion.md"
+          },
+          {
+            "id": "authorized_voice_audio",
+            "name": "授权声音/音频交付模板",
+            "rubric": "authorized_voice_audio",
+            "file": "templates/authorized_voice_audio.md"
+          },
+          {
+            "id": "seo_people_first",
+            "name": "People-first SEO内容模板",
+            "rubric": "seo_people_first",
+            "file": "templates/seo_people_first.md"
+          },
+          {
+            "id": "content_calendar",
+            "name": "内容日历交付模板",
+            "rubric": "content_calendar",
+            "file": "templates/content_calendar.md"
+          }
+        ]
+      },
+      "evidence": {
+        "path": "/mnt/data/tiangong_omni_body_v3_3_delivery/templates/manifest.json",
+        "exists": true,
+        "bytes": 2627
+      },
+      "op_id": "20260705_020158_970_template.list",
+      "action": "template.list",
+      "risk_level": "A0",
+      "elapsed_seconds": 0.001
+    }
+  }
+]

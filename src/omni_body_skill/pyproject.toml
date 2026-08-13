@@ -1,0 +1,25 @@
+[project]
+name = "tiangong-omni-body-v3-appbus"
+version = "0.3.5"
+description = "Tiangong v3.5 single-entry omni_body with skill router, app bus, professional apps, and model protocol adapters."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+office = [
+  "python-docx>=1.1.0",
+  "python-pptx>=0.6.23",
+  "openpyxl>=3.1.0"
+]
+media = [
+  "Pillow>=10.0.0",
+  "pypdf>=4.0.0",
+  "reportlab>=4.0.0"
+]
+app_adapters = [
+  "playwright>=1.40.0",
+  "pyautogui>=0.9.54"
+]
+
+[tool.setuptools]
+packages = ["tools", "adapters", "model_adapters"]

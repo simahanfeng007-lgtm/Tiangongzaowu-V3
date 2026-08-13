@@ -1,9 +1,10 @@
-# Bundled skills
+# Bundled skills compatibility mirrors
 
-`omni_body_skill` has a single authoritative source at
-`backend/omni_body_skill/`.
+此目录中的受管 Skill 已不再是人工可编辑权威源。
 
-The previous byte-for-byte bundled copy was removed because two writable
-authorities for the same skill allow security fixes to drift. Packaging must
-copy from the canonical directory at build time and verify the release
-manifest instead of committing a second source tree.
+当前权威位置：
+
+- Novel creation：`src/bundled_skills/novel-creation/`
+- Omni Body：`src/omni_body_skill/`
+
+`readable-python-source/` 仅保留兼容镜像和历史可读路径。修改受管 Skill 时必须修改 `src/` 权威源，再运行 `python scripts/sync-generated-sources.py --write` 生成镜像。

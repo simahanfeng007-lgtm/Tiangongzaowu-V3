@@ -1,0 +1,250 @@
+{
+  "schema": "tiangong.v3.omni_body.model_adapter_profiles.v1",
+  "default_tool_name": "omni_body",
+  "profiles": {
+    "gpt_openai_chat": {
+      "display_name": "GPT / OpenAI Chat Completions",
+      "provider": "gpt",
+      "aliases": [
+        "openai",
+        "gpt",
+        "chatgpt",
+        "gpt-4",
+        "gpt-4o",
+        "gpt-5",
+        "gpt-5.6"
+      ],
+      "model_patterns": [
+        "gpt-*",
+        "o*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": true,
+      "verified_level": "official_doc"
+    },
+    "deepseek_openai": {
+      "display_name": "DeepSeek OpenAI-Compatible Tool Calls",
+      "provider": "deepseek",
+      "aliases": [
+        "deepseek",
+        "deepseek-chat",
+        "deepseek-reasoner",
+        "deepseek-v3",
+        "deepseek-v4"
+      ],
+      "model_patterns": [
+        "deepseek-*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    },
+    "minimax_openai": {
+      "display_name": "MiniMax OpenAI-Compatible Tool Calls",
+      "provider": "minimax",
+      "aliases": [
+        "minimax",
+        "MiniMax",
+        "minimax-m2",
+        "minimax-m2.5",
+        "abab"
+      ],
+      "model_patterns": [
+        "minimax-*",
+        "MiniMax-*",
+        "abab*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    },
+    "minimax_raw_xml": {
+      "display_name": "MiniMax Raw XML/Tag Tool Calls",
+      "provider": "minimax",
+      "aliases": [
+        "minimax-raw",
+        "minimax-xml",
+        "MiniMax-M2.5-raw"
+      ],
+      "model_patterns": [
+        "MiniMax-M2.5*",
+        "MiniMax-M2*"
+      ],
+      "schema_style": "xml_prompt_contract",
+      "call_style": "xml_or_tag_tool_call",
+      "result_style": "xml_tool_result",
+      "argument_encoding": "json_inside_tags",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": false,
+      "supports_strict_schema": false,
+      "verified_level": "open_source_guide_plus_heuristic"
+    },
+    "glm_openai": {
+      "display_name": "GLM / Z.AI OpenAI-Compatible Function Calling",
+      "provider": "glm",
+      "aliases": [
+        "glm",
+        "zhipu",
+        "z.ai",
+        "zai",
+        "chatglm",
+        "glm-4",
+        "glm-4.5",
+        "glm-4.6",
+        "glm-4.7"
+      ],
+      "model_patterns": [
+        "glm-*",
+        "chatglm*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    },
+    "mimo_openai": {
+      "display_name": "Xiaomi MiMo OpenAI-Compatible Tool Calls",
+      "provider": "mimo",
+      "aliases": [
+        "mimo",
+        "xiaomi-mimo",
+        "MiMo",
+        "mimo-v2",
+        "mimo-v2.5"
+      ],
+      "model_patterns": [
+        "mimo-*",
+        "MiMo-*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    },
+    "mimo_anthropic": {
+      "display_name": "Xiaomi MiMo Anthropic-Compatible Tool Use",
+      "provider": "mimo",
+      "aliases": [
+        "mimo-anthropic",
+        "xiaomi-mimo-anthropic"
+      ],
+      "model_patterns": [
+        "mimo-*",
+        "MiMo-*"
+      ],
+      "schema_style": "anthropic_tools",
+      "call_style": "anthropic_tool_use",
+      "result_style": "anthropic_tool_result",
+      "argument_encoding": "object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    },
+    "kimi_openai": {
+      "display_name": "Kimi / Moonshot Tool Calls",
+      "provider": "kimi",
+      "aliases": [
+        "kimi",
+        "moonshot",
+        "kimi-k2",
+        "moonshot-v1",
+        "kimi-k2-thinking"
+      ],
+      "model_patterns": [
+        "moonshot-*",
+        "kimi-*",
+        "kimi_k*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc_with_runtime_normalization"
+    },
+    "doubao_openai": {
+      "display_name": "Doubao / Volcengine Ark Function Calling",
+      "provider": "doubao",
+      "aliases": [
+        "doubao",
+        "volcengine",
+        "ark",
+        "seed",
+        "豆包",
+        "火山方舟"
+      ],
+      "model_patterns": [
+        "doubao-*",
+        "ep-*",
+        "seed-*"
+      ],
+      "schema_style": "openai_tools",
+      "call_style": "openai_tool_calls",
+      "result_style": "openai_role_tool",
+      "argument_encoding": "json_string_or_object",
+      "supports_parallel_tool_calls": true,
+      "supports_tool_choice": true,
+      "supports_strict_schema": false,
+      "verified_level": "official_doc"
+    }
+  },
+  "internal_canonical_call_schema": {
+    "type": "object",
+    "required": [
+      "tool",
+      "action",
+      "target",
+      "args"
+    ],
+    "properties": {
+      "tool": {
+        "const": "omni_body"
+      },
+      "action": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      },
+      "args": {
+        "type": "object"
+      },
+      "call_id": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "profile": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

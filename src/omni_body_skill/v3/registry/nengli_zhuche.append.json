@@ -1,0 +1,797 @@
+[
+  {
+    "id": "nengli_omni_body_appbus_v1",
+    "mingcheng": "Omni Body App Bus 通用身体工具",
+    "leixing": "gongju",
+    "miaoshu": "通过唯一 omni_body 工具执行本地文件、代码、文档、表格、图片、音视频与已挂载应用工具组动作。该能力是工具总线，不是智能体；模型必须传明确 action/target/args。",
+    "laiyuan": "manual_import",
+    "banben": "0.2.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A4",
+    "risk_label": "工具/代码/安装/应用控制",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "文件处理",
+      "办公文档",
+      "图片处理",
+      "音视频处理",
+      "代码工程",
+      "应用自动化",
+      "浏览器自动化",
+      "桌面自动化",
+      "交付打包",
+      "应用能力挂载"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": true,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "notes": "只注册一个真实工具 omni_body；应用动作通过 registry/app_actions.json 挂载。adapter-only 动作未接后端时返回 ok=false。"
+  },
+  {
+    "leixing": "nengli",
+    "laiyuan": "manual_import",
+    "banben": "0.3.2-v3",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "高质量交付/本地文件/内容生产",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": false,
+    "registers_tool": false,
+    "tool_name": "",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "workflow",
+    "tool_effect": "guide",
+    "tool_risk_level": "A3",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": false,
+    "primary_tool_name": "omni_body",
+    "id": "nengli_omni_body_delivery_kernel_v32",
+    "mingcheng": "v3.2 Delivery Kernel 总协议",
+    "miaoshu": "高质量交付闭环：模板、质检、返工、打包。",
+    "taskIntents": [
+      "高质量交付",
+      "质检",
+      "返工",
+      "打包"
+    ],
+    "workflow_markdown_path": "deliverable_skills/28_delivery_kernel_global.md",
+    "skill_prompt": "# v3.2 Delivery Kernel 总协议\n\n## 定位\n本包仍然是工具系统，不是智能体。大模型必须显式调用 `omni_body(action,target,args)`，并遵循“生成 → 质检 → 返工 → 再质检 → 打包”的交付闭环。\n\n## 强制流程\n1. 先调用 `template.list` 或读取对应 Skill。\n2. 生成结构化大纲：`writing.outline.create` 或 `template.apply`。\n3. 用原有工具生成交付物：docx/pptx/xlsx/code/video/image。\n4. 调用对应 `qc.*.delivery_check`。\n5. 若分数低于 80，调用 `repair.plan` 生成返工清单，然后修改交付物。\n6. 最终调用 `deliverable.package` 打包交付物、QC报告、源材料和说明。\n\n## 禁止\n- 不允许 goal-only 调用。\n- 不允许质检失败后直接宣称完成。\n- 不允许 adapter-only 功能假成功。\n",
+    "planOnly": false,
+    "notes": "v3.2 delivery kernel skill"
+  },
+  {
+    "id": "nengli_omni_body_v33_webnovel_chapter_v1",
+    "mingcheng": "世界顶尖级网文章节交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级网文章节交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "网文章节交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/34_skill_webnovel_chapter_delivery_worldclass.md",
+    "primary_actions": [
+      "writing.chapter.plan.create",
+      "qc.novel.chapter_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_poster_campaign_v1",
+    "mingcheng": "世界顶尖级海报/修图视觉交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级海报/修图视觉交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "海报/修图视觉交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/35_skill_poster_visual_delivery_worldclass.md",
+    "primary_actions": [
+      "poster.brief.create",
+      "qc.poster.commercial_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_spreadsheet_analysis_v1",
+    "mingcheng": "世界顶尖级表格分析报告交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级表格分析报告交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "表格分析报告交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/36_skill_spreadsheet_analysis_report_worldclass.md",
+    "primary_actions": [
+      "spreadsheet.analysis.plan.create",
+      "qc.sheet.analysis_report_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_meeting_minutes_v1",
+    "mingcheng": "世界顶尖级会议纪要与行动跟进交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级会议纪要与行动跟进交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "会议纪要与行动跟进交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/37_skill_meeting_minutes_action_followup_worldclass.md",
+    "primary_actions": [
+      "meeting.minutes.create",
+      "qc.meeting.minutes_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_sales_script_v1",
+    "mingcheng": "世界顶尖级B2B销售话术交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级B2B销售话术交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "B2B销售话术交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/38_skill_sales_script_delivery_worldclass.md",
+    "primary_actions": [
+      "sales.script.create",
+      "qc.sales.script_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_course_plan_v1",
+    "mingcheng": "世界顶尖级课程/教案交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级课程/教案交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "课程/教案交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/39_skill_course_lesson_plan_worldclass.md",
+    "primary_actions": [
+      "course.lesson_plan.create",
+      "qc.course.plan_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_kb_ingestion_v1",
+    "mingcheng": "世界顶尖级知识库入库交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级知识库入库交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "知识库入库交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/40_skill_knowledge_base_ingestion_worldclass.md",
+    "primary_actions": [
+      "kb.ingestion_manifest.create",
+      "qc.kb.ingestion_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_authorized_voice_audio_v1",
+    "mingcheng": "世界顶尖级授权声音/音频交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级授权声音/音频交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "授权声音/音频交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/41_skill_authorized_voice_audio_worldclass.md",
+    "primary_actions": [
+      "voice.consent_pack.create",
+      "qc.voice_authorized.delivery_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_seo_people_first_v1",
+    "mingcheng": "世界顶尖级SEO/网页内容交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级SEO/网页内容交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "SEO/网页内容交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/42_skill_seo_people_first_content_worldclass.md",
+    "primary_actions": [
+      "seo.content.brief.create",
+      "qc.seo.people_first_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_v33_content_calendar_v1",
+    "mingcheng": "世界顶尖级内容日历交付",
+    "leixing": "nengli",
+    "miaoshu": "使用唯一 omni_body 工具按 v3.3 交付流程完成世界顶尖级内容日历交付，包含创建动作、质量门、返工与打包。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A3",
+    "risk_label": "内容生产/本地交付/QC",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "高质量交付",
+      "内容日历交付",
+      "内容生产",
+      "质检返工"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": false,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "skill_file": "deliverable_skills/43_skill_content_calendar_worldclass.md",
+    "primary_actions": [
+      "content.calendar.create",
+      "qc.content.calendar_check",
+      "repair.plan",
+      "deliverable.package"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_skill_router_v331",
+    "mingcheng": "Omni Body Skill Router / 大模型Skill分发闭环",
+    "leixing": "gongju",
+    "miaoshu": "通过 omni_body 的 skill.route / skill.get / skill.step.check 将用户任务匹配到模型可阅读的 Skill；大模型按 Skill 流程调用原子工具和质量门，工具不替模型执行完整 Skill。",
+    "laiyuan": "manual_import",
+    "banben": "3.3.1",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A4",
+    "risk_label": "工具/代码/安装/Skill分发",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "Skill路由",
+      "交付流程",
+      "质量门返工",
+      "万能工具调度",
+      "高质量交付"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": true,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "notes": [
+      "先调用 skill.route 获取匹配 Skill；再 skill.get 获取完整流程。",
+      "工具不执行整个 Skill；大模型必须按流程逐步调用原子动作和 qc.*。",
+      "QC 未通过不得交付；必须 repair.plan 或直接返工后再 QC。"
+    ]
+  },
+  {
+    "id": "nengli_omni_body_professional_apps_v34",
+    "mingcheng": "Omni Body v3.4 专业级应用桥接层",
+    "leixing": "gongju",
+    "miaoshu": "通过 omni_body 的 v3.4 专业应用动作完成应用能力探测、Playwright浏览器桥接、Office/WPS桥接、Adobe/Blender脚本桥接、Figma/Canva/飞书/企微请求包、Git/Docker/SQLite受控执行。工具只执行明确 action 或生成桥接包，不跑隐藏智能体流程。",
+    "laiyuan": "manual_import",
+    "banben": "3.4.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A4",
+    "risk_label": "工具/专业应用/本地执行/桥接脚本",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "专业应用桥接",
+      "浏览器自动化",
+      "Office原生桥接",
+      "Adobe脚本",
+      "Blender建模",
+      "Git工程",
+      "Docker检查",
+      "SQLite数据处理"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": true,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "core_actions": [
+      "v34.professional_apps.info",
+      "app.adapter.health",
+      "app.native.capability_probe",
+      "app.bridge.script.create",
+      "app.bridge.pack.create",
+      "browser.playwright.script.create",
+      "microsoft.office.com.script.create",
+      "adobe.photoshop.uxp.script.create",
+      "blender.python.script.create",
+      "git.status",
+      "docker.health",
+      "sqlite.query"
+    ],
+    "boundary": "先 skill.route/skill.get 获取Skill；模型按Skill调用 v3.4 专业应用动作。工具不代替模型完成完整工作流。"
+  },
+  {
+    "id": "nengli_omni_body_model_adapters_v35",
+    "mingcheng": "Omni Body v3.5 模型工具协议适配层",
+    "leixing": "gongju",
+    "miaoshu": "通过 omni_body 的 model.adapter.* 动作，把 DeepSeek、MiniMax、GLM、MiMo、GPT、Kimi、豆包等模型的原生工具调用格式转译为统一 CanonicalOmniCall，并将结果回渲染为对应模型的 tool_result 格式。",
+    "laiyuan": "manual_import",
+    "banben": "3.5.0",
+    "zhuangtai": "jihuo",
+    "schema": "tiangong.v3.learning_ability_draft.v1",
+    "promotion_stage": "active",
+    "risk_level": "A4",
+    "risk_label": "工具/模型适配/协议转译",
+    "review_required": true,
+    "activation_allowed": true,
+    "candidate_only": false,
+    "taskIntents": [
+      "模型协议适配",
+      "工具调用转译",
+      "DeepSeek适配",
+      "MiniMax适配",
+      "GLM适配",
+      "MiMo适配",
+      "GPT适配",
+      "Kimi适配",
+      "豆包适配"
+    ],
+    "primary_tools": [
+      "omni_body"
+    ],
+    "fallback_tools": [
+      "omni_body"
+    ],
+    "required_tools": [
+      "omni_body"
+    ],
+    "missing_tools": [],
+    "tool_callable": true,
+    "registers_tool": true,
+    "tool_name": "omni_body",
+    "tool_names": [
+      "omni_body"
+    ],
+    "tool_kind": "executable",
+    "tool_effect": "execute",
+    "tool_risk_level": "A4",
+    "tool_release_state": "released",
+    "model_visible_skill": true,
+    "model_visible_tool": true,
+    "planOnly": false,
+    "core_actions": [
+      "model.adapter.info",
+      "model.adapter.list",
+      "model.adapter.detect",
+      "model.adapter.render_tool_schema",
+      "model.adapter.parse_tool_call",
+      "model.adapter.render_tool_result",
+      "model.adapter.roundtrip_test"
+    ],
+    "boundary": "适配层只做协议渲染、解析、参数归一、结果回传；不做任务规划，不执行完整Skill。复杂任务仍由大模型先调用 skill.route。"
+  }
+]

@@ -1,0 +1,10 @@
+# Optional enhancement dependencies. The tool degrades or returns ok=false if absent.
+python-docx>=1.1.0     # richer docx.create
+python-pptx>=0.6.23    # richer pptx.create
+openpyxl>=3.1.0        # richer xlsx read/write; stdlib fallback exists for simple xlsx
+Pillow>=10.0.0         # image.* actions
+pypdf>=4.0.0           # pdf.extract_text
+reportlab>=4.0.0       # richer pdf.create_from_text; stdlib fallback exists
+playwright>=1.40.0     # browser adapters, host must wire it explicitly
+pyautogui>=0.9.54      # desktop adapters, host must wire it explicitly
+imageio-ffmpeg>=0.6.0  # portable ffmpeg binary for audio/video actions
