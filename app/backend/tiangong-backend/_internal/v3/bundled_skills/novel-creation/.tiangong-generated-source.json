@@ -3,6 +3,6 @@
   "mapping_id": "managed-novel-skill-runtime",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "readable-python-source/bundled-skills/novel-creation",
-  "tree_sha256": "4230ea2e44c1df4aa2dc4996a1a88432e4b5fb81085ae42ce2df7cd4f443c925",
+  "tree_sha256": "5f0ca06c4524cff7f677628fb7250c73c15ab430a840ad879fa66610641d5ff4",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }
