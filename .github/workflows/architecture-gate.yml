@@ -58,5 +58,8 @@ jobs:
       - name: Run P17 M2-03 tool-result continuation regression
         run: python tests/test_zongdiaodu_p17_m2_03.py -v
 
-      - name: Compile P17 M2 V3 seams
-        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+      - name: Run P17 M2-04 embedded life lifecycle regression
+        run: python tests/test_embedded_life_p17_m2_04.py -v
+
+      - name: Compile P17 M2 seams
+        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py src/life_service/embedded_runtime.py src/life_service/embedded_runtime_lifecycle.py

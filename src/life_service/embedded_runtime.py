@@ -50,6 +50,11 @@ from .autonomous_tasks import (
 from . import complete_core as complete_life_core
 from .complete_core import CompleteLifeSystem, LifeCoreError, atomic_json, utc_now
 from .complete_scheduler import EmbeddedLifeScheduler
+from .embedded_runtime_lifecycle import (
+    cleanup_partial_initialization,
+    recover_inflight_scheduler_flags,
+    start_embedded_scheduler,
+)
 from .context_api import LifeContextApiError, LifeContextCompileAuthorizeApi, LifeProjectionInputs
 from .identity_migration import migrate_legacy_identities
 from .activity_scope import build_activity_scope, normalize_repository_evidence
@@ -462,63 +467,26 @@ class EmbeddedLifeRuntime:
             )
             self._state = self._load_state()
             heartbeat_recovered = self._reconcile_scheduler_heartbeat(active_life_id)
-            recovered_inflight = False
-            identity_states = self._state.get("identity_states")
-            if isinstance(identity_states, Mapping):
-                for identity_scope in identity_states.values():
-                    if not isinstance(identity_scope, dict):
-                        continue
-                    scheduler_state = identity_scope.get("scheduler")
-                    if not isinstance(scheduler_state, dict):
-                        continue
-                    for key in (
-                        "autonomy_decision_inflight",
-                        "learning_decision_inflight",
-                        "self_iteration_decision_inflight",
-                        "greeting_inflight",
-                        "proactive_decision_inflight",
-                    ):
-                        if scheduler_state.get(key) is True:
-                            scheduler_state[key] = False
-                            recovered_inflight = True
+            recovered_inflight = recover_inflight_scheduler_flags(self._state)
             projection_changed = self._reconcile_authoritative_journal(active_life_id)
             classification_changed = self._ensure_memory_classification(active_life_id)
             memory_contract_changed = self._reconcile_memory_contract(active_life_id)
             if projection_changed or classification_changed or memory_contract_changed or heartbeat_recovered or recovered_inflight:
                 self._persist(active_life_id)
             heartbeat_seconds = float(os.environ.get("TIANGONG_LIFE_HEARTBEAT_SECONDS") or 30.0)
-            self.scheduler = EmbeddedLifeScheduler(
+            self.scheduler = start_embedded_scheduler(
                 self._scheduler_tick,
                 interval_seconds=heartbeat_seconds,
             )
-            self.scheduler.start()
             self._closed = False
             self._closing = False
         except Exception as init_error:
-            cleanup_errors: list[Exception] = []
-            scheduler = self.scheduler
-            if scheduler is not None:
-                try:
-                    scheduler.stop()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            store = self.authority_store
-            if store is not None:
-                try:
-                    store.close()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            lease = self._lease
-            if lease is not None:
-                try:
-                    lease.release()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            if cleanup_errors:
-                init_error.add_note(
-                    "life kernel partial-initialization cleanup failed: "
-                    + ",".join(type(exc).__name__ for exc in cleanup_errors)
-                )
+            cleanup_partial_initialization(
+                scheduler=self.scheduler,
+                authority_store=self.authority_store,
+                lease=self._lease,
+                init_error=init_error,
+            )
             raise
 
     @classmethod
