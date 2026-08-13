@@ -92,6 +92,7 @@ from .capability_health import (
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
 from .memory_coordinator import MemoryCoordinator
+from .memory_context import select_layered_memories
 from .proactive_initiative import evaluate_proactive_candidate
 from .store import LifeShadowStore, LifeShadowStoreError
 from .cognition import CognitionTrigger, UnifiedCognitionShadow
@@ -748,6 +749,9 @@ class EmbeddedLifeRuntime:
                 # remain compatibility-only and cannot authorize this producer.
                 "proactive_enabled": True,
                 "proactive_mode": "shadow",
+                # P16 has a sub-budget in addition to the existing global Life LLM cap.
+                "proactive_llm_daily_budget": 6,
+                "proactive_llm_daily_attempt_budget": 8,
                 "proactive_decision_interval_seconds": 900,
                 "proactive_min_interval_seconds": 3600,
                 "proactive_max_messages_per_hour": 2,
@@ -764,6 +768,7 @@ class EmbeddedLifeRuntime:
                 "proactive_evidence_stale_after_seconds": 86400,
                 "proactive_min_utility_lcb_milli": 120,
                 "proactive_min_margin_milli": 80,
+                "proactive_reply_link_window_seconds": 21600,
                 "learned_boundary_rules": [],
             },
             "inbox": [],
@@ -805,6 +810,12 @@ class EmbeddedLifeRuntime:
                 "proactive_decision_inflight": False,
                 "last_proactive_delivery_at_ms": 0,
                 "last_proactive_reason": "",
+                "proactive_model_budget_date": "",
+                "proactive_model_attempts": 0,
+                "proactive_model_successes": 0,
+                "proactive_model_failures": 0,
+                "proactive_model_timeouts": 0,
+                "proactive_model_skipped": 0,
                 "last_user_run_id": "",
             },
             "updated_at": utc_now(),
@@ -3099,32 +3110,47 @@ class EmbeddedLifeRuntime:
         scope = self._scope_state(life_id)
         scheduler = scope.setdefault("scheduler", {})
         observations: list[dict[str, Any]] = []
-        memories = scope.get("memories") if isinstance(scope.get("memories"), Mapping) else {}
-        for memory_id, row in reversed(list(memories.items())):
-            if len(observations) >= 24 or not isinstance(row, Mapping):
-                continue
-            if str(row.get("status") or "active") != "active":
-                continue
-            classification = row.get("classification") if isinstance(row.get("classification"), Mapping) else {}
-            memory_type = str(classification.get("memory_type") or row.get("memory_type") or "")
-            if memory_type not in {"goal", "user_preference", "hard_constraint", "relationship", "causal_summary", "observation"}:
-                continue
-            observed_at_ms = self._proactive_timestamp_ms(
-                row.get("created_at_ms") or row.get("created_at") or ""
+        # P15 Memory SSoT is the only proactive memory read authority.  Never
+        # fall back to the legacy scope["memories"] projection: that would
+        # bypass derivation invalidation, expiry, privacy scope and lineage dedupe.
+        try:
+            store = self._contract_store()
+            instruction_items, data_items, evidence_items, _skipped = select_layered_memories(
+                store,
+                life_id=life_id,
+                principal_ref=life_id,
+                privacy_scope="private",
+                now_ms=now_ms,
+                limit=24,
             )
-            content = json.dumps(row.get("content"), ensure_ascii=False, sort_keys=True)
-            if not content.strip():
+            layered_items = instruction_items + data_items + evidence_items
+        except Exception:
+            layered_items = ()
+            store = None
+        privacy = scope.get("settings", {}).get("privacy") if isinstance(scope.get("settings"), Mapping) else {}
+        for item in layered_items:
+            if store is None:
+                break
+            derivation = store.get_memory_derivation(item.derivation_id)
+            if derivation is None or derivation.context_eligible is not True:
                 continue
-            privacy = scope.get("settings", {}).get("privacy") if isinstance(scope.get("settings"), Mapping) else {}
+            assertion = store.get_memory_assertion(derivation.memory_id, derivation.memory_revision)
+            if assertion is None or assertion.lifecycle_status != "active":
+                continue
+            summary = str(item.summary or "")[:1600]
             if isinstance(privacy, Mapping) and bool(privacy.get("redact_llm", True)):
-                content = self._redact_sensitive_text(content)
+                summary = self._redact_sensitive_text(summary)
+            if not summary.strip():
+                continue
             observations.append({
-                "source_ref": f"memory:{memory_id}",
-                "observed_at_ms": observed_at_ms,
-                "confidence_milli": max(0, min(1000, int(row.get("confidence_milli") or 800))),
-                "epistemic_state": "KNOWN" if observed_at_ms else "UNKNOWN",
-                "kind": f"memory:{memory_type or 'unknown'}",
-                "summary": content[:1600],
+                "source_ref": f"memory:{item.derivation_id}",
+                "observed_at_ms": int(derivation.created_at_ms),
+                "confidence_milli": max(0, min(1000, int(assertion.verification_strength_milli))),
+                "epistemic_state": "KNOWN",
+                "kind": f"memory:{str(item.semantic_domain).casefold()}",
+                "authority": "memory_context_layered",
+                "memory_section": str(item.section),
+                "summary": summary,
             })
 
         autonomy = self._autonomy_state(life_id)
@@ -3184,16 +3210,27 @@ class EmbeddedLifeRuntime:
 
     def _reset_proactive_model_budget_if_needed(self, scheduler: dict[str, Any]) -> None:
         budget_day = utc_now()[:10]
-        if str(scheduler.get("model_budget_date") or "") == budget_day:
-            return
-        scheduler.update({
-            "model_budget_date": budget_day,
-            "model_attempts": 0,
-            "model_successes": 0,
-            "model_failures": 0,
-            "model_timeouts": 0,
-            "model_skipped": 0,
-        })
+        # Preserve the existing global Life-model hard cap.
+        if str(scheduler.get("model_budget_date") or "") != budget_day:
+            scheduler.update({
+                "model_budget_date": budget_day,
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_failures": 0,
+                "model_timeouts": 0,
+                "model_skipped": 0,
+            })
+        # A smaller proactive pool prevents shadow/live initiative from starving
+        # autonomy, learning or self-iteration out of the global budget.
+        if str(scheduler.get("proactive_model_budget_date") or "") != budget_day:
+            scheduler.update({
+                "proactive_model_budget_date": budget_day,
+                "proactive_model_attempts": 0,
+                "proactive_model_successes": 0,
+                "proactive_model_failures": 0,
+                "proactive_model_timeouts": 0,
+                "proactive_model_skipped": 0,
+            })
 
     def _reserve_proactive_model_call_locked(
         self,
@@ -3201,17 +3238,24 @@ class EmbeddedLifeRuntime:
         scheduler: dict[str, Any],
         settings: Mapping[str, Any],
     ) -> bool:
-        """Reserve exactly one LLM call before invoking it."""
+        """Reserve one real LLM call against both global and proactive pools."""
         self._reset_proactive_model_budget_if_needed(scheduler)
-        success_limit = max(0, int(settings.get("llm_daily_budget") or 20))
-        attempt_limit = max(0, int(settings.get("llm_daily_attempt_budget") or 30))
-        if (
-            (success_limit and int(scheduler.get("model_successes") or 0) >= success_limit)
-            or (attempt_limit and int(scheduler.get("model_attempts") or 0) >= attempt_limit)
-        ):
+        global_success_limit = max(0, int(settings.get("llm_daily_budget") or 20))
+        global_attempt_limit = max(0, int(settings.get("llm_daily_attempt_budget") or 30))
+        proactive_success_limit = max(0, int(settings.get("proactive_llm_daily_budget") or 6))
+        proactive_attempt_limit = max(0, int(settings.get("proactive_llm_daily_attempt_budget") or 8))
+        exhausted = (
+            (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
+            or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
+            or (proactive_success_limit and int(scheduler.get("proactive_model_successes") or 0) >= proactive_success_limit)
+            or (proactive_attempt_limit and int(scheduler.get("proactive_model_attempts") or 0) >= proactive_attempt_limit)
+        )
+        if exhausted:
             scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
+            scheduler["proactive_model_skipped"] = int(scheduler.get("proactive_model_skipped") or 0) + 1
             return False
         scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
+        scheduler["proactive_model_attempts"] = int(scheduler.get("proactive_model_attempts") or 0) + 1
         return True
 
     def _schedule_native_proactive(self, *, life_id: str) -> None:
@@ -3232,13 +3276,31 @@ class EmbeddedLifeRuntime:
         last_ms = int(scheduler.get("last_proactive_decision_at_ms") or 0)
         if last_ms and now_ms - last_ms < interval_ms:
             return
+        try:
+            context = self._build_proactive_context(life_id=life_id, now_ms=now_ms)
+        except Exception as exc:
+            scheduler["last_proactive_decision_at_ms"] = now_ms
+            scheduler["last_proactive_reason"] = "life.proactive.context_unavailable"
+            self.system.journal.append(
+                life_id,
+                "life.proactive.suppressed",
+                {"reason_code": "life.proactive.context_unavailable", "error_type": type(exc).__name__},
+                actor="life_proactive",
+                idempotency_key=f"life.proactive.context-unavailable:{life_id}:{now_ms // max(60_000, interval_ms)}",
+            )
+            self._persist(life_id)
+            return
+        if not context.get("observations"):
+            scheduler["last_proactive_decision_at_ms"] = now_ms
+            scheduler["last_proactive_reason"] = "life.proactive.evidence_missing"
+            self._persist(life_id)
+            return
         if not self._reserve_proactive_model_call_locked(scheduler=scheduler, settings=settings):
             scheduler["last_proactive_decision_at_ms"] = now_ms
             scheduler["last_proactive_reason"] = "life.proactive.model_budget_exhausted"
             self._persist(life_id)
             return
 
-        context = self._build_proactive_context(life_id=life_id, now_ms=now_ms)
         scheduler["proactive_decision_inflight"] = True
         scheduler["last_proactive_decision_at_ms"] = now_ms
         scheduler["last_proactive_reason"] = "life.proactive.decision_started"
@@ -3265,6 +3327,7 @@ class EmbeddedLifeRuntime:
                 scheduler["proactive_decision_inflight"] = False
                 scheduler["last_proactive_reason"] = "life.proactive.decision_failed"
                 scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+                scheduler["proactive_model_failures"] = int(scheduler.get("proactive_model_failures") or 0) + 1
                 self.system.journal.append(
                     life_id,
                     "life.proactive.suppressed",
@@ -3281,6 +3344,7 @@ class EmbeddedLifeRuntime:
             scheduler = scope.setdefault("scheduler", {})
             self._reset_proactive_model_budget_if_needed(scheduler)
             scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+            scheduler["proactive_model_successes"] = int(scheduler.get("proactive_model_successes") or 0) + 1
             now_ms = time.time_ns() // 1_000_000
             decision = evaluate_proactive_candidate(
                 proposal,
@@ -3364,6 +3428,7 @@ class EmbeddedLifeRuntime:
             if not text_value:
                 scheduler["last_proactive_reason"] = "life.proactive.expression_unavailable"
                 scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+                scheduler["proactive_model_failures"] = int(scheduler.get("proactive_model_failures") or 0) + 1
                 self.system.journal.append(
                     life_id,
                     "life.proactive.suppressed",
@@ -3374,6 +3439,7 @@ class EmbeddedLifeRuntime:
                 self._persist(life_id)
                 return
             scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+            scheduler["proactive_model_successes"] = int(scheduler.get("proactive_model_successes") or 0) + 1
             privacy = scope.get("settings", {}).get("privacy") if isinstance(scope.get("settings"), Mapping) else {}
             if isinstance(privacy, Mapping) and bool(privacy.get("redact_share", True)):
                 text_value = self._redact_sensitive_text(text_value)
@@ -3428,6 +3494,8 @@ class EmbeddedLifeRuntime:
     ) -> bool:
         """Link a real later user turn to the latest delivered initiative."""
         scope = self._scope_state(life_id)
+        settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        reply_window_ms = max(60, int(settings.get("proactive_reply_link_window_seconds") or 21600)) * 1000
         for row in reversed(scope.get("proactive_chats", [])):
             if not isinstance(row, dict):
                 continue
@@ -3436,7 +3504,10 @@ class EmbeddedLifeRuntime:
             created_at_ms = int(row.get("created_at_ms") or 0)
             if not created_at_ms or created_at_ms > int(user_activity_at_ms):
                 continue
+            if int(user_activity_at_ms) - created_at_ms > reply_window_ms:
+                return False
             row["replied"] = True
+            row["reply_link_kind"] = "first_user_turn_after_delivery"
             row["replied_at_ms"] = int(user_activity_at_ms)
             row["reply_run_id"] = str(run_id or "")[:160]
             initiative_id = str(row.get("initiative_id") or "")
@@ -3447,6 +3518,7 @@ class EmbeddedLifeRuntime:
                     "initiative_id": initiative_id,
                     "message_id": str(row.get("message_id") or ""),
                     "reply_run_id": row["reply_run_id"],
+                    "reply_link_kind": row["reply_link_kind"],
                 },
                 actor="user",
                 idempotency_key=f"life.proactive.replied:{initiative_id}",
@@ -8293,6 +8365,8 @@ class EmbeddedLifeRuntime:
                         "share_dnd_end",
                         "proactive_enabled",
                         "proactive_mode",
+                        "proactive_llm_daily_budget",
+                        "proactive_llm_daily_attempt_budget",
                         "proactive_decision_interval_seconds",
                         "proactive_min_interval_seconds",
                         "proactive_max_messages_per_hour",
@@ -8308,6 +8382,7 @@ class EmbeddedLifeRuntime:
                         "proactive_evidence_stale_after_seconds",
                         "proactive_min_utility_lcb_milli",
                         "proactive_min_margin_milli",
+                        "proactive_reply_link_window_seconds",
                     }
                     # Preserve namespaced/extension settings used by plugins and
                     # tests.  Known safety-sensitive keys are strongly typed;
@@ -8357,6 +8432,8 @@ class EmbeddedLifeRuntime:
                         "share_min_interval_seconds": (60, 604800),
                         "share_hourly_limit": (0, 60),
                         "share_daily_limit": (0, 1000),
+                        "proactive_llm_daily_budget": (0, 1000),
+                        "proactive_llm_daily_attempt_budget": (0, 2000),
                         "proactive_decision_interval_seconds": (60, 86400),
                         "proactive_min_interval_seconds": (0, 604800),
                         "proactive_max_messages_per_hour": (0, 60),
@@ -8370,6 +8447,7 @@ class EmbeddedLifeRuntime:
                         "proactive_evidence_stale_after_seconds": (60, 604800),
                         "proactive_min_utility_lcb_milli": (0, 4000),
                         "proactive_min_margin_milli": (0, 4000),
+                        "proactive_reply_link_window_seconds": (60, 604800),
                     }
                     for key, (minimum, maximum) in limits.items():
                         if key not in updates:

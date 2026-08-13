@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 from life_service.embedded_runtime import EmbeddedLifeRuntime
 
@@ -223,7 +224,7 @@ def test_live_turn_counts_decision_and_expression_as_two_model_calls():
         try:
             configure(life, mode="live")
             scope = life._scope_state()
-            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 30})
+            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 30, "proactive_llm_daily_budget": 6, "proactive_llm_daily_attempt_budget": 8})
             scheduler = scope["scheduler"]
             scheduler.update({
                 "model_budget_date": "",
@@ -243,6 +244,8 @@ def test_live_turn_counts_decision_and_expression_as_two_model_calls():
             assert scheduler["model_attempts"] == 2
             assert scheduler["model_successes"] == 2
             assert scheduler["model_failures"] == 0
+            assert scheduler["proactive_model_attempts"] == 2
+            assert scheduler["proactive_model_successes"] == 2
         finally:
             life.close()
 
@@ -253,7 +256,7 @@ def test_expression_call_is_not_made_when_second_model_budget_is_exhausted():
         try:
             configure(life, mode="live")
             scope = life._scope_state()
-            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 1})
+            scope["settings"].update({"llm_daily_budget": 20, "llm_daily_attempt_budget": 1, "proactive_llm_daily_budget": 6, "proactive_llm_daily_attempt_budget": 8})
             scheduler = scope["scheduler"]
             scheduler.update({
                 "model_budget_date": "",
@@ -290,3 +293,115 @@ def test_gateway_wires_proactive_world_to_existing_committed_wu_reader():
     reader = backend.split("def repository_evidence_snapshot", 1)[1].split("\n    def ", 1)[0]
     assert "production_repository_evidence_snapshot" in reader
     assert "world_understanding_production" in reader
+
+
+
+def test_proactive_context_uses_p15_layered_memory_authority_only():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            life_id = str(life._active()["life_id"])
+            # A legacy row must never be a fallback source for P16 cognition.
+            life._scope_state(life_id)["memories"] = {
+                "legacy-secret": {
+                    "status": "active",
+                    "memory_type": "goal",
+                    "created_at_ms": NOW - 1_000,
+                    "confidence_milli": 1000,
+                    "content": "LEGACY-MEMORY-MUST-NOT-LEAK",
+                }
+            }
+            with mock.patch(
+                "life_service.embedded_runtime.select_layered_memories",
+                return_value=((), (), (), 0),
+            ) as selector:
+                context = life._build_proactive_context(life_id=life_id, now_ms=NOW)
+            selector.assert_called_once_with(
+                life._contract_store(),
+                life_id=life_id,
+                principal_ref=life_id,
+                privacy_scope="private",
+                now_ms=NOW,
+                limit=24,
+            )
+            assert "LEGACY-MEMORY-MUST-NOT-LEAK" not in repr(context)
+            source = (Path(__file__).resolve().parents[1] / "src" / "life_service" / "embedded_runtime.py").read_text(encoding="utf-8")
+            block = source.split("def _build_proactive_context", 1)[1].split("\n    def ", 1)[0]
+            assert 'scope.get("memories")' not in block
+            assert "select_layered_memories(" in block
+        finally:
+            life.close()
+
+
+def test_context_failure_does_not_spend_model_budget_or_break_scheduler():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            configure(life, mode="shadow")
+            life.set_proactive_decider(lambda _context: proposal())
+            life_id = str(life._active()["life_id"])
+            scheduler = life._scope_state(life_id)["scheduler"]
+            before = int(scheduler.get("model_attempts") or 0)
+            with mock.patch.object(life, "_build_proactive_context", side_effect=RuntimeError("context failed")):
+                life._schedule_native_proactive(life_id=life_id)
+            assert int(scheduler.get("model_attempts") or 0) == before
+            assert int(scheduler.get("proactive_model_attempts") or 0) == 0
+            assert scheduler["proactive_decision_inflight"] is False
+            assert scheduler["last_proactive_reason"] == "life.proactive.context_unavailable"
+        finally:
+            life.close()
+
+
+def test_proactive_subbudget_prevents_shadow_from_starving_global_pool():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            scope = life._scope_state()
+            scope["settings"].update({
+                "llm_daily_budget": 20,
+                "llm_daily_attempt_budget": 30,
+                "proactive_llm_daily_budget": 6,
+                "proactive_llm_daily_attempt_budget": 1,
+            })
+            scheduler = scope["scheduler"]
+            scheduler.update({
+                "model_budget_date": "",
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_skipped": 0,
+                "proactive_model_budget_date": "",
+                "proactive_model_attempts": 0,
+                "proactive_model_successes": 0,
+                "proactive_model_skipped": 0,
+            })
+            assert life._reserve_proactive_model_call_locked(scheduler=scheduler, settings=scope["settings"]) is True
+            assert life._reserve_proactive_model_call_locked(scheduler=scheduler, settings=scope["settings"]) is False
+            assert scheduler["model_attempts"] == 1
+            assert scheduler["proactive_model_attempts"] == 1
+            assert scheduler["proactive_model_skipped"] == 1
+        finally:
+            life.close()
+
+
+def test_reply_lineage_expires_after_bounded_temporal_window():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            configure(life, mode="live")
+            scope = life._scope_state()
+            scope["settings"]["proactive_reply_link_window_seconds"] = 3600
+            life.set_proactive_decider(lambda _context: proposal())
+            life.set_proactive_expression_writer(lambda _material: {"text": "还需要继续吗？"})
+            life_id = str(life._active()["life_id"])
+            life._proactive_worker(life_id, initiative_context(life_id), NOW // 900_000)
+            row = scope["proactive_chats"][0]
+            row["created_at_ms"] = NOW - 3_600_001
+            linked = life._mark_latest_proactive_replied(
+                life_id=life_id,
+                user_activity_at_ms=NOW,
+                run_id="run-too-late",
+            )
+            assert linked is False
+            assert row["replied"] is False
+        finally:
+            life.close()
