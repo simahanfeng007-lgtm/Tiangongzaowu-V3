@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from copy import deepcopy
 import os
 import re
 import shutil
@@ -108,6 +109,10 @@ class EmbeddedBackendRuntime:
         self._learning_ingest_provider: Any = None
         self._p15_memory_remember_provider: Any = None
         self._p15_memory_recall_provider: Any = None
+        self._last_conversation_context: dict[str, Any] = {}
+        self._last_user_name = ""
+        self._last_user_text = ""
+        self._last_conversation_at_ms = 0
         # The authoritative LifeKernel is hosted by Total Gateway.  Disable the
         # legacy Runtime's second LifeOrchestrator/context source before any
         # request can observe it; otherwise one process would still contain two
@@ -346,6 +351,14 @@ class EmbeddedBackendRuntime:
             value = data.get(source_key)
             if value and not context.get(target_key):
                 context[target_key] = value
+        # P16 keeps only a derived in-process continuity projection. It
+        # is not a second conversation store and is rebuilt by each real
+        # user turn. Proactive compose reads it without persisting a fake
+        # user message.
+        self._last_conversation_context = deepcopy(context)
+        self._last_user_name = user
+        self._last_user_text = text
+        self._last_conversation_at_ms = int(time.time() * 1000)
         result = self.qiaojie.chuli_duihua(text, user, context)
         return self._module._safe_bridge_json(result, source="chat")
 
@@ -851,6 +864,78 @@ class EmbeddedBackendRuntime:
             "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest(),
         }
 
+    def _proactive_decision(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Model-only P16 initiative proposal; Life recomputes every gate/score."""
+        initiative_context = body.get("initiative_context")
+        if not isinstance(initiative_context, Mapping):
+            raise ValueError("proactive initiative_context is required")
+        encoded = json.dumps(dict(initiative_context), ensure_ascii=False, sort_keys=True)
+        if len(encoded.encode("utf-8")) > 128 * 1024:
+            raise ValueError("proactive initiative_context is too large")
+        system_prompt = (
+            "你是天工生命体的主动沟通候选生成层，不是发送器，也没有执行权限。"
+            "只依据 initiative_context 中真实提供的 observations 决定是否值得主动开口。"
+            "没有 source_ref 的现实变化一律视为 UNKNOWN；UNKNOWN、过期或低可信信息不能被你补全。"
+            "只返回一个 JSON 对象，不要 Markdown。candidate_kind 只能是 respond、ask_user、wait、no_op。"
+            "respond/ask_user 必须提供 evidence_refs，且每个 ref 必须逐字来自 observations.source_ref；"
+            "expression_intent 只描述想表达什么，不写最终话术，不得声称工具已执行或外部世界已变化。"
+            "score 必须包含 goal_gain_milli、viability_gain_milli、information_gain_milli、"
+            "relationship_value_milli、resource_cost_milli、expected_harm_milli、"
+            "uncertainty_penalty_milli、irreversibility_penalty_milli，均为 0..1000 整数。"
+            "证据不足、只是想打招呼、没有新信息或打扰价值大于收益时选 wait/no_op。"
+        )
+        llm = getattr(self.scheduler, "_zhiming_llm", None)
+        if not callable(llm):
+            raise RuntimeError("proactive decision model bridge unavailable")
+        raw = str(llm(system_prompt, encoded) or "").strip()
+        if raw.startswith("[LLM"):
+            raise RuntimeError(raw[:240])
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if match is None:
+            raise ValueError("proactive decision model did not return JSON")
+        decision = json.loads(match.group(0))
+        if not isinstance(decision, dict):
+            raise ValueError("proactive decision model output is invalid")
+        return {
+            "ok": True,
+            "decision": decision,
+            "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest(),
+        }
+
+    def _proactive_compose(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Express an already-authorized initiative through the normal dialogue voice."""
+        material = body.get("material")
+        if not isinstance(material, Mapping):
+            raise ValueError("proactive compose material is required")
+        context = deepcopy(self._last_conversation_context)
+        packed_context = self._module._duihua_shangxiawen(
+            context,
+            self._last_user_text,
+        )
+        text = self.scheduler.shengcheng_zhudong_biaoda(
+            dict(material),
+            duihua_shangxiawen=packed_context,
+            last_user_text=self._last_user_text,
+            user_name=self._last_user_name,
+        )
+        text = str(text or "").strip()
+        if not text:
+            raise RuntimeError("proactive dialogue expression returned empty")
+        conversation_id = str(
+            context.get("conversation_id")
+            or context.get("active_session_id")
+            or context.get("session_id")
+            or ""
+        )[:240]
+        return {
+            "ok": True,
+            "preview": {
+                "text": text[:4000],
+                "conversation_id": conversation_id,
+                "source": "normal_dialogue_engine",
+            },
+        }
+
     def _share_compose(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """Compose one proactive, persona-voiced chat message (share/greeting).
 
@@ -993,6 +1078,12 @@ class EmbeddedBackendRuntime:
             elif verb == "POST" and path == "/api/v1/internal/capability/patch/decision":
                 # Model-only patch drafting lane; no core execution lock.
                 result = self._capability_patch_decision(body)
+            elif verb == "POST" and path == "/api/v1/internal/proactive/decision":
+                # P16 model-only candidate lane; Life remains the decision authority.
+                result = self._proactive_decision(body)
+            elif verb == "POST" and path == "/api/v1/internal/proactive/compose":
+                # P16 expression lane reuses the normal dialogue engine, with no tools.
+                result = self._proactive_compose(body)
             elif verb == "POST" and path == "/api/v1/internal/share/compose":
                 # Model-only persona copywriting lane; no core lock.
                 result = self._share_compose(body)

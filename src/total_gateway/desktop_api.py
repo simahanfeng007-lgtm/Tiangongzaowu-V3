@@ -161,6 +161,7 @@ _ROUTES = (
     _route("POST", "/api/v1/v3/life/execution/commit", "life"),
     _route("POST", "/api/v1/v3/life/inbox/read", "life"),
     _route("POST", "/api/v1/v3/life/inbox/delete", "life"),
+    _route("GET", "/api/v1/v3/life/proactive/status", "life"),
     _route("GET", "/api/v1/v3/life/proactive-chat/pending", "life"),
     _route("POST", "/api/v1/v3/life/proactive-chat/ack", "life"),
     _route("POST", "/api/v1/v3/life/settings", "life"),

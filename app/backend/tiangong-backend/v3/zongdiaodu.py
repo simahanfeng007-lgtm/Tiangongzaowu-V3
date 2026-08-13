@@ -9175,6 +9175,84 @@ class Zongdiaodu:
             return [self._state_to_plain_dict(v) for v in value]
         return value
 
+    def shengcheng_zhudong_biaoda(
+        self,
+        material: dict[str, Any],
+        *,
+        duihua_shangxiawen: str = "",
+        last_user_text: str = "",
+        user_name: str = "",
+    ) -> str:
+        """P16 model-only proactive expression using the normal dialogue context.
+
+        This is not a user turn: it does not route tools, create a Run, mutate
+        conversation history, or claim execution. The Life kernel has already
+        decided that speaking is eligible before this method is reached.
+        """
+        if not isinstance(material, dict):
+            raise ValueError("proactive expression material is invalid")
+        decision = material.get("decision") if isinstance(material.get("decision"), dict) else {}
+        initiative_context = (
+            material.get("initiative_context")
+            if isinstance(material.get("initiative_context"), dict)
+            else {}
+        )
+        if str(decision.get("candidate_kind") or "") not in {"respond", "ask_user"}:
+            return ""
+        authoritative_soul = _authoritative_life_soul_prompt(duihua_shangxiawen)
+        soul_text = authoritative_soul if authoritative_soul is not None else duqu_soul()
+        system_tishi = goujian_system_tishi(
+            self.shenti,
+            soul_text,
+            self._body_settings_for_context(),
+        )
+        system_tishi = system_tishi.rstrip() + "\n\n" + BIAOXIAN_SYSTEM_PROMPT
+        system_tishi += (
+            "\n\n[P16 主动表达边界]\n"
+            "这是生命体内部已经裁决通过的一次表达，不是用户刚刚发送的新消息。"
+            "你只能把 decision.expression_intent 用你平时和该用户对话的自然口吻表达出来；"
+            "事实只能来自 initiative_context.observations 和已有最近对话。"
+            "不得调用或描述工具调用，不得补全 UNKNOWN 信息，不得声称外部变化、执行成功、"
+            "文件修改或用户授权。若证据与表达意图不一致，返回空字符串。"
+        )
+        body_tishi = goujian_shenti_tishi(
+            self.shenti,
+            include_legacy_affect=authoritative_soul is None,
+        )
+        payload = {
+            "schema": "tiangong.life.proactive-expression-request.v1",
+            "internal_event_not_user_message": True,
+            "candidate_kind": decision.get("candidate_kind"),
+            "topic": decision.get("topic"),
+            "expression_intent": decision.get("expression_intent"),
+            "evidence_refs": decision.get("evidence_refs") or [],
+            "observations": initiative_context.get("observations") or [],
+            "affect": initiative_context.get("affect") or {},
+            "last_real_user_text": str(last_user_text or "")[:1600],
+            "user_name": str(user_name or "")[:160],
+        }
+        user_prompt_parts = [body_tishi]
+        if duihua_shangxiawen:
+            user_prompt_parts.append("[最近真实对话与权威上下文]\n" + duihua_shangxiawen[:24000])
+        user_prompt_parts.append(
+            "[TIANGONG_LIFE_INITIATIVE_V1]\n"
+            + json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            + "\n[/TIANGONG_LIFE_INITIATIVE_V1]\n"
+            "直接输出你要对用户说的话；可以包含正常 <biaoxian> 表现标记，但不要输出 JSON、计划或内部说明。"
+        )
+        llm = getattr(self, "_zhiming_llm", None)
+        if not callable(llm):
+            raise RuntimeError("normal dialogue model bridge unavailable")
+        raw = str(llm(system_tishi, "\n\n".join(user_prompt_parts)) or "").strip()
+        if raw.startswith("[LLM"):
+            raise RuntimeError(raw[:240])
+        lowered = raw.casefold()
+        if any(marker in lowered for marker in ("<tool_call", "<function_calls", "<invoke", "<omni_body")):
+            return ""
+        cleaned = strip_internal_reply_markers(raw).strip()
+        cleaned = re.sub(r"```(?:json)?|```", "", cleaned, flags=re.IGNORECASE).strip()
+        return cleaned[:4000]
+
     def body_state_snapshot(self, payload: dict | None = None) -> dict:
         """Return a bounded, read-only projection of the live runtime body.
 

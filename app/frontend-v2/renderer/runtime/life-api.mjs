@@ -60,6 +60,7 @@ export const LIFE_API_ROUTES = Object.freeze({
   inboxDelete: route("POST", "/api/v1/v3/life/inbox/delete", "life.inbox"),
   proactiveChatPending: route("GET", "/api/v1/v3/life/proactive-chat/pending", "life.proactive_chat"),
   proactiveChatAck: route("POST", "/api/v1/v3/life/proactive-chat/ack", "life.proactive_chat"),
+  proactiveStatus: route("GET", "/api/v1/v3/life/proactive/status", "life.proactive_chat.status"),
   settingsUpdate: route("POST", "/api/v1/v3/life/settings", "life.settings"),
   upgradeConfirm: route("POST", "/api/v1/v3/life/upgrade/confirm", "life.upgrade"),
   upgradeCancel: route("POST", "/api/v1/v3/life/upgrade/cancel", "life.upgrade"),
@@ -282,6 +283,7 @@ export function createLifeApiClient({ request = defaultRequest, timeoutMs = 9000
       return call("inboxDelete", { body: { message_id, ...extra } });
     },
     getPendingProactiveChats: (options = {}) => call("proactiveChatPending", options),
+    getProactiveStatus: (options = {}) => call("proactiveStatus", options),
     ackProactiveChat(messageId, extra = {}) {
       const message_id = String(messageId || "").trim();
       if (!message_id) throw new LifeApiContractError("message_id is required", "empty_message_id");

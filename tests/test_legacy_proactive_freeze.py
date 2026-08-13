@@ -41,7 +41,12 @@ def test_legacy_learning_report_does_not_enqueue_chat() -> None:
 
 def test_no_legacy_direct_producer_remains_but_delivery_api_stays() -> None:
     text = EMBEDDED.read_text(encoding="utf-8")
-    assert '["proactive_chats"].append(' not in text
+    greeting = text.split("def _schedule_greeting", 1)[1].split("\n    def ", 1)[0]
+    learning = text.split("def _learning_report", 1)[1].split("\n    def ", 1)[0]
+    assert "proactive_chats" not in greeting
+    assert 'proactive_chats"].append' not in learning
+    assert text.count('proactive_chats"].append') == 1
+    assert 'scope["proactive_chats"].append(row)' in text
     assert "/api/v1/v3/life/proactive-chat/pending" in text
     assert "/api/v1/v3/life/proactive-chat/ack" in text
     assert '"proactive_chats": []' in text
