@@ -3,9 +3,10 @@ name: P17 M2-04 candidate readonly
 on:
   push:
     branches:
-      - agent/p17-m2-god-module-decomposition
+      - agent/p17-m2-04-construction
     paths:
       - .github/workflows/p17-m2-04-candidate-readonly.yml
+      - scripts/p17-m2-04-candidate.py
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
       - name: Checkout construction branch
         uses: actions/checkout@v4
         with:
-          ref: agent/p17-m2-god-module-decomposition
+          ref: agent/p17-m2-04-construction
           fetch-depth: 0
 
       - name: Set up Python 3.12
@@ -31,186 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Build exact M2-04 candidate
-        shell: python
-        run: |
-          from pathlib import Path
-
-          runtime = Path("src/life_service/embedded_runtime.py")
-          text = runtime.read_text(encoding="utf-8")
-
-          def replace_once(old: str, new: str, label: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected 1 anchor, found {count}")
-              text = text.replace(old, new, 1)
-
-          import_anchor = "from .complete_scheduler import EmbeddedLifeScheduler\n"
-          import_replacement = import_anchor + (
-              "from .embedded_runtime_lifecycle import (\n"
-              "    cleanup_partial_initialization,\n"
-              "    recover_inflight_scheduler_flags,\n"
-              "    start_embedded_scheduler,\n"
-              ")\n"
-          )
-          replace_once(import_anchor, import_replacement, "lifecycle import")
-
-          recovery_old = '''            recovered_inflight = False
-            identity_states = self._state.get("identity_states")
-            if isinstance(identity_states, Mapping):
-                for identity_scope in identity_states.values():
-                    if not isinstance(identity_scope, dict):
-                        continue
-                    scheduler_state = identity_scope.get("scheduler")
-                    if not isinstance(scheduler_state, dict):
-                        continue
-                    for key in (
-                        "autonomy_decision_inflight",
-                        "learning_decision_inflight",
-                        "self_iteration_decision_inflight",
-                        "greeting_inflight",
-                        "proactive_decision_inflight",
-                    ):
-                        if scheduler_state.get(key) is True:
-                            scheduler_state[key] = False
-                            recovered_inflight = True
-'''
-          replace_once(
-              recovery_old,
-              "            recovered_inflight = recover_inflight_scheduler_flags(self._state)\n",
-              "inflight recovery",
-          )
-
-          scheduler_old = '''            heartbeat_seconds = float(os.environ.get("TIANGONG_LIFE_HEARTBEAT_SECONDS") or 30.0)
-            self.scheduler = EmbeddedLifeScheduler(
-                self._scheduler_tick,
-                interval_seconds=heartbeat_seconds,
-            )
-            self.scheduler.start()
-'''
-          scheduler_new = '''            heartbeat_seconds = float(os.environ.get("TIANGONG_LIFE_HEARTBEAT_SECONDS") or 30.0)
-            self.scheduler = start_embedded_scheduler(
-                self._scheduler_tick,
-                interval_seconds=heartbeat_seconds,
-            )
-'''
-          replace_once(scheduler_old, scheduler_new, "scheduler start")
-
-          cleanup_old = '''        except Exception as init_error:
-            cleanup_errors: list[Exception] = []
-            scheduler = self.scheduler
-            if scheduler is not None:
-                try:
-                    scheduler.stop()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            store = self.authority_store
-            if store is not None:
-                try:
-                    store.close()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            lease = self._lease
-            if lease is not None:
-                try:
-                    lease.release()
-                except Exception as exc:
-                    cleanup_errors.append(exc)
-            if cleanup_errors:
-                init_error.add_note(
-                    "life kernel partial-initialization cleanup failed: "
-                    + ",".join(type(exc).__name__ for exc in cleanup_errors)
-                )
-            raise
-'''
-          cleanup_new = '''        except Exception as init_error:
-            cleanup_partial_initialization(
-                scheduler=self.scheduler,
-                authority_store=self.authority_store,
-                lease=self._lease,
-                init_error=init_error,
-            )
-            raise
-'''
-          replace_once(cleanup_old, cleanup_new, "partial init cleanup")
-
-          if "self.scheduler = EmbeddedLifeScheduler(" in text:
-              raise SystemExit("direct scheduler construction remains")
-          if "cleanup_errors: list[Exception] = []" in text:
-              raise SystemExit("inline partial cleanup remains")
-          compile(text, str(runtime), "exec")
-          runtime.write_text(text, encoding="utf-8", newline="\n")
-
-          test = Path("tests/test_embedded_life_p17_m2_04.py")
-          test.write_text('''from __future__ import annotations
-import ast
-import unittest
-from pathlib import Path
-ROOT = Path(__file__).resolve().parents[1]
-LIFE = ROOT / "src" / "life_service"
-RUNTIME = LIFE / "embedded_runtime.py"
-BOUNDARY = LIFE / "embedded_runtime_lifecycle.py"
-class EmbeddedLifeM204Tests(unittest.TestCase):
-    def test_boundary_is_coordination_not_second_runtime(self):
-        text = BOUNDARY.read_text(encoding="utf-8")
-        tree = ast.parse(text)
-        names = {node.name for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))}
-        self.assertIn("recover_inflight_scheduler_flags", names)
-        self.assertIn("start_embedded_scheduler", names)
-        self.assertIn("cleanup_partial_initialization", names)
-        self.assertNotIn("EmbeddedLifeRuntime", names)
-        self.assertNotIn("EmbeddedLifeScheduler", names)
-        self.assertNotIn("LifeShadowStore.open", text)
-        self.assertNotIn("CompleteLifeSystem(", text)
-    def test_boundary_reuses_existing_scheduler(self):
-        text = BOUNDARY.read_text(encoding="utf-8")
-        self.assertIn("from .complete_scheduler import EmbeddedLifeScheduler", text)
-        self.assertIn("scheduler = EmbeddedLifeScheduler(", text)
-        self.assertIn("scheduler.start()", text)
-    def test_recovery_keys_are_preserved(self):
-        text = BOUNDARY.read_text(encoding="utf-8")
-        for key in ("autonomy_decision_inflight", "learning_decision_inflight", "self_iteration_decision_inflight", "greeting_inflight", "proactive_decision_inflight"):
-            self.assertIn(key, text)
-        self.assertIn("scheduler_state[key] = False", text)
-    def test_cleanup_order_is_preserved(self):
-        text = BOUNDARY.read_text(encoding="utf-8")
-        self.assertLess(text.index("scheduler.stop()"), text.index("authority_store.close()"))
-        self.assertLess(text.index("authority_store.close()"), text.index("lease.release()"))
-        self.assertIn("init_error.add_note", text)
-    def test_runtime_delegates_lifecycle_coordination(self):
-        text = RUNTIME.read_text(encoding="utf-8")
-        self.assertIn("recover_inflight_scheduler_flags(self._state)", text)
-        self.assertIn("start_embedded_scheduler(", text)
-        self.assertIn("cleanup_partial_initialization(", text)
-        self.assertNotIn("self.scheduler = EmbeddedLifeScheduler(", text)
-        self.assertNotIn("cleanup_errors: list[Exception] = []", text)
-    def test_single_runtime_authority_remains(self):
-        boundary = BOUNDARY.read_text(encoding="utf-8")
-        runtime = RUNTIME.read_text(encoding="utf-8")
-        self.assertIn("class EmbeddedLifeRuntime", runtime)
-        self.assertIn("LifeWriterLease.acquire", runtime)
-        self.assertIn("CompleteLifeSystem(data_root", runtime)
-        self.assertIn("LifeShadowStore.open", runtime)
-        self.assertNotIn("LifeWriterLease.acquire", boundary)
-        self.assertNotIn("LifeShadowStore.open", boundary)
-if __name__ == "__main__":
-    unittest.main()
-''', encoding="utf-8", newline="\n")
-
-          gate = Path(".github/workflows/architecture-gate.yml")
-          gate_text = gate.read_text(encoding="utf-8")
-          gate_anchor = '''      - name: Compile P17 M2 V3 seams
-        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
-'''
-          gate_new = '''      - name: Run P17 M2-04 embedded life lifecycle regression
-        run: python tests/test_embedded_life_p17_m2_04.py -v
-
-      - name: Compile P17 M2 seams
-        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py src/life_service/embedded_runtime.py src/life_service/embedded_runtime_lifecycle.py
-'''
-          if gate_text.count(gate_anchor) != 1:
-              raise SystemExit("architecture gate anchor mismatch")
-          gate.write_text(gate_text.replace(gate_anchor, gate_new, 1), encoding="utf-8", newline="\n")
+        run: python scripts/p17-m2-04-candidate.py
 
       - name: Synchronize generated life-service mirrors
         run: python scripts/sync-generated-sources.py --write
