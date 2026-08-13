@@ -166,8 +166,8 @@ ZHUISHI_BAOZHANG_SHIBAI = True # 事务保障失败时回滚
 
 # ── API 配置 ──────────
 API_PEIZHI_LUJING = Path.home() / ".tiangong" / "api_keys.json"
-L4_PROVIDER_IDS = ("deepseek_v4", "mimo", "glm_5_2", "minimax_m3", "gpt_5_5")
-L4_OPENAI_FALLBACK_PROVIDER = "gpt_5_5"
+L4_PROVIDER_IDS = ("deepseek_v4", "mimo", "glm_5_2", "minimax_m3", "gpt_5_6")
+L4_OPENAI_FALLBACK_PROVIDER = "gpt_5_6"
 PROVIDER_ALIASES = {
     "deepseek": "deepseek_v4",
     "deepseek-v4": "deepseek_v4",
@@ -187,17 +187,20 @@ PROVIDER_ALIASES = {
     "minimax_m3": "minimax_m3",
     "mimo-v2.5": "mimo",
     "xiaomi-mimo": "mimo",
-    "openai": "gpt_5_5",
-    "gpt": "gpt_5_5",
-    "gpt-5.5": "gpt_5_5",
-    "gpt_5_5": "gpt_5_5",
+    "openai": "gpt_5_6",
+    "gpt": "gpt_5_6",
+    "gpt-5.6": "gpt_5_6",
+    "gpt_5_6": "gpt_5_6",
+    # 旧 GPT-5.5 配置别名，兼容已保存的 provider 设置。
+    "gpt-5.5": "gpt_5_6",
+    "gpt_5_5": "gpt_5_6",
 }
 PROVIDER_MATCH_KEYWORDS = {
     "deepseek_v4": ("deepseek",),
     "glm_5_2": ("glm", "chatglm", "zhipu", "zhipuai", "bigmodel", "z.ai", "z-ai"),
     "mimo": ("mimo", "xiaomimimo", "xiaomi-mimo", "platform.xiaomimimo", "mimo.mi.com"),
     "minimax_m3": ("minimax", "mini-max", "minimaxi"),
-    "gpt_5_5": ("openai", "gpt", "chatgpt", "api.openai.com"),
+    "gpt_5_6": ("openai", "gpt", "chatgpt", "api.openai.com"),
 }
 PROVIDER_MATCH_WEIGHTS = {
     "provider": 2,
@@ -387,7 +390,7 @@ PROVIDER_BASE_URL = {
     "glm_5_2":     os.environ.get("ZAI_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
     "glm_5_1":     os.environ.get("ZAI_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
     "zhipu":       os.environ.get("ZAI_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
-    "gpt_5_5":     os.environ.get("OPENAI_API_BASE_URL", "https://api.openai.com/v1"),
+    "gpt_5_6":     os.environ.get("OPENAI_API_BASE_URL", "https://api.openai.com/v1"),
     "openai":      "https://api.openai.com/v1",
     "anthropic":   "https://api.anthropic.com/v1",
     "minimax_m3":  os.environ.get("MINIMAX_API_BASE_URL", "https://api.minimaxi.com/v1"),
@@ -401,7 +404,7 @@ PROVIDER_DEFAULT_MODEL = {
     "mimo": "mimo-v2.5-pro",
     "glm_5_2": "glm-5.2",
     "minimax_m3": "MiniMax-M3",
-    "gpt_5_5": "gpt-5.5",
+    "gpt_5_6": "gpt-5.6",
 }
 
 PROVIDER_FALLBACK_DISPLAY_NAME = {
@@ -409,7 +412,7 @@ PROVIDER_FALLBACK_DISPLAY_NAME = {
     "mimo": "Xiaomi MiMo",
     "glm_5_2": "Z.AI GLM-5.2",
     "minimax_m3": "MiniMax M3",
-    "gpt_5_5": "OpenAI compatible",
+    "gpt_5_6": "OpenAI compatible",
 }
 
 
@@ -436,8 +439,8 @@ def duqu_api_miyao(provider_id: str) -> str | None:
     provider_id = normalize_provider_id(provider_id)
     # 环境变量
     env_map = {
-        "gpt_5_5": ("TIANGONG_GPT_5_5_API_KEY", "OPENAI_API_KEY"),
-        "openai": ("TIANGONG_GPT_5_5_API_KEY", "OPENAI_API_KEY"),
+        "gpt_5_6": ("TIANGONG_GPT_5_6_API_KEY", "OPENAI_API_KEY"),
+        "openai": ("TIANGONG_GPT_5_6_API_KEY", "OPENAI_API_KEY"),
         "anthropic": ("TIANGONG_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
         # Electron's trusted vault derives its injected variable from the
         # authoritative provider id.  Keep the vendor-standard name as a
@@ -623,7 +626,7 @@ def duqu_model_ming(provider_id: str) -> str:
         "mimo": "MIMO_MODEL",
         "glm_5_2": "ZAI_MODEL",
         "minimax_m3": "MINIMAX_MODEL",
-        "gpt_5_5": "OPENAI_MODEL",
+        "gpt_5_6": "OPENAI_MODEL",
     }
     env_name = env_map.get(provider_id)
     if env_name:
@@ -695,14 +698,14 @@ def l4_provider_presets() -> list[dict]:
         })
     rows.append({
         "id": "openai",
-        "provider_id": "gpt_5_5",
+        "provider_id": "gpt_5_6",
         "display_name": "OpenAI compatible",
-        "default_model": PROVIDER_DEFAULT_MODEL["gpt_5_5"],
-        "supported_models": [PROVIDER_DEFAULT_MODEL["gpt_5_5"]],
-        "base_url": PROVIDER_BASE_URL["gpt_5_5"],
+        "default_model": PROVIDER_DEFAULT_MODEL["gpt_5_6"],
+        "supported_models": [PROVIDER_DEFAULT_MODEL["gpt_5_6"]],
+        "base_url": PROVIDER_BASE_URL["gpt_5_6"],
         "protocol_family": ["openai_chat_completions"],
-        "request_api_style": "OpenAI-compatible custom endpoint; normalized to L4 gpt_5_5 adapter",
-        "alias_of": "gpt_5_5",
+        "request_api_style": "OpenAI-compatible custom endpoint; normalized to L4 gpt_5_6 adapter",
+        "alias_of": "gpt_5_6",
     })
     return rows
 

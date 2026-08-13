@@ -1365,7 +1365,7 @@ const OFFICIAL_MODEL_HOSTS = Object.freeze({
   glm_5_2: new Set(["open.bigmodel.cn"]),
   glm_5_1: new Set(["open.bigmodel.cn"]),
   zhipu: new Set(["open.bigmodel.cn"]),
-  gpt_5_5: new Set(["api.openai.com"]),
+  gpt_5_6: new Set(["api.openai.com"]),
   openai: new Set(["api.openai.com"]),
   anthropic: new Set(["api.anthropic.com"]),
   minimax_m3: new Set(["api.minimaxi.com"]),

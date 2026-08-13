@@ -164,7 +164,7 @@ function sanitizeLocalSettings(settings = {}) {
   if (Object.prototype.hasOwnProperty.call(next, "bodyLighting")) next.bodyLighting = presentation.lighting;
   const service = String(next.modelService || "").trim();
   const provider = String(next.modelProvider || "").trim();
-  if (next.modelMatchedProvider === "gpt_5_5" && service !== "gpt_5_5" && provider !== "gpt_5_5") {
+  if (next.modelMatchedProvider === "gpt_5_6" && service !== "gpt_5_6" && provider !== "gpt_5_6") {
     next.modelMatchedProvider = "";
   }
   return next;

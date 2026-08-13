@@ -3,7 +3,7 @@ export const providerPresets = {
     label: "OpenAI compatible",
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",
-    model: "gpt-5.5",
+    model: "gpt-5.6",
     thinking: {
       supported: false,
       modes: [],
@@ -64,11 +64,11 @@ export const providerPresets = {
       defaultDepth: "auto",
     },
   },
-  gpt_5_5: {
-    label: "OpenAI GPT-5.5",
-    provider: "gpt_5_5",
+  gpt_5_6: {
+    label: "OpenAI GPT-5.6",
+    provider: "gpt_5_6",
     baseUrl: "https://api.openai.com/v1",
-    model: "gpt-5.5",
+    model: "gpt-5.6",
     thinking: {
       supported: false,
       modes: [],
@@ -154,7 +154,7 @@ export function applyProviderPreset(settings, presetId) {
 export function providerThinkingCapability(serviceId = "custom", providerId = "") {
   const service = String(serviceId || "").trim();
   const provider = String(providerId || "").trim().toLowerCase();
-  if (provider === "openai" || provider === "openai_compatible" || provider === "gpt_5_5") {
+  if (provider === "openai" || provider === "openai_compatible" || provider === "gpt_5_6") {
     return unsupportedThinking;
   }
   const preset = providerPresets[service];

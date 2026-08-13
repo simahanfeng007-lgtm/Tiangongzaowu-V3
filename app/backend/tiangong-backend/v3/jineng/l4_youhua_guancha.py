@@ -215,7 +215,7 @@ def _usable(summary: dict[str, Any]) -> bool:
     return summary.get("credential_state") == "configured" and summary.get("health") in {"available", "degraded", "no_data"}
 
 
-def _pick(summaries: dict[str, dict[str, Any]], preferred: list[str], fallback: str = "gpt_5_5") -> dict[str, str]:
+def _pick(summaries: dict[str, dict[str, Any]], preferred: list[str], fallback: str = "gpt_5_6") -> dict[str, str]:
     for provider_id in preferred:
         row = summaries.get(provider_id) or {}
         if _usable(row):
@@ -223,30 +223,30 @@ def _pick(summaries: dict[str, dict[str, Any]], preferred: list[str], fallback: 
     row = summaries.get(fallback) or {}
     if _usable(row):
         return {"provider": fallback, "reason": f"{fallback}:fallback:{row.get('health')}"}
-    return {"provider": fallback if fallback else (preferred[0] if preferred else "gpt_5_5"), "reason": "requires_credentials_or_health_data"}
+    return {"provider": fallback if fallback else (preferred[0] if preferred else "gpt_5_6"), "reason": "requires_credentials_or_health_data"}
 
 
 def _routing_recommendations(summaries: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     return [
         {
             "task": "ordinary_chat",
-            **_pick(summaries, ["gpt_5_5", "minimax_m3", "deepseek_v4"]),
+            **_pick(summaries, ["gpt_5_6", "minimax_m3", "deepseek_v4"]),
         },
         {
             "task": "agentic_tool_call",
-            **_pick(summaries, ["gpt_5_5", "glm_5_2", "minimax_m3", "deepseek_v4"]),
+            **_pick(summaries, ["gpt_5_6", "glm_5_2", "minimax_m3", "deepseek_v4"]),
         },
         {
             "task": "deep_reasoning",
-            **_pick(summaries, ["deepseek_v4", "gpt_5_5", "minimax_m3"]),
+            **_pick(summaries, ["deepseek_v4", "gpt_5_6", "minimax_m3"]),
         },
         {
             "task": "structured_code_or_json",
-            **_pick(summaries, ["glm_5_2", "minimax_m3", "gpt_5_5"]),
+            **_pick(summaries, ["glm_5_2", "minimax_m3", "gpt_5_6"]),
         },
         {
             "task": "frontier_fallback",
-            **_pick(summaries, ["gpt_5_5", "deepseek_v4", "minimax_m3"]),
+            **_pick(summaries, ["gpt_5_6", "deepseek_v4", "minimax_m3"]),
         },
     ]
 

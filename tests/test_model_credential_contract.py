@@ -53,7 +53,7 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('"minimax_m3": ("TIANGONG_MINIMAX_M3_API_KEY", "MINIMAX_API_KEY")', backend)
         self.assertIn('"glm_5_2": ("TIANGONG_GLM_5_2_API_KEY"', backend)
         self.assertIn('"mimo": ("TIANGONG_MIMO_API_KEY", "MIMO_API_KEY")', backend)
-        self.assertIn('"gpt_5_5": ("TIANGONG_GPT_5_5_API_KEY", "OPENAI_API_KEY")', backend)
+        self.assertIn('"gpt_5_6": ("TIANGONG_GPT_5_6_API_KEY", "OPENAI_API_KEY")', backend)
 
     def test_every_writable_settings_panel_group_has_an_authoritative_sink(self) -> None:
         """Prevent UI-only settings changes from silently losing their runtime mapping."""

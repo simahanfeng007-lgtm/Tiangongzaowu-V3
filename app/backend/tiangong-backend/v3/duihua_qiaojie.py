@@ -3295,7 +3295,10 @@ def _llm_match_display_name(match: dict, raw_provider: str, provider_display_nam
     raw = str(raw_provider or "").strip()
     if match.get("reason") == "unmatched_openai_compatible_fallback" and raw:
         normalized = raw.lower().replace("_", "-")
-        if normalized not in {"openai", "openai-compatible", "gpt", "gpt-5.5", "gpt-5-5"}:
+        if normalized not in {
+            "openai", "openai-compatible", "gpt",
+            "gpt-5.6", "gpt-5-6", "gpt-5.5", "gpt-5-5",
+        }:
             return f"{raw} / {provider_display_name}"
     return provider_display_name
 

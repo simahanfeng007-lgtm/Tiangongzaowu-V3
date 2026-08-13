@@ -26,7 +26,7 @@ _OFFICIAL_HOSTS: dict[str, frozenset[str]] = {
     "glm_5_2": frozenset({"open.bigmodel.cn"}),
     "glm_5_1": frozenset({"open.bigmodel.cn"}),
     "zhipu": frozenset({"open.bigmodel.cn"}),
-    "gpt_5_5": frozenset({"api.openai.com"}),
+    "gpt_5_6": frozenset({"api.openai.com"}),
     "openai": frozenset({"api.openai.com"}),
     "anthropic": frozenset({"api.anthropic.com"}),
     "minimax_m3": frozenset({"api.minimaxi.com"}),

@@ -1030,7 +1030,7 @@ def _default_image_generation_model(provider: str) -> str:
     provider = str(provider or "").strip().lower()
     defaults = {
         "openai": "gpt-image-1",
-        "gpt_5_5": "gpt-image-1",
+        "gpt_5_6": "gpt-image-1",
         "minimax": "image-01",
         "minimax_m3": "image-01",
     }

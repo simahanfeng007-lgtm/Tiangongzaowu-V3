@@ -95,7 +95,7 @@ function providerPresetRows(settings = {}) {
   }
   for (const [id, preset] of Object.entries(providerPresets)) {
     if (seen.has(id)) continue;
-    if (id === "openai_compatible" && seenProviders.has("gpt_5_5")) continue;
+    if (id === "openai_compatible" && seenProviders.has("gpt_5_6")) continue;
     seen.add(id);
     if (preset.provider) seenProviders.add(preset.provider);
     rows.push({

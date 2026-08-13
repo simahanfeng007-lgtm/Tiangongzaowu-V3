@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-PROVIDER_IDS=("deepseek_v4","mimo","glm_5_2","minimax_m3","gpt_5_5")
+PROVIDER_IDS=("deepseek_v4","mimo","glm_5_2","minimax_m3","gpt_5_6")
 
 @dataclass(frozen=True, slots=True)
 class ProviderFactsheet:
@@ -38,12 +38,12 @@ _FACTS={
  "mimo": ProviderFactsheet("mimo","MiMo","mimo-v2.5-pro",context_window_tokens=131072,max_output_tokens=16384),
  "glm_5_2": ProviderFactsheet("glm_5_2","GLM 5.2","glm-5.2",context_window_tokens=131072,max_output_tokens=32768),
  "minimax_m3": ProviderFactsheet("minimax_m3","MiniMax M3","MiniMax-M3",context_window_tokens=1000000,max_output_tokens=32768),
- "gpt_5_5": ProviderFactsheet("gpt_5_5","GPT-5.5","gpt-5.5",context_window_tokens=400000,max_output_tokens=32768),
+ "gpt_5_6": ProviderFactsheet("gpt_5_6","GPT-5.6","gpt-5.6",context_window_tokens=400000,max_output_tokens=32768),
 }
 
 def _pid(provider_id: str) -> str:
     key=str(provider_id or "").strip().lower()
-    aliases={"deepseek":"deepseek_v4","deepseek_v4_pro":"deepseek_v4","glm":"glm_5_2","minimax":"minimax_m3","gpt":"gpt_5_5","openai":"gpt_5_5"}
+    aliases={"deepseek":"deepseek_v4","deepseek_v4_pro":"deepseek_v4","glm":"glm_5_2","minimax":"minimax_m3","gpt":"gpt_5_6","openai":"gpt_5_6"}
     key=aliases.get(key,key)
     if key not in _FACTS: raise ValueError(f"unknown provider: {provider_id}")
     return key
@@ -71,7 +71,7 @@ class ModelProviderRequestMapper:
         if self.provider_id=="deepseek_v4": return {"temperature":0.6}
         if self.provider_id=="glm_5_2": return {"temperature":0.7}
         if self.provider_id=="mimo": return {"temperature":0.7}
-        if self.provider_id=="gpt_5_5": return {}
+        if self.provider_id=="gpt_5_6": return {}
         return {}
 
 class ModelProviderResponseMapper:

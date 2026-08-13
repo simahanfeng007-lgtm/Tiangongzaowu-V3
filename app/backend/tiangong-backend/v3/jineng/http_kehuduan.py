@@ -1124,7 +1124,7 @@ def _yingyong_l4_youhua(pid: str, payload: dict[str, Any], model_name: str, base
         output_limit, output_policy = _jianyi_shuchu_shangxian(pid, payload, "MIMO_MAX_TOKENS")
         payload.setdefault("max_tokens", output_limit)
         applied.extend(["mimo_open_weight_profile_applied", "max_tokens_present", f"output_policy:{output_policy}"])
-    elif pid == "gpt_5_5":
+    elif pid == "gpt_5_6":
         output_limit, output_policy = _jianyi_shuchu_shangxian(pid, payload, "OPENAI_MAX_TOKENS")
         payload.setdefault("max_tokens", output_limit)
         applied.extend(["openai_compatible_profile_applied", "max_tokens_present", f"output_policy:{output_policy}"])

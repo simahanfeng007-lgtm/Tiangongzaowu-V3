@@ -9,7 +9,7 @@
   MiniMax M3:    API 实测 — reasoning_split=true 时 delta 含 reasoning_content
   Mimo:          Mimo-V2.5-Pro 文档标注 "Deep Thinking"，OpenAI 兼容
   GLM-5.2:       Zhipu 官方文档标注 "深度思考"，OpenAI 兼容
-  GPT-5.5:       OpenAI 兼容，thinking 模式同标准
+  GPT-5.6:       OpenAI 兼容，thinking 模式同标准
 
 所有模型在 thinking 阶段的 streaming delta 均使用 reasoning_content 字段。
 """
@@ -88,10 +88,10 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         heartbeat_interval=15.0,
     ),
 
-    # ── GPT-5.5 ──
+    # ── GPT-5.6 ──
     # OpenAI 兼容，thinking 模式标准
-    "gpt_5_5": ModelStreamConfig(
-        provider_id="gpt_5_5",
+    "gpt_5_6": ModelStreamConfig(
+        provider_id="gpt_5_6",
         context_window=1_048_576,
         thinking_enabled=True,
         thinking_param={"type": "enabled"},
