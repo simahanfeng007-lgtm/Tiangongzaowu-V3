@@ -30,7 +30,7 @@ from .json_guards import (
     error_payload,
     loads_json_object,
 )
-from .reply_sanitizer import strip_internal_reply_markers
+from .reply_sanitizer import has_unknown_internal_markup, strip_internal_reply_markers
 from .l0_ability_projection import (
     REGISTRY_SCHEMA,
     read_json_compat,
@@ -57,6 +57,9 @@ MAX_FILE_JSON_BODY_BYTES = 64 * 1024 * 1024
 MAX_VOICE_BODY_BYTES = 25 * 1024 * 1024
 CHAT_RETRY_LIMIT = 1
 CHAT_RETRY_SLEEP_SECONDS = 0.35
+# 未知内部标记（例如 <conversation>…</conversation>）打回重发的次数上限。
+# 与 CHAT_RETRY_LIMIT 独立：普通错误重试保持原语义，只有脏格式才多花一次模型调用。
+CHAT_MARKUP_RETRY_LIMIT = 2
 RUN_STATE_SCHEMA = "tiangong.v3.run_state.v1"
 BACKEND_BUILD_ID = os.environ.get("TIANGONG_BUILD_ID", "tiangong-v3.0.3-source-complete-20260722")
 BACKEND_API_CONTRACT = os.environ.get("TIANGONG_BACKEND_API_CONTRACT", "tiangong.desktop.backend.v3")
@@ -1138,7 +1141,7 @@ class DuihuaQiaojie:
                 _stream_queue.put(evt)
         last_error = ""
         last_error_payload: dict | None = None
-        for attempt in range(1, CHAT_RETRY_LIMIT + 1):
+        for attempt in range(1, max(CHAT_RETRY_LIMIT, CHAT_MARKUP_RETRY_LIMIT) + 1):
             try:
                 run_control.step("backend_attempt", "模型运行", "running", f"第 {attempt} 次调用。")
                 attempt_biaoxian: dict = {}
@@ -1169,6 +1172,13 @@ class DuihuaQiaojie:
                             or getattr(self._zd, "zuihou_biaoxian", None)
                             or {}
                         )
+                if has_unknown_internal_markup(huifu):
+                    if attempt < CHAT_MARKUP_RETRY_LIMIT:
+                        last_error = str(huifu)
+                        run_control.step("backend_attempt", "模型运行", "failed", "检测到未知内部标记，打回重发。")
+                        time.sleep(CHAT_RETRY_SLEEP_SECONDS * attempt)
+                        continue
+                    run_control.step("backend_attempt", "模型运行", "done", "检测到未知内部标记，重试次数已用尽，交付前清理。")
                 if _huifu_keyi_zhongshi(huifu) and attempt < CHAT_RETRY_LIMIT:
                     last_error = str(huifu)
                     candidate_error = chat_error_text_payload(last_error, source="chat_runtime")

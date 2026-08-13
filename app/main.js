@@ -1656,6 +1656,12 @@ function modelRuntimeServiceName() {
   return "total-gateway";
 }
 
+// Credential saves restart the 7184 gateway so it can inherit the new env
+// credential. /ready collection takes 20-60s in source mode (HOTFIX-20260728),
+// so the restart budget must match the ready probe's 90s window; the old 45s
+// caused "保存中" rollback loops whenever a slow boot passed 45s.
+const CREDENTIAL_RESTART_TIMEOUT_MS = 90000;
+
 function withTimeout(promise, ms, message) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -1705,12 +1711,12 @@ async function setProviderApiKey(payload = {}) {
     return { ok: true, provider, credential_state: "configured", backend_restarted: false, env_already_bound: true };
   }
   try {
-    await withTimeout(restartBackendForCredentialChange(), 45000, "model_runtime_restart_timeout");
+    await withTimeout(restartBackendForCredentialChange(), CREDENTIAL_RESTART_TIMEOUT_MS, "model_runtime_restart_timeout");
   } catch (error) {
     writeDesktopCredentialEnvelope(filePath, before);
     if (typeof previousEnv === "string") process.env[providerApiKeyEnvName(provider)] = previousEnv;
     else delete process.env[providerApiKeyEnvName(provider)];
-    try { await withTimeout(restartBackendForCredentialChange(), 45000, "model_runtime_restart_timeout"); } catch (rollbackError) {
+    try { await withTimeout(restartBackendForCredentialChange(), CREDENTIAL_RESTART_TIMEOUT_MS, "model_runtime_restart_timeout"); } catch (rollbackError) {
       writeDesktopDiagnostic("model-credential-rollback-restart-failed", rollbackError?.message || rollbackError);
     }
     throw error;
@@ -1730,12 +1736,12 @@ async function deleteProviderApiKey(payload = {}) {
   }
   delete process.env[providerApiKeyEnvName(provider)];
   try {
-    await withTimeout(restartBackendForCredentialChange(), 45000, "model_runtime_restart_timeout");
+    await withTimeout(restartBackendForCredentialChange(), CREDENTIAL_RESTART_TIMEOUT_MS, "model_runtime_restart_timeout");
   } catch (error) {
     writeDesktopCredentialEnvelope(filePath, before);
     if (typeof previousEnv === "string") process.env[providerApiKeyEnvName(provider)] = previousEnv;
     else delete process.env[providerApiKeyEnvName(provider)];
-    try { await withTimeout(restartBackendForCredentialChange(), 45000, "model_runtime_restart_timeout"); } catch (rollbackError) {
+    try { await withTimeout(restartBackendForCredentialChange(), CREDENTIAL_RESTART_TIMEOUT_MS, "model_runtime_restart_timeout"); } catch (rollbackError) {
       writeDesktopDiagnostic("model-credential-rollback-restart-failed", rollbackError?.message || rollbackError);
     }
     throw error;
