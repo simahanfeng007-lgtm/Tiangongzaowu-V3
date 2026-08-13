@@ -822,7 +822,16 @@ class GatewayRuntime:
                         raise RuntimeError("autonomy activity decision is invalid")
                     return decision
 
-                runtime.life_service.set_autonomy_decider(
+                from life_service.embedded_runtime_wiring import (
+                    EmbeddedLifeGatewayBinding,
+                    bind_embedded_life_gateway_callback,
+                    bind_embedded_life_learning_materializers,
+                )
+
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.AUTONOMY_DECIDER,
+
                     decide_autonomous_activity
                 )
                 # The Life heartbeat owns its schedule and state, while the
@@ -845,7 +854,10 @@ class GatewayRuntime:
                         raise RuntimeError("learning model decision is invalid")
                     return decision
 
-                runtime.life_service.set_learning_decider(decide_autonomous_learning)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.LEARNING_DECIDER,
+                    decide_autonomous_learning)
 
                 def decide_capability_patch(material: object) -> dict[str, object]:
                     scoped = dict(material) if isinstance(material, dict) else {}
@@ -863,7 +875,10 @@ class GatewayRuntime:
                         raise RuntimeError("capability patch decision is invalid")
                     return decision
 
-                runtime.life_service.set_capability_patch_decider(decide_capability_patch)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.CAPABILITY_PATCH_DECIDER,
+                    decide_capability_patch)
 
                 # Learning-share copywriter: the model rephrases a completed
                 # learning into a short user-facing share message.  It reuses
@@ -884,7 +899,10 @@ class GatewayRuntime:
                         raise RuntimeError("learning share synthesis is invalid")
                     return str(preview.get("summary") or "").strip()
 
-                runtime.life_service.set_learning_share_writer(write_learning_share)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.LEARNING_SHARE_WRITER,
+                    write_learning_share)
 
                 # Greeting copywriter: same persona voice lane, used by the
                 # life scheduler's random user-greeting event.
@@ -903,7 +921,10 @@ class GatewayRuntime:
                         raise RuntimeError("greeting compose is invalid")
                     return str(preview.get("summary") or "").strip()
 
-                runtime.life_service.set_greeting_writer(write_greeting)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.GREETING_WRITER,
+                    write_greeting)
 
                 # P16 native proactive cognition. Decision and expression are
                 # injected in-process through the one 7184 assembly point; Life
@@ -939,8 +960,14 @@ class GatewayRuntime:
                         raise RuntimeError("proactive expression is invalid")
                     return preview
 
-                runtime.life_service.set_proactive_decider(decide_proactive_initiative)
-                runtime.life_service.set_proactive_expression_writer(write_proactive_expression)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.PROACTIVE_DECIDER,
+                    decide_proactive_initiative)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.PROACTIVE_EXPRESSION_WRITER,
+                    write_proactive_expression)
 
                 # Self-iteration reviewer: the model proposes bounded self-code
                 # upgrade cards on a slow cadence.  Every card waits for the
@@ -961,7 +988,10 @@ class GatewayRuntime:
                         raise RuntimeError("self-iteration model decision is invalid")
                     return decision
 
-                runtime.life_service.set_self_iteration_decider(decide_self_iteration)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.SELF_ITERATION_DECIDER,
+                    decide_self_iteration)
 
                 def apply_upgrade_changes(material: object) -> dict[str, object]:
                     scoped = dict(material) if isinstance(material, dict) else {}
@@ -975,7 +1005,10 @@ class GatewayRuntime:
                         return {"ok": False, "error": str(payload.get("error") or "self-iteration apply failed")}
                     return payload if isinstance(payload, dict) else {"ok": False, "error": "self-iteration apply result invalid"}
 
-                runtime.life_service.set_upgrade_executor(apply_upgrade_changes)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.UPGRADE_EXECUTOR,
+                    apply_upgrade_changes)
 
                 def artifact_action_catalog() -> list[dict[str, object]]:
                     status, payload, _ = runtime.backend_service.request(
@@ -1102,9 +1135,18 @@ class GatewayRuntime:
                         raise RuntimeError(str(payload.get("error") or "learning_synthesis_failed"))
                     return preview
 
-                runtime.life_service.set_artifact_action_catalog_provider(artifact_action_catalog)
-                runtime.life_service.set_artifact_publisher(publish_learning_artifact)
-                runtime.life_service.set_world_identity_provider(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.ARTIFACT_ACTION_CATALOG_PROVIDER,
+                    artifact_action_catalog)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.ARTIFACT_PUBLISHER,
+                    publish_learning_artifact)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.WORLD_IDENTITY_PROVIDER,
+
                     lambda life_id: {
                         "life_id": str(life_id),
                         "principal_scope_hash": canonical_sha256({
@@ -1116,20 +1158,37 @@ class GatewayRuntime:
                 )
                 # P16 reads World only through the existing committed WU projection.
                 # This callback performs no sensing and creates no second World runtime.
-                runtime.life_service.set_proactive_world_provider(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.PROACTIVE_WORLD_PROVIDER,
+
                     runtime.backend_service.repository_evidence_snapshot
                 )
-                runtime.life_service.set_capability_workspace_mapper(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.CAPABILITY_WORKSPACE_MAPPER,
+
                     life_capability_workspace_mapper(config.workspace_root)
                 )
-                runtime.life_service.set_capability_workspace_remover(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.CAPABILITY_WORKSPACE_REMOVER,
+
                     life_capability_workspace_remover(config.workspace_root)
                 )
-                runtime.life_service.set_capability_workspace_marker(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.CAPABILITY_WORKSPACE_MARKER,
+
                     life_capability_workspace_marker(config.workspace_root)
                 )
-                runtime.life_service.set_artifact_invoker(invoke_learning_artifact_action)
-                runtime.life_service.set_learning_materializers(
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service,
+                    EmbeddedLifeGatewayBinding.ARTIFACT_INVOKER,
+                    invoke_learning_artifact_action)
+                bind_embedded_life_learning_materializers(
+                    runtime.life_service,
+
                     researcher=research_learning_material,
                     synthesizer=synthesize_learning_material,
                 )
