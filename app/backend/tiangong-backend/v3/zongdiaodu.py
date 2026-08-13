@@ -77,6 +77,12 @@ from .runtime_lifecycle import (
     start_zongdiaodu_runtime,
     stop_zongdiaodu_runtime,
 )
+from .runtime_turn_orchestration import (
+    PreparedStep,
+    TurnLoopState,
+    coordinate_parallel_steps,
+    evaluate_turn_budget,
+)
 
 install_zongdiaodu_import_observers()
 
@@ -7132,10 +7138,10 @@ class Zongdiaodu:
                 raise holder["error"]
             return holder["value"]
 
-        gongju_cishu = 0
+        turn_loop = TurnLoopState()
+        gongju_cishu = turn_loop.action_rounds
         tool_call_counts: dict[str, int] = {}
         tool_call_results: dict[str, Any] = {}
-        repeat_observation_counts: dict[str, int] = {}
         protected_path_keys: set[str] = set()
         generated_media: list[dict[str, str]] = []
         generated_attachments: list[dict[str, str]] = []
@@ -7151,14 +7157,9 @@ class Zongdiaodu:
         final_guard_exhausted = False
         final_chain_status = "complete"
         correction_state = _simple_chain_completion_correction_state(run_state)
-        iteration_count = 0
+        iteration_count = turn_loop.iteration_count
         loop_started_at = time.monotonic()
-        if isinstance(run_state, dict):
-            run_state["_live"] = {
-                "iteration_count": 0,
-                "tool_rounds": 0,
-                "loop_started_at": loop_started_at,
-            }
+        turn_loop.project_live(run_state, loop_started_at)
         progress_monitor = _SimpleChainProgressMonitor(
             max_no_progress_steps=_SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
             max_cycle_hits=_SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
@@ -7251,9 +7252,8 @@ class Zongdiaodu:
 
         def _check_stop(summary: str = "") -> None:
             """停止检查前先投影预算，保证中断点上的时长/轮次精确落盘。"""
-            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
-                run_state["_live"]["iteration_count"] = iteration_count
-                run_state["_live"]["tool_rounds"] = gongju_cishu
+            turn_loop.project_live(run_state, loop_started_at)
+            if isinstance(run_state, dict):
                 _simple_chain_save_run_state(run_state)
             if run_control:
                 run_control.check_stop(summary)
@@ -7347,9 +7347,8 @@ class Zongdiaodu:
         while True:
             if initial_llm_failed or audio_semantic_unavailable:
                 break
-            iteration_count += 1
-            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
-                run_state["_live"]["iteration_count"] = iteration_count
+            iteration_count = turn_loop.bump_iteration()
+            turn_loop.project_live(run_state, loop_started_at)
             loop_elapsed = time.monotonic() - loop_started_at
             # 状态级卡死判定：状态指纹连续无变化 / 状态回环 / 意图文本重复。
             # 单工具重复不再作为判据（误伤合法重跑），只保留保护性安全网。
@@ -7380,15 +7379,14 @@ class Zongdiaodu:
                         },
                     )
                 break
-            if (
-                iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS
-                or loop_elapsed > effective_wall_clock_seconds
-            ):
-                budget_reasons: list[str] = []
-                if iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS:
-                    budget_reasons.append("[loop_budget_exhausted] loop iteration budget exhausted")
-                if loop_elapsed > effective_wall_clock_seconds:
-                    budget_reasons.append("[loop_budget_exhausted] wall-clock budget exhausted")
+            budget_decision = evaluate_turn_budget(
+                iteration_count=iteration_count,
+                elapsed_seconds=loop_elapsed,
+                max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                max_wall_clock_seconds=effective_wall_clock_seconds,
+            )
+            if budget_decision.exhausted:
+                budget_reasons = list(budget_decision.reasons)
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
@@ -7511,34 +7509,44 @@ class Zongdiaodu:
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     continue
-                seen_parallel: set[str] = set()
-                unique_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
-                repeated_parallel: list[tuple[str, dict[str, Any], str, str]] = []
+                coordination_candidates: list[PreparedStep] = []
                 for tn, ta, _action, _issues in prepared_parallel:
                     call_key = _gongju_diaoyong_key(tn, ta)
-                    if call_key in seen_parallel:
-                        # One model response may contain the same call twice.
-                        # Execute a single occurrence; there is no prior fact to
-                        # replay yet and duplicate side effects are forbidden.
-                        continue
-                    if call_key in tool_call_results and _simple_chain_should_replay_cached_call(
-                        tool_call_results.get(call_key)
-                    ):
-                        repeated_parallel.append((tn, ta, call_key, _action))
-                        seen_parallel.add(call_key)
-                        continue
-                    seen_parallel.add(call_key)
-                    unique_parallel.append((tn, ta, _action, _issues))
-                prepared_parallel = unique_parallel
-                protected_parallel: list[tuple[str, dict[str, Any], list[str]]] = []
-                remaining_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
-                for _pn, _pa, _paction, _pissues in prepared_parallel:
-                    protected_hits = _simple_chain_protected_block(_pn, _pa, protected_path_keys)
-                    if protected_hits:
-                        protected_parallel.append((_pn, _pa, protected_hits))
-                    else:
-                        remaining_parallel.append((_pn, _pa, _paction, _pissues))
-                prepared_parallel = remaining_parallel
+                    coordination_candidates.append(
+                        PreparedStep(
+                            name=tn,
+                            arguments=ta,
+                            action=_action,
+                            observations=tuple(_issues),
+                            identity_key=call_key,
+                            reuse_prior_fact=(
+                                call_key in tool_call_results
+                                and _simple_chain_should_replay_cached_call(
+                                    tool_call_results.get(call_key)
+                                )
+                            ),
+                            artifact_guard_hits=tuple(
+                                _simple_chain_protected_block(
+                                    tn,
+                                    ta,
+                                    protected_path_keys,
+                                )
+                            ),
+                        )
+                    )
+                parallel_coordination = coordinate_parallel_steps(coordination_candidates)
+                prepared_parallel = [
+                    (item.name, item.arguments, item.action, list(item.observations))
+                    for item in parallel_coordination.ready
+                ]
+                repeated_parallel = [
+                    (item.name, item.arguments, item.identity_key, item.action)
+                    for item in parallel_coordination.reused
+                ]
+                protected_parallel = [
+                    (item.name, item.arguments, list(item.artifact_guard_hits))
+                    for item in parallel_coordination.guarded
+                ]
                 if protected_parallel and prepared_parallel:
                     # 混合批次：放行新的生产性调用，只抑制会破坏已验证产物的
                     # 调用。与 parallel explicit-action filter 同一原则，
@@ -7563,8 +7571,7 @@ class Zongdiaodu:
                         )
                 elif protected_parallel:
                     guard_key = "protected_block:parallel"
-                    guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                    repeat_observation_counts[guard_key] = guard_count
+                    guard_count = turn_loop.bump_repeat(guard_key)
                     combined_protected = {
                         "schema": "tiangong.v3.parallel_protected_artifact.v1",
                         "request_id": request_id,
@@ -7629,8 +7636,7 @@ class Zongdiaodu:
                         ),
                         repeated_parallel[0],
                     )
-                    repeat_count = repeat_observation_counts.get(repeated_key, 0) + 1
-                    repeat_observation_counts[repeated_key] = repeat_count
+                    repeat_count = turn_loop.bump_repeat(repeated_key)
                     if (
                         repeat_count >= 2
                         and repeated_action not in {"skill.get", "skill.read", "skill.route"}
@@ -7714,7 +7720,7 @@ class Zongdiaodu:
                     )
                     for offset, (tn, ta, _, _) in enumerate(prepared_parallel, start=1)
                 ]
-                if gongju_cishu + len(tools) > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+                if not turn_loop.can_schedule(len(tools), _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
                     final_guard_exhausted = True
                     final_chain_status = "force_stopped"
                     shenti, huifu = _natural_closeout(
@@ -7953,7 +7959,7 @@ class Zongdiaodu:
                     call_key = _gongju_diaoyong_key(tn, ta if isinstance(ta, dict) else {})
                     tool_call_counts[call_key] = tool_call_counts.get(call_key, 0) + 1
                     tool_call_results[call_key] = raw
-                    gongju_cishu += 1
+                    gongju_cishu = turn_loop.record_batch_result()
                     if on_event:
                         ok_flag = bool(raw.get("ok", True) if isinstance(raw, dict) else True)
                         on_event({
@@ -8301,8 +8307,7 @@ class Zongdiaodu:
             candidate_call_key = _gongju_diaoyong_key(tool_name, tool_args)
             if candidate_call_key in blocked_recovery_call_keys and not explicit_retry_authorized:
                 guard_key = "recovery_guard:" + candidate_call_key
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
+                guard_count = turn_loop.bump_repeat(guard_key)
                 recovery_payload = _simple_chain_recovery_guard_payload(
                     request_id,
                     recovery_checkpoint,
@@ -8382,8 +8387,7 @@ class Zongdiaodu:
             protected_hits = _simple_chain_protected_block(tool_name, tool_args, protected_path_keys)
             if protected_hits:
                 guard_key = "protected_block:" + candidate_call_key
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
+                guard_count = turn_loop.bump_repeat(guard_key)
                 protected_payload = _simple_chain_protected_artifact_payload(
                     request_id,
                     tool_name,
@@ -8418,8 +8422,7 @@ class Zongdiaodu:
             if tool_call_key in tool_call_results and _simple_chain_should_replay_cached_call(
                 tool_call_results.get(tool_call_key)
             ):
-                repeat_count = repeat_observation_counts.get(tool_call_key, 0) + 1
-                repeat_observation_counts[tool_call_key] = repeat_count
+                repeat_count = turn_loop.bump_repeat(tool_call_key)
                 repeat_action = _simple_chain_tool_action(tool_name, tool_args)
                 if (
                     repeat_count >= 2
@@ -8532,7 +8535,7 @@ class Zongdiaodu:
                     on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
-            if gongju_cishu >= _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+            if not turn_loop.can_schedule(1, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout(
@@ -8552,7 +8555,7 @@ class Zongdiaodu:
                     )
                 break
             tool_call_counts[tool_call_key] = tool_call_counts.get(tool_call_key, 0) + 1
-            gongju_cishu += 1
+            gongju_cishu = turn_loop.reserve_one()
             tool_call_id = _simple_chain_tool_call_id(request_id, gongju_cishu, tool_name, tool_args)
             dispatch_meta = _tool_dispatch_meta(None, tool_name, tool_args, tool_label, gongju_cishu)
             dispatch_meta["call_id"] = tool_call_id
