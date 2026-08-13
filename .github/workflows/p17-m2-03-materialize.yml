@@ -1,0 +1,86 @@
+name: P17 M2-03 materialize verified blobs
+
+on:
+  push:
+    branches:
+      - agent/p17-m2-god-module-decomposition
+    paths:
+      - .github/workflows/p17-m2-03-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m2-god-module-decomposition
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact M2-03 candidate
+        run: python scripts/p17-m2-03-candidate.py
+
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+          python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+
+      - name: Create unreferenced verified blobs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          paths = [
+              ".github/workflows/architecture-gate.yml",
+              "app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py",
+              "app/backend/tiangong-backend/v3/zongdiaodu.py",
+              "source-ownership.json",
+              "tests/test_zongdiaodu_p17_m2_03.py",
+          ]
+          result = {}
+          for relative in paths:
+              raw = Path(relative).read_bytes()
+              body = json.dumps({
+                  "content": base64.b64encode(raw).decode("ascii"),
+                  "encoding": "base64",
+              }).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs",
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  result[relative] = json.load(response)["sha"]
+          print(json.dumps(result, sort_keys=True))
