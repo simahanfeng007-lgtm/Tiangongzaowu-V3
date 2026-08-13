@@ -5,9 +5,9 @@ export const providerPresets = {
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-5.6",
     thinking: {
-      supported: false,
-      modes: [],
-      defaultDepth: "",
+      supported: true,
+      modes: ["off", "minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, label: value })),
+      defaultDepth: "medium",
     },
   },
   deepseek_v4: {
@@ -18,10 +18,11 @@ export const providerPresets = {
     thinking: {
       supported: true,
       modes: [
-        { value: "enabled", label: "enabled" },
-        { value: "disabled", label: "disabled" },
+        { value: "off", label: "关闭" },
+        { value: "high", label: "高" },
+        { value: "max", label: "最大" },
       ],
-      defaultDepth: "enabled",
+      defaultDepth: "high",
     },
   },
   mimo: {
@@ -32,9 +33,10 @@ export const providerPresets = {
     thinking: {
       supported: true,
       modes: [
-        { value: "auto", label: "auto" },
+        { value: "off", label: "关闭" },
+        { value: "on", label: "开启" },
       ],
-      defaultDepth: "auto",
+      defaultDepth: "on",
     },
   },
   glm_5_2: {
@@ -45,10 +47,15 @@ export const providerPresets = {
     thinking: {
       supported: true,
       modes: [
-        { value: "enabled", label: "enabled" },
-        { value: "disabled", label: "disabled" },
+        { value: "off", label: "关闭" },
+        { value: "minimal", label: "最小" },
+        { value: "low", label: "低" },
+        { value: "medium", label: "中" },
+        { value: "high", label: "高" },
+        { value: "xhigh", label: "超高" },
+        { value: "max", label: "最大" },
       ],
-      defaultDepth: "enabled",
+      defaultDepth: "high",
     },
   },
   minimax_m3: {
@@ -59,7 +66,8 @@ export const providerPresets = {
     thinking: {
       supported: true,
       modes: [
-        { value: "auto", label: "auto" },
+        { value: "off", label: "关闭" },
+        { value: "auto", label: "自动" },
       ],
       defaultDepth: "auto",
     },
@@ -70,9 +78,9 @@ export const providerPresets = {
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-5.6",
     thinking: {
-      supported: false,
-      modes: [],
-      defaultDepth: "",
+      supported: true,
+      modes: ["off", "minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, label: value })),
+      defaultDepth: "medium",
     },
   },
 };
@@ -140,8 +148,15 @@ export function applyProviderPreset(settings, presetId) {
     modelBaseUrl: profile?.modelBaseUrl ?? preset.baseUrl,
     modelName: profile?.modelName ?? preset.model,
     modelApiKey: "",
-    modelThinkingEnabled: Boolean(profile?.modelThinkingEnabled) && Boolean(thinking.supported),
-    modelThinkingDepth: profile?.modelThinkingDepth || thinking.defaultDepth || "",
+    modelThinkingEnabled: profile?.reasoning
+      ? profile.reasoning.enabled === true
+      : Boolean(profile?.modelThinkingEnabled) && Boolean(thinking.supported),
+    modelThinkingDepth: profile?.reasoning?.configured_mode
+      || profile?.reasoning?.effective_mode
+      || profile?.modelThinkingDepth
+      || thinking.defaultDepth
+      || "",
+    modelThinkingCapability: profile?.reasoning || thinking,
     modelMultimodalInput: profile?.modelMultimodalInput || settings?.modelMultimodalInput || "auto",
     modelImageInput: profile?.modelImageInput || settings?.modelImageInput || "auto",
     modelVideoInput: profile?.modelVideoInput || settings?.modelVideoInput || "auto",
@@ -154,9 +169,6 @@ export function applyProviderPreset(settings, presetId) {
 export function providerThinkingCapability(serviceId = "custom", providerId = "") {
   const service = String(serviceId || "").trim();
   const provider = String(providerId || "").trim().toLowerCase();
-  if (provider === "openai" || provider === "openai_compatible" || provider === "gpt_5_6") {
-    return unsupportedThinking;
-  }
   const preset = providerPresets[service];
   if (preset?.thinking?.supported) return preset.thinking;
   return providerThinkingFallbacks[provider] || unsupportedThinking;

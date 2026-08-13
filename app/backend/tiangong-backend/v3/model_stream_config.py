@@ -1,20 +1,12 @@
 """
 大模型专属通道适配
 ═══════════════════════════════════
-每个模型的 staring/thinking 行为配置。
-统一处理 thinking 阶段的心跳——避免前端 180s 超时。
-
-实测依据:
-  DeepSeek V4:   API 实测 — delta 含 reasoning_content
-  MiniMax M3:    API 实测 — reasoning_split=true 时 delta 含 reasoning_content
-  Mimo:          Mimo-V2.5-Pro 文档标注 "Deep Thinking"，OpenAI 兼容
-  GLM-5.2:       Zhipu 官方文档标注 "深度思考"，OpenAI 兼容
-  GPT-5.6:       OpenAI 兼容，thinking 模式同标准
-
-所有模型在 thinking 阶段的 streaming delta 均使用 reasoning_content 字段。
+每个供应商的 streaming/thinking 能力配置。
+统一处理 thinking 阶段的心跳，并把各家推理字段归一为仅后端可见的数据；
+前端只接收自然语言 content。具体控制项按供应商能力分别声明，不假设完全一致。
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -31,6 +23,21 @@ class ModelStreamConfig:
     reasoning_field: str = "reasoning_content"
     # 心跳间隔（秒），thinking 阶段每 N 秒发一次空事件
     heartbeat_interval: float = 15.0
+    # Product-facing reasoning control.  These are real provider controls, not
+    # presentation choices: private reasoning is never user-visible.
+    reasoning_modes: tuple[str, ...] = ()
+    default_reasoning_mode: str = "off"
+    reasoning_control: str = "unsupported"
+
+    def reasoning_capability(self) -> dict[str, Any]:
+        modes = list(self.reasoning_modes)
+        return {
+            "supported": bool(modes),
+            "control": self.reasoning_control,
+            "modes": modes,
+            "default_mode": self.default_reasoning_mode if self.default_reasoning_mode in modes else (modes[0] if modes else "off"),
+            "private_reasoning_visible": False,
+        }
 
 
 # ═══════════════════════════════════════════
@@ -49,6 +56,9 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         reasoning_split=False,
         reasoning_field="reasoning_content",
         heartbeat_interval=15.0,
+        reasoning_modes=("off", "high", "max"),
+        default_reasoning_mode="high",
+        reasoning_control="thinking_and_effort",
     ),
 
     # ── MiniMax M3 ──
@@ -62,6 +72,9 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         reasoning_split=True,
         reasoning_field="reasoning_content",
         heartbeat_interval=15.0,
+        reasoning_modes=("off", "auto"),
+        default_reasoning_mode="auto",
+        reasoning_control="adaptive_toggle",
     ),
 
     # ── MiMo V2.5-Pro ──
@@ -74,6 +87,9 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         reasoning_split=False,
         reasoning_field="reasoning_content",
         heartbeat_interval=15.0,
+        reasoning_modes=("off", "on"),
+        default_reasoning_mode="on",
+        reasoning_control="thinking_toggle",
     ),
 
     # ── GLM-5.2 ──
@@ -86,6 +102,9 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         reasoning_split=False,
         reasoning_field="reasoning_content",
         heartbeat_interval=15.0,
+        reasoning_modes=("off", "minimal", "low", "medium", "high", "xhigh", "max"),
+        default_reasoning_mode="high",
+        reasoning_control="thinking_and_effort",
     ),
 
     # ── GPT-5.6 ──
@@ -98,6 +117,9 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         reasoning_split=False,
         reasoning_field="reasoning_content",
         heartbeat_interval=15.0,
+        reasoning_modes=("off", "minimal", "low", "medium", "high", "xhigh"),
+        default_reasoning_mode="medium",
+        reasoning_control="reasoning_effort",
     ),
 }
 
@@ -117,3 +139,24 @@ def get_context_window(provider_id: str) -> int:
     if cfg:
         return cfg.context_window
     return 131072
+
+
+def get_model_reasoning_capability(provider_id: str, model_name: str = "") -> dict[str, Any]:
+    """Return the authoritative user-configurable reasoning contract."""
+    cfg = get_model_stream_config(provider_id)
+    normalized_model = str(model_name or "").strip().lower()
+    if cfg is not None and cfg.provider_id == "gpt_5_6" and normalized_model:
+        known_reasoning_model = normalized_model.startswith(("gpt-5", "o1", "o3", "o4"))
+        if not known_reasoning_model:
+            cfg = None
+    if cfg is None:
+        return {
+            "supported": False,
+            "control": "unsupported",
+            "modes": [],
+            "default_mode": "off",
+            "private_reasoning_visible": False,
+        }
+    capability = cfg.reasoning_capability()
+    capability.update({"provider_id": cfg.provider_id, "model_name": str(model_name or "")})
+    return capability

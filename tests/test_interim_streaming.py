@@ -81,41 +81,27 @@ class InterimTextEmitterTests(unittest.TestCase):
         self.assertEqual(received[-1], "正文内容")
 
 
-class InterimStreamRouterTests(unittest.TestCase):
-    """思考先流、正文开始后清空思考只流正文（Codex 式逐段展示）。"""
+class PrivateReasoningIsolationTests(unittest.TestCase):
+    """模型私有 reasoning 永远不能进入前端 interim 快照。"""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.zongdiaodu = importlib.import_module("v3.zongdiaodu")
         cls.emitter_cls = cls.zongdiaodu.Zongdiaodu._InterimTextEmitter
-        cls.router_cls = cls.zongdiaodu.Zongdiaodu._InterimStreamRouter
 
-    def test_reasoning_streams_then_visible_replaces(self) -> None:
+    def test_only_visible_content_is_written(self) -> None:
         received: list[str] = []
         emitter = self.emitter_cls(received.append, min_interval_seconds=0.0, min_chars=1)
-        router = self.router_cls(emitter)
-        router.push_reasoning("思考第一段")
-        router.push_reasoning("思考第二段")
-        self.assertEqual(received[-1], "思考第一段思考第二段")
-        router.push_visible("正文第一段")
+        emitter.push("正文第一段")
         self.assertEqual(received[-1], "正文第一段")
-        router.push_visible("正文第二段")
+        emitter.push("正文第二段")
         self.assertEqual(received[-1], "正文第一段正文第二段")
 
-    def test_reasoning_after_visible_ignored(self) -> None:
-        received: list[str] = []
-        emitter = self.emitter_cls(received.append, min_interval_seconds=0.0, min_chars=1)
-        router = self.router_cls(emitter)
-        router.push_visible("正文")
-        router.push_reasoning("后面的思考不再显示")
-        self.assertEqual(received, ["正文"])
-
-    def test_visible_without_reasoning(self) -> None:
-        received: list[str] = []
-        emitter = self.emitter_cls(received.append, min_interval_seconds=0.0, min_chars=1)
-        router = self.router_cls(emitter)
-        router.push_visible("直接正文")
-        self.assertEqual(received, ["直接正文"])
+    def test_scheduler_has_no_reasoning_projection_router(self) -> None:
+        source = (BACKEND_ROOT / "v3" / "zongdiaodu.py").read_text(encoding="utf-8")
+        self.assertNotIn("class _InterimStreamRouter", source)
+        self.assertNotIn("push_reasoning", source)
+        self.assertIn("_on_reasoning_chunk = None", source)
 
 
 class RunControlInterimReplyTests(unittest.TestCase):

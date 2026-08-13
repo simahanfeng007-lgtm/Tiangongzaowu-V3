@@ -91,6 +91,7 @@ function providerPresetRows(settings = {}) {
       model: String(profile.configured_model_name || profile.model_name || item.configured_model_name || item.default_model || item.model || "").trim(),
       baseUrl: String(profile.configured_base_url || profile.base_url || item.configured_base_url || item.base_url || "").trim(),
       credentialState: String(profile.credential_state || item.credential_state || "").trim(),
+      reasoning: profile.reasoning || item.reasoning || null,
     });
   }
   for (const [id, preset] of Object.entries(providerPresets)) {
@@ -105,6 +106,11 @@ function providerPresetRows(settings = {}) {
       model: preset.model || "",
       baseUrl: preset.baseUrl || "",
       credentialState: String((profiles[preset.provider] || profiles[id] || {}).credential_state || "").trim(),
+      reasoning: (profiles[preset.provider] || profiles[id] || {}).reasoning || (preset.thinking ? {
+        supported: preset.thinking.supported === true,
+        modes: (preset.thinking.modes || []).map((item) => typeof item === "string" ? item : item.value),
+        default_mode: preset.thinking.defaultDepth || "off",
+      } : null),
     });
   }
   return rows;
@@ -115,6 +121,44 @@ function presetOptions(rows, selected = "") {
     `<option value="">自动匹配 / 手动输入</option>`,
     ...rows.map((item) => `<option value="${esc(item.id)}" ${item.id === selected ? "selected" : ""}>${esc(item.label)}</option>`),
   ].join("");
+}
+
+const reasoningModeLabels = Object.freeze({
+  off: "关闭",
+  none: "关闭",
+  on: "开启",
+  auto: "自动",
+  minimal: "最小",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "超高",
+  max: "最大",
+});
+
+function normalizedReasoningCapability(value = null) {
+  const modes = Array.isArray(value?.modes)
+    ? value.modes.map((item) => {
+      if (typeof item !== "string") return item;
+      return { value: item, label: reasoningModeLabels[item] || item };
+    })
+      .filter((item) => item && String(item.value || "").trim())
+    : [];
+  return {
+    supported: value?.supported === true && modes.length > 0,
+    modes,
+    defaultMode: String(value?.default_mode || value?.defaultDepth || modes[0]?.value || "off"),
+    configuredMode: String(value?.configured_mode || value?.effective_mode || ""),
+  };
+}
+
+function reasoningOptions(capability, selected = "") {
+  if (!capability.supported) return '<option value="off">此模型不支持可配置思考</option>';
+  const active = selected || capability.configuredMode || capability.defaultMode;
+  return capability.modes.map((item) => {
+    const value = String(item.value || "");
+    return `<option value="${esc(value)}" ${value === active ? "selected" : ""}>${esc(item.label || value)}</option>`;
+  }).join("");
 }
 
 function safeJson(text) {
@@ -251,6 +295,11 @@ export const settingsPanelPlugin = {
                 <label class="field-row">
                   <span>模型名称</span>
                   <input id="settingsModelName" placeholder="provider model id" />
+                </label>
+                <label class="field-row">
+                  <span>思考深度</span>
+                  <select id="settingsModelThinking"></select>
+                  <small id="settingsModelThinkingHint">思考过程只供模型内部使用，前端仅显示自然回复。</small>
                 </label>
                 <label class="field-row">
                   <span>接口地址</span>
@@ -441,6 +490,8 @@ export const settingsPanelPlugin = {
     const presetInput = panel.querySelector("#settingsModelPreset");
     const providerInput = panel.querySelector("#settingsModelProvider");
     const modelInput = panel.querySelector("#settingsModelName");
+    const thinkingInput = panel.querySelector("#settingsModelThinking");
+    const thinkingHint = panel.querySelector("#settingsModelThinkingHint");
     const baseUrlInput = panel.querySelector("#settingsModelBaseUrl");
     const apiKeyInput = panel.querySelector("#settingsModelApiKey");
     const workspaceSaveState = panel.querySelector("#workspaceSaveState");
@@ -503,8 +554,19 @@ export const settingsPanelPlugin = {
       presetInput.value = safeSelected;
     }
 
+    function renderThinkingInput(rawCapability = null, selected = "") {
+      const capability = normalizedReasoningCapability(rawCapability);
+      thinkingInput.innerHTML = reasoningOptions(capability, selected);
+      const active = selected || capability.configuredMode || capability.defaultMode || "off";
+      thinkingInput.value = capability.supported ? active : "off";
+      thinkingInput.disabled = !capability.supported;
+      thinkingHint.textContent = capability.supported
+        ? "设置按当前服务商、接口地址和模型单独保存；思考过程不会显示到聊天正文。"
+        : "该模型没有已验证的可配置思考参数；不会向接口发送猜测字段。";
+    }
+
     function keepModelDraft() {
-      return modelFormDirty && [presetInput, providerInput, modelInput, baseUrlInput, apiKeyInput].includes(document.activeElement);
+      return modelFormDirty && [presetInput, providerInput, modelInput, thinkingInput, baseUrlInput, apiKeyInput].includes(document.activeElement);
     }
 
     function renderPermissionFields(mode, riskMax = "A4") {
@@ -550,6 +612,10 @@ export const settingsPanelPlugin = {
         baseUrlInput.value = settings.modelBaseUrl || "";
         const activeRow = presetRowById(currentPresetRows, selected) || presetRowById(currentPresetRows, matchedProvider);
         apiKeyInput.value = isCredentialConfigured(activeRow?.credentialState) ? MASKED_API_KEY : "";
+        renderThinkingInput(
+          settings.modelThinkingCapability || activeRow?.reasoning,
+          settings.modelThinkingDepth,
+        );
       }
       workspaceInput.value = settings.workspace || "";
       if (workspaceMode) {
@@ -585,6 +651,7 @@ export const settingsPanelPlugin = {
         modelInput.value = data.configured_model_name || "";
         baseUrlInput.value = data.configured_base_url || "";
         apiKeyInput.value = isCredentialConfigured(data.credential_state || data.api_key || "") ? MASKED_API_KEY : "";
+        renderThinkingInput(data.reasoning, data.reasoning?.configured_mode || data.reasoning?.effective_mode || "");
       }
     }
 
@@ -828,7 +895,7 @@ export const settingsPanelPlugin = {
       }
     }
 
-    [providerInput, modelInput, baseUrlInput, apiKeyInput].forEach((input) => {
+    [providerInput, modelInput, thinkingInput, baseUrlInput, apiKeyInput].forEach((input) => {
       input.addEventListener("focus", () => {
         if (input === apiKeyInput && isMaskedApiKey(apiKeyInput.value)) apiKeyInput.select();
       });
@@ -846,6 +913,7 @@ export const settingsPanelPlugin = {
       modelInput.value = row?.model || "";
       baseUrlInput.value = row?.baseUrl || "";
       apiKeyInput.value = isCredentialConfigured(row?.credentialState) ? MASKED_API_KEY : "";
+      renderThinkingInput(row?.reasoning);
       setPill(modelSaveState, "待保存", "warn");
     });
 
@@ -897,6 +965,8 @@ export const settingsPanelPlugin = {
           modelProvider: providerInput.value.trim() || selectedRow?.provider || "",
           modelName: modelInput.value.trim() || selectedRow?.model || "",
           modelBaseUrl: baseUrlInput.value.trim() || selectedRow?.baseUrl || "",
+          modelThinkingEnabled: !["off", "none", ""].includes(thinkingInput.value),
+          modelThinkingDepth: thinkingInput.value,
           ...(keyValue ? { modelApiKey: keyValue } : {})
         });
         modelFormDirty = false;

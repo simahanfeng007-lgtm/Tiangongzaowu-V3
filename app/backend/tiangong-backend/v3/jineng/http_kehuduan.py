@@ -28,6 +28,7 @@ from ..peizhi import (
     ZHUIZONG_LUJING,
     duqu_endpoint_api_miyao,
     duqu_model_ming,
+    duqu_model_reasoning_config,
     duqu_moren_provider,
     duqu_provider_base_url,
     infer_provider_id,
@@ -67,13 +68,125 @@ L4_OPTIMIZATION_TRACE_PATH = ZHUIZONG_LUJING / "l4_model_optimization.jsonl"
 _MODEL_ADAPTER_CORE: Any | None = None
 
 
-class NativeAudioModelReply(str):
+class ModelTurnReply(str):
+    """Backward-compatible text reply with one normalized assistant turn.
+
+    ``str(reply)`` remains the legacy visible-text + ``<tool_call>`` wire form
+    consumed by ``GutongCeng``.  Structured fields keep the provider response
+    intact so presentation, tool dispatch, and private reasoning never need to
+    be reconstructed from the same user-visible string.
+    """
+
+    def __new__(
+        cls,
+        value: Any,
+        *,
+        visible_text: str = "",
+        tool_calls: list[dict[str, Any]] | None = None,
+        private_reasoning: str = "",
+        finish_reason: str = "",
+        usage: dict[str, Any] | None = None,
+        provider_id: str = "",
+    ):
+        obj = super().__new__(cls, str(value or ""))
+        obj.visible_text = str(visible_text or "")
+        obj.tool_calls = tuple(dict(item) for item in (tool_calls or []) if isinstance(item, dict))
+        obj.private_reasoning = str(private_reasoning or "")
+        obj.finish_reason = str(finish_reason or "")
+        obj.usage = dict(usage or {})
+        obj.provider_id = str(provider_id or "")
+        return obj
+
+
+class NativeAudioModelReply(ModelTurnReply):
     """Text reply carrying a non-user-visible receipt for native audio input."""
 
-    def __new__(cls, value: Any, evidence: dict[str, Any]):
-        obj = super().__new__(cls, str(value or ""))
+    def __new__(cls, value: Any, evidence: dict[str, Any], **turn: Any):
+        obj = super().__new__(cls, value, **turn)
         obj.native_audio_evidence = dict(evidence or {})
         return obj
+
+
+def _stream_reasoning_text(delta: dict[str, Any]) -> str:
+    """Normalize private reasoning deltas without projecting them to users."""
+    for key in ("reasoning_content", "reasoning"):
+        value = delta.get(key)
+        if isinstance(value, str) and value:
+            return value
+    details = delta.get("reasoning_details")
+    if isinstance(details, list):
+        return "".join(
+            str(item.get("text") or "")
+            for item in details
+            if isinstance(item, dict) and item.get("text")
+        )
+    return ""
+
+
+def _render_tool_turn_legacy(visible_text: str, tool_calls: list[dict[str, Any]]) -> str:
+    """Serialize one structured turn for the legacy parser without losing text."""
+    parts: list[str] = [str(visible_text or "").strip()] if str(visible_text or "").strip() else []
+    for call in tool_calls:
+        name = str(call.get("name") or "")
+        args = call.get("arguments", {})
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                pass
+        if isinstance(args, dict):
+            args_text = json.dumps(args, ensure_ascii=False)
+        else:
+            args_text = str(args)[:500]
+        parts.append(f"<tool_call>\n<name>{name}</name>\n<arguments>{args_text}</arguments>\n</tool_call>")
+    return "\n".join(parts).strip()
+
+
+def _apply_reasoning_profile(
+    pid: str,
+    payload: dict[str, Any],
+    *,
+    base_url: str,
+    model_name: str,
+) -> dict[str, Any]:
+    """Map one persisted product setting to the provider's real request shape."""
+    profile = duqu_model_reasoning_config(pid, base_url, model_name)
+    mode = str(profile.get("effective_mode") or "off")
+    if not bool(profile.get("supported")):
+        return {
+            "reasoning_mode": "unsupported",
+            "reasoning_control": "unsupported",
+            "reasoning_binding_key": profile.get("binding_key") or "",
+            "private_reasoning_visible": False,
+        }
+    if pid == "deepseek_v4":
+        payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
+        if mode == "off":
+            payload.pop("reasoning_effort", None)
+        else:
+            payload["reasoning_effort"] = "max" if mode == "max" else "high"
+    elif pid == "glm_5_2":
+        payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
+        if mode == "off":
+            payload.pop("reasoning_effort", None)
+        else:
+            payload["reasoning_effort"] = mode
+    elif pid == "mimo":
+        payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
+        payload.pop("reasoning_effort", None)
+    elif pid == "minimax_m3":
+        if mode == "off":
+            payload["thinking"] = {"type": "disabled"}
+            payload.pop("reasoning_split", None)
+        # auto deliberately preserves the adapter's task-sensitive profile.
+    elif pid == "gpt_5_6":
+        payload["reasoning_effort"] = "none" if mode == "off" else mode
+    return {
+        "reasoning_mode": mode,
+        "reasoning_control": profile.get("control") or "unsupported",
+        "reasoning_binding_key": profile.get("binding_key") or "",
+        "private_reasoning_visible": False,
+    }
 
 
 def _inject_native_audio_input(payload: dict[str, Any], paths: tuple[str, ...]) -> dict[str, Any] | None:
@@ -483,14 +596,15 @@ class HttpKehuduan:
         shenti: ShentiZhuangtai | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
-        prior_assistant_messages: list[str] | None = None,
+        prior_assistant_messages: list[Any] | None = None,
         stable_user_message: str | None = None,
     ) -> str:
         """流式调用LLM，返回回复文本。
 
         on_text_chunk 用于前端流式展示可见正文；
-        on_reasoning_chunk 转发模型的思考内容（如 DeepSeek reasoning_content），
-        让“思考中”阶段也有逐段内容可看。
+        on_reasoning_chunk 仅供受信任的内部适配器使用；产品展示层不得
+        把 reasoning_content 当作自然回复。正常调用会把它保存在返回值的
+        private_reasoning 元数据中。
         """
         pid = infer_provider_id(provider_id or duqu_moren_provider(self._moren_provider))
 
@@ -571,7 +685,14 @@ class HttpKehuduan:
                 optimization_trace = MINIMAX_M3.apply_profile(payload, model_name, effective_system_tishi, yonghu_tishi)
             else:
                 optimization_trace = _yingyong_l4_youhua(pid, payload, model_name, base_url)
+            reasoning_trace = _apply_reasoning_profile(
+                pid,
+                payload,
+                base_url=base_url,
+                model_name=model_name,
+            )
             if isinstance(optimization_trace, dict):
+                optimization_trace.update(reasoning_trace)
                 optimization_trace.update(_cache_prefix_observation(payload))
             if adapter_profile and isinstance(optimization_trace, dict):
                 optimization_trace["model_tool_adapter"] = {
@@ -583,9 +704,27 @@ class HttpKehuduan:
         except ValueError as e:
             return f"[LLM错误: {e}]"
 
-        def _native_reply(value: Any, *, visible: bool = False, reason: str = "") -> str:
+        def _native_reply(
+            value: Any,
+            *,
+            visible: bool = False,
+            reason: str = "",
+            visible_text: str = "",
+            tool_calls: list[dict[str, Any]] | None = None,
+            private_reasoning: str = "",
+            finish_reason: str = "",
+            usage: dict[str, Any] | None = None,
+        ) -> str:
+            turn = {
+                "visible_text": visible_text,
+                "tool_calls": tool_calls or [],
+                "private_reasoning": private_reasoning,
+                "finish_reason": finish_reason,
+                "usage": usage or {},
+                "provider_id": pid,
+            }
             if not isinstance(native_audio_receipt, dict):
-                return str(value or "")
+                return ModelTurnReply(value, **turn)
             evidence = dict(native_audio_receipt)
             if reason:
                 evidence["semantic_visibility"] = "unavailable"
@@ -593,7 +732,7 @@ class HttpKehuduan:
             elif visible and evidence.get("semantic_visibility") != "unavailable":
                 evidence["semantic_visibility"] = "visible"
                 evidence["reason"] = ""
-            return NativeAudioModelReply(value, evidence)
+            return NativeAudioModelReply(value, evidence, **turn)
 
         # 组装URL和请求头
         url = f"{base_url}/chat/completions"
@@ -646,6 +785,7 @@ class HttpKehuduan:
             try:
                 validate_model_endpoint(pid, base_url, resolve_dns=True)
                 accumulated_content: list[str] = []
+                accumulated_reasoning: list[str] = []
                 accumulated_tool_calls: list[dict[str, Any]] = []
                 tool_call_index: dict[int, dict[str, Any]] = {}
                 finish_reason = ""
@@ -683,11 +823,12 @@ class HttpKehuduan:
                                 accumulated_content.append(text)
                                 if on_text_chunk:
                                     on_text_chunk(text)
-                            reasoning = delta.get("reasoning_content")
+                            reasoning = _stream_reasoning_text(delta)
+                            if reasoning:
+                                accumulated_reasoning.append(reasoning)
                             if reasoning and on_reasoning_chunk:
                                 on_reasoning_chunk(str(reasoning))
-                            # 注意：reasoning_content 不再整段丢弃；
-                            # 是否展示由上层 on_reasoning_chunk 决定。
+                            # reasoning 只留在私有模型轮次；展示层只能消费 content。
                             # SSE 连接通过 duihua_qiaojie 的 300s ping 保活
                             tc_list = delta.get("tool_calls") or []
                             for tc in tc_list:
@@ -720,6 +861,7 @@ class HttpKehuduan:
                     optimization_trace["cache_hit_rate"] = round(cached_tokens / prompt_tokens, 4) if prompt_tokens else 0.0
                 # Build a synthetic response for the existing parsing pipeline
                 visible_content = "".join(accumulated_content)
+                private_reasoning = "".join(accumulated_reasoning)
                 data = {
                     "choices": [{
                         "index": 0,
@@ -880,7 +1022,15 @@ class HttpKehuduan:
             try:
                 rendered = MINIMAX_M3.render_legacy_reply(data)
                 if rendered:
-                    return _native_reply(rendered, visible="<tool_call>" not in rendered)
+                    cleaned_visible = _qingli_sikao(visible_content)
+                    return _native_reply(
+                        rendered,
+                        visible="<tool_call>" not in rendered,
+                        visible_text=cleaned_visible,
+                        private_reasoning=private_reasoning,
+                        finish_reason=finish_reason,
+                        usage=stream_usage,
+                    )
             except Exception:
                 pass
 
@@ -905,33 +1055,32 @@ class HttpKehuduan:
         
         if gongju_diaoyong:
             # 转为 gutong_ceng 能识别的 <tool_call> 文本格式
-            tc_parts = []
-            for tc in gongju_diaoyong:
-                name = tc.get("name", "")
-                args = tc.get("arguments", {})
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except Exception:
-                        pass
-                if isinstance(args, dict):
-                    args_str = json.dumps(args, ensure_ascii=False)
-                    tc_parts.append(
-                        f"<tool_call>\n<name>{name}</name>\n<arguments>{args_str}</arguments>\n</tool_call>"
-                    )
-                else:
-                    tc_parts.append(
-                        f"<tool_call>\n<name>{name}</name>\n<arguments>{str(args)[:500]}</arguments>\n</tool_call>"
-                    )
-            neirong = "\n".join(tc_parts)
-            return _native_reply(neirong.strip(), visible=False)
+            cleaned_visible = _qingli_sikao(visible_content).strip()
+            neirong = _render_tool_turn_legacy(cleaned_visible, gongju_diaoyong)
+            return _native_reply(
+                neirong,
+                visible=False,
+                visible_text=cleaned_visible,
+                tool_calls=gongju_diaoyong,
+                private_reasoning=private_reasoning,
+                finish_reason=finish_reason,
+                usage=stream_usage,
+            )
         
         # 没有结构化 tool_calls → 读 content
         try:
             neirong = data["choices"][0]["message"]["content"]
             finish_reason = str(data["choices"][0].get("finish_reason") or "")
             if neirong:
-                return _native_reply(_qingli_sikao(neirong), visible=True)
+                cleaned_visible = _qingli_sikao(neirong)
+                return _native_reply(
+                    cleaned_visible,
+                    visible=True,
+                    visible_text=cleaned_visible,
+                    private_reasoning=private_reasoning,
+                    finish_reason=finish_reason,
+                    usage=stream_usage,
+                )
             if finish_reason == "length":
                 return _native_reply(
                     "[模型本轮达到输出上限但未返回可见内容；系统已启用低思考重试策略，请重新发送。]",

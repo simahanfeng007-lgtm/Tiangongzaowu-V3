@@ -6782,7 +6782,8 @@ class Zongdiaodu:
     class _InterimTextEmitter:
         """将流式文本按节流策略累积写入 run 状态，供前端轮询实时展示。
 
-        reasoning_content 已在适配层过滤，这里只会收到可见正文；
+        这里只接收模型 ``content`` 自然正文；``reasoning_content`` 永远不
+        进入 run 快照或前端消息。
         每次 flush 写入的是“到目前为止的完整文本”，前端用新快照替换旧气泡。
         """
 
@@ -6821,27 +6822,13 @@ class Zongdiaodu:
                 self._last_flush_at = time.monotonic()
 
         def reset(self) -> None:
-            """清空已累积文本（例如思考结束、正文开始时切换到正文流）。"""
+            """清空已累积的自然正文。"""
             self._accumulated = ""
             self._last_sent = ""
 
-    class _InterimStreamRouter:
-        """思考/正文双通道流：思考内容先入流，正文开始后清空思考只流正文。"""
-
-        def __init__(self, emitter: "_InterimTextEmitter") -> None:
-            self._emitter = emitter
-            self._kind = "reasoning"
-
-        def push_reasoning(self, text: str) -> None:
-            if self._kind != "reasoning":
-                return
-            self._emitter.push(text)
-
-        def push_visible(self, text: str) -> None:
-            if self._kind == "reasoning":
-                self._kind = "visible"
-                self._emitter.reset()
-            self._emitter.push(text)
+        @property
+        def current_text(self) -> str:
+            return self._accumulated
 
     def _huanxing_simple_chain(
         self,
@@ -6869,25 +6856,12 @@ class Zongdiaodu:
         # run 状态（last_interim_reply_text）。前端轮询 /run/status 会实时
         # 用新快照替换气泡，恢复“字往外蹦”的流式体验。
         _on_text_chunk = None
-        _on_reasoning_chunk = None
         _interim_emitter = None
-        _interim_router = None
         if run_control is not None and getattr(run_control, "interim_reply", None) is not None:
             _interim_emitter = self._InterimTextEmitter(
                 lambda text: run_control.interim_reply(text)
             )
-            _interim_router = self._InterimStreamRouter(_interim_emitter)
         if on_event or _interim_emitter is not None:
-            def _on_reasoning_chunk(chunk_text: str) -> None:
-                # 思考阶段：思考内容按节流写入 interim，让“思考中”有逐段内容
-                cleaned = strip_internal_reply_markers(chunk_text)
-                if not cleaned:
-                    return
-                if re.search(r"<\s*/?\s*(biaoxian|system-reminder)\b", cleaned, re.IGNORECASE):
-                    return
-                if _interim_router is not None:
-                    _interim_router.push_reasoning(cleaned)
-
             def _on_text_chunk(chunk_text: str) -> None:
                 cleaned = strip_internal_reply_markers(chunk_text)
                 if not cleaned:
@@ -6897,8 +6871,12 @@ class Zongdiaodu:
                     return
                 if on_event:
                     on_event({"type": "text", "content": cleaned})
-                if _interim_router is not None:
-                    _interim_router.push_visible(cleaned)
+                if _interim_emitter is not None:
+                    _interim_emitter.push(cleaned)
+        # Private model reasoning is retained by the provider adapter on the
+        # ModelTurnReply object.  It is intentionally not exposed as a callback
+        # to the presentation/runtime layer.
+        _on_reasoning_chunk = None
         available_tool_names = {
             str(item.get("name") or "").strip()
             for item in GUGE.suoyou_gongju()
@@ -7016,6 +6994,9 @@ class Zongdiaodu:
                     holder["value"] = _call_huanxing()
                 except Exception as exc:
                     holder["error"] = exc
+                finally:
+                    if _interim_emitter is not None:
+                        _interim_emitter.flush()
 
             _ctx = _contextvars.copy_context()
             _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
@@ -7067,6 +7048,9 @@ class Zongdiaodu:
                     holder["value"] = _call_jixu()
                 except Exception as exc:
                     holder["error"] = exc
+                finally:
+                    if _interim_emitter is not None:
+                        _interim_emitter.flush()
 
             _ctx = _contextvars.copy_context()
             _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
@@ -7118,6 +7102,9 @@ class Zongdiaodu:
                     holder["value"] = _call_closeout()
                 except Exception as exc:
                     holder["error"] = exc
+                finally:
+                    if _interim_emitter is not None:
+                        _interim_emitter.flush()
 
             _ctx = _contextvars.copy_context()
             _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
@@ -7446,6 +7433,32 @@ class Zongdiaodu:
 
             if len(tools) > 1:
                 # —— 并行执行多个工具 ——
+                if run_control:
+                    structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
+                    visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
+                    if not visible_interim:
+                        visible_interim = f"我会并行处理这 {len(tools)} 项操作。"
+                    already_streamed = bool(
+                        _interim_emitter is not None
+                        and _interim_emitter.current_text.rstrip().endswith(visible_interim.rstrip())
+                    )
+                    if not already_streamed:
+                        try:
+                            run_control.interim_reply(
+                                visible_interim,
+                                meta={
+                                    "source": "model_reply_before_parallel_tool_calls",
+                                    "tool_count": len(tools),
+                                },
+                            )
+                        except Exception as exc:
+                            run_control.step(
+                                "interim_reply",
+                                "模型并行阶段回复",
+                                "failed",
+                                str(exc)[:500],
+                                meta={"source": "model_reply_before_parallel_tool_calls"},
+                            )
                 prepared_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
                 blocked_parallel: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
                 for tn, ta in tools:
@@ -8036,25 +8049,31 @@ class Zongdiaodu:
                 continue
 
             if tool_name and run_control:
-                visible_interim = _interim_visible_reply_from_tool_message(huifu)
+                structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
+                visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
                 if visible_interim:
-                    try:
-                        run_control.interim_reply(
-                            visible_interim,
-                            meta={
-                                "source": "model_reply_before_tool_call",
-                                "tool_name": str(tool_name or ""),
-                                "tool_action": _simple_chain_tool_action(tool_name, tool_args if isinstance(tool_args, dict) else {}),
-                            },
-                        )
-                    except Exception as exc:
-                        run_control.step(
-                            "interim_reply",
-                            "模型阶段回复",
-                            "failed",
-                            str(exc)[:500],
-                            meta={"source": "model_reply_before_tool_call"},
-                        )
+                    already_streamed = bool(
+                        _interim_emitter is not None
+                        and _interim_emitter.current_text.rstrip().endswith(visible_interim.rstrip())
+                    )
+                    if not already_streamed:
+                        try:
+                            run_control.interim_reply(
+                                visible_interim,
+                                meta={
+                                    "source": "model_reply_before_tool_call",
+                                    "tool_name": str(tool_name or ""),
+                                    "tool_action": _simple_chain_tool_action(tool_name, tool_args if isinstance(tool_args, dict) else {}),
+                                },
+                            )
+                        except Exception as exc:
+                            run_control.step(
+                                "interim_reply",
+                                "模型阶段回复",
+                                "failed",
+                                str(exc)[:500],
+                                meta={"source": "model_reply_before_tool_call"},
+                            )
                 else:
                     # 模型没有自然语言 → 用工具动作生成一条人话
                     fallback = _gongju_jieduan_huifu(tool_name, tool_args)

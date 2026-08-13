@@ -1,6 +1,7 @@
 """
 天工造物 v3：起源 — 全局配置
 """
+import hashlib
 import os
 import re
 import sys
@@ -353,6 +354,79 @@ def _load_api_config() -> dict:
         return {}
 
 
+def model_reasoning_capability(provider_id: str | None, model_name: str = "") -> dict:
+    """Single backend authority for model reasoning controls exposed to UI."""
+    from .model_stream_config import get_model_reasoning_capability
+
+    provider = normalize_provider_id(provider_id)
+    return get_model_reasoning_capability(provider, model_name)
+
+
+def _model_reasoning_binding_key(provider_id: str, base_url: str, model_name: str) -> str:
+    canonical = "\n".join((
+        normalize_provider_id(provider_id),
+        normalize_provider_base_url(base_url).lower(),
+        str(model_name or "").strip().lower(),
+    ))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def duqu_model_reasoning_config(
+    provider_id: str | None,
+    base_url: str | None = None,
+    model_name: str | None = None,
+) -> dict:
+    provider = normalize_provider_id(provider_id)
+    effective_base_url = normalize_provider_base_url(base_url or duqu_provider_base_url(provider) or "")
+    effective_model = str(model_name or duqu_model_ming(provider) or "").strip()
+    capability = model_reasoning_capability(provider, effective_model)
+    binding_key = _model_reasoning_binding_key(provider, effective_base_url, effective_model)
+    profiles = _load_api_config().get("_model_reasoning_profiles")
+    profile = profiles.get(binding_key) if isinstance(profiles, dict) else None
+    configured_mode = str(profile.get("mode") or "").strip().lower() if isinstance(profile, dict) else ""
+    modes = tuple(str(item) for item in capability.get("modes") or [])
+    default_mode = str(capability.get("default_mode") or "off")
+    effective_mode = configured_mode if configured_mode in modes else default_mode
+    return {
+        **capability,
+        "binding_key": binding_key,
+        "configured_mode": configured_mode,
+        "effective_mode": effective_mode,
+        "enabled": effective_mode not in {"", "off", "none"},
+    }
+
+
+def save_model_reasoning_config(
+    data: dict,
+    *,
+    provider_id: str,
+    base_url: str,
+    model_name: str,
+    mode: str,
+) -> dict:
+    """Validate and persist a non-secret per-endpoint/model reasoning mode."""
+    provider = normalize_provider_id(provider_id)
+    capability = model_reasoning_capability(provider, model_name)
+    normalized_mode = str(mode or "").strip().lower()
+    modes = tuple(str(item) for item in capability.get("modes") or [])
+    if normalized_mode not in modes:
+        raise ValueError(
+            f"model_reasoning_mode_unsupported:{normalized_mode or 'empty'}; allowed={','.join(modes) or 'none'}"
+        )
+    binding_key = _model_reasoning_binding_key(provider, base_url, model_name)
+    profiles = data.get("_model_reasoning_profiles")
+    if not isinstance(profiles, dict):
+        profiles = {}
+    profiles[binding_key] = {
+        "provider": provider,
+        "base_url": normalize_provider_base_url(base_url),
+        "model_name": str(model_name or "").strip(),
+        "mode": normalized_mode,
+    }
+    data["_model_reasoning_profiles"] = profiles
+    return profiles[binding_key]
+
+
 def _api_config_key_value(data: dict, key: str) -> str:
     value = data.get(key)
     if isinstance(value, dict):
@@ -513,6 +587,11 @@ def l4_provider_profiles() -> dict:
         configured_model_name = duqu_configured_model_ming(provider_id)
         effective_base_url = configured_base_url or duqu_provider_base_url(provider_id) or ""
         credential_state = provider_credential_state(provider_id, effective_base_url)
+        reasoning = duqu_model_reasoning_config(
+            provider_id,
+            effective_base_url,
+            configured_model_name or duqu_model_ming(provider_id),
+        )
         rows[provider_id] = {
             "provider": str(inputs.get("provider") or provider_id),
             "base_url": effective_base_url,
@@ -521,6 +600,7 @@ def l4_provider_profiles() -> dict:
             "configured_model_name": configured_model_name,
             "credential_state": credential_state,
             "api_key": "configured" if credential_state == "configured" else "missing",
+            "reasoning": reasoning,
         }
     return rows
 
@@ -675,6 +755,7 @@ def l4_provider_presets() -> list[dict]:
                 "configured_model_name": profile.get("configured_model_name") or "",
                 "credential_state": profile.get("credential_state") or "not_configured",
                 "api_key": profile.get("api_key") or "missing",
+                "reasoning": profile.get("reasoning") or model_reasoning_capability(provider_id, default_model),
             })
             continue
         rows.append({
@@ -695,6 +776,10 @@ def l4_provider_presets() -> list[dict]:
             "configured_model_name": profile.get("configured_model_name") or "",
             "credential_state": profile.get("credential_state") or "not_configured",
             "api_key": profile.get("api_key") or "missing",
+            "reasoning": profile.get("reasoning") or model_reasoning_capability(
+                provider_id,
+                profile.get("configured_model_name") or getattr(factsheet, "default_model_id", ""),
+            ),
         })
     rows.append({
         "id": "openai",
@@ -706,6 +791,7 @@ def l4_provider_presets() -> list[dict]:
         "protocol_family": ["openai_chat_completions"],
         "request_api_style": "OpenAI-compatible custom endpoint; normalized to L4 gpt_5_6 adapter",
         "alias_of": "gpt_5_6",
+        "reasoning": profiles.get("gpt_5_6", {}).get("reasoning") or model_reasoning_capability("gpt_5_6", PROVIDER_DEFAULT_MODEL["gpt_5_6"]),
     })
     return rows
 

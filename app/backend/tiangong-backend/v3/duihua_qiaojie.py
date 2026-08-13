@@ -3230,6 +3230,7 @@ def _llm_settings() -> dict:
         duqu_moren_provider,
         duqu_provider_input_config,
         duqu_provider_base_url,
+        duqu_model_reasoning_config,
         l4_provider_profiles,
         l4_provider_display_name,
         l4_provider_presets,
@@ -3267,6 +3268,7 @@ def _llm_settings() -> dict:
         l4_provider_display_name(matched_provider),
     )
     match["display_name"] = matched_display_name
+    reasoning = duqu_model_reasoning_config(matched_provider, effective_base_url, effective_model)
     return {
         "ok": True,
         "provider": provider,
@@ -3285,6 +3287,7 @@ def _llm_settings() -> dict:
         "provider_match": match,
         "providers": l4_provider_presets(),
         "provider_profiles": l4_provider_profiles(),
+        "reasoning": reasoning,
         "credential_scope": ("official_provider" if binding and binding.official else binding.custom_scope if binding else "rejected"),
         "endpoint_official": bool(binding and binding.official),
         "optimization": {
@@ -3328,6 +3331,7 @@ def _save_llm_settings(payload: dict) -> dict:
         duqu_provider_input_config,
         l4_provider_profiles,
         l4_provider_display_name,
+        save_model_reasoning_config,
         normalize_provider_base_url,
         provider_match_info,
         duqu_provider_base_url,
@@ -3353,6 +3357,19 @@ def _save_llm_settings(payload: dict) -> dict:
     base_url = normalize_provider_base_url(base_url_value)
     model_name = str(model_name_value or "").strip()
     clear = bool(payload.get("clear_api_key"))
+    has_reasoning_mode = any(
+        key in payload
+        for key in ("reasoning_mode", "modelThinkingDepth", "modelThinkingEnabled")
+    )
+    reasoning_mode = str(
+        payload.get("reasoning_mode")
+        if "reasoning_mode" in payload
+        else payload.get("modelThinkingDepth")
+        if "modelThinkingDepth" in payload
+        else ""
+    ).strip().lower()
+    if "modelThinkingEnabled" in payload and not bool(payload.get("modelThinkingEnabled")):
+        reasoning_mode = "off"
     current_provider = duqu_moren_provider(MOREN_PROVIDER)
     current_inputs = duqu_provider_input_config(current_provider)
     same_saved_provider = (
@@ -3418,6 +3435,28 @@ def _save_llm_settings(payload: dict) -> dict:
         else:
             model_names.pop(provider, None)
     data["_model_names"] = model_names
+    if has_reasoning_mode:
+        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(provider) or ""
+        reasoning_model_name = model_name or match_model_name or duqu_model_ming(provider)
+        if not reasoning_mode:
+            from .peizhi import model_reasoning_capability
+            reasoning_mode = str(
+                model_reasoning_capability(provider, reasoning_model_name).get("default_mode") or "off"
+            )
+        try:
+            save_model_reasoning_config(
+                data,
+                provider_id=provider,
+                base_url=reasoning_base_url,
+                model_name=reasoning_model_name,
+                mode=reasoning_mode,
+            )
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "error_code": "model_reasoning_mode_unsupported",
+            }
     API_PEIZHI_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     result = _llm_settings()
     result.update({

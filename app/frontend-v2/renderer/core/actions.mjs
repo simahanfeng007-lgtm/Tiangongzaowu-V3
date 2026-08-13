@@ -1514,11 +1514,20 @@ export function createActions({ runtime, state, kernel = null }) {
           status: "running",
           summary: "思考中"
         });
+        let liveVisibleText = "";
         const streamResult = await runtime.sendStream(sendPayload, {
-          onText: (chunk) => { state.streamAppendById({ sessionId: targetSessionId, messageId: targetMessageId, delta: chunk }); },
+          onText: (chunk) => {
+            liveVisibleText += String(chunk || "");
+            state.streamAppendById({ sessionId: targetSessionId, messageId: targetMessageId, delta: chunk });
+          },
           onStageText: (snapshot) => {
             const visibleText = spokenBackendText(snapshot);
             if (!visibleText) return;
+            // Polling is recovery for a disconnected/missed SSE path.  Once the
+            // renderer has newer live content, an older run snapshot must not
+            // replace it.
+            if (liveVisibleText && !visibleText.startsWith(liveVisibleText)) return;
+            liveVisibleText = visibleText;
             state.replaceMessageById({
               sessionId: targetSessionId,
               messageId: targetMessageId,

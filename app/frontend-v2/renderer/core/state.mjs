@@ -56,6 +56,7 @@ const defaultSettings = {
   modelProviderProfiles: {},
   modelThinkingEnabled: false,
   modelThinkingDepth: "",
+  modelThinkingCapability: null,
   modelMultimodalInput: "auto",
   modelImageInput: "auto",
   modelVideoInput: "auto",

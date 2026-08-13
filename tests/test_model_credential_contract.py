@@ -68,7 +68,10 @@ class ModelCredentialContractTests(unittest.TestCase):
         # Model provider, endpoint, model id and secret: renderer -> trusted
         # Electron vault -> backend configuration reader.
         self.assertIn('id="settingsModelApiKey"', panel)
+        self.assertIn('id="settingsModelThinking"', panel)
         self.assertIn('writeModelSettings(secureLlmBody)', frontend)
+        self.assertIn('reasoning_mode: next.modelThinkingDepth', frontend)
+        self.assertIn('modelThinkingCapability: llm?.reasoning', frontend)
         self.assertIn('handleTrusted("model:setSettings"', electron)
         self.assertIn('handleTrusted("model:probeProviderApi"', electron)
         self.assertIn('requestProviderProbe(providerProbeEndpoint(baseUrl, "models")', electron)
@@ -84,6 +87,7 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn("hydrateProviderApiKeys();", gateway_env)
         self.assertIn("const env = { ...process.env };", gateway_env)
         self.assertIn('if path == "/api/v1/llm/settings":', backend)
+        self.assertIn('save_model_reasoning_config(', backend)
 
         # Workspace: renderer -> trusted Electron owner -> child-runtime env.
         self.assertIn('id="settingsWorkspaceRoot"', panel)

@@ -74,6 +74,9 @@ const defaultSettings = {
   modelProviderMatch: null,
   modelProviderPresets: [],
   modelProviderProfiles: {},
+  modelThinkingEnabled: false,
+  modelThinkingDepth: "",
+  modelThinkingCapability: null,
   knowledgeRoot: "",
   permissionMode: "full_access",
   permissionRiskMax: "A4",
@@ -2317,6 +2320,11 @@ export function createHttpRuntime({ kernel = null } = {}) {
           modelProviderProfiles: llm?.provider_profiles && typeof llm.provider_profiles === "object" && !Array.isArray(llm.provider_profiles)
             ? llm.provider_profiles
             : local.modelProviderProfiles || {},
+          modelThinkingEnabled: llm?.reasoning?.enabled === true,
+          modelThinkingDepth: llm?.reasoning?.configured_mode || llm?.reasoning?.effective_mode || "",
+          modelThinkingCapability: llm?.reasoning && typeof llm.reasoning === "object"
+            ? llm.reasoning
+            : local.modelThinkingCapability || null,
           personaName: typeof lifeSoul.name === "string"
             ? lifeSoul.name
             : bodyProfile.name || character?.profile?.name || local.personaName,
@@ -2387,7 +2395,9 @@ export function createHttpRuntime({ kernel = null } = {}) {
         || Object.prototype.hasOwnProperty.call(next || {}, "modelProvider")
         || Object.prototype.hasOwnProperty.call(next || {}, "modelBaseUrl")
         || Object.prototype.hasOwnProperty.call(next || {}, "modelName")
-        || Object.prototype.hasOwnProperty.call(next || {}, "modelService");
+        || Object.prototype.hasOwnProperty.call(next || {}, "modelService")
+        || Object.prototype.hasOwnProperty.call(next || {}, "modelThinkingEnabled")
+        || Object.prototype.hasOwnProperty.call(next || {}, "modelThinkingDepth");
       const hasLifeSoulSettings = ["personaName", "soulPrompt"]
         .some((key) => Object.prototype.hasOwnProperty.call(next || {}, key));
       const bodySettingKeys = [
@@ -2435,7 +2445,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
         // Model settings are committed to the authoritative runtime first.
         // Never persist a secret—or speculative endpoint/model values—in
         // renderer storage before the main-process transaction succeeds.
-        for (const key of ["modelApiKey", "api_key", "clear_api_key", "modelProvider", "modelBaseUrl", "modelName", "modelService"]) {
+        for (const key of ["modelApiKey", "api_key", "clear_api_key", "modelProvider", "modelBaseUrl", "modelName", "modelService", "modelThinkingEnabled", "modelThinkingDepth", "modelThinkingCapability"]) {
           delete localNext[key];
         }
       }
@@ -2455,10 +2465,14 @@ export function createHttpRuntime({ kernel = null } = {}) {
         const hasModelBaseUrl = Object.prototype.hasOwnProperty.call(next || {}, "modelBaseUrl");
         const hasModelName = Object.prototype.hasOwnProperty.call(next || {}, "modelName");
         const hasModelApiKey = Object.prototype.hasOwnProperty.call(next || {}, "modelApiKey");
+        const hasThinkingEnabled = Object.prototype.hasOwnProperty.call(next || {}, "modelThinkingEnabled");
+        const hasThinkingDepth = Object.prototype.hasOwnProperty.call(next || {}, "modelThinkingDepth");
         const llmBody = {
           provider: hasModelProvider ? next.modelProvider : saved.modelProvider,
           base_url: hasModelBaseUrl ? next.modelBaseUrl : saved.modelBaseUrl,
           model_name: hasModelName ? next.modelName : saved.modelName,
+          ...(hasThinkingDepth ? { reasoning_mode: next.modelThinkingDepth } : {}),
+          ...(!hasThinkingDepth && hasThinkingEnabled && next.modelThinkingEnabled === false ? { reasoning_mode: "off" } : {}),
         };
         const apiKey = hasModelApiKey ? String(next.modelApiKey || "").trim() : "";
         // Provider aliases are insufficient for custom OpenAI-compatible endpoints:
@@ -2480,6 +2494,9 @@ export function createHttpRuntime({ kernel = null } = {}) {
           saved.modelProviderProfiles = data.provider_profiles && typeof data.provider_profiles === "object" && !Array.isArray(data.provider_profiles)
             ? data.provider_profiles
             : saved.modelProviderProfiles || {};
+          saved.modelThinkingEnabled = data.reasoning?.enabled === true;
+          saved.modelThinkingDepth = data.reasoning?.configured_mode || data.reasoning?.effective_mode || "";
+          saved.modelThinkingCapability = data.reasoning && typeof data.reasoning === "object" ? data.reasoning : null;
           writeLocalSettings({
             modelService: saved.modelService,
             modelProvider: saved.modelProvider,
@@ -2490,6 +2507,9 @@ export function createHttpRuntime({ kernel = null } = {}) {
             modelProviderMatch: saved.modelProviderMatch,
             modelProviderPresets: saved.modelProviderPresets,
             modelProviderProfiles: saved.modelProviderProfiles,
+            modelThinkingEnabled: saved.modelThinkingEnabled,
+            modelThinkingDepth: saved.modelThinkingDepth,
+            modelThinkingCapability: saved.modelThinkingCapability,
           });
           return data;
         }));
