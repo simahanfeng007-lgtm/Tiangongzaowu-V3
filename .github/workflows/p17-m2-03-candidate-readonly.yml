@@ -1,0 +1,67 @@
+name: P17 M2-03 candidate readonly
+
+on:
+  push:
+    branches:
+      - agent/p17-m2-god-module-decomposition
+    paths:
+      - .github/workflows/p17-m2-03-candidate-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m2-god-module-decomposition
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact M2-03 candidate
+        run: python scripts/p17-m2-03-candidate.py
+
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+
+      - name: Compile M2 seams
+        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+
+      - name: Collect candidate
+        shell: bash
+        run: |
+          mkdir -p p17-m2-03-candidate/.github/workflows p17-m2-03-candidate/app/backend/tiangong-backend/v3 p17-m2-03-candidate/tests
+          cp .github/workflows/architecture-gate.yml p17-m2-03-candidate/.github/workflows/architecture-gate.yml
+          cp app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py p17-m2-03-candidate/app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+          cp app/backend/tiangong-backend/v3/zongdiaodu.py p17-m2-03-candidate/app/backend/tiangong-backend/v3/zongdiaodu.py
+          cp source-ownership.json p17-m2-03-candidate/source-ownership.json
+          cp tests/test_zongdiaodu_p17_m2_03.py p17-m2-03-candidate/tests/test_zongdiaodu_p17_m2_03.py
+          git diff c5682695635139e4fea05fe4f6136f66891f1c66 -- app/backend/tiangong-backend/v3/zongdiaodu.py > p17-m2-03-candidate/zongdiaodu.diff
+
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p17-m2-03-candidate-readonly
+          path: p17-m2-03-candidate
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
