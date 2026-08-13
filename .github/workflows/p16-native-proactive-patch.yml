@@ -60,6 +60,9 @@ jobs:
       - name: Wire committed World Understanding evidence
         run: python scripts/p16_native_proactive_world_wire.py
 
+      - name: Apply final focused-test and budget repair
+        run: python scripts/p16_native_proactive_final_repair.py
+
       - name: Sync generated source mirrors
         run: python scripts/sync-generated-sources.py --write
 
