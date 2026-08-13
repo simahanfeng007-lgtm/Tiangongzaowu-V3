@@ -44,6 +44,7 @@ from .autonomous_tasks import (
     materialize_tasks,
     normalize_activity_types,
     normalize_autonomy_state,
+    reap_stale_pending_tasks,
     update_task_status,
 )
 from . import complete_core as complete_life_core
@@ -1901,6 +1902,9 @@ class EmbeddedLifeRuntime:
         if not autonomy.get("enabled") or not autonomy.get("task_generation_enabled"):
             return []
         before = deepcopy(autonomy)
+        # 先回收从未尝试且长期滞留的 pending/blocked 任务（因果类僵尸任务），
+        # 释放待办池，否则每日计划等目录任务会被永久挤死。
+        reaped = reap_stale_pending_tasks(autonomy)
         candidates = derive_task_candidates(
             scope,
             life_id=life_id,
@@ -1941,6 +1945,14 @@ class EmbeddedLifeRuntime:
                     "idempotency_key": f"autonomy.task.auto-cancel:{task['task_id']}",
                 }
                 for task in stale_updates
+            ] + [
+                {
+                    "event_type": "autonomy.task_status_changed",
+                    "payload": {"task_id": task["task_id"], "task": task},
+                    "actor": "life_autonomy",
+                    "idempotency_key": f"autonomy.task.stale-reap:{task['task_id']}",
+                }
+                for task in reaped
             ] + [
                 {
                     "event_type": "autonomy.task_generated",

@@ -6779,6 +6779,70 @@ class Zongdiaodu:
         if SHENGMING_LIFE_CHAIN_ENABLED:
             self.xintiao.tingzhi()
 
+    class _InterimTextEmitter:
+        """将流式文本按节流策略累积写入 run 状态，供前端轮询实时展示。
+
+        reasoning_content 已在适配层过滤，这里只会收到可见正文；
+        每次 flush 写入的是“到目前为止的完整文本”，前端用新快照替换旧气泡。
+        """
+
+        def __init__(
+            self,
+            sink: Callable[[str], object],
+            *,
+            min_interval_seconds: float = 0.3,
+            min_chars: int = 24,
+        ) -> None:
+            self._sink = sink
+            self._min_interval = min_interval_seconds
+            self._min_chars = min_chars
+            self._accumulated = ""
+            self._last_sent = ""
+            self._last_flush_at = time.monotonic()
+
+        def push(self, chunk: str) -> None:
+            text = str(chunk or "")
+            if not text:
+                return
+            self._accumulated += text
+            new_chars = len(self._accumulated) - len(self._last_sent)
+            now = time.monotonic()
+            if now - self._last_flush_at >= self._min_interval or new_chars >= self._min_chars:
+                self.flush()
+
+        def flush(self) -> None:
+            snapshot = self._accumulated
+            if not snapshot or snapshot == self._last_sent:
+                return
+            try:
+                self._sink(snapshot)
+            finally:
+                self._last_sent = snapshot
+                self._last_flush_at = time.monotonic()
+
+        def reset(self) -> None:
+            """清空已累积文本（例如思考结束、正文开始时切换到正文流）。"""
+            self._accumulated = ""
+            self._last_sent = ""
+
+    class _InterimStreamRouter:
+        """思考/正文双通道流：思考内容先入流，正文开始后清空思考只流正文。"""
+
+        def __init__(self, emitter: "_InterimTextEmitter") -> None:
+            self._emitter = emitter
+            self._kind = "reasoning"
+
+        def push_reasoning(self, text: str) -> None:
+            if self._kind != "reasoning":
+                return
+            self._emitter.push(text)
+
+        def push_visible(self, text: str) -> None:
+            if self._kind == "reasoning":
+                self._kind = "visible"
+                self._emitter.reset()
+            self._emitter.push(text)
+
     def _huanxing_simple_chain(
         self,
         *,
@@ -6801,13 +6865,40 @@ class Zongdiaodu:
             _simple_chain_is_response_only_without_tools(xiaoxi)
             or is_execution_discussion_only(xiaoxi)
         )
-        # 流式回调：将 on_text_chunk 桥接到 on_event，同时过滤 biaoxian/思考标签
+        # 流式回调：桥接到 SSE（on_event），同时按节流策略把完整正文写入
+        # run 状态（last_interim_reply_text）。前端轮询 /run/status 会实时
+        # 用新快照替换气泡，恢复“字往外蹦”的流式体验。
         _on_text_chunk = None
-        if on_event:
+        _on_reasoning_chunk = None
+        _interim_emitter = None
+        _interim_router = None
+        if run_control is not None and getattr(run_control, "interim_reply", None) is not None:
+            _interim_emitter = self._InterimTextEmitter(
+                lambda text: run_control.interim_reply(text)
+            )
+            _interim_router = self._InterimStreamRouter(_interim_emitter)
+        if on_event or _interim_emitter is not None:
+            def _on_reasoning_chunk(chunk_text: str) -> None:
+                # 思考阶段：思考内容按节流写入 interim，让“思考中”有逐段内容
+                cleaned = strip_internal_reply_markers(chunk_text)
+                if not cleaned:
+                    return
+                if re.search(r"<\s*/?\s*(biaoxian|system-reminder)\b", cleaned, re.IGNORECASE):
+                    return
+                if _interim_router is not None:
+                    _interim_router.push_reasoning(cleaned)
+
             def _on_text_chunk(chunk_text: str) -> None:
                 cleaned = strip_internal_reply_markers(chunk_text)
-                if cleaned:
+                if not cleaned:
+                    return
+                if re.search(r"<\s*/?\s*(biaoxian|system-reminder)\b", cleaned, re.IGNORECASE):
+                    # 未闭合的标签碎片不进正文流，避免气泡闪现原始标签
+                    return
+                if on_event:
                     on_event({"type": "text", "content": cleaned})
+                if _interim_router is not None:
+                    _interim_router.push_visible(cleaned)
         available_tool_names = {
             str(item.get("name") or "").strip()
             for item in GUGE.suoyou_gongju()
@@ -6891,7 +6982,7 @@ class Zongdiaodu:
         run_state["stage"] = "skill_loading"
         _simple_chain_save_run_state(run_state)
 
-        def _llm_huanxing_scoped(on_chunk=None) -> tuple[ShentiZhuangtai, str]:
+        def _llm_huanxing_scoped(on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 首轮唤醒同样必须有硬超时：模型 API 挂起时 run 必须收口，
             # 不能一直占用执行槽（与 _llm_jixu_scoped 的看门狗一致）。
             import contextvars as _contextvars
@@ -6908,12 +6999,14 @@ class Zongdiaodu:
                             cache_stable_user_message,
                             shenti,
                             on_text_chunk=on_chunk,
+                            on_reasoning_chunk=on_reasoning_chunk,
                         )
                 return self.gutong.huanxing(
                     system_tishi,
                     cache_stable_user_message,
                     shenti,
                     on_text_chunk=on_chunk,
+                    on_reasoning_chunk=on_reasoning_chunk,
                 )
 
             holder: dict[str, Any] = {}
@@ -6937,7 +7030,7 @@ class Zongdiaodu:
                 raise holder["error"]
             return holder["value"]
 
-        def _llm_jixu_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
+        def _llm_jixu_scoped(payload: Any, on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             prior_texts: list[str] = []
             for item in quality_history:
                 if not isinstance(item, dict):
@@ -6955,12 +7048,14 @@ class Zongdiaodu:
                         return self.gutong.jixu(
                             system_tishi, payload, shenti, xiaoxi,
                             on_text_chunk=on_chunk,
+                            on_reasoning_chunk=on_reasoning_chunk,
                             assistant_messages=prior_texts,
                             stable_user_message=cache_stable_user_message,
                         )
                 return self.gutong.jixu(
                     system_tishi, payload, shenti, xiaoxi,
                     on_text_chunk=on_chunk,
+                    on_reasoning_chunk=on_reasoning_chunk,
                     assistant_messages=prior_texts,
                     stable_user_message=cache_stable_user_message,
                 )
@@ -6986,7 +7081,7 @@ class Zongdiaodu:
                 raise holder["error"]
             return holder["value"]
 
-        def _llm_closeout_scoped(payload: Any, on_chunk=None) -> tuple[ShentiZhuangtai, str]:
+        def _llm_closeout_scoped(payload: Any, on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 收尾必须是“新的一轮用户指令”，不能走 jixu 的工具结果续写框架，
             # 否则模型会继续按原循环说话（例如“第 3 遍读取，继续。”）。
             closeout_text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -7008,10 +7103,12 @@ class Zongdiaodu:
                             closeout_user_text,
                             shenti,
                             on_text_chunk=on_chunk,
+                            on_reasoning_chunk=on_reasoning_chunk,
                         )
                 return self.gutong.huanxing(
                     system_tishi, closeout_user_text, shenti,
                     on_text_chunk=on_chunk,
+                    on_reasoning_chunk=on_reasoning_chunk,
                 )
 
             holder: dict[str, Any] = {}
@@ -7134,6 +7231,7 @@ class Zongdiaodu:
                 next_body, reply = _llm_closeout_scoped(
                     _simple_chain_model_payload(payload),
                     on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
                 )
             except Exception:
                 _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
@@ -7167,7 +7265,8 @@ class Zongdiaodu:
         audio_semantic_unavailable = False
         try:
             shenti, huifu = _llm_huanxing_scoped(
-                on_chunk=None if native_audio_paths else _on_text_chunk
+                on_chunk=None if native_audio_paths else _on_text_chunk,
+                on_reasoning_chunk=None if native_audio_paths else _on_reasoning_chunk,
             )
         except Exception as exc:
             # 终局模型失败显式化（对抗测试 P1-1）：初始唤醒失败同样归一 force_stopped。
@@ -7328,7 +7427,11 @@ class Zongdiaodu:
                         guidance[:500],
                         meta=guidance_payload,
                     )
-                    shenti, huifu = _llm_jixu_scoped(guidance_payload, on_chunk=_on_text_chunk)
+                    shenti, huifu = _llm_jixu_scoped(
+                        guidance_payload,
+                        on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
+                    )
                     continue
             # Defense in depth: even a provider that serializes an unsolicited
             # textual tool call while native tools are disabled must never turn
@@ -7376,7 +7479,11 @@ class Zongdiaodu:
                             f"Blocked {len(blocked_parallel)} non-omni_body parallel tool calls.",
                             meta=combined_block,
                         )
-                    shenti, huifu = _llm_jixu_scoped(_simple_chain_model_payload(combined_block), on_chunk=_on_text_chunk)
+                    shenti, huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(combined_block),
+                        on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
+                    )
                     continue
                 seen_parallel: set[str] = set()
                 unique_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
@@ -7473,6 +7580,7 @@ class Zongdiaodu:
                     shenti, huifu = _llm_jixu_scoped(
                         _simple_chain_model_payload(combined_protected),
                         on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     continue
                 if repeated_parallel and prepared_parallel:
@@ -7568,6 +7676,7 @@ class Zongdiaodu:
                     shenti, huifu = _llm_jixu_scoped(
                         _simple_chain_model_payload(repeated_result),
                         on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     continue
                 tools = [
@@ -7881,7 +7990,11 @@ class Zongdiaodu:
                         f"{len(parallel_results)} 个工具全部完成",
                         meta=combined)
                 try:
-                    shenti, next_huifu = _llm_jixu_scoped(_simple_chain_model_payload(combined), on_chunk=_on_text_chunk)
+                    shenti, next_huifu = _llm_jixu_scoped(
+                        _simple_chain_model_payload(combined),
+                        on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
+                    )
                 except Exception as exc:
                     final_guard_exhausted = True
                     final_chain_status = "failed"
@@ -8055,6 +8168,7 @@ class Zongdiaodu:
                     shenti, huifu = _llm_jixu_scoped(
                         _simple_chain_model_payload(correction_payload),
                         on_chunk=_on_text_chunk,
+                        on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     _simple_chain_emit_event(
                         run_state,
@@ -8135,7 +8249,11 @@ class Zongdiaodu:
                         f"Blocked non-omni_body tool: {tool_name}",
                         meta=guard_payload,
                     )
-                shenti, huifu = _llm_jixu_scoped(guard_payload, on_chunk=_on_text_chunk)
+                shenti, huifu = _llm_jixu_scoped(
+                    guard_payload,
+                    on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
+                )
                 if isinstance(run_state, dict):
                     live = run_state.setdefault("_live", {})
                     blocks = live.setdefault("tool_block_diagnostics", [])
@@ -8182,6 +8300,7 @@ class Zongdiaodu:
                 shenti, huifu = _llm_jixu_scoped(
                     _simple_chain_model_payload(recovery_payload),
                     on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
             if (
@@ -8263,6 +8382,7 @@ class Zongdiaodu:
                 shenti, huifu = _llm_jixu_scoped(
                     _simple_chain_model_payload(protected_payload),
                     on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
             tool_label = _gongju_xianshi_ming(tool_name)
@@ -8381,6 +8501,7 @@ class Zongdiaodu:
                 shenti, huifu = _llm_jixu_scoped(
                     _simple_chain_model_payload(repeated_result),
                     on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
             if gongju_cishu >= _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
@@ -8634,7 +8755,11 @@ class Zongdiaodu:
                 break
             model_quality_payload = _simple_chain_model_payload(quality_payload)
             try:
-                shenti, next_huifu = _llm_jixu_scoped(model_quality_payload, on_chunk=_on_text_chunk)
+                shenti, next_huifu = _llm_jixu_scoped(
+                    model_quality_payload,
+                    on_chunk=_on_text_chunk,
+                    on_reasoning_chunk=_on_reasoning_chunk,
+                )
             except Exception as exc:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"

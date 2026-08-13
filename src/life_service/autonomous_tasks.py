@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from copy import deepcopy
 from typing import Any, Mapping
+import os
 
 from contracts import canonical_sha256
 
@@ -17,6 +18,10 @@ AUTONOMY_ENGINE_VERSION = "tiangong.life.autonomy-task-engine.v1"
 TERMINAL_TASK_STATES = {"completed", "failed", "cancelled", "rejected"}
 ACTIVE_TASK_STATES = {"pending", "running", "blocked", "awaiting_user"}
 ALLOWED_TASK_STATES = TERMINAL_TASK_STATES | ACTIVE_TASK_STATES
+
+CATALOG_SOURCE = "life_activity_catalog"
+_COGNITION_PENDING_LIMIT_DEFAULT = 16
+_STALE_PENDING_MAX_AGE_HOURS_DEFAULT = 72
 
 # This is a catalog of bounded internal activities, not a second scheduler and
 # not an execution-tool registry.  The Life scheduler selects from it; any
@@ -198,6 +203,26 @@ def normalize_autonomy_state(value: Any) -> dict[str, Any]:
 
 def _now_ms() -> int:
     return time.time_ns() // 1_000_000
+
+
+def _cognition_pending_limit() -> int:
+    """非目录类任务（因果/认知类）的独立待办上限，防止挤占每日计划。"""
+    raw = str(os.environ.get("TIANGONG_LIFE_COGNITION_PENDING_LIMIT") or "").strip()
+    try:
+        value = int(raw) if raw else _COGNITION_PENDING_LIMIT_DEFAULT
+    except ValueError:
+        value = _COGNITION_PENDING_LIMIT_DEFAULT
+    return max(0, min(1024, value))
+
+
+def _stale_pending_max_age_seconds() -> int:
+    """陈旧 pending 任务的回收阈值（默认 72 小时，可用环境变量覆盖）。"""
+    raw = str(os.environ.get("TIANGONG_LIFE_STALE_PENDING_HOURS") or "").strip()
+    try:
+        hours = float(raw) if raw else _STALE_PENDING_MAX_AGE_HOURS_DEFAULT
+    except ValueError:
+        hours = _STALE_PENDING_MAX_AGE_HOURS_DEFAULT
+    return max(1, int(hours * 3600))
 
 
 def _task_fingerprint(kind: str, subject_refs: list[str], causal_basis: list[str]) -> str:
@@ -494,11 +519,23 @@ def materialize_tasks(
         if isinstance(task, Mapping) and str(task.get("status") or "") in ACTIVE_TASK_STATES
     }
     pending_count = len(active_fingerprints)
-    available = max(0, int(state.get("pending_limit")) - pending_count)
+    available_total = max(0, int(state.get("pending_limit")) - pending_count)
+    cognition_active = {
+        str(task.get("fingerprint") or "")
+        for task in tasks.values()
+        if isinstance(task, Mapping)
+        and str(task.get("status") or "") in ACTIVE_TASK_STATES
+        and str(task.get("source") or "") != CATALOG_SOURCE
+    }
+    available_cognition = max(0, _cognition_pending_limit() - len(cognition_active))
     created: list[dict[str, Any]] = []
     for candidate in candidates:
-        if available <= 0:
-            break
+        is_catalog = str(candidate.get("source") or "") == CATALOG_SOURCE
+        if is_catalog:
+            if available_total <= 0:
+                continue
+        elif available_total <= 0 or available_cognition <= 0:
+            continue
         fingerprint = str(candidate["fingerprint"])
         # The causal fingerprint is a durable idempotency key.  Recurring
         # catalog activities receive a new day in their causal basis; all
@@ -533,7 +570,9 @@ def materialize_tasks(
         active_fingerprints.add(fingerprint)
         existing_fingerprints.add(fingerprint)
         created.append(deepcopy(task))
-        available -= 1
+        available_total -= 1
+        if not is_catalog:
+            available_cognition -= 1
     state["generation_count"] = int(state.get("generation_count") or 0) + 1
     state["last_tick_at_ms"] = now_ms
     state["last_tick_reason"] = str(reason or "scheduled")[:80]
@@ -582,6 +621,46 @@ def update_task_status(
     return deepcopy(task)
 
 
+def reap_stale_pending_tasks(
+    state: dict[str, Any],
+    *,
+    now_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    """回收从未尝试且长期滞留的 pending/blocked 任务。
+
+    因果/认知类任务若没有执行通道会永远 pending（attempt_count=0），
+    一旦填满 pending_limit 就会挤死每日计划等目录任务的生成。
+    这里把超过阈值天数的陈旧任务标记为 cancelled，释放待办池。
+    """
+    state = normalize_autonomy_state(state)
+    now_ms = _now_ms() if now_ms is None else int(now_ms)
+    max_age_ms = _stale_pending_max_age_seconds() * 1000
+    reaped: list[dict[str, Any]] = []
+    for task_id, task in list(state.get("tasks", {}).items()):
+        if not isinstance(task, Mapping):
+            continue
+        if str(task.get("status") or "") not in {"pending", "blocked"}:
+            continue
+        if int(task.get("attempt_count") or 0) > 0:
+            continue
+        created_ms = int(task.get("created_at_ms") or 0)
+        if not created_ms or now_ms - created_ms < max_age_ms:
+            continue
+        reaped.append(
+            update_task_status(
+                state,
+                task_id=str(task_id),
+                status="cancelled",
+                now_ms=now_ms,
+                result={
+                    "reason_code": "life.autonomy.stale_pending_reaped",
+                    "age_hours": int(round((now_ms - created_ms) / 3_600_000)),
+                },
+            )
+        )
+    return reaped
+
+
 __all__ = [
     "ACTIVE_TASK_STATES",
     "ALLOWED_TASK_STATES",
@@ -595,5 +674,6 @@ __all__ = [
     "materialize_tasks",
     "normalize_activity_types",
     "normalize_autonomy_state",
+    "reap_stale_pending_tasks",
     "update_task_status",
 ]

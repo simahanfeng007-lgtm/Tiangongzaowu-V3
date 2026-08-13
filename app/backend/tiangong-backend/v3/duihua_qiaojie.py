@@ -60,6 +60,8 @@ CHAT_RETRY_SLEEP_SECONDS = 0.35
 # 未知内部标记（例如 <conversation>…</conversation>）打回重发的次数上限。
 # 与 CHAT_RETRY_LIMIT 独立：普通错误重试保持原语义，只有脏格式才多花一次模型调用。
 CHAT_MARKUP_RETRY_LIMIT = 2
+# 流式 interim 文本的最大长度（前端轮询 run 状态实时展示正文，不能截断在 500 字）。
+INTERIM_REPLY_MAX_CHARS = 20000
 RUN_STATE_SCHEMA = "tiangong.v3.run_state.v1"
 BACKEND_BUILD_ID = os.environ.get("TIANGONG_BUILD_ID", "tiangong-v3.0.3-source-complete-20260722")
 BACKEND_API_CONTRACT = os.environ.get("TIANGONG_BACKEND_API_CONTRACT", "tiangong.desktop.backend.v3")
@@ -594,7 +596,7 @@ class RunControlManager:
                 return {"ok": False, "skipped": "duplicate_interim_reply"}
             count = int(run.get("interim_reply_count") or 0) + 1
             run["interim_reply_count"] = count
-            run["last_interim_reply_text"] = clean[:500]
+            run["last_interim_reply_text"] = clean[:INTERIM_REPLY_MAX_CHARS]
             run["updated_at"] = time.time()
             run["updatedAt"] = run["updated_at"]
             self._runs[request_id] = run
@@ -605,11 +607,13 @@ class RunControlManager:
             f"interim_reply_{count}",
             "模型阶段回复",
             "done",
-            clean[:500],
+            clean[:INTERIM_REPLY_MAX_CHARS],
             meta={
                 "schema": "tiangong.v3.interim_reply.v1",
                 "chars": len(clean),
                 "source": (meta or {}).get("source") if isinstance(meta, dict) else "",
+                # interim 正文由流式气泡展示，不占进度卡；避免高频 flush 刷屏。
+                "visibility": "internal",
             },
         )
         # 再尝试回调（SSE 模式下可能没有回调，不影响步骤已创建）

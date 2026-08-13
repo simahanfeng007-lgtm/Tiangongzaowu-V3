@@ -482,10 +482,16 @@ class HttpKehuduan:
         provider_id: str | None = None,
         shenti: ShentiZhuangtai | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
         prior_assistant_messages: list[str] | None = None,
         stable_user_message: str | None = None,
     ) -> str:
-        """流式调用LLM，返回回复文本。on_text_chunk 可选回调用于前端流式展示。"""
+        """流式调用LLM，返回回复文本。
+
+        on_text_chunk 用于前端流式展示可见正文；
+        on_reasoning_chunk 转发模型的思考内容（如 DeepSeek reasoning_content），
+        让“思考中”阶段也有逐段内容可看。
+        """
         pid = infer_provider_id(provider_id or duqu_moren_provider(self._moren_provider))
 
         # Resolve and validate the endpoint before releasing any credential.
@@ -677,7 +683,11 @@ class HttpKehuduan:
                                 accumulated_content.append(text)
                                 if on_text_chunk:
                                     on_text_chunk(text)
-                            # reasoning_content 不转发到前端（用户不可见思考内容）
+                            reasoning = delta.get("reasoning_content")
+                            if reasoning and on_reasoning_chunk:
+                                on_reasoning_chunk(str(reasoning))
+                            # 注意：reasoning_content 不再整段丢弃；
+                            # 是否展示由上层 on_reasoning_chunk 决定。
                             # SSE 连接通过 duihua_qiaojie 的 300s ping 保活
                             tc_list = delta.get("tool_calls") or []
                             for tc in tc_list:
@@ -953,13 +963,13 @@ class HttpKehuduan:
         """返回 (system, user, on_text_chunk=None) -> str 回调函数，供 GutongCeng 使用"""
         if provider_id:
             pid = infer_provider_id(provider_id)
-            return lambda system, user, on_text_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
-                system, user, pid, on_text_chunk=on_text_chunk,
+            return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+                system, user, pid, on_text_chunk=on_text_chunk, on_reasoning_chunk=on_reasoning_chunk,
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message,
             )
-        return lambda system, user, on_text_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
-            system, user, on_text_chunk=on_text_chunk,
+        return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+            system, user, on_text_chunk=on_text_chunk, on_reasoning_chunk=on_reasoning_chunk,
             prior_assistant_messages=prior_assistant_messages,
             stable_user_message=stable_user_message,
         )

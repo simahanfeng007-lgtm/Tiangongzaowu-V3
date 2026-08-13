@@ -84,12 +84,19 @@ class GutongCeng:
         yonghu_tishi: str,
         shenti: ShentiZhuangtai,
         on_text_chunk=None,
+        on_reasoning_chunk=None,
     ) -> tuple[ShentiZhuangtai, str]:
         """一次唤醒：调LLM获得回复"""
         try:
-            huifu = self.llm(system_tishi, yonghu_tishi, on_text_chunk)
+            huifu = self.llm(
+                system_tishi, yonghu_tishi, on_text_chunk,
+                on_reasoning_chunk=on_reasoning_chunk,
+            )
         except TypeError:
-            huifu = self.llm(system_tishi, yonghu_tishi)
+            try:
+                huifu = self.llm(system_tishi, yonghu_tishi, on_text_chunk)
+            except TypeError:
+                huifu = self.llm(system_tishi, yonghu_tishi)
         shenti.shengming.zong_huanxing_cishu += 1
         return shenti, huifu
 
@@ -100,6 +107,7 @@ class GutongCeng:
         shenti: ShentiZhuangtai,
         yuanshi_qingqiu: str = "",
         on_text_chunk=None,
+        on_reasoning_chunk=None,
         assistant_messages: list[str] | None = None,
         stable_user_message: str = "",
     ) -> tuple[ShentiZhuangtai, str]:
@@ -159,19 +167,26 @@ class GutongCeng:
                           review.get("passed", False))
 
         try:
-                huifu = self.llm(
+            huifu = self.llm(
                 system_tishi,
                 yonghu_tishi,
                 on_text_chunk,
+                on_reasoning_chunk=on_reasoning_chunk,
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message or None,
             )
         except TypeError:
             # 旧回调不支持关键字参数：退化为单消息（无前缀缓存）。
             try:
-                huifu = self.llm(system_tishi, yonghu_tishi, on_text_chunk)
+                huifu = self.llm(
+                    system_tishi, yonghu_tishi, on_text_chunk,
+                    on_reasoning_chunk=on_reasoning_chunk,
+                )
             except TypeError:
-                huifu = self.llm(system_tishi, yonghu_tishi)
+                try:
+                    huifu = self.llm(system_tishi, yonghu_tishi, on_text_chunk)
+                except TypeError:
+                    huifu = self.llm(system_tishi, yonghu_tishi)
         return shenti, huifu
 
     @staticmethod
