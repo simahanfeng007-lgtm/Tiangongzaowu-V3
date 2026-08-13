@@ -1,0 +1,74 @@
+name: P17 M2-05 candidate readonly
+
+on:
+  push:
+    branches:
+      - agent/p17-m2-05-construction
+    paths:
+      - .github/workflows/p17-m2-05-candidate-readonly.yml
+      - scripts/p17-m2-05-candidate.py
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+      M205_BASE: 241f4cdd6b208896fe83573d17b5adc81b22d14b
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m2-05-construction
+          fetch-depth: 0
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build exact M2-05 candidate
+        run: python scripts/p17-m2-05-candidate.py
+      - name: Synchronize generated mirrors
+        run: python scripts/sync-generated-sources.py --write
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+          python tests/test_embedded_life_p17_m2_04.py -v
+          python tests/test_embedded_life_p17_m2_05.py -v
+          python -m py_compile src/life_service/embedded_runtime_wiring.py src/total_gateway/runtime.py app/life-service/runtime314/life_service/embedded_runtime_wiring.py app/runtime/python312/Lib/site-packages/life_service/embedded_runtime_wiring.py app/runtime/python312/Lib/site-packages/total_gateway/runtime.py
+          git diff --check
+      - name: Collect formal candidate files
+        shell: python
+        run: |
+          import os, shutil, subprocess
+          from pathlib import Path
+          root=Path.cwd(); base=os.environ['M205_BASE']
+          names=subprocess.check_output(['git','diff','--name-only',base],text=True).splitlines()
+          excluded={'.github/workflows/p17-m2-05-candidate-readonly.yml','scripts/p17-m2-05-candidate.py'}
+          out=root/'candidate'
+          selected=[]
+          for name in names:
+              if not name or name in excluded: continue
+              src=root/name
+              if not src.is_file(): continue
+              dst=out/name; dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dst); selected.append(name)
+          (out/'M205_FILES.txt').write_text('\n'.join(selected)+'\n',encoding='utf-8')
+          print('\n'.join(selected))
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p17-m2-05-candidate-readonly
+          path: candidate
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
