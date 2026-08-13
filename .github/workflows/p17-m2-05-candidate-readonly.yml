@@ -19,7 +19,6 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       PYTHONHASHSEED: "0"
-      M205_BASE: 241f4cdd6b208896fe83573d17b5adc81b22d14b
     steps:
       - name: Checkout construction branch
         uses: actions/checkout@v4
@@ -48,22 +47,14 @@ jobs:
           python -m py_compile src/life_service/embedded_runtime_wiring.py src/total_gateway/runtime.py app/life-service/runtime314/life_service/embedded_runtime_wiring.py app/runtime/python312/Lib/site-packages/life_service/embedded_runtime_wiring.py app/runtime/python312/Lib/site-packages/total_gateway/runtime.py
           git diff --check
       - name: Collect formal candidate files
-        shell: python
         run: |
-          import os, shutil, subprocess
-          from pathlib import Path
-          root=Path.cwd(); base=os.environ['M205_BASE']
-          names=subprocess.check_output(['git','diff','--name-only',base],text=True).splitlines()
-          excluded={'.github/workflows/p17-m2-05-candidate-readonly.yml','scripts/p17-m2-05-candidate.py'}
-          out=root/'candidate'
-          selected=[]
-          for name in names:
-              if not name or name in excluded: continue
-              src=root/name
-              if not src.is_file(): continue
-              dst=out/name; dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,dst); selected.append(name)
-          (out/'M205_FILES.txt').write_text('\n'.join(selected)+'\n',encoding='utf-8')
-          print('\n'.join(selected))
+          mkdir -p candidate/.github/workflows candidate/src/life_service candidate/src/total_gateway candidate/app/life-service/runtime314/life_service candidate/tests
+          cp .github/workflows/architecture-gate.yml candidate/.github/workflows/
+          cp src/life_service/embedded_runtime_wiring.py candidate/src/life_service/
+          cp src/total_gateway/runtime.py candidate/src/total_gateway/
+          cp app/life-service/runtime314/life_service/embedded_runtime_wiring.py candidate/app/life-service/runtime314/life_service/
+          cp app/life-service/runtime314/life_service/.tiangong-generated-source.json candidate/app/life-service/runtime314/life_service/
+          cp tests/test_embedded_life_p17_m2_05.py candidate/tests/
       - name: Upload candidate artifact
         uses: actions/upload-artifact@v4
         with:
