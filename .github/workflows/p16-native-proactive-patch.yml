@@ -55,8 +55,10 @@ jobs:
         run: python scripts/p16_native_proactive_repair.py
 
       - name: Apply P16 merge hardening
-        if: ${{ hashFiles('scripts/p16_native_proactive_hardening.py') != '' }}
         run: python scripts/p16_native_proactive_hardening.py
+
+      - name: Wire committed World Understanding evidence
+        run: python scripts/p16_native_proactive_world_wire.py
 
       - name: Sync generated source mirrors
         run: python scripts/sync-generated-sources.py --write
@@ -112,9 +114,13 @@ jobs:
           from pathlib import Path
           life = Path('src/life_service/embedded_runtime.py').read_text(encoding='utf-8')
           backend = Path('src/total_gateway/embedded_backend.py').read_text(encoding='utf-8')
+          gateway = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
           dialogue = Path('app/backend/tiangong-backend/v3/zongdiaodu.py').read_text(encoding='utf-8')
           assert life.count('proactive_chats"].append') == 1
           assert 'def _schedule_native_proactive' in life
+          assert 'world_understanding_committed' in life
+          assert 'set_proactive_world_provider' in gateway
+          assert 'runtime.backend_service.repository_evidence_snapshot' in gateway
           assert 'def _proactive_compose' in backend
           assert 'self.qiaojie.chuli_duihua(text, user, context)' in backend
           compose = backend.split('def _proactive_compose', 1)[1].split('\n    def ', 1)[0]
