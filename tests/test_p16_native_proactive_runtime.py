@@ -141,7 +141,7 @@ def test_ack_is_delivery_not_reply_and_next_user_turn_links_reply():
 
             linked = life._mark_latest_proactive_replied(
                 life_id=life_id,
-                user_activity_at_ms=NOW + 30_000,
+                user_activity_at_ms=int(row["created_at_ms"]) + 30_000,
                 run_id="run-user-after-proactive",
             )
             assert linked is True
