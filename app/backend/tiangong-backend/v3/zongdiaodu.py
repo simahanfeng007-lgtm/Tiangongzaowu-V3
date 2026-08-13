@@ -61,7 +61,6 @@ from .run_context import (
 # User-message turns go through simple_chain + omni_body only.
 from .codex_turn_chain import TurnItem
 from .tool_result_contract import (
-    normalize_tool_result,
     tool_result_attachments,
     tool_result_error,
     tool_result_media,
@@ -83,13 +82,20 @@ from .runtime_turn_orchestration import (
     coordinate_parallel_steps,
     evaluate_turn_budget,
 )
+from .runtime_tool_result_boundary import (
+    attach_tool_result_contract,
+    canonical_tool_result,
+    contract_observed_write,
+    decide_simple_chain_completion,
+    project_tool_dispatch,
+    tool_write_verified,
+)
 
 install_zongdiaodu_import_observers()
 
 from .execution_integrity import (
     build_action_obligations,
     build_task_contract_obligations,
-    decide_task_contract_completion,
     execution_integrity_blockers,
     extract_model_task_profile,
     initialize_task_contract,
@@ -1957,18 +1963,8 @@ def _tool_dispatch_meta(
 
 
 def _tool_dispatch_with_result(meta: dict[str, Any] | None, result: Any) -> dict[str, Any] | None:
-    if not isinstance(meta, dict):
-        return None
-    output = dict(meta)
-    tool_name = str(output.get("toolName") or output.get("tool_name") or "")
-    contract = normalize_tool_result(tool_name, result)
-    ok = bool(contract.get("ok"))
-    output["status"] = "done" if ok else "failed"
-    output["resultStatus"] = str(contract.get("status") or "")
-    output["resultContract"] = contract
-    if not ok:
-        output["resultSummary"] = str(contract.get("error") or contract.get("summary") or "")[:500]
-    return output
+    return project_tool_dispatch(meta, result)
+
 
 
 def _tool_result_with_contract(
@@ -1977,45 +1973,12 @@ def _tool_result_with_contract(
     *,
     source_native_id: str = "",
 ) -> Any:
-    contract = normalize_tool_result(tool_name, result)
-    if isinstance(result, dict):
-        output = dict(result)
-        output.setdefault("tool_result_contract", contract)
-    else:
-        output = {
-            "ok": bool(contract.get("ok")),
-            "zhuangtai": str(contract.get("status") or ""),
-            "value": result,
-            "tool_result_contract": contract,
-        }
-    native_id = str(source_native_id or "").strip() or (
-        "tool.result." + hashlib.sha256(json.dumps(
-            {"tool_name": tool_name, "contract": contract},
-            ensure_ascii=False,
-            sort_keys=True,
-            default=str,
-        ).encode("utf-8")).hexdigest()[:32]
+    return attach_tool_result_contract(
+        tool_name,
+        result,
+        source_native_id=source_native_id,
     )
-    from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
-    from .run_context import current_run_context
-    run_context = current_run_context()
-    causal = {}
-    if run_context.source_inquiry_id:
-        causal = {
-            "source_inquiry_id": run_context.source_inquiry_id,
-            "autonomous_intent_id": run_context.autonomous_intent_id,
-            "gateway_intent_id": run_context.outer_execution_ticket_id,
-            "terminal_status": "success" if bool(contract.get("ok")) else "failure",
-        }
-    notify_native_post_commit(NativePostCommitEvent(
-        source_kind="TOOL_RESULT",
-        source_native_id=native_id,
-        producer_ref="v3.tool_result_contract",
-        payload={"tool_name": str(tool_name or ""), **contract, **causal},
-        occurred_at_ms=int(time.time() * 1000),
-    ))
-    return output
 
 
 def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
@@ -3078,55 +3041,13 @@ def _tool_is_write_effect(tool_name: str, result: Any) -> bool:
 
 
 def _contract_observed_write(contract: dict[str, Any] | None) -> bool:
-    if not isinstance(contract, dict):
-        return False
-    if "observed_write_effect" in contract or "write_evidence" in contract:
-        evidence = contract.get("write_evidence")
-        return bool(
-            contract.get("observed_write_effect")
-            and isinstance(evidence, dict)
-            and evidence.get("authoritative") is True
-            and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
-        )
-    # Durable checkpoints created before v3.write_evidence.v1 only have the
-    # legacy boolean. Preserve resume compatibility without allowing newly
-    # normalized results to self-certify.
-    return bool(contract.get("write_effect"))
+    return contract_observed_write(contract)
+
 
 
 def _tool_write_verified(tool_name: str, result: Any) -> bool:
-    contract = normalize_tool_result(tool_name, result)
-    if not contract.get("ok"):
-        return False
-    evidence = contract.get("write_evidence")
-    if _contract_observed_write(contract):
-        if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
-            return False
-        if not evidence.get("changed_files") and not evidence.get("deleted_files") and not evidence.get("verified_unchanged_files"):
-            return False
-        if not isinstance(result, dict):
-            return True
-        readback = result.get("readback")
-        if isinstance(readback, dict):
-            return readback.get("ok") is True
-        if isinstance(readback, list):
-            return bool(readback) and all(isinstance(item, dict) and item.get("ok") is True for item in readback)
-        result_evidence = result.get("evidence")
-        if isinstance(result_evidence, dict) and result_evidence.get("exists") is True:
-            return True
-        # The pre/post or sandbox-broker evidence above is already authoritative.
-        # A separate readback is desirable but is enforced by the final
-        # post-mutation verification gate, not by inventing a write here.
-        return True
-    # B4 磁盘兜底：契约缺 write_effect，但写工具返回的目标路径在磁盘上真实存在。
-    # 仅对写类动作生效（本函数只被写类质量载荷调用），读动作不会走到这里。
-    try:
-        paths = [str(path) for path in (contract.get("paths") or []) if str(path or "").strip()]
-        if paths and all(Path(path).is_file() for path in paths):
-            return True
-    except Exception:
-        pass
-    return False
+    return tool_write_verified(tool_name, result)
+
 
 
 def _simple_chain_payload_paths(payload: dict[str, Any]) -> list[str]:
@@ -5093,7 +5014,7 @@ def _simple_chain_quality_gate_payload(
     run_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     action = _simple_chain_tool_action(tool_name, tool_args) if str(tool_name or "").strip() in SIMPLE_CHAIN_TOOL_NAMES else ""
-    contract = normalize_tool_result(tool_name, tool_result)
+    contract = canonical_tool_result(tool_name, tool_result)
     source_text_map = _simple_chain_source_text_map(user_message, tool_name, tool_args, tool_result, contract)
     codex_evidence = _simple_chain_codex_evidence(user_message, tool_name, tool_args, tool_result, contract)
     codex_evidence["source_text_map_ref"] = "quality_payload.source_text_map"
@@ -5919,23 +5840,17 @@ def _simple_chain_life_completion_gate(
     final_reply: Any = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], bool, str, list[str]]:
-    """Apply evidence observations, then let the life contract decide once."""
-
-    _evidence_ok, evidence_status, evidence_reasons = _simple_chain_evidence_check(
+    return decide_simple_chain_completion(
         user_message,
         quality_history,
         generated_attachments,
+        task_contract=task_contract,
+        evidence_check=_simple_chain_evidence_check,
         required_read_paths=required_read_paths,
         final_reply=final_reply,
         task_obligations=task_obligations,
     )
-    return decide_task_contract_completion(
-        task_contract,
-        evidence_reasons=evidence_reasons,
-        evidence_status=evidence_status,
-        final_reply=final_reply,
-        has_real_observation=bool(quality_history),
-    )
+
 
 
 _INCOMPLETE_REASON_RENHUA = (
