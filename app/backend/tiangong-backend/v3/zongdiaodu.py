@@ -31,7 +31,6 @@ from .gutong.shangxiawen import goujian_shenti_tishi, goujian_system_tishi, gouj
 from .gutong.gutong_ceng import GutongCeng
 from .jineng.guge_ceng import GUGE
 from .jineng.jirou_ceng import JIROU
-from .jineng.http_kehuduan import HttpKehuduan
 from .context_compactor import (
     estimate_tokens,
     compact_tool_result,
@@ -39,12 +38,8 @@ from .context_compactor import (
     DEFAULT_WINDOW_TOKENS,
     SYSTEM_BUDGET_PCT,
 )
-from .guancha_pinggu.guancha import GuanchaYinqing, HuifuXinxi
+from .guancha_pinggu.guancha import HuifuXinxi
 from .guancha_pinggu.pinggu import pinggu_xingdong
-from .jinhua.biaoda_router import JinhuaBiaodaRouter
-from .jinhua.bihuan_yinqing import JinhuaBihuanYinqing
-from .jinhua.yinqing import JinhuaYinqing
-from .ziyu.yinqing import ZiyuYinqing
 from .zhuangtai_tongbu import TONGBU
 from .duihua_qiaojie import (
     QIAOJIE,
@@ -75,9 +70,15 @@ from .tool_result_contract import (
     tool_result_status,
     tool_result_write_effect,
 )
-from .world_understanding_production import install_world_understanding_observer
+from .runtime_bootstrap import install_zongdiaodu_import_observers
+from .runtime_composition import build_zongdiaodu_composition
+from .runtime_lifecycle import (
+    DetachedLegacyHeartbeat,
+    start_zongdiaodu_runtime,
+    stop_zongdiaodu_runtime,
+)
 
-install_world_understanding_observer()
+install_zongdiaodu_import_observers()
 
 from .execution_integrity import (
     build_action_obligations,
@@ -149,24 +150,6 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
         "[Soul 人格底稿]\n"
         + soul["prompt"]
     )
-
-
-class _DetachedLegacyHeartbeat:
-    """Compatibility surface after the legacy life chain was detached."""
-
-    yunxing_zhong = False
-
-    def gengxin_shenti(self, _shenti: Any) -> None:
-        return None
-
-    def qidong(self) -> None:
-        return None
-
-    def tingzhi(self) -> None:
-        return None
-
-    def _yici_tick(self, _shenti: Any) -> None:
-        return None
 
 
 def _simple_chain_explicit_named_skill_ids(user_message: str) -> list[str]:
@@ -6522,29 +6505,25 @@ class Zongdiaodu:
     """总调度：唯一唤醒入口"""
 
     def __init__(self, llm_diaoyong_han_shu: Callable | None = None):
-        if llm_diaoyong_han_shu is not None:
-            self.http_kehuduan = None
-            self.gutong = GutongCeng(llm_diaoyong_han_shu)
-        else:
-            self.http_kehuduan = HttpKehuduan()
-            self.gutong = GutongCeng(self.http_kehuduan.zuowei_huidiao())
+        composition = build_zongdiaodu_composition(llm_diaoyong_han_shu)
+        self.http_kehuduan = composition.http_kehuduan
+        self.gutong = composition.gutong
         self._zuihou_biaoxian_default = _biaoxian_default()
         self.shengming_zhouqi = None
-        self.xintiao = _DetachedLegacyHeartbeat()
-        # 引擎实例化
-        self.guancha_yq = GuanchaYinqing()
+        self.xintiao = DetachedLegacyHeartbeat()
+        self.guancha_yq = composition.guancha_yq
         self.jingyan_chi = None
-        self.jinhua_yq = JinhuaYinqing()
-        self.jinhua_biaoda = JinhuaBiaodaRouter()
-        self.jinhua_bihuan = JinhuaBihuanYinqing()
-        self.ziyu_yq = ZiyuYinqing()
+        self.jinhua_yq = composition.jinhua_yq
+        self.jinhua_biaoda = composition.jinhua_biaoda
+        self.jinhua_bihuan = composition.jinhua_bihuan
+        self.ziyu_yq = composition.ziyu_yq
         self.zizhu_xuexi_yq = None
         self._xuexi_lian = None
         self._shenti_by_scope: dict[str, ShentiZhuangtai] = {}
 
-        # 生命链 v3.6.1：执行链与生命链隔离
-        self._lifecycle_lock = threading.Lock()
-        self._active_user_run_lock = threading.Lock()
+        # Mutable run state remains owned by the one Zongdiaodu host.
+        self._lifecycle_lock = composition.lifecycle_lock
+        self._active_user_run_lock = composition.active_user_run_lock
         self._active_user_run_count = 0
         self._active_user_run = False
         self.life_orchestrator = None
@@ -6639,14 +6618,11 @@ class Zongdiaodu:
         return self._shenti_by_scope[scope]
 
     def qidong(self):
-        """启动总调度（含心跳 + 状态同步 + 对话桥接 + 旧任务清理）"""
-        self._cleanup_stale_run_states()
-        if SHENGMING_LIFE_CHAIN_ENABLED:
-            self.xintiao.gengxin_shenti(self.shenti)
-            self.xintiao.qidong()
-        TONGBU.qidong()
-        QIAOJIE.shezhi_zongdiaodu(self)
-        QIAOJIE.qidong()
+        """启动唯一 V3 总调度；具体接线由 lifecycle port 持有。"""
+        start_zongdiaodu_runtime(
+            self,
+            life_chain_enabled=SHENGMING_LIFE_CHAIN_ENABLED,
+        )
 
     def _cleanup_stale_run_states(self):
         """启动对账：终态白名单反转 + owner 存活判定 + 统一根目录 + 保留策略。
@@ -6810,9 +6786,11 @@ class Zongdiaodu:
             )
 
     def tingzhi(self):
-        """停止总调度"""
-        if SHENGMING_LIFE_CHAIN_ENABLED:
-            self.xintiao.tingzhi()
+        """停止唯一 V3 总调度；保持原有停止语义。"""
+        stop_zongdiaodu_runtime(
+            self,
+            life_chain_enabled=SHENGMING_LIFE_CHAIN_ENABLED,
+        )
 
     class _InterimTextEmitter:
         """将流式文本按节流策略累积写入 run 状态，供前端轮询实时展示。
