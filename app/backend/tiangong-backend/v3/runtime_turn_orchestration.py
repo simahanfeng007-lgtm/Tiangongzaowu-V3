@@ -29,6 +29,25 @@ class TurnLoopState:
     def can_schedule(self, requested: int, max_rounds: int) -> bool:
         return self.action_rounds + max(0, int(requested)) <= max(0, int(max_rounds))
 
+    def reserve_one(self) -> int:
+        self.action_rounds += 1
+        return self.action_rounds
+
+    def record_batch_result(self) -> int:
+        self.action_rounds += 1
+        return self.action_rounds
+
+    def project_live(self, run_state: dict[str, object] | None, loop_started_at: float) -> None:
+        if not isinstance(run_state, dict):
+            return
+        live = run_state.get("_live")
+        if not isinstance(live, dict):
+            live = {}
+            run_state["_live"] = live
+        live["iteration_count"] = self.iteration_count
+        live["tool_rounds"] = self.action_rounds
+        live["loop_started_at"] = float(loop_started_at)
+
 
 def evaluate_turn_budget(
     *,
