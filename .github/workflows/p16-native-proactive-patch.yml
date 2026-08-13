@@ -25,6 +25,20 @@ jobs:
           ref: agent/p16-native-proactive-v0.1
           fetch-depth: 0
 
+      - name: Locate authoritative World Understanding wiring
+        shell: bash
+        run: |
+          grep -R -n -E "ProductionWorldUnderstandingRuntime|install_native_post_commit_observer|repository_evidence_snapshot" src app tests > p16-wu-wiring.txt || true
+          cat p16-wu-wiring.txt
+
+      - name: Upload WU wiring diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: p16-wu-wiring-diagnostics
+          path: p16-wu-wiring.txt
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -39,6 +53,10 @@ jobs:
 
       - name: Repair P16 patch output
         run: python scripts/p16_native_proactive_repair.py
+
+      - name: Apply P16 merge hardening
+        if: ${{ hashFiles('scripts/p16_native_proactive_hardening.py') != '' }}
+        run: python scripts/p16_native_proactive_hardening.py
 
       - name: Sync generated source mirrors
         run: python scripts/sync-generated-sources.py --write
