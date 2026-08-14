@@ -1,6 +1,9 @@
 name: P17 M3-04 candidate read-only
 
 on:
+  push:
+    branches:
+      - "agent/p17-m3-04-construction"
   workflow_dispatch:
 
 permissions:
