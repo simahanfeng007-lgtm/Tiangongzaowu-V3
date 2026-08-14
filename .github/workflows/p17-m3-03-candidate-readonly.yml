@@ -62,6 +62,21 @@ jobs:
           PY
       - name: Build exact M3-03 candidate
         run: python scripts/p17-m3-03-candidate.py
+      - name: Restore support record dataclass descriptors
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/life_service/store_contract_support.py")
+          source = path.read_text(encoding="utf-8")
+          for class_name in ("ProtectedPayloadRecord", "MemoryDeletionResult"):
+              anchor = f"class {class_name}:"
+              replacement = f"@dataclass(frozen=True, slots=True)\n{anchor}"
+              if source.count(anchor) != 1 or source.count(replacement) != 0:
+                  raise RuntimeError(f"dataclass descriptor anchor changed: {class_name}")
+              source = source.replace(anchor, replacement)
+          path.write_text(source, encoding="utf-8")
+          PY
       - name: Synchronize generated life-service mirrors
         run: python scripts/sync-generated-sources.py --write
       - name: Validate candidate
