@@ -1,0 +1,87 @@
+name: P17 M3-01 candidate readonly
+
+on:
+  push:
+    branches:
+      - agent/p17-m3-01-construction
+    paths:
+      - .github/workflows/p17-m3-01-candidate-readonly.yml
+      - scripts/p17-m3-01-candidate.py
+      - src/life_service/store_connection.py
+      - tests/test_life_store_p17_m3_01.py
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m3-01-construction
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact M3-01 candidate
+        run: python scripts/p17-m3-01-candidate.py
+
+      - name: Synchronize generated life-service mirrors
+        run: python scripts/sync-generated-sources.py --write
+
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+          python tests/test_embedded_life_p17_m2_04.py -v
+          python tests/test_embedded_life_p17_m2_05.py -v
+          python tests/test_life_store_p17_m3_01.py -v
+          python -m py_compile src/life_service/store.py src/life_service/store_connection.py app/life-service/runtime314/life_service/store.py app/life-service/runtime314/life_service/store_connection.py app/runtime/python312/Lib/site-packages/life_service/store.py app/runtime/python312/Lib/site-packages/life_service/store_connection.py
+          git diff --check
+
+      - name: Collect formal candidate files
+        shell: python
+        run: |
+          from pathlib import Path
+          import shutil
+          paths = [
+              ".github/workflows/architecture-gate.yml",
+              "src/life_service/store.py",
+              "src/life_service/store_connection.py",
+              "app/life-service/runtime314/life_service/store.py",
+              "app/life-service/runtime314/life_service/store_connection.py",
+              "app/life-service/runtime314/life_service/.tiangong-generated-source.json",
+              "app/runtime/python312/Lib/site-packages/life_service/store.py",
+              "app/runtime/python312/Lib/site-packages/life_service/store_connection.py",
+              "app/runtime/python312/Lib/site-packages/life_service/.tiangong-generated-source.json",
+              "tests/test_life_store_p17_m3_01.py",
+          ]
+          for relative in paths:
+              source = Path(relative)
+              target = Path("candidate") / relative
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, target)
+
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p17-m3-01-candidate-readonly
+          path: candidate
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
