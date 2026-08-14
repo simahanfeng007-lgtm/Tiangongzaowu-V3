@@ -18,6 +18,7 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       PYTHONHASHSEED: "0"
+      PYTHONPATH: src
     steps:
       - name: Checkout construction branch
         uses: actions/checkout@v4
