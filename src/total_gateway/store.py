@@ -7,6 +7,8 @@ from .diagnostics import diagnostic_log
 import os
 import json
 import sqlite3
+
+from .store_unit_of_work import gateway_store_write_transaction
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -3254,13 +3256,8 @@ class GatewayStateStore:
     def _write_transaction(self) -> Iterator[None]:
         if self._closed:
             raise StoreError("gateway store is closed")
-        self._connection.execute("BEGIN IMMEDIATE")
-        try:
+        with gateway_store_write_transaction(self._connection):
             yield
-            self._connection.execute("COMMIT")
-        except Exception:
-            self._connection.execute("ROLLBACK")
-            raise
 
     def _assert_request_binding_locked(
         self,
