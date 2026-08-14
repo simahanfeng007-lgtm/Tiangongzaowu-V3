@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install Life runtime test dependencies
-        run: python -m pip install cryptography pydantic
+        run: python -m pip install cryptography==48.0.1 pydantic==2.13.4
       - name: Align builder with current Architecture Gate
         shell: bash
         run: |
@@ -43,7 +43,7 @@ jobs:
               '    test_anchor = "      - name: Run P17 M3-02 life store schema regression\\n        run: python tests/test_life_store_p17_m3_02.py -v\\n"\n'
               '    if gate.count(test_anchor) != 1:\n'
               '        raise RuntimeError("M3-02 gate anchor changed")\n'
-              '    test_replacement = test_anchor + "\\n      - name: Run P17 M3-03 life memory repository regression\\n        run: python tests/test_life_store_p17_m3_03.py -v\\n"\n'
+              '    test_replacement = test_anchor + "\\n      - name: Install P17 M3-03 Life store test dependencies\\n        run: python -m pip install cryptography==48.0.1 pydantic==2.13.4\\n\\n      - name: Run P17 M3-03 life memory repository regression\\n        run: python tests/test_life_store_p17_m3_03.py -v\\n"\n'
               '    gate = gate.replace(test_anchor, test_replacement)\n'
               '    compile_anchor = "src/life_service/store_schema.py src/total_gateway/runtime.py"\n'
               '    compile_replacement = "src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py"\n'
