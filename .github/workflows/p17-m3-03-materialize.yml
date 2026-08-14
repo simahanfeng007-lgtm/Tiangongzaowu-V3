@@ -1,0 +1,146 @@
+name: P17 M3-03 materialize verified blobs
+
+on:
+  push:
+    branches:
+      - agent/p17-m3-03-construction
+    paths:
+      - .github/workflows/p17-m3-03-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+      PYTHONPATH: .:src
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m3-03-construction
+          fetch-depth: 0
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Life runtime test dependencies
+        run: python -m pip install cryptography==48.0.1 pydantic==2.13.4
+      - name: Align builder with current contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/p17-m3-03-candidate.py")
+          source = path.read_text(encoding="utf-8")
+          start = source.index("    test_anchor = ")
+          end = source.index('    print("P17-M3-03 candidate patched"', start)
+          replacement = (
+              '    test_anchor = "      - name: Run P17 M3-02 life store schema regression\\n        run: python tests/test_life_store_p17_m3_02.py -v\\n"\n'
+              '    if gate.count(test_anchor) != 1:\n'
+              '        raise RuntimeError("M3-02 gate anchor changed")\n'
+              '    test_replacement = test_anchor + "\\n      - name: Install P17 M3-03 Life store test dependencies\\n        run: python -m pip install cryptography==48.0.1 pydantic==2.13.4\\n\\n      - name: Run P17 M3-03 life memory repository regression\\n        run: python tests/test_life_store_p17_m3_03.py -v\\n"\n'
+              '    gate = gate.replace(test_anchor, test_replacement)\n'
+              '    compile_anchor = "src/life_service/store_schema.py src/total_gateway/runtime.py"\n'
+              '    compile_replacement = "src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py"\n'
+              '    if gate.count(compile_anchor) != 1:\n'
+              '        raise RuntimeError("compile gate anchor changed")\n'
+              '    GATE.write_text(gate.replace(compile_anchor, compile_replacement), encoding="utf-8")\n'
+          )
+          source = source[:start] + replacement + source[end:]
+          old = '    repo_methods = [textwrap.indent(textwrap.dedent(segment(source, targets[name])), "    ") for name in target_names]\n'
+          new = '    repo_methods = [(("    @staticmethod\\n" if name in STATIC_NAMES else "") + textwrap.indent(textwrap.dedent(segment(source, targets[name])), "    ")) for name in target_names]\n'
+          if source.count(old) != 1:
+              raise RuntimeError("repository method extraction anchor changed")
+          source = source.replace(old, new)
+          path.write_text(source, encoding="utf-8")
+          PY
+      - name: Build exact M3-03 candidate
+        run: python scripts/p17-m3-03-candidate.py
+      - name: Restore support record dataclass descriptors
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/life_service/store_contract_support.py")
+          source = path.read_text(encoding="utf-8")
+          for class_name in ("ProtectedPayloadRecord", "MemoryDeletionResult"):
+              anchor = f"class {class_name}:"
+              replacement = f"@dataclass(frozen=True, slots=True)\n{anchor}"
+              if source.count(anchor) != 1 or source.count(replacement) != 0:
+                  raise RuntimeError(f"dataclass descriptor anchor changed: {class_name}")
+              source = source.replace(anchor, replacement)
+          path.write_text(source, encoding="utf-8")
+          PY
+      - name: Synchronize generated life-service mirrors
+        run: python scripts/sync-generated-sources.py --write
+      - name: Validate candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+          python tests/test_embedded_life_p17_m2_04.py -v
+          python tests/test_embedded_life_p17_m2_05.py -v
+          python tests/test_life_store_p17_m3_01.py -v
+          python tests/test_life_store_p17_m3_02.py -v
+          python tests/test_life_store_p17_m3_03.py -v
+          python tests/test_life_shadow_store.py -v
+          python tests/test_causal_memory_store.py -v
+          python tests/test_memory_derivation_store_p15.py -v
+          python -m py_compile src/life_service/store.py src/life_service/store_connection.py src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py app/life-service/runtime314/life_service/store.py app/life-service/runtime314/life_service/store_connection.py app/life-service/runtime314/life_service/store_schema.py app/life-service/runtime314/life_service/store_contract_support.py app/life-service/runtime314/life_service/store_memory_repository.py
+          git diff --check
+      - name: Create unreferenced verified blobs
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          from pathlib import Path
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          paths = [
+              ".github/workflows/architecture-gate.yml",
+              "src/life_service/store.py",
+              "src/life_service/store_contract_support.py",
+              "src/life_service/store_memory_repository.py",
+              "app/life-service/runtime314/life_service/store.py",
+              "app/life-service/runtime314/life_service/store_contract_support.py",
+              "app/life-service/runtime314/life_service/store_memory_repository.py",
+              "app/life-service/runtime314/life_service/.tiangong-generated-source.json",
+              "tests/test_life_store_p17_m3_03.py",
+          ]
+          result = {}
+          for relative in paths:
+              raw = Path(relative).read_bytes()
+              body = json.dumps({
+                  "content": base64.b64encode(raw).decode("ascii"),
+                  "encoding": "base64",
+              }).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs",
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  result[relative] = json.load(response)["sha"]
+          print(json.dumps(result, sort_keys=True))
