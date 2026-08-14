@@ -1,0 +1,22 @@
+name: P17 M3-03 store surface audit
+
+on:
+  push:
+    branches:
+      - agent/p17-m3-03-construction
+    paths:
+      - scripts/p17-m3-03-audit.py
+      - .github/workflows/p17-m3-03-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m3-03-construction
+          fetch-depth: 0
+      - run: python scripts/p17-m3-03-audit.py
