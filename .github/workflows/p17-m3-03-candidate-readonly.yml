@@ -29,27 +29,29 @@ jobs:
         with:
           python-version: "3.12"
       - name: Align builder with current Architecture Gate
-        shell: python
-
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
           path = Path("scripts/p17-m3-03-candidate.py")
           source = path.read_text(encoding="utf-8")
           start = source.index("    test_anchor = ")
-          end = source.index("    print(\"P17-M3-03 candidate patched\"", start)
-          replacement = '''    test_anchor = "      - name: Run P17 M3-02 life store schema regression\n        run: python tests/test_life_store_p17_m3_02.py -v\n"
-    if gate.count(test_anchor) != 1:
-        raise RuntimeError("M3-02 gate anchor changed")
-    test_replacement = test_anchor + "\n      - name: Run P17 M3-03 life memory repository regression\n        run: python tests/test_life_store_p17_m3_03.py -v\n"
-    gate = gate.replace(test_anchor, test_replacement)
-    compile_anchor = "src/life_service/store_schema.py src/total_gateway/runtime.py"
-    compile_replacement = "src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py"
-    if gate.count(compile_anchor) != 1:
-        raise RuntimeError("compile gate anchor changed")
-    GATE.write_text(gate.replace(compile_anchor, compile_replacement), encoding="utf-8")
-'''
+          end = source.index('    print("P17-M3-03 candidate patched"', start)
+          replacement = (
+              '    test_anchor = "      - name: Run P17 M3-02 life store schema regression\\n        run: python tests/test_life_store_p17_m3_02.py -v\\n"\n'
+              '    if gate.count(test_anchor) != 1:\n'
+              '        raise RuntimeError("M3-02 gate anchor changed")\n'
+              '    test_replacement = test_anchor + "\\n      - name: Run P17 M3-03 life memory repository regression\\n        run: python tests/test_life_store_p17_m3_03.py -v\\n"\n'
+              '    gate = gate.replace(test_anchor, test_replacement)\n'
+              '    compile_anchor = "src/life_service/store_schema.py src/total_gateway/runtime.py"\n'
+              '    compile_replacement = "src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py"\n'
+              '    if gate.count(compile_anchor) != 1:\n'
+              '        raise RuntimeError("compile gate anchor changed")\n'
+              '    GATE.write_text(gate.replace(compile_anchor, compile_replacement), encoding="utf-8")\n'
+          )
           source = source[:start] + replacement + source[end:]
           path.write_text(source, encoding="utf-8")
+          PY
       - name: Build exact M3-03 candidate
         run: python scripts/p17-m3-03-candidate.py
       - name: Synchronize generated life-service mirrors
