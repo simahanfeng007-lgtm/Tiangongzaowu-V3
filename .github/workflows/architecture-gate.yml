@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - "agent/p17-*"
+      - "agent/p17*"
   pull_request:
     branches:
       - main
