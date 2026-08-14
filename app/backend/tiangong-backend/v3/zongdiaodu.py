@@ -932,6 +932,130 @@ def _simple_chain_emit_event(
         pass
 
 
+
+def _simple_chain_authority_identity(run_state: dict[str, Any] | None) -> dict[str, Any]:
+    """Project existing Request/Run/Generation/Life identity; never mint authority."""
+    context = current_run_context()
+    state = run_state if isinstance(run_state, dict) else {}
+    return {
+        "request_id": str(context.request_id or state.get("request_id") or ""),
+        "run_id": str(context.run_id or state.get("run_id") or ""),
+        "generation": int(context.generation or 0),
+        "life_id": str(context.life_id or ""),
+        "session_id": str(context.session_id or state.get("session_id") or ""),
+    }
+
+
+def _simple_chain_checkpoint_continue(
+    run_state: dict[str, Any] | None,
+    turn_loop: TurnLoopState,
+    *,
+    requested: int,
+    loop_started_at: float,
+    source: str,
+) -> bool:
+    """Persist a non-terminal local Epoch checkpoint before rollover."""
+    if not isinstance(run_state, dict):
+        return False
+    identity = _simple_chain_authority_identity(run_state)
+    epoch_index = int(turn_loop.epoch_index)
+    requested_count = max(0, int(requested))
+    turn_loop.project_live(run_state, loop_started_at)
+    run_state["authority_identity"] = identity
+    run_state["status"] = "checkpoint_continue"
+    run_state["stage"] = "epoch_checkpoint"
+    run_state["continuation"] = {
+        "schema": "tiangong.v3.simple_chain.epoch_continuation.v1",
+        "status": "checkpoint_requested",
+        "epoch_index": epoch_index,
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "requested_tool_rounds": requested_count,
+        "latest_safe_step": f"global_tool_round_{int(turn_loop.action_rounds)}",
+        "next_step": f"epoch_{epoch_index + 1}_tool_round_1",
+    }
+    meta = {
+        **identity,
+        "epoch_index": epoch_index,
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "requested_tool_rounds": requested_count,
+        "continuation_status": "checkpoint_continue",
+    }
+    _simple_chain_emit_event(run_state, "epoch.checkpoint_requested", "epoch budget reached", source, extra=meta)
+    _simple_chain_emit_event(run_state, "run.continuation_requested", "same run continuation requested", source, extra=meta)
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+
+    run_state["continuation"]["status"] = "checkpoint_committed"
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+    _simple_chain_emit_event(run_state, "epoch.checkpoint_committed", "epoch checkpoint persisted", source, extra=meta)
+    _simple_chain_emit_event(run_state, "epoch.completed", "epoch completed non-terminally", source, extra=meta)
+
+    next_epoch = turn_loop.begin_next_epoch()
+    turn_loop.project_live(run_state, loop_started_at)
+    run_state["status"] = "running"
+    run_state["stage"] = "execution_epoch"
+    run_state["continuation"].update({"status": "continued", "next_epoch_index": int(next_epoch)})
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+    next_meta = {
+        **identity,
+        "epoch_index": int(next_epoch),
+        "next_epoch_index": int(next_epoch),
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "requested_tool_rounds": requested_count,
+        "continuation_status": "continued",
+    }
+    _simple_chain_emit_event(run_state, "epoch.started", "next epoch started", source, extra=next_meta)
+    _simple_chain_emit_event(run_state, "run.continued", "same run continued", source, extra=next_meta)
+    return True
+
+
+def _simple_chain_prepare_tool_budget(
+    turn_loop: TurnLoopState,
+    requested: int,
+    *,
+    run_state: dict[str, Any] | None,
+    loop_started_at: float,
+    source: str,
+) -> tuple[bool, tuple[str, ...]]:
+    """Dual-budget bridge for both production tool dispatch paths."""
+    requested_count = max(0, int(requested))
+    decision = turn_loop.decide_schedule(
+        requested_count,
+        max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+        max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+    )
+    if decision.can_schedule:
+        return True, ()
+    if decision.terminal:
+        return False, tuple(decision.reasons)
+    if requested_count > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+        return False, ("[epoch_tool_batch_too_large] requested batch exceeds one Epoch",)
+    if not decision.should_checkpoint_continue:
+        return False, tuple(decision.reasons)
+    if not _simple_chain_checkpoint_continue(
+        run_state,
+        turn_loop,
+        requested=requested_count,
+        loop_started_at=loop_started_at,
+        source=source,
+    ):
+        return False, ("[epoch_checkpoint_failed] checkpoint persistence failed",)
+    resumed = turn_loop.decide_schedule(
+        requested_count,
+        max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+        max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+    )
+    return resumed.can_schedule, (() if resumed.can_schedule else tuple(resumed.reasons))
+
+
 def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
@@ -4020,6 +4144,9 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # the best evidence already produced.  Environment overrides exist for
 # operational tuning; defaults are the shipped contract.
 _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
+_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", "1000")
+)
 _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 3
 _SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
 _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
@@ -7635,23 +7762,31 @@ class Zongdiaodu:
                     )
                     for offset, (tn, ta, _, _) in enumerate(prepared_parallel, start=1)
                 ]
-                if not turn_loop.can_schedule(len(tools), _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+                budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                    turn_loop,
+                    len(tools),
+                    run_state=run_state,
+                    loop_started_at=loop_started_at,
+                    source="parallel_tool_batch",
+                )
+                if not budget_ready:
                     final_guard_exhausted = True
                     final_chain_status = "force_stopped"
-                    shenti, huifu = _natural_closeout(
-                        "force_stopped",
-                        ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                    )
+                    shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
                     if run_control:
                         run_control.step(
                             "simple_chain_tool_round_budget",
                             "Tool round budget",
                             "failed",
-                            f"Batch of {len(tools)} would exceed the tool round budget.",
+                            "Global tool budget exhausted or Epoch checkpoint persistence failed.",
                             meta={
-                                "tool_rounds": gongju_cishu,
+                                "global_tool_rounds": turn_loop.action_rounds,
+                                "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                                "epoch_index": turn_loop.epoch_index,
                                 "requested": len(tools),
-                                "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                                "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                                "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                                "reasons": list(budget_reasons),
                             },
                         )
                     break
@@ -8450,22 +8585,30 @@ class Zongdiaodu:
                     on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
-            if not turn_loop.can_schedule(1, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+            budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                turn_loop,
+                1,
+                run_state=run_state,
+                loop_started_at=loop_started_at,
+                source="single_tool",
+            )
+            if not budget_ready:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
-                shenti, huifu = _natural_closeout(
-                    "force_stopped",
-                    ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                )
+                shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
                 if run_control:
                     run_control.step(
                         "simple_chain_tool_round_budget",
                         "Tool round budget",
                         "failed",
-                        "Tool round budget exhausted.",
+                        "Global tool budget exhausted or Epoch checkpoint persistence failed.",
                         meta={
-                            "tool_rounds": gongju_cishu,
-                            "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            "global_tool_rounds": turn_loop.action_rounds,
+                            "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                            "epoch_index": turn_loop.epoch_index,
+                            "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                            "reasons": list(budget_reasons),
                         },
                     )
                 break

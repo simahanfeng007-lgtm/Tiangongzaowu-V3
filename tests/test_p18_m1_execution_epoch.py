@@ -9,6 +9,7 @@ continuation; only the global limit is terminal for budget purposes.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 
 class ExecutionEpochBudgetTests(unittest.TestCase):
@@ -153,6 +154,28 @@ class ExecutionEpochBudgetTests(unittest.TestCase):
         state = TurnLoopState(action_rounds=74)
         self.assertTrue(state.can_schedule(1, 75))
         self.assertFalse(state.can_schedule(2, 75))
+
+
+    def test_global_boundary_999_then_1000(self) -> None:
+        from v3.runtime_turn_orchestration import TurnLoopState
+        state = TurnLoopState(action_rounds=999, epoch_index=13, epoch_action_rounds=24)
+        self.assertTrue(state.decide_schedule(1, max_epoch_rounds=75, max_global_rounds=1000).can_schedule)
+        state.reserve_one()
+        decision = state.decide_schedule(1, max_epoch_rounds=75, max_global_rounds=1000)
+        self.assertTrue(decision.terminal)
+        self.assertTrue(decision.global_exhausted)
+
+    def test_real_zongdiaodu_paths_use_p18_dual_budget_bridge(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app" / "backend" / "tiangong-backend" / "v3" / "zongdiaodu.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("turn_loop.can_schedule(", source)
+        self.assertIn("_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", source)
+        self.assertIn('source="parallel_tool_batch"', source)
+        self.assertIn('source="single_tool"', source)
+        self.assertIn("epoch.checkpoint_committed", source)
+        self.assertIn("run.continued", source)
 
 
 if __name__ == "__main__":
