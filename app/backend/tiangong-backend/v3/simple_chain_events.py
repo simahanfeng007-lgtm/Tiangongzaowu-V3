@@ -1,7 +1,7 @@
 """简单链事件流：追加式 JSONL，供监控/网关/回放消费。
 
 纯增量设计，不影响任何现有系统：
-- 发射失败只返回 False，绝不影响主流程；
+- 发射失败只返回 False，绝不影响任何现有主流程；
 - 位置不写死：环境变量 → 自动生成的位置指针文件 → 自动推导，首次运行生成指针；
 - 按日轮转（events-YYYYMMDD.jsonl），保留 30 天；
 - 跨进程追加用现有文件锁，seq 单调递增。
@@ -29,6 +29,14 @@ EVENT_TYPES = frozenset({
     "budget_limited",
     "run_interrupted",
     "chain_completed",
+    # P18-M1: non-terminal execution-epoch / continuation lifecycle.
+    # These extend the existing event stream; they are not a second ledger.
+    "epoch.started",
+    "epoch.checkpoint_requested",
+    "epoch.checkpoint_committed",
+    "epoch.completed",
+    "run.continuation_requested",
+    "run.continued",
 })
 TERMINAL_EVENT_TYPES = frozenset({
     "turn.failed",
@@ -158,9 +166,28 @@ def append_event(event: dict[str, Any]) -> bool:
                 "type": etype,
                 "at": datetime.now().isoformat(timespec="seconds"),
             }
-            for key in ("run_id", "request_id", "session_id", "round", "tool_rounds",
-                        "wall_clock_used_s", "reason", "source", "status", "attempt",
-                        "decided_to_continue", "fingerprint_changed"):
+            for key in (
+                "run_id",
+                "request_id",
+                "session_id",
+                "generation",
+                "life_id",
+                "round",
+                "tool_rounds",
+                "global_tool_rounds",
+                "epoch_index",
+                "epoch_tool_rounds",
+                "requested_tool_rounds",
+                "next_epoch_index",
+                "wall_clock_used_s",
+                "reason",
+                "source",
+                "status",
+                "continuation_status",
+                "attempt",
+                "decided_to_continue",
+                "fingerprint_changed",
+            ):
                 if key in event:
                     payload[key] = event[key]
             line = json.dumps(payload, ensure_ascii=False, default=str)
