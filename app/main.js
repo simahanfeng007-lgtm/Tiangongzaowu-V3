@@ -1681,7 +1681,13 @@ async function restartBackendForCredentialChange() {
   await serviceSupervisor.stop(serviceName, "provider-credential-updated");
   const runtime = await serviceSupervisor.start(serviceName);
   if (mainWindow && !mainWindow.isDestroyed()) startBackendWatchdog();
-  if (!runtime.ready) throw new Error("model_runtime_restart_after_credential_update_failed");
+  if (!runtime.running) throw new Error("model_runtime_restart_after_credential_update_failed");
+  if (!runtime.ready && !(await waitForTotalGatewayReadiness())) {
+    throw new Error("model_runtime_restart_after_credential_update_failed");
+  }
+  // Publish the late READY transition immediately instead of waiting for the
+  // next monitor interval, so credential UI state and backend state converge.
+  await serviceSupervisor.poll();
 }
 
 async function setProviderApiKey(payload = {}) {
@@ -3467,15 +3473,21 @@ async function waitForTotalGateway(child = null, failed = null, timeoutMs = 1200
   for (let i = 0; i < SERVICE_START_ATTEMPTS; i += 1) {
     if (failed?.value === true || (child && child.exitCode !== null)) return false;
     if (Date.now() >= deadline) return false;
-    // /health becomes available before the embedded runtime has finished
-    // collecting the release/life/store evidence required by /ready.  A
-    // credential transaction must not commit against that intermediate state:
-    // the caller would interpret RUNNING-but-not-READY as a failed restart and
-    // roll back a valid vault update.
-    // HOTFIX-20260728: /ready 在真实数据下需 20-60 秒收集 release/life/store
-    // 证据，5 秒超时会导致就绪检查永远失败、启动页卡死并重试循环。
-    // /health 在网关预热期实测 0.7-1.3 秒波动，1 秒超时会偶发误判，放宽到 3 秒。
-    if (await totalGatewayHealthCheck(3000) && await totalGatewayReadyCheck(90000)) return true;
+    // Process startup and business readiness are different states.  Once
+    // /health is structurally valid the supervisor owns the live process and
+    // represents a failing /ready probe as DEGRADED.  Requiring READY here
+    // killed a healthy 7184 every two minutes and prevented late readiness
+    // from ever converging in the renderer.
+    if (await totalGatewayHealthCheck(3000)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+async function waitForTotalGatewayReadiness(timeoutMs = CREDENTIAL_RESTART_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await totalGatewayReadyCheck(3000)) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return false;
@@ -4092,9 +4104,10 @@ const serviceSupervisor = new ServiceSupervisor({
   services: [
     {
       name: "total-gateway", phase: 0, start: startTotalGateway,
-      // HOTFIX-20260728: 就绪探测超时对齐 /ready 在真实数据下的实际耗时（20-60s）；
-      // 健康探测同步放宽（预热期实测波动超过 1-2s）。
-      health: () => totalGatewayHealthCheck(3000), ready: () => totalGatewayReadyCheck(90000), stop: stopTotalGateway,
+      // /ready is now a bounded cached probe.  NOT_READY degrades the live
+      // process and monitoring later converges it to RUNNING; it is never a
+      // reason to destroy an otherwise healthy single-process gateway.
+      health: () => totalGatewayHealthCheck(3000), ready: () => totalGatewayReadyCheck(3000), stop: stopTotalGateway,
     },
   ],
   onTransition: (event) => {

@@ -144,6 +144,42 @@ class DesktopServiceSupervisorTests(unittest.TestCase):
         self.assertEqual(result["afterPoll"]["status"], "DEGRADED")
         self.assertEqual(result["afterPoll"]["lastError"], "service_not_ready")
 
+    def test_late_readiness_converges_without_restarting_live_service(self) -> None:
+        module_path = json.dumps(str(APP_ROOT / "service-supervisor.js"))
+        result = self.run_node(
+            f"""
+            const {{ ServiceSupervisor }} = require({module_path});
+            (async () => {{
+              let startCount = 0;
+              let ready = false;
+              const supervisor = new ServiceSupervisor({{
+                restartDelayMs: 0,
+                services: [{{
+                  name: "total-gateway",
+                  start: async () => {{ startCount += 1; return true; }},
+                  health: async () => true,
+                  ready: async () => ready,
+                  stop: async () => {{}},
+                }}],
+              }});
+              await supervisor.start("total-gateway");
+              const degraded = supervisor.snapshot()["total-gateway"];
+              ready = true;
+              await supervisor.poll();
+              process.stdout.write(JSON.stringify({{
+                startCount,
+                degraded,
+                converged: supervisor.snapshot()["total-gateway"],
+              }}));
+            }})().catch((error) => {{ console.error(error); process.exit(1); }});
+            """
+        )
+        self.assertEqual(result["startCount"], 1)
+        self.assertEqual(result["degraded"]["status"], "DEGRADED")
+        self.assertTrue(result["degraded"]["running"])
+        self.assertEqual(result["converged"]["status"], "RUNNING")
+        self.assertTrue(result["converged"]["ready"])
+
     def test_targeted_stop_does_not_enter_global_drain_or_stop_siblings(self) -> None:
         module_path = json.dumps(str(APP_ROOT / "service-supervisor.js"))
         result = self.run_node(

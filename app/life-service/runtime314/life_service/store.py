@@ -252,7 +252,20 @@ class LifeShadowStore:
         )
         try:
             store = cls(opened.path, opened.connection)
-            store.health()
+            initial_health = store.health()
+            # Opening the authority store already performs the full fail-closed
+            # audit.  Seed the readiness cache with that verified result so the
+            # first /ready request never repeats the same expensive walk.
+            import threading as _threading
+            import time as _time
+
+            store._health_cache_lock = _threading.Lock()
+            store._health_cache = initial_health
+            store._health_cache_version = int(
+                store._connection.execute("PRAGMA data_version").fetchone()[0]
+            )
+            store._health_cache_at_ms = _time.time_ns() // 1_000_000
+            store._health_audit_inflight_version: int | None = None
             return store
         except Exception:
             opened.connection.close()
@@ -5030,12 +5043,14 @@ class LifeShadowStore:
             self._health_cache: dict[str, Any] | None = None
             self._health_cache_version = -1
             self._health_cache_at_ms = 0
+            self._health_audit_inflight_version: int | None = None
             lock = self._health_cache_lock
         try:
             version = int(self._connection.execute("PRAGMA data_version").fetchone()[0])
         except Exception:
             version = -1
         now_ms = _time.time_ns() // 1_000_000
+        start_audit = False
         with lock:
             cached = self._health_cache
             if (
@@ -5045,18 +5060,45 @@ class LifeShadowStore:
                 and now_ms - self._health_cache_at_ms < max_age_ms
             ):
                 return cached
-        try:
-            result = self._health_on_snapshot()
-        except Exception as exc:
-            result = {
-                "healthy": False,
-                "reason_code": str(exc) or "life.authority_store.health_failed",
-                "cached_failure": True,
-            }
-        with lock:
-            self._health_cache = result
-            self._health_cache_version = version
-            self._health_cache_at_ms = now_ms
+            if self._health_audit_inflight_version is None:
+                self._health_audit_inflight_version = version
+                start_audit = True
+            # A same-version verified snapshot may be served stale while its
+            # refresh runs.  A changed/unknown database version fails closed
+            # until the private read-only audit completes.
+            if cached is not None and version >= 0 and version == self._health_cache_version:
+                result = dict(cached)
+                result["audit_pending"] = True
+                result["stale_while_revalidate"] = True
+            else:
+                result = {
+                    "healthy": False,
+                    "reason_code": "life.authority_store.audit_pending",
+                    "audit_pending": True,
+                }
+
+        if start_audit:
+            def _refresh() -> None:
+                try:
+                    refreshed = self._health_on_snapshot()
+                except Exception as exc:
+                    refreshed = {
+                        "healthy": False,
+                        "reason_code": str(exc) or "life.authority_store.health_failed",
+                        "cached_failure": True,
+                    }
+                refreshed_at_ms = _time.time_ns() // 1_000_000
+                with lock:
+                    self._health_cache = refreshed
+                    self._health_cache_version = version
+                    self._health_cache_at_ms = refreshed_at_ms
+                    self._health_audit_inflight_version = None
+
+            _threading.Thread(
+                target=_refresh,
+                name="tiangong-life-authority-health-audit",
+                daemon=True,
+            ).start()
         return result
 
     def _health_on_snapshot(self) -> dict[str, Any]:
@@ -5077,8 +5119,11 @@ class LifeShadowStore:
             return self.health()
         snapshot = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         snapshot.row_factory = self._connection.row_factory
-        shim = object.__new__(type(self))
-        shim._connection = snapshot
+        # Construct a complete store facade.  The former object.__new__ shim
+        # only injected _connection/_lock, so causal-pack verification reached
+        # read_protected_payload() without _memory_repository and made every
+        # populated authority store permanently NOT_READY.
+        shim = type(self)(Path(db_path), snapshot)
         shim._lock = _threading.RLock()
         try:
             return shim.health()

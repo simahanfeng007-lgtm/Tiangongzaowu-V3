@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -212,6 +214,36 @@ class CausalMemoryStoreTests(unittest.TestCase):
         self.assertEqual(self.store.read_causal_context_pack(pack.pack_id), pack)
         duplicate = self.store.put_causal_context_pack(pack, privacy_scope="private")
         self.assertFalse(duplicate.created_by_this_call)
+        snapshot_health = self.store._health_on_snapshot()  # noqa: SLF001
+        self.assertEqual(snapshot_health["schema_version"], SHADOW_STORE_SCHEMA_VERSION)
+
+    def test_cached_health_refresh_is_bounded_and_non_blocking(self) -> None:
+        release = threading.Event()
+        completed = threading.Event()
+        original = self.store._health_on_snapshot  # noqa: SLF001
+
+        def slow_health() -> dict[str, object]:
+            release.wait(timeout=2)
+            try:
+                return original()
+            finally:
+                completed.set()
+
+        self.store._health_on_snapshot = slow_health  # type: ignore[method-assign]  # noqa: SLF001
+        self.store._health_cache_at_ms = 0  # noqa: SLF001
+        started = time.monotonic()
+        cached = self.store.health_cached(max_age_ms=0)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 0.25)
+        self.assertTrue(cached.get("audit_pending"))
+        self.assertNotEqual(cached.get("healthy"), False)
+        release.set()
+        self.assertTrue(completed.wait(timeout=2))
+        deadline = time.monotonic() + 2
+        while self.store._health_audit_inflight_version is not None and time.monotonic() < deadline:  # noqa: SLF001
+            time.sleep(0.01)
+        refreshed = self.store.health_cached()
+        self.assertNotEqual(refreshed.get("healthy"), False)
 
     def test_privacy_delete_destroys_recall_paths_but_keeps_minimal_proof(self) -> None:
         secret = "仅用于删除测试的敏感记忆"
