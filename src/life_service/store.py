@@ -64,6 +64,7 @@ from contracts import (
 from contracts.world_understanding.memory_candidate import MemoryWorldCandidate
 
 from .replay import LifeReplaySummary, advance_replay_sha256, replay_life_events
+from .store_connection import open_life_shadow_sqlite
 
 
 SHADOW_STORE_SCHEMA_VERSION = 17
@@ -1272,44 +1273,20 @@ class LifeShadowStore:
         create: bool,
         now_ms: int,
     ) -> "LifeShadowStore":
-        if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:
-            raise LifeShadowStoreError("shadow store timestamp is invalid")
-        if path.name != path.name.strip() or not path.name.endswith(".shadow.sqlite3"):
-            raise LifeShadowStoreError("shadow store path must end with .shadow.sqlite3")
-        parent = path.parent.resolve(strict=True)
-        candidate = parent / path.name
-        if candidate.exists():
-            if candidate.is_symlink() or not candidate.is_file():
-                raise LifeShadowStoreError("shadow store path is unsafe")
-        elif not create:
-            raise LifeShadowStoreError("shadow store does not exist")
-        existed = candidate.exists()
-        connection = sqlite3.connect(
-            candidate,
-            timeout=5.0,
-            isolation_level=None,
-            check_same_thread=False,
+        opened = open_life_shadow_sqlite(
+            path,
+            create=create,
+            now_ms=now_ms,
+            error_factory=LifeShadowStoreError,
+            initialize=cls._initialize,
+            migrate=cls._migrate,
         )
-        connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA trusted_schema=OFF")
-            connection.execute("PRAGMA busy_timeout=5000")
-            mode = str(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
-            if mode != "wal":
-                raise LifeShadowStoreError("shadow store did not enter WAL mode")
-            connection.execute("PRAGMA synchronous=FULL")
-            if not existed:
-                if not create:
-                    raise LifeShadowStoreError("shadow store creation was not authorized")
-                cls._initialize(connection, now_ms=now_ms)
-            else:
-                cls._migrate(connection, now_ms=now_ms)
-            store = cls(candidate, connection)
+            store = cls(opened.path, opened.connection)
             store.health()
             return store
         except Exception:
-            connection.close()
+            opened.connection.close()
             raise
 
     @staticmethod
