@@ -209,6 +209,7 @@ PROVIDER_MATCH_WEIGHTS = {
     "model_name": 3,
 }
 MOREN_PROVIDER = L4_OPENAI_FALLBACK_PROVIDER   # 默认对话Provider；未命中时走 OpenAI 兼容优化
+CUSTOM_PROVIDER_ID = "custom"                  # 用户自定义/未命名服务商的持久化身份
 
 
 def normalize_provider_id(provider_id: str | None) -> str:
@@ -216,6 +217,22 @@ def normalize_provider_id(provider_id: str | None) -> str:
     if not raw:
         return MOREN_PROVIDER
     return PROVIDER_ALIASES.get(raw.lower(), raw)
+
+
+def normalize_provider_identity(provider_id: str | None) -> str:
+    """Normalize the persisted provider IDENTITY (user configuration).
+
+    Unlike ``provider_match_info`` / ``normalize_provider_id`` this never
+    substitutes a routing fallback: an empty or unknown provider keeps its own
+    identity so the saved configuration round-trips faithfully and the UI can
+    never pin a matched L4 family as the user's choice.  Only true family
+    aliases (e.g. the historical gpt-5.5 name) collapse onto the family id.
+    """
+    raw = str(provider_id or "").strip()
+    if not raw:
+        return CUSTOM_PROVIDER_ID
+    normalized = PROVIDER_ALIASES.get(raw.lower(), raw)
+    return CUSTOM_PROVIDER_ID if normalized in {"", CUSTOM_PROVIDER_ID} else normalized
 
 
 def normalize_provider_base_url(base_url: str | None) -> str:
@@ -605,46 +622,84 @@ def l4_provider_profiles() -> dict:
     return rows
 
 def duqu_moren_provider(fallback: str = MOREN_PROVIDER) -> str:
-    """读取用户保存的默认 Provider。"""
+    """Read the persisted provider IDENTITY without re-inferring it.
+
+    Runtime routing fallbacks must never become the stored identity: the
+    identity round-trips the user's configuration, while
+    ``provider_match_info`` derives the L4 routing family separately at call
+    time.  Records corrupted by the historical fallback-overwrite defect
+    (identity overwritten with the routing fallback while the real provider
+    string survived inside ``_provider_inputs``) self-heal here.
+    """
     data = _load_api_config()
-    if isinstance(data, dict) and data:
-        raw_provider = str(data.get("_default_provider") or "").strip()
-        base_urls = data.get("_base_urls") if isinstance(data.get("_base_urls"), dict) else {}
-        model_names = data.get("_model_names") if isinstance(data.get("_model_names"), dict) else {}
-        inputs = data.get("_provider_inputs") if isinstance(data.get("_provider_inputs"), dict) else {}
-        raw_input = inputs.get(normalize_provider_id(raw_provider)) if isinstance(inputs, dict) else {}
-        if isinstance(raw_input, dict):
-            raw_provider = str(raw_input.get("provider") or raw_provider).strip()
-            base_url = str(raw_input.get("base_url") or base_urls.get(raw_provider) or "").strip()
-            model_name = str(raw_input.get("model_name") or model_names.get(raw_provider) or "").strip()
-        else:
-            base_url = str(base_urls.get(raw_provider) or "").strip()
-            model_name = str(model_names.get(raw_provider) or "").strip()
-        return infer_provider_id(raw_provider, base_url, model_name, fallback)
-    return infer_provider_id(fallback, fallback=fallback)
+    if not isinstance(data, dict) or not data:
+        return str(fallback or MOREN_PROVIDER)
+    stored = str(data.get("_default_provider") or "").strip()
+    inputs = data.get("_provider_inputs")
+    record = (
+        inputs.get(normalize_provider_id(stored))
+        if isinstance(inputs, dict) and stored
+        else None
+    )
+    if isinstance(record, dict):
+        raw_identity = str(record.get("provider") or "").strip()
+        if raw_identity:
+            # Self-heal: the historical defect stored the user's real
+            # provider string inside the record while overwriting
+            # _default_provider with the routing fallback.
+            return normalize_provider_identity(raw_identity)
+    if stored:
+        return normalize_provider_identity(stored)
+    base_urls = data.get("_base_urls") if isinstance(data.get("_base_urls"), dict) else {}
+    model_names = data.get("_model_names") if isinstance(data.get("_model_names"), dict) else {}
+    for key in (*base_urls.keys(), *model_names.keys()):
+        if key:
+            return normalize_provider_identity(key)
+    return str(fallback or MOREN_PROVIDER)
 
 
 def duqu_provider_input_config(provider_id: str | None) -> dict:
     """Return the raw user-entered provider/url/model values for display."""
     data = _load_api_config()
-    provider_id = normalize_provider_id(provider_id or duqu_moren_provider(MOREN_PROVIDER))
+    identity = normalize_provider_identity(provider_id or duqu_moren_provider(MOREN_PROVIDER))
     inputs = data.get("_provider_inputs") if isinstance(data.get("_provider_inputs"), dict) else {}
-    current = inputs.get(provider_id) if isinstance(inputs, dict) else None
-    if isinstance(current, dict):
-        return {
-            "provider": str(current.get("provider") or ""),
-            "base_url": normalize_provider_base_url(current.get("base_url")),
-            "model_name": str(current.get("model_name") or ""),
-        }
-    raw_default = str(data.get("_default_provider") or "").strip()
+    for key in _configured_key_candidates(identity, data):
+        current = inputs.get(key)
+        if isinstance(current, dict) and any(
+            str(current.get(field) or "").strip() for field in ("provider", "base_url", "model_name")
+        ):
+            return {
+                "provider": str(current.get("provider") or ""),
+                "base_url": normalize_provider_base_url(current.get("base_url")),
+                "model_name": str(current.get("model_name") or ""),
+            }
+    # Self-heal lookups: legacy corrupted files keyed records by the routing
+    # fallback; match by the real provider string recorded inside.
+    for current in inputs.values():
+        if (
+            isinstance(current, dict)
+            and str(current.get("provider") or "").strip()
+            and normalize_provider_identity(current.get("provider")) == identity
+            and any(
+                str(current.get(field) or "").strip()
+                for field in ("base_url", "model_name")
+            )
+        ):
+            return {
+                "provider": str(current.get("provider") or ""),
+                "base_url": normalize_provider_base_url(current.get("base_url")),
+                "model_name": str(current.get("model_name") or ""),
+            }
     base_urls = data.get("_base_urls") if isinstance(data.get("_base_urls"), dict) else {}
     model_names = data.get("_model_names") if isinstance(data.get("_model_names"), dict) else {}
-    base_url = str(base_urls.get(raw_default) or "").strip()
-    model_name = str(model_names.get(raw_default) or "").strip()
-    if raw_default and (base_url or model_name or raw_default not in L4_PROVIDER_IDS):
-        matched = infer_provider_id(raw_default, base_url, model_name)
-        if matched == provider_id:
-            return {"provider": raw_default, "base_url": _normalize_provider_base_url_for(matched, base_url), "model_name": model_name}
+    base_url = str(base_urls.get(identity) or "").strip()
+    model_name = str(model_names.get(identity) or "").strip()
+    if base_url or model_name:
+        return {
+            "provider": identity,
+            "base_url": _normalize_provider_base_url_for(identity, base_url),
+            "model_name": model_name,
+        }
     return {"provider": "", "base_url": "", "model_name": ""}
 
 

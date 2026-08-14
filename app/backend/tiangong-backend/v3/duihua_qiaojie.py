@@ -3333,6 +3333,7 @@ def _save_llm_settings(payload: dict) -> dict:
         l4_provider_display_name,
         save_model_reasoning_config,
         normalize_provider_base_url,
+        normalize_provider_identity,
         provider_match_info,
         duqu_provider_base_url,
     )
@@ -3381,7 +3382,15 @@ def _save_llm_settings(payload: dict) -> dict:
     match_base_url = base_url if has_base_url else (duqu_configured_provider_base_url(current_provider) if same_saved_provider else "")
     match_model_name = model_name if has_model_name else (duqu_configured_model_ming(current_provider) if same_saved_provider else "")
     match = provider_match_info(match_provider, match_base_url, match_model_name)
-    provider = str(match.get("provider") or MOREN_PROVIDER)
+    # 路由家族：只用于端点校验 / L4 优化 / 思考能力配置，绝不写回持久化身份。
+    routing_provider = str(match.get("provider") or MOREN_PROVIDER)
+    # 配置身份：用户显式或已保存身份的忠实规范化；空值即 custom。
+    # 第一性原理：身份与路由分离——即使路由回退为 gpt_5_6，用户身份仍
+    # 保持自身（custom/原始名称），设置界面永不把回退值钉成用户选择。
+    identity_provider = (
+        normalize_provider_identity(raw_provider) if has_provider
+        else normalize_provider_identity(current_provider)
+    )
     API_PEIZHI_LUJING.parent.mkdir(parents=True, exist_ok=True)
     try:
         data = json.loads(API_PEIZHI_LUJING.read_text(encoding="utf-8-sig")) if API_PEIZHI_LUJING.exists() else {}
@@ -3389,28 +3398,28 @@ def _save_llm_settings(payload: dict) -> dict:
             data = {}
     except Exception:
         data = {}
-    effective_base_url = base_url if has_base_url and base_url else (match_base_url or duqu_provider_base_url(provider) or "")
+    effective_base_url = base_url if has_base_url and base_url else (match_base_url or duqu_provider_base_url(identity_provider) or "")
     try:
-        binding = validate_model_endpoint(provider, effective_base_url, resolve_dns=False)
+        binding = validate_model_endpoint(routing_provider, effective_base_url, resolve_dns=False)
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "error_code": "model_endpoint_rejected"}
     # Credentials are owned by Electron safeStorage and injected only into the
     # backend process environment.  The JSON settings file is deliberately
     # non-secret.  ``clear_api_key`` is processed by the desktop vault before
     # this request reaches the backend.
-    data["_default_provider"] = provider
+    data["_default_provider"] = identity_provider
 
     provider_inputs = data.get("_provider_inputs")
     if not isinstance(provider_inputs, dict):
         provider_inputs = {}
-    previous_input = provider_inputs.get(provider) if isinstance(provider_inputs.get(provider), dict) else {}
+    previous_input = provider_inputs.get(identity_provider) if isinstance(provider_inputs.get(identity_provider), dict) else {}
     display_provider = raw_provider if has_provider else str(previous_input.get("provider") or current_inputs.get("provider") or "")
     display_base_url = base_url if has_base_url else str(previous_input.get("base_url") or match_base_url or "")
     display_model_name = model_name if has_model_name else str(previous_input.get("model_name") or match_model_name or "")
-    matched_display_name = _llm_match_display_name(match, display_provider, l4_provider_display_name(provider))
+    matched_display_name = _llm_match_display_name(match, display_provider, l4_provider_display_name(routing_provider))
     match["display_name"] = matched_display_name
-    if has_provider or has_base_url or has_model_name or provider not in provider_inputs:
-        provider_inputs[provider] = {
+    if has_provider or has_base_url or has_model_name or identity_provider not in provider_inputs:
+        provider_inputs[identity_provider] = {
             "provider": display_provider,
             "base_url": display_base_url,
             "model_name": display_model_name,
@@ -3422,31 +3431,31 @@ def _save_llm_settings(payload: dict) -> dict:
         base_urls = {}
     if has_base_url:
         if base_url:
-            base_urls[provider] = base_url
+            base_urls[identity_provider] = base_url
         else:
-            base_urls.pop(provider, None)
+            base_urls.pop(identity_provider, None)
     data["_base_urls"] = base_urls
     model_names = data.get("_model_names")
     if not isinstance(model_names, dict):
         model_names = {}
     if has_model_name:
         if model_name:
-            model_names[provider] = model_name
+            model_names[identity_provider] = model_name
         else:
-            model_names.pop(provider, None)
+            model_names.pop(identity_provider, None)
     data["_model_names"] = model_names
     if has_reasoning_mode:
-        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(provider) or ""
-        reasoning_model_name = model_name or match_model_name or duqu_model_ming(provider)
+        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(identity_provider) or ""
+        reasoning_model_name = model_name or match_model_name or duqu_model_ming(identity_provider)
         if not reasoning_mode:
             from .peizhi import model_reasoning_capability
             reasoning_mode = str(
-                model_reasoning_capability(provider, reasoning_model_name).get("default_mode") or "off"
+                model_reasoning_capability(routing_provider, reasoning_model_name).get("default_mode") or "off"
             )
         try:
             save_model_reasoning_config(
                 data,
-                provider_id=provider,
+                provider_id=routing_provider,
                 base_url=reasoning_base_url,
                 model_name=reasoning_model_name,
                 mode=reasoning_mode,
@@ -3460,13 +3469,13 @@ def _save_llm_settings(payload: dict) -> dict:
     API_PEIZHI_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     result = _llm_settings()
     result.update({
-        "provider": provider,
-        "provider_display_name": l4_provider_display_name(provider),
-        "matched_provider": provider,
+        "provider": routing_provider,
+        "provider_display_name": l4_provider_display_name(routing_provider),
+        "matched_provider": routing_provider,
         "matched_provider_display_name": matched_display_name,
-        "configured_provider": display_provider,
-        "model": model_name or duqu_model_ming(provider),
-        "model_name": model_name or duqu_model_ming(provider),
+        "configured_provider": display_provider or identity_provider,
+        "model": model_name or duqu_model_ming(identity_provider),
+        "model_name": model_name or duqu_model_ming(identity_provider),
         "configured_model_name": display_model_name,
         "base_url": base_url or result.get("base_url", ""),
         "configured_base_url": display_base_url,
