@@ -29,7 +29,7 @@ jobs:
           python .github/p18_m1_turn_budget_apply.py
 
       - name: Remove temporary engineering carriers
-        run: git rm .github/p18_m1_turn_budget_apply.py .github/workflows/p18-m1-turn-budget.yml
+        run: git rm -f .github/p18_m1_turn_budget_apply.py .github/workflows/p18-m1-turn-budget.yml
 
       - name: Compile changed seams
         run: |
