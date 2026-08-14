@@ -213,7 +213,7 @@ class SettingsAuthorityAtomicityTests(unittest.TestCase):
         self.config_path.write_text("{ 损坏", encoding="utf-8")
         result = workspace_settings.duqu_workspace_settings()
         self.assertEqual(result["settings_integrity"], "recovered_from_backup")
-        self.assertEqual(result["workspace"], str(workspace))
+        self.assertEqual(result["workspace"], str(Path(workspace).resolve()))
 
 
 if __name__ == "__main__":
