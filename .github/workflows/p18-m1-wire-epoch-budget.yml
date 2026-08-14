@@ -1,0 +1,585 @@
+name: P18 M1 wire epoch budget
+
+on:
+  push:
+    branches:
+      - agent/p18-m1-long-execution-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  wire-production-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch production budget branches and focused tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          zpath = Path('app/backend/tiangong-backend/v3/zongdiaodu.py')
+          text = zpath.read_text(encoding='utf-8')
+
+          old_constants = '''# CC-style platform budgets.  The model may keep working only inside these
+          # hard limits; beyond them the platform terminates the run fail-closed with
+          # the best evidence already produced.  Environment overrides exist for
+          # operational tuning; defaults are the shipped contract.
+          _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))'''
+          new_constants = '''# P18-M1 execution budgets.  The historical 75-tool limit is now the bounded
+          # execution-epoch budget, not the terminal lifetime of the request/run.
+          # Global exhaustion remains fail-closed and is additionally bounded by the
+          # existing gateway/effect authority; no Epoch rollover creates new authority.
+          _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
+          _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
+              os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", "1000")
+          )'''
+          if old_constants not in text:
+              raise SystemExit('P18-M1 patch drift: constants anchor missing')
+          text = text.replace(old_constants, new_constants, 1)
+
+          budget_max_anchor = '"tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,'
+          if text.count(budget_max_anchor) != 2:
+              raise SystemExit(f'P18-M1 patch drift: expected 2 budget max anchors, got {text.count(budget_max_anchor)}')
+          text = text.replace(
+              budget_max_anchor,
+              '"tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,\n'
+              '            "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,\n'
+              '            "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,\n'
+              '            "global_tool_rounds": 0,\n'
+              '            "epoch_index": 0,\n'
+              '            "epoch_tool_rounds": 0,',
+          )
+
+          old_projection = '''            budget.update({
+              "rounds_used": int(live.get("iteration_count") or 0),
+              "tool_rounds": int(live.get("tool_rounds") or 0),
+              "wall_clock_used_s": max(0.0, wall),
+          })'''
+          new_projection = '''            global_tool_rounds = int(live.get("global_tool_rounds") or live.get("tool_rounds") or 0)
+          budget.update({
+              "rounds_used": int(live.get("global_iteration_count") or live.get("iteration_count") or 0),
+              "tool_rounds": global_tool_rounds,
+              "global_tool_rounds": global_tool_rounds,
+              "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+              "epoch_index": int(live.get("epoch_index") or 0),
+              "epoch_tool_rounds": int(live.get("epoch_tool_rounds") or 0),
+              "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+              "wall_clock_used_s": max(0.0, wall),
+          })'''
+          if old_projection not in text:
+              raise SystemExit('P18-M1 patch drift: live budget projection anchor missing')
+          text = text.replace(old_projection, new_projection, 1)
+
+          old_view = '''        "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
+          "failures": list(run_state.get("failures") or [])[-8:],'''
+          new_view = '''        "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
+          "budget": run_state.get("budget") if isinstance(run_state.get("budget"), dict) else {},
+          "authority_identity": (
+              run_state.get("authority_identity")
+              if isinstance(run_state.get("authority_identity"), dict)
+              else {}
+          ),
+          "continuation": (
+              run_state.get("continuation")
+              if isinstance(run_state.get("continuation"), dict)
+              else {}
+          ),
+          "failures": list(run_state.get("failures") or [])[-8:],'''
+          if old_view not in text:
+              raise SystemExit('P18-M1 patch drift: run_state view anchor missing')
+          text = text.replace(old_view, new_view, 1)
+
+          helper_anchor = '\n\ndef _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:'
+          helper_code = r'''
+
+          def _simple_chain_authority_identity(run_state: dict[str, Any] | None) -> dict[str, Any]:
+              """Snapshot existing authority identity without creating a new authority source."""
+
+              context = current_run_context()
+              state = run_state if isinstance(run_state, dict) else {}
+              return {
+                  "request_id": str(context.request_id or state.get("request_id") or ""),
+                  "run_id": str(context.run_id or state.get("run_id") or ""),
+                  "generation": int(context.generation or 0),
+                  "life_id": str(context.life_id or ""),
+                  "session_id": str(context.session_id or state.get("session_id") or ""),
+              }
+
+
+          def _simple_chain_checkpoint_continue(
+              run_state: dict[str, Any] | None,
+              turn_loop: TurnLoopState,
+              *,
+              requested: int,
+              loop_started_at: float,
+              source: str,
+          ) -> bool:
+              """Persist the current execution frontier before rolling the local Epoch.
+
+              M1 deliberately reuses the existing simple-chain run-state checkpoint and
+              event stream.  This is a non-terminal local continuation inside the same
+              request/run/generation/life authority; M2 will harden physical durability.
+              """
+
+              requested_count = max(0, int(requested))
+              current_epoch = int(turn_loop.epoch_index)
+              identity = _simple_chain_authority_identity(run_state)
+              turn_loop.project_live(run_state, loop_started_at)
+              if isinstance(run_state, dict):
+                  run_state["authority_identity"] = identity
+                  run_state["status"] = "checkpoint_continue"
+                  run_state["stage"] = "epoch_checkpoint"
+                  run_state["continuation"] = {
+                      "schema": "tiangong.v3.simple_chain.epoch_continuation.v1",
+                      "status": "checkpoint_requested",
+                      "epoch_index": current_epoch,
+                      "global_tool_rounds": int(turn_loop.action_rounds),
+                      "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+                      "requested_tool_rounds": requested_count,
+                      "latest_safe_step": f"global_tool_round_{int(turn_loop.action_rounds)}",
+                      "next_step": f"epoch_{current_epoch + 1}_tool_round_1",
+                  }
+              common = {
+                  **identity,
+                  "epoch_index": current_epoch,
+                  "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+                  "global_tool_rounds": int(turn_loop.action_rounds),
+                  "requested_tool_rounds": requested_count,
+                  "continuation_status": "checkpoint_continue",
+              }
+              _simple_chain_emit_event(
+                  run_state,
+                  "epoch.checkpoint_requested",
+                  "execution epoch budget reached; checkpoint requested",
+                  source,
+                  extra=common,
+              )
+              _simple_chain_emit_event(
+                  run_state,
+                  "run.continuation_requested",
+                  "continue same authoritative run after local epoch checkpoint",
+                  source,
+                  extra=common,
+              )
+              _simple_chain_save_run_state(run_state)
+              if isinstance(run_state, dict) and run_state.get("persistence_degraded"):
+                  return False
+
+              if isinstance(run_state, dict) and isinstance(run_state.get("continuation"), dict):
+                  run_state["continuation"]["status"] = "checkpoint_committed"
+                  _simple_chain_save_run_state(run_state)
+                  if run_state.get("persistence_degraded"):
+                      return False
+              _simple_chain_emit_event(
+                  run_state,
+                  "epoch.checkpoint_committed",
+                  "execution epoch checkpoint persisted",
+                  source,
+                  extra=common,
+              )
+              _simple_chain_emit_event(
+                  run_state,
+                  "epoch.completed",
+                  "execution epoch completed without terminating the run",
+                  source,
+                  extra=common,
+              )
+
+              next_epoch = turn_loop.begin_next_epoch()
+              turn_loop.project_live(run_state, loop_started_at)
+              if isinstance(run_state, dict):
+                  run_state["status"] = "running"
+                  run_state["stage"] = "execution_epoch"
+                  if isinstance(run_state.get("continuation"), dict):
+                      run_state["continuation"].update({
+                          "status": "continued",
+                          "next_epoch_index": int(next_epoch),
+                      })
+                  _simple_chain_save_run_state(run_state)
+                  if run_state.get("persistence_degraded"):
+                      return False
+              next_common = {
+                  **identity,
+                  "epoch_index": int(next_epoch),
+                  "next_epoch_index": int(next_epoch),
+                  "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+                  "global_tool_rounds": int(turn_loop.action_rounds),
+                  "requested_tool_rounds": requested_count,
+                  "continuation_status": "continued",
+              }
+              _simple_chain_emit_event(
+                  run_state,
+                  "epoch.started",
+                  "next execution epoch started",
+                  source,
+                  extra=next_common,
+              )
+              _simple_chain_emit_event(
+                  run_state,
+                  "run.continued",
+                  "same authoritative run continued in the next execution epoch",
+                  source,
+                  extra=next_common,
+              )
+              return True
+
+
+          def _simple_chain_prepare_tool_budget(
+              turn_loop: TurnLoopState,
+              requested: int,
+              *,
+              run_state: dict[str, Any] | None,
+              loop_started_at: float,
+              source: str,
+          ) -> tuple[bool, tuple[str, ...]]:
+              """Production dual-budget bridge used by single and parallel tool paths."""
+
+              requested_count = max(0, int(requested))
+              decision = turn_loop.decide_schedule(
+                  requested_count,
+                  max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                  max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+              )
+              if decision.can_schedule:
+                  return True, ()
+              if decision.terminal:
+                  return False, tuple(decision.reasons)
+              if requested_count > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+                  return False, (
+                      "[epoch_tool_batch_too_large] requested tool batch exceeds one execution epoch",
+                  )
+              if decision.should_checkpoint_continue:
+                  if not _simple_chain_checkpoint_continue(
+                      run_state,
+                      turn_loop,
+                      requested=requested_count,
+                      loop_started_at=loop_started_at,
+                      source=source,
+                  ):
+                      return False, (
+                          "[epoch_checkpoint_failed] execution epoch checkpoint could not be persisted",
+                      )
+                  resumed = turn_loop.decide_schedule(
+                      requested_count,
+                      max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                      max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                  )
+                  if resumed.can_schedule:
+                      return True, ()
+                  return False, tuple(resumed.reasons)
+              return False, tuple(decision.reasons)
+          '''
+          if helper_anchor not in text:
+              raise SystemExit('P18-M1 patch drift: observation helper anchor missing')
+          text = text.replace(helper_anchor, helper_code + helper_anchor, 1)
+
+          old_initial = '''        turn_loop.project_live(run_state, loop_started_at)
+          progress_monitor = _SimpleChainProgressMonitor('''
+          new_initial = '''        turn_loop.project_live(run_state, loop_started_at)
+          if isinstance(run_state, dict):
+              run_state["authority_identity"] = _simple_chain_authority_identity(run_state)
+              _simple_chain_save_run_state(run_state)
+          _simple_chain_emit_event(
+              run_state,
+              "epoch.started",
+              "initial execution epoch started",
+              "runtime",
+              extra={
+                  **_simple_chain_authority_identity(run_state),
+                  "epoch_index": int(turn_loop.epoch_index),
+                  "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+                  "global_tool_rounds": int(turn_loop.action_rounds),
+                  "continuation_status": "initial",
+              },
+          )
+          progress_monitor = _SimpleChainProgressMonitor('''
+          if old_initial not in text:
+              raise SystemExit('P18-M1 patch drift: initial epoch anchor missing')
+          text = text.replace(old_initial, new_initial, 1)
+
+          old_parallel = '''                if not turn_loop.can_schedule(len(tools), _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+                    final_guard_exhausted = True
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout(
+                        "force_stopped",
+                        ["[tool_round_budget_exhausted] tool round budget exhausted"],
+                    )
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_tool_round_budget",
+                            "Tool round budget",
+                            "failed",
+                            f"Batch of {len(tools)} would exceed the tool round budget.",
+                            meta={
+                                "tool_rounds": gongju_cishu,
+                                "requested": len(tools),
+                                "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            },
+                        )
+                    break'''
+          new_parallel = '''                budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                    turn_loop,
+                    len(tools),
+                    run_state=run_state,
+                    loop_started_at=loop_started_at,
+                    source="parallel_tool_batch",
+                )
+                if not budget_ready:
+                    final_guard_exhausted = True
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_tool_round_budget",
+                            "Tool round budget",
+                            "failed",
+                            f"Batch of {len(tools)} would exceed the authoritative global tool budget or checkpoint safely failed.",
+                            meta={
+                                "global_tool_rounds": turn_loop.action_rounds,
+                                "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                                "epoch_index": turn_loop.epoch_index,
+                                "requested": len(tools),
+                                "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                                "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                                "reasons": list(budget_reasons),
+                            },
+                        )
+                    break'''
+          if old_parallel not in text:
+              raise SystemExit('P18-M1 patch drift: parallel cutoff block missing')
+          text = text.replace(old_parallel, new_parallel, 1)
+
+          old_single = '''            if not turn_loop.can_schedule(1, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout(
+                    "force_stopped",
+                    ["[tool_round_budget_exhausted] tool round budget exhausted"],
+                )
+                if run_control:
+                    run_control.step(
+                        "simple_chain_tool_round_budget",
+                        "Tool round budget",
+                        "failed",
+                        "Tool round budget exhausted.",
+                        meta={
+                            "tool_rounds": gongju_cishu,
+                            "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                        },
+                    )
+                break'''
+          new_single = '''            budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                turn_loop,
+                1,
+                run_state=run_state,
+                loop_started_at=loop_started_at,
+                source="single_tool",
+            )
+            if not budget_ready:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
+                if run_control:
+                    run_control.step(
+                        "simple_chain_tool_round_budget",
+                        "Tool round budget",
+                        "failed",
+                        "Authoritative global tool budget exhausted or epoch checkpoint persistence failed.",
+                        meta={
+                            "global_tool_rounds": turn_loop.action_rounds,
+                            "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                            "epoch_index": turn_loop.epoch_index,
+                            "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                            "reasons": list(budget_reasons),
+                        },
+                    )
+                break'''
+          if old_single not in text:
+              raise SystemExit('P18-M1 patch drift: single cutoff block missing')
+          text = text.replace(old_single, new_single, 1)
+
+          if 'turn_loop.can_schedule(' in text:
+              raise SystemExit('P18-M1 patch incomplete: legacy production can_schedule call remains')
+          zpath.write_text(text, encoding='utf-8')
+
+          p18 = Path('tests/test_p18_m1_execution_epoch.py')
+          t = p18.read_text(encoding='utf-8')
+          t = t.replace(
+              'import unittest\n',
+              'import json\nimport os\nimport tempfile\nimport time\nimport unittest\nfrom pathlib import Path\nfrom unittest import mock\n',
+              1,
+          )
+          test_insert = r'''
+
+              def test_production_budget_bridge_checkpoint_continues_single_and_batch(self) -> None:
+                  from v3 import simple_chain_events
+                  from v3.runtime_turn_orchestration import TurnLoopState
+                  from v3.zongdiaodu import (
+                      _simple_chain_new_run_state,
+                      _simple_chain_prepare_tool_budget,
+                  )
+
+                  with tempfile.TemporaryDirectory() as temp_dir:
+                      root = Path(temp_dir)
+                      with mock.patch.dict(
+                          os.environ,
+                          {
+                              "TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT": str(root / "run_state"),
+                              "TIANGONG_SIMPLE_CHAIN_EVENTS_ROOT": str(root / "events"),
+                          },
+                          clear=False,
+                      ):
+                          simple_chain_events._cached_root = None
+                          for requested, prior_epoch_steps in ((1, 75), (3, 74)):
+                              state = TurnLoopState(
+                                  action_rounds=prior_epoch_steps,
+                                  epoch_action_rounds=prior_epoch_steps,
+                              )
+                              run_state = _simple_chain_new_run_state(
+                                  f"req-{requested}",
+                                  "session-p18",
+                              )
+                              ready, reasons = _simple_chain_prepare_tool_budget(
+                                  state,
+                                  requested,
+                                  run_state=run_state,
+                                  loop_started_at=time.monotonic(),
+                                  source="test",
+                              )
+                              self.assertTrue(ready, reasons)
+                              self.assertEqual(reasons, ())
+                              self.assertEqual(state.epoch_index, 1)
+                              self.assertEqual(state.epoch_action_rounds, 0)
+                              self.assertEqual(state.action_rounds, prior_epoch_steps)
+                              self.assertEqual(run_state["status"], "running")
+                              self.assertEqual(run_state["stage"], "execution_epoch")
+                              self.assertEqual(run_state["continuation"]["status"], "continued")
+                              self.assertEqual(
+                                  run_state["budget"]["global_tool_rounds"],
+                                  prior_epoch_steps,
+                              )
+                              self.assertEqual(run_state["budget"]["epoch_index"], 1)
+
+                          events_root = simple_chain_events.events_root(refresh=True)
+                          event_files = list(events_root.glob("events-*.jsonl"))
+                          self.assertTrue(event_files)
+                          event_types = {
+                              json.loads(line)["type"]
+                              for line in event_files[-1].read_text(encoding="utf-8").splitlines()
+                              if line.strip()
+                          }
+                          self.assertIn("epoch.checkpoint_requested", event_types)
+                          self.assertIn("epoch.checkpoint_committed", event_types)
+                          self.assertIn("epoch.completed", event_types)
+                          self.assertIn("epoch.started", event_types)
+                          self.assertIn("run.continuation_requested", event_types)
+                          self.assertIn("run.continued", event_types)
+
+              def test_production_budget_bridge_global_999_to_1000_boundary(self) -> None:
+                  from v3.runtime_turn_orchestration import TurnLoopState
+                  from v3.zongdiaodu import _simple_chain_prepare_tool_budget
+
+                  state = TurnLoopState(
+                      action_rounds=999,
+                      epoch_index=13,
+                      epoch_action_rounds=24,
+                  )
+                  ready, reasons = _simple_chain_prepare_tool_budget(
+                      state,
+                      1,
+                      run_state=None,
+                      loop_started_at=time.monotonic(),
+                      source="test",
+                  )
+                  self.assertTrue(ready, reasons)
+                  state.reserve_one()
+                  self.assertEqual(state.action_rounds, 1000)
+                  ready_after, terminal_reasons = _simple_chain_prepare_tool_budget(
+                      state,
+                      1,
+                      run_state=None,
+                      loop_started_at=time.monotonic(),
+                      source="test",
+                  )
+                  self.assertFalse(ready_after)
+                  self.assertTrue(any("global_tool_budget_exhausted" in item for item in terminal_reasons))
+
+              def test_zongdiaodu_production_paths_no_longer_use_legacy_cutoff(self) -> None:
+                  source = (
+                      Path(__file__).resolve().parents[1]
+                      / "app"
+                      / "backend"
+                      / "tiangong-backend"
+                      / "v3"
+                      / "zongdiaodu.py"
+                  ).read_text(encoding="utf-8")
+                  self.assertNotIn("turn_loop.can_schedule(", source)
+                  self.assertIn("_simple_chain_prepare_tool_budget(", source)
+                  self.assertIn("source=\"parallel_tool_batch\"", source)
+                  self.assertIn("source=\"single_tool\"", source)
+                  self.assertIn("_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", source)
+          '''
+          marker = '\n\nif __name__ == "__main__":\n    unittest.main()\n'
+          if marker not in t:
+              raise SystemExit('P18-M1 patch drift: test insertion marker missing')
+          t = t.replace(marker, test_insert + marker, 1)
+          p18.write_text(t, encoding='utf-8')
+
+          legacy = Path('tests/test_simple_chain_loop_budget.py')
+          lt = legacy.read_text(encoding='utf-8')
+          import_anchor = '''            _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+              _SIMPLE_CHAIN_MAX_LOOP_TURNS,'''
+          import_replacement = '''            _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+              _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+              _SIMPLE_CHAIN_MAX_LOOP_TURNS,'''
+          if import_anchor not in lt:
+              raise SystemExit('P18-M1 patch drift: legacy budget import anchor missing')
+          lt = lt.replace(import_anchor, import_replacement, 1)
+          assert_anchor = '        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 75)\n'
+          if assert_anchor not in lt:
+              raise SystemExit('P18-M1 patch drift: legacy budget assertion anchor missing')
+          lt = lt.replace(
+              assert_anchor,
+              assert_anchor + '        self.assertEqual(_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS, 1000)\n',
+              1,
+          )
+          legacy.write_text(lt, encoding='utf-8')
+          PY
+
+      - name: Remove one-shot workflow from final tree
+        shell: bash
+        run: git rm .github/workflows/p18-m1-wire-epoch-budget.yml
+
+      - name: Syntax validation
+        shell: bash
+        run: |
+          python -m py_compile \
+            app/backend/tiangong-backend/v3/zongdiaodu.py \
+            app/backend/tiangong-backend/v3/runtime_turn_orchestration.py \
+            app/backend/tiangong-backend/v3/simple_chain_events.py \
+            tests/test_p18_m1_execution_epoch.py \
+            tests/test_simple_chain_loop_budget.py
+
+      - name: Commit production wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/backend/tiangong-backend/v3/zongdiaodu.py tests/test_p18_m1_execution_epoch.py tests/test_simple_chain_loop_budget.py .github/workflows/p18-m1-wire-epoch-budget.yml
+          git commit -m "P18-M1: wire epoch checkpoint continuation into simple chain"
+          git push origin HEAD:agent/p18-m1-long-execution-chain-governance
+
+      - name: Focused regression tests
+        shell: bash
+        continue-on-error: true
+        env:
+          PYTHONPATH: app/backend/tiangong-backend:src
+        run: |
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_p18_m1_execution_epoch.py tests/test_simple_chain_loop_budget.py
