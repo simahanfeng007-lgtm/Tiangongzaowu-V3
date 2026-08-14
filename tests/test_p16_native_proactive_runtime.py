@@ -287,7 +287,7 @@ def test_expression_call_is_not_made_when_second_model_budget_is_exhausted():
 def test_gateway_wires_proactive_world_to_existing_committed_wu_reader():
     source = Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "runtime.py"
     gateway = source.read_text(encoding="utf-8")
-    assert "set_proactive_world_provider" in gateway
+    assert "EmbeddedLifeGatewayBinding.PROACTIVE_WORLD_PROVIDER" in gateway
     assert "runtime.backend_service.repository_evidence_snapshot" in gateway
     backend = (Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "embedded_backend.py").read_text(encoding="utf-8")
     reader = backend.split("def repository_evidence_snapshot", 1)[1].split("\n    def ", 1)[0]
