@@ -87,6 +87,7 @@ jobs:
         run: |
           python tests/test_life_store_p17_m3_03.py -v
           python -m unittest discover -s tests -p "test_total_gateway_store_p17*.py" -v
+          python tests/test_gateway_store.py -v
 
       - name: Compile seams and validate diff hygiene
         shell: bash
