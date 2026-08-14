@@ -70,10 +70,12 @@ def stop_zongdiaodu_runtime(
     *,
     life_chain_enabled: bool,
 ) -> None:
-    """Preserve the historical stop behavior exactly."""
+    """闭合停止生命周期：心跳、桥接 HTTP 服务与旧 WS 监听器全部关闭。"""
 
     if life_chain_enabled:
         host.xintiao.tingzhi()
+    TONGBU.tingzhi()
+    QIAOJIE.tingzhi()
 
 
 __all__ = [
