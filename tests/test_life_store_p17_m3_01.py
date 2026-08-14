@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
-
-from life_service.store_connection import open_life_shadow_sqlite
-
 CONNECTION = ROOT / "src" / "life_service" / "store_connection.py"
 STORE = ROOT / "src" / "life_service" / "store.py"
 GATE = ROOT / ".github" / "workflows" / "architecture-gate.yml"
+
+spec = importlib.util.spec_from_file_location("p17_m3_store_connection", CONNECTION)
+if spec is None or spec.loader is None:
+    raise RuntimeError("cannot load store_connection.py")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+open_life_shadow_sqlite = module.open_life_shadow_sqlite
 
 
 class MarkerStoreError(RuntimeError):
