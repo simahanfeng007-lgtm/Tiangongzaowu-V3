@@ -55,7 +55,7 @@ class WorkspaceAuthorityContractTests(unittest.TestCase):
         result = baocun_workspace_settings({"workspace_mode": "full"})
         self.assertEqual("full", result["workspace_mode"])
         stored = self._stored()
-        self.assertEqual(str(workspace), stored["workspace"])
+        self.assertEqual(str(workspace.resolve()), stored["workspace"])
         self.assertEqual("full", stored["workspace_mode"])
         self.assertEqual("full", duqu_workspace_settings()["workspace_mode"])
 
@@ -64,16 +64,16 @@ class WorkspaceAuthorityContractTests(unittest.TestCase):
         baocun_workspace_settings({"workspace": str(workspace)})
         result = baocun_workspace_settings({"workspace": ""})
         stored = self._stored()
-        self.assertEqual(str(workspace), stored["workspace"])
-        self.assertEqual(str(workspace), result["workspace"])
+        self.assertEqual(str(workspace.resolve()), stored["workspace"])
+        self.assertEqual(str(workspace.resolve()), result["workspace"])
 
     def test_explicit_workspace_change_updates_authority(self) -> None:
         first = Path(self.temporary.name) / "a"
         second = Path(self.temporary.name) / "b"
         baocun_workspace_settings({"workspace": str(first)})
         result = baocun_workspace_settings({"workspace": str(second)})
-        self.assertEqual(str(second), result["workspace"])
-        self.assertEqual(str(second), self._stored()["workspace"])
+        self.assertEqual(str(second.resolve()), result["workspace"])
+        self.assertEqual(str(second.resolve()), self._stored()["workspace"])
 
     def test_empty_payload_is_a_noop(self) -> None:
         workspace = Path(self.temporary.name) / "projects"
@@ -82,7 +82,7 @@ class WorkspaceAuthorityContractTests(unittest.TestCase):
         result = baocun_workspace_settings({})
         after = self._stored()
         self.assertEqual(before, after)
-        self.assertEqual(str(workspace), result["workspace"])
+        self.assertEqual(str(workspace.resolve()), result["workspace"])
 
 
 if __name__ == "__main__":
