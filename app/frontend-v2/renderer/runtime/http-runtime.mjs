@@ -1515,6 +1515,10 @@ export function runPhaseFromStatus(status, signals = {}) {
   if (value === "FORCE_STOPPED") return "force_stopped";
   if (value === "WAITING_FOR_USER") return "awaiting_user";
   if (["CANCELLED", "CANCELED", "ABORTED", "INTERRUPTED", "YIZHONGDUAN", "SUPERSEDED"].includes(value)) return "cancelled";
+  // 后端两阶段停止：cancel_requested 表示指令已记录、执行器尚未在检查点
+  // 确认退出——此时绝不能宣称"已停止"，UI 保持"正在停止"并继续轮询，
+  // 直到后端落 interrupted 终态。
+  if (value === "CANCEL_REQUESTED") return "stopping";
   // 仅这些已知的进行中状态允许映射为 running
   // ACTIVE：网关 session_queue 已激活但聚合机尚未落第一帧的合法过渡态
   // （desktop/status 在快照缺失时回退队列态），必须按进行中等待，不得误判 unknown 终态。
@@ -2199,6 +2203,19 @@ export function createHttpRuntime({ kernel = null } = {}) {
         }
       }
       if (!active && !stopResult?.ok) return { ok: false, error: stopResult?.error || "没有正在运行的前端请求" };
+      if (stopResult?.ok === true) {
+        // 后端确认收到停止请求：不本地掐断请求，让执行器在检查点确认退出，
+        // 由后端返回权威终态；前端只在后端确认后才宣称"已停止"。
+        return {
+          ok: true,
+          canceled: Boolean(stopResult?.interrupted),
+          interrupted: Boolean(stopResult?.interrupted),
+          cancel_requested: Boolean(stopResult?.cancel_requested),
+          summary: stopResult?.interrupted
+            ? "后端已确认停止。"
+            : "停止指令已送达；正在等待当前执行步骤安全退出。",
+        };
+      }
       active?.controller?.abort(new Error("user_cancelled"));
       clearProgressPolling(requestId);
       clearActivityTimer(active);
@@ -2207,9 +2224,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
         ok: true,
         canceled: true,
         interrupted: true,
-        summary: stopResult?.ok
-          ? "停止指令已送达后端；前端已停止等待。"
-          : "前端已停止等待；后端停止指令未确认。"
+        summary: "前端已停止等待；后端停止指令未确认。",
       };
     },
 
