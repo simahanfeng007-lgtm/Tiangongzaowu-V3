@@ -24,3 +24,5 @@ jobs:
           python-version: '3.12'
       - name: Audit Gateway Store
         run: python scripts/p17-m3-04-audit.py
+      - name: Audit Gateway Store regression coverage
+        run: python scripts/p17-m3-04-test-audit.py
