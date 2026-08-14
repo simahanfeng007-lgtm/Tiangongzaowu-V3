@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import inspect
 import sqlite3
 import sys
@@ -81,6 +82,27 @@ class LifeStoreM303Tests(unittest.TestCase):
         from life_service.store import LifeShadowStoreError
         from life_service.store_contract_support import LifeShadowStoreError as SupportError
         self.assertIs(LifeShadowStoreError, SupportError)
+
+    def test_memory_support_records_preserve_frozen_slotted_dataclasses(self) -> None:
+        from life_service.store_contract_support import MemoryDeletionResult, ProtectedPayloadRecord
+        self.assertTrue(dataclasses.is_dataclass(ProtectedPayloadRecord))
+        self.assertTrue(dataclasses.is_dataclass(MemoryDeletionResult))
+        self.assertIn("__slots__", ProtectedPayloadRecord.__dict__)
+        self.assertIn("__slots__", MemoryDeletionResult.__dict__)
+        record = ProtectedPayloadRecord(
+            payload_id="payload",
+            life_id="life",
+            privacy_scope="private",
+            ciphertext_sha256="0" * 64,
+            created_at_ms=1,
+            key_available=True,
+            key_destroyed_at_ms=None,
+        )
+        self.assertEqual(record.payload_id, "payload")
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            record.payload_id = "other"  # type: ignore[misc]
+        source = (SRC / "life_service" / "store_contract_support.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("@dataclass(frozen=True, slots=True)"), 2)
 
     def test_open_wires_repository_to_same_connection(self) -> None:
         from life_service.store import LifeShadowStore
