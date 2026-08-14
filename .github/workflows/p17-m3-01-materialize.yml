@@ -1,0 +1,98 @@
+name: P17 M3-01 materialize verified blobs
+
+on:
+  push:
+    branches:
+      - agent/p17-m3-01-construction
+    paths:
+      - .github/workflows/p17-m3-01-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout construction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m3-01-construction
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact M3-01 candidate
+        run: python scripts/p17-m3-01-candidate.py
+
+      - name: Synchronize generated life-service mirrors
+        run: python scripts/sync-generated-sources.py --write
+
+      - name: Validate candidate
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python tests/test_source_authority_p17_m1.py -v
+          python tests/test_source_authority_p17_m1_03.py -v
+          python tests/test_zongdiaodu_p17_m2_01.py -v
+          python tests/test_zongdiaodu_p17_m2_02.py -v
+          python tests/test_zongdiaodu_p17_m2_03.py -v
+          python tests/test_embedded_life_p17_m2_04.py -v
+          python tests/test_embedded_life_p17_m2_05.py -v
+          python tests/test_life_store_p17_m3_01.py -v
+          python -m py_compile src/life_service/store.py src/life_service/store_connection.py app/life-service/runtime314/life_service/store.py app/life-service/runtime314/life_service/store_connection.py app/runtime/python312/Lib/site-packages/life_service/store.py app/runtime/python312/Lib/site-packages/life_service/store_connection.py
+          git diff --check
+
+      - name: Create unreferenced verified blobs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          paths = [
+              ".github/workflows/architecture-gate.yml",
+              "src/life_service/store.py",
+              "src/life_service/store_connection.py",
+              "app/life-service/runtime314/life_service/store.py",
+              "app/life-service/runtime314/life_service/store_connection.py",
+              "app/life-service/runtime314/life_service/.tiangong-generated-source.json",
+              "app/runtime/python312/Lib/site-packages/life_service/store.py",
+              "app/runtime/python312/Lib/site-packages/life_service/store_connection.py",
+              "app/runtime/python312/Lib/site-packages/life_service/.tiangong-generated-source.json",
+              "tests/test_life_store_p17_m3_01.py",
+          ]
+          result = {}
+          for relative in paths:
+              raw = Path(relative).read_bytes()
+              body = json.dumps({
+                "content": base64.b64encode(raw).decode("ascii"),
+                "encoding": "base64",
+            }).encode("utf-8")
+            request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs",
+              data=body,
+              method="POST",
+              headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "Content-Type": "application/json",
+              },
+            )
+            with urllib.request.urlopen(request) as response:
+                result[relative] = json.load(response)["sha"]
+          print(json.dumps(result, sort_keys=True))
