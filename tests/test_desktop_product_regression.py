@@ -740,8 +740,14 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
         gateway_wait_end = main.index("async function startTotalGateway", gateway_wait_start)
         gateway_wait = main[gateway_wait_start:gateway_wait_end]
         self.assertIn("totalGatewayHealthCheck(3000)", gateway_wait)
-        self.assertIn("totalGatewayReadyCheck(90000)", gateway_wait)
-        self.assertIn("ready: () => totalGatewayReadyCheck(90000)", main)
+        process_wait_end = gateway_wait.index("async function waitForTotalGatewayReadiness")
+        process_wait = gateway_wait[:process_wait_end]
+        readiness_wait = gateway_wait[process_wait_end:]
+        self.assertNotIn("totalGatewayReadyCheck", process_wait)
+        self.assertIn("totalGatewayReadyCheck(3000)", readiness_wait)
+        self.assertIn("CREDENTIAL_RESTART_TIMEOUT_MS", readiness_wait)
+        self.assertIn("waitForTotalGatewayReadiness()", credential_restart)
+        self.assertIn("ready: () => totalGatewayReadyCheck(3000)", main)
 
         secure_start = main.index("async function secureModelSettingsUpdate")
         secure_end = main.index("function applyProviderApiKey", secure_start)
