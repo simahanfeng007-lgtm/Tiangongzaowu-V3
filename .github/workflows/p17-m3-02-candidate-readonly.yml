@@ -73,5 +73,6 @@ jobs:
         with:
           name: p17-m3-02-candidate-readonly
           path: candidate
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 3
