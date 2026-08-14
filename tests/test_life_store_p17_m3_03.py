@@ -94,7 +94,7 @@ class LifeStoreM303Tests(unittest.TestCase):
 
     def test_architecture_gate_covers_m3_03(self) -> None:
         gate = (ROOT / ".github" / "workflows" / "architecture-gate.yml").read_text(encoding="utf-8")
-        self.assertEqual(gate.count("python tests/test_life_store_p17_m3_03.py -v"), 2)
+        self.assertEqual(gate.count("python tests/test_life_store_p17_m3_03.py -v"), 1)
         self.assertIn("src/life_service/store_memory_repository.py", gate)
         self.assertIn("src/life_service/store_contract_support.py", gate)
 
