@@ -667,7 +667,13 @@ def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any =
             "tool_rounds": 0,
             "wall_clock_used_s": 0,
             "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
-            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "global_tool_rounds": 0,
+            "epoch_index": 0,
+            "epoch_rounds_used": 0,
+            "epoch_tool_rounds": 0,
             "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
             "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
         },
@@ -717,6 +723,17 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "obligations": [item for item in (run_state.get("obligations") or []) if isinstance(item, dict)][-12:],
         "delivery": run_state.get("delivery") if isinstance(run_state.get("delivery"), dict) else {},
         "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
+        "budget": run_state.get("budget") if isinstance(run_state.get("budget"), dict) else {},
+        "authority_identity": (
+            run_state.get("authority_identity")
+            if isinstance(run_state.get("authority_identity"), dict)
+            else {}
+        ),
+        "continuation": (
+            run_state.get("continuation")
+            if isinstance(run_state.get("continuation"), dict)
+            else {}
+        ),
         "failures": list(run_state.get("failures") or [])[-8:],
         "gaps": list(run_state.get("gaps") or [])[-8:],
         "completion_correction": (
@@ -743,9 +760,19 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
         if isinstance(budget, dict):
             started_at = float(live.get("loop_started_at") or 0)
             wall = round(time.monotonic() - started_at, 1) if started_at else float(budget.get("wall_clock_used_s") or 0)
+            global_rounds = int(live.get("global_iteration_count") or live.get("iteration_count") or 0)
+            global_tools = int(live.get("global_tool_rounds") or live.get("tool_rounds") or 0)
             budget.update({
-                "rounds_used": int(live.get("iteration_count") or 0),
-                "tool_rounds": int(live.get("tool_rounds") or 0),
+                "rounds_used": global_rounds,
+                "tool_rounds": global_tools,
+                "global_rounds_used": global_rounds,
+                "global_tool_rounds": global_tools,
+                "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                "epoch_index": int(live.get("epoch_index") or 0),
+                "epoch_rounds_used": int(live.get("epoch_iteration_count") or 0),
+                "epoch_rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                "epoch_tool_rounds": int(live.get("epoch_tool_rounds") or 0),
+                "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
                 "wall_clock_used_s": max(0.0, wall),
             })
     elif "budget" not in run_state:
@@ -754,7 +781,13 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
             "tool_rounds": 0,
             "wall_clock_used_s": 0,
             "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
-            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "global_tool_rounds": 0,
+            "epoch_index": 0,
+            "epoch_rounds_used": 0,
+            "epoch_tool_rounds": 0,
             "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
             "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
         }
@@ -996,6 +1029,9 @@ def _simple_chain_checkpoint_continue(
     _simple_chain_emit_event(run_state, "epoch.completed", "epoch completed non-terminally", source, extra=meta)
 
     next_epoch = turn_loop.begin_next_epoch()
+    # The model decision that triggered rollover is executed in the new Epoch.
+    # Keep the global iteration unchanged while accounting it once locally.
+    turn_loop.epoch_iteration_count = 1
     turn_loop.project_live(run_state, loop_started_at)
     run_state["status"] = "running"
     run_state["stage"] = "execution_epoch"
@@ -7421,14 +7457,51 @@ class Zongdiaodu:
                         },
                     )
                 break
-            budget_decision = evaluate_turn_budget(
-                iteration_count=iteration_count,
+            # P18-M1: the historical loop-turn cap is an Epoch-local context
+            # budget. Hitting it checkpoints and continues the same authoritative Run.
+            epoch_turn_decision = evaluate_turn_budget(
+                iteration_count=turn_loop.epoch_iteration_count,
+                elapsed_seconds=0.0,
+                max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                max_wall_clock_seconds=float("inf"),
+            )
+            if epoch_turn_decision.exhausted:
+                checkpointed = _simple_chain_checkpoint_continue(
+                    run_state,
+                    turn_loop,
+                    requested=0,
+                    loop_started_at=loop_started_at,
+                    source="epoch_turn_budget",
+                )
+                if not checkpointed:
+                    budget_reasons = ["[epoch_checkpoint_failed] epoch turn checkpoint persistence failed"]
+                    final_guard_exhausted = True
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_epoch_turn_checkpoint",
+                            "Epoch turn checkpoint",
+                            "failed",
+                            budget_reasons[0],
+                            meta={
+                                "global_iteration_count": iteration_count,
+                                "epoch_index": turn_loop.epoch_index,
+                                "max_epoch_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                            },
+                        )
+                    break
+
+            # Wall clock remains an absolute platform/Authority deadline. Epoch
+            # rollover must never extend or bypass it.
+            wall_clock_decision = evaluate_turn_budget(
+                iteration_count=0,
                 elapsed_seconds=loop_elapsed,
                 max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
                 max_wall_clock_seconds=effective_wall_clock_seconds,
             )
-            if budget_decision.exhausted:
-                budget_reasons = list(budget_decision.reasons)
+            if wall_clock_decision.exhausted:
+                budget_reasons = list(wall_clock_decision.reasons)
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
@@ -7439,10 +7512,12 @@ class Zongdiaodu:
                         "failed",
                         "; ".join(budget_reasons)[:500],
                         meta={
-                            "iteration_count": iteration_count,
+                            "global_iteration_count": iteration_count,
+                            "epoch_iteration_count": turn_loop.epoch_iteration_count,
+                            "epoch_index": turn_loop.epoch_index,
                             "tool_rounds": gongju_cishu,
                             "elapsed_seconds": round(loop_elapsed, 1),
-                            "max_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                            "max_epoch_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
                             "max_wall_clock_seconds": round(effective_wall_clock_seconds, 1),
                         },
                     )

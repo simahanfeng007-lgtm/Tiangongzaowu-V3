@@ -161,6 +161,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
     def test_budget_defaults_tripled(self) -> None:
         from v3.zongdiaodu import (
             _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
+            _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
             _SIMPLE_CHAIN_MAX_LOOP_TURNS,
             _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS,
             _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS,
@@ -170,6 +171,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         )
 
         self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 75)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS, 1000)
         self.assertEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, 180)
         self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 5400)
         self.assertEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 90)

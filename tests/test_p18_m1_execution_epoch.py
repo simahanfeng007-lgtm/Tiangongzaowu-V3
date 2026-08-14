@@ -178,5 +178,61 @@ class ExecutionEpochBudgetTests(unittest.TestCase):
         self.assertIn("run.continued", source)
 
 
+    def test_production_checkpoint_rollover_preserves_global_counters(self) -> None:
+        import os
+        import tempfile
+        import time
+        from unittest import mock
+        from v3.runtime_turn_orchestration import TurnLoopState
+        from v3.zongdiaodu import _simple_chain_checkpoint_continue, _simple_chain_new_run_state
+
+        state = TurnLoopState(
+            action_rounds=75,
+            iteration_count=181,
+            epoch_index=0,
+            epoch_action_rounds=75,
+            epoch_iteration_count=181,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(os.environ, {"TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT": temp_dir}, clear=False):
+                run_state = _simple_chain_new_run_state("req-p18-turn", "session-p18")
+                with mock.patch("v3.zongdiaodu._simple_chain_emit_event", return_value=True):
+                    ok = _simple_chain_checkpoint_continue(
+                        run_state,
+                        state,
+                        requested=0,
+                        loop_started_at=time.monotonic(),
+                        source="epoch_turn_budget",
+                    )
+        self.assertTrue(ok)
+        self.assertEqual(state.action_rounds, 75)
+        self.assertEqual(state.iteration_count, 181)
+        self.assertEqual(state.epoch_index, 1)
+        self.assertEqual(state.epoch_action_rounds, 0)
+        self.assertEqual(state.epoch_iteration_count, 1)
+        self.assertEqual(run_state["budget"]["global_tool_rounds"], 75)
+        self.assertEqual(run_state["budget"]["global_rounds_used"], 181)
+        self.assertEqual(run_state["budget"]["epoch_index"], 1)
+        self.assertEqual(run_state["budget"]["epoch_tool_rounds"], 0)
+        self.assertEqual(run_state["budget"]["epoch_rounds_used"], 1)
+        self.assertEqual(run_state["continuation"]["status"], "continued")
+
+    def test_loop_turn_cutoff_is_epoch_local_but_wall_clock_remains_global(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app" / "backend" / "tiangong-backend" / "v3" / "zongdiaodu.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("iteration_count=turn_loop.epoch_iteration_count", source)
+        self.assertIn('source="epoch_turn_budget"', source)
+        self.assertIn("wall_clock_decision = evaluate_turn_budget", source)
+        self.assertIn("effective_wall_clock_seconds", source)
+        self.assertNotIn(
+            "iteration_count=iteration_count,\n                elapsed_seconds=loop_elapsed",
+            source,
+        )
+        self.assertIn('"global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS', source)
+        self.assertIn('"epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS', source)
+
+
 if __name__ == "__main__":
     unittest.main()
