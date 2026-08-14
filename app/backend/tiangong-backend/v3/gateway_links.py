@@ -233,8 +233,10 @@ def load_link_settings() -> dict[str, Any]:
 def save_link_settings(payload: dict[str, Any]) -> dict[str, Any]:
     current = load_link_settings()
     next_settings = _normalize_settings(_deep_merge(current, payload if isinstance(payload, dict) else {}))
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(next_settings, ensure_ascii=False, indent=2), encoding="utf-8")
+    from .settings_persistence import atomic_write_json
+
+    # 含密钥：原子写但绝不落 .bak 副本，避免密钥扩散。
+    atomic_write_json(CONFIG_PATH, next_settings, backup=False)
     return next_settings
 
 

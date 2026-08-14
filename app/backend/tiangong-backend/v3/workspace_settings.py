@@ -1,13 +1,13 @@
 """Workspace settings shared by desktop UI and backend tools."""
 from __future__ import annotations
 
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any
 
 from .peizhi import WORKSPACE_SETTINGS_LUJING
+from .settings_persistence import atomic_write_json, read_json_authority
 
 
 def _env_workspace_root() -> str:
@@ -31,13 +31,8 @@ def _normalize_workspace_mode(value: Any) -> str:
 
 
 def _load_raw() -> dict[str, Any]:
-    if not WORKSPACE_SETTINGS_LUJING.exists():
-        return {}
-    try:
-        data = json.loads(WORKSPACE_SETTINGS_LUJING.read_text(encoding="utf-8-sig"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data, _state = read_json_authority(WORKSPACE_SETTINGS_LUJING)
+    return data if isinstance(data, dict) else {}
 
 
 def _normalize_workspace_path(value: str | os.PathLike[str] | None, *, fallback: Path | None = None) -> Path:
@@ -56,7 +51,9 @@ def duqu_workspace_settings() -> dict[str, Any]:
     # That authority must outrank this legacy backend-local preference; if it
     # did not, the tool could request an Omni grant for a different directory
     # from the one bound into the execution ticket.
-    data = _load_raw()
+    data, integrity = read_json_authority(WORKSPACE_SETTINGS_LUJING)
+    if not isinstance(data, dict):
+        data = {}
     desktop_authority = _env_workspace_root()
     if desktop_authority:
         configured = ""
@@ -78,6 +75,8 @@ def duqu_workspace_settings() -> dict[str, Any]:
         "exists": root.exists(),
         "writable": os.access(root, os.W_OK),
         "settings_path": str(WORKSPACE_SETTINGS_LUJING),
+        "settings_integrity": integrity,
+        "error_code": "SETTINGS_AUTHORITY_CORRUPTED" if integrity == "corrupted" else "",
     }
 
 
@@ -119,6 +118,5 @@ def baocun_workspace_settings(payload: dict[str, Any] | None) -> dict[str, Any]:
         data["workspace_mode"] = workspace_mode
         os.environ["TIANGONG_WORKSPACE_MODE"] = workspace_mode
     data["updated_at"] = int(time.time())
-    WORKSPACE_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
-    WORKSPACE_SETTINGS_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(WORKSPACE_SETTINGS_LUJING, data)
     return duqu_workspace_settings()
