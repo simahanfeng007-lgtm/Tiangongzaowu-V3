@@ -1,0 +1,29 @@
+name: P17 M3-02 schema audit
+
+on:
+  push:
+    branches:
+      - agent/p17-m3-02-construction
+    paths:
+      - .github/workflows/p17-m3-02-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p17-m3-02-construction
+          fetch-depth: 0
+      - name: Audit schema authority references
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== schema/version identifiers ==='
+          git grep -n -E 'SHADOW_STORE_SCHEMA_VERSION|SHADOW_STORE_APPLICATION_ID|_SCHEMA_SHA256|_EXPECTED_TABLES|_P[0-9]+_[A-Z0-9_]+' -- 'src/life_service/*.py' 'tests/*.py' || true
+          echo '=== initialize/migrate methods ==='
+          grep -n -E '^    def _initialize|^    def _migrate|^    def health' src/life_service/store.py
