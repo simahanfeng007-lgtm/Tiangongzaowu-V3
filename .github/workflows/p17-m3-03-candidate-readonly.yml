@@ -31,7 +31,7 @@ jobs:
           python-version: "3.12"
       - name: Install Life runtime test dependencies
         run: python -m pip install cryptography==48.0.1 pydantic==2.13.4
-      - name: Align builder with current Architecture Gate
+      - name: Align builder with current contracts
         shell: bash
         run: |
           python - <<'PY'
@@ -53,6 +53,11 @@ jobs:
               '    GATE.write_text(gate.replace(compile_anchor, compile_replacement), encoding="utf-8")\n'
           )
           source = source[:start] + replacement + source[end:]
+          old = '    repo_methods = [textwrap.indent(textwrap.dedent(segment(source, targets[name])), "    ") for name in target_names]\n'
+          new = '    repo_methods = [(("    @staticmethod\\n" if name in STATIC_NAMES else "") + textwrap.indent(textwrap.dedent(segment(source, targets[name])), "    ")) for name in target_names]\n'
+          if source.count(old) != 1:
+              raise RuntimeError("repository method extraction anchor changed")
+          source = source.replace(old, new)
           path.write_text(source, encoding="utf-8")
           PY
       - name: Build exact M3-03 candidate
