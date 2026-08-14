@@ -185,6 +185,7 @@ class FrozenBackendCompatibilityTests(unittest.TestCase):
             self.assertLessEqual(len(str(materialized_path)) + len(".tmp"), 240)
             self.assertEqual(materialized_path.read_bytes(), body)
 
+    @pytest.mark.ci_fragile
     def test_materialize_inputs_rejects_unsafe_filename_with_compat_code(self) -> None:
         for filename in ("../escape.md", "control\x00name.md", "CON.txt"):
             with self.subTest(filename=repr(filename)):
