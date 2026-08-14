@@ -1,4 +1,4 @@
-name: P17 M3-04 candidate read-only v2
+name: P17 M3-04 candidate read-only v3-equivalent
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Apply deterministic M3-04 candidate patch v2
+      - name: Apply deterministic M3-04 candidate patch v3-equivalent
         run: python scripts/p17-m3-04-apply-v2.py
 
       - name: Validate intended candidate paths only
@@ -39,15 +39,23 @@ jobs:
               "src/total_gateway/store_unit_of_work.py",
               "tests/test_total_gateway_store_p17_m3_04.py",
           }
-          actual = set(subprocess.check_output([
-              "git", "diff", "--name-only", "40cae726515496caf4a50ceb3fe4b6bc55d24a3c", "--",
-              ".github/workflows/architecture-gate.yml",
-              "src/total_gateway/store.py",
-              "src/total_gateway/store_unit_of_work.py",
-              "tests/test_total_gateway_store_p17_m3_04.py",
-          ], text=True).splitlines())
+          lines = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+              text=True,
+          ).splitlines()
+          actual = set()
+          for line in lines:
+              if not line:
+                  continue
+              path = line[3:]
+              if " -> " in path:
+                  path = path.split(" -> ", 1)[1]
+              actual.add(path)
           if actual != expected:
-              raise SystemExit(f"candidate path mismatch: {sorted(actual)}")
+              raise SystemExit(
+                  f"candidate workspace mismatch: expected={sorted(expected)} actual={sorted(actual)}"
+              )
+          print("candidate workspace paths:", *sorted(actual), sep="\n- ")
           PY
 
       - name: Validate source authority and committed mirrors
@@ -98,6 +106,6 @@ jobs:
       - name: Upload validated candidate
         uses: actions/upload-artifact@v4
         with:
-          name: p17-m3-04-candidate-readonly-v2
+          name: p17-m3-04-candidate-readonly-v3
           path: candidate
           if-no-files-found: error
