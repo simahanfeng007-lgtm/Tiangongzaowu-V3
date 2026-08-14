@@ -184,7 +184,16 @@ def _validate_boundary_policy(row: dict[str, Any], *, by_id: dict[str, dict[str,
         if not source_fs.is_dir():
             errors.append(f"{mapping_id}.boundary_policy: closed-world authority must be a directory")
         else:
-            actual = {PurePosixPath(child.name) for child in source_fs.iterdir()}
+            # Bytecode/test caches are runner artifacts, never authority
+            # entries: full-suite pytest creates __pycache__ and .pytest_cache
+            # under the V3 backend and would otherwise flip closed-world
+            # validation from green to red purely through test ordering.
+            cache_children = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+            actual = {
+                PurePosixPath(child.name)
+                for child in source_fs.iterdir()
+                if child.name not in cache_children
+            }
             classified = set(seen)
             missing = sorted(str(path) for path in actual - classified)
             stale = sorted(str(path) for path in classified - actual)
