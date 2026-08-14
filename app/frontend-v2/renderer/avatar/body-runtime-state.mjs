@@ -1,4 +1,4 @@
-// §18.1/§18.5 BodyRuntimeState：posture/gaze/expression/speaking/speech-energy/watermark 唯一逻辑权威。
+// §18.1/§18.5 BodyRuntimeState：conversation/posture/gaze/expression/speaking/speech-energy/watermark 唯一逻辑权威。
 // provisional-present 期间同态双投影：current 可写、pending 只读不回写（§4.2 N_authoritativeSimulation=1）。
 // transitionActionBuffer：有界 Qmax=32、TTL、latest-wins 去重；提交/回滚确定 winner 后
 // gesture 凭 actionId 至多执行一次，过期记 TRANSITION_ACTION_EXPIRED；stop 最高优先级清缓冲并投影停止。
@@ -7,8 +7,8 @@
 import { isScheduledActionExpired } from "./contracts.mjs";
 import { deepFreeze } from "./canonical-hash.mjs";
 
-export const BODY_RUNTIME_STATE_SCHEMA_VERSION = 1;
-export const MIGRATION_SNAPSHOT_SCHEMA_VERSION = 1;
+export const BODY_RUNTIME_STATE_SCHEMA_VERSION = 2;
+export const MIGRATION_SNAPSHOT_SCHEMA_VERSION = 2;
 export const TRANSITION_BUFFER_QMAX = 32;
 
 export class BodyStateError extends Error {
@@ -39,6 +39,7 @@ export function createBodyRuntimeState({ nowMonotonic } = {}) {
     posture: { name: "idle", transitionProgress: 1, updatedAtMonotonic: 0 },
     expression: { targets: {}, current: {}, remainingTransitionMs: 0, updatedAtMonotonic: 0 },
     gaze: { target: null, current: null, filter: { alpha: 0.35, settled: true }, updatedAtMonotonic: 0 },
+    conversationState: "IDLE",
     speaking: false,
     speechEnergy: 0,
     viseme: null,
@@ -107,6 +108,15 @@ export function createBodyRuntimeState({ nowMonotonic } = {}) {
         state.gaze = { ...state.gaze, current: clonePlain(state.gaze.target), filter: { ...state.gaze.filter, settled: true } };
         touch("gaze");
       },
+      setConversationState(conversationState) {
+        const normalized = String(conversationState ?? "").trim().toUpperCase();
+        const allowed = ["IDLE", "LISTENING", "THINKING", "TURN_ACQUIRING", "SPEAKING", "TURN_YIELDING"];
+        if (!allowed.includes(normalized)) {
+          throw new BodyStateError("conversation_state_invalid", `未知会话具身状态 ${conversationState}`);
+        }
+        state.conversationState = normalized;
+        touch();
+      },
       setSpeaking(speaking) {
         state.speaking = speaking === true;
         if (!state.speaking) state.viseme = null;
@@ -151,6 +161,7 @@ export function createBodyRuntimeState({ nowMonotonic } = {}) {
       posture: state.posture,
       expression: state.expression,
       gaze: state.gaze,
+      conversationState: state.conversationState,
       speaking: state.speaking,
       speechEnergy: state.speechEnergy,
       viseme: state.viseme,
@@ -178,6 +189,7 @@ export function createBodyRuntimeState({ nowMonotonic } = {}) {
         setPosture: readonlyGuard,
         setExpressionTargets: readonlyGuard,
         setGazeTarget: readonlyGuard,
+        setConversationState: readonlyGuard,
         setSpeaking: readonlyGuard,
         setSpeechEnergy: readonlyGuard,
         setViseme: readonlyGuard,
@@ -198,6 +210,7 @@ export function createBodyRuntimeState({ nowMonotonic } = {}) {
       setPosture: (...args) => requireWriter().setPosture(...args),
       setExpressionTargets: (...args) => requireWriter().setExpressionTargets(...args),
       setGazeTarget: (...args) => requireWriter().setGazeTarget(...args),
+      setConversationState: (...args) => requireWriter().setConversationState(...args),
       setSpeaking: (...args) => requireWriter().setSpeaking(...args),
       setSpeechEnergy: (...args) => requireWriter().setSpeechEnergy(...args),
       setViseme: (...args) => requireWriter().setViseme(...args),
@@ -237,6 +250,7 @@ export function assembleMigrationSnapshot({
     posture: clonePlain(snapshot.posture),
     expression: clonePlain(snapshot.expression),
     gaze: clonePlain(snapshot.gaze),
+    conversationState: snapshot.conversationState,
     speaking: snapshot.speaking,
     speechEnergy: snapshot.speechEnergy,
     viseme: snapshot.viseme,

@@ -330,6 +330,10 @@ export function createThreeVrmRuntimeAdapter({
       return engine.setSpeaking(speaking);
     },
 
+    setConversationState(conversationState) {
+      return engine.setConversationState?.(conversationState) ?? false;
+    },
+
     applyVisemeTarget(targets) {
       return engine.applyVisemeTarget(targets);
     },
@@ -338,6 +342,7 @@ export function createThreeVrmRuntimeAdapter({
     applyBodyPerformance(wire) {
       const gesture = typeof wire?.gesture === "string" ? wire.gesture : wire?.gesture?.semanticId ?? null;
       const data = {
+        channel: typeof wire?.channel === "string" ? wire.channel : null,
         expression: typeof wire?.expression?.name === "string" ? wire.expression.name : null,
         gaze: typeof wire?.gaze?.target === "string" ? wire.gaze.target : null,
         posture: typeof wire?.posture === "string" ? wire.posture : null,
@@ -358,8 +363,12 @@ export function createThreeVrmRuntimeAdapter({
       return engine.setQinggan?.(qinggan) ?? false;
     },
 
-    beginSpeech(text) {
-      return engine.beginSpeech?.(text) ?? false;
+    beginSpeech(text, speechPlan = null) {
+      return engine.beginSpeech?.(text, speechPlan) ?? false;
+    },
+
+    applySpeechBoundary(boundary) {
+      return engine.applySpeechBoundary?.(boundary) ?? false;
     },
 
     setSpeechEnergy(energy) {

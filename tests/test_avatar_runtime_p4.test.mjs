@@ -690,7 +690,8 @@ test("committed 迁移快照：watermark/expression 插值/gaze 滤波/动画 no
   assert.deepEqual(ctx.adapter.gestureLog, ["wave", "clap"]);
 
   const snap = ctx.runtime.getLastMigrationSnapshot();
-  assert.equal(snap.schemaVersion, 1);
+  assert.equal(snap.schemaVersion, 2);
+  assert.equal(snap.conversationState, "IDLE");
   assert.equal(snap.watermark.sequence, 8, "已消费 watermark 迁移");
   assert.equal(snap.posture.name, "stand");
   assert.equal(snap.expression.targets.happy, 0.8);

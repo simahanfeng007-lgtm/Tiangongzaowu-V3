@@ -22,6 +22,11 @@ import { createThemePresentationSync, sanitizeThemeId } from "../avatar/theme-pr
 import { createSpeechEventForwarder } from "../avatar/speech-event-forwarder.mjs";
 import { createBodyCommandScheduler } from "../avatar/body-command-scheduler.mjs";
 import { createBiaoxianAdapter } from "../avatar/body-performance-adapter.mjs";
+import {
+  ConversationEmbodimentState,
+  EMBODIMENT_PHASE_EVENT_NAME,
+  createConversationEmbodimentController,
+} from "../avatar/conversation-embodiment.mjs";
 import { createLifecycleScope } from "../avatar/lifecycle.mjs";
 import {
   AVATAR_CAMERA_DEFAULTS,
@@ -373,10 +378,22 @@ export const avatarPanelPlugin = {
     };
     lifecycle.trackDomListener(window, "tiangong-biaoxian", onBiaoxian);
 
+    // H3: conversation state projects through the same scheduler/runtime.
+    const submitAndPump = (wire) => { scheduler.submit(wire); scheduler.pump(); };
+    const embodiment = createConversationEmbodimentController({ nowMonotonic, submit: submitAndPump });
+    lifecycle.trackCleanup(() => embodiment.dispose());
+    lifecycle.trackDomListener(window, EMBODIMENT_PHASE_EVENT_NAME, (event) => {
+      embodiment.transition(event.detail?.state, { reason: event.detail?.meta?.reason ?? "conversation-event" });
+    });
+    lifecycle.trackDomListener(window, "tiangong-chat-final-render", () => {
+      embodiment.transition(ConversationEmbodimentState.TURN_ACQUIRING, { reason: "assistant-response-ready" });
+    });
+
     // ── TTS：§17 单一所有者转发的订阅桥（本面板不播放任何音频）──────
     const speechForwarder = createSpeechEventForwarder({
       nowMonotonic,
-      submit: (wire) => { scheduler.submit(wire); scheduler.pump(); },
+      submit: submitAndPump,
+      onPhase: (phase) => embodiment.handleSpeechPhase(phase),
     });
     lifecycle.trackCleanup(speechForwarder.attachWindowBridge({ target: window, ownerId: "tts-owner" }));
 

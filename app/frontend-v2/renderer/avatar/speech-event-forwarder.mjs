@@ -13,11 +13,13 @@
 //   纯 addEventListener 适配，不改既有业务逻辑。
 
 import { deepFreeze } from "./canonical-hash.mjs";
+import { speechPlanFromPayload } from "./speech-motor-plan.mjs";
 
 export const SPEECH_EVENT_FORWARDER_SCHEMA_VERSION = 1;
 
 export const SpeechEventKind = Object.freeze({
   START: "speech-start",
+  BOUNDARY: "speech-boundary",
   ENERGY: "speech-energy",
   STOP: "speech-stop",
 });
@@ -39,6 +41,7 @@ function clampEnergy(value) {
 export function createSpeechEventForwarder({
   nowMonotonic,
   submit, // BodyCommandScheduler.submit（或同形函数）：语音事件经调度器进入 BodyRuntimeState 唯一入口链
+  onPhase = null,
   energyTtlMs = 250,
   startStopTtlMs = 5_000,
 } = {}) {
@@ -50,7 +53,7 @@ export function createSpeechEventForwarder({
   }
 
   let activeOwner = null; // { ownerId, claimedAtMonotonic }
-  const counters = { start: 0, energy: 0, stop: 0, rejectedNotOwner: 0 };
+  const counters = { start: 0, boundary: 0, energy: 0, stop: 0, rejectedNotOwner: 0 };
 
   function assertOwner(handle, expected) {
     if (activeOwner === null || activeOwner.ownerId !== expected) {
@@ -87,18 +90,50 @@ export function createSpeechEventForwarder({
       speechStart(meta = {}) {
         assertOwner(handle, id);
         counters.start += 1;
+        const payload = meta === null || typeof meta !== "object" ? {} : meta;
+        const text = typeof payload.text === "string" ? payload.text.slice(0, 10_000) : "";
+        const speechPlan = speechPlanFromPayload({
+          text,
+          speechPlan: payload.speechPlan,
+          durationMs: payload.durationMs,
+        });
         const event = stamp(SpeechEventKind.START, {
           speaking: true,
-          meta: deepFreeze({ ...(meta === null || typeof meta !== "object" ? {} : meta) }),
+          text,
+          speechPlan,
+          meta: deepFreeze({ ...payload, speechPlan: undefined }),
         });
         // 经调度器：speaking=true 语义，走 speech 通道节流纪律。
         submit({
           type: SpeechEventKind.START,
           speaking: true,
+          speechText: text,
+          speechPlan,
           ttlMs: startStopTtlMs,
           priority: "high",
           speechEventAtMonotonic: event.atMonotonic,
         });
+        if (typeof onPhase === "function") onPhase("start", event);
+        return event;
+      },
+      speechBoundary(boundary = {}) {
+        assertOwner(handle, id);
+        counters.boundary += 1;
+        const payload = boundary === null || typeof boundary !== "object" ? {} : boundary;
+        const event = stamp(SpeechEventKind.BOUNDARY, {
+          text: typeof payload.text === "string" ? payload.text.slice(0, 10_000) : "",
+          charIndex: Math.max(0, Number(payload.charIndex) || 0),
+          elapsedMs: Math.max(0, Number(payload.elapsedMs) || 0),
+          boundaryType: typeof payload.boundaryType === "string" ? payload.boundaryType : null,
+        });
+        submit({
+          type: SpeechEventKind.BOUNDARY,
+          speechBoundary: event,
+          ttlMs: energyTtlMs,
+          priority: "normal",
+          speechEventAtMonotonic: event.atMonotonic,
+        });
+        if (typeof onPhase === "function") onPhase("boundary", event);
         return event;
       },
       speechEnergy(energy) {
@@ -112,6 +147,7 @@ export function createSpeechEventForwarder({
           priority: "low",
           speechEventAtMonotonic: event.atMonotonic,
         });
+        if (typeof onPhase === "function") onPhase("energy", event);
         return event;
       },
       speechStop(reason = null) {
@@ -126,6 +162,7 @@ export function createSpeechEventForwarder({
           priority: "high",
           speechEventAtMonotonic: event.atMonotonic,
         });
+        if (typeof onPhase === "function") onPhase("stop", event);
         // stop 后自动释放所有权，下一段语音可重新 claim。
         if (activeOwner !== null && activeOwner.ownerId === id) activeOwner = null;
         return event;
@@ -153,7 +190,8 @@ export function createSpeechEventForwarder({
       if (detail === null || typeof detail !== "object") return;
       const kind = String(detail.phase ?? detail.kind ?? "").toLowerCase();
       try {
-        if (kind === "start") ensureOwner().speechStart(detail.meta ?? {});
+        if (kind === "start") ensureOwner().speechStart(detail);
+        else if (kind === "boundary") ensureOwner().speechBoundary({ ...(detail.boundary ?? {}), text: detail.text });
         else if (kind === "energy") ensureOwner().speechEnergy(detail.energy);
         else if (kind === "stop") {
           ensureOwner().speechStop(detail.reason ?? null);
