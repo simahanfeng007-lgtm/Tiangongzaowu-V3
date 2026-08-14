@@ -105,6 +105,10 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       PYTHONHASHSEED: "0"
+      # Windows shared runners cannot provide AppContainer profiles, release
+      # archive bindings, TTS network or short-path-stable temp directories;
+      # the ci_fragile-marked tests skip there only and keep running locally.
+      TIANGONG_CI_ENV: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
