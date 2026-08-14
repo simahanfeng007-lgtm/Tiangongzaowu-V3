@@ -85,7 +85,7 @@ class LifeStoreM303Tests(unittest.TestCase):
     def test_open_wires_repository_to_same_connection(self) -> None:
         from life_service.store import LifeShadowStore
         with tempfile.TemporaryDirectory() as tmp:
-            store = LifeShadowStore.open(Path(tmp) / "life-shadow.db", create=True, now_ms=1)
+            store = LifeShadowStore.open(Path(tmp) / "life.shadow.sqlite3", create=True, now_ms=1)
             try:
                 self.assertIs(store._memory_repository._connection, store._connection)
                 self.assertEqual(store.health()["schema_version"], 17)
@@ -97,6 +97,8 @@ class LifeStoreM303Tests(unittest.TestCase):
         self.assertEqual(gate.count("python tests/test_life_store_p17_m3_03.py -v"), 1)
         self.assertIn("src/life_service/store_memory_repository.py", gate)
         self.assertIn("src/life_service/store_contract_support.py", gate)
+        self.assertIn("cryptography==48.0.1", gate)
+        self.assertIn("pydantic==2.13.4", gate)
 
 
 if __name__ == "__main__":
