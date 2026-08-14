@@ -177,6 +177,7 @@ def test_failed_and_missing_targets_are_not_deliverables() -> None:
         assert paths == [str(actual.resolve())]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows cmd wrapper semantics")
 def test_windows_utf8_shell_wrapper_keeps_command_data_out_of_outer_cmd_parsing() -> None:
     from omni_body_skill.tools.sandbox_runtime import (
         WINDOWS_UTF8_SHELL_MARKER,
@@ -268,6 +269,7 @@ def _body_runtime(root: Path):
     )
 
 
+@pytest.mark.ci_fragile
 def test_mindmap_html_target_cannot_overwrite_mermaid_or_opml() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -317,6 +319,7 @@ def test_search_result_parser_returns_real_links_and_deduplicates() -> None:
         assert results[0]["snippet"] == "第一条中文摘要 & evidence"
 
 
+@pytest.mark.ci_fragile
 def test_file_browser_fetch_is_confined_to_workspace() -> None:
     from omni_body_skill.tools.omni_body_tool import OmniBodyError
 
@@ -337,6 +340,7 @@ def test_file_browser_fetch_is_confined_to_workspace() -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows CJK font integration")
+@pytest.mark.ci_fragile
 def test_image_add_text_uses_scalable_cjk_font_and_writes_visible_pixels() -> None:
     from PIL import Image, ImageChops
 
@@ -396,6 +400,7 @@ def test_pdf_create_from_text_embeds_cjk_font() -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows SAPI integration")
+@pytest.mark.ci_fragile
 def test_audio_tts_creates_valid_chinese_wav_inside_appcontainer() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)

@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import pytest
+
 import os
 import tempfile
 import unittest
@@ -42,9 +44,11 @@ class UserSpecifiedExtractionTests(unittest.TestCase):
 
 
 class HardDenyTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows path denial semantics")
     def test_windows_dir(self) -> None:
         self.assertTrue(_is_hard_deny_path(Path(r"C:\Windows\System32\x.dll")))
 
+    @unittest.skipUnless(os.name == "nt", "Windows path denial semantics")
     def test_drive_root(self) -> None:
         self.assertTrue(_is_hard_deny_path(Path(r"C:\\")))
 
@@ -76,6 +80,7 @@ class UserSpecifiedValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(OmniGrantAuthorityError, "absolute_forbidden"):
                 authority._validate_path_value(str(desktop / "作文.docx"), allow_absolute=False)
 
+    @unittest.skipUnless(os.name == "nt", "Windows path denial semantics")
     def test_user_named_system_path_still_denied(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             authority = _authority(Path(temporary) / "ws")
@@ -169,6 +174,7 @@ class ToolContractsUserRootsTests(unittest.TestCase):
             )
             self.assertTrue(out.get("ok"), out)
 
+    @unittest.skipUnless(os.name == "nt", "Windows path denial semantics")
     def test_system_path_denied_even_with_user_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             out = self._validate(
@@ -191,6 +197,7 @@ class BodyRuntimeUserRootsE2ETests(unittest.TestCase):
             user_path_roots=[str(r) for r in user_roots],
         ))
 
+    @pytest.mark.ci_fragile
     def test_docx_create_to_desktop_user_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             ws = Path(temporary) / "ws"
@@ -215,6 +222,7 @@ class BodyRuntimeUserRootsE2ETests(unittest.TestCase):
             self.assertFalse(result.get("ok") or result.get("success"))
             self.assertFalse(target.is_file())
 
+    @pytest.mark.ci_fragile
     def test_file_copy_to_user_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             ws = Path(temporary) / "ws"

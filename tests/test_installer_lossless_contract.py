@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import pytest
 import json
 import os
 import subprocess
@@ -45,12 +46,14 @@ def test_installer_aborts_when_preinstall_backup_fails() -> None:
     assert "user data and recovery snapshots are preserved" in include
 
 
+@pytest.mark.skipif(os.name != "nt", reason="installer PowerShell contract is Windows-only")
 def test_installer_contract_uses_inbox_windows_powershell() -> None:
     include = INSTALLER_INCLUDE.read_text(encoding="utf-8")
     assert r"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" in include
     assert Path(_powershell()).name.casefold() == "powershell.exe"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="installer PowerShell contract is Windows-only")
 def test_preinstall_backup_is_verified_atomic_and_non_destructive(tmp_path: Path) -> None:
     source_a = tmp_path / "profile"
     source_b = tmp_path / "life"

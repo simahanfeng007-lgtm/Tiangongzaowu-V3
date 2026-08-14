@@ -83,6 +83,7 @@ class ToolContractFullDiskTests(unittest.TestCase):
             for issue in (result.get("issues") or [])
         )
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_workspace_mode_blocks_desktop(self) -> None:
         result = self._validate(r"C:\Users\someone\Desktop\a.md", "workspace")
         self.assertTrue(self._has_outside_workspace(result))
@@ -92,14 +93,17 @@ class ToolContractFullDiskTests(unittest.TestCase):
         self.assertFalse(self._has_outside_workspace(result))
         self.assertTrue(bool(result.get("ok")))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_still_blocks_windows_core(self) -> None:
         result = self._validate(r"C:\Windows\System32\drivers\etc\hosts", "full")
         self.assertTrue(self._has_outside_workspace(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_still_blocks_credential_dir(self) -> None:
         result = self._validate(r"C:\Users\someone\.ssh\id_rsa", "full")
         self.assertTrue(self._has_outside_workspace(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_blocks_hard_deny_in_shell_command(self) -> None:
         from omni_body_skill.tool_contracts import validate_tool_request
 

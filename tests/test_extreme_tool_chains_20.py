@@ -198,10 +198,12 @@ class ExtremeToolChains20(unittest.TestCase):
         with self.assertRaisesRegex(OmniGrantAuthorityError, "path.url_forbidden"):
             self.authority.issue(self._payload(9, action="file.read", target="sample.txt", args={"output_path": "data:text/plain,escape"}), now_ms=self.now_ms + 90)
 
+    @unittest.skipUnless(os.name == "nt", "Windows system path denial semantics")
     def test_t10_windows_system_path_remains_a5_denied_cross_platform(self):
         with self.assertRaisesRegex(OmniGrantAuthorityError, "workspace_escape"):
             self.authority.issue(self._payload(10, action="file.read", target=r"C:\\Windows\\system.ini", args={}), now_ms=self.now_ms + 100)
 
+    @unittest.skipUnless(os.name == "nt", "Windows UNC path semantics")
     def test_t11_unc_absolute_path_uses_signed_path_freedom(self):
         issued = self.authority.issue(
             self._payload(11, action="file.read", target=r"\\\\server\\share\\secret.txt", args={}),

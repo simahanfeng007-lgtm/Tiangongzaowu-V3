@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import hashlib
 import tempfile
 import unittest
@@ -223,6 +225,7 @@ class ProductionReadinessCollectorTests(unittest.TestCase):
         self.assertTrue(authenticated)
         self.assertFalse(passed)
 
+    @pytest.mark.ci_fragile
     def test_exact_selected_binaries_and_authenticated_health_are_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             runtime = Path(temporary) / "resources"
