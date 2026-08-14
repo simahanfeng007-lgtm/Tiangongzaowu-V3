@@ -24,7 +24,9 @@ jobs:
         run: python -m pip install -r requirements-source.lock
 
       - name: Apply M1 turn-budget patch
-        run: python .github/p18_m1_turn_budget_apply.py
+        run: |
+          sed -i 's/expect(text, import_anchor)$/expect(text, import_anchor, 2)/' .github/p18_m1_turn_budget_apply.py
+          python .github/p18_m1_turn_budget_apply.py
 
       - name: Remove temporary engineering carriers
         run: git rm .github/p18_m1_turn_budget_apply.py .github/workflows/p18-m1-turn-budget.yml
