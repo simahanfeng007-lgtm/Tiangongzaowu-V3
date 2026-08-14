@@ -91,6 +91,9 @@ jobs:
       - name: Run provider identity persistence contract
         run: python -m pytest tests/test_provider_identity_persistence.py -q
 
+      - name: Run settings authority contract
+        run: python -m pytest tests/test_settings_authority_contract.py -q
+
       - name: Compile P17 M2 and M3 seams
         run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py src/life_service/embedded_runtime.py src/life_service/embedded_runtime_lifecycle.py src/life_service/embedded_runtime_wiring.py src/life_service/store.py src/life_service/store_connection.py src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py src/total_gateway/store.py src/total_gateway/store_unit_of_work.py
 
