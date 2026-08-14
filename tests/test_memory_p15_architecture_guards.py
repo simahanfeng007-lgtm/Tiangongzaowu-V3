@@ -39,7 +39,7 @@ def test_single_life_shadow_store_authority() -> None:
     definitions = [
         path
         for path in sorted(LIFE_SERVICE.glob("*.py"))
-        if "class LifeShadowStore" in _source(path)
+        if re.search(r"class LifeShadowStore\s*[:(]", _source(path))
     ]
     assert definitions == [LIFE_SERVICE / "store.py"]
 

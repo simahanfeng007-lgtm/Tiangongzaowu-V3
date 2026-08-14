@@ -201,16 +201,17 @@ test("P6a-A2 forwarder window 桥消费 phase 事件：start/energy/stop 全链�
   detach();
 });
 
-test("P6a-A3 conversation-panel 接线：播放开始/能量/停止处均有补事件（每 phase 两行：浏览器 TTS + 生成音频）", () => {
+test("P6a-A3 conversation-panel 接线：单一播放所有者转发文本/边界/终态，不伪造 energy", () => {
   const source = readFileSync(
     new URL("../app/frontend-v2/renderer/plugins/conversation-panel.mjs", import.meta.url),
     "utf8",
   );
   assert.ok(source.includes('from "../avatar/speech-phase-events.mjs"'), "conversation-panel 必须引入 dispatchSpeechPhase");
-  for (const phase of ["start", "energy", "stop"]) {
-    const occurrences = source.split(`dispatchSpeechPhase("${phase}")`).length - 1;
-    assert.equal(occurrences, 2, `phase=${phase} 应在 speakWithBrowser 与 playGeneratedVoice 各补一行（实际 ${occurrences}）`);
-  }
+  assert.equal((source.match(/dispatchSpeechPhase\("start",/g) || []).length, 2);
+  assert.equal((source.match(/dispatchSpeechPhase\("stop",/g) || []).length, 3); // browser end/error + generated audio terminal
+  assert.equal((source.match(/dispatchSpeechPhase\("boundary",/g) || []).length, 1);
+  assert.equal((source.match(/dispatchSpeechPhase\("energy"/g) || []).length, 0, "无 analyser 时不得把 timeupdate 伪造成能量");
+  assert.ok(source.includes("speechPlan: result?.speech_plan ?? result?.viseme_timeline ?? null"));
   // 播放逻辑本身未被改动：speak/speakSynth 调用保持原样。
   assert.ok(source.includes("window.speechSynthesis.speak(utterance);"));
   assert.ok(source.includes("await audio.play();"));
@@ -762,6 +763,10 @@ function makeVrm1Bytes() {
 function createStubVrm() {
   const scene = new THREE.Group();
   scene.name = "stub-vrm-scene";
+  const geometry = new THREE.BoxGeometry(0.45, 1.7, 0.28);
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.position.y = 0.85;
+  scene.add(mesh);
   const setValueCalls = [];
   return {
     scene,
@@ -832,11 +837,17 @@ test("P6a-D2 未知 expression 降级 neutral 并记诊断（含引擎级诊断�
   engine.disposeEngine();
 });
 
-test("P6a-D3 gaze 目标→lookAt：命名目标=相机、点目标=Vector3、未知名降级 camera 并记诊断", async () => {
+test("P6a-D3 gaze 目标→lookAt：社会语义空间化、点目标=Vector3、未知名降级 camera", async () => {
   const { engine, vrm, lookAt } = await createLoadedEngine();
   const named = engine.applyPerformanceSemantics({ gaze: { target: "user" } });
   assert.equal(named.gaze.degraded, false);
   assert.equal(vrm.lookAt.target !== null, true); // 引擎相机绑定
+  const left = engine.applyPerformanceSemantics({ gaze: { target: "left" } });
+  const leftX = vrm.lookAt.target.position.x;
+  const right = engine.applyPerformanceSemantics({ gaze: { target: "right" } });
+  assert.equal(left.gaze.spatialTarget, "left");
+  assert.equal(right.gaze.spatialTarget, "right");
+  assert.notEqual(leftX, vrm.lookAt.target.position.x);
   const point = engine.applyPerformanceSemantics({ gaze: { target: { x: 1, y: 2, z: 3 } } });
   assert.equal(point.gaze.kind, "point");
   assert.equal(point.gaze.degraded, false);
@@ -871,6 +882,22 @@ test("P6a-D4 posture→姿态语义槽：显式 bones 直写、registerPostureSl
   assert.equal(unknown.posture.degradedTo, "neutral");
   assert.equal(rotations.length, before); // neutral 恒等槽不写任何骨骼
   assert.equal(unknown.diagnostics[0].reason, "unknown_posture_slot");
+  engine.disposeEngine();
+});
+
+test("H5 adaptive framing: conversation state uses settle delay and slow camera convergence", async () => {
+  const { engine } = await createLoadedEngine();
+  const camera = engine.debugInternals().camera;
+  const initialZ = camera.position.z;
+  engine.setConversationState("SPEAKING");
+  engine.update(0.1);
+  assert.equal(camera.position.z, initialZ, "state transition must not snap the camera");
+  for (let i = 0; i < 40; i += 1) engine.update(0.05);
+  const speakingZ = camera.position.z;
+  assert.ok(speakingZ < initialZ, "speaking converges to a subtly closer portrait");
+  engine.setConversationState("THINKING");
+  for (let i = 0; i < 80; i += 1) engine.update(0.05);
+  assert.ok(camera.position.z > speakingZ, "thinking slowly yields more visual space");
   engine.disposeEngine();
 });
 

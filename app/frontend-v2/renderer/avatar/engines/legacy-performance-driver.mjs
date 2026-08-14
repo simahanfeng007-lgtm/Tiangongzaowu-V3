@@ -11,8 +11,10 @@
 //   - 口型在无文字计划时用 speechEnergy 做能量驱动兜底。
 
 import * as THREE from "three";
+import { createGestureProsodyPlan, gestureMotionAt } from "../gesture-prosody-planner.mjs";
+import { createHumanIdleDynamics, createSocialBlinkController } from "../human-idle-dynamics.mjs";
 
-export const LEGACY_PERFORMANCE_DRIVER_VERSION = "legacy-performance-driver-1.1.0";
+export const LEGACY_PERFORMANCE_DRIVER_VERSION = "legacy-performance-driver-1.2.0";
 
 export const VRMA_GESTURE_KEYS = Object.freeze([
   "thinking",
@@ -52,6 +54,7 @@ const ALLOWED_PERFORMANCE = Object.freeze({
 
 const SPEAKING_NOMINAL_SECONDS = 5;
 const SPEAKING_ENERGY_EXTEND_SECONDS = 0.5;
+const VISEME_CYCLE = Object.freeze(["aa", "ih", "ou", "ee", "oh"]);
 
 function clamp01(value) {
   return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
@@ -75,7 +78,7 @@ function speechDurationForText(text) {
   return THREE.MathUtils.clamp(clean.length * 0.085, 1.0, 8.0);
 }
 
-export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme }) {
+export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme, random = Math.random }) {
   if (vrm === null || typeof vrm !== "object") {
     throw new TypeError("legacy-performance-driver 需要 vrm 对象");
   }
@@ -88,11 +91,17 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
 
   const state = {
     idleTime: 0,
-    idleShiftSeed: Math.random() * 6.28,
+    idleShiftSeed: clamp01(random()) * 6.28,
     qinggan: Object.fromEntries(EMOTION_KEYS.map((key) => [key, 0])),
     performance: null,
+    conversationState: "IDLE",
     talkUntil: 0,
     speechPlan: null,
+    speechText: "",
+    gestureProsody: null,
+    gestureLastStrokeAt: Number.NEGATIVE_INFINITY,
+    gestureLastSemantic: null,
+    gestureSuppressedCount: 0,
     speaking: false,
     speakingUntil: 0,
     speechEnergy: 0,
@@ -113,10 +122,104 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       ee: 0,
       oh: 0,
     },
-    blinkTimer: 1.4,
-    blinkPhase: 0,
+    idleDynamics: createHumanIdleDynamics({ random }),
+    idleMotion: Object.freeze({ shift: 0, sway: 0, headYaw: 0, headRoll: 0, facialDrift: 0 }),
+    socialBlink: createSocialBlinkController({ random }),
     tailRig: Object.freeze({ bones: [], baseRotations: [] }),
+    tailDynamics: { amplitude: 0.72, tempo: 0.78, phase: 0, velocity: [] },
   };
+
+  function currentGestureMotion() {
+    const aligned = state.gestureProsody;
+    if (!aligned) return null;
+    const elapsedMs = (state.idleTime - aligned.startedAt) * 1000;
+    const motion = gestureMotionAt(aligned.timeline, elapsedMs);
+    if (!motion && elapsedMs > aligned.timeline.durationMs + 500) {
+      state.gestureProsody = null;
+      return null;
+    }
+    if (motion && elapsedMs >= motion.strokeAtMs && aligned.recordedStrokeAtMs !== motion.strokeAtMs) {
+      aligned.recordedStrokeAtMs = motion.strokeAtMs;
+      state.gestureLastStrokeAt = state.idleTime;
+      state.gestureLastSemantic = motion.gesture;
+    }
+    return motion;
+  }
+
+  function rebuildGestureProsody(text, plan) {
+    const gesture = state.performance?.gesture;
+    if (!["co_speech", "nod", "tilt", "hand_to_chest"].includes(gesture)) {
+      state.gestureProsody = null;
+      return null;
+    }
+    const timing = state.performance?.channelTiming?.gesture ?? {};
+    const timeline = createGestureProsodyPlan({
+      text,
+      speechPlan: plan,
+      gesture,
+      intensity: timing.intensity ?? 0.55,
+    });
+    if (!timeline) {
+      state.gestureProsody = null;
+      state.gestureSuppressedCount += 1;
+      return null;
+    }
+    const refractorySeconds = state.gestureLastSemantic === gesture ? 3.8 : 1.35;
+    const firstStrokeAt = state.idleTime + timeline.items[0].strokeAtMs / 1000;
+    if (firstStrokeAt - state.gestureLastStrokeAt < refractorySeconds) {
+      state.gestureProsody = null;
+      state.gestureSuppressedCount += 1;
+      return null;
+    }
+    state.gestureProsody = {
+      timeline,
+      startedAt: state.idleTime,
+      recordedStrokeAtMs: null,
+    };
+    return state.gestureProsody;
+  }
+
+  function activePerformance() {
+    const stored = state.performance;
+    if (stored === null) return null;
+    if (!stored.channelUntil) return state.idleTime < stored.until ? stored : null;
+    const active = { source: stored.source, channelUntil: stored.channelUntil };
+    let activeCount = 0;
+    for (const channel of ["expression", "gaze", "posture", "gesture", "tail"]) {
+      if (state.idleTime >= Number(stored.channelUntil[channel] || 0)) continue;
+      active[channel] = stored[channel];
+      activeCount += 1;
+    }
+    const alignable = ["co_speech", "nod", "tilt", "hand_to_chest"].includes(active.gesture);
+    const gestureAge = state.idleTime - Number(stored.channelTiming?.gesture?.startedAt ?? state.idleTime);
+    const waitingForSpeech = alignable && gestureAge < 0.75;
+    if (alignable && (waitingForSpeech || state.gestureProsody || state.speaking || state.speechPlan)) {
+      delete active.gesture;
+      activeCount -= 1;
+      const motion = currentGestureMotion();
+      if (motion) {
+        active.gesture = motion.gesture;
+        active.gestureEnvelope = motion.envelope;
+        active.gesturePhase = motion.phase;
+        active.gestureProminenceAtMs = motion.prominenceAtMs;
+        active.startedAt = state.gestureProsody.startedAt + motion.startMs / 1000;
+        active.duration = Math.max(0.1, (motion.endMs - motion.startMs) / 1000);
+        active.until = active.startedAt + active.duration;
+        active.intensity = motion.strength;
+        activeCount += 1;
+      }
+    }
+    if (!activeCount) return null;
+    const timingChannel = active.gesture ? "gesture" : active.gaze ? "gaze" : active.posture ? "posture" : active.expression ? "expression" : "tail";
+    const timing = stored.channelTiming?.[timingChannel] ?? {};
+    if (!Number.isFinite(active.gestureEnvelope)) {
+      active.startedAt = timing.startedAt ?? state.idleTime;
+      active.duration = timing.duration ?? 1;
+      active.until = stored.channelUntil[timingChannel];
+      active.intensity = timing.intensity ?? 0.45;
+    }
+    return active;
+  }
 
   // ── 尾巴骨骼识别（桌面宠物.html refreshTailRig parity）────────────────
   function refreshTailRig(root) {
@@ -139,6 +242,7 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       baseRotations.push(...bones.map((bone) => bone.rotation.clone()));
     }
     state.tailRig = Object.freeze({ bones, baseRotations });
+    state.tailDynamics.velocity = bones.map(() => ({ x: 0, y: 0, z: 0 }));
   }
 
   // ── 表演语义（biaoxian）────────────────────────────────────────
@@ -177,6 +281,29 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
   }
 
   function applyBodyPerformance(data, text = "") {
+    const requestedChannel = typeof data?.channel === "string" ? data.channel : null;
+    if (["expression", "gaze", "posture", "gesture", "tail"].includes(requestedChannel)) {
+      const field = requestedChannel;
+      const raw = field === "gesture" && typeof data?.gesture === "object" ? data.gesture.semanticId : data?.[field];
+      if (typeof raw !== "string" || !ALLOWED_PERFORMANCE[field].includes(raw)) return false;
+      const duration = THREE.MathUtils.clamp(Number(data?.duration) || 2.0, 0.1, 8);
+      const previous = state.performance?.channelUntil ? state.performance : {
+        source: data?.source || "client",
+        channelUntil: {},
+        channelTiming: {},
+      };
+      state.performance = {
+        ...previous,
+        [field]: raw,
+        source: data?.source || previous.source || "client",
+        channelUntil: { ...previous.channelUntil, [field]: state.idleTime + duration },
+        channelTiming: {
+          ...previous.channelTiming,
+          [field]: { startedAt: state.idleTime, duration, intensity: clamp01(data?.intensity ?? 0.45) },
+        },
+      };
+      return state.performance;
+    }
     const performance = sanitizePerformance(data, text);
     performance.startedAt = state.idleTime;
     performance.until = state.idleTime + performance.duration;
@@ -194,12 +321,47 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       viseme: visemeForChar(ch, index),
       strength: 0.55 + ((ch.charCodeAt(0) + index) % 5) * 0.06,
     }));
+    state.speechText = String(text ?? "");
     state.speechPlan = { startedAt: state.idleTime, duration, items };
     state.talkUntil = Math.max(state.talkUntil, state.idleTime + duration);
+    rebuildGestureProsody(state.speechText, {
+      durationMs: duration * 1000,
+      items: items.map((item) => ({ atMs: item.time * 1000, viseme: item.viseme, strength: item.strength })),
+    });
+  }
+
+  function setSpeechPlan(plan, text = "") {
+    if (plan === null || typeof plan !== "object" || !Array.isArray(plan.items) || !plan.items.length) {
+      startSpeechPlan(text);
+      return state.speechPlan;
+    }
+    const duration = THREE.MathUtils.clamp((Number(plan.durationMs) || 1000) / 1000, 0.12, 120);
+    const items = plan.items
+      .map((item) => ({
+        time: Math.max(0, Number(item?.atMs) || 0) / 1000,
+        viseme: VISEME_CYCLE.includes(String(item?.viseme)) ? String(item.viseme) : "aa",
+        strength: clamp01(item?.strength ?? 0.7),
+      }))
+      .sort((a, b) => a.time - b.time);
+    state.speechText = String(text ?? "");
+    state.speechPlan = { startedAt: state.idleTime, duration, items, source: String(plan.source || "provider") };
+    state.talkUntil = Math.max(state.talkUntil, state.idleTime + duration);
+    rebuildGestureProsody(state.speechText, plan);
+    return state.speechPlan;
+  }
+
+  function applySpeechBoundary(boundary = {}) {
+    if (state.speechPlan === null && typeof boundary.text === "string") startSpeechPlan(boundary.text);
+    if (state.speechPlan !== null && Number.isFinite(Number(boundary.elapsedMs))) {
+      state.speechPlan.startedAt = state.idleTime - Math.max(0, Number(boundary.elapsedMs)) / 1000;
+      if (state.gestureProsody) state.gestureProsody.startedAt = state.speechPlan.startedAt;
+    }
+    state.socialBlink.noteBoundary(boundary);
+    return state.speechPlan !== null;
   }
 
   function markTalking(text) {
-    const active = state.performance !== null && state.idleTime < state.performance.until;
+    const active = activePerformance() !== null;
     if (!active) {
       applyBodyPerformance({
         gesture: "co_speech",
@@ -252,7 +414,7 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
     const q = state.qinggan || {};
     const talk = state.idleTime < state.talkUntil ? 1 : 0;
     const mouth = speechMouthTargets();
-    const perf = state.performance !== null && state.idleTime < state.performance.until ? state.performance : null;
+    const perf = activePerformance();
     const pInt = perf ? perf.intensity : 0;
     const target = {
       happy: Math.max(aboveBase(q.joy, 0.36) * 0.78, perf?.expression === "happy" ? 0.55 : 0, perf?.expression === "shy" ? 0.40 : 0),
@@ -274,19 +436,17 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
     const expressionProfile = EXPRESSION_PROFILE;
     target.happy *= expressionProfile.smileScale ?? 1;
     target.relaxed = Math.max(target.relaxed, expressionProfile.baseCalm ?? 0.04);
+    target.relaxed = Math.max(target.relaxed, 0.04 + Math.max(0, state.idleMotion.facialDrift) * 0.018);
     target.angry = Math.min(1, target.angry * (expressionProfile.angerScale ?? 1));
 
-    state.blinkTimer -= dt * (1 + clamp01(q.worry) * 0.45 + clamp01(q.fear) * 0.75);
-    if (state.blinkTimer <= 0) {
-      state.blinkPhase = 0.16;
-      state.blinkTimer = 2.4 + Math.random() * 2.2 - clamp01(q.worry) * 0.75;
-    }
-    state.blinkPhase = Math.max(0, state.blinkPhase - dt);
-    target.blink = state.blinkPhase > 0 ? Math.sin((state.blinkPhase / 0.16) * Math.PI) : 0;
+    target.blink = state.socialBlink.update(dt, state.conversationState).amount;
 
-    const k = 1 - Math.exp(-dt * 7);
     for (const [name, value] of Object.entries(target)) {
-      state.expression[name] = THREE.MathUtils.lerp(state.expression[name] || 0, value, k);
+      const current = state.expression[name] || 0;
+      const mouth = VISEME_CYCLE.includes(name);
+      const speed = name === "blink" ? 24 : mouth ? 13 : (value > current ? 6.4 : 4.1);
+      const k = 1 - Math.exp(-dt * speed);
+      state.expression[name] = THREE.MathUtils.lerp(current, value, k);
       try {
         applyExpression(name, state.expression[name]);
       } catch (_error) {
@@ -332,19 +492,20 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
 
       // 肖像固定模式：PORTRAIT_STAND_MODE=true、autonomyDemo=false（聊天肖像）。
       const softTalk = state.idleTime < state.talkUntil ? 1 : 0;
-      const perf = state.performance !== null && state.idleTime < state.performance.until ? state.performance : null;
+      const perf = activePerformance();
       const pInt = perf ? perf.intensity : 0;
       const pAge = perf ? state.idleTime - perf.startedAt : 0;
       const pNorm = perf ? THREE.MathUtils.clamp(pAge / perf.duration, 0, 1) : 0;
-      const pWave = perf ? Math.sin(pNorm * Math.PI) : 0;
-      const gesture = perf?.gesture || (softTalk ? "co_speech" : "none");
+      const pWave = perf ? (Number.isFinite(perf.gestureEnvelope) ? perf.gestureEnvelope : Math.sin(pNorm * Math.PI)) : 0;
+      const gesture = perf?.gesture || "none";
       const speechPulse = softTalk * (0.5 + 0.5 * Math.sin(state.idleTime * 5.2 + state.idleShiftSeed));
-      const coSpeech = (softTalk || gesture === "co_speech") * (0.24 + (perf ? pInt : 0.55) * 0.42);
-      const shift = Math.sin(state.idleTime * 0.33 + state.idleShiftSeed);
-      const sway = Math.sin(state.idleTime * 0.21 + state.idleShiftSeed * 0.7);
+      const coSpeech = (gesture === "co_speech" ? pWave : 0) * (0.24 + (perf ? pInt : 0.55) * 0.42);
+      const motionScale = { LISTENING: 0.42, THINKING: 0.58, TURN_ACQUIRING: 0.72, SPEAKING: 1, TURN_YIELDING: 0.5, IDLE: 0.68 }[state.conversationState] ?? 0.68;
+      const shift = (Math.sin(state.idleTime * 0.33 + state.idleShiftSeed) * 0.32 + state.idleMotion.shift * 0.68) * motionScale;
+      const sway = (Math.sin(state.idleTime * 0.21 + state.idleShiftSeed * 0.7) * 0.28 + state.idleMotion.sway * 0.72) * motionScale;
       const breath2 = Math.sin(state.idleTime * 0.74 + 1.2);
-      const microLook = Math.sin(state.idleTime * 0.13 + state.idleShiftSeed * 0.5);
-      const microSettle = Math.sin(state.idleTime * 0.17 + 2.1);
+      const microLook = Math.sin(state.idleTime * 0.13 + state.idleShiftSeed * 0.5) * 0.35 + state.idleMotion.headYaw * 0.65;
+      const microSettle = Math.sin(state.idleTime * 0.17 + 2.1) * 0.35 + state.idleMotion.headRoll * 0.65;
       const postureLean = {
         attentive: -0.012,
         bashful: 0.012,
@@ -354,7 +515,10 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       }[perf?.posture || "relaxed"] || 0;
       let headX = -0.012 + breath * 0.003 + softTalk * 0.004 + speechPulse * 0.006 * coSpeech + (perf?.gaze === "down" ? 0.026 * pInt : 0);
       // 目光跟随镜头：headY 只保留自然微动（VRM LookAt 接管 gaze）
-      let headY = Math.sin(state.idleTime * 0.26) * 0.014 + microLook * 0.010;
+      let headY = Math.sin(state.idleTime * 0.26) * 0.014 * motionScale + microLook * 0.010 * motionScale;
+      if (perf?.gaze === "left") headY -= 0.045 * Math.max(0.35, pInt);
+      if (perf?.gaze === "right") headY += 0.045 * Math.max(0.35, pInt);
+      if (perf?.gaze === "away") headY -= 0.060 * Math.max(0.35, pInt);
       let headZ = Math.sin(state.idleTime * 0.21) * 0.006 + microSettle * 0.004;
       if (gesture === "nod") headX += Math.sin(pNorm * Math.PI * 2.0) * 0.18 * pWave * Math.max(0.55, pInt);
       if (gesture === "tilt" || perf?.posture === "bashful") headZ += 0.14 * pWave * Math.max(0.50, pInt);
@@ -549,20 +713,38 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
   }
 
   // ── 尾巴（桌面宠物.html applyTailMotion parity）────────────────
-  function applyTailMotion() {
+  function applyTailMotion(dt) {
     const { bones, baseRotations } = state.tailRig;
     if (!bones.length) return;
     const talking = state.idleTime < state.talkUntil ? 1 : 0;
     const mood = clamp01(state.qinggan.joy) + clamp01(state.qinggan.surprise) * 0.5;
+    const performance = activePerformance();
+    const tail = performance?.tail ?? "calm";
+    const tailTiming = state.performance?.channelTiming?.tail ?? {};
+    const tailIntensity = tailTiming.intensity ?? 0.4;
+    const targetAmplitude = { calm: 0.72, curious: 1.05, happy: 1.35, alert: 1.18 }[tail] ?? 0.72;
+    const targetTempo = { calm: 0.78, curious: 1.08, happy: 1.28, alert: 1.42 }[tail] ?? 0.78;
+    const transition = 1 - Math.exp(-Math.max(0, dt) * 2.4);
+    state.tailDynamics.amplitude = THREE.MathUtils.lerp(state.tailDynamics.amplitude, targetAmplitude, transition);
+    state.tailDynamics.tempo = THREE.MathUtils.lerp(state.tailDynamics.tempo, targetTempo, transition);
+    state.tailDynamics.phase += Math.max(0, dt) * 0.86 * state.tailDynamics.tempo;
     bones.forEach((bone, index) => {
       const base = baseRotations[index];
       if (!bone || !base) return;
-      const phase = state.idleTime * (0.86 + index * 0.05) - index * 0.46;
+      const phase = state.tailDynamics.phase * (1 + index * 0.05) - index * 0.46;
       const fade = THREE.MathUtils.clamp(1 - index * 0.075, 0.38, 1);
-      const amp = (0.045 + talking * 0.030 + mood * 0.018) * fade;
-      bone.rotation.x = base.x + Math.sin(phase * 0.72 + 0.8) * amp * 0.28;
-      bone.rotation.y = base.y + Math.sin(phase) * amp;
-      bone.rotation.z = base.z + Math.cos(phase * 0.82 + index * 0.55) * amp * 0.62;
+      const amp = (0.045 + talking * 0.030 + mood * 0.018) * fade * state.tailDynamics.amplitude * (0.72 + tailIntensity * 0.45);
+      const target = {
+        x: base.x + Math.sin(phase * 0.72 + 0.8) * amp * 0.28,
+        y: base.y + Math.sin(phase) * amp,
+        z: base.z + Math.cos(phase * 0.82 + index * 0.55) * amp * 0.62,
+      };
+      const velocity = state.tailDynamics.velocity[index] ?? { x: 0, y: 0, z: 0 };
+      state.tailDynamics.velocity[index] = velocity;
+      for (const axis of ["x", "y", "z"]) {
+        velocity[axis] += ((target[axis] - bone.rotation[axis]) * 20 - velocity[axis] * 7.5) * Math.max(0, dt);
+        bone.rotation[axis] += velocity[axis] * Math.max(0, dt);
+      }
     });
   }
 
@@ -570,6 +752,7 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
   function update(dt, { gestureActive = false } = {}) {
     const seconds = Math.max(0, Number(dt) || 0);
     state.idleTime += seconds;
+    state.idleMotion = state.idleDynamics.update(seconds, state.conversationState);
     if (state.speaking && state.idleTime >= state.speakingUntil) {
       state.speaking = false;
       state.speechEnergy = 0;
@@ -579,7 +762,7 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       resetPortraitPose();
       applyNaturalPose();
     }
-    applyTailMotion();
+    applyTailMotion(seconds);
     updateExpressions(seconds);
   }
 
@@ -600,6 +783,9 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
       state.talkUntil = 0;
       state.speechEnergy = 0;
       state.speechPlan = null;
+      state.speechText = "";
+      state.gestureProsody = null;
+      if (state.performance?.channelUntil?.gesture) state.performance.channelUntil.gesture = state.idleTime;
     }
     return true;
   }
@@ -613,6 +799,13 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
     return true;
   }
 
+  function setConversationState(conversationState) {
+    const normalized = String(conversationState ?? "").trim().toUpperCase();
+    if (!["IDLE", "LISTENING", "THINKING", "TURN_ACQUIRING", "SPEAKING", "TURN_YIELDING"].includes(normalized)) return false;
+    state.conversationState = normalized;
+    return true;
+  }
+
   refreshTailRig(vrm.scene);
 
   return Object.freeze({
@@ -621,15 +814,32 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme 
     setQinggan,
     applyBodyPerformance,
     markTalking,
+    setSpeechPlan,
+    applySpeechBoundary,
     setSpeaking,
     setSpeechEnergy,
+    setConversationState,
     snapshot: () => Object.freeze({
       idleTime: state.idleTime,
       performance: state.performance === null ? null : Object.freeze({ ...state.performance }),
+      conversationState: state.conversationState,
       qinggan: Object.freeze({ ...state.qinggan }),
       speaking: state.speaking,
       speechEnergy: state.speechEnergy,
       talkUntil: state.talkUntil,
+      gestureProsody: state.gestureProsody ? Object.freeze({
+        startedAt: state.gestureProsody.startedAt,
+        timeline: state.gestureProsody.timeline,
+      }) : null,
+      gestureLastStrokeAt: state.gestureLastStrokeAt,
+      gestureSuppressedCount: state.gestureSuppressedCount,
+      idleDynamics: state.idleDynamics.snapshot(),
+      blink: state.socialBlink.snapshot(),
+      tailDynamics: Object.freeze({
+        amplitude: state.tailDynamics.amplitude,
+        tempo: state.tailDynamics.tempo,
+        phase: state.tailDynamics.phase,
+      }),
       expression: Object.freeze({ ...state.expression }),
       tailBones: state.tailRig.bones.map((bone) => bone.name),
     }),

@@ -21,6 +21,7 @@ class MemorySingleWriterTests(unittest.TestCase):
         for path in sorted(LIFE_SERVICE.glob("*.py")):
             if path.name in {
                 "store.py",
+                "store_memory_repository.py",
                 "memory_coordinator.py",
                 "memory_migration.py",
                 "p15_cutover.py",

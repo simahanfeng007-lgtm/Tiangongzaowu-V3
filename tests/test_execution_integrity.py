@@ -1027,7 +1027,11 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
 
     def test_runtime_uses_life_completion_not_legacy_hard_gate(self):
         self.assertIn("def _simple_chain_life_completion_gate(", self.zong)
-        self.assertIn("decide_task_contract_completion(", self.zong)
+        boundary = (
+            ROOT / "app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("decide_task_contract_completion(", boundary)
+        self.assertIn("decide_simple_chain_completion", self.zong)
         runtime_block = self.zong[self.zong.index("def _huanxing_simple_chain("):]
         self.assertIn("_simple_chain_life_completion_gate(", runtime_block)
         self.assertNotIn("_simple_chain_evidence_check(", runtime_block)

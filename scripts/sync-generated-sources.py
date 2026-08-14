@@ -85,9 +85,22 @@ def mapping_files(source: Path) -> list[tuple[Path, Path]]:
     return list(files_under(source))
 
 
+def logical_tree_path_sort_key(path: Path) -> str:
+    """Return the historical Windows/NTFS logical ordering on every host.
+
+    Runtime mirrors were originally generated on Windows. ``Path`` ordering is
+    case-insensitive there but case-sensitive on POSIX, which made the same
+    source tree produce a different marker hash on Ubuntu whenever a path such
+    as ``SOURCE_OWNERSHIP.md`` was present. Normalize separators and case here
+    so generated-source identity is host-independent and remains compatible
+    with already-committed Windows-generated markers.
+    """
+    return path.as_posix().replace("/", "\\").casefold()
+
+
 def tree_hash(rows: list[tuple[Path, Path]]) -> str:
     h = hashlib.sha256()
-    for rel, path in rows:
+    for rel, path in sorted(rows, key=lambda row: logical_tree_path_sort_key(row[0])):
         h.update(rel.as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(bytes.fromhex(marker_sha256(path)))

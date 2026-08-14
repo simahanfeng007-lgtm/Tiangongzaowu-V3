@@ -22,6 +22,13 @@ import {
   VRMA_GESTURE_KEYS,
 } from "./legacy-performance-driver.mjs";
 import { calibrateVrm0FemaleShoulderWidth } from "./shoulder-calibrator.mjs";
+import {
+  SOCIAL_GAZE_TARGETS,
+  gazeForConversationState,
+  normalizeConversationEmbodimentState,
+  resolveSocialGazeTarget,
+} from "../social-attention.mjs";
+import { adaptiveFramingForConversationState } from "../human-idle-dynamics.mjs";
 
 import {
   AVATAR_ENGINE_CONTRACT_VERSION,
@@ -77,8 +84,8 @@ export const POSTURE_SEMANTIC_SLOTS = Object.freeze({
   neutral: Object.freeze({ bones: Object.freeze({}) }),
 });
 
-// P6a 视线语义目标：命名目标一律解析为引擎相机（vrm.lookAt.target 缺省绑定）。
-const GAZE_SEMANTIC_TARGETS = Object.freeze(["camera", "user", "front", "reset"]);
+// H1: backend gaze semantics and engine semantics share one vocabulary.
+const GAZE_SEMANTIC_TARGETS = SOCIAL_GAZE_TARGETS;
 
 // P6a 校准诊断环上限（超出丢弃最旧）。
 const PERFORMANCE_DIAGNOSTICS_LIMIT = 128;
@@ -249,6 +256,7 @@ export function createThreeVrmEngine(options = {}) {
     disposed: false,
     contextLost: false,
     speaking: false,
+    conversationState: "IDLE",
     canvas, // P6a §14.3：当前渲染 canvas（rehost DOM 迁移的对象）
     renderer: null,
     scene: null,
@@ -262,10 +270,16 @@ export function createThreeVrmEngine(options = {}) {
     postureSlots: new Map(Object.entries(POSTURE_SEMANTIC_SLOTS)),
     // P6a 校准诊断环（有界，最新在尾）。
     performanceDiagnostics: [],
+    gazeTargetObjects: new Map(),
     // 取景基线（frameCameraToModel 写入）与展示偏移（applyCameraPresentation 写入）。
     // 相机最终位姿 = 基线 + 偏移，语义与旧面板四项控件逐值一致。
     cameraFraming: null,
     cameraPresentation: { focus: 0, height: 0, distance: 0, side: 0 },
+    cameraAdaptive: {
+      current: { focus: 0, height: 0, distance: 0, side: 0 },
+      target: { ...adaptiveFramingForConversationState("IDLE") },
+      settleRemaining: 0,
+    },
     // 交互（旧 桌面宠物.html 的 OrbitControls parity）：鼠标拖拽旋转/缩放视角。
     controls: null,
     cameraManual: false, // 用户拖拽后进入手动视角；设置/恢复默认时退出
@@ -454,27 +468,49 @@ export function createThreeVrmEngine(options = {}) {
 
   // 相机最终位姿 = 取景基线 + 展示偏移。与旧面板 setMainCameraSetting 同语义：
   // focus→焦点高低、height→镜头升降、distance→远近增量、side→左右平移（焦点反向）。
-  function composeFramedCamera() {
+  function composeFramedCamera({ preserveManual = false } = {}) {
     const framing = state.cameraFraming;
     if (!framing || !state.camera) return false;
     const prefs = state.cameraPresentation;
+    const adaptive = state.cameraAdaptive.current;
     const focus = framing.focus.clone();
-    focus.x -= prefs.side;
-    focus.y += prefs.focus;
+    focus.x -= prefs.side + adaptive.side;
+    focus.y += prefs.focus + adaptive.focus;
     const distance = THREE.MathUtils.clamp(
-      framing.distance + prefs.distance,
+      framing.distance + prefs.distance + adaptive.distance,
       cameraPreset.near * 4,
       cameraPreset.far * 0.4,
     );
     state.camera.position.copy(focus).add(
       new THREE.Vector3(cameraPreset.side, cameraPreset.lift + prefs.height, distance),
     );
+    state.camera.position.y += adaptive.height;
     state.camera.lookAt(focus);
     state.camera.updateProjectionMatrix();
     // 展示设置/重新取景时退出手动拖拽视角（与旧面板滑块=恢复主镜头一致）。
-    state.cameraManual = false;
+    if (!preserveManual) state.cameraManual = false;
     syncOrbitTarget(focus);
     return true;
+  }
+
+  function updateAdaptiveFraming(dt) {
+    if (state.cameraManual || !state.cameraFraming) return false;
+    const seconds = THREE.MathUtils.clamp(Number(dt) || 0, 0, 0.25);
+    if (state.cameraAdaptive.settleRemaining > 0) {
+      state.cameraAdaptive.settleRemaining = Math.max(0, state.cameraAdaptive.settleRemaining - seconds);
+      return false;
+    }
+    const response = 1 - Math.exp(-seconds * 0.62);
+    let changed = false;
+    for (const key of ["focus", "height", "distance", "side"]) {
+      const current = state.cameraAdaptive.current[key];
+      const target = state.cameraAdaptive.target[key];
+      const next = THREE.MathUtils.lerp(current, target, response);
+      state.cameraAdaptive.current[key] = next;
+      if (Math.abs(next - current) > 0.00001) changed = true;
+    }
+    if (changed) composeFramedCamera({ preserveManual: true });
+    return changed;
   }
 
   function orientAndPresentModel(vrm, label) {
@@ -521,6 +557,23 @@ export function createThreeVrmEngine(options = {}) {
 
   function assertEngineAlive() {
     if (state.disposed) throw new AvatarEngineError("engine_disposed", "引擎已 disposeEngine");
+  }
+
+  function gazeTargetForSemantic(name) {
+    const resolved = resolveSocialGazeTarget(name, { cameraPosition: state.camera?.position });
+    if (["camera", "user", "front", "reset"].includes(resolved.semantic)) {
+      return { resolved, target: state.camera };
+    }
+    let target = state.gazeTargetObjects.get(resolved.semantic);
+    if (!target) {
+      target = new THREE.Object3D();
+      target.name = `tiangong-social-gaze-${resolved.semantic}`;
+      state.gazeTargetObjects.set(resolved.semantic, target);
+      state.scene?.add?.(target);
+    }
+    target.position.set(resolved.point.x, resolved.point.y, resolved.point.z);
+    target.updateMatrixWorld?.(true);
+    return { resolved, target };
   }
 
   // ── §11.4 模型级 dispose（幂等）─────────────────────────────
@@ -1002,9 +1055,27 @@ export function createThreeVrmEngine(options = {}) {
       return driver ? driver.setQinggan(qinggan) : false;
     },
 
-    beginSpeech(text) {
+    beginSpeech(text, speechPlan = null) {
       const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
-      return driver ? driver.markTalking(text) : false;
+      if (!driver) return false;
+      driver.setSpeaking(true);
+      return speechPlan ? driver.setSpeechPlan(speechPlan, text) : driver.markTalking(text);
+    },
+
+    applySpeechBoundary(boundary) {
+      const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
+      return driver ? driver.applySpeechBoundary(boundary) : false;
+    },
+
+    setConversationState(conversationState) {
+      state.conversationState = normalizeConversationEmbodimentState(conversationState);
+      state.cameraAdaptive.target = { ...adaptiveFramingForConversationState(state.conversationState) };
+      state.cameraAdaptive.settleRemaining = 0.65;
+      const driver = state.model && !state.model.disposed ? state.model.performanceDriver : null;
+      driver?.setConversationState(state.conversationState);
+      const target = gazeTargetForSemantic(gazeForConversationState(state.conversationState));
+      engine.applyGaze({ target: target.target });
+      return true;
     },
 
     setSpeechEnergy(energy) {
@@ -1094,8 +1165,16 @@ export function createThreeVrmEngine(options = {}) {
           if (!ok) recordDiagnostic({ channel: "gaze", reason: "lookat_unavailable", requested: gaze.point, degradedTo: null });
           report.gaze = Object.freeze({ kind: "point", applied: ok, degraded: !ok });
         } else if (GAZE_SEMANTIC_TARGETS.includes(gaze.name)) {
-          const ok = engine.applyGaze({}); // 命名目标 = 引擎相机（lookAt 缺省绑定）
-          report.gaze = Object.freeze({ kind: "named", name: gaze.name, applied: ok, degraded: false });
+          const spatial = gazeTargetForSemantic(gaze.name);
+          const ok = engine.applyGaze({ target: spatial.target });
+          report.gaze = Object.freeze({
+            kind: "named",
+            name: gaze.name,
+            spatialTarget: spatial.resolved.semantic,
+            point: spatial.resolved.point,
+            applied: ok,
+            degraded: false,
+          });
         } else {
           const ok = engine.applyGaze({}); // 未知名降级 camera
           recordDiagnostic({ channel: "gaze", reason: "unknown_gaze_target", requested: gaze.name, degradedTo: "camera" });
@@ -1147,6 +1226,7 @@ export function createThreeVrmEngine(options = {}) {
       if (model && !model.disposed && model.vrm && typeof model.vrm.update === "function") {
         // Legacy 表现驱动：VRMA 动作播放时由动作驱动全身，否则自然站姿接管。
         updateCameraInertia(Number(dt) || 0);
+        updateAdaptiveFraming(Number(dt) || 0);
         model.performanceDriver?.update(dt, { gestureActive: model.currentGesture !== "" });
         model.vrm.update(dt);
       }

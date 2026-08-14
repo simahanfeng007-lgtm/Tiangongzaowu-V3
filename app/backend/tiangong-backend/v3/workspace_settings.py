@@ -1,12 +1,13 @@
 """Workspace settings shared by desktop UI and backend tools."""
 from __future__ import annotations
 
-import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
 from .peizhi import WORKSPACE_SETTINGS_LUJING
+from .settings_persistence import atomic_write_json, read_json_authority
 
 
 def _env_workspace_root() -> str:
@@ -30,13 +31,8 @@ def _normalize_workspace_mode(value: Any) -> str:
 
 
 def _load_raw() -> dict[str, Any]:
-    if not WORKSPACE_SETTINGS_LUJING.exists():
-        return {}
-    try:
-        data = json.loads(WORKSPACE_SETTINGS_LUJING.read_text(encoding="utf-8-sig"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data, _state = read_json_authority(WORKSPACE_SETTINGS_LUJING)
+    return data if isinstance(data, dict) else {}
 
 
 def _normalize_workspace_path(value: str | os.PathLike[str] | None, *, fallback: Path | None = None) -> Path:
@@ -55,7 +51,9 @@ def duqu_workspace_settings() -> dict[str, Any]:
     # That authority must outrank this legacy backend-local preference; if it
     # did not, the tool could request an Omni grant for a different directory
     # from the one bound into the execution ticket.
-    data = _load_raw()
+    data, integrity = read_json_authority(WORKSPACE_SETTINGS_LUJING)
+    if not isinstance(data, dict):
+        data = {}
     desktop_authority = _env_workspace_root()
     if desktop_authority:
         configured = ""
@@ -77,6 +75,8 @@ def duqu_workspace_settings() -> dict[str, Any]:
         "exists": root.exists(),
         "writable": os.access(root, os.W_OK),
         "settings_path": str(WORKSPACE_SETTINGS_LUJING),
+        "settings_integrity": integrity,
+        "error_code": "SETTINGS_AUTHORITY_CORRUPTED" if integrity == "corrupted" else "",
     }
 
 
@@ -86,27 +86,37 @@ def duqu_workspace_root() -> Path:
 
 def baocun_workspace_settings(payload: dict[str, Any] | None) -> dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
-    raw_workspace = (
-        payload.get("workspace")
-        if "workspace" in payload
-        else payload.get("workspaceRoot")
-        if "workspaceRoot" in payload
-        else payload.get("path")
-    )
-    workspace = _normalize_workspace_path(str(raw_workspace or ""))
-    workspace.mkdir(parents=True, exist_ok=True)
+    has_workspace = any(key in payload for key in ("workspace", "workspaceRoot", "path"))
+    has_mode = any(key in payload for key in ("workspace_mode", "mode"))
+    if not has_workspace and not has_mode:
+        return duqu_workspace_settings()
     data = _load_raw()
-    data["workspace"] = str(workspace)
-    workspace_mode = _normalize_workspace_mode(
-        payload.get("workspace_mode")
-        if "workspace_mode" in payload
-        else payload.get("mode")
-    )
-    data["workspace_mode"] = workspace_mode
-    data["updated_at"] = int(__import__("time").time())
-    WORKSPACE_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
-    WORKSPACE_SETTINGS_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.environ["TIANGONG_DESKTOP_WORKSPACE_ROOT"] = str(workspace)
-    os.environ["TIANGONG_WORKSPACE_ROOT"] = str(workspace)
-    os.environ["TIANGONG_WORKSPACE_MODE"] = workspace_mode
+    # 第一性原理：字段级更新。只改 workspace_mode 时绝不触碰已保存的
+    # workspace 权威；字段为空表示"未提供新值"，保留既有配置，绝不用
+    # 默认工作区覆盖用户权威。
+    if has_workspace:
+        raw_workspace = (
+            payload.get("workspace")
+            if "workspace" in payload
+            else payload.get("workspaceRoot")
+            if "workspaceRoot" in payload
+            else payload.get("path")
+        )
+        raw_text = str(raw_workspace or "").strip()
+        if raw_text:
+            workspace = _normalize_workspace_path(raw_text)
+            workspace.mkdir(parents=True, exist_ok=True)
+            data["workspace"] = str(workspace)
+            os.environ["TIANGONG_DESKTOP_WORKSPACE_ROOT"] = str(workspace)
+            os.environ["TIANGONG_WORKSPACE_ROOT"] = str(workspace)
+    if has_mode:
+        workspace_mode = _normalize_workspace_mode(
+            payload.get("workspace_mode")
+            if "workspace_mode" in payload
+            else payload.get("mode")
+        )
+        data["workspace_mode"] = workspace_mode
+        os.environ["TIANGONG_WORKSPACE_MODE"] = workspace_mode
+    data["updated_at"] = int(time.time())
+    atomic_write_json(WORKSPACE_SETTINGS_LUJING, data)
     return duqu_workspace_settings()

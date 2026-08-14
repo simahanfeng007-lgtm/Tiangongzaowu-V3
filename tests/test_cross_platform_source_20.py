@@ -117,6 +117,8 @@ def test_p15_windows_reserved_and_trailing_dot_names_fail_on_linux_too() -> None
     assert any("trailing" in item.lower() for item in validate_relative_path("src/file.txt."))
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive checkout semantics")
+@pytest.mark.ci_fragile
 def test_p16_case_insensitive_collision_is_detected_before_windows_checkout() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)

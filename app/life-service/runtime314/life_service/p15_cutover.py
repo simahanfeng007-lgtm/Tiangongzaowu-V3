@@ -28,7 +28,8 @@ def verify_cutover_phase(phase: str) -> dict[str, object]:
     embedded = _source("src/life_service/embedded_runtime.py")
     context = _source("src/life_service/context.py")
     memory_context = _source("src/life_service/memory_context.py")
-    store = _source("src/life_service/store.py")
+    store_schema = _source("src/life_service/store_schema.py")
+    memory_repository = _source("src/life_service/store_memory_repository.py")
     wu_bridge = _source("src/world_understanding/cognition/memory_candidate.py")
 
     if phase == "A":
@@ -73,9 +74,12 @@ def verify_cutover_phase(phase: str) -> dict[str, object]:
         )
     elif phase == "E":
         # Memory -> World candidate path is active and bridged.
+        # After M3-01..03 the table DDL lives in the schema authority and
+        # the operational SQL lives in the Memory repository.
         check(
             "world_candidate_outbox_table",
-            '"memory_world_candidate_outbox"' in store,
+            '"memory_world_candidate_outbox"' in store_schema
+            and "memory_world_candidate_outbox" in memory_repository,
         )
         check(
             "wu_bridge_available",
@@ -85,6 +89,7 @@ def verify_cutover_phase(phase: str) -> dict[str, object]:
         # No temporary dual path remains in production.
         allowed_writers = {
             "store.py",
+            "store_memory_repository.py",
             "memory_coordinator.py",
             "memory_migration.py",
             "p15_cutover.py",

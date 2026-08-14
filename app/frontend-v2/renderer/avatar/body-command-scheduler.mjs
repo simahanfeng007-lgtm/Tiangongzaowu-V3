@@ -3,9 +3,9 @@
 // 位置：biaoxian/TTS/面板语义命令 →【本调度器】→ AvatarRuntime.applyPerformance
 // （BodyRuntimeState 唯一写入者仍在 AvatarRuntime 内，本调度器是其唯一业务入口）。
 //
-// 分类策略（§15.2）：
+// 分类策略（§15.2 / H0）：复合 biaoxian 先展开为通道原子动作。
 //   gaze/expression：latest-wins（每类只保留最新一条待执行）
-//   posture：状态型，只保留最新有效状态
+//   posture/tail/conversation-state：状态型，只保留最新有效状态
 //   gesture：有界 FIFO，必须带 TTL（缺 ttlMs 视为立即过期拒绝入队）
 //   model-load：最新命令取代前一个待执行加载（旧的记 superseded）
 //   speech-energy：按频率降采样，最多保留一条待转发，禁止无限排队
@@ -29,7 +29,7 @@ import {
 } from "./contracts.mjs";
 import { deepFreeze } from "./canonical-hash.mjs";
 
-export const BODY_COMMAND_SCHEDULER_SCHEMA_VERSION = 1;
+export const BODY_COMMAND_SCHEDULER_SCHEMA_VERSION = 2;
 export const SCHEDULER_QMAX = 32;
 export const DEFAULT_SPEECH_ENERGY_MIN_INTERVAL_MS = 50;
 export const DEFAULT_SEEN_KEY_CAPACITY = 256;
@@ -46,9 +46,12 @@ export class BodyCommandSchedulerError extends Error {
 const CATEGORY_RANK = Object.freeze({
   "model-load": 80,
   posture: 60,
+  tail: 55,
   gesture: 50,
   expression: 40,
   gaze: 30,
+  "conversation-state": 25,
+  "speech-plan": 20,
   "speech-energy": 10,
 });
 
@@ -65,14 +68,49 @@ function isStopAction(wire) {
 }
 
 function classify(wire) {
+  if (typeof wire.channel === "string" && CATEGORY_RANK[wire.channel] !== undefined) return wire.channel;
   if (wire.type === "model-load") return "model-load";
+  if (wire.type === "conversation-state" || typeof wire.conversationState === "string") return "conversation-state";
+  if (wire.type === "speech-boundary" || wire.speechPlan || wire.speechBoundary) return "speech-plan";
   if (wire.type === "speech-energy" || Number.isFinite(wire.speechEnergy)) return "speech-energy";
   if (typeof wire.speaking === "boolean") return "speech-energy"; // 说话状态与能量同通道降采样
   if (wire.gesture !== undefined && wire.gesture !== null) return "gesture";
   if (typeof wire.posture === "string" && wire.posture.length > 0) return "posture";
   if (wire.expression !== null && typeof wire.expression === "object") return "expression";
   if (wire.gaze !== null && typeof wire.gaze === "object") return "gaze";
+  if (typeof wire.extras?.tail === "string" || typeof wire.tail === "string") return "tail";
   return "gesture"; // 兜底：无类别语义的动作按离散动作处理（必须有 TTL）
+}
+
+const BODY_CHANNEL_FIELDS = Object.freeze({
+  posture: "posture",
+  gesture: "gesture",
+  gaze: "gaze",
+  expression: "expression",
+  "conversation-state": "conversationState",
+});
+
+export function splitBodyActionChannels(wire) {
+  if (wire === null || typeof wire !== "object" || typeof wire.channel === "string") return Object.freeze([wire]);
+  if (wire.type === "model-load" || wire.type?.startsWith?.("speech-") || isStopAction(wire)) return Object.freeze([wire]);
+  const present = Object.entries(BODY_CHANNEL_FIELDS)
+    .filter(([, field]) => wire[field] !== null && wire[field] !== undefined)
+    .map(([channel, field]) => ({ channel, field }));
+  const tail = typeof wire.extras?.tail === "string" ? wire.extras.tail : typeof wire.tail === "string" ? wire.tail : null;
+  if (tail !== null) present.push({ channel: "tail", field: "tail" });
+  if (present.length === 0) return Object.freeze([wire]);
+  const bodyFields = new Set([...Object.values(BODY_CHANNEL_FIELDS), "tail"]);
+  const base = Object.fromEntries(Object.entries(wire).filter(([key]) => !bodyFields.has(key)));
+  return Object.freeze(present.map(({ channel, field }) => {
+    const atomic = { ...base, channel };
+    if (channel === "tail") {
+      atomic.extras = { ...(wire.extras ?? {}), tail };
+    } else {
+      atomic[field] = wire[field];
+      if (wire.extras) atomic.extras = { ...wire.extras, tail: null };
+    }
+    return deepFreeze(atomic);
+  }));
 }
 
 export function createBodyCommandScheduler({
@@ -97,7 +135,7 @@ export function createBodyCommandScheduler({
     throw new BodyCommandSchedulerError("interval_invalid", "speechEnergyMinIntervalMs 必须是非负数");
   }
 
-  // 待执行槽位：latest-wins 类每类一格；gesture FIFO 一条队列；speech-energy 一格。
+  // 待执行槽位：latest-wins/状态类每类一格；gesture FIFO 一条队列；speech-energy 一格。
   const latestSlots = new Map(); // category → item
   let gestureQueue = []; // item[]
   let speechEnergyPending = null; // item | null
@@ -118,6 +156,7 @@ export function createBodyCommandScheduler({
     overflowDropped: 0,
     downsampled: 0,
     superseded: 0,
+    expanded: 0,
     stopFlushed: 0,
   };
 
@@ -145,7 +184,8 @@ export function createBodyCommandScheduler({
   // 幂等键：缺 turnId/sequence/instance 标识的非标准动作（如本地 speech 事件）不参与去重。
   function idempotencyKeyOf(wire) {
     try {
-      return actionIdempotencyKey(wire);
+      const base = actionIdempotencyKey(wire);
+      return typeof wire.channel === "string" ? `${base}:${wire.channel}` : base;
     } catch (_error) {
       return null;
     }
@@ -206,7 +246,7 @@ export function createBodyCommandScheduler({
   }
 
   // 提交一个 wire 动作。返回 { accepted, reason }；stop 立即转发并清空队列。
-  function submit(wire) {
+  function submitAtomic(wire) {
     if (wire === null || typeof wire !== "object") {
       throw new BodyCommandSchedulerError("wire_invalid", "submit 需要 WireBodyAction 对象");
     }
@@ -250,6 +290,9 @@ export function createBodyCommandScheduler({
       case "gaze":
       case "expression":
       case "posture":
+      case "tail":
+      case "conversation-state":
+      case "speech-plan":
         // latest-wins / 状态型：同类只保留最新（被取代的不计失败，语义即覆盖）。
         if (latestSlots.has(category)) counters.superseded += 1;
         latestSlots.set(category, item);
@@ -286,6 +329,25 @@ export function createBodyCommandScheduler({
     return deepFreeze({ accepted: true, reason: "queued" });
   }
 
+  // A backend biaoxian is one intent but not one scheduling channel.  Expand it
+  // before classification so a gesture can never drag stale gaze/expression/
+  // posture through the FIFO.
+  function submit(wire) {
+    if (wire === null || typeof wire !== "object") {
+      throw new BodyCommandSchedulerError("wire_invalid", "submit 需要 WireBodyAction 对象");
+    }
+    const actions = splitBodyActionChannels(wire);
+    if (actions.length === 1) return submitAtomic(actions[0]);
+    counters.expanded += 1;
+    const results = actions.map((action) => submitAtomic(action));
+    return deepFreeze({
+      accepted: results.some((result) => result.accepted),
+      reason: "expanded",
+      channels: Object.freeze(actions.map((action) => action.channel)),
+      results: Object.freeze(results),
+    });
+  }
+
   // 逐条结算：过期丢弃；执行后置入幂等键。返回各类计数。
   function drainItems(items, now, result) {
     for (const item of items) {
@@ -309,7 +371,7 @@ export function createBodyCommandScheduler({
     const now = nowMonotonic();
     const result = { executed: 0, expired: 0, deduped: 0 };
     const order = [];
-    for (const category of ["model-load", "posture", "expression", "gaze"]) {
+    for (const category of ["model-load", "conversation-state", "posture", "expression", "gaze", "tail", "speech-plan"]) {
       const item = latestSlots.get(category);
       if (item) order.push([category, item]);
     }

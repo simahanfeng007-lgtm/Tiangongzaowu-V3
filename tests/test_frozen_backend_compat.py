@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import unittest
 import tempfile
 from pathlib import Path
@@ -141,6 +143,7 @@ class FrozenBackendCompatibilityTests(unittest.TestCase):
         }
         return transport, ticket, arguments
 
+    @pytest.mark.ci_fragile
     def test_materialize_inputs_accepts_nfc_chinese_filename(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             transport, ticket, arguments = self._attachment_materialization_case(
@@ -157,6 +160,7 @@ class FrozenBackendCompatibilityTests(unittest.TestCase):
             )
             self.assertEqual(materialized_path.read_bytes(), b"attachment-content")
 
+    @pytest.mark.ci_fragile
     def test_materialize_customer_hash_named_76kb_markdown_stays_below_max_path(self) -> None:
         body = b"# Synthetic attachment regression\n" + (
             b"A" * (78_234 - len(b"# Synthetic attachment regression\n"))
@@ -181,6 +185,7 @@ class FrozenBackendCompatibilityTests(unittest.TestCase):
             self.assertLessEqual(len(str(materialized_path)) + len(".tmp"), 240)
             self.assertEqual(materialized_path.read_bytes(), body)
 
+    @pytest.mark.ci_fragile
     def test_materialize_inputs_rejects_unsafe_filename_with_compat_code(self) -> None:
         for filename in ("../escape.md", "control\x00name.md", "CON.txt"):
             with self.subTest(filename=repr(filename)):

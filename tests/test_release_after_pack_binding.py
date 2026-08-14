@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,9 +15,19 @@ CONFIG = ROOT / "electron-builder.config.cjs"
 BINDING = ROOT / "app" / "lib" / "release-binding.js"
 _BUNDLED_RELEASE_PYTHON = ROOT / "app" / "runtime" / "python312" / "python.exe"
 RELEASE_PYTHON = _BUNDLED_RELEASE_PYTHON if _BUNDLED_RELEASE_PYTHON.is_file() else Path(sys.executable)
+_ASAR_MODULE_DIR = ROOT / "app" / "node_modules" / "@electron" / "asar"
 
 
 class ReleaseAfterPackBindingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The archive binding probe drives electron-builder's afterPack hook
+        # through the real Node toolchain. Plain source checkouts and CI
+        # runners without `npm install` cannot execute it; the probe remains
+        # exercised wherever the desktop toolchain exists (release pipeline QA
+        # and developer machines with node_modules).
+        if shutil.which("node") is None or not _ASAR_MODULE_DIR.is_dir():
+            self.skipTest("desktop Node toolchain unavailable")
+
     def test_after_pack_binds_complete_archive_and_one_byte_tamper_fails(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tg-after-pack-") as temporary:
             stage = Path(temporary).resolve()

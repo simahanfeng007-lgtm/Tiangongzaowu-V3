@@ -133,13 +133,10 @@ RUNTIME_CONTEXT_KEYWORDS = (
 
 
 def _load_raw() -> dict[str, Any]:
-    if not SETTINGS_PATH.exists():
-        return {}
-    try:
-        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8-sig"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    from .settings_persistence import read_json_authority
+
+    data, _state = read_json_authority(SETTINGS_PATH)
+    return data if isinstance(data, dict) else {}
 
 
 def _normalize_mode(value: Any) -> str:
@@ -172,8 +169,10 @@ def _normalize_roots(value: Any) -> list[str]:
 
 
 def duqu_permission_settings() -> dict[str, Any]:
-    raw = _load_raw()
-    merged = {**DEFAULT_SETTINGS, **raw}
+    from .settings_persistence import read_json_authority
+
+    raw, integrity = read_json_authority(SETTINGS_PATH)
+    merged = {**DEFAULT_SETTINGS, **(raw if isinstance(raw, dict) else {})}
     merged["permission_mode"] = _normalize_mode(merged.get("permission_mode"))
     merged["mode_label"] = PERMISSION_MODES[merged["permission_mode"]]
     merged["allow_roots"] = _normalize_roots(merged.get("allow_roots"))
@@ -184,7 +183,9 @@ def duqu_permission_settings() -> dict[str, Any]:
     merged["a5_blocked"] = bool(merged.get("a5_blocked", True))
     merged["ok"] = True
     merged["settings_path"] = str(SETTINGS_PATH)
-    merged["source"] = "configured" if SETTINGS_PATH.exists() else "default"
+    merged["source"] = "configured" if integrity != "missing" else "default"
+    merged["settings_integrity"] = integrity
+    merged["error_code"] = "SETTINGS_AUTHORITY_CORRUPTED" if integrity == "corrupted" else ""
     return merged
 
 
@@ -210,8 +211,9 @@ def baocun_permission_settings(payload: dict[str, Any] | None) -> dict[str, Any]
     current["updated_at"] = int(time.time())
     save_data = {k: current[k] for k in DEFAULT_SETTINGS.keys() if k in current}
     save_data["updated_at"] = current["updated_at"]
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(save_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from .settings_persistence import atomic_write_json
+
+    atomic_write_json(SETTINGS_PATH, save_data)
     return duqu_permission_settings()
 
 

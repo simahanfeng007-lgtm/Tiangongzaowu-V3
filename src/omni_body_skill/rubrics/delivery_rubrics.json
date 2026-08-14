@@ -1,0 +1,257 @@
+{
+  "schema": "tiangong.v3.delivery_rubrics.v1",
+  "version": "3.3.0",
+  "rubrics": {
+    "business_proposal": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "客户/受众明确",
+        "执行摘要先给结论",
+        "问题-方案-证据闭环",
+        "实施路径可执行",
+        "风险假设透明",
+        "行动建议明确",
+        "文字清晰无AI腔"
+      ]
+    },
+    "executive_ppt": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "Big Idea清晰",
+        "金字塔/MECE结构",
+        "结论句标题",
+        "单页单观点",
+        "证据支撑",
+        "视觉密度可控",
+        "明确决策请求"
+      ]
+    },
+    "code_project": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "正确性",
+        "测试覆盖",
+        "可读性",
+        "可维护性",
+        "安全边界",
+        "README",
+        "打包与回滚"
+      ]
+    },
+    "research_review": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "研究问题明确",
+        "搜索策略可复现",
+        "筛选标准",
+        "证据表",
+        "来源可追溯",
+        "综合而非罗列",
+        "局限与不确定性"
+      ]
+    },
+    "short_video": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "前3秒钩子",
+        "移动竖屏适配",
+        "字幕与声音",
+        "节奏",
+        "品牌卖点",
+        "CTA",
+        "技术导出可用"
+      ]
+    },
+    "webnovel_chapter": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "开头钩子",
+        "场景目标/冲突/代价",
+        "视角一致",
+        "情绪升级",
+        "具体细节",
+        "对话动作平衡",
+        "阶段回报/反转",
+        "结尾悬念"
+      ]
+    },
+    "poster_campaign": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "受众和利益点",
+        "视觉层级",
+        "标题清晰",
+        "移动端可读",
+        "品牌一致",
+        "CTA",
+        "导出规格",
+        "风险合规"
+      ]
+    },
+    "spreadsheet_analysis": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "业务问题",
+        "数据字典",
+        "清洗日志",
+        "公式完整",
+        "洞察",
+        "可视化摘要",
+        "行动建议",
+        "审计性"
+      ]
+    },
+    "meeting_minutes": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "议程背景",
+        "决策",
+        "行动项",
+        "负责人截止时间",
+        "风险阻塞",
+        "下次跟进",
+        "清晰性",
+        "来源追溯"
+      ]
+    },
+    "sales_script": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "ICP匹配",
+        "许可式开场",
+        "痛点诊断",
+        "价值表达",
+        "证据",
+        "异议处理",
+        "下一步收口",
+        "合规"
+      ]
+    },
+    "course_plan": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "可测量目标",
+        "学员画像",
+        "流程顺序",
+        "主动练习",
+        "评价",
+        "材料",
+        "时间分配",
+        "分层支持",
+        "反思"
+      ]
+    },
+    "kb_ingestion": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "来源清单",
+        "权限",
+        "切分策略",
+        "元数据",
+        "QA对",
+        "检索测试",
+        "更新策略",
+        "失败案例"
+      ]
+    },
+    "authorized_voice_audio": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "授权记录",
+        "身份与用途范围",
+        "脚本转写",
+        "音频质量",
+        "披露/水印",
+        "存储安全",
+        "使用限制",
+        "撤回计划"
+      ]
+    },
+    "seo_people_first": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "用户意图",
+        "一手价值",
+        "证据",
+        "可扫读",
+        "原创性",
+        "信任信号",
+        "反空话",
+        "有用下一步"
+      ]
+    },
+    "content_calendar": {
+      "thresholds": {
+        "world_class": 90,
+        "ready": 80,
+        "repair": 60
+      },
+      "criteria": [
+        "目标对齐",
+        "受众分层",
+        "渠道匹配",
+        "发布节奏",
+        "资产要求",
+        "负责人截止",
+        "指标",
+        "风险缓冲"
+      ]
+    }
+  }
+}

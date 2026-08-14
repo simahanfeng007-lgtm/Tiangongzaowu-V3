@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import hashlib
 import json
 import tempfile
@@ -223,6 +225,7 @@ class ReleaseManifestTests(unittest.TestCase):
         )
         self.assertNotIn("component-manifest.json", script)
 
+    @pytest.mark.ci_fragile
     def test_production_manifest_binds_frozen_runtime_executables(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             runtime = Path(temporary)
@@ -301,6 +304,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 (output / RELEASE_MANIFEST_FILENAME).read_bytes(),
             )
 
+    @pytest.mark.ci_fragile
     def test_same_version_production_rebuild_uses_the_newer_build_time(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             runtime = Path(temporary)

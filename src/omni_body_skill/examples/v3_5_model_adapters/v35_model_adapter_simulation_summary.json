@@ -1,0 +1,24 @@
+{
+  "total_actions": 751,
+  "model_adapter_actions": [
+    "model.adapter.info",
+    "model.adapter.list",
+    "model.adapter.detect",
+    "model.adapter.render_tool_schema",
+    "model.adapter.parse_tool_call",
+    "model.adapter.render_tool_result",
+    "model.adapter.roundtrip_test"
+  ],
+  "providers_tested": [
+    "deepseek",
+    "minimax",
+    "glm",
+    "mimo",
+    "gpt",
+    "kimi",
+    "doubao"
+  ],
+  "log_path": "/mnt/data/v35_model_adapter_workspace/v35_model_adapter_simulation_log.json",
+  "roundtrip_success": true,
+  "roundtrip_profiles_tested": 9
+}

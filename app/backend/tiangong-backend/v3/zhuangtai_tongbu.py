@@ -53,8 +53,36 @@ class ZhuangtaiTongbu:
         self._jiuxu.wait(timeout=3.0)
 
     def tingzhi(self):
-        """停止 WebSocket 服务"""
+        """停止 WebSocket 服务：关闭监听器并断开所有连接。
+
+        仅翻转标志不足以闭合生命周期——serve 循环会一直
+        ``wait_closed()`` 到进程退出。必须在所属事件循环上真正 close。
+        """
         self.yunxing_zhong = False
+        xunhuan = self._xunhuan
+        fuwuqi = self._fuwuqi
+        lianjie = set(self._lianjie)
+        if xunhuan is not None and not xunhuan.is_closed():
+
+            def _guanbi() -> None:
+                try:
+                    if fuwuqi is not None:
+                        fuwuqi.close()
+                except Exception:
+                    pass
+                try:
+                    for lj in lianjie:
+                        try:
+                            lj.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            try:
+                xunhuan.call_soon_threadsafe(_guanbi)
+            except Exception:
+                pass
 
     def tuibo(self, shenti: ShentiZhuangtai):
         """打包身体状态并广播给所有连接"""
@@ -100,7 +128,10 @@ class ZhuangtaiTongbu:
             "127.0.0.1",
             self.duankou,
         )
-        await self._fuwuqi.wait_closed()
+        try:
+            await self._fuwuqi.wait_closed()
+        finally:
+            self._fuwuqi = None
 
     def _yunxing_xunhuan(self):
         """后台线程入口"""

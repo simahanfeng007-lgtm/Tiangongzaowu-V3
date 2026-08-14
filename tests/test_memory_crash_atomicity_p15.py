@@ -31,7 +31,7 @@ class MemoryCrashAtomicityTests(unittest.TestCase):
         for index in range(1, 21):
             value = event(1, None, suffix=f"{index:064x}")
             with mock.patch.object(
-                self.store,
+                self.store._memory_repository,
                 "_put_memory_derivation_locked",
                 side_effect=LifeShadowStoreError("simulated crash"),
             ):

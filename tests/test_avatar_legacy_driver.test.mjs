@@ -103,6 +103,24 @@ test("legacy driver: applyBodyPerformance 语义白名单与默认回退", () =>
   assert.equal(bad.expression, "soft");
 });
 
+test("legacy driver: H0 通道独立更新，gesture 不覆盖 gaze/expression", () => {
+  const { driver } = makeDriver();
+  driver.applyBodyPerformance({ channel: "gaze", gaze: "left", intensity: 0.3, duration: 3 });
+  driver.applyBodyPerformance({ channel: "expression", expression: "thinking", intensity: 0.5, duration: 2 });
+  driver.applyBodyPerformance({ channel: "gesture", gesture: "tilt", intensity: 0.7, duration: 1 });
+  const beforeSpeech = driver.snapshot().performance;
+  assert.equal(beforeSpeech.gaze, "left");
+  assert.equal(beforeSpeech.expression, "thinking");
+  assert.equal(beforeSpeech.gesture, "tilt");
+  assert.ok(beforeSpeech.channelUntil.gaze > beforeSpeech.channelUntil.gesture);
+  driver.markTalking("通道不应被整包覆盖");
+  const afterSpeech = driver.snapshot().performance;
+  assert.equal(afterSpeech.gaze, "left");
+  assert.equal(afterSpeech.expression, "thinking");
+  assert.equal(afterSpeech.gesture, "tilt");
+  assert.equal(afterSpeech.until, undefined);
+});
+
 test("legacy driver: 说话计划驱动口型（markTalking 后 aa>0）", () => {
   const { driver, captured } = makeDriver();
   driver.markTalking("你好呀");
@@ -128,7 +146,7 @@ test("legacy driver: qinggan 情绪驱动表情（joy→happy）", () => {
 });
 
 test("legacy driver: 版本与常量导出稳定", () => {
-  assert.equal(LEGACY_PERFORMANCE_DRIVER_VERSION, "legacy-performance-driver-1.1.0");
+  assert.equal(LEGACY_PERFORMANCE_DRIVER_VERSION, "legacy-performance-driver-1.2.0");
   assert.equal(EMOTION_KEYS.length, 7);
   assert.equal(VRMA_GESTURE_KEYS.length, 7);
 });

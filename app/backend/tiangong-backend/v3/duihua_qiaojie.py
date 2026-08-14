@@ -75,6 +75,12 @@ TERMINAL_RUN_PHASES = frozenset({
     "succeeded",
 })
 RUN_STATE_LOCK_TIMEOUT_SECONDS = 15.0
+# Windows 保留设备名（含扩展名形态）：CON.json / NUL 等在任何盘符下都指向设备。
+_WINDOWS_RESERVED_BASENAMES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+})
 
 
 def _simple_chain_origin(closeout_source: str, simple_chain_status: str) -> str:
@@ -154,9 +160,12 @@ def _safe_request_id(request_id: str) -> str:
     """
 
     raw = str(request_id or "").strip()
-    if _PORTABLE_FILENAME_ID_RE.fullmatch(raw):
+    basename = raw.split(".", 1)[0].strip().upper()
+    if _PORTABLE_FILENAME_ID_RE.fullmatch(raw) and basename not in _WINDOWS_RESERVED_BASENAMES:
         return raw
-    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "_", raw).strip("._")[:80] or "opaque"
+    # 点号也剔除：Windows 保留名按"首个点/冒号之前"判定，
+    # lpt3.json--digest 这类形态同样会命中 LPT3 设备。
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", raw).strip("._-")[:80] or "opaque"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
     return f"{slug}--{digest}"
 
@@ -318,6 +327,57 @@ def _run_is_terminal(run: dict | None) -> bool:
     return _run_phase(run) in TERMINAL_RUN_PHASES
 
 
+def _process_start_token(pid: int) -> str | None:
+    """Opaque process-creation token for PID-reuse detection.
+
+    PID alone is not process identity: after a crash the OS can hand the same
+    PID to an unrelated process, which would make a dead run look alive
+    forever.  The token is compared for equality with the value captured at
+    claim time; PID reuse yields a different creation timestamp.
+    """
+    if pid <= 0:
+        return None
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return None
+            try:
+                creation = ctypes.c_ulonglong()
+                exit_time = ctypes.c_ulonglong()
+                kernel_time = ctypes.c_ulonglong()
+                user_time = ctypes.c_ulonglong()
+                if not kernel32.GetProcessTimes(
+                    handle,
+                    ctypes.byref(creation),
+                    ctypes.byref(exit_time),
+                    ctypes.byref(kernel_time),
+                    ctypes.byref(user_time),
+                ):
+                    return None
+                return f"nt:{creation.value}"
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return None
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as stream:
+            data = stream.read()
+        rparen = data.rfind(")")
+        if rparen < 0:
+            return None
+        fields = data[rparen + 2:].split()
+        # field 22 (starttime) is the 20th field after the parenthesized comm.
+        if len(fields) < 20 or not fields[19].isdigit():
+            return None
+        return f"posix:{fields[19]}"
+    except OSError:
+        return None
+
+
 def _process_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -342,10 +402,28 @@ def _process_is_alive(pid: int) -> bool:
 
 
 def _run_owner_is_alive(run: dict | None) -> bool:
+    """Owner liveness with PID-reuse protection.
+
+    A run is owned by the live process only when the PID is alive AND its
+    creation token matches the one captured at claim time.  Snapshots from
+    before the lease field existed keep the historical pid-only semantics;
+    unreadable creation tokens degrade to pid-only rather than false-dead.
+    """
     try:
-        return _process_is_alive(int((run or {}).get("owner_pid") or 0))
+        pid = int((run or {}).get("owner_pid") or 0)
     except Exception:
         return False
+    if pid == os.getpid():
+        return True
+    if not _process_is_alive(pid):
+        return False
+    stored_token = str((run or {}).get("owner_start_token") or "").strip()
+    if not stored_token:
+        return True
+    current_token = _process_start_token(pid)
+    if current_token is None:
+        return True
+    return current_token == stored_token
 
 
 class RunControlHandle:
@@ -423,14 +501,21 @@ class RunControlManager:
         }
         return json.dumps(payload, ensure_ascii=False)
 
-    def claim(self, request_id: str, message: str, *, session_id: str = "", interim_reply_callback=None) -> tuple[RunControlHandle, str, str]:
+    def claim(self, request_id: str, message: str, *, session_id: str = "", interim_reply_callback=None, principal_scope: str = "") -> tuple[RunControlHandle, str, str]:
         clean_id = _normalise_claim_request_id(request_id)
         message_digest = hashlib.sha256(str(message or "").encode("utf-8")).hexdigest()
+        # Run authority key 的一部分：request_id 只在 scope 内唯一。不同
+        # principal/session 复用同一 request_id 时，scope 不匹配直接冲突，
+        # 绝不串 Run、绝不把 A 的运行状态/回复暴露给 B。
+        scope = str(principal_scope or "").strip() or (str(session_id or "").strip() or "local")
         now = time.time()
         handle = RunControlHandle(self, clean_id)
         with self._lock, _run_snapshot_lock(clean_id):
             existing = self._authoritative_run_locked(clean_id)
             if isinstance(existing, dict):
+                existing_scope = str(existing.get("principal_scope") or "")
+                if existing_scope and existing_scope != scope:
+                    return handle, "scope_conflict", ""
                 if _run_phase(existing) == "running" and not _run_owner_is_alive(existing):
                     existing = self._normalise_recovered_run(existing)
                     self._runs[clean_id] = existing
@@ -452,9 +537,11 @@ class RunControlManager:
                 "requestId": clean_id,
                 "session_id": str(session_id or ""),
                 "sessionId": str(session_id or ""),
+                "principal_scope": scope,
                 "phase": "running",
                 "ok": None,
                 "stop_requested": False,
+                "executing": True,
                 "guidance": [],
                 "steps": [{
                     "requestId": clean_id,
@@ -469,11 +556,13 @@ class RunControlManager:
                 "updated_at": now,
                 "updatedAt": now,
                 "message": str(message or "")[:500],
+                "message_full": str(message or "")[:65536],
                 "message_digest": message_digest,
                 "execution_count": 1,
                 "interim_reply_count": 0,
                 "owner_pid": os.getpid(),
                 "owner_token": uuid.uuid4().hex,
+                "owner_start_token": _process_start_token(os.getpid()) or "",
             }
             self._runs[clean_id] = run
             if callable(interim_reply_callback):
@@ -561,6 +650,11 @@ class RunControlManager:
             if _run_is_terminal(run):
                 return
             now = time.time()
+            if bool(run.get("stop_requested")):
+                # 停止请求的执行器 ACK：此刻才允许宣称 interrupted。
+                self._finalize_user_stop(run, request_id, now)
+                return
+            run["executing"] = False
             steps = [item for item in (run.get("steps") or []) if item.get("id") != "backend_finished"]
             steps.append({
                 "requestId": request_id,
@@ -628,7 +722,54 @@ class RunControlManager:
             result = {"ok": True}
         return result
 
+    def _finalize_user_stop(self, run: dict, request_id: str, now: float) -> None:
+        """写用户停止的权威终态：仅在执行器确认（或确认无执行者）后调用。"""
+        run["stop_requested"] = True
+        run["phase"] = "interrupted"
+        run["ok"] = None
+        run["executing"] = False
+        steps = [item for item in (run.get("steps") or []) if item.get("id") not in {"user_stop", "backend_finished"}]
+        steps.extend([
+            {
+                "requestId": request_id,
+                "id": "user_stop",
+                "title": "停止执行",
+                "status": "interrupted",
+                "summary": "后端已在检查点退出，本轮执行确已停止。",
+                "at": now,
+                "phase": "interrupted",
+                "runPhase": "interrupted",
+            },
+            {
+                "requestId": request_id,
+                "id": "backend_finished",
+                "title": "后端完成",
+                "status": "interrupted",
+                "summary": "用户已停止本轮执行。",
+                "at": now,
+                "phase": "interrupted",
+                "runPhase": "interrupted",
+            },
+        ])
+        run["steps"] = steps[-80:]
+        run["updated_at"] = now
+        run["updatedAt"] = now
+        run["final_response"] = json.dumps({
+            "cuowu": "用户已停止本轮执行",
+            "zhuangtai": "yizhongduan",
+            "interrupted": True,
+            "request_id": request_id,
+        }, ensure_ascii=False)
+        run["final_response_at"] = now
+        self._runs[request_id] = run
+        _save_run_snapshot_unlocked(run)
+        self._interim_reply_callbacks.pop(request_id, None)
+
     def stop(self, request_id: str) -> dict:
+        # 两阶段停止：cancel_requested（请求已记录，等待执行器 ACK）
+        # → interrupted（执行器在检查点退出后的权威终态）。
+        # 前端在 cancel_requested 阶段必须继续显示"正在停止"，
+        # 只有 interrupted 才允许宣称"已停止"。
         with self._lock, _run_snapshot_lock(request_id):
             run = self._authoritative_run_locked(request_id)
             if not run:
@@ -643,45 +784,42 @@ class RunControlManager:
                 }
             now = time.time()
             run["stop_requested"] = True
-            run["phase"] = "interrupted"
+            if not bool(run.get("executing")) or not _run_owner_is_alive(run):
+                # 没有在场的执行者（崩溃恢复后的孤儿/从未真正执行）：
+                # 无 ACK 可等，直接落权威终态。
+                self._finalize_user_stop(run, request_id, now)
+                return {
+                    "ok": True,
+                    "interrupted": True,
+                    "canceled": True,
+                    "acknowledged": True,
+                    "requestId": request_id,
+                }
+            run["phase"] = "cancel_requested"
             run["ok"] = None
             steps = [item for item in (run.get("steps") or []) if item.get("id") not in {"user_stop", "backend_finished"}]
-            steps.extend([
-                {
-                    "requestId": request_id,
-                    "id": "user_stop",
-                    "title": "收到停止指令",
-                    "status": "interrupted",
-                    "summary": "后端已停止继续执行。",
-                    "at": now,
-                    "phase": "interrupted",
-                    "runPhase": "interrupted",
-                },
-                {
-                    "requestId": request_id,
-                    "id": "backend_finished",
-                    "title": "后端完成",
-                    "status": "interrupted",
-                    "summary": "用户已停止本轮执行。",
-                    "at": now,
-                    "phase": "interrupted",
-                    "runPhase": "interrupted",
-                },
-            ])
+            steps.append({
+                "requestId": request_id,
+                "id": "user_stop",
+                "title": "收到停止指令",
+                "status": "running",
+                "summary": "已请求停止，等待当前执行步骤安全退出。",
+                "at": now,
+                "phase": "cancel_requested",
+                "runPhase": "cancel_requested",
+            })
             run["steps"] = steps[-80:]
             run["updated_at"] = now
             run["updatedAt"] = now
-            run["final_response"] = json.dumps({
-                "cuowu": "用户已停止本轮执行",
-                "zhuangtai": "yizhongduan",
-                "interrupted": True,
-                "request_id": request_id,
-            }, ensure_ascii=False)
-            run["final_response_at"] = now
             self._runs[request_id] = run
             _save_run_snapshot_unlocked(run)
-            self._interim_reply_callbacks.pop(request_id, None)
-        return {"ok": True, "interrupted": True, "canceled": True, "requestId": request_id}
+        return {
+            "ok": True,
+            "interrupted": False,
+            "canceled": False,
+            "cancel_requested": True,
+            "requestId": request_id,
+        }
 
     def interrupt_all(self) -> dict:
         """Request cooperative cancellation for every in-process active run."""
@@ -757,7 +895,7 @@ class RunControlManager:
             "old_request_id": request_id,
             "session_id": str(normalised.get("session_id") or normalised.get("sessionId") or ""),
             "task_title": _resume_task_title(normalised),
-            "last_user_message": str(normalised.get("message") or ""),
+            "last_user_message": str(normalised.get("message_full") or normalised.get("message") or ""),
             "phase_before_restart": "running",
             "stop_reason": "backend_restart",
             "completed_steps": [
@@ -1084,6 +1222,26 @@ class DuihuaQiaojie:
             self._link_manager = None
             self._link_manager_error = str(e)
 
+    def tingzhi(self):
+        """闭合桥接生命周期：停止链路管理器与 HTTP 服务。"""
+        link_manager = getattr(self, "_link_manager", None)
+        if link_manager is not None:
+            stop_fn = getattr(link_manager, "stop", None)
+            if callable(stop_fn):
+                try:
+                    stop_fn()
+                except Exception:
+                    pass
+            self._link_manager = None
+        fuwuqi = getattr(self, "_fuwuqi", None)
+        if fuwuqi is not None:
+            try:
+                fuwuqi.shutdown()
+                fuwuqi.server_close()
+            except Exception:
+                pass
+            self._fuwuqi = None
+
     def chuli_duihua(self, xiaoxi: str, yonghu_ming: str = "", conversation_context: dict | None = None) -> str:
         if self._zd is None:
             return json.dumps({"cuowu": "v3未就绪"}, ensure_ascii=False)
@@ -1119,6 +1277,13 @@ class DuihuaQiaojie:
             return cached_response
         if claim_state == "terminal":
             return cached_response
+        if claim_state == "scope_conflict":
+            return json.dumps({
+                "cuowu": "该 request_id 已被另一会话/身份占用，拒绝串用运行状态。",
+                "error_code": "run_scope_conflict",
+                "zhuangtai": "shibai",
+                "request_id": run_control.request_id,
+            }, ensure_ascii=False)
         if claim_state == "conflict":
             return json.dumps({
                 "cuowu": "同一 request_id 对应了不同请求内容",
@@ -1602,9 +1767,6 @@ class _ChuliQi(BaseHTTPRequestHandler):
             return
         if path == "/api/v1/knowledge/settings":
             self._write_json(_knowledge_action("settings", {}))
-            return
-        if path == "/api/v1/sessions":
-            self._write_json([])
             return
         if path == "/api/v1/character/state":
             self._write_json(_character_state())
@@ -2315,13 +2477,13 @@ def _policy_confirm_archive() -> dict:
 
 
 def _policy_pending_confirmations() -> dict:
-    """前端轮询/恢复用：列出仍在等待用户决定的确认。"""
-    from . import confirmation_store
+    """旧确认链的 pending 通道已随 G3 退役彻底关闭。
 
-    items = confirmation_store.list_pending()
-    if not isinstance(items, list):
-        items = []
-    return {"ok": True, "pending": items}
+    历史 pending_confirmations.json 只是证据档案：pending 永远返回空，
+    历史内容只能经只读 archive 端点查询。任何旧记录都不再表现为
+    "等待批准"——那是一条永远无法完成的死链。
+    """
+    return {"ok": True, "retired": True, "read_only": True, "pending": [], "count": 0}
 
 
 def _compact_attachment_context(items: object, limit: int = 5) -> str:
@@ -3333,6 +3495,7 @@ def _save_llm_settings(payload: dict) -> dict:
         l4_provider_display_name,
         save_model_reasoning_config,
         normalize_provider_base_url,
+        normalize_provider_identity,
         provider_match_info,
         duqu_provider_base_url,
     )
@@ -3381,7 +3544,15 @@ def _save_llm_settings(payload: dict) -> dict:
     match_base_url = base_url if has_base_url else (duqu_configured_provider_base_url(current_provider) if same_saved_provider else "")
     match_model_name = model_name if has_model_name else (duqu_configured_model_ming(current_provider) if same_saved_provider else "")
     match = provider_match_info(match_provider, match_base_url, match_model_name)
-    provider = str(match.get("provider") or MOREN_PROVIDER)
+    # 路由家族：只用于端点校验 / L4 优化 / 思考能力配置，绝不写回持久化身份。
+    routing_provider = str(match.get("provider") or MOREN_PROVIDER)
+    # 配置身份：用户显式或已保存身份的忠实规范化；空值即 custom。
+    # 第一性原理：身份与路由分离——即使路由回退为 gpt_5_6，用户身份仍
+    # 保持自身（custom/原始名称），设置界面永不把回退值钉成用户选择。
+    identity_provider = (
+        normalize_provider_identity(raw_provider) if has_provider
+        else normalize_provider_identity(current_provider)
+    )
     API_PEIZHI_LUJING.parent.mkdir(parents=True, exist_ok=True)
     try:
         data = json.loads(API_PEIZHI_LUJING.read_text(encoding="utf-8-sig")) if API_PEIZHI_LUJING.exists() else {}
@@ -3389,28 +3560,28 @@ def _save_llm_settings(payload: dict) -> dict:
             data = {}
     except Exception:
         data = {}
-    effective_base_url = base_url if has_base_url and base_url else (match_base_url or duqu_provider_base_url(provider) or "")
+    effective_base_url = base_url if has_base_url and base_url else (match_base_url or duqu_provider_base_url(identity_provider) or "")
     try:
-        binding = validate_model_endpoint(provider, effective_base_url, resolve_dns=False)
+        binding = validate_model_endpoint(routing_provider, effective_base_url, resolve_dns=False)
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "error_code": "model_endpoint_rejected"}
     # Credentials are owned by Electron safeStorage and injected only into the
     # backend process environment.  The JSON settings file is deliberately
     # non-secret.  ``clear_api_key`` is processed by the desktop vault before
     # this request reaches the backend.
-    data["_default_provider"] = provider
+    data["_default_provider"] = identity_provider
 
     provider_inputs = data.get("_provider_inputs")
     if not isinstance(provider_inputs, dict):
         provider_inputs = {}
-    previous_input = provider_inputs.get(provider) if isinstance(provider_inputs.get(provider), dict) else {}
+    previous_input = provider_inputs.get(identity_provider) if isinstance(provider_inputs.get(identity_provider), dict) else {}
     display_provider = raw_provider if has_provider else str(previous_input.get("provider") or current_inputs.get("provider") or "")
     display_base_url = base_url if has_base_url else str(previous_input.get("base_url") or match_base_url or "")
     display_model_name = model_name if has_model_name else str(previous_input.get("model_name") or match_model_name or "")
-    matched_display_name = _llm_match_display_name(match, display_provider, l4_provider_display_name(provider))
+    matched_display_name = _llm_match_display_name(match, display_provider, l4_provider_display_name(routing_provider))
     match["display_name"] = matched_display_name
-    if has_provider or has_base_url or has_model_name or provider not in provider_inputs:
-        provider_inputs[provider] = {
+    if has_provider or has_base_url or has_model_name or identity_provider not in provider_inputs:
+        provider_inputs[identity_provider] = {
             "provider": display_provider,
             "base_url": display_base_url,
             "model_name": display_model_name,
@@ -3422,31 +3593,31 @@ def _save_llm_settings(payload: dict) -> dict:
         base_urls = {}
     if has_base_url:
         if base_url:
-            base_urls[provider] = base_url
+            base_urls[identity_provider] = base_url
         else:
-            base_urls.pop(provider, None)
+            base_urls.pop(identity_provider, None)
     data["_base_urls"] = base_urls
     model_names = data.get("_model_names")
     if not isinstance(model_names, dict):
         model_names = {}
     if has_model_name:
         if model_name:
-            model_names[provider] = model_name
+            model_names[identity_provider] = model_name
         else:
-            model_names.pop(provider, None)
+            model_names.pop(identity_provider, None)
     data["_model_names"] = model_names
     if has_reasoning_mode:
-        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(provider) or ""
-        reasoning_model_name = model_name or match_model_name or duqu_model_ming(provider)
+        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(identity_provider) or ""
+        reasoning_model_name = model_name or match_model_name or duqu_model_ming(identity_provider)
         if not reasoning_mode:
             from .peizhi import model_reasoning_capability
             reasoning_mode = str(
-                model_reasoning_capability(provider, reasoning_model_name).get("default_mode") or "off"
+                model_reasoning_capability(routing_provider, reasoning_model_name).get("default_mode") or "off"
             )
         try:
             save_model_reasoning_config(
                 data,
-                provider_id=provider,
+                provider_id=routing_provider,
                 base_url=reasoning_base_url,
                 model_name=reasoning_model_name,
                 mode=reasoning_mode,
@@ -3457,16 +3628,18 @@ def _save_llm_settings(payload: dict) -> dict:
                 "error": str(exc),
                 "error_code": "model_reasoning_mode_unsupported",
             }
-    API_PEIZHI_LUJING.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from .settings_persistence import atomic_write_json
+
+    atomic_write_json(API_PEIZHI_LUJING, data)
     result = _llm_settings()
     result.update({
-        "provider": provider,
-        "provider_display_name": l4_provider_display_name(provider),
-        "matched_provider": provider,
+        "provider": routing_provider,
+        "provider_display_name": l4_provider_display_name(routing_provider),
+        "matched_provider": routing_provider,
         "matched_provider_display_name": matched_display_name,
-        "configured_provider": display_provider,
-        "model": model_name or duqu_model_ming(provider),
-        "model_name": model_name or duqu_model_ming(provider),
+        "configured_provider": display_provider or identity_provider,
+        "model": model_name or duqu_model_ming(identity_provider),
+        "model_name": model_name or duqu_model_ming(identity_provider),
         "configured_model_name": display_model_name,
         "base_url": base_url or result.get("base_url", ""),
         "configured_base_url": display_base_url,

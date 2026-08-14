@@ -1006,11 +1006,16 @@ export function createAvatarRuntime({
           bodyWriter.setActiveAnimation(null);
           continue;
         }
-        // Legacy 表现驱动（§15 聊天互动）：带 biaoxian 语义的动作整包交给驱动，
-        // 驱动负责自然站姿/程序化手势/表情/口型；引擎 semantic 命令继续处理
+        // Legacy 表现驱动（§15/H0）：只接收 Scheduler 已展开的身体通道，
+        // 禁止 gesture 再携带并覆盖其他器官状态；引擎 semantic 命令继续处理
         // gaze 与 VRMA 手势，两者在引擎侧按语义去重。
-        if (wire.posture || wire.gesture || wire.expression) {
+        const legacyPerformanceChannel = ["posture", "gesture", "expression", "gaze", "tail"].includes(wire.channel);
+        if (legacyPerformanceChannel || (!wire.channel && (wire.posture || wire.gesture || wire.expression || wire.gaze || wire.extras?.tail))) {
           engineAdapter.applyBodyPerformance?.(wire);
+        }
+        if (typeof wire.conversationState === "string") {
+          bodyWriter.setConversationState(wire.conversationState);
+          engineAdapter.setConversationState?.(wire.conversationState);
         }
         if (typeof wire.posture === "string" && wire.posture.length > 0) {
           bodyWriter.setPosture({ name: wire.posture });
@@ -1032,7 +1037,14 @@ export function createAvatarRuntime({
           bodyWriter.setSpeechEnergy(wire.speechEnergy);
           engineAdapter.setSpeechEnergy?.(wire.speechEnergy);
         }
-        if (typeof wire.viseme === "string") bodyWriter.setViseme(wire.viseme);
+        if (wire.speechPlan || typeof wire.speechText === "string") {
+          engineAdapter.beginSpeech?.(wire.speechText ?? "", wire.speechPlan ?? null);
+        }
+        if (wire.speechBoundary) engineAdapter.applySpeechBoundary?.(wire.speechBoundary);
+        if (typeof wire.viseme === "string") {
+          bodyWriter.setViseme(wire.viseme);
+          engineAdapter.applyVisemeTarget?.({ [wire.viseme]: Number(wire.visemeStrength) || 0.7 });
+        }
         if (wire.gesture !== undefined && wire.gesture !== null) {
           const semanticId = typeof wire.gesture === "string" ? wire.gesture : wire.gesture?.semanticId;
           const pending = slots.pending;

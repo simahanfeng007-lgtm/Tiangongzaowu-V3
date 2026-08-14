@@ -6,6 +6,7 @@ import { renderUserAvatar as renderSharedUserAvatar } from "../core/user-avatar.
 import { normalizeUserIdentity } from "../runtime/life-view-model.mjs";
 import { requestVoiceOutput } from "../runtime/http-runtime.mjs";
 import { dispatchSpeechPhase } from "../avatar/speech-phase-events.mjs";
+import { ConversationEmbodimentState, dispatchEmbodimentPhase } from "../avatar/conversation-embodiment.mjs";
 
 const DEFAULT_LOGO_SRC = "../assets/tiangong-avatar.png";
 const CHAT_ATTACHMENT_LIMIT = 20;
@@ -239,15 +240,23 @@ function speakWithBrowser(text, settings = {}) {
   utterance.volume = Math.max(0, Math.min(1, Number(settings.bodyVoiceVolume ?? 1)));
   const voice = pickSpeechVoice(settings);
   if (voice) utterance.voice = voice;
-  utterance.onstart = () => dispatchSpeechPhase("start"); // P6a §17：播放开始补事件（不改播放逻辑）
-  utterance.onboundary = () => dispatchSpeechPhase("energy"); // P6a §17：边界事件即能量节拍
-  utterance.onend = utterance.onerror = () => dispatchSpeechPhase("stop"); // P6a §17：播放停止补事件
+  utterance.onstart = () => dispatchSpeechPhase("start", { text: clean });
+  utterance.onboundary = (event) => dispatchSpeechPhase("boundary", {
+    text: clean,
+    boundary: {
+      charIndex: Number(event?.charIndex) || 0,
+      elapsedMs: Math.max(0, Number(event?.elapsedTime) || 0) * 1000,
+      boundaryType: String(event?.name || "word"),
+    },
+  });
+  utterance.onend = () => dispatchSpeechPhase("stop", { reason: "ended" });
+  utterance.onerror = () => dispatchSpeechPhase("stop", { reason: "error" });
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
   return true;
 }
 
-async function playGeneratedVoice(result, settings = {}) {
+async function playGeneratedVoice(result, settings = {}, text = "") {
   const encoded = String(result?.audio_base64 || "");
   if (!encoded || typeof Audio === "undefined") return false;
   try {
@@ -263,15 +272,18 @@ async function playGeneratedVoice(result, settings = {}) {
     audio.volume = Math.max(0, Math.min(1, Number(settings.bodyVoiceVolume ?? 1)));
     generatedVoiceAudio = audio;
     const release = () => {
-      dispatchSpeechPhase("stop"); // P6a §17：ended/error 终态补 stop 事件
+      dispatchSpeechPhase("stop", { reason: "ended-or-error" });
       URL.revokeObjectURL(url);
       if (generatedVoiceAudio === audio) generatedVoiceAudio = null;
     };
     audio.addEventListener("ended", release, { once: true });
     audio.addEventListener("error", release, { once: true });
-    audio.addEventListener("timeupdate", () => dispatchSpeechPhase("energy")); // P6a §17：播放节拍补 energy（无 analyser，不携带能量值）
     await audio.play();
-    dispatchSpeechPhase("start"); // P6a §17：播放开始补事件（不改播放逻辑）
+    dispatchSpeechPhase("start", {
+      text,
+      speechPlan: result?.speech_plan ?? result?.viseme_timeline ?? null,
+      durationMs: Number.isFinite(audio.duration) ? audio.duration * 1000 : null,
+    });
     return true;
   } catch {
     return false;
@@ -290,7 +302,7 @@ async function speakAssistantReply(text, settings = {}) {
         mode,
         voice_id: providerVoiceId(settings),
       });
-      if (result?.ok && await playGeneratedVoice(result, settings)) return true;
+      if (result?.ok && await playGeneratedVoice(result, settings, clean)) return true;
     } catch {
       // The configured service is unavailable.  Browser TTS is the declared local fallback.
     }
@@ -1549,6 +1561,7 @@ export const conversationPanelPlugin = {
       const text = input.value.trim();
       const attachments = pendingAttachments.slice(0, CHAT_ATTACHMENT_LIMIT);
       if (!text && !attachments.length) return;
+      dispatchEmbodimentPhase(ConversationEmbodimentState.THINKING, { meta: { reason: "user-submit" } });
       const originalText = text;
       const originalAttachments = attachments;
       const snap = state.snapshot();
@@ -1633,7 +1646,13 @@ export const conversationPanelPlugin = {
       }
     });
 
-    input.addEventListener("input", resizeInput);
+    input.addEventListener("input", () => {
+      resizeInput();
+      dispatchEmbodimentPhase(
+        input.value.trim() ? ConversationEmbodimentState.LISTENING : ConversationEmbodimentState.IDLE,
+        { meta: { reason: "user-input" } },
+      );
+    });
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();

@@ -14,6 +14,47 @@ from unittest import mock
 
 
 class WorkspaceSettingsModeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import v3.workspace_settings as ws
+
+        self._ws = ws
+        self._tmp = tempfile.TemporaryDirectory()
+        # WORKSPACE_SETTINGS_LUJING is resolved from Path.home() at import
+        # time; runtime HOME/USERPROFILE patches cannot isolate it.  Patch the
+        # module attribute so local test runs never write the developer's real
+        # ~/.tiangong/v3/workspace_settings.json.
+        self._original_path = ws.WORKSPACE_SETTINGS_LUJING
+        try:
+            self._original_stat = self._original_path.stat().st_mtime_ns
+        except OSError:
+            self._original_stat = None
+        ws.WORKSPACE_SETTINGS_LUJING = Path(self._tmp.name) / "workspace_settings.json"
+        self._env_snapshot = {
+            key: os.environ.get(key)
+            for key in (
+                "TIANGONG_DESKTOP_WORKSPACE_ROOT",
+                "TIANGONG_WORKSPACE_ROOT",
+                "TIANGONG_WORKSPACE_MODE",
+            )
+        }
+        for key in self._env_snapshot:
+            os.environ.pop(key, None)
+
+    def tearDown(self) -> None:
+        self._ws.WORKSPACE_SETTINGS_LUJING = self._original_path
+        for key, value in self._env_snapshot.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        # 隔离断言：本测试绝不触碰真实用户配置。
+        try:
+            current_stat = self._original_path.stat().st_mtime_ns
+        except OSError:
+            current_stat = None
+        self.assertEqual(self._original_stat, current_stat, "test must not modify the real user settings file")
+        self._tmp.cleanup()
+
     def _isolated_env(self, tmp: str) -> dict:
         return {
             "USERPROFILE": str(Path(tmp) / "home"),
@@ -48,13 +89,13 @@ class WorkspaceSettingsModeTests(unittest.TestCase):
             self.assertEqual(saved2["workspace_mode"], "workspace")
 
     def test_legacy_config_without_mode_is_workspace(self) -> None:
-        from v3.workspace_settings import WORKSPACE_SETTINGS_LUJING, duqu_workspace_settings
+        from v3.workspace_settings import duqu_workspace_settings
 
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ, self._isolated_env(tmp), clear=False
         ):
-            WORKSPACE_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
-            WORKSPACE_SETTINGS_LUJING.write_text(
+            self._ws.WORKSPACE_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
+            self._ws.WORKSPACE_SETTINGS_LUJING.write_text(
                 '{"workspace": "C:/legacy-ws", "updated_at": 1}',
                 encoding="utf-8",
             )
@@ -83,6 +124,7 @@ class ToolContractFullDiskTests(unittest.TestCase):
             for issue in (result.get("issues") or [])
         )
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_workspace_mode_blocks_desktop(self) -> None:
         result = self._validate(r"C:\Users\someone\Desktop\a.md", "workspace")
         self.assertTrue(self._has_outside_workspace(result))
@@ -92,14 +134,17 @@ class ToolContractFullDiskTests(unittest.TestCase):
         self.assertFalse(self._has_outside_workspace(result))
         self.assertTrue(bool(result.get("ok")))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_still_blocks_windows_core(self) -> None:
         result = self._validate(r"C:\Windows\System32\drivers\etc\hosts", "full")
         self.assertTrue(self._has_outside_workspace(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_still_blocks_credential_dir(self) -> None:
         result = self._validate(r"C:\Users\someone\.ssh\id_rsa", "full")
         self.assertTrue(self._has_outside_workspace(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows core path denial semantics")
     def test_full_mode_blocks_hard_deny_in_shell_command(self) -> None:
         from omni_body_skill.tool_contracts import validate_tool_request
 

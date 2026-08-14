@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from contextlib import closing
 from email.message import Message
 import json
@@ -1121,6 +1123,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
 
 class SandboxCloseoutTests(unittest.TestCase):
+    @pytest.mark.ci_fragile
     def test_embedded_workspace_path_in_shell_command_is_rewritten_to_private_copy(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1138,6 +1141,7 @@ class SandboxCloseoutTests(unittest.TestCase):
             self.assertIn(str(sandbox / "project"), rewritten[-1])
 
     @unittest.skipUnless(os.name == "nt", "Windows cmd integration")
+    @pytest.mark.ci_fragile
     def test_absolute_unicode_workspace_path_in_cmd_runs_inside_private_copy(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1213,6 +1217,7 @@ class SandboxCloseoutTests(unittest.TestCase):
             self.assertIn("result.txt", result["changed_files"])
             self.assertFalse(Path(result["sandbox_root"]).exists())
 
+    @pytest.mark.ci_fragile
     def test_legacy_terminal_is_sandboxed_and_a5_cannot_be_confirmed_away(self) -> None:
         from v3.jineng.jirou_ceng import JirouCeng
 

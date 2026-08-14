@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -229,6 +230,7 @@ class ImpactDerivationTests(unittest.TestCase):
         self.assertGreaterEqual(knobs["privacy_scope_milli"], 500)
         self.assertGreaterEqual(knobs["blast_radius_milli"], 700)
 
+    @unittest.skipUnless(os.name == "nt", "Windows absolute path blast semantics")
     def test_outside_workspace_and_host_root_blast(self) -> None:
         outside = derive_impact_knobs(
             "file.write", {"path": r"C:\Users\someone\Documents\work-notes.md"}, workspace_root=str(ROOT)

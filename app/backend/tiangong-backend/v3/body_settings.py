@@ -326,8 +326,9 @@ def save_body_settings(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         ui["theme_style"] = theme_style if theme_style in {"ink_teal", "bronze_gear", "jade_light", "cosmos_dark", "ink_wash", "nordic_light"} else ui["theme_style"]
 
     current = _merge_settings(current)
-    BODY_SETTINGS_LUJING.parent.mkdir(parents=True, exist_ok=True)
-    BODY_SETTINGS_LUJING.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    from .settings_persistence import atomic_write_json
+
+    atomic_write_json(BODY_SETTINGS_LUJING, current, backup=False)
 
     if "soul" in profile_payload or "soul" in body:
         SOUL_LUJING.parent.mkdir(parents=True, exist_ok=True)

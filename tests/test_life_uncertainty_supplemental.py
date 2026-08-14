@@ -82,6 +82,7 @@ def test_append_cache_detects_external_event_tamper(tmp_path: Path) -> None:
         life.close()
 
 
+@pytest.mark.ci_fragile
 def test_thousand_memory_writes_restart_and_search_are_bounded(tmp_path: Path) -> None:
     life = _runtime(tmp_path)
     started = time.perf_counter()

@@ -1,0 +1,134 @@
+name: Architecture gate
+
+on:
+  push:
+    branches:
+      - main
+      - "agent/p17*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-authority:
+    name: source-authority-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate source-authority topology
+        run: python scripts/check-source-authority.py
+
+      - name: Verify generated-source mirrors
+        run: python scripts/sync-generated-sources.py --check-committed
+
+      - name: Run P17 M1 source-authority regression
+        run: python tests/test_source_authority_p17_m1.py -v
+
+      - name: Run P17 M1-03 V3 boundary regression
+        run: python tests/test_source_authority_p17_m1_03.py -v
+
+      - name: Run P17 M2-01 Zongdiaodu composition regression
+        run: python tests/test_zongdiaodu_p17_m2_01.py -v
+
+      - name: Run P17 M2-02 turn orchestration regression
+        run: python tests/test_zongdiaodu_p17_m2_02.py -v
+
+      - name: Run P17 M2-03 tool-result continuation regression
+        run: python tests/test_zongdiaodu_p17_m2_03.py -v
+
+      - name: Run P17 M2-04 embedded life lifecycle regression
+        run: python tests/test_embedded_life_p17_m2_04.py -v
+
+      - name: Run P17 M2-05 embedded life gateway wiring regression
+        run: python tests/test_embedded_life_p17_m2_05.py -v
+
+      - name: Run P17 M3-01 life store connection regression
+        run: python tests/test_life_store_p17_m3_01.py -v
+
+      - name: Run P17 M3-02 life store schema regression
+        run: python tests/test_life_store_p17_m3_02.py -v
+
+      - name: Install P17 M3-03 Life store test dependencies
+        run: python -m pip install cryptography==48.0.1 pydantic==2.13.4 pytest
+
+      - name: Run P17 M3-03 life memory repository regression
+        run: python tests/test_life_store_p17_m3_03.py -v
+
+      - name: Run P17 M3-04 Gateway Store UoW regression
+        run: python -m unittest discover -s tests -p "test_total_gateway_store_p17*.py" -v
+
+      - name: Run P17 M3-05 store closeout regression
+        run: python -m pytest tests/test_gateway_store.py tests/test_life_shadow_store.py tests/test_causal_memory_store.py tests/test_memory_derivation_store_p15.py -q
+
+      - name: Run P17 M3-05 single-writer and cutover guards
+        run: python -m pytest tests/test_memory_single_writer_p15.py tests/test_memory_p15_architecture_guards.py tests/test_p15_cutover_phases.py tests/test_p15_acceptance_gate.py -q
+
+      - name: Run P17 M4 architecture guards
+        run: python -m pytest tests/test_p17_m4_architecture_guards.py -q
+
+      - name: Run provider identity persistence contract
+        run: python -m pytest tests/test_provider_identity_persistence.py -q
+
+      - name: Run settings authority contract
+        run: python -m pytest tests/test_settings_authority_contract.py -q
+
+      - name: Run P17.1 runtime integrity regression
+        run: python -m pytest tests/test_p17_1_runtime_integrity.py -q
+
+      - name: Compile P17 M2 and M3 seams
+        run: python -m py_compile app/backend/tiangong-backend/v3/zongdiaodu.py app/backend/tiangong-backend/v3/runtime_bootstrap.py app/backend/tiangong-backend/v3/runtime_composition.py app/backend/tiangong-backend/v3/runtime_lifecycle.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py src/life_service/embedded_runtime.py src/life_service/embedded_runtime_lifecycle.py src/life_service/embedded_runtime_wiring.py src/life_service/store.py src/life_service/store_connection.py src/life_service/store_schema.py src/life_service/store_contract_support.py src/life_service/store_memory_repository.py src/total_gateway/runtime.py src/total_gateway/store.py src/total_gateway/store_unit_of_work.py
+
+  full-regression:
+    name: full-regression-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+      # Windows shared runners cannot provide AppContainer profiles, release
+      # archive bindings, TTS network or short-path-stable temp directories;
+      # the ci_fragile-marked tests skip there only and keep running locally.
+      TIANGONG_CI_ENV: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install full source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+
+      - name: Run full repository pytest
+        run: python -m pytest -q

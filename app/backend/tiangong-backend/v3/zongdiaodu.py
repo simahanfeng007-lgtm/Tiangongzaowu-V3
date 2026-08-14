@@ -31,7 +31,6 @@ from .gutong.shangxiawen import goujian_shenti_tishi, goujian_system_tishi, gouj
 from .gutong.gutong_ceng import GutongCeng
 from .jineng.guge_ceng import GUGE
 from .jineng.jirou_ceng import JIROU
-from .jineng.http_kehuduan import HttpKehuduan
 from .context_compactor import (
     estimate_tokens,
     compact_tool_result,
@@ -39,12 +38,8 @@ from .context_compactor import (
     DEFAULT_WINDOW_TOKENS,
     SYSTEM_BUDGET_PCT,
 )
-from .guancha_pinggu.guancha import GuanchaYinqing, HuifuXinxi
+from .guancha_pinggu.guancha import HuifuXinxi
 from .guancha_pinggu.pinggu import pinggu_xingdong
-from .jinhua.biaoda_router import JinhuaBiaodaRouter
-from .jinhua.bihuan_yinqing import JinhuaBihuanYinqing
-from .jinhua.yinqing import JinhuaYinqing
-from .ziyu.yinqing import ZiyuYinqing
 from .zhuangtai_tongbu import TONGBU
 from .duihua_qiaojie import (
     QIAOJIE,
@@ -66,7 +61,6 @@ from .run_context import (
 # User-message turns go through simple_chain + omni_body only.
 from .codex_turn_chain import TurnItem
 from .tool_result_contract import (
-    normalize_tool_result,
     tool_result_attachments,
     tool_result_error,
     tool_result_media,
@@ -75,14 +69,33 @@ from .tool_result_contract import (
     tool_result_status,
     tool_result_write_effect,
 )
-from .world_understanding_production import install_world_understanding_observer
+from .runtime_bootstrap import install_zongdiaodu_import_observers
+from .runtime_composition import build_zongdiaodu_composition
+from .runtime_lifecycle import (
+    DetachedLegacyHeartbeat,
+    start_zongdiaodu_runtime,
+    stop_zongdiaodu_runtime,
+)
+from .runtime_turn_orchestration import (
+    PreparedStep,
+    TurnLoopState,
+    coordinate_parallel_steps,
+    evaluate_turn_budget,
+)
+from .runtime_tool_result_boundary import (
+    attach_tool_result_contract,
+    canonical_tool_result,
+    contract_observed_write,
+    decide_simple_chain_completion,
+    project_tool_dispatch,
+    tool_write_verified,
+)
 
-install_world_understanding_observer()
+install_zongdiaodu_import_observers()
 
 from .execution_integrity import (
     build_action_obligations,
     build_task_contract_obligations,
-    decide_task_contract_completion,
     execution_integrity_blockers,
     extract_model_task_profile,
     initialize_task_contract,
@@ -149,24 +162,6 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
         "[Soul 人格底稿]\n"
         + soul["prompt"]
     )
-
-
-class _DetachedLegacyHeartbeat:
-    """Compatibility surface after the legacy life chain was detached."""
-
-    yunxing_zhong = False
-
-    def gengxin_shenti(self, _shenti: Any) -> None:
-        return None
-
-    def qidong(self) -> None:
-        return None
-
-    def tingzhi(self) -> None:
-        return None
-
-    def _yici_tick(self, _shenti: Any) -> None:
-        return None
 
 
 def _simple_chain_explicit_named_skill_ids(user_message: str) -> list[str]:
@@ -1968,18 +1963,8 @@ def _tool_dispatch_meta(
 
 
 def _tool_dispatch_with_result(meta: dict[str, Any] | None, result: Any) -> dict[str, Any] | None:
-    if not isinstance(meta, dict):
-        return None
-    output = dict(meta)
-    tool_name = str(output.get("toolName") or output.get("tool_name") or "")
-    contract = normalize_tool_result(tool_name, result)
-    ok = bool(contract.get("ok"))
-    output["status"] = "done" if ok else "failed"
-    output["resultStatus"] = str(contract.get("status") or "")
-    output["resultContract"] = contract
-    if not ok:
-        output["resultSummary"] = str(contract.get("error") or contract.get("summary") or "")[:500]
-    return output
+    return project_tool_dispatch(meta, result)
+
 
 
 def _tool_result_with_contract(
@@ -1988,45 +1973,12 @@ def _tool_result_with_contract(
     *,
     source_native_id: str = "",
 ) -> Any:
-    contract = normalize_tool_result(tool_name, result)
-    if isinstance(result, dict):
-        output = dict(result)
-        output.setdefault("tool_result_contract", contract)
-    else:
-        output = {
-            "ok": bool(contract.get("ok")),
-            "zhuangtai": str(contract.get("status") or ""),
-            "value": result,
-            "tool_result_contract": contract,
-        }
-    native_id = str(source_native_id or "").strip() or (
-        "tool.result." + hashlib.sha256(json.dumps(
-            {"tool_name": tool_name, "contract": contract},
-            ensure_ascii=False,
-            sort_keys=True,
-            default=str,
-        ).encode("utf-8")).hexdigest()[:32]
+    return attach_tool_result_contract(
+        tool_name,
+        result,
+        source_native_id=source_native_id,
     )
-    from world_understanding.post_commit import NativePostCommitEvent, notify_native_post_commit
 
-    from .run_context import current_run_context
-    run_context = current_run_context()
-    causal = {}
-    if run_context.source_inquiry_id:
-        causal = {
-            "source_inquiry_id": run_context.source_inquiry_id,
-            "autonomous_intent_id": run_context.autonomous_intent_id,
-            "gateway_intent_id": run_context.outer_execution_ticket_id,
-            "terminal_status": "success" if bool(contract.get("ok")) else "failure",
-        }
-    notify_native_post_commit(NativePostCommitEvent(
-        source_kind="TOOL_RESULT",
-        source_native_id=native_id,
-        producer_ref="v3.tool_result_contract",
-        payload={"tool_name": str(tool_name or ""), **contract, **causal},
-        occurred_at_ms=int(time.time() * 1000),
-    ))
-    return output
 
 
 def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
@@ -3089,55 +3041,13 @@ def _tool_is_write_effect(tool_name: str, result: Any) -> bool:
 
 
 def _contract_observed_write(contract: dict[str, Any] | None) -> bool:
-    if not isinstance(contract, dict):
-        return False
-    if "observed_write_effect" in contract or "write_evidence" in contract:
-        evidence = contract.get("write_evidence")
-        return bool(
-            contract.get("observed_write_effect")
-            and isinstance(evidence, dict)
-            and evidence.get("authoritative") is True
-            and (evidence.get("changed_files") or evidence.get("deleted_files") or evidence.get("verified_unchanged_files"))
-        )
-    # Durable checkpoints created before v3.write_evidence.v1 only have the
-    # legacy boolean. Preserve resume compatibility without allowing newly
-    # normalized results to self-certify.
-    return bool(contract.get("write_effect"))
+    return contract_observed_write(contract)
+
 
 
 def _tool_write_verified(tool_name: str, result: Any) -> bool:
-    contract = normalize_tool_result(tool_name, result)
-    if not contract.get("ok"):
-        return False
-    evidence = contract.get("write_evidence")
-    if _contract_observed_write(contract):
-        if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
-            return False
-        if not evidence.get("changed_files") and not evidence.get("deleted_files") and not evidence.get("verified_unchanged_files"):
-            return False
-        if not isinstance(result, dict):
-            return True
-        readback = result.get("readback")
-        if isinstance(readback, dict):
-            return readback.get("ok") is True
-        if isinstance(readback, list):
-            return bool(readback) and all(isinstance(item, dict) and item.get("ok") is True for item in readback)
-        result_evidence = result.get("evidence")
-        if isinstance(result_evidence, dict) and result_evidence.get("exists") is True:
-            return True
-        # The pre/post or sandbox-broker evidence above is already authoritative.
-        # A separate readback is desirable but is enforced by the final
-        # post-mutation verification gate, not by inventing a write here.
-        return True
-    # B4 磁盘兜底：契约缺 write_effect，但写工具返回的目标路径在磁盘上真实存在。
-    # 仅对写类动作生效（本函数只被写类质量载荷调用），读动作不会走到这里。
-    try:
-        paths = [str(path) for path in (contract.get("paths") or []) if str(path or "").strip()]
-        if paths and all(Path(path).is_file() for path in paths):
-            return True
-    except Exception:
-        pass
-    return False
+    return tool_write_verified(tool_name, result)
+
 
 
 def _simple_chain_payload_paths(payload: dict[str, Any]) -> list[str]:
@@ -5104,7 +5014,7 @@ def _simple_chain_quality_gate_payload(
     run_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     action = _simple_chain_tool_action(tool_name, tool_args) if str(tool_name or "").strip() in SIMPLE_CHAIN_TOOL_NAMES else ""
-    contract = normalize_tool_result(tool_name, tool_result)
+    contract = canonical_tool_result(tool_name, tool_result)
     source_text_map = _simple_chain_source_text_map(user_message, tool_name, tool_args, tool_result, contract)
     codex_evidence = _simple_chain_codex_evidence(user_message, tool_name, tool_args, tool_result, contract)
     codex_evidence["source_text_map_ref"] = "quality_payload.source_text_map"
@@ -5930,23 +5840,17 @@ def _simple_chain_life_completion_gate(
     final_reply: Any = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], bool, str, list[str]]:
-    """Apply evidence observations, then let the life contract decide once."""
-
-    _evidence_ok, evidence_status, evidence_reasons = _simple_chain_evidence_check(
+    return decide_simple_chain_completion(
         user_message,
         quality_history,
         generated_attachments,
+        task_contract=task_contract,
+        evidence_check=_simple_chain_evidence_check,
         required_read_paths=required_read_paths,
         final_reply=final_reply,
         task_obligations=task_obligations,
     )
-    return decide_task_contract_completion(
-        task_contract,
-        evidence_reasons=evidence_reasons,
-        evidence_status=evidence_status,
-        final_reply=final_reply,
-        has_real_observation=bool(quality_history),
-    )
+
 
 
 _INCOMPLETE_REASON_RENHUA = (
@@ -6522,29 +6426,25 @@ class Zongdiaodu:
     """总调度：唯一唤醒入口"""
 
     def __init__(self, llm_diaoyong_han_shu: Callable | None = None):
-        if llm_diaoyong_han_shu is not None:
-            self.http_kehuduan = None
-            self.gutong = GutongCeng(llm_diaoyong_han_shu)
-        else:
-            self.http_kehuduan = HttpKehuduan()
-            self.gutong = GutongCeng(self.http_kehuduan.zuowei_huidiao())
+        composition = build_zongdiaodu_composition(llm_diaoyong_han_shu)
+        self.http_kehuduan = composition.http_kehuduan
+        self.gutong = composition.gutong
         self._zuihou_biaoxian_default = _biaoxian_default()
         self.shengming_zhouqi = None
-        self.xintiao = _DetachedLegacyHeartbeat()
-        # 引擎实例化
-        self.guancha_yq = GuanchaYinqing()
+        self.xintiao = DetachedLegacyHeartbeat()
+        self.guancha_yq = composition.guancha_yq
         self.jingyan_chi = None
-        self.jinhua_yq = JinhuaYinqing()
-        self.jinhua_biaoda = JinhuaBiaodaRouter()
-        self.jinhua_bihuan = JinhuaBihuanYinqing()
-        self.ziyu_yq = ZiyuYinqing()
+        self.jinhua_yq = composition.jinhua_yq
+        self.jinhua_biaoda = composition.jinhua_biaoda
+        self.jinhua_bihuan = composition.jinhua_bihuan
+        self.ziyu_yq = composition.ziyu_yq
         self.zizhu_xuexi_yq = None
         self._xuexi_lian = None
         self._shenti_by_scope: dict[str, ShentiZhuangtai] = {}
 
-        # 生命链 v3.6.1：执行链与生命链隔离
-        self._lifecycle_lock = threading.Lock()
-        self._active_user_run_lock = threading.Lock()
+        # Mutable run state remains owned by the one Zongdiaodu host.
+        self._lifecycle_lock = composition.lifecycle_lock
+        self._active_user_run_lock = composition.active_user_run_lock
         self._active_user_run_count = 0
         self._active_user_run = False
         self.life_orchestrator = None
@@ -6639,14 +6539,11 @@ class Zongdiaodu:
         return self._shenti_by_scope[scope]
 
     def qidong(self):
-        """启动总调度（含心跳 + 状态同步 + 对话桥接 + 旧任务清理）"""
-        self._cleanup_stale_run_states()
-        if SHENGMING_LIFE_CHAIN_ENABLED:
-            self.xintiao.gengxin_shenti(self.shenti)
-            self.xintiao.qidong()
-        TONGBU.qidong()
-        QIAOJIE.shezhi_zongdiaodu(self)
-        QIAOJIE.qidong()
+        """启动唯一 V3 总调度；具体接线由 lifecycle port 持有。"""
+        start_zongdiaodu_runtime(
+            self,
+            life_chain_enabled=SHENGMING_LIFE_CHAIN_ENABLED,
+        )
 
     def _cleanup_stale_run_states(self):
         """启动对账：终态白名单反转 + owner 存活判定 + 统一根目录 + 保留策略。
@@ -6810,9 +6707,11 @@ class Zongdiaodu:
             )
 
     def tingzhi(self):
-        """停止总调度"""
-        if SHENGMING_LIFE_CHAIN_ENABLED:
-            self.xintiao.tingzhi()
+        """停止唯一 V3 总调度；保持原有停止语义。"""
+        stop_zongdiaodu_runtime(
+            self,
+            life_chain_enabled=SHENGMING_LIFE_CHAIN_ENABLED,
+        )
 
     class _InterimTextEmitter:
         """将流式文本按节流策略累积写入 run 状态，供前端轮询实时展示。
@@ -7154,10 +7053,10 @@ class Zongdiaodu:
                 raise holder["error"]
             return holder["value"]
 
-        gongju_cishu = 0
+        turn_loop = TurnLoopState()
+        gongju_cishu = turn_loop.action_rounds
         tool_call_counts: dict[str, int] = {}
         tool_call_results: dict[str, Any] = {}
-        repeat_observation_counts: dict[str, int] = {}
         protected_path_keys: set[str] = set()
         generated_media: list[dict[str, str]] = []
         generated_attachments: list[dict[str, str]] = []
@@ -7173,14 +7072,9 @@ class Zongdiaodu:
         final_guard_exhausted = False
         final_chain_status = "complete"
         correction_state = _simple_chain_completion_correction_state(run_state)
-        iteration_count = 0
+        iteration_count = turn_loop.iteration_count
         loop_started_at = time.monotonic()
-        if isinstance(run_state, dict):
-            run_state["_live"] = {
-                "iteration_count": 0,
-                "tool_rounds": 0,
-                "loop_started_at": loop_started_at,
-            }
+        turn_loop.project_live(run_state, loop_started_at)
         progress_monitor = _SimpleChainProgressMonitor(
             max_no_progress_steps=_SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
             max_cycle_hits=_SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
@@ -7273,9 +7167,8 @@ class Zongdiaodu:
 
         def _check_stop(summary: str = "") -> None:
             """停止检查前先投影预算，保证中断点上的时长/轮次精确落盘。"""
-            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
-                run_state["_live"]["iteration_count"] = iteration_count
-                run_state["_live"]["tool_rounds"] = gongju_cishu
+            turn_loop.project_live(run_state, loop_started_at)
+            if isinstance(run_state, dict):
                 _simple_chain_save_run_state(run_state)
             if run_control:
                 run_control.check_stop(summary)
@@ -7369,9 +7262,8 @@ class Zongdiaodu:
         while True:
             if initial_llm_failed or audio_semantic_unavailable:
                 break
-            iteration_count += 1
-            if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
-                run_state["_live"]["iteration_count"] = iteration_count
+            iteration_count = turn_loop.bump_iteration()
+            turn_loop.project_live(run_state, loop_started_at)
             loop_elapsed = time.monotonic() - loop_started_at
             # 状态级卡死判定：状态指纹连续无变化 / 状态回环 / 意图文本重复。
             # 单工具重复不再作为判据（误伤合法重跑），只保留保护性安全网。
@@ -7402,15 +7294,14 @@ class Zongdiaodu:
                         },
                     )
                 break
-            if (
-                iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS
-                or loop_elapsed > effective_wall_clock_seconds
-            ):
-                budget_reasons: list[str] = []
-                if iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS:
-                    budget_reasons.append("[loop_budget_exhausted] loop iteration budget exhausted")
-                if loop_elapsed > effective_wall_clock_seconds:
-                    budget_reasons.append("[loop_budget_exhausted] wall-clock budget exhausted")
+            budget_decision = evaluate_turn_budget(
+                iteration_count=iteration_count,
+                elapsed_seconds=loop_elapsed,
+                max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                max_wall_clock_seconds=effective_wall_clock_seconds,
+            )
+            if budget_decision.exhausted:
+                budget_reasons = list(budget_decision.reasons)
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
@@ -7533,34 +7424,44 @@ class Zongdiaodu:
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     continue
-                seen_parallel: set[str] = set()
-                unique_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
-                repeated_parallel: list[tuple[str, dict[str, Any], str, str]] = []
+                coordination_candidates: list[PreparedStep] = []
                 for tn, ta, _action, _issues in prepared_parallel:
                     call_key = _gongju_diaoyong_key(tn, ta)
-                    if call_key in seen_parallel:
-                        # One model response may contain the same call twice.
-                        # Execute a single occurrence; there is no prior fact to
-                        # replay yet and duplicate side effects are forbidden.
-                        continue
-                    if call_key in tool_call_results and _simple_chain_should_replay_cached_call(
-                        tool_call_results.get(call_key)
-                    ):
-                        repeated_parallel.append((tn, ta, call_key, _action))
-                        seen_parallel.add(call_key)
-                        continue
-                    seen_parallel.add(call_key)
-                    unique_parallel.append((tn, ta, _action, _issues))
-                prepared_parallel = unique_parallel
-                protected_parallel: list[tuple[str, dict[str, Any], list[str]]] = []
-                remaining_parallel: list[tuple[str, dict[str, Any], str, list[str]]] = []
-                for _pn, _pa, _paction, _pissues in prepared_parallel:
-                    protected_hits = _simple_chain_protected_block(_pn, _pa, protected_path_keys)
-                    if protected_hits:
-                        protected_parallel.append((_pn, _pa, protected_hits))
-                    else:
-                        remaining_parallel.append((_pn, _pa, _paction, _pissues))
-                prepared_parallel = remaining_parallel
+                    coordination_candidates.append(
+                        PreparedStep(
+                            name=tn,
+                            arguments=ta,
+                            action=_action,
+                            observations=tuple(_issues),
+                            identity_key=call_key,
+                            reuse_prior_fact=(
+                                call_key in tool_call_results
+                                and _simple_chain_should_replay_cached_call(
+                                    tool_call_results.get(call_key)
+                                )
+                            ),
+                            artifact_guard_hits=tuple(
+                                _simple_chain_protected_block(
+                                    tn,
+                                    ta,
+                                    protected_path_keys,
+                                )
+                            ),
+                        )
+                    )
+                parallel_coordination = coordinate_parallel_steps(coordination_candidates)
+                prepared_parallel = [
+                    (item.name, item.arguments, item.action, list(item.observations))
+                    for item in parallel_coordination.ready
+                ]
+                repeated_parallel = [
+                    (item.name, item.arguments, item.identity_key, item.action)
+                    for item in parallel_coordination.reused
+                ]
+                protected_parallel = [
+                    (item.name, item.arguments, list(item.artifact_guard_hits))
+                    for item in parallel_coordination.guarded
+                ]
                 if protected_parallel and prepared_parallel:
                     # 混合批次：放行新的生产性调用，只抑制会破坏已验证产物的
                     # 调用。与 parallel explicit-action filter 同一原则，
@@ -7585,8 +7486,7 @@ class Zongdiaodu:
                         )
                 elif protected_parallel:
                     guard_key = "protected_block:parallel"
-                    guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                    repeat_observation_counts[guard_key] = guard_count
+                    guard_count = turn_loop.bump_repeat(guard_key)
                     combined_protected = {
                         "schema": "tiangong.v3.parallel_protected_artifact.v1",
                         "request_id": request_id,
@@ -7651,8 +7551,7 @@ class Zongdiaodu:
                         ),
                         repeated_parallel[0],
                     )
-                    repeat_count = repeat_observation_counts.get(repeated_key, 0) + 1
-                    repeat_observation_counts[repeated_key] = repeat_count
+                    repeat_count = turn_loop.bump_repeat(repeated_key)
                     if (
                         repeat_count >= 2
                         and repeated_action not in {"skill.get", "skill.read", "skill.route"}
@@ -7736,7 +7635,7 @@ class Zongdiaodu:
                     )
                     for offset, (tn, ta, _, _) in enumerate(prepared_parallel, start=1)
                 ]
-                if gongju_cishu + len(tools) > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+                if not turn_loop.can_schedule(len(tools), _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
                     final_guard_exhausted = True
                     final_chain_status = "force_stopped"
                     shenti, huifu = _natural_closeout(
@@ -7975,7 +7874,7 @@ class Zongdiaodu:
                     call_key = _gongju_diaoyong_key(tn, ta if isinstance(ta, dict) else {})
                     tool_call_counts[call_key] = tool_call_counts.get(call_key, 0) + 1
                     tool_call_results[call_key] = raw
-                    gongju_cishu += 1
+                    gongju_cishu = turn_loop.record_batch_result()
                     if on_event:
                         ok_flag = bool(raw.get("ok", True) if isinstance(raw, dict) else True)
                         on_event({
@@ -8323,8 +8222,7 @@ class Zongdiaodu:
             candidate_call_key = _gongju_diaoyong_key(tool_name, tool_args)
             if candidate_call_key in blocked_recovery_call_keys and not explicit_retry_authorized:
                 guard_key = "recovery_guard:" + candidate_call_key
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
+                guard_count = turn_loop.bump_repeat(guard_key)
                 recovery_payload = _simple_chain_recovery_guard_payload(
                     request_id,
                     recovery_checkpoint,
@@ -8404,8 +8302,7 @@ class Zongdiaodu:
             protected_hits = _simple_chain_protected_block(tool_name, tool_args, protected_path_keys)
             if protected_hits:
                 guard_key = "protected_block:" + candidate_call_key
-                guard_count = repeat_observation_counts.get(guard_key, 0) + 1
-                repeat_observation_counts[guard_key] = guard_count
+                guard_count = turn_loop.bump_repeat(guard_key)
                 protected_payload = _simple_chain_protected_artifact_payload(
                     request_id,
                     tool_name,
@@ -8440,8 +8337,7 @@ class Zongdiaodu:
             if tool_call_key in tool_call_results and _simple_chain_should_replay_cached_call(
                 tool_call_results.get(tool_call_key)
             ):
-                repeat_count = repeat_observation_counts.get(tool_call_key, 0) + 1
-                repeat_observation_counts[tool_call_key] = repeat_count
+                repeat_count = turn_loop.bump_repeat(tool_call_key)
                 repeat_action = _simple_chain_tool_action(tool_name, tool_args)
                 if (
                     repeat_count >= 2
@@ -8554,7 +8450,7 @@ class Zongdiaodu:
                     on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
-            if gongju_cishu >= _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+            if not turn_loop.can_schedule(1, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout(
@@ -8574,7 +8470,7 @@ class Zongdiaodu:
                     )
                 break
             tool_call_counts[tool_call_key] = tool_call_counts.get(tool_call_key, 0) + 1
-            gongju_cishu += 1
+            gongju_cishu = turn_loop.reserve_one()
             tool_call_id = _simple_chain_tool_call_id(request_id, gongju_cishu, tool_name, tool_args)
             dispatch_meta = _tool_dispatch_meta(None, tool_name, tool_args, tool_label, gongju_cishu)
             dispatch_meta["call_id"] = tool_call_id
