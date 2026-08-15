@@ -1,0 +1,56 @@
+name: P18.1 Stage D seam inspection
+
+on:
+  push:
+    branches: [agent/p18-1-universal-endpoint-protocol-harness]
+    paths: [.github/workflows/p18-1-stage-d-inspect.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Print backend settings/probe functions and frontend event seams
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path = Path('app/backend/tiangong-backend/v3/duihua_qiaojie.py')
+          source = path.read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          lines = source.splitlines()
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                  node.name in {'_llm_settings', '_save_llm_settings'}
+                  or 'probe' in node.name.lower()
+                  or ('llm' in node.name.lower() and 'setting' in node.name.lower())
+              ):
+                  print(f'===== BACKEND {node.name} L{node.lineno}-L{node.end_lineno} =====')
+                  print('\n'.join(lines[node.lineno-1:node.end_lineno]))
+
+          js = Path('app/frontend-v2/renderer/plugins/settings-panel.mjs').read_text(encoding='utf-8')
+          for needle in [
+              'settingsModelPreset', 'settingsModelProvider', 'settingsProbeProviderApi',
+              'probeProviderApi', 'saveModel', 'modelBaseUrl', 'modelProvider', 'modelThinkingDepth'
+          ]:
+              print(f'===== FRONTEND needle={needle} =====')
+              start = 0
+              while True:
+                  idx = js.find(needle, start)
+                  if idx < 0:
+                      break
+                  lo = max(0, js.rfind('\n', 0, max(0, idx-1200)))
+                  hi = min(len(js), js.find('\n', idx+2200))
+                  if hi < 0:
+                      hi = len(js)
+                  print(js[lo:hi])
+                  print('-----')
+                  start = idx + len(needle)
+          PY
