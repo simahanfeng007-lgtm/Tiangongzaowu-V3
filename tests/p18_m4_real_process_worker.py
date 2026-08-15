@@ -311,9 +311,11 @@ def run_longrun(args: argparse.Namespace) -> int:
                     left, right = socket.socketpair()
                     right.close()
                     try:
-                        left.sendall(b"disconnect-probe")
-                    except OSError:
-                        metrics["network_disconnects"] += 1
+                        # Peer EOF is the cross-platform transport truth.
+                        # Windows may buffer a send after peer close, while recv()
+                        # deterministically reports the closed stream as b"".
+                        if left.recv(1) == b"":
+                            metrics["network_disconnects"] += 1
                     finally:
                         left.close()
                     metrics["sse_reconnects"] += 1
