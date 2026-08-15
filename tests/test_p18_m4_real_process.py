@@ -215,7 +215,10 @@ def test_m4_real_process_case_d_high_fault_500_steps_with_network_timeouts_lock_
         "--mode", "hold-lock",
         "--artifact", str(lock_file),
         "--ready", str(lock_ready),
-        "--hold-seconds", "4",
+        # Keep the real OS lock alive beyond this test's own 20s ready + 45s
+        # first-process barrier bounds. The parent terminates the holder in the
+        # finally block, so this increases determinism without adding wall time.
+        "--hold-seconds", "90",
     ])
     try:
         _wait_for(lock_ready, timeout=20)
