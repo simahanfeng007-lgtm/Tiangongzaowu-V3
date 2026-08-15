@@ -7,6 +7,7 @@ on:
       - scripts/p18_1_stage_d_migrate.py
       - scripts/p18_1_stage_d_migrate_v2.py
       - scripts/p18_1_stage_d_fixups.py
+      - scripts/p18_1_stage_d_frontend.py
       - .github/workflows/p18-1-stage-d-migrate.yml
 
 permissions:
@@ -14,7 +15,7 @@ permissions:
 
 jobs:
   migrate:
-    if: "${{ !startsWith(github.event.head_commit.message, 'D1 P18.1: apply Stage D settings migration') }}"
+    if: "${{ !startsWith(github.event.head_commit.message, 'D2 P18.1: apply service protocol renderer migration') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,7 @@ jobs:
         run: |
           python scripts/p18_1_stage_d_migrate_v2.py
           python scripts/p18_1_stage_d_fixups.py
+          python scripts/p18_1_stage_d_frontend.py
       - name: Compile Python seams
         run: >-
           python -m py_compile
@@ -34,8 +36,11 @@ jobs:
           app/backend/tiangong-backend/v3/model_endpoint.py
           app/backend/tiangong-backend/v3/duihua_qiaojie.py
           app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
-      - name: Check desktop JavaScript syntax
-        run: node --check app/main.js
+      - name: Check JavaScript syntax
+        run: |
+          node --check app/main.js
+          node --check app/frontend-v2/renderer/plugins/provider-presets.mjs
+          node --check app/frontend-v2/renderer/plugins/settings-panel.mjs
       - name: Commit authoritative files
         shell: bash
         run: |
@@ -47,6 +52,7 @@ jobs:
             app/backend/tiangong-backend/v3/model_endpoint.py \
             app/backend/tiangong-backend/v3/duihua_qiaojie.py \
             app/backend/tiangong-backend/v3/jineng/http_kehuduan.py \
-            app/main.js
-          git commit -m "D1 P18.1: apply Stage D settings migration"
+            app/main.js \
+            app/frontend-v2/renderer/plugins/settings-panel.mjs
+          git commit -m "D2 P18.1: apply service protocol renderer migration"
           git push origin HEAD:agent/p18-1-universal-endpoint-protocol-harness
