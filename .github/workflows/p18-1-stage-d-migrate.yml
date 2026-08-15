@@ -5,6 +5,7 @@ on:
     branches: [agent/p18-1-universal-endpoint-protocol-harness]
     paths:
       - scripts/p18_1_stage_d_migrate.py
+      - scripts/p18_1_stage_d_migrate_v2.py
       - .github/workflows/p18-1-stage-d-migrate.yml
 
 permissions:
@@ -22,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - name: Apply migration
-        run: python scripts/p18_1_stage_d_migrate.py
+        run: python scripts/p18_1_stage_d_migrate_v2.py
       - name: Compile Python seams
         run: >-
           python -m py_compile
