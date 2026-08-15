@@ -1,0 +1,50 @@
+name: P18 M4 fix concurrency probe
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Patch deterministic concurrent PREPARE identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_p18_m4_corruption_matrix.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100 + worker_no))'
+          new = 'prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100))'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one PREPARE seam, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify targeted concurrency case
+        run: python -m pytest -q tests/test_p18_m4_corruption_matrix.py::test_m4_corruption_10_two_agents_targeting_same_file_cannot_both_dispatch
+      - name: Commit production test correction and remove applicator
+        run: |
+          rm .github/workflows/p18-m4-fix-concurrency-probe.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_p18_m4_corruption_matrix.py .github/workflows/p18-m4-fix-concurrency-probe.yml
+          git commit -m "P18-M4: make concurrent prepare probe deterministic"
+          git push origin HEAD:agent/p18-m4-adversarial-certification
