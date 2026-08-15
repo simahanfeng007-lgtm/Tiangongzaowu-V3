@@ -32,9 +32,11 @@ class P18M3ProductionControlWiringTests(unittest.TestCase):
         )
         self.assertFalse(state.adaptive_execution_active)
 
-    def test_checkpoint_rollover_upgrades_same_scheduler_to_adaptive_horizon(self) -> None:
+    def test_checkpoint_seam_explicitly_upgrades_same_scheduler_to_adaptive_horizon(self) -> None:
         state = TurnLoopState(action_rounds=75, epoch_action_rounds=75)
         state.begin_next_epoch()
+        self.assertFalse(state.adaptive_execution_active)
+        state.activate_adaptive_control()
         self.assertTrue(state.adaptive_execution_active)
         self.assertEqual(state.current_epoch_round_limit(75), 48)
         for _ in range(48):
@@ -116,6 +118,7 @@ class P18M3ProductionControlWiringTests(unittest.TestCase):
     def test_live_projection_exposes_adaptive_governance_state(self) -> None:
         state = TurnLoopState()
         state.begin_next_epoch()
+        state.activate_adaptive_control()
         run_state: dict[str, object] = {}
         state.project_live(run_state, 1.0)
         live = run_state["_live"]
