@@ -1,0 +1,69 @@
+name: P18 M2 bootstrap regenerative store
+
+on:
+  push:
+    branches:
+      - agent/p18-m2-regenerative-execution-kernel
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Apply canonical store patch
+        run: python .github/p18_m2_store_patch.py
+      - name: Remove one-shot carriers
+        run: git rm -f .github/p18_m2_store_patch.py .github/workflows/p18-m2-bootstrap-store.yml
+      - name: Compile regenerative seams
+        run: >-
+          python -m py_compile
+          src/total_gateway/regenerative_execution.py
+          src/total_gateway/store.py
+          tests/test_p18_m2_regenerative_store.py
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Run focused canonical-store regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m2_regenerative_store.py
+          tests/test_gateway_store.py
+          tests/test_gateway_life_continuity.py
+          tests/test_effect_ledger.py
+      - name: Verify no second store authority
+        shell: bash
+        run: |
+          test "$(grep -R "GatewayStateStore.open" -n src/total_gateway/regenerative_execution.py | wc -l)" -eq 0
+          grep -q "STORE_SCHEMA_VERSION = 21" src/total_gateway/store.py
+          grep -q "gateway-regenerative-execution-v21" src/total_gateway/store.py
+          grep -q "def append_execution_event" src/total_gateway/store.py
+          grep -q "def commit_regenerative_checkpoint" src/total_gateway/store.py
+          grep -q "def recover_regenerative_execution" src/total_gateway/store.py
+      - name: Commit validated production change
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/total_gateway/regenerative_execution.py src/total_gateway/store.py
+          git commit -m "P18-M2: add durable execution ledger and checkpoints"
+          git push origin HEAD:agent/p18-m2-regenerative-execution-kernel
