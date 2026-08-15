@@ -99,6 +99,7 @@ class RegenerativeExecutionAuthority:
             "prepare_effect": self._prepare_effect,
             "start_effect": self._start_effect,
             "finish_effect": self._finish_effect,
+            "reconcile_effect": self._reconcile_effect,
             "commit_checkpoint": self._commit_checkpoint,
             "recover": self._recover,
             "verify_completion": self._verify_completion,
@@ -210,7 +211,7 @@ class RegenerativeExecutionAuthority:
             "event_hash": event.event_hash,
         }
 
-    def _effect_identity(self, payload: Mapping[str, Any]) -> tuple[_Identity, dict[str, Any], str, str, str, int]:
+    def _effect_identity(self, payload: Mapping[str, Any]) -> tuple[_Identity, dict[str, Any], str, str, str, int, int, str, str]:
         identity, contract = self._bound_identity(payload)
         logical_effect_id = _text(payload.get("logical_effect_id"), label="logical_effect_id")
         expected_logical = derive_logical_effect_id(
@@ -226,15 +227,33 @@ class RegenerativeExecutionAuthority:
         )
         if logical_effect_id != expected_logical:
             raise StoreConflictError("logical effect ID changed for the same immutable intent")
+        attempt = _integer(payload.get("attempt", 1), label="attempt", minimum=1)
+        global_step = _integer(payload.get("global_step"), label="global_step")
+        attempt_id = derive_attempt_id(logical_effect_id=logical_effect_id, attempt=attempt)
+        step_id = derive_step_id(
+            request_id=identity.request_id,
+            run_id=identity.run_id,
+            generation=identity.generation,
+            global_step=global_step,
+            logical_effect_id=logical_effect_id,
+        )
         generation_binding = self._store.get_request_generation_binding(identity.request_id)
         if generation_binding is None:
             raise StoreConflictError("request generation binding disappeared")
         run_sequence = int(generation_binding["run_sequence"])
-        intent_sha = canonical_sha256({
-            "domain": "tiangong.gateway.logical-effect-intent.v1",
+        physical_key = canonical_sha256({
+            "domain": "tiangong.gateway.physical-effect-attempt.v1",
             "logical_effect_id": logical_effect_id,
+            "attempt_id": attempt_id,
+            "step_id": step_id,
         })
-        ordinal = int(logical_effect_id[4:16], 16)
+        ordinal = int(physical_key[:8], 16) & 0x7fffffff
+        intent_sha = canonical_sha256({
+            "domain": "tiangong.gateway.physical-effect-intent.v1",
+            "logical_effect_id": logical_effect_id,
+            "attempt_id": attempt_id,
+            "step_id": step_id,
+        })
         effect_id = derive_effect_identity(
             request_id=identity.request_id,
             run_id=identity.run_id,
@@ -244,28 +263,81 @@ class RegenerativeExecutionAuthority:
             ordinal=ordinal,
             intent_sha256=intent_sha,
         ).effect_id
-        return identity, contract, logical_effect_id, effect_id, intent_sha, run_sequence
+        return (
+            identity, contract, logical_effect_id, effect_id, intent_sha,
+            run_sequence, ordinal, attempt_id, step_id,
+        )
+
+    def _logical_effect_disposition(
+        self, identity: _Identity, logical_effect_id: str
+    ) -> tuple[str | None, Any | None]:
+        unresolved_ambiguous: dict[str, Any] = {}
+        committed = None
+        for event in self._store.list_execution_events(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation
+        ):
+            if event.logical_effect_id != logical_effect_id:
+                continue
+            if event.event_type == "step.committed":
+                committed = event
+            elif event.event_type == "step.ambiguous" and event.effect_id:
+                unresolved_ambiguous[event.effect_id] = event
+            elif event.event_type == "step.reconciled" and event.effect_id:
+                verdict = str(event.payload.get("verdict") or "").upper()
+                if verdict == "APPLIED":
+                    committed = event
+                    unresolved_ambiguous.pop(event.effect_id, None)
+                elif verdict == "PROVEN_NOT_APPLIED":
+                    unresolved_ambiguous.pop(event.effect_id, None)
+        if committed is not None:
+            return "already_committed", committed
+        if unresolved_ambiguous:
+            return "reconcile_required", list(unresolved_ambiguous.values())[-1]
+        return None, None
 
     def _prepare_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        identity, _contract, logical_effect_id, effect_id, intent_sha, run_sequence = self._effect_identity(payload)
+        (
+            identity, _contract, logical_effect_id, effect_id, intent_sha,
+            run_sequence, ordinal, attempt_id, step_id,
+        ) = self._effect_identity(payload)
         now_ms = _integer(payload.get("now_ms"), label="now_ms")
         attempt = _integer(payload.get("attempt", 1), label="attempt", minimum=1)
+        prior_disposition, prior_event = self._logical_effect_disposition(identity, logical_effect_id)
+        if prior_disposition is not None:
+            prior_effect_id = str(getattr(prior_event, "effect_id", "") or "") or effect_id
+            event, _ = self._store.append_execution_event(
+                event_key=f"step.prepared:{step_id}:{attempt}",
+                request_id=identity.request_id, run_id=identity.run_id,
+                generation=identity.generation,
+                epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
+                event_type="step.prepared", created_at_ms=now_ms,
+                payload={
+                    "disposition": prior_disposition,
+                    "effect_state": "LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "AMBIGUOUS",
+                    "claimed_now": False,
+                    "prior_event_id": getattr(prior_event, "event_id", None),
+                    "obligation_key": payload.get("obligation_key"),
+                    "effect_namespace": payload.get("effect_namespace"),
+                    "normalized_target": payload.get("normalized_target"),
+                    "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
+                },
+                logical_effect_id=logical_effect_id, attempt_id=attempt_id,
+                step_id=step_id, effect_id=prior_effect_id,
+            )
+            return {
+                "disposition": prior_disposition, "effect_id": prior_effect_id,
+                "logical_effect_id": logical_effect_id, "attempt_id": attempt_id,
+                "step_id": step_id,
+                "effect_state": "LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "AMBIGUOUS",
+                "ledger_seq": event.ledger_seq,
+            }
         claim = EffectClaim(
-            effect_id=effect_id,
-            request_id=identity.request_id,
-            run_id=identity.run_id,
-            run_sequence=run_sequence,
-            generation=identity.generation,
-            effect_kind="execution",
-            ordinal=int(logical_effect_id[4:16], 16),
-            intent_sha256=intent_sha,
-            pipeline_version="p18-m2-regenerative-effect-v1",
-            attempt=1,
-            claim_revision=1,
-            lease_epoch=1,
-            supersedes_claim_sha256=None,
-            owner_component_id="tiangong-total-gateway",
-            claimed_at_ms=now_ms,
+            effect_id=effect_id, request_id=identity.request_id, run_id=identity.run_id,
+            run_sequence=run_sequence, generation=identity.generation,
+            effect_kind="execution", ordinal=ordinal, intent_sha256=intent_sha,
+            pipeline_version="p18-m2-regenerative-effect-v1", attempt=1,
+            claim_revision=1, lease_epoch=1, supersedes_claim_sha256=None,
+            owner_component_id="tiangong-total-gateway", claimed_at_ms=now_ms,
             claim_sha256="0" * 64,
         ).with_computed_sha256()
         record, claimed = self._store.claim_effect(claim)
@@ -279,44 +351,25 @@ class RegenerativeExecutionAuthority:
             disposition = "failed_final"
         else:
             disposition = "blocked"
-        attempt_id = derive_attempt_id(logical_effect_id=logical_effect_id, attempt=attempt)
-        step_id = derive_step_id(
-            request_id=identity.request_id,
-            run_id=identity.run_id,
-            generation=identity.generation,
-            global_step=_integer(payload.get("global_step"), label="global_step"),
-            logical_effect_id=logical_effect_id,
-        )
-        event_key = f"step.prepared:{logical_effect_id}:{attempt}"
         event, _ = self._store.append_execution_event(
-            event_key=event_key,
-            request_id=identity.request_id,
-            run_id=identity.run_id,
-            generation=identity.generation,
+            event_key=f"step.prepared:{step_id}:{attempt}", request_id=identity.request_id,
+            run_id=identity.run_id, generation=identity.generation,
             epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
-            event_type="step.prepared",
-            created_at_ms=now_ms,
+            event_type="step.prepared", created_at_ms=now_ms,
             payload={
-                "disposition": disposition,
-                "effect_state": record.state,
-                "claimed_now": claimed,
-                "obligation_key": payload.get("obligation_key"),
+                "disposition": disposition, "effect_state": record.state,
+                "claimed_now": claimed, "obligation_key": payload.get("obligation_key"),
                 "effect_namespace": payload.get("effect_namespace"),
                 "normalized_target": payload.get("normalized_target"),
                 "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
             },
-            logical_effect_id=logical_effect_id,
-            attempt_id=attempt_id,
-            step_id=step_id,
-            effect_id=effect_id,
+            logical_effect_id=logical_effect_id, attempt_id=attempt_id,
+            step_id=step_id, effect_id=effect_id,
         )
         return {
-            "disposition": disposition,
-            "effect_id": effect_id,
-            "logical_effect_id": logical_effect_id,
-            "attempt_id": attempt_id,
-            "step_id": step_id,
-            "effect_state": record.state,
+            "disposition": disposition, "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id, "attempt_id": attempt_id,
+            "step_id": step_id, "effect_state": record.state,
             "ledger_seq": event.ledger_seq,
         }
 
@@ -336,7 +389,7 @@ class RegenerativeExecutionAuthority:
             return {"dispatch_permitted": False, "disposition": "reconcile_required", "effect_state": record.state}
         started = self._store.mark_effect_started(effect_id, started_at_ms=now_ms)
         event, _ = self._store.append_execution_event(
-            event_key=f"step.dispatched:{logical_effect_id}:{attempt_id}",
+            event_key=f"step.dispatched:{step_id}:{attempt_id}",
             request_id=identity.request_id,
             run_id=identity.run_id,
             generation=identity.generation,
@@ -400,7 +453,7 @@ class RegenerativeExecutionAuthority:
             "AMBIGUOUS": "step.ambiguous",
         }[status]
         event, _ = self._store.append_execution_event(
-            event_key=f"{event_type}:{logical_effect_id}:{attempt_id}",
+            event_key=f"{event_type}:{step_id}:{attempt_id}",
             request_id=identity.request_id,
             run_id=identity.run_id,
             generation=identity.generation,
@@ -421,6 +474,44 @@ class RegenerativeExecutionAuthority:
             "effect_id": effect_id,
             "effect_state": record.state,
             "result_sha256": result.result_sha256,
+            "ledger_seq": event.ledger_seq,
+        }
+
+    def _reconcile_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        identity, _contract = self._bound_identity(payload)
+        effect_id = _text(payload.get("effect_id"), label="effect_id")
+        logical_effect_id = _text(payload.get("logical_effect_id"), label="logical_effect_id")
+        attempt_id = _text(payload.get("attempt_id"), label="attempt_id")
+        step_id = _text(payload.get("step_id"), label="step_id")
+        verdict = _text(payload.get("verdict"), label="verdict").upper()
+        if verdict not in {"APPLIED", "PROVEN_NOT_APPLIED", "INCONCLUSIVE"}:
+            raise ValueError("reconciliation verdict is invalid")
+        now_ms = _integer(payload.get("now_ms"), label="now_ms")
+        record = self._store.get_effect(effect_id)
+        if record is None or record.claim.request_id != identity.request_id or record.claim.run_id != identity.run_id or record.claim.generation != identity.generation:
+            raise StoreConflictError("reconciliation effect is not owned by this Run")
+        result = self._store.record_effect_reconciliation(
+            effect_id=effect_id, attempt=1, verdict=verdict,
+            evidence=dict(_mapping(payload.get("evidence"))), observed_at_ms=now_ms,
+        )
+        event, _ = self._store.append_execution_event(
+            event_key=f"step.reconciled:{step_id}:{attempt_id}:{verdict}",
+            request_id=identity.request_id, run_id=identity.run_id,
+            generation=identity.generation,
+            epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
+            event_type="step.reconciled", created_at_ms=now_ms,
+            payload={
+                "verdict": verdict, "contradiction": bool(result.get("contradiction")),
+                "attempt_state": result.get("attempt_state"),
+                "evidence": dict(_mapping(payload.get("evidence"))),
+            },
+            logical_effect_id=logical_effect_id, attempt_id=attempt_id,
+            step_id=step_id, effect_id=effect_id,
+        )
+        return {
+            "verdict": verdict, "contradiction": bool(result.get("contradiction")),
+            "retry_allowed": verdict == "PROVEN_NOT_APPLIED" and not bool(result.get("contradiction")),
+            "logical_committed": verdict == "APPLIED" and not bool(result.get("contradiction")),
             "ledger_seq": event.ledger_seq,
         }
 
@@ -567,7 +658,30 @@ class RegenerativeExecutionAuthority:
                 model_generated=False,
                 result_sha256="0" * 64,
             ).with_computed_sha256()
+            dispatched = next((
+                event for event in reversed(self._store.list_execution_events(
+                    identity.request_id, run_id=identity.run_id, generation=identity.generation
+                ))
+                if event.effect_id == record.claim.effect_id
+                and event.event_type == "step.dispatched"
+            ), None)
             self._store.complete_effect(result)
+            if dispatched is None or not dispatched.logical_effect_id or not dispatched.attempt_id or not dispatched.step_id:
+                raise StoreCorruptionError("started effect has no canonical dispatch event for crash recovery")
+            self._store.append_execution_event(
+                event_key=f"step.ambiguous:{dispatched.step_id}:{dispatched.attempt_id}:restart",
+                request_id=identity.request_id, run_id=identity.run_id,
+                generation=identity.generation, epoch_index=dispatched.epoch_index,
+                event_type="step.ambiguous", created_at_ms=now_ms,
+                payload={
+                    "effect_state": "AMBIGUOUS",
+                    "reason": "process_restart_after_dispatch",
+                    "result_sha256": result.result_sha256,
+                },
+                logical_effect_id=dispatched.logical_effect_id,
+                attempt_id=dispatched.attempt_id, step_id=dispatched.step_id,
+                effect_id=record.claim.effect_id, causal_parent_event_id=dispatched.event_id,
+            )
         recovered = self._store.recover_regenerative_execution(
             identity.request_id,
             run_id=identity.run_id,

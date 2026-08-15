@@ -5268,6 +5268,19 @@ class GatewayStateStore:
             )
             return True
 
+    def get_request_generation_binding(self, request_id: str) -> dict | None:
+        """Return the authoritative generation row without exposing a mutable handle."""
+        if not request_id:
+            raise ValueError("request_id is required")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM request_generation WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            return None if row is None else dict(row)
+
     def get_execution_task_contract(
         self, request_id: str, *, run_id: str, generation: int
     ) -> dict | None:
