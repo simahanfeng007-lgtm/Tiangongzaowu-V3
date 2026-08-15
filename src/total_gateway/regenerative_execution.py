@@ -252,6 +252,7 @@ class RegenerativeCheckpoint(BaseModel):
     global_step: int = Field(ge=0)
     frontier_version: int = Field(ge=1)
     frontier_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    frontier: ExecutionFrontier
     continuity_capsule_id: str = Field(min_length=1, max_length=160)
     ledger_head_seq: int = Field(ge=0)
     ledger_head_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -273,6 +274,19 @@ class RegenerativeCheckpoint(BaseModel):
 
     @model_validator(mode="after")
     def validate_checkpoint(self) -> Self:
+        if (
+            self.frontier.request_id != self.request_id
+            or self.frontier.run_id != self.run_id
+            or self.frontier.generation != self.generation
+            or self.frontier.life_id != self.life_id
+            or self.frontier.root_goal_hash != self.root_goal_hash
+            or self.frontier.task_contract_hash != self.task_contract_hash
+            or self.frontier.authority_hash != self.authority_hash
+            or self.frontier.frontier_version != self.frontier_version
+            or self.frontier.frontier_hash != self.frontier_hash
+            or not self.frontier.has_valid_hash()
+        ):
+            raise ValueError("checkpoint frontier binding is invalid")
         if self.pending_effect_ids != tuple(sorted(set(self.pending_effect_ids))):
             raise ValueError("checkpoint pending effect ids must be sorted and unique")
         if self.ambiguous_effect_ids != tuple(sorted(set(self.ambiguous_effect_ids))):
@@ -392,6 +406,7 @@ def build_regenerative_checkpoint(
         global_step=frontier.global_step,
         frontier_version=frontier.frontier_version,
         frontier_hash=frontier.frontier_hash,
+        frontier=frontier,
         continuity_capsule_id=continuity_capsule_id,
         ledger_head_seq=ledger_head_seq,
         ledger_head_hash=ledger_head_hash,
