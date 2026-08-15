@@ -89,6 +89,13 @@ from .runtime_turn_orchestration import (
     coordinate_parallel_steps,
     evaluate_turn_budget,
 )
+from .runtime_adaptive_observation import (
+    EpochRealityObservation,
+    horizon_metrics_from_observation,
+    resource_budget_from_runtime,
+    resource_usage_from_observation,
+    semantic_signals_from_observation,
+)
 from .runtime_tool_result_boundary import (
     attach_tool_result_contract,
     canonical_tool_result,
@@ -1092,7 +1099,25 @@ def _simple_chain_regenerative_initialize(
         "task_contract_hash": str(initialized["task_contract_hash"]),
         "authority_hash": str(initialized["authority_hash"]),
     })
-    recovered = _simple_chain_regenerative_call(run_state, "recover")
+    recovered = _simple_chain_regenerative_call(
+        run_state,
+        "recover",
+        runtime_version="tiangong-v3-p18-m2",
+        provider_version="gateway-regenerative-provider-v1",
+        model_version=str(MOREN_PROVIDER or "configured-model"),
+        tool_contract_version="omni_body.v1",
+        skill_contract_version="skill.v1",
+        task_contract_version=str((run_state.get("task_contract") or {}).get("schema") or "task.v1"),
+    )
+    if isinstance(recovered, dict) and recovered.get("recoverable") is True and recovered.get("resume_allowed") is False:
+        state["version_resume_blocked"] = {
+            "reason": str(recovered.get("reason") or "RECONCILE_REQUIRED"),
+            "reconcile_required": bool(recovered.get("reconcile_required")),
+            "migration_required": bool(recovered.get("migration_required")),
+            "revalidation_required": bool(recovered.get("revalidation_required")),
+            "version_mismatches": list(recovered.get("version_mismatches") or ()),
+        }
+        return recovered
     if isinstance(recovered, dict) and recovered.get("recoverable") is True:
         frontier = recovered.get("frontier") if isinstance(recovered.get("frontier"), dict) else {}
         state["recovery_frontier"] = frontier
@@ -1457,6 +1482,102 @@ def _simple_chain_regenerative_execute_tool(
     return raw
 
 
+def _simple_chain_m3_observe_checkpoint(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    frontier: dict[str, Any],
+    checkpoint_latency_seconds: float,
+) -> None:
+    """Feed M3 only from already-observed execution/checkpoint reality."""
+    state = _simple_chain_regenerative_state(run_state)
+    raw_calls = run_state.get("tool_calls") if isinstance(run_state.get("tool_calls"), list) else []
+    offset = max(0, min(len(raw_calls), int(state.get("m3_observed_tool_calls") or 0)))
+    recent_calls = [item for item in raw_calls[offset:] if isinstance(item, dict)]
+    successful = sum(1 for item in recent_calls if bool(item.get("ok")))
+    failed = sum(1 for item in recent_calls if not bool(item.get("ok")))
+    readonly = sum(
+        1 for item in recent_calls
+        if bool(item.get("ok")) and str(item.get("tool_action") or "") in SIMPLE_CHAIN_READ_ONLY_ACTIONS
+    )
+    mutating = sum(
+        1 for item in recent_calls
+        if bool(item.get("ok")) and str(item.get("tool_action") or "") in _SIMPLE_CHAIN_MUTATING_ACTIONS
+    )
+    completed_ids = {str(item) for item in frontier.get("completed_obligation_ids") or () if str(item)}
+    pending_ids = {str(item) for item in frontier.get("pending_obligation_ids") or () if str(item)}
+    active_id = str(frontier.get("active_obligation_id") or "")
+    blockers = {str(item) for item in frontier.get("active_blockers") or () if str(item)}
+    pending_effects = {str(item) for item in frontier.get("pending_effect_ids") or () if str(item)}
+    ambiguous_effects = {str(item) for item in frontier.get("ambiguous_effect_ids") or () if str(item)}
+    frontier_contradiction = bool(completed_ids.intersection(pending_ids)) or bool(active_id and active_id in completed_ids)
+
+    previous_completed = max(0, int(state.get("m3_completed_obligations") or 0))
+    progress_delta = float(max(0, len(completed_ids) - previous_completed))
+    fact_head = str(frontier.get("verified_fact_head") or "")
+    artifact_head = str(frontier.get("artifact_revision_head") or "")
+    if fact_head and fact_head != str(state.get("m3_verified_fact_head") or ""):
+        progress_delta += 1.0
+    if artifact_head and artifact_head != str(state.get("m3_artifact_revision_head") or ""):
+        progress_delta += 1.0
+
+    current_root_hash, current_task_hash = _simple_chain_task_hashes(run_state)
+    root_match = str(state.get("root_goal_hash") or "") in {"", str(current_root_hash or "")}
+    task_match = str(state.get("task_contract_hash") or "") in {"", str(current_task_hash or "")}
+    live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else {}
+    context_pressure = float(live.get("context_pressure") or 0.0)
+    loop_started_at = live.get("loop_started_at")
+    wall_clock = max(0.0, time.monotonic() - float(loop_started_at)) if loop_started_at else 0.0
+    repeat_peak = max((int(value) for value in turn_loop.repeat_counts.values()), default=0)
+
+    observation = EpochRealityObservation(
+        successful_tools=successful,
+        failed_tools=failed,
+        read_only_successes=readonly,
+        mutating_successes=mutating,
+        repeat_peak=repeat_peak,
+        ambiguous_effects=len(ambiguous_effects),
+        pending_effects=len(pending_effects),
+        pending_obligations=len(pending_ids),
+        completed_obligations=len(completed_ids),
+        blockers=len(blockers),
+        progress_delta=progress_delta,
+        context_pressure=context_pressure,
+        checkpoint_commit_latency_seconds=max(0.0, float(checkpoint_latency_seconds)),
+        wall_clock_seconds=wall_clock,
+        global_steps=max(0, int(frontier.get("global_step") or 0)),
+        epoch_index=max(0, int(frontier.get("epoch_index") or 0)),
+        root_goal_match=root_match,
+        task_contract_match=task_match,
+        authority_reference_match=True,
+        frontier_contradiction=frontier_contradiction,
+        semantic_handoff_contradiction=False,
+        critical_fact_verified=str(state.get("critical_fact_status") or "verified").lower() == "verified",
+    )
+    metrics = horizon_metrics_from_observation(observation)
+    semantic = turn_loop.observe_semantic_drift(
+        semantic_signals_from_observation(observation),
+        base_metrics=metrics,
+    )
+    no_progress_streak = 0 if progress_delta > 0.0 else max(0, int(state.get("m3_no_progress_epochs") or 0)) + 1
+    governor = turn_loop.observe_resource_governor(
+        usage=resource_usage_from_observation(observation),
+        budget=resource_budget_from_runtime(wall_clock_budget_seconds=_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS),
+        progress_delta=progress_delta,
+        regeneration_streak=no_progress_streak,
+    )
+    state.update({
+        "m3_observed_tool_calls": len(raw_calls),
+        "m3_completed_obligations": len(completed_ids),
+        "m3_verified_fact_head": fact_head,
+        "m3_artifact_revision_head": artifact_head,
+        "m3_no_progress_epochs": no_progress_streak,
+        "m3_last_risk": float(turn_loop.adaptive_horizon.ewma_risk),
+        "m3_last_epoch_limit": int(turn_loop.adaptive_horizon.current_epoch_steps),
+        "m3_last_semantic_drift": float(semantic.score),
+        "m3_resource_governor_allowed": bool(governor.allowed),
+    })
+
 def _simple_chain_regenerative_checkpoint(
     run_state: dict[str, Any],
     turn_loop: TurnLoopState,
@@ -1464,6 +1585,7 @@ def _simple_chain_regenerative_checkpoint(
     source: str,
 ) -> bool:
     context = current_run_context()
+    checkpoint_started_at = time.monotonic()
     if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
         return True
     state = _simple_chain_regenerative_state(run_state)
@@ -1506,6 +1628,12 @@ def _simple_chain_regenerative_checkpoint(
     state["checkpoint_hash"] = str(result.get("checkpoint_hash") or "")
     state["frontier_hash"] = str(result.get("frontier_hash") or state.get("frontier_hash") or "")
     state["checkpoint_source"] = source
+    _simple_chain_m3_observe_checkpoint(
+        run_state,
+        turn_loop,
+        frontier=frontier,
+        checkpoint_latency_seconds=max(0.0, time.monotonic() - checkpoint_started_at),
+    )
     return True
 
 
