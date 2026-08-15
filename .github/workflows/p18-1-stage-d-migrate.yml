@@ -1,0 +1,46 @@
+name: P18.1 Stage D settings migration
+
+on:
+  push:
+    branches: [agent/p18-1-universal-endpoint-protocol-harness]
+    paths:
+      - scripts/p18_1_stage_d_migrate.py
+      - .github/workflows/p18-1-stage-d-migrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: "${{ !startsWith(github.event.head_commit.message, 'D1 P18.1: apply Stage D settings migration') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p18-1-universal-endpoint-protocol-harness
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Apply migration
+        run: python scripts/p18_1_stage_d_migrate.py
+      - name: Compile Python seams
+        run: >-
+          python -m py_compile
+          app/backend/tiangong-backend/v3/peizhi.py
+          app/backend/tiangong-backend/v3/duihua_qiaojie.py
+          app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+      - name: Check desktop JavaScript syntax
+        run: node --check app/main.js
+      - name: Commit authoritative files
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "tiangong-p18-1-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            app/backend/tiangong-backend/v3/peizhi.py \
+            app/backend/tiangong-backend/v3/duihua_qiaojie.py \
+            app/backend/tiangong-backend/v3/jineng/http_kehuduan.py \
+            app/main.js
+          git commit -m "D1 P18.1: apply Stage D settings migration"
+          git push origin HEAD:agent/p18-1-universal-endpoint-protocol-harness
