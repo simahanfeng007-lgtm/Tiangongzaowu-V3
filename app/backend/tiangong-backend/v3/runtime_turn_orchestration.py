@@ -23,6 +23,13 @@ except ImportError:
     # P17 retained a direct spec_from_file_location loader for this pure
     # coordination module. Keep that legacy inspection path valid without
     # changing the production package authority or creating another runtime.
+    import sys
+    from pathlib import Path
+
+    _backend_root = str(Path(__file__).resolve().parents[1])
+    if _backend_root not in sys.path:
+        sys.path.insert(0, _backend_root)
+
     from v3.runtime_adaptive_control import (
         AdaptiveHorizonDecision,
         AdaptiveHorizonState,
