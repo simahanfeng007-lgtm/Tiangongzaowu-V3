@@ -126,6 +126,12 @@ class EmbeddedBackendRuntime:
         scheduler_module = importlib.import_module("v3.zongdiaodu")
         self.qiaojie = self._module.QIAOJIE
         self.scheduler = scheduler_module.Zongdiaodu()
+        # Reset the process-global dependency pointer before this GatewayRuntime
+        # instance wires its own canonical store provider. This prevents test or
+        # restart leakage while keeping one shared provider for concurrent runs.
+        continuity_setter = getattr(scheduler_module, "set_simple_chain_continuity_checkpoint_provider", None)
+        if callable(continuity_setter):
+            continuity_setter(None)
         self.scheduler.life_orchestrator = None
         self.scheduler.p15_memory_remember_provider = None
         self.scheduler.p15_memory_recall_provider = None
@@ -449,6 +455,17 @@ class EmbeddedBackendRuntime:
         self._p15_memory_recall_provider = recall_provider
         self.scheduler.p15_memory_remember_provider = remember_provider
         self.scheduler.p15_memory_recall_provider = recall_provider
+
+    def set_continuity_checkpoint_provider(self, provider: Any) -> None:
+        """Bind Epoch checkpoints to Total Gateway's one canonical store."""
+        if provider is not None and not callable(provider):
+            raise TypeError("continuity checkpoint provider must be callable")
+        module = importlib.import_module("v3.zongdiaodu")
+        setter = getattr(module, "set_simple_chain_continuity_checkpoint_provider", None)
+        if not callable(setter):
+            raise EmbeddedBackendError("continuity.checkpoint_provider_unsupported")
+        setter(provider)
+        self._continuity_checkpoint_provider = provider
 
     def set_learning_ingest_provider(self, provider: Any) -> None:
         if not callable(provider):

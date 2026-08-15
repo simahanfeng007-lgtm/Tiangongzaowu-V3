@@ -966,6 +966,19 @@ def _simple_chain_emit_event(
 
 
 
+_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER: Callable[[dict[str, Any]], Any] | None = None
+
+
+def set_simple_chain_continuity_checkpoint_provider(
+    provider: Callable[[dict[str, Any]], Any] | None,
+) -> None:
+    """Bind the one Total-Gateway continuity authority into the embedded backend."""
+    if provider is not None and not callable(provider):
+        raise TypeError("continuity checkpoint provider must be callable")
+    global _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER
+    _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER = provider
+
+
 def _simple_chain_authority_identity(run_state: dict[str, Any] | None) -> dict[str, Any]:
     """Project existing Request/Run/Generation/Life identity; never mint authority."""
     context = current_run_context()
@@ -1019,6 +1032,53 @@ def _simple_chain_checkpoint_continue(
     _simple_chain_emit_event(run_state, "run.continuation_requested", "same run continuation requested", source, extra=meta)
     _simple_chain_save_run_state(run_state)
     if run_state.get("persistence_degraded"):
+        return False
+
+    # A Gateway-authorized production run must commit the Epoch boundary into
+    # the existing canonical TaskContinuityCapsule chain before it can be
+    # reported as committed locally. The provider is an injected pointer to
+    # Total Gateway's already-open GatewayStateStore; it never owns state.
+    context = current_run_context()
+    provider = _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER
+    canonical_required = bool(context.outer_execution_ticket_id)
+    if callable(provider):
+        canonical_payload = {
+            "schema": "tiangong.gateway.execution-epoch-checkpoint.v1",
+            **identity,
+            "outer_execution_ticket_id": str(context.outer_execution_ticket_id or ""),
+            "epoch_index": epoch_index,
+            "epoch_iteration_count": int(turn_loop.epoch_iteration_count),
+            "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+            "global_iteration_count": int(turn_loop.iteration_count),
+            "global_tool_rounds": int(turn_loop.action_rounds),
+            "requested_tool_rounds": requested_count,
+            "latest_safe_step": str(run_state["continuation"].get("latest_safe_step") or ""),
+            "next_step": str(run_state["continuation"].get("next_step") or ""),
+            "source": str(source or "execution_epoch"),
+        }
+        try:
+            canonical_result = provider(canonical_payload)
+        except Exception:
+            canonical_result = None
+        binding_ok = (
+            isinstance(canonical_result, dict)
+            and canonical_result.get("ok") is True
+            and str(canonical_result.get("request_id") or "") == identity["request_id"]
+            and str(canonical_result.get("run_id") or "") == identity["run_id"]
+            and int(canonical_result.get("generation") if type(canonical_result.get("generation")) is int else -1)
+            == int(identity["generation"])
+            and str(canonical_result.get("life_id") or "") == identity["life_id"]
+            and bool(str(canonical_result.get("capsule_id") or ""))
+        )
+        if not binding_ok:
+            run_state["continuation"]["status"] = "canonical_checkpoint_failed"
+            _simple_chain_save_run_state(run_state)
+            return False
+        run_state["continuation"]["canonical_capsule_id"] = str(canonical_result["capsule_id"])
+        run_state["continuation"]["canonical_duplicate"] = bool(canonical_result.get("duplicate"))
+    elif canonical_required:
+        run_state["continuation"]["status"] = "canonical_checkpoint_unavailable"
+        _simple_chain_save_run_state(run_state)
         return False
 
     run_state["continuation"]["status"] = "checkpoint_committed"

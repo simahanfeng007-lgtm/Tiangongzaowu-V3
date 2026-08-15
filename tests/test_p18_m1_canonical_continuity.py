@@ -1,78 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-ROOT = Path('.')
-ZONG = ROOT / 'app/backend/tiangong-backend/v3/zongdiaodu.py'
-EMBEDDED = ROOT / 'src/total_gateway/embedded_backend.py'
-RUNTIME = ROOT / 'src/total_gateway/runtime.py'
-TEST = ROOT / 'tests/test_p18_m1_canonical_continuity.py'
-
-
-def require_once(text: str, needle: str, label: str) -> None:
-    count = text.count(needle)
-    if count != 1:
-        raise SystemExit(f'{label}: expected one anchor, got {count}')
-
-
-def patch_zong() -> None:
-    text = ZONG.read_text(encoding='utf-8')
-    global_anchor = '''def _simple_chain_authority_identity(run_state: dict[str, Any] | None) -> dict[str, Any]:\n'''
-    require_once(text, global_anchor, 'zong authority helper')
-    provider_code = '''_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER: Callable[[dict[str, Any]], Any] | None = None\n\n\ndef set_simple_chain_continuity_checkpoint_provider(\n    provider: Callable[[dict[str, Any]], Any] | None,\n) -> None:\n    \"\"\"Bind the one Total-Gateway continuity authority into the embedded backend.\"\"\"\n    if provider is not None and not callable(provider):\n        raise TypeError(\"continuity checkpoint provider must be callable\")\n    global _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER\n    _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER = provider\n\n\n'''
-    text = text.replace(global_anchor, provider_code + global_anchor, 1)
-
-    start = text.index('def _simple_chain_checkpoint_continue(')
-    end = text.index('\n\ndef _simple_chain_prepare_tool_budget(', start)
-    helper = text[start:end]
-    commit_anchor = '''    _simple_chain_save_run_state(run_state)\n    if run_state.get("persistence_degraded"):\n        return False\n\n    run_state["continuation"]["status"] = "checkpoint_committed"\n'''
-    require_once(helper, commit_anchor, 'zong checkpoint commit boundary')
-    canonical = '''    _simple_chain_save_run_state(run_state)\n    if run_state.get("persistence_degraded"):\n        return False\n\n    # A Gateway-authorized production run must commit the Epoch boundary into\n    # the existing canonical TaskContinuityCapsule chain before it can be\n    # reported as committed locally. The provider is an injected pointer to\n    # Total Gateway's already-open GatewayStateStore; it never owns state.\n    context = current_run_context()\n    provider = _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER\n    canonical_required = bool(context.outer_execution_ticket_id)\n    if callable(provider):\n        canonical_payload = {\n            "schema": "tiangong.gateway.execution-epoch-checkpoint.v1",\n            **identity,\n            "outer_execution_ticket_id": str(context.outer_execution_ticket_id or ""),\n            "epoch_index": epoch_index,\n            "epoch_iteration_count": int(turn_loop.epoch_iteration_count),\n            "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),\n            "global_iteration_count": int(turn_loop.iteration_count),\n            "global_tool_rounds": int(turn_loop.action_rounds),\n            "requested_tool_rounds": requested_count,\n            "latest_safe_step": str(run_state["continuation"].get("latest_safe_step") or ""),\n            "next_step": str(run_state["continuation"].get("next_step") or ""),\n            "source": str(source or "execution_epoch"),\n        }\n        try:\n            canonical_result = provider(canonical_payload)\n        except Exception:\n            canonical_result = None\n        binding_ok = (\n            isinstance(canonical_result, dict)\n            and canonical_result.get("ok") is True\n            and str(canonical_result.get("request_id") or "") == identity["request_id"]\n            and str(canonical_result.get("run_id") or "") == identity["run_id"]\n            and int(canonical_result.get("generation") if type(canonical_result.get("generation")) is int else -1)\n            == int(identity["generation"])\n            and str(canonical_result.get("life_id") or "") == identity["life_id"]\n            and bool(str(canonical_result.get("capsule_id") or ""))\n        )\n        if not binding_ok:\n            run_state["continuation"]["status"] = "canonical_checkpoint_failed"\n            _simple_chain_save_run_state(run_state)\n            return False\n        run_state["continuation"]["canonical_capsule_id"] = str(canonical_result["capsule_id"])\n        run_state["continuation"]["canonical_duplicate"] = bool(canonical_result.get("duplicate"))\n    elif canonical_required:\n        run_state["continuation"]["status"] = "canonical_checkpoint_unavailable"\n        _simple_chain_save_run_state(run_state)\n        return False\n\n    run_state["continuation"]["status"] = "checkpoint_committed"\n'''
-    helper = helper.replace(commit_anchor, canonical, 1)
-    text = text[:start] + helper + text[end:]
-    ZONG.write_text(text, encoding='utf-8')
-
-
-def patch_embedded() -> None:
-    text = EMBEDDED.read_text(encoding='utf-8')
-    init_anchor = '''        self.scheduler = scheduler_module.Zongdiaodu()\n        self.scheduler.life_orchestrator = None\n'''
-    require_once(text, init_anchor, 'embedded scheduler init')
-    text = text.replace(
-        init_anchor,
-        '''        self.scheduler = scheduler_module.Zongdiaodu()\n        # Reset the process-global dependency pointer before this GatewayRuntime\n        # instance wires its own canonical store provider. This prevents test or\n        # restart leakage while keeping one shared provider for concurrent runs.\n        continuity_setter = getattr(scheduler_module, "set_simple_chain_continuity_checkpoint_provider", None)\n        if callable(continuity_setter):\n            continuity_setter(None)\n        self.scheduler.life_orchestrator = None\n''',
-        1,
-    )
-    method_anchor = '''    def set_learning_ingest_provider(self, provider: Any) -> None:\n'''
-    require_once(text, method_anchor, 'embedded provider method anchor')
-    method = '''    def set_continuity_checkpoint_provider(self, provider: Any) -> None:\n        \"\"\"Bind Epoch checkpoints to Total Gateway's one canonical store.\"\"\"\n        if provider is not None and not callable(provider):\n            raise TypeError("continuity checkpoint provider must be callable")\n        module = importlib.import_module("v3.zongdiaodu")\n        setter = getattr(module, "set_simple_chain_continuity_checkpoint_provider", None)\n        if not callable(setter):\n            raise EmbeddedBackendError("continuity.checkpoint_provider_unsupported")\n        setter(provider)\n        self._continuity_checkpoint_provider = provider\n\n'''
-    text = text.replace(method_anchor, method + method_anchor, 1)
-    EMBEDDED.write_text(text, encoding='utf-8')
-
-
-def patch_runtime() -> None:
-    text = RUNTIME.read_text(encoding='utf-8')
-    import_anchor = 'from .cutover_coordinator import ChannelCutoverCoordinator\n'
-    require_once(text, import_anchor, 'runtime import anchor')
-    text = text.replace(import_anchor, import_anchor + 'from .continuity import persist_working_checkpoint\n', 1)
-
-    helper_anchor = 'def _gateway_p15_memory_remember(runtime: object, user_text: object) -> dict[str, object]:\n'
-    require_once(text, helper_anchor, 'runtime helper anchor')
-    helper = '''def _gateway_execution_epoch_checkpoint(\n    runtime: object,\n    payload: object,\n) -> dict[str, object]:\n    \"\"\"Commit one backend Epoch boundary through the existing Gateway continuity SSoT.\"\"\"\n    if not isinstance(payload, Mapping):\n        return {"ok": False, "error": "continuity.payload_invalid"}\n    if payload.get("schema") != "tiangong.gateway.execution-epoch-checkpoint.v1":\n        return {"ok": False, "error": "continuity.schema_invalid"}\n    request_id = str(payload.get("request_id") or "").strip()\n    run_id = str(payload.get("run_id") or "").strip()\n    life_id = str(payload.get("life_id") or "").strip()\n    generation = payload.get("generation")\n    epoch_index = payload.get("epoch_index")\n    global_tool_rounds = payload.get("global_tool_rounds")\n    global_iteration_count = payload.get("global_iteration_count")\n    latest_safe_step = str(payload.get("latest_safe_step") or "").strip()[:500]\n    next_step = str(payload.get("next_step") or "").strip()[:500]\n    if (\n        not request_id\n        or not run_id\n        or not life_id\n        or type(generation) is not int\n        or generation < 0\n        or type(epoch_index) is not int\n        or epoch_index < 0\n        or type(global_tool_rounds) is not int\n        or global_tool_rounds < 0\n        or type(global_iteration_count) is not int\n        or global_iteration_count < 0\n        or not latest_safe_step\n        or not next_step\n    ):\n        return {"ok": False, "error": "continuity.identity_or_progress_invalid"}\n    store = getattr(runtime, "store", None)\n    if store is None:\n        return {"ok": False, "error": "continuity.store_unavailable"}\n    try:\n        active = store.get_active_request_capsule(\n            request_id, run_id=run_id, generation=generation\n        )\n    except Exception:\n        return {"ok": False, "error": "continuity.authority_lookup_failed"}\n    if active is None:\n        return {"ok": False, "error": "continuity.authority_not_found"}\n    current = active.capsule\n    if (\n        current.request_id != request_id\n        or current.run_id != run_id\n        or current.generation != generation\n        or current.life_id != life_id\n    ):\n        return {"ok": False, "error": "continuity.authority_binding_mismatch"}\n    recovery = tuple(dict.fromkeys((\n        *current.recovery_preconditions,\n        f"execution epoch {epoch_index} is canonically committed",\n        f"global tool round {global_tool_rounds} is the latest safe tool boundary",\n        f"global iteration {global_iteration_count} remains in the same run",\n        "request/run/generation/life authority identity remains unchanged",\n    )))\n    try:\n        record = persist_working_checkpoint(\n            store,\n            life_id=current.life_id,\n            request_id=current.request_id,\n            run_id=current.run_id,\n            generation=current.generation,\n            user_goal=current.user_goal,\n            hard_constraints=current.hard_constraints,\n            active_plan=current.active_plan,\n            verified_fact_ids=current.verified_fact_ids,\n            artifact_refs=current.artifact_refs,\n            pending_effect_ids=current.pending_effect_ids,\n            latest_safe_step=latest_safe_step,\n            next_step=next_step,\n            recovery_preconditions=recovery,\n            created_at_ms=time.time_ns() // 1_000_000,\n        )\n    except Exception:\n        return {"ok": False, "error": "continuity.checkpoint_commit_failed"}\n    capsule = record.capsule\n    return {\n        "ok": True,\n        "request_id": capsule.request_id,\n        "run_id": capsule.run_id,\n        "generation": capsule.generation,\n        "life_id": capsule.life_id,\n        "capsule_id": capsule.capsule_id,\n        "duplicate": bool(record.duplicate),\n        "epoch_index": epoch_index,\n        "global_tool_rounds": global_tool_rounds,\n        "global_iteration_count": global_iteration_count,\n    }\n\n\n'''
-    text = text.replace(helper_anchor, helper + helper_anchor, 1)
-
-    wiring_anchor = '''                runtime.backend_service.set_p15_memory_provider(\n                    remember_provider=p15_memory_remember,\n                    recall_provider=p15_memory_recall,\n                )\n'''
-    require_once(text, wiring_anchor, 'runtime embedded provider wiring')
-    text = text.replace(
-        wiring_anchor,
-        wiring_anchor + '''\n                def execution_epoch_checkpoint(payload: object) -> dict[str, object]:\n                    return _gateway_execution_epoch_checkpoint(runtime, payload)\n\n                runtime.backend_service.set_continuity_checkpoint_provider(\n                    execution_epoch_checkpoint\n                )\n''',
-        1,
-    )
-    RUNTIME.write_text(text, encoding='utf-8')
-
-
-def write_tests() -> None:
-    content = r'''from __future__ import annotations
-
 import os
 import tempfile
 import unittest
@@ -209,7 +136,7 @@ class CanonicalEpochContinuityTests(unittest.TestCase):
             generation=1,
             latest_safe_step="global_tool_round_150",
             next_step="epoch_2_tool_round_1",
-            created_at_ms=2_000,
+            created_at_ms=__import__("time").time_ns() // 1_000_000,
             pending_effect_ids=(self.pending_effect,),
             recovery_preconditions=("reconcile pending effect before retry",),
         )
@@ -359,12 +286,3 @@ class BackendCanonicalProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-'''
-    TEST.write_text(content, encoding='utf-8')
-
-
-if __name__ == '__main__':
-    patch_zong()
-    patch_embedded()
-    patch_runtime()
-    write_tests()
