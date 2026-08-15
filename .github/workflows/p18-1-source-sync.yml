@@ -3,7 +3,14 @@ name: P18.1 source authority and generated sync
 on:
   push:
     branches: [agent/p18-1-universal-endpoint-protocol-harness]
-    paths: [.github/workflows/p18-1-source-sync.yml]
+    paths:
+      - source-ownership.json
+      - src/**
+      - app/backend/tiangong-backend/v3/**
+      - scripts/sync-generated-sources.py
+      - scripts/check-source-authority.py
+      - .github/workflows/p18-1-source-sync.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,7 +21,7 @@ env:
 
 jobs:
   sync-and-gate:
-    if: "${{ !startsWith(github.event.head_commit.message, 'E1 P18.1: generated-source sync bot') }}"
+    if: "${{ !startsWith(github.event.head_commit.message, 'E2 P18.1: generated-source sync bot') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,22 +30,6 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - name: Register new authoritative v3 implementation roots
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          p = Path('source-ownership.json')
-          data = json.loads(p.read_text(encoding='utf-8'))
-          roots = data['v3_backend']['implementation_roots']
-          for item in [
-              'app/backend/tiangong-backend/v3/model_endpoint.py',
-              'app/backend/tiangong-backend/v3/model_protocol_contract.py',
-          ]:
-              if item not in roots:
-                  roots.append(item)
-          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          PY
       - name: Sync generated source mirrors from authoritative roots
         run: python scripts/sync-generated-sources.py --write
       - name: Source authority gate
@@ -55,5 +46,5 @@ jobs:
           git config user.name "tiangong-p18-1-bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "E1 P18.1: generated-source sync bot"
+          git commit -m "E2 P18.1: generated-source sync bot"
           git push origin HEAD:agent/p18-1-universal-endpoint-protocol-harness
