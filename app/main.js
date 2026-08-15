@@ -1494,24 +1494,24 @@ function providerProbeEndpoint(baseUrl, suffix) {
   return target;
 }
 
-function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null } = {}) {
+
+function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const body = payload ? JSON.stringify(payload) : "";
     const transport = url.protocol === "http:" ? http : https;
+    const mergedHeaders = {
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      ...(headers || {}),
+      ...(body ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : {}),
+    };
     const request = transport.request(url, {
       method,
-      headers: {
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        ...(payload ? {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-        } : {}),
-      },
-      timeout: 12_000,
+      headers: mergedHeaders,
+      timeout: 15000,
+      rejectUnauthorized: true,
     }, (response) => {
       let responseBody = "";
-      response.setEncoding("utf8");
       response.on("data", (chunk) => {
         const remaining = 256 * 1024 - responseBody.length;
         if (remaining > 0) responseBody += String(chunk).slice(0, remaining);
@@ -1524,7 +1524,7 @@ function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null
     });
     request.on("timeout", () => request.destroy(Object.assign(new Error("request_timeout"), { code: "ETIMEDOUT" })));
     request.on("error", reject);
-    if (payload) request.write(body);
+    if (body) request.write(body);
     request.end();
   });
 }
@@ -1532,122 +1532,115 @@ function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null
 // The probe deliberately accepts no renderer-supplied URL or credential.
 // Both come from the committed configuration and OS vault; only bounded,
 // non-secret status is returned to the renderer.
+
 async function probeProviderApiConnection() {
-  let settings;
+  const settings = await desktopModelSettingsRequest("GET");
+  if (!settings || settings.ok === false) {
+    return { ok: false, error: settings?.error || "model_settings_unavailable" };
+  }
+  const provider = String(settings.provider_identity || settings.configured_provider || settings.provider || "custom").trim().toLowerCase();
+  const servicePreset = String(settings.service_preset || settings.modelService || "custom").trim().toLowerCase();
+  const protocolFamily = String(settings.protocol_family || settings.modelProtocol || "openai_chat_completions").trim();
+  const baseUrl = String(settings.base_url || settings.configured_base_url || "").trim();
+  const modelName = String(settings.model_name || settings.configured_model_name || settings.model || "").trim();
+  if (!baseUrl || !modelName) return { ok: false, error: "provider_endpoint_or_model_missing" };
+  if (String(settings.credential_state || "") !== "configured") {
+    return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
+  }
+
+  let credentialId;
+  let apiKey;
   try {
-    settings = await desktopModelSettingsRequest("GET");
-  } catch (_error) {
-    return { ok: false, stage: "configuration", error_code: "model_configuration_unavailable" };
-  }
-  const provider = String(settings?.configured_provider || "").trim().toLowerCase();
-  const baseUrl = String(settings?.configured_base_url || "").trim();
-  const modelName = String(settings?.configured_model_name || "").trim();
-  let origin;
-  try {
-    origin = canonicalModelOrigin(baseUrl);
-  } catch (_error) {
-    return { ok: false, stage: "configuration", provider, error_code: "model_endpoint_invalid" };
-  }
-  const originUrl = new URL(origin);
-  const loopback = ["127.0.0.1", "localhost", "::1"].includes(originUrl.hostname);
-  if (originUrl.protocol === "http:" && !loopback) {
-    return { ok: false, stage: "configuration", provider, error_code: "plaintext_http_forbidden" };
-  }
-  // The settings response is served inside 7184.  It reads the effective
-  // credential from its own process environment, so this guards the
-  // Electron-vault -> child-process injection boundary before any provider
-  // request is made.
-  if (String(settings?.credential_state || "").toLowerCase() !== "configured") {
-    return { ok: false, stage: "gateway_credential", provider, error_code: "gateway_credential_not_injected" };
-  }
-  const credentialId = modelCredentialBindingId(provider, baseUrl);
-  try {
-    const envelope = readDesktopCredentialEnvelope(desktopProviderCredentialsPath());
+    credentialId = modelCredentialBindingId(provider, baseUrl);
+    const envelope = readDesktopCredentialEnvelope(desktopCredentialStorePath());
     const item = envelope.providers?.[credentialId];
-    if (!item || item.scheme !== "electron-safe-storage-v1" || !item.value) {
-      return { ok: false, stage: "credential_lookup", provider, error_code: "credential_missing" };
+    if (!item || item.backend !== "electron_safe_storage" || !safeStorage.isEncryptionAvailable()) {
+      return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
     }
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { ok: false, stage: "credential_decrypt", provider, error_code: "safe_storage_unavailable" };
+    apiKey = safeStorage.decryptString(Buffer.from(String(item.value || ""), "base64"));
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "credential_read_failed"), protocol_family: protocolFamily };
+  }
+  if (!apiKey) return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
+
+  let suffix;
+  let payload;
+  let requestApiKey = apiKey;
+  let headers = {};
+  if (protocolFamily === "openai_responses") {
+    suffix = "responses";
+    payload = { model: modelName, input: "ping", max_output_tokens: 1, store: false, stream: false };
+  } else if (protocolFamily === "anthropic_messages") {
+    suffix = "v1/messages";
+    payload = { model: modelName, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false };
+    headers = { "anthropic-version": "2023-06-01" };
+    if (servicePreset !== "scnet") {
+      requestApiKey = "";
+      headers["x-api-key"] = apiKey;
     }
-    const apiKey = safeStorage.decryptString(Buffer.from(String(item.value), "base64"));
-    if (!apiKey) return { ok: false, stage: "credential_decrypt", provider, error_code: "credential_empty" };
-    let response;
-    try {
-      response = await requestProviderProbe(providerProbeEndpoint(baseUrl, "models"), { apiKey });
-    } catch (error) {
-      return {
-        ok: false,
-        stage: "provider_models",
-        provider,
-        error_code: error?.code === "ETIMEDOUT" ? "request_timeout" : "provider_transport_failed",
-      };
-    }
-    let payload = {};
-    try { payload = JSON.parse(response.body || "{}"); } catch (_error) { /* status remains authoritative */ }
-    const modelIds = Array.isArray(payload?.data)
-      ? payload.data.map((entry) => String(entry?.id || "")).filter(Boolean)
-      : [];
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return {
-        ok: true,
-        stage: "provider_models",
-        provider,
-        model_name: modelName,
-        http_status: response.statusCode,
-        latency_ms: response.latencyMs,
-        models_count: modelIds.length,
-        configured_model_available: modelIds.length ? modelIds.includes(modelName) : null,
-      };
-    }
-    if ([404, 405, 501].includes(response.statusCode) && modelName) {
-      let chat;
-      try {
-        chat = await requestProviderProbe(providerProbeEndpoint(baseUrl, "chat/completions"), {
-          method: "POST",
-          apiKey,
-          payload: {
-            model: modelName,
-            messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1,
-            stream: false,
-          },
-        });
-      } catch (error) {
-        return {
-          ok: false,
-          stage: "provider_chat",
-          provider,
-          error_code: error?.code === "ETIMEDOUT" ? "request_timeout" : "provider_transport_failed",
-        };
-      }
-      let chatPayload = {};
-      try { chatPayload = JSON.parse(chat.body || "{}"); } catch (_error) { /* status remains authoritative */ }
-      return {
-        ok: chat.statusCode >= 200 && chat.statusCode < 300,
-        stage: "provider_chat",
-        provider,
-        model_name: modelName,
-        http_status: chat.statusCode,
-        latency_ms: chat.latencyMs,
-        error_code: safeProviderErrorCode(chatPayload?.error?.code || chatPayload?.code, null),
-      };
-    }
+  } else if (protocolFamily === "openai_chat_completions") {
+    suffix = "chat/completions";
+    payload = { model: modelName, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false };
+  } else {
+    return { ok: false, error: "unsupported_protocol_family", protocol_family: protocolFamily };
+  }
+
+  const endpoint = providerProbeEndpoint(baseUrl, suffix);
+  try {
+    const response = await requestProviderProbe(endpoint, {
+      method: "POST",
+      apiKey: requestApiKey,
+      payload,
+      headers,
+    });
+    const status = Number(response.statusCode || 0);
+    const authValid = ![401, 403].includes(status);
+    const protocolValid = status > 0 && ![404, 405, 415, 422].includes(status) && status < 500;
+    const modelValid = status > 0 && status < 400;
     return {
-      ok: false,
-      stage: "provider_models",
-      provider,
-      model_name: modelName,
-      http_status: response.statusCode,
+      ok: modelValid,
+      provider_identity: provider,
+      service_preset: servicePreset,
+      protocol_family: protocolFamily,
+      endpoint_reachable: status > 0,
+      auth_valid: authValid,
+      protocol_valid: protocolValid,
+      model_valid: modelValid,
+      streaming_supported: false,
+      native_tools_supported: false,
+      reasoning_control_supported: false,
+      parallel_tool_calls_supported: false,
+      structured_output_supported: false,
+      continuation_supported: false,
+      configured_model_available: modelValid ? true : null,
+      http_status: status,
       latency_ms: response.latencyMs,
-      error_code: safeProviderErrorCode(payload?.error?.code || payload?.code, null),
+      probe_evidence: {
+        protocol_family: protocolFamily,
+        endpoint: endpoint.toString(),
+        http_status: status,
+        latency_ms: response.latencyMs,
+        conservative_tool_capability: true,
+      },
+      response_preview: modelValid ? "" : String(response.body || "").slice(0, 500),
     };
-  } catch (_error) {
+  } catch (error) {
     return {
       ok: false,
-      stage: "credential_decrypt",
-      provider,
-      error_code: "credential_decrypt_failed",
+      provider_identity: provider,
+      service_preset: servicePreset,
+      protocol_family: protocolFamily,
+      endpoint_reachable: false,
+      auth_valid: false,
+      protocol_valid: false,
+      model_valid: false,
+      streaming_supported: false,
+      native_tools_supported: false,
+      reasoning_control_supported: false,
+      parallel_tool_calls_supported: false,
+      structured_output_supported: false,
+      continuation_supported: false,
+      error: String(error?.message || error || "provider_probe_failed"),
     };
   }
 }

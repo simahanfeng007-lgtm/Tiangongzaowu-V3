@@ -159,6 +159,24 @@ def _apply_reasoning_profile(
     }
 
 
+
+def _apply_endpoint_raw_reasoning(endpoint: Any, capability: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply user-entered unknown-model reasoning only when non-empty."""
+    if getattr(capability, "reasoning_control", "") != "raw_optional":
+        return {"raw_reasoning_sent": False}
+    mode = str(getattr(endpoint, "reasoning_mode", "") or "").strip()
+    if not mode:
+        payload.pop("reasoning_effort", None)
+        # Do not manufacture thinking={} for unknown models.
+        if isinstance(payload.get("thinking"), dict) and not payload.get("thinking"):
+            payload.pop("thinking", None)
+        return {"raw_reasoning_sent": False, "raw_reasoning_mode": ""}
+    if endpoint.protocol_family in {"openai_chat_completions", "openai_responses"}:
+        payload["reasoning_effort"] = mode
+    elif endpoint.protocol_family == "anthropic_messages":
+        payload["thinking"] = {"type": mode}
+    return {"raw_reasoning_sent": True, "raw_reasoning_mode": mode}
+
 def _inject_native_audio_input(payload: dict[str, Any], paths: tuple[str, ...]) -> dict[str, Any] | None:
     """Attach verified local audio bytes to an OpenAI-chat-shaped canonical payload."""
     if not paths:
@@ -773,6 +791,8 @@ class HttpKehuduan:
             reasoning_trace = _apply_reasoning_profile(
                 pid, payload, base_url=base_url, model_name=model_name
             )
+            raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
+            reasoning_trace.update(raw_reasoning_trace)
             if isinstance(optimization_trace, dict):
                 optimization_trace.update(reasoning_trace)
                 optimization_trace.update(_cache_prefix_observation(payload))

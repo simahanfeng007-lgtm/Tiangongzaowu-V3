@@ -219,20 +219,43 @@ def normalize_provider_id(provider_id: str | None) -> str:
     return PROVIDER_ALIASES.get(raw.lower(), raw)
 
 
-def normalize_provider_identity(provider_id: str | None) -> str:
-    """Normalize the persisted provider IDENTITY (user configuration).
 
-    Unlike ``provider_match_info`` / ``normalize_provider_id`` this never
-    substitutes a routing fallback: an empty or unknown provider keeps its own
-    identity so the saved configuration round-trips faithfully and the UI can
-    never pin a matched L4 family as the user's choice.  Only true family
-    aliases (e.g. the historical gpt-5.5 name) collapse onto the family id.
+def normalize_provider_identity(provider_id: str | None) -> str:
+    """Normalize only persisted connection identity, never L4 routing family.
+
+    P18.1 deliberately separates provider identity from optimization family.
+    Historical family IDs remain readable, but service names stay service names.
     """
     raw = str(provider_id or "").strip()
     if not raw:
         return CUSTOM_PROVIDER_ID
-    normalized = PROVIDER_ALIASES.get(raw.lower(), raw)
-    return CUSTOM_PROVIDER_ID if normalized in {"", CUSTOM_PROVIDER_ID} else normalized
+    key = raw.lower().replace(" ", "").replace("-", "_")
+    identity_aliases = {
+        "openai": "openai",
+        "deepseek": "deepseek",
+        "zhipu": "zhipu",
+        "zhipuai": "zhipu",
+        "zai": "zhipu",
+        "z_ai": "zhipu",
+        "glm": "zhipu",
+        "minimax": "minimax",
+        "xiaomi": "mimo",
+        "xiaomi_mimo": "mimo",
+        "mimo": "mimo",
+        "scnet": "scnet",
+        "anthropic": "anthropic",
+        "custom": CUSTOM_PROVIDER_ID,
+        # Already-persisted historical routing-family identities stay valid so
+        # upgrades do not orphan their existing endpoint/key bindings.
+        "deepseek_v4": "deepseek_v4",
+        "glm_5_1": "glm_5_2",
+        "glm_5_2": "glm_5_2",
+        "minimax_m3": "minimax_m3",
+        "gpt": "gpt_5_6",
+        "gpt_5_5": "gpt_5_6",
+        "gpt_5_6": "gpt_5_6",
+    }
+    return identity_aliases.get(key, raw)
 
 
 def normalize_provider_base_url(base_url: str | None) -> str:
