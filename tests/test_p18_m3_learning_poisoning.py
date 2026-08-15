@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import unittest
 
+from pydantic import ValidationError
+
 from contracts import MemoryDerivationV1
 from life_service import memory_promotion
 
@@ -56,12 +58,21 @@ class P18M3LearningPoisoningTests(unittest.TestCase):
         self.assertEqual(memory_promotion.BASE_EVIDENCE_WEIGHT_MILLI["reflection"], 0)
         self.assertEqual(memory_promotion.BASE_EVIDENCE_WEIGHT_MILLI["prospective"], 0)
 
-    def test_model_inference_only_cannot_promote_to_l3(self) -> None:
+    def test_model_inference_cannot_be_forged_as_memory_derivation_origin(self) -> None:
+        with self.assertRaises(ValidationError):
+            derivation(
+                derivation_id="mdr_" + "0" * 64,
+                root="lev_" + "0" * 64,
+                layer="L2_DIARY",
+                origin="MODEL_INFERENCE",
+            )
+
+    def test_zero_weight_model_inference_evidence_cannot_promote_to_l3(self) -> None:
         candidate = derivation(
             derivation_id="mdr_" + "1" * 64,
             root="lev_" + "1" * 64,
             layer="L2_DIARY",
-            origin="MODEL_INFERENCE",
+            origin="PROMOTION",
         )
         disposition = memory_promotion.evaluate_l3(
             l2_derivations=(candidate,),
@@ -83,14 +94,14 @@ class P18M3LearningPoisoningTests(unittest.TestCase):
         self.assertEqual(disposition.support_milli, 0)
         self.assertIn("insufficient_support", disposition.reason_codes)
 
-    def test_repeated_same_model_inference_lineage_does_not_create_independence(self) -> None:
+    def test_repeated_same_lineage_zero_weight_inference_does_not_create_independence(self) -> None:
         root = "lev_" + "2" * 64
         candidates = tuple(
             derivation(
                 derivation_id=f"mdr_{index:064x}",
                 root=root,
                 layer="L2_DIARY",
-                origin="MODEL_INFERENCE",
+                origin="PROMOTION",
             )
             for index in range(1, 6)
         )
