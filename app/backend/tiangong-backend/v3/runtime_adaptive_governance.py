@@ -1,15 +1,21 @@
 """P18-M3 adaptive governance policy.
 
-This module is deliberately pure.  It owns no persistence, Runtime, Scheduler,
+This module is deliberately pure. It owns no persistence, Runtime, Scheduler,
 Gateway, Authority, Memory store, Fact store, Effect dispatch, or tool dispatch.
-It evaluates the M3.8-M3.12 governance decisions consumed by the existing
-production authorities.
+Version-resume governance is re-exported from total_gateway.regenerative_governance
+so M3 has one canonical checkpoint-compatibility policy.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Iterable, Mapping
+
+from total_gateway.regenerative_governance import (
+    CheckpointVersionVector,
+    VersionCompatibilityDecision,
+    evaluate_checkpoint_version_compatibility,
+    version_vector_from_mapping,
+)
 
 
 UNTRUSTED_DATA = "UNTRUSTED_DATA"
@@ -218,134 +224,6 @@ def evaluate_semantic_drift(
         replan=high,
         allow_horizon_growth=not high,
         reasons=tuple(reasons),
-    )
-
-
-@dataclass(frozen=True)
-class CheckpointVersionVector:
-    checkpoint_schema_version: str = ""
-    runtime_version: str = ""
-    provider_profile_hash: str = ""
-    model_version: str = ""
-    tool_registry_version: str = ""
-    skill_version: str = ""
-    task_contract_version: str = ""
-
-
-@dataclass(frozen=True)
-class VersionCompatibilityDecision:
-    resume_allowed: bool
-    reconcile_required: bool
-    migration_required: bool
-    revalidation_required: bool
-    mismatches: tuple[str, ...]
-    reasons: tuple[str, ...]
-
-
-def evaluate_checkpoint_version_compatibility(
-    checkpoint: CheckpointVersionVector,
-    current: CheckpointVersionVector,
-    *,
-    compatible_mismatches: Iterable[str] = (),
-    migratable_schema_pairs: Iterable[tuple[str, str]] = (),
-    migration_completed: bool = False,
-    revalidated: bool = False,
-) -> VersionCompatibilityDecision:
-    """Never silently resume across version drift.
-
-    Callers may explicitly declare compatible dimensions or a supported schema
-    migration.  Until required migration/revalidation is complete, resume is
-    denied.  Unknown drift fails closed to RECONCILE_REQUIRED.
-    """
-
-    fields = (
-        "checkpoint_schema_version",
-        "runtime_version",
-        "provider_profile_hash",
-        "model_version",
-        "tool_registry_version",
-        "skill_version",
-        "task_contract_version",
-    )
-    mismatches = tuple(
-        name
-        for name in fields
-        if str(getattr(checkpoint, name) or "") != str(getattr(current, name) or "")
-    )
-    if not mismatches:
-        return VersionCompatibilityDecision(True, False, False, False, (), ())
-
-    compatible = {str(item) for item in compatible_mismatches}
-    schema_pair = (
-        str(checkpoint.checkpoint_schema_version or ""),
-        str(current.checkpoint_schema_version or ""),
-    )
-    migratable_pairs = {(str(a), str(b)) for a, b in migratable_schema_pairs}
-    schema_mismatch = "checkpoint_schema_version" in mismatches
-    migration_required = schema_mismatch and schema_pair in migratable_pairs
-
-    unknown = tuple(
-        name
-        for name in mismatches
-        if name != "checkpoint_schema_version" and name not in compatible
-    )
-    if schema_mismatch and not migration_required:
-        unknown = ("checkpoint_schema_version",) + unknown
-
-    if unknown:
-        return VersionCompatibilityDecision(
-            resume_allowed=False,
-            reconcile_required=True,
-            migration_required=migration_required,
-            revalidation_required=True,
-            mismatches=mismatches,
-            reasons=tuple(f"version_mismatch:{name}" for name in unknown),
-        )
-
-    needs_migration = migration_required and not migration_completed
-    needs_revalidation = not revalidated
-    if needs_migration or needs_revalidation:
-        reasons: list[str] = []
-        if needs_migration:
-            reasons.append("checkpoint_migration_required")
-        if needs_revalidation:
-            reasons.append("version_revalidation_required")
-        return VersionCompatibilityDecision(
-            resume_allowed=False,
-            reconcile_required=False,
-            migration_required=migration_required,
-            revalidation_required=needs_revalidation,
-            mismatches=mismatches,
-            reasons=tuple(reasons),
-        )
-
-    return VersionCompatibilityDecision(
-        resume_allowed=True,
-        reconcile_required=False,
-        migration_required=migration_required,
-        revalidation_required=False,
-        mismatches=mismatches,
-        reasons=("explicit_version_compatibility_revalidated",),
-    )
-
-
-def version_vector_from_mapping(payload: Mapping[str, object]) -> CheckpointVersionVector:
-    """Normalize existing M2 checkpoint/runtime metadata into the M3 vector."""
-
-    return CheckpointVersionVector(
-        checkpoint_schema_version=str(
-            payload.get("checkpoint_schema_version") or payload.get("schema_version") or ""
-        ),
-        runtime_version=str(payload.get("runtime_version") or ""),
-        provider_profile_hash=str(
-            payload.get("provider_profile_hash") or payload.get("provider_version") or ""
-        ),
-        model_version=str(payload.get("model_version") or ""),
-        tool_registry_version=str(
-            payload.get("tool_registry_version") or payload.get("tool_contract_version") or ""
-        ),
-        skill_version=str(payload.get("skill_version") or payload.get("skill_contract_version") or ""),
-        task_contract_version=str(payload.get("task_contract_version") or ""),
     )
 
 
