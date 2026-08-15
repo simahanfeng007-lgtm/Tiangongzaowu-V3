@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/p18_1_stage_d_migrate.py
       - scripts/p18_1_stage_d_migrate_v2.py
+      - scripts/p18_1_stage_d_fixups.py
       - .github/workflows/p18-1-stage-d-migrate.yml
 
 permissions:
@@ -23,11 +24,14 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - name: Apply migration
-        run: python scripts/p18_1_stage_d_migrate_v2.py
+        run: |
+          python scripts/p18_1_stage_d_migrate_v2.py
+          python scripts/p18_1_stage_d_fixups.py
       - name: Compile Python seams
         run: >-
           python -m py_compile
           app/backend/tiangong-backend/v3/peizhi.py
+          app/backend/tiangong-backend/v3/model_endpoint.py
           app/backend/tiangong-backend/v3/duihua_qiaojie.py
           app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
       - name: Check desktop JavaScript syntax
@@ -40,6 +44,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add \
             app/backend/tiangong-backend/v3/peizhi.py \
+            app/backend/tiangong-backend/v3/model_endpoint.py \
             app/backend/tiangong-backend/v3/duihua_qiaojie.py \
             app/backend/tiangong-backend/v3/jineng/http_kehuduan.py \
             app/main.js
