@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Iterable
 
+from .runtime_adaptive_control import (
+    AdaptiveHorizonDecision,
+    AdaptiveHorizonState,
+    HorizonControlMetrics,
+)
+
 
 @dataclass(frozen=True)
 class TurnBudgetDecision:
@@ -79,6 +85,7 @@ class TurnLoopState:
     epoch_index: int = 0
     epoch_action_rounds: int = 0
     epoch_iteration_count: int = 0
+    adaptive_horizon: AdaptiveHorizonState = field(default_factory=AdaptiveHorizonState)
 
     def bump_iteration(self) -> int:
         self.iteration_count += 1
@@ -137,6 +144,32 @@ class TurnLoopState:
             reasons=(),
         )
 
+    def current_epoch_round_limit(self, configured_max: int) -> int:
+        """Return the M3 local horizon bounded by the configured hard ceiling."""
+
+        hard_ceiling = max(1, int(configured_max))
+        return min(hard_ceiling, int(self.adaptive_horizon.current_epoch_steps))
+
+    def decide_adaptive_schedule(
+        self,
+        requested: int,
+        *,
+        configured_max_epoch_rounds: int,
+        max_global_rounds: int,
+    ) -> EpochBudgetDecision:
+        """Evaluate budgets using the current adaptive local horizon."""
+
+        return self.decide_schedule(
+            requested,
+            max_epoch_rounds=self.current_epoch_round_limit(configured_max_epoch_rounds),
+            max_global_rounds=max_global_rounds,
+        )
+
+    def observe_epoch_metrics(self, metrics: HorizonControlMetrics) -> AdaptiveHorizonDecision:
+        """Feed one bounded reality-derived Epoch sample into the M3 controller."""
+
+        return self.adaptive_horizon.observe_epoch(metrics)
+
     def reserve_one(self) -> int:
         self.action_rounds += 1
         self.epoch_action_rounds += 1
@@ -175,6 +208,8 @@ class TurnLoopState:
         live["epoch_index"] = self.epoch_index
         live["epoch_iteration_count"] = self.epoch_iteration_count
         live["epoch_tool_rounds"] = self.epoch_action_rounds
+        live["adaptive_epoch_tool_limit"] = int(self.adaptive_horizon.current_epoch_steps)
+        live["adaptive_ewma_risk"] = round(float(self.adaptive_horizon.ewma_risk), 6)
 
 
 def evaluate_turn_budget(
