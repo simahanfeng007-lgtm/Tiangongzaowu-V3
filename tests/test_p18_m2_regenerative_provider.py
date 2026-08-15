@@ -89,7 +89,7 @@ class RegenerativeProviderTests(unittest.TestCase):
             operation, now_ms=now_ms, epoch_index=global_step // 75, global_step=global_step,
             logical_effect_id=logical, obligation_key="deliver-result",
             effect_namespace="omni_body:file.write", normalized_target=target,
-            desired_postcondition_sha256=post, attempt=1, **extra,
+            desired_postcondition_sha256=post, attempt=global_step, **extra,
         )
 
     def test_prepare_is_durable_before_start_and_committed_effect_is_not_dispatchable_twice(self) -> None:
@@ -136,7 +136,6 @@ class RegenerativeProviderTests(unittest.TestCase):
             latest_safe_step="effect started", next_step="reconcile before retry",
             recovery_preconditions=("reconcile started effect",), created_at_ms=2160,
         )
-        # Checkpointing a STARTED effect is allowed only when Frontier says it is pending.
         checkpoint = self.provider(self.payload(
             "commit_checkpoint", now_ms=2170, frontier=frontier.model_dump(mode="json"),
             continuity_capsule_id=continuity.capsule.capsule_id,
@@ -151,6 +150,51 @@ class RegenerativeProviderTests(unittest.TestCase):
         self.assertIn(prepared["effect_id"], recovered["ambiguous_effect_ids"])
         duplicate = self.provider(self.effect_payload("prepare_effect", global_step=2, now_ms=2500))
         self.assertEqual(duplicate["disposition"], "reconcile_required")
+
+    def test_proven_not_applied_reconciliation_allows_new_physical_attempt(self) -> None:
+        first = self.provider(self.effect_payload("prepare_effect", global_step=1, now_ms=2000))
+        self.provider(self.payload(
+            "start_effect", now_ms=2100, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+        ))
+        self.provider(self.payload(
+            "finish_effect", now_ms=2200, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+            outcome="ambiguous", result_summary={"timeout": True},
+        ))
+        blocked = self.provider(self.effect_payload("prepare_effect", global_step=2, now_ms=2300))
+        self.assertEqual(blocked["disposition"], "reconcile_required")
+        reconciled = self.provider(self.payload(
+            "reconcile_effect", now_ms=2400, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+            verdict="PROVEN_NOT_APPLIED", evidence={"target_absent": True},
+        ))
+        self.assertTrue(reconciled["retry_allowed"])
+        second = self.provider(self.effect_payload("prepare_effect", global_step=3, now_ms=2500))
+        self.assertEqual(second["disposition"], "prepared")
+        self.assertNotEqual(second["effect_id"], first["effect_id"])
+        self.assertEqual(second["logical_effect_id"], first["logical_effect_id"])
+
+    def test_applied_reconciliation_commits_logical_effect_and_blocks_retry(self) -> None:
+        first = self.provider(self.effect_payload("prepare_effect", global_step=1, now_ms=2000))
+        self.provider(self.payload(
+            "start_effect", now_ms=2100, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+        ))
+        self.provider(self.payload(
+            "finish_effect", now_ms=2200, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+            outcome="ambiguous", result_summary={"timeout": True},
+        ))
+        reconciled = self.provider(self.payload(
+            "reconcile_effect", now_ms=2300, epoch_index=0, effect_id=first["effect_id"],
+            logical_effect_id=first["logical_effect_id"], attempt_id=first["attempt_id"], step_id=first["step_id"],
+            verdict="APPLIED", evidence={"target_hash_matches": True},
+        ))
+        self.assertTrue(reconciled["logical_committed"])
+        duplicate = self.provider(self.effect_payload("prepare_effect", global_step=2, now_ms=2400))
+        self.assertEqual(duplicate["disposition"], "already_committed")
+        self.assertEqual(duplicate["effect_id"], first["effect_id"])
 
     def frontier(self, *, version: int, global_step: int, pending=(), ambiguous=(), pending_obligations=()):
         return ExecutionFrontier(
