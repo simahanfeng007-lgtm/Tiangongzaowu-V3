@@ -1,0 +1,52 @@
+name: P18 M4 fix windows disconnect probe
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Replace platform-dependent send failure with peer EOF probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/p18_m4_real_process_worker.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''                if step == 100:\n                    left, right = socket.socketpair()\n                    right.close()\n                    try:\n                        left.sendall(b"disconnect-probe")\n                    except OSError:\n                        metrics["network_disconnects"] += 1\n                    finally:\n                        left.close()\n                    metrics["sse_reconnects"] += 1\n'''
+          new = '''                if step == 100:\n                    left, right = socket.socketpair()\n                    right.close()\n                    try:\n                        # Peer EOF is the cross-platform transport truth.\n                        # Windows may buffer a send after peer close, while recv()\n                        # deterministically reports the closed stream as b"".\n                        if left.recv(1) == b"":\n                            metrics["network_disconnects"] += 1\n                    finally:\n                        left.close()\n                    metrics["sse_reconnects"] += 1\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'disconnect seam count: {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+      - name: Compile and smoke high-fault case on Ubuntu
+        run: |
+          python -m pip install -r requirements-source.lock
+          python -m py_compile tests/p18_m4_real_process_worker.py tests/test_p18_m4_real_process.py
+          python -m pytest -q tests/test_p18_m4_real_process.py::test_m4_real_process_case_d_high_fault_500_steps_with_network_timeouts_lock_and_torn_tail
+      - name: Remove applicator commit and push harness correction
+        run: |
+          rm .github/workflows/p18-m4-fix-windows-disconnect-probe.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/p18_m4_real_process_worker.py .github/workflows/p18-m4-fix-windows-disconnect-probe.yml
+          git commit -m "P18-M4: make real-process disconnect probe cross-platform"
+          git push origin HEAD:agent/p18-m4-adversarial-certification
