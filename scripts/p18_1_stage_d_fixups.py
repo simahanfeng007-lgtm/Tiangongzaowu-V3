@@ -1,4 +1,4 @@
-"""Small deterministic Stage-D fixups after the settings migration."""
+"""Small deterministic and idempotent Stage-D fixups."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,11 +8,14 @@ ENDPOINT = ROOT / "app/backend/tiangong-backend/v3/model_endpoint.py"
 BRIDGE = ROOT / "app/backend/tiangong-backend/v3/duihua_qiaojie.py"
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count != 1:
-        raise RuntimeError(f"{label}: expected one match, got {count}")
-    return text.replace(old, new, 1)
+def ensure_replaced(text: str, old: str, new: str, label: str) -> str:
+    old_count = text.count(old)
+    new_count = text.count(new)
+    if old_count == 1:
+        return text.replace(old, new, 1)
+    if old_count == 0 and new_count >= 1:
+        return text
+    raise RuntimeError(f"{label}: unexpected old={old_count} new={new_count}")
 
 
 def patch_endpoint() -> None:
@@ -22,7 +25,7 @@ def patch_endpoint() -> None:
         ('"zhipu", "glm_5_2", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,', '"zhipu", "zhipu", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,', "zhipu literal identity"),
         ('"minimax", "minimax_m3", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,', '"minimax", "minimax", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,', "minimax literal identity"),
     ):
-        text = replace_once(text, old, new, label)
+        text = ensure_replaced(text, old, new, label)
     old = '''    reasoning_mode = ""
     try:
         reasoning = peizhi.duqu_model_reasoning_config(optimization_family, base_url, model_name)
@@ -40,24 +43,18 @@ def patch_endpoint() -> None:
         except Exception:
             reasoning_mode = ""
 '''
-    text = replace_once(text, old, new, "endpoint reasoning precedence")
+    text = ensure_replaced(text, old, new, "endpoint reasoning precedence")
     ENDPOINT.write_text(text, encoding="utf-8")
 
 
 def patch_bridge() -> None:
     text = BRIDGE.read_text(encoding="utf-8")
-    text = replace_once(
-        text,
-        "    from .settings_persistence import atomic_write_json\n",
-        "",
-        "remove nonexistent settings_persistence import",
-    )
-    text = replace_once(
-        text,
-        "    atomic_write_json(API_PEIZHI_LUJING, data)",
-        "    _atomic_write_json(API_PEIZHI_LUJING, data)",
-        "use bridge atomic writer",
-    )
+    old_import = "    from .settings_persistence import atomic_write_json\n"
+    if old_import in text:
+        text = text.replace(old_import, "", 1)
+    old_call = "    atomic_write_json(API_PEIZHI_LUJING, data)"
+    new_call = "    _atomic_write_json(API_PEIZHI_LUJING, data)"
+    text = ensure_replaced(text, old_call, new_call, "use bridge atomic writer")
     BRIDGE.write_text(text, encoding="utf-8")
 
 
