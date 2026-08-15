@@ -20,7 +20,7 @@ def test_stable_readonly_epoch_projects_low_risk_growth_signals() -> None:
         completed_obligations=4,
     )
     metrics = horizon_metrics_from_observation(observation)
-    assert metrics.readonly is True
+    assert metrics.readonly_fraction == 1.0
     assert metrics.tool_failure_rate == 0.0
     assert metrics.progress_velocity > 0.0
     assert metrics.ambiguous_effect_rate == 0.0
@@ -44,7 +44,15 @@ def test_failed_ambiguous_epoch_projects_high_risk_signals() -> None:
     assert metrics.repeat_risk == 1.0
     assert metrics.ambiguous_effect_rate > 0.6
     assert metrics.frontier_complexity > 0.0
-    assert metrics.readonly is False
+    assert metrics.readonly_fraction == 0.0
+
+
+def test_checkpoint_latency_uses_existing_pressure_dimension() -> None:
+    metrics = horizon_metrics_from_observation(
+        EpochRealityObservation(checkpoint_commit_latency_seconds=2.5)
+    )
+    assert metrics.checkpoint_cost == 2.5
+    assert metrics.checkpoint_commit_latency_pressure == 0.5
 
 
 def test_contract_and_frontier_mismatch_projects_semantic_drift() -> None:
