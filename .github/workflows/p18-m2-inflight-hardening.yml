@@ -24,7 +24,23 @@ jobs:
       - name: Install source dependencies
         run: python -m pip install -r requirements-source.lock
       - name: Apply in-flight hardening
-        run: python .github/p18_m2_inflight_patch.py
+        run: |
+          python .github/p18_m2_inflight_patch.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/backend/tiangong-backend/v3/zongdiaodu.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    try:\n        raw = owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)\n    except Exception as exc:\n        raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}\n    status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""\n    ambiguous = bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {\n        "ambiguous", "unknown", "deadline", "timeout", "timed_out"\n    }\n    outcome = "ambiguous" if ambiguous else "succeeded" if tool_result_ok(raw) else "failed_final"\n'''
+          new = '''    handler_exception = False\n    try:\n        raw = owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)\n    except Exception as exc:\n        handler_exception = True\n        raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}\n    status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""\n    result_ok = bool(tool_result_ok(tool_name, raw))\n    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {\n        "ambiguous", "unknown", "deadline", "timeout", "timed_out"\n    }\n    outcome = "ambiguous" if ambiguous else "succeeded" if result_ok else "failed_final"\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'effect outcome anchor count={text.count(old)}')
+          text = text.replace(old, new, 1)
+          old_ok = '            "ok": bool(tool_result_ok(raw)),\n'
+          if text.count(old_ok) != 1:
+              raise SystemExit(f'observed ok anchor count={text.count(old_ok)}')
+          text = text.replace(old_ok, '            "ok": result_ok,\n', 1)
+          path.write_text(text, encoding='utf-8', newline='\n')
+          PY
       - name: Sync generated mirrors
         run: python scripts/sync-generated-sources.py --write
       - name: Remove one-shot carriers
@@ -56,6 +72,8 @@ jobs:
           grep -q '\[EFFECT_IN_FLIGHT\]' app/backend/tiangong-backend/v3/zongdiaodu.py
           grep -q 'duplicate retry blocked' app/backend/tiangong-backend/v3/zongdiaodu.py
           grep -q 'unresolved_started' src/total_gateway/regenerative_provider.py
+          grep -q 'tool_result_ok(tool_name, raw)' app/backend/tiangong-backend/v3/zongdiaodu.py
+          grep -q 'handler_exception = True' app/backend/tiangong-backend/v3/zongdiaodu.py
       - name: Commit after validation
         shell: bash
         run: |
