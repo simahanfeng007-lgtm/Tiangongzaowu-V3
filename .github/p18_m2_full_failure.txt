@@ -1,0 +1,98 @@
+P18-M2 Ubuntu full diagnostic
+candidate=983e9fd55d4590d6bcdad2fa02c5e0172150c1d0
+exit_code=1
+
+............F........................... [  1%]
+.................................................... [  3%]
+........................................................F. [  5%]
+.............................................................. [  7%]
+................................................................. [  9%]
+..................F................s............................. [ 11%]
+.................................................................... [ 13%]
+..................................................................... [ 16%]
+......................................................................................... [ 19%]
+..................................................................ss.... [ 21%]
+............................................................. [ 23%]
+...................s............................................. [ 25%]
+.............................................................. [ 27%]
+...................ss................................... [ 29%]
+..............................s......................................... [ 32%]
+........................................................................ [ 34%]
+............................................................. [ 36%]
+....s......................ssssss.s...........................s......... [ 38%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+............................................................. [ 50%]
+...................s..........................s.s.....s.... [ 52%]
+..s.................................................................. [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+................................................................. [ 62%]
+...............................s........................ [ 63%]
+....................s..................................... [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+.........................................F... [ 72%]
+........................................................................ [ 74%]
+......................................................................................................... [ 78%]
+......................................................................s. [ 80%]
+....................s.s...sss.................... [ 82%]
+.......................................................ss [ 84%]
+ss...................................................................... [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+...................ss.....................                               [100%]
+=================================== FAILURES ===================================
+_ ActiveRequestActivationTests.test_v9_legacy_request_waits_for_exact_duplicate_to_restore_envelope _
+tests/test_active_request_activation.py:484: in test_v9_legacy_request_waits_for_exact_duplicate_to_restore_envelope
+    downgrade_v12_to_v11(connection)
+tests/gateway_store_migration_support.py:93: in downgrade_v12_to_v11
+    raise AssertionError(f"expected a v12 fixture, got v{version}")
+E   AssertionError: expected a v12 fixture, got v21
+_ ChannelCutoverStoreTests.test_v8_database_migrates_in_place_to_current_schema _
+tests/test_channel_cutover.py:370: in test_v8_database_migrates_in_place_to_current_schema
+    downgrade_v12_to_v11(connection)
+tests/gateway_store_migration_support.py:93: in downgrade_v12_to_v11
+    raise AssertionError(f"expected a v12 fixture, got v{version}")
+E   AssertionError: expected a v12 fixture, got v21
+______ CoordinationEventTests.test_restart_health_tamper_and_v6_migration ______
+tests/test_coordination_events.py:257: in test_restart_health_tamper_and_v6_migration
+    downgrade_v12_to_v11(connection)
+tests/gateway_store_migration_support.py:93: in downgrade_v12_to_v11
+    raise AssertionError(f"expected a v12 fixture, got v{version}")
+E   AssertionError: expected a v12 fixture, got v21
+_____ ShadowStoreTests.test_version_seven_store_migrates_to_shadow_schema ______
+tests/test_shadow_migration.py:320: in test_version_seven_store_migrates_to_shadow_schema
+    downgrade_v12_to_v11(connection)
+tests/gateway_store_migration_support.py:93: in downgrade_v12_to_v11
+    raise AssertionError(f"expected a v12 fixture, got v{version}")
+E   AssertionError: expected a v12 fixture, got v21
+=============================== warnings summary ===============================
+src/contracts/world_understanding/repository_tree.py:120
+  /home/runner/work/Tiangongzaowu-V3/Tiangongzaowu-V3/src/contracts/world_understanding/repository_tree.py:120: UserWarning: Field name "schema" in "RepositoryTreeManifest" shadows an attribute in parent "WorldContractModel"
+    class RepositoryTreeManifest(WorldContractModel):
+
+src/contracts/world_understanding/repository.py:251
+  /home/runner/work/Tiangongzaowu-V3/Tiangongzaowu-V3/src/contracts/world_understanding/repository.py:251: UserWarning: Field name "schema" in "RepositoryObservation" shadows an attribute in parent "WorldContractModel"
+    class RepositoryObservation(WorldContractModel):
+
+src/contracts/world_understanding/repository_structure.py:266
+  /home/runner/work/Tiangongzaowu-V3/Tiangongzaowu-V3/src/contracts/world_understanding/repository_structure.py:266: UserWarning: Field name "schema" in "RepositoryStructureSnapshot" shadows an attribute in parent "WorldContractModel"
+    class RepositoryStructureSnapshot(WorldContractModel):
+
+src/contracts/world_understanding/repository_structure.py:346
+  /home/runner/work/Tiangongzaowu-V3/Tiangongzaowu-V3/src/contracts/world_understanding/repository_structure.py:346: UserWarning: Field name "schema" in "RepositoryStructureDelta" shadows an attribute in parent "WorldContractModel"
+    class RepositoryStructureDelta(WorldContractModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_active_request_activation.py::ActiveRequestActivationTests::test_v9_legacy_request_waits_for_exact_duplicate_to_restore_envelope - AssertionError: expected a v12 fixture, got v21
+FAILED tests/test_channel_cutover.py::ChannelCutoverStoreTests::test_v8_database_migrates_in_place_to_current_schema - AssertionError: expected a v12 fixture, got v21
+FAILED tests/test_coordination_events.py::CoordinationEventTests::test_restart_health_tamper_and_v6_migration - AssertionError: expected a v12 fixture, got v21
+FAILED tests/test_shadow_migration.py::ShadowStoreTests::test_version_seven_store_migrates_to_shadow_schema - AssertionError: expected a v12 fixture, got v21
+4 failed, 2940 passed, 35 skipped, 4 warnings, 807 subtests passed in 201.28s (0:03:21)
