@@ -25,6 +25,17 @@ jobs:
           python-version: '3.12'
       - name: Install source runtime dependencies
         run: python -m pip install -r requirements-source.lock
+      - name: Align one-shot patch with canonical M1 checkpoint payload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/p18_m2_runtime_integration_patch.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('# Canonical Continuity payload carries unresolved physical effects as well.')
+          end = text.index('# No Epoch rollover until structured M2 checkpoint is committed.', start)
+          replacement = '''# Canonical Continuity payload carries unresolved physical effects as well.\nzong = replace_once(\n    zong,\n    '            "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),\\n',\n    '            "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),\\n'\n    '            "pending_effect_ids": list(dict.fromkeys([\\n'\n    '                *(_simple_chain_regenerative_state(run_state).get("pending_effect_ids") or []),\\n'\n    '                *(_simple_chain_regenerative_state(run_state).get("ambiguous_effect_ids") or []),\\n'\n    '            ])),\\n',\n    "zong continuity pending effect payload",\n)\n\n'''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8', newline='\n')
+          PY
       - name: Apply P18-M2 production integration
         run: python .github/p18_m2_runtime_integration_patch.py
       - name: Synchronize generated source mirrors
