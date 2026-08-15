@@ -1,0 +1,288 @@
+name: P18 M3 closeout validation
+
+on:
+  push:
+    branches:
+      - agent/p18-m3-adaptive-control-governance
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  m3-closeout-focused-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile final M3 production seams
+        run: >-
+          python -m py_compile
+          app/backend/tiangong-backend/v3/runtime_adaptive_control.py
+          app/backend/tiangong-backend/v3/runtime_adaptive_governance.py
+          app/backend/tiangong-backend/v3/runtime_adaptive_observation.py
+          app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+          app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+          src/life_service/memory_promotion.py
+          src/total_gateway/regenerative_execution.py
+          src/total_gateway/regenerative_governance.py
+          src/total_gateway/regenerative_provider.py
+          src/total_gateway/store.py
+          src/world_understanding/known/freshness.py
+          src/world_understanding/known/set.py
+          app/backend/tiangong-backend/v3/zongdiaodu.py
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+      - name: Run M3 hard acceptance and inherited execution regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_memory_promotion_math_p15.py
+          tests/test_world_understanding_p4_known_closure.py
+          tests/test_p18_m2_regenerative_store.py
+          tests/test_p18_m2_regenerative_provider.py
+          tests/test_p18_m2_runtime_integration.py
+          tests/test_p18_m2_runtime_effect_boundary.py
+          tests/test_p18_m2_crash_matrix.py
+          tests/test_p18_m1_execution_epoch.py
+          tests/test_p18_m1_canonical_continuity.py
+          tests/test_p18_m1_delivery_boundaries.py
+          tests/test_effect_ledger.py
+          tests/test_effect_fact_chain_v14.py
+          tests/test_gateway_life_continuity.py
+          tests/test_completion_gate.py
+          tests/test_simple_chain_loop_budget.py
+          tests/test_zongdiaodu_p17_m2_02.py
+      - name: Verify final M3 architecture invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          adaptive = Path('app/backend/tiangong-backend/v3/runtime_adaptive_control.py').read_text(encoding='utf-8')
+          governance = Path('app/backend/tiangong-backend/v3/runtime_adaptive_governance.py').read_text(encoding='utf-8')
+          observation = Path('app/backend/tiangong-backend/v3/runtime_adaptive_observation.py').read_text(encoding='utf-8')
+          turn = Path('app/backend/tiangong-backend/v3/runtime_turn_orchestration.py').read_text(encoding='utf-8')
+          tool_boundary = Path('app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          version_governance = Path('src/total_gateway/regenerative_governance.py').read_text(encoding='utf-8')
+          known = Path('src/world_understanding/known/set.py').read_text(encoding='utf-8')
+          freshness = Path('src/world_understanding/known/freshness.py').read_text(encoding='utf-8')
+          zong = Path('app/backend/tiangong-backend/v3/zongdiaodu.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          for source in (adaptive, governance, observation, version_governance, freshness):
+              for token in ('GatewayStateStore.open', 'sqlite3.connect', 'subprocess.run', '_jineng_zhixing'):
+                  assert token not in source
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          assert zong.count('_simple_chain_regenerative_execute_tool(') >= 3
+          assert 'turn_loop.activate_adaptive_control()' in zong
+          assert 'EpochRealityObservation(' in zong
+          assert 'horizon_metrics_from_observation(observation)' in zong
+          assert 'semantic_signals_from_observation(observation)' in zong
+          assert 'resource_usage_from_observation(observation)' in zong
+          assert 'context_pressure=context_pressure' in zong
+          assert 'def evaluate_resource_governor' in adaptive
+          assert 'def evaluate_learning_promotion' in governance
+          assert 'def evaluate_semantic_drift' in governance
+          assert 'explicit_user_memory_ssot' in governance
+          assert 'class StaleKnownDependency' in known
+          assert 'def get_hash_for_dependency' in known
+          assert 'def evaluate_known_freshness' in freshness
+          assert 'VOLATILE_SOURCE_KINDS' in freshness
+          assert 'contract["trust_class"] = UNTRUSTED_DATA' in tool_boundary
+          assert 'contract["instruction_source"] = TOOL_RESULT_DATA' in tool_boundary
+          assert 'contract["may_change_authority"] = False' in tool_boundary
+          guard = provider.index('version_decision = evaluate_checkpoint_version_compatibility(')
+          resumed = provider.index('event_key=f"run.resumed:')
+          assert guard < resumed
+          assert 'RECONCILE_REQUIRED' in provider
+          assert 'resume_allowed' in provider
+          for temp in (
+              '.github/workflows/p18-m3-provider-patch.yml',
+              '.github/workflows/p18-m3-observation-patch.yml',
+          ):
+              assert not Path(temp).exists(), temp
+          print('P18-M3 FINAL architecture invariants: PASS')
+          PY
+
+  m3-closeout-focused-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile final M3 production seams
+        run: >-
+          python -m py_compile
+          app/backend/tiangong-backend/v3/runtime_adaptive_control.py
+          app/backend/tiangong-backend/v3/runtime_adaptive_governance.py
+          app/backend/tiangong-backend/v3/runtime_adaptive_observation.py
+          app/backend/tiangong-backend/v3/runtime_turn_orchestration.py
+          app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py
+          src/life_service/memory_promotion.py
+          src/total_gateway/regenerative_execution.py
+          src/total_gateway/regenerative_governance.py
+          src/total_gateway/regenerative_provider.py
+          src/total_gateway/store.py
+          src/world_understanding/known/freshness.py
+          src/world_understanding/known/set.py
+          app/backend/tiangong-backend/v3/zongdiaodu.py
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+      - name: Run M3 hard acceptance and inherited execution regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_memory_promotion_math_p15.py
+          tests/test_world_understanding_p4_known_closure.py
+          tests/test_p18_m2_regenerative_store.py
+          tests/test_p18_m2_regenerative_provider.py
+          tests/test_p18_m2_runtime_integration.py
+          tests/test_p18_m2_runtime_effect_boundary.py
+          tests/test_p18_m2_crash_matrix.py
+          tests/test_p18_m1_execution_epoch.py
+          tests/test_p18_m1_canonical_continuity.py
+          tests/test_p18_m1_delivery_boundaries.py
+          tests/test_effect_ledger.py
+          tests/test_effect_fact_chain_v14.py
+          tests/test_gateway_life_continuity.py
+          tests/test_completion_gate.py
+          tests/test_simple_chain_loop_budget.py
+          tests/test_zongdiaodu_p17_m2_02.py
+      - name: Verify final M3 architecture invariants
+        shell: pwsh
+        run: |
+          $script = @'
+          from pathlib import Path
+          adaptive = Path('app/backend/tiangong-backend/v3/runtime_adaptive_control.py').read_text(encoding='utf-8')
+          governance = Path('app/backend/tiangong-backend/v3/runtime_adaptive_governance.py').read_text(encoding='utf-8')
+          observation = Path('app/backend/tiangong-backend/v3/runtime_adaptive_observation.py').read_text(encoding='utf-8')
+          tool_boundary = Path('app/backend/tiangong-backend/v3/runtime_tool_result_boundary.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          version_governance = Path('src/total_gateway/regenerative_governance.py').read_text(encoding='utf-8')
+          known = Path('src/world_understanding/known/set.py').read_text(encoding='utf-8')
+          freshness = Path('src/world_understanding/known/freshness.py').read_text(encoding='utf-8')
+          zong = Path('app/backend/tiangong-backend/v3/zongdiaodu.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          for source in (adaptive, governance, observation, version_governance, freshness):
+              for token in ('GatewayStateStore.open', 'sqlite3.connect', 'subprocess.run', '_jineng_zhixing'):
+                  assert token not in source
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          assert zong.count('_simple_chain_regenerative_execute_tool(') >= 3
+          assert 'turn_loop.activate_adaptive_control()' in zong
+          assert 'EpochRealityObservation(' in zong
+          assert 'horizon_metrics_from_observation(observation)' in zong
+          assert 'semantic_signals_from_observation(observation)' in zong
+          assert 'resource_usage_from_observation(observation)' in zong
+          assert 'context_pressure=context_pressure' in zong
+          assert 'def evaluate_resource_governor' in adaptive
+          assert 'def evaluate_learning_promotion' in governance
+          assert 'def evaluate_semantic_drift' in governance
+          assert 'explicit_user_memory_ssot' in governance
+          assert 'class StaleKnownDependency' in known
+          assert 'def get_hash_for_dependency' in known
+          assert 'def evaluate_known_freshness' in freshness
+          assert 'VOLATILE_SOURCE_KINDS' in freshness
+          assert 'contract["trust_class"] = UNTRUSTED_DATA' in tool_boundary
+          assert 'contract["instruction_source"] = TOOL_RESULT_DATA' in tool_boundary
+          assert 'contract["may_change_authority"] = False' in tool_boundary
+          guard = provider.index('version_decision = evaluate_checkpoint_version_compatibility(')
+          resumed = provider.index('event_key=f"run.resumed:')
+          assert guard < resumed
+          assert 'RECONCILE_REQUIRED' in provider
+          assert 'resume_allowed' in provider
+          for temp in (
+              '.github/workflows/p18-m3-provider-patch.yml',
+              '.github/workflows/p18-m3-observation-patch.yml',
+          ):
+              assert not Path(temp).exists(), temp
+          print('P18-M3 FINAL architecture invariants: PASS')
+          '@
+          $script | python -
+
+  m3-closeout-full-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install full source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority before full regression
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Run complete repository pytest
+        run: python -m pytest -q
+
+  m3-closeout-full-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install full source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority before full regression
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Run complete repository pytest
+        run: python -m pytest -q
