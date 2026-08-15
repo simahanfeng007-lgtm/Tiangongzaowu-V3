@@ -42,7 +42,7 @@ def test_m4_dispatch_uses_existing_action_fence_permit_and_releases_on_receipt()
         rig.close()
 
 
-def test_m4_applied_reconciliation_promotes_head_to_reconciled_for_checkpoint_projection() -> None:
+def test_m4_applied_reconciliation_is_projected_as_committed_without_mutating_first_result() -> None:
     rig = CorruptionRig()
     try:
         prepared = rig.provider(
@@ -74,7 +74,11 @@ def test_m4_applied_reconciliation_promotes_head_to_reconciled_for_checkpoint_pr
                 result_summary={"transport": "lost"},
             )
         )
-        assert rig.store.get_effect(prepared["effect_id"]).state == "AMBIGUOUS"
+        first_result = rig.store.get_effect(prepared["effect_id"])
+        assert first_result.state == "AMBIGUOUS"
+        assert first_result.result is not None
+        assert first_result.result.status == "AMBIGUOUS"
+
         reconciled = rig.provider(
             rig.payload(
                 "reconcile_effect",
@@ -89,8 +93,21 @@ def test_m4_applied_reconciliation_promotes_head_to_reconciled_for_checkpoint_pr
             )
         )
         assert reconciled["logical_committed"] is True
-        assert rig.store.get_effect(prepared["effect_id"]).state == "RECONCILED"
+        immutable_first_result = rig.store.get_effect(prepared["effect_id"])
+        assert immutable_first_result.state == "AMBIGUOUS"
+        assert immutable_first_result.result is not None
+        assert immutable_first_result.result.status == "AMBIGUOUS"
+        assert rig.store.latest_effect_verdict(prepared["effect_id"], 1) == "APPLIED"
+
         frontier = rig.frontier(version=1, global_step=10)
+        update = rig.provider(
+            rig.payload(
+                "update_frontier",
+                now_ms=3_140,
+                frontier=frontier.model_dump(mode="json"),
+            )
+        )
+        assert update["committed"] is True
         assert frontier.pending_effect_ids == ()
         assert frontier.ambiguous_effect_ids == ()
     finally:
