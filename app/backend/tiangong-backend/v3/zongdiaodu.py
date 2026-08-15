@@ -1326,6 +1326,22 @@ def _simple_chain_regenerative_execute_tool(
                 latest_safe_step=f"logical effect {logical_effect_id} was already committed",
             )
         return raw
+    if disposition == "in_flight":
+        _simple_chain_regenerative_effect_state(run_state, effect_id, state="prepared")
+        if update_frontier:
+            _simple_chain_regenerative_update_frontier(
+                run_state, turn_loop, global_step=global_step,
+                latest_safe_step=f"logical effect {logical_effect_id} remains in flight",
+                next_action_hint="wait for the in-flight effect to resolve; do not dispatch a duplicate",
+            )
+        return {
+            "ok": False,
+            "status": "in_flight",
+            "ambiguous_effect": False,
+            "error": "[EFFECT_IN_FLIGHT] logical action already dispatched; duplicate retry blocked",
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+        }
     if disposition == "reconcile_required":
         _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous")
         if update_frontier:
@@ -1381,15 +1397,18 @@ def _simple_chain_regenerative_execute_tool(
         run_state, effect_id, state="started", call_id=call_id,
         logical_effect_id=logical_effect_id, attempt_id=attempt_id, step_id=step_id,
     )
+    handler_exception = False
     try:
         raw = owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)
     except Exception as exc:
+        handler_exception = True
         raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}
     status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""
-    ambiguous = bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {
+    result_ok = bool(tool_result_ok(tool_name, raw))
+    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {
         "ambiguous", "unknown", "deadline", "timeout", "timed_out"
     }
-    outcome = "ambiguous" if ambiguous else "succeeded" if tool_result_ok(raw) else "failed_final"
+    outcome = "ambiguous" if ambiguous else "succeeded" if result_ok else "failed_final"
     _simple_chain_regenerative_call(
         run_state,
         "append_event",
@@ -1398,7 +1417,7 @@ def _simple_chain_regenerative_execute_tool(
         event_type="step.observed",
         payload={
             "status": status,
-            "ok": bool(tool_result_ok(raw)),
+            "ok": result_ok,
             "result_digest": _simple_chain_regenerative_sha256({"result": str(raw)[:4000]}),
         },
         logical_effect_id=logical_effect_id,
@@ -1417,7 +1436,7 @@ def _simple_chain_regenerative_execute_tool(
         outcome=outcome,
         error_code=(str(raw.get("error_code") or raw.get("error") or "")[:160] if isinstance(raw, dict) else ""),
         result_summary={
-            "ok": bool(tool_result_ok(raw)),
+            "ok": result_ok,
             "status": status,
             "tool_name": tool_name,
             "call_id": call_id,

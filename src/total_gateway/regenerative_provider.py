@@ -272,6 +272,7 @@ class RegenerativeExecutionAuthority:
     def _logical_effect_disposition(
         self, identity: _Identity, logical_effect_id: str
     ) -> tuple[str | None, Any | None]:
+        unresolved_started: dict[str, Any] = {}
         unresolved_ambiguous: dict[str, Any] = {}
         committed = None
         for event in self._store.list_execution_events(
@@ -279,21 +280,35 @@ class RegenerativeExecutionAuthority:
         ):
             if event.logical_effect_id != logical_effect_id:
                 continue
-            if event.event_type == "step.committed":
+            effect_id = str(event.effect_id or "")
+            if event.event_type == "step.dispatched" and effect_id:
+                unresolved_started[effect_id] = event
+            elif event.event_type == "step.committed":
                 committed = event
-            elif event.event_type == "step.ambiguous" and event.effect_id:
-                unresolved_ambiguous[event.effect_id] = event
-            elif event.event_type == "step.reconciled" and event.effect_id:
+                if effect_id:
+                    unresolved_started.pop(effect_id, None)
+                    unresolved_ambiguous.pop(effect_id, None)
+            elif event.event_type == "step.failed" and effect_id:
+                unresolved_started.pop(effect_id, None)
+                unresolved_ambiguous.pop(effect_id, None)
+            elif event.event_type == "step.ambiguous" and effect_id:
+                unresolved_started.pop(effect_id, None)
+                unresolved_ambiguous[effect_id] = event
+            elif event.event_type == "step.reconciled" and effect_id:
                 verdict = str(event.payload.get("verdict") or "").upper()
                 if verdict == "APPLIED":
                     committed = event
-                    unresolved_ambiguous.pop(event.effect_id, None)
+                    unresolved_started.pop(effect_id, None)
+                    unresolved_ambiguous.pop(effect_id, None)
                 elif verdict == "PROVEN_NOT_APPLIED":
-                    unresolved_ambiguous.pop(event.effect_id, None)
+                    unresolved_started.pop(effect_id, None)
+                    unresolved_ambiguous.pop(effect_id, None)
         if committed is not None:
             return "already_committed", committed
         if unresolved_ambiguous:
             return "reconcile_required", list(unresolved_ambiguous.values())[-1]
+        if unresolved_started:
+            return "in_flight", list(unresolved_started.values())[-1]
         return None, None
 
     def _prepare_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -314,7 +329,7 @@ class RegenerativeExecutionAuthority:
                 event_type="step.prepared", created_at_ms=now_ms,
                 payload={
                     "disposition": prior_disposition,
-                    "effect_state": "LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "AMBIGUOUS",
+                    "effect_state": ("LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "SIDE_EFFECT_STARTED" if prior_disposition == "in_flight" else "AMBIGUOUS"),
                     "claimed_now": False,
                     "prior_event_id": getattr(prior_event, "event_id", None),
                     "obligation_key": payload.get("obligation_key"),
@@ -329,7 +344,7 @@ class RegenerativeExecutionAuthority:
                 "disposition": prior_disposition, "effect_id": prior_effect_id,
                 "logical_effect_id": logical_effect_id, "attempt_id": attempt_id,
                 "step_id": step_id,
-                "effect_state": "LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "AMBIGUOUS",
+                "effect_state": ("LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "SIDE_EFFECT_STARTED" if prior_disposition == "in_flight" else "AMBIGUOUS"),
                 "prior_result_summary": (
                     dict(prior_event.payload.get("result_summary") or {})
                     if getattr(prior_event, "event_type", "") == "step.committed"
