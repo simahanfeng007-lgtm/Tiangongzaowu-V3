@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contracts import canonical_sha256
 from total_gateway.continuity import persist_working_checkpoint
+from total_gateway.regenerative_execution import derive_logical_effect_id
 
 from test_p18_m4_persistence_corruption import CorruptionRig
 
@@ -11,7 +13,78 @@ TARGET_PROVIDER = "gpt-5.6-adapter-v1"
 TARGET_MODEL = "gpt-5.6"
 
 
-def _commit_source_provider_checkpoint(rig: CorruptionRig):
+def _effect_intent(rig: CorruptionRig) -> dict[str, object]:
+    obligation_key = "persist-certified-artifact"
+    effect_namespace = "filesystem.write"
+    normalized_target = "workspace:/certified/m4-cross-provider.txt"
+    desired_postcondition_sha256 = canonical_sha256(
+        {"target": normalized_target, "content": "provider-switch-safe"}
+    )
+    logical_effect_id = derive_logical_effect_id(
+        request_id=rig.request_id,
+        run_id=rig.run_id,
+        generation=rig.generation,
+        obligation_key=obligation_key,
+        effect_namespace=effect_namespace,
+        normalized_target=normalized_target,
+        desired_postcondition_sha256=desired_postcondition_sha256,
+    )
+    return {
+        "logical_effect_id": logical_effect_id,
+        "obligation_key": obligation_key,
+        "effect_namespace": effect_namespace,
+        "normalized_target": normalized_target,
+        "desired_postcondition_sha256": desired_postcondition_sha256,
+    }
+
+
+def _commit_source_irreversible_effect(rig: CorruptionRig) -> dict[str, object]:
+    intent = _effect_intent(rig)
+    prepared = rig.provider(
+        rig.payload(
+            "prepare_effect",
+            now_ms=1320,
+            epoch_index=3,
+            global_step=250,
+            attempt=1,
+            **intent,
+        )
+    )
+    assert prepared["disposition"] == "prepared"
+    started = rig.provider(
+        rig.payload(
+            "start_effect",
+            now_ms=1330,
+            epoch_index=3,
+            effect_id=prepared["effect_id"],
+            logical_effect_id=prepared["logical_effect_id"],
+            attempt_id=prepared["attempt_id"],
+            step_id=prepared["step_id"],
+        )
+    )
+    assert started["dispatch_permitted"] is True
+    finished = rig.provider(
+        rig.payload(
+            "finish_effect",
+            now_ms=1340,
+            epoch_index=3,
+            effect_id=prepared["effect_id"],
+            logical_effect_id=prepared["logical_effect_id"],
+            attempt_id=prepared["attempt_id"],
+            step_id=prepared["step_id"],
+            outcome="succeeded",
+            result_summary={
+                "verified_reality": "workspace:/certified/m4-cross-provider.txt",
+                "content_sha256": intent["desired_postcondition_sha256"],
+            },
+        )
+    )
+    assert finished["effect_state"] == "SUCCEEDED"
+    return {**intent, **prepared}
+
+
+def _commit_source_provider_checkpoint(rig: CorruptionRig, *, with_effect: bool = False):
+    committed_effect = _commit_source_irreversible_effect(rig) if with_effect else None
     rig.append_event("m4.cross-provider.source", now_ms=1400)
     frontier = rig.frontier(version=1, global_step=300)
     rig.store.commit_execution_frontier(frontier, expected_revision=0, updated_at_ms=1500)
@@ -47,7 +120,7 @@ def _commit_source_provider_checkpoint(rig: CorruptionRig):
         )
     )
     assert result["committed"] is True
-    return frontier
+    return frontier, committed_effect
 
 
 def _target_recovery_payload(rig: CorruptionRig, *, revalidated: bool):
@@ -92,7 +165,7 @@ def test_m4_cross_provider_switch_requires_explicit_revalidation_before_resume()
 def test_m4_cross_provider_resume_preserves_run_generation_contract_and_frontier() -> None:
     rig = CorruptionRig()
     try:
-        source_frontier = _commit_source_provider_checkpoint(rig)
+        source_frontier, _effect = _commit_source_provider_checkpoint(rig)
         request_id = rig.request_id
         run_id = rig.run_id
         generation = rig.generation
@@ -129,5 +202,56 @@ def test_m4_cross_provider_resume_preserves_run_generation_contract_and_frontier
         )
         assert checkpoint["provider_version"] == SOURCE_PROVIDER
         assert checkpoint["model_version"] == SOURCE_MODEL
+    finally:
+        rig.close()
+
+
+def test_m4_cross_provider_resume_cannot_replay_committed_logical_effect() -> None:
+    rig = CorruptionRig()
+    try:
+        _frontier, committed = _commit_source_provider_checkpoint(rig, with_effect=True)
+        assert committed is not None
+        logical_effect_id = str(committed["logical_effect_id"])
+        effect_id = str(committed["effect_id"])
+        effects_before = rig.store.list_effects_for_request(
+            rig.request_id, run_id=rig.run_id, generation=rig.generation
+        )
+        committed_before = [
+            event for event in rig.store.list_execution_events(
+                rig.request_id, run_id=rig.run_id, generation=rig.generation
+            )
+            if event.event_type == "step.committed" and event.logical_effect_id == logical_effect_id
+        ]
+        assert len(effects_before) == 1
+        assert len(committed_before) == 1
+
+        resumed = rig.provider(_target_recovery_payload(rig, revalidated=True))
+        assert resumed["resume_allowed"] is True
+
+        replay_prepare = rig.provider(
+            rig.payload(
+                "prepare_effect",
+                now_ms=1800,
+                epoch_index=4,
+                global_step=301,
+                attempt=2,
+                **_effect_intent(rig),
+            )
+        )
+        assert replay_prepare["disposition"] == "already_committed"
+        assert replay_prepare["effect_state"] == "LOGICAL_COMMITTED"
+        assert replay_prepare["effect_id"] == effect_id
+
+        effects_after = rig.store.list_effects_for_request(
+            rig.request_id, run_id=rig.run_id, generation=rig.generation
+        )
+        committed_after = [
+            event for event in rig.store.list_execution_events(
+                rig.request_id, run_id=rig.run_id, generation=rig.generation
+            )
+            if event.event_type == "step.committed" and event.logical_effect_id == logical_effect_id
+        ]
+        assert len(effects_after) == 1
+        assert len(committed_after) == 1
     finally:
         rig.close()
