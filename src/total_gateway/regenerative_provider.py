@@ -335,7 +335,6 @@ class RegenerativeExecutionAuthority:
                 payload={
                     "disposition": prior_disposition,
                     "effect_state": ("LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "SIDE_EFFECT_STARTED" if prior_disposition == "in_flight" else "AMBIGUOUS"),
-                    "claimed_now": False,
                     "prior_event_id": getattr(prior_event, "event_id", None),
                     "obligation_key": payload.get("obligation_key"),
                     "effect_namespace": payload.get("effect_namespace"),
@@ -384,7 +383,7 @@ class RegenerativeExecutionAuthority:
             event_type="step.prepared", created_at_ms=now_ms,
             payload={
                 "disposition": disposition, "effect_state": record.state,
-                "claimed_now": claimed, "obligation_key": payload.get("obligation_key"),
+                "obligation_key": payload.get("obligation_key"),
                 "effect_namespace": payload.get("effect_namespace"),
                 "normalized_target": payload.get("normalized_target"),
                 "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),

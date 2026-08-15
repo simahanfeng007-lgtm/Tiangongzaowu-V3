@@ -93,8 +93,8 @@ def _setup(db: Path, scenario: str, *, now_ms: int) -> tuple[GatewayStateStore, 
             gateway_epoch=1,
             lease_id=f"lease_{canonical_sha256({'scenario': scenario})[:32]}",
             owner_instance_id="p18-m4-real-process-worker",
-            issued_at_ms=1_200,
-            lease_duration_ms=86_400_000,
+            issued_at_ms=now_ms,
+            lease_duration_ms=3_600_000,
         )
     provider = RegenerativeExecutionAuthority(store)
     contract = store.get_execution_task_contract(request_id, run_id=run_id, generation=generation)
@@ -288,7 +288,7 @@ def run_longrun(args: argparse.Namespace) -> int:
                 generation=identity["generation"],
                 epoch_index=step // 75,
                 event_type="step.observed",
-                payload={"scenario": args.scenario, "step": step, "process_id": os.getpid()},
+                payload={"scenario": args.scenario, "step": step},
                 created_at_ms=now_ms,
             )
 

@@ -317,7 +317,7 @@ def test_m4_corruption_10_two_agents_targeting_same_file_cannot_both_dispatch() 
                 with lock:
                     stores.append(store)
                 provider = RegenerativeExecutionAuthority(store)
-                prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100 + worker_no))
+                prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100))
                 barrier.wait(timeout=10)
                 started = provider(
                     rig.payload(
