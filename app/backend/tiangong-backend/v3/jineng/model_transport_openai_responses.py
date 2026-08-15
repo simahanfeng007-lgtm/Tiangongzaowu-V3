@@ -6,7 +6,14 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
-from .model_transport_contract import StreamState, TransportRequest, content_text, json_output
+from .model_transport_contract import (
+    StreamState,
+    TransportRequest,
+    content_text,
+    drop_last_role_messages,
+    extract_native_roundtrip_context,
+    json_output,
+)
 from .model_transport_openai_chat import _legacy_wire
 
 
@@ -48,7 +55,7 @@ class OpenAIResponsesTransport:
             if not isinstance(message, Mapping):
                 continue
             role = str(message.get("role") or "user")
-            if role == "system":
+            if role in {"system", "developer"}:
                 instructions.append(content_text(message.get("content")))
                 continue
             if role == "tool":
@@ -56,37 +63,64 @@ class OpenAIResponsesTransport:
                 if call_id:
                     items.append({"type": "function_call_output", "call_id": call_id, "output": content_text(message.get("content"))})
                 continue
-            if role not in {"user", "assistant", "developer"}:
+            if role not in {"user", "assistant"}:
                 continue
             items.append({"role": role, "content": content_text(message.get("content"))})
         return "\n\n".join(part for part in instructions if part), items
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
+        canonical = dict(canonical_payload)
+        native = extract_native_roundtrip_context(canonical, endpoint)
+        messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
+        if native is not None:
+            # Gutong currently records the Runtime result as a legacy assistant
+            # observation. Remove only the newest result slots after exact
+            # ToolCallBinding verification, then add provider-native items.
+            messages = drop_last_role_messages(messages, role="assistant", count=len(native.results))
+
         payload: dict[str, Any] = {
-            "model": endpoint.model_name or str(canonical_payload.get("model") or ""),
+            "model": endpoint.model_name or str(canonical.get("model") or ""),
             "stream": True,
         }
-        instructions, input_items = self._convert_input(canonical_payload.get("messages"))
+        instructions, input_items = self._convert_input(messages)
         if instructions:
             payload["instructions"] = instructions
+
+        if native is not None:
+            continuation = native.turn.provider_continuation_state
+            opaque = continuation.opaque_payload if isinstance(continuation.opaque_payload, Mapping) else {}
+            replay_items = opaque.get("output_items") if isinstance(opaque.get("output_items"), list) else []
+            if replay_items:
+                input_items.extend(dict(item) for item in replay_items if isinstance(item, Mapping))
+                for binding, result in zip(native.bindings, native.results, strict=True):
+                    input_items.append(self.encode_tool_result(result, binding.as_dict()))
+            # Remote response state is an optional transport optimization only.
+            # It is OFF by default; local replay remains sufficient for the
+            # same Run when provider state disappears.
+            use_remote = bool(endpoint.endpoint_overrides.get("responses_use_previous_response_id", False))
+            previous_response_id = str(opaque.get("previous_response_id") or "").strip()
+            if use_remote and previous_response_id:
+                payload["previous_response_id"] = previous_response_id
+
         payload["input"] = input_items
-        tools = self._convert_tools(canonical_payload.get("tools"))
+        tools = self._convert_tools(canonical.get("tools"))
         if tools:
             payload["tools"] = tools
-        if canonical_payload.get("tool_choice") is not None:
-            payload["tool_choice"] = canonical_payload.get("tool_choice")
-        if canonical_payload.get("parallel_tool_calls") is not None:
-            payload["parallel_tool_calls"] = bool(canonical_payload.get("parallel_tool_calls"))
-        effort = canonical_payload.get("reasoning_effort")
+        if canonical.get("tool_choice") is not None:
+            payload["tool_choice"] = canonical.get("tool_choice")
+        if canonical.get("parallel_tool_calls") is not None:
+            payload["parallel_tool_calls"] = bool(canonical.get("parallel_tool_calls"))
+        effort = canonical.get("reasoning_effort")
         if effort:
             payload["reasoning"] = {"effort": str(effort)}
-        elif isinstance(canonical_payload.get("reasoning"), Mapping):
-            payload["reasoning"] = dict(canonical_payload["reasoning"])
-        max_output = canonical_payload.get("max_output_tokens") or canonical_payload.get("max_tokens")
+        elif isinstance(canonical.get("reasoning"), Mapping):
+            payload["reasoning"] = dict(canonical["reasoning"])
+        max_output = canonical.get("max_output_tokens") or canonical.get("max_completion_tokens") or canonical.get("max_tokens")
         if max_output:
             payload["max_output_tokens"] = int(max_output)
-        # Remote storage is never task authority. SCNet explicitly defaults
-        # false; using false for all endpoints is the conservative baseline.
+        # Remote storage is never task authority. SCNet and the generic path
+        # default false; endpoint override may only enable provider storage as
+        # soft continuation state.
         payload["store"] = bool(endpoint.endpoint_overrides.get("responses_store", False))
         return TransportRequest(self.build_url(endpoint), self.build_headers(endpoint, api_key), payload, self.protocol_family)
 
