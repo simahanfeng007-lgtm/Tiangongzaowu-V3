@@ -3383,6 +3383,7 @@ def _openai_chat_completion(qiaojie, payload: dict) -> dict:
 
 
 
+
 def _llm_settings() -> dict:
     """Return P18.1 endpoint authority plus legacy UI projections."""
     from .endpoint_security import validate_model_endpoint
@@ -3525,6 +3526,7 @@ def _llm_match_display_name(match: dict, raw_provider: str, provider_display_nam
         }:
             return f"{raw} / {provider_display_name}"
     return provider_display_name
+
 
 
 

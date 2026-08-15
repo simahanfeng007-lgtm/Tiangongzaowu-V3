@@ -1496,6 +1496,7 @@ function providerProbeEndpoint(baseUrl, suffix) {
 
 
 
+
 function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -1533,6 +1534,7 @@ function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null
 // The probe deliberately accepts no renderer-supplied URL or credential.
 // Both come from the committed configuration and OS vault; only bounded,
 // non-secret status is returned to the renderer.
+
 
 
 async function probeProviderApiConnection() {

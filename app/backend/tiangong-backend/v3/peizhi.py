@@ -221,6 +221,7 @@ def normalize_provider_id(provider_id: str | None) -> str:
 
 
 
+
 def normalize_provider_identity(provider_id: str | None) -> str:
     """Normalize only persisted connection identity, never L4 routing family.
 
