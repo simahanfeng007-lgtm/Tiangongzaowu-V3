@@ -3570,8 +3570,11 @@ def _save_llm_settings(payload: dict) -> dict:
     ).strip()
 
     service_value = payload.get("service_preset") if "service_preset" in payload else payload.get("modelService")
+    # Legacy callers may provide only a historical provider/family identity.
+    # Do not pre-empt provider->service alias resolution with an eager custom
+    # default; an explicit service_preset still remains authoritative.
     service_preset = normalize_service_preset(
-        service_value or current_input.get("service_preset") or "custom",
+        service_value or current_input.get("service_preset") or "",
         raw_provider or current_identity,
     )
     preset = SERVICE_PRESETS[service_preset]
