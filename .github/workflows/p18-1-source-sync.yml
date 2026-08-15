@@ -1,4 +1,5 @@
 name: P18.1 source authority and generated sync
+# Final closeout trigger; remove this branch-only workflow before merging main.
 
 on:
   push:
