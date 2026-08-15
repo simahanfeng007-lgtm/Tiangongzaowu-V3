@@ -56,6 +56,7 @@ jobs:
         run: |
           python - <<'PY'
           import json, sys
+          sys.path.insert(0, 'src')
           sys.path.insert(0, 'app/backend/tiangong-backend')
           sys.path.insert(0, 'tests')
           from p18_m4_deterministic_harness import DeterministicLongHorizonHarness
@@ -140,6 +141,7 @@ jobs:
         run: |
           $script = @'
           import json, sys
+          sys.path.insert(0, 'src')
           sys.path.insert(0, 'app/backend/tiangong-backend')
           sys.path.insert(0, 'tests')
           from p18_m4_deterministic_harness import DeterministicLongHorizonHarness
