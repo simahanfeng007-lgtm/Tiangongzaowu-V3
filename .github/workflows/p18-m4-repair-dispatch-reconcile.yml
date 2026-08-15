@@ -1,0 +1,176 @@
+name: P18 M4 repair dispatch reconcile
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Patch regenerative dispatch to canonical action fence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/total_gateway/regenerative_provider.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        started = self._store.mark_effect_started(effect_id, started_at_ms=now_ms)\n        event, _ = self._store.append_execution_event(\n            event_key=f"step.dispatched:{step_id}:{attempt_id}",\n            request_id=identity.request_id,\n            run_id=identity.run_id,\n            generation=identity.generation,\n            epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),\n            event_type="step.dispatched",\n            created_at_ms=now_ms,\n            payload={"effect_state": started.state, "dispatch_boundary": "durably_started_before_handler"},\n            logical_effect_id=logical_effect_id,\n            attempt_id=attempt_id,\n            step_id=step_id,\n            effect_id=effect_id,\n        )\n        return {\n            "dispatch_permitted": True,\n            "disposition": "dispatched",\n            "effect_state": started.state,\n            "ledger_seq": event.ledger_seq,\n        }\n'''
+          new = '''        fence = self._store.action_fence_status()\n        dispatch_nonce = canonical_sha256({\n            "domain": "tiangong.gateway.regenerative-dispatch-permit.v1",\n            "request_id": identity.request_id,\n            "run_id": identity.run_id,\n            "generation": identity.generation,\n            "effect_id": effect_id,\n            "attempt_id": attempt_id,\n            "step_id": step_id,\n        })\n        try:\n            permit = self._store.acquire_dispatch_permit(\n                effect_id=effect_id,\n                attempt=1,\n                expected_fence_epoch=int(fence["action_fence_epoch"]),\n                nonce_sha256=dispatch_nonce,\n                now_ms=now_ms,\n            )\n        except StoreConflictError:\n            current = self._store.get_effect(effect_id)\n            if current is None:\n                raise\n            if current.state in _TERMINAL_COMMITTED_EFFECT_STATES:\n                return {\n                    "dispatch_permitted": False,\n                    "disposition": "already_committed",\n                    "effect_state": current.state,\n                }\n            if current.state in _RECONCILE_REQUIRED_EFFECT_STATES:\n                disposition = (\n                    "in_flight" if current.state == "SIDE_EFFECT_STARTED" else "reconcile_required"\n                )\n                return {\n                    "dispatch_permitted": False,\n                    "disposition": disposition,\n                    "effect_state": current.state,\n                }\n            raise\n        started = self._store.get_effect(effect_id)\n        if started is None or started.state != "SIDE_EFFECT_STARTED":\n            raise StoreCorruptionError("dispatch permit did not advance canonical Effect head")\n        event, _ = self._store.append_execution_event(\n            event_key=f"step.dispatched:{step_id}:{attempt_id}",\n            request_id=identity.request_id,\n            run_id=identity.run_id,\n            generation=identity.generation,\n            epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),\n            event_type="step.dispatched",\n            created_at_ms=now_ms,\n            payload={\n                "effect_state": started.state,\n                "dispatch_boundary": "action_fence_permit_before_handler",\n                "fence_epoch": int(permit["fence_epoch"]),\n            },\n            logical_effect_id=logical_effect_id,\n            attempt_id=attempt_id,\n            step_id=step_id,\n            effect_id=effect_id,\n        )\n        return {\n            "dispatch_permitted": True,\n            "disposition": "dispatched",\n            "effect_state": started.state,\n            "ledger_seq": event.ledger_seq,\n        }\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'start-effect seam count: {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+      - name: Patch APPLIED reconciliation to canonical Effect head
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/total_gateway/store.py')
+          text = path.read_text(encoding='utf-8')
+          old_idempotent = '''            if existing == verdict and existing in {"APPLIED", "PROVEN_NOT_APPLIED"}:\n                # 幂等：同结论重复落地不产生新事实\n                return {"fact": None, "contradiction": False,\n                        "attempt_state": self._get_effect_attempt_locked(effect_id, attempt)["state"],\n                        "idempotent": True}\n'''
+          new_idempotent = '''            if existing == verdict and existing in {"APPLIED", "PROVEN_NOT_APPLIED"}:\n                # 幂等：同结论重复落地不产生新事实。若 first receipt 先落为\n                # AMBIGUOUS，则 APPLIED reconciliation 还必须修正 canonical head。\n                if existing == "APPLIED":\n                    self._connection.execute(\n                        "UPDATE effect_ledger SET state = 'RECONCILED' "\n                        "WHERE effect_id = ? AND state = 'AMBIGUOUS'",\n                        (effect_id,),\n                    )\n                return {"fact": None, "contradiction": False,\n                        "attempt_state": self._get_effect_attempt_locked(effect_id, attempt)["state"],\n                        "idempotent": True}\n'''
+          old_final = '''            self._connection.execute(\n                "UPDATE effect_attempts SET state = ? WHERE effect_id = ? AND attempt = ?",\n                (new_state, effect_id, attempt),\n            )\n            return {"fact": fact, "contradiction": contradiction, "attempt_state": new_state}\n'''
+          new_final = '''            self._connection.execute(\n                "UPDATE effect_attempts SET state = ? WHERE effect_id = ? AND attempt = ?",\n                (new_state, effect_id, attempt),\n            )\n            if verdict == "APPLIED" and not contradiction:\n                # The first transport result remains immutable (usually AMBIGUOUS),\n                # while the head projection advances to RECONCILED after verified\n                # reality proves the side effect applied.  Checkpoint/Completion\n                # read this canonical head and must not keep treating it ambiguous.\n                self._connection.execute(\n                    "UPDATE effect_ledger SET state = 'RECONCILED' "\n                    "WHERE effect_id = ? AND state = 'AMBIGUOUS'",\n                    (effect_id,),\n                )\n            return {"fact": fact, "contradiction": contradiction, "attempt_state": new_state}\n'''
+          if text.count(old_idempotent) != 1:
+              raise SystemExit(f'idempotent reconciliation seam count: {text.count(old_idempotent)}')
+          if text.count(old_final) != 1:
+              raise SystemExit(f'final reconciliation seam count: {text.count(old_final)}')
+          text = text.replace(old_idempotent, new_idempotent).replace(old_final, new_final)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Add direct regressions for repaired invariants
+        run: |
+          cat >> tests/test_p18_m4_corruption_matrix.py <<'PY'
+
+
+def test_m4_repaired_dispatch_uses_existing_action_fence_permit_and_releases_on_receipt() -> None:
+    rig = CorruptionRig()
+    try:
+        prepared = rig.provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=3_000))
+        before = rig.store.action_fence_status()
+        assert before["inflight_count"] == 0
+        started = rig.provider(
+            rig.payload(
+                "start_effect",
+                now_ms=3_010,
+                epoch_index=0,
+                effect_id=prepared["effect_id"],
+                logical_effect_id=prepared["logical_effect_id"],
+                attempt_id=prepared["attempt_id"],
+                step_id=prepared["step_id"],
+            )
+        )
+        assert started["dispatch_permitted"] is True
+        assert rig.store.action_fence_status()["inflight_count"] == 1
+        finished = rig.provider(
+            rig.payload(
+                "finish_effect",
+                now_ms=3_020,
+                epoch_index=0,
+                effect_id=prepared["effect_id"],
+                logical_effect_id=prepared["logical_effect_id"],
+                attempt_id=prepared["attempt_id"],
+                step_id=prepared["step_id"],
+                outcome="succeeded",
+                result_summary={"verified": True},
+            )
+        )
+        assert finished["effect_state"] == "SUCCEEDED"
+        assert rig.store.action_fence_status()["inflight_count"] == 0
+    finally:
+        rig.close()
+
+
+def test_m4_repaired_applied_reconciliation_promotes_head_to_reconciled_for_checkpoint_projection() -> None:
+    rig = CorruptionRig()
+    try:
+        prepared = rig.provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=3_100))
+        started = rig.provider(
+            rig.payload(
+                "start_effect",
+                now_ms=3_110,
+                epoch_index=0,
+                effect_id=prepared["effect_id"],
+                logical_effect_id=prepared["logical_effect_id"],
+                attempt_id=prepared["attempt_id"],
+                step_id=prepared["step_id"],
+            )
+        )
+        assert started["dispatch_permitted"] is True
+        rig.provider(
+            rig.payload(
+                "finish_effect",
+                now_ms=3_120,
+                epoch_index=0,
+                effect_id=prepared["effect_id"],
+                logical_effect_id=prepared["logical_effect_id"],
+                attempt_id=prepared["attempt_id"],
+                step_id=prepared["step_id"],
+                outcome="ambiguous",
+                error_code="response_lost",
+                result_summary={"transport": "lost"},
+            )
+        )
+        assert rig.store.get_effect(prepared["effect_id"]).state == "AMBIGUOUS"
+        reconciled = rig.provider(
+            rig.payload(
+                "reconcile_effect",
+                now_ms=3_130,
+                epoch_index=0,
+                effect_id=prepared["effect_id"],
+                logical_effect_id=prepared["logical_effect_id"],
+                attempt_id=prepared["attempt_id"],
+                step_id=prepared["step_id"],
+                verdict="APPLIED",
+                evidence={"readback": "postcondition_matched"},
+            )
+        )
+        assert reconciled["logical_committed"] is True
+        assert rig.store.get_effect(prepared["effect_id"]).state == "RECONCILED"
+        frontier = rig.frontier(version=1, global_step=10)
+        assert frontier.pending_effect_ids == ()
+        assert frontier.ambiguous_effect_ids == ()
+    finally:
+        rig.close()
+PY
+      - name: Sync generated mirrors and install dependencies
+        run: |
+          python scripts/sync-generated-sources.py --write
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python -m pip install -r requirements-source.lock
+      - name: Run targeted P0 regression suite
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m4_corruption_matrix.py::test_m4_corruption_10_two_agents_targeting_same_file_cannot_both_dispatch
+          tests/test_p18_m4_corruption_matrix.py::test_m4_corruption_04_timeout_after_applied_effect_reconciles_applied_and_never_replays
+          tests/test_p18_m4_corruption_matrix.py::test_m4_repaired_dispatch_uses_existing_action_fence_permit_and_releases_on_receipt
+          tests/test_p18_m4_corruption_matrix.py::test_m4_repaired_applied_reconciliation_promotes_head_to_reconciled_for_checkpoint_projection
+          tests/test_effect_fact_chain_v14.py
+          tests/test_p18_m2_crash_matrix.py
+          tests/test_p18_m4_provider_l4.py::test_m4_each_registered_provider_individually_passes_l4[deepseek_v4]
+      - name: Remove applicator commit and push repair
+        run: |
+          rm .github/workflows/p18-m4-repair-dispatch-reconcile.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src app tests .github/workflows/p18-m4-repair-dispatch-reconcile.yml
+          git commit -m "P18-M4: fence concurrent dispatch and reconcile applied effects"
+          git push origin HEAD:agent/p18-m4-adversarial-certification
