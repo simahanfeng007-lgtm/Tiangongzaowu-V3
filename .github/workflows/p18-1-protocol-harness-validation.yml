@@ -1,0 +1,94 @@
+name: P18.1 Protocol Harness validation
+
+on:
+  push:
+    branches:
+      - agent/p18-1-universal-endpoint-protocol-harness
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  protocol-harness-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Compile P18.1 implementation
+        run: >-
+          python -m py_compile
+          app/backend/tiangong-backend/v3/model_endpoint.py
+          app/backend/tiangong-backend/v3/model_protocol_contract.py
+          app/backend/tiangong-backend/v3/model_stream_config.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_contract.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_anthropic.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_registry.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_executor.py
+          app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+          app/backend/tiangong-backend/v3/gutong/gutong_ceng.py
+          app/backend/tiangong-backend/v3/zongdiaodu.py
+          src/omni_body_skill/model_adapters/core.py
+      - name: Run P18.1 endpoint, envelope, and native protocol focused tests
+        run: >-
+          python -m pytest -q
+          tests/test_p18_1_endpoint_authority.py
+          tests/test_p18_1_provider_turn_envelope.py
+          tests/test_p18_1_native_tool_roundtrip.py
+      - name: Run inherited model-boundary regressions
+        run: >-
+          python -m pytest -q
+          tests/test_model_reasoning_contract.py
+          tests/test_audio_semantic_integrity.py
+          tests/test_model_tool_boundary.py
+          tests/test_llm_error_hints.py
+          tests/test_v21_g3_backend.py
+
+  protocol-harness-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Compile P18.1 implementation
+        run: >-
+          python -m py_compile
+          app/backend/tiangong-backend/v3/model_endpoint.py
+          app/backend/tiangong-backend/v3/model_protocol_contract.py
+          app/backend/tiangong-backend/v3/model_stream_config.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_contract.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_anthropic.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_registry.py
+          app/backend/tiangong-backend/v3/jineng/model_transport_executor.py
+          app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+          app/backend/tiangong-backend/v3/gutong/gutong_ceng.py
+          app/backend/tiangong-backend/v3/zongdiaodu.py
+          src/omni_body_skill/model_adapters/core.py
+      - name: Run P18.1 endpoint, envelope, and native protocol focused tests
+        run: >-
+          python -m pytest -q
+          tests/test_p18_1_endpoint_authority.py
+          tests/test_p18_1_provider_turn_envelope.py
+          tests/test_p18_1_native_tool_roundtrip.py
+      - name: Run inherited model-boundary regressions
+        run: >-
+          python -m pytest -q
+          tests/test_model_reasoning_contract.py
+          tests/test_audio_semantic_integrity.py
+          tests/test_model_tool_boundary.py
+          tests/test_llm_error_hints.py
+          tests/test_v21_g3_backend.py
