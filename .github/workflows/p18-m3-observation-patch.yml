@@ -76,7 +76,7 @@ jobs:
               '        return recovered',
           ]
 
-          # Insert one pure adapter around the existing durable-checkpoint authority.
+          # Insert a pure adapter around the existing durable-checkpoint authority.
           checkpoint_start = next(i for i, line in enumerate(lines) if line == 'def _simple_chain_regenerative_checkpoint(')
           helper = '''def _simple_chain_m3_observe_checkpoint(
               run_state: dict[str, Any],
@@ -84,7 +84,6 @@ jobs:
               *,
               frontier: dict[str, Any],
               checkpoint_latency_seconds: float,
-              loop_started_at: float | None,
           ) -> None:
               """Feed M3 only from already-observed execution/checkpoint reality."""
               state = _simple_chain_regenerative_state(run_state)
@@ -123,6 +122,7 @@ jobs:
               task_match = str(state.get("task_contract_hash") or "") in {"", str(current_task_hash or "")}
               live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else {}
               context_pressure = float(live.get("context_pressure") or 0.0)
+              loop_started_at = live.get("loop_started_at")
               wall_clock = max(0.0, time.monotonic() - float(loop_started_at)) if loop_started_at else 0.0
               repeat_peak = max((int(value) for value in turn_loop.repeat_counts.values()), default=0)
 
@@ -174,15 +174,11 @@ jobs:
                   "m3_resource_governor_allowed": bool(governor.allowed),
               })
           '''.splitlines()
-          # Normalize helper indentation (the triple-quoted body is indented by Python source formatting).
           helper = [line[12:] if line.startswith('            ') else line for line in helper]
           lines[checkpoint_start:checkpoint_start] = helper + ['']
 
-          # Re-find checkpoint after insertion and extend it with observed timing context.
+          # Time the existing checkpoint function without changing its public/caller signature.
           checkpoint_start = next(i for i, line in enumerate(lines) if line == 'def _simple_chain_regenerative_checkpoint(')
-          source_param = next(i for i in range(checkpoint_start, checkpoint_start + 12) if lines[i].strip() == 'source: str,')
-          if not any('loop_started_at:' in line for line in lines[source_param:source_param + 4]):
-              lines.insert(source_param + 1, '    loop_started_at: float | None = None,')
           context_line = next(i for i in range(checkpoint_start, checkpoint_start + 20) if lines[i].strip() == 'context = current_run_context()')
           if not any('checkpoint_started_at' in line for line in lines[context_line:context_line + 4]):
               lines.insert(context_line + 1, '    checkpoint_started_at = time.monotonic()')
@@ -199,22 +195,13 @@ jobs:
                   '        turn_loop,',
                   '        frontier=frontier,',
                   '        checkpoint_latency_seconds=max(0.0, time.monotonic() - checkpoint_started_at),',
-                  '        loop_started_at=loop_started_at,',
                   '    )',
               ]
 
-          # Pass the already-observed loop start into the single checkpoint caller.
-          caller_candidates = [
-              i for i, line in enumerate(lines)
-              if '_simple_chain_regenerative_checkpoint(run_state, turn_loop, source=source)' in line
-          ]
-          if len(caller_candidates) != 1:
-              raise SystemExit(f'checkpoint caller candidates={caller_candidates}')
-          ci = caller_candidates[0]
-          lines[ci] = lines[ci].replace(
-              '_simple_chain_regenerative_checkpoint(run_state, turn_loop, source=source)',
-              '_simple_chain_regenerative_checkpoint(run_state, turn_loop, source=source, loop_started_at=loop_started_at)',
-          )
+          # M2 hard invariant: preserve this production caller text exactly.
+          caller = 'if not _simple_chain_regenerative_checkpoint(run_state, turn_loop, source=source):'
+          if sum(1 for line in lines if caller in line) != 1:
+              raise SystemExit('M2 checkpoint caller invariant missing')
 
           path.write_text('\n'.join(lines) + '\n', encoding='utf-8', newline='\n')
           Path('.github/workflows/p18-m3-observation-patch.yml').unlink()
