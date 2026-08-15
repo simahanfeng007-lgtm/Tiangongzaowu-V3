@@ -1,53 +1,43 @@
-name: P18.1 source authority and generated sync
-# Final closeout trigger; remove this branch-only workflow before merging main.
+name: P18.1 one-shot tooling cleanup
 
 on:
   push:
     branches: [agent/p18-1-universal-endpoint-protocol-harness]
     paths:
-      - source-ownership.json
-      - src/**
-      - app/backend/tiangong-backend/v3/**
-      - scripts/sync-generated-sources.py
-      - scripts/check-source-authority.py
       - .github/workflows/p18-1-source-sync.yml
-  workflow_dispatch:
 
 permissions:
   contents: write
 
-env:
-  PYTHONUTF8: '1'
-  PYTHONIOENCODING: utf-8
-
 jobs:
-  sync-and-gate:
-    if: "${{ !startsWith(github.event.head_commit.message, 'E2 P18.1: generated-source sync bot') }}"
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/p18-1-universal-endpoint-protocol-harness
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Install gate test dependency
-        run: python -m pip install pytest==9.0.3
-      - name: Sync generated source mirrors from authoritative roots
-        run: python scripts/sync-generated-sources.py --write
-      - name: Source authority gate
-        run: python scripts/check-source-authority.py
-      - name: Generated source tests
-        run: >-
-          python -m pytest -q
-          tests/test_sync_generated_sources.py
-          tests/test_source_authority_p17_m1.py
-      - name: Commit generated outputs
+      - name: Remove branch-only migration and certification tooling
         shell: bash
         run: |
-          if git diff --quiet; then exit 0; fi
+          git rm -f --ignore-unmatch \
+            .github/workflows/p18-1-closeout-fix.yml \
+            .github/workflows/p18-1-native-roundtrip-patch.yml \
+            .github/workflows/p18-1-protocol-harness-validation.yml \
+            .github/workflows/p18-1-source-sync.yml \
+            .github/workflows/p18-1-stage-d-inspect.yml \
+            .github/workflows/p18-1-stage-d-migrate.yml \
+            scripts/p18_1_apply_native_roundtrip.py \
+            scripts/p18_1_closeout_fix.py \
+            scripts/p18_1_stage_d_fixups.py \
+            scripts/p18_1_stage_d_frontend.py \
+            scripts/p18_1_stage_d_frontend_v2.py \
+            scripts/p18_1_stage_d_migrate.py \
+            scripts/p18_1_stage_d_migrate_v2.py
+      - name: Commit clean closeout branch
+        shell: bash
+        run: |
           git config user.name "tiangong-p18-1-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "E2 P18.1: generated-source sync bot"
+          git commit -m "E4 P18.1: remove one-shot migration tooling"
           git push origin HEAD:agent/p18-1-universal-endpoint-protocol-harness
