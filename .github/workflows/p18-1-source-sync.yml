@@ -30,6 +30,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
+      - name: Install gate test dependency
+        run: python -m pip install pytest==9.0.3
       - name: Sync generated source mirrors from authoritative roots
         run: python scripts/sync-generated-sources.py --write
       - name: Source authority gate
