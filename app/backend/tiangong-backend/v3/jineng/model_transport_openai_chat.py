@@ -6,7 +6,14 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
-from .model_transport_contract import StreamState, TransportRequest, content_text, json_output
+from .model_transport_contract import (
+    StreamState,
+    TransportRequest,
+    content_text,
+    drop_last_role_messages,
+    extract_native_roundtrip_context,
+    json_output,
+)
 
 
 class OpenAIChatTransport:
@@ -20,9 +27,30 @@ class OpenAIChatTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         payload = dict(canonical_payload)
+        native = extract_native_roundtrip_context(payload, endpoint)
+        if native is not None:
+            messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+            messages = drop_last_role_messages(messages, role="assistant", count=len(native.results))
+            opaque = native.turn.provider_continuation_state.opaque_payload
+            opaque = opaque if isinstance(opaque, Mapping) else {}
+            replay_calls = opaque.get("assistant_tool_calls") if isinstance(opaque.get("assistant_tool_calls"), list) else []
+            if replay_calls:
+                assistant_message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": native.turn.visible_text or None,
+                    "tool_calls": [dict(item) for item in replay_calls if isinstance(item, Mapping)],
+                }
+                # DeepSeek reasoning continuation remains opaque/private and is
+                # replayed only to the same provider/protocol/model.
+                reasoning = opaque.get("assistant_reasoning_content")
+                if isinstance(reasoning, str) and reasoning:
+                    assistant_message["reasoning_content"] = reasoning
+                messages.append(assistant_message)
+                for binding, result in zip(native.bindings, native.results, strict=True):
+                    messages.append(self.encode_tool_result(result, binding.as_dict()))
+                payload["messages"] = messages
         payload["model"] = endpoint.model_name or str(payload.get("model") or "")
         payload["stream"] = True
-        # Preserve the established final-usage chunk request where supported.
         payload.setdefault("stream_options", {"include_usage": True})
         return TransportRequest(
             url=self.build_url(endpoint),
@@ -114,9 +142,14 @@ class OpenAIChatTransport:
                 sequence_index=seq,
             ))
         legacy = _legacy_wire(state.visible_text, calls)
+        opaque: dict[str, Any] = {}
+        if replay_tool_calls:
+            opaque["assistant_tool_calls"] = replay_tool_calls
+        if state.private_reasoning:
+            opaque["assistant_reasoning_content"] = state.private_reasoning
         continuation = ProviderContinuationState(
-            mode="local_replay" if replay_tool_calls else "none",
-            opaque_payload={"assistant_tool_calls": replay_tool_calls} if replay_tool_calls else None,
+            mode="local_replay" if opaque else "none",
+            opaque_payload=opaque or None,
             provider_identity=endpoint.provider_identity,
             protocol_family=self.protocol_family,
             model_id=endpoint.model_name,
