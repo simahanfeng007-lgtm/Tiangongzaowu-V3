@@ -26,9 +26,11 @@ jobs:
       - name: Compile P18.1 implementation
         run: >-
           python -m py_compile
+          app/backend/tiangong-backend/v3/peizhi.py
           app/backend/tiangong-backend/v3/model_endpoint.py
           app/backend/tiangong-backend/v3/model_protocol_contract.py
           app/backend/tiangong-backend/v3/model_stream_config.py
+          app/backend/tiangong-backend/v3/duihua_qiaojie.py
           app/backend/tiangong-backend/v3/jineng/model_transport_contract.py
           app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py
           app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py
@@ -39,12 +41,19 @@ jobs:
           app/backend/tiangong-backend/v3/gutong/gutong_ceng.py
           app/backend/tiangong-backend/v3/zongdiaodu.py
           src/omni_body_skill/model_adapters/core.py
-      - name: Run P18.1 endpoint, envelope, and native protocol focused tests
+      - name: Check desktop and renderer JavaScript
+        run: |
+          node --check app/main.js
+          node --check app/frontend-v2/renderer/plugins/provider-presets.mjs
+          node --check app/frontend-v2/renderer/plugins/settings-panel.mjs
+      - name: Run P18.1 focused tests
         run: >-
           python -m pytest -q
           tests/test_p18_1_endpoint_authority.py
           tests/test_p18_1_provider_turn_envelope.py
           tests/test_p18_1_native_tool_roundtrip.py
+          tests/test_p18_1_stage_d.py
+          tests/test_provider_identity_persistence.py
       - name: Run inherited model-boundary regressions
         run: >-
           python -m pytest -q
@@ -65,9 +74,11 @@ jobs:
       - name: Compile P18.1 implementation
         run: >-
           python -m py_compile
+          app/backend/tiangong-backend/v3/peizhi.py
           app/backend/tiangong-backend/v3/model_endpoint.py
           app/backend/tiangong-backend/v3/model_protocol_contract.py
           app/backend/tiangong-backend/v3/model_stream_config.py
+          app/backend/tiangong-backend/v3/duihua_qiaojie.py
           app/backend/tiangong-backend/v3/jineng/model_transport_contract.py
           app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py
           app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py
@@ -78,12 +89,19 @@ jobs:
           app/backend/tiangong-backend/v3/gutong/gutong_ceng.py
           app/backend/tiangong-backend/v3/zongdiaodu.py
           src/omni_body_skill/model_adapters/core.py
-      - name: Run P18.1 endpoint, envelope, and native protocol focused tests
+      - name: Check desktop and renderer JavaScript
+        run: |
+          node --check app/main.js
+          node --check app/frontend-v2/renderer/plugins/provider-presets.mjs
+          node --check app/frontend-v2/renderer/plugins/settings-panel.mjs
+      - name: Run P18.1 focused tests
         run: >-
           python -m pytest -q
           tests/test_p18_1_endpoint_authority.py
           tests/test_p18_1_provider_turn_envelope.py
           tests/test_p18_1_native_tool_roundtrip.py
+          tests/test_p18_1_stage_d.py
+          tests/test_provider_identity_persistence.py
       - name: Run inherited model-boundary regressions
         run: >-
           python -m pytest -q
