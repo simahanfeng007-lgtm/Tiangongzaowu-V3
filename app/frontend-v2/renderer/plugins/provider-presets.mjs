@@ -34,12 +34,23 @@ const thinking = Object.freeze({
     modes: [{ value: "off", label: "关闭" }, { value: "on", label: "开启" }],
     defaultDepth: "on",
   },
+  kimi: {
+    supported: true,
+    modes: ["low", "high", "max"].map((value) => ({ value, label: value })),
+    defaultDepth: "max",
+  },
 });
 
 const rawOptionalThinking = Object.freeze({
   supported: true,
   rawOptional: true,
   control: "raw_optional",
+  modes: [],
+  defaultDepth: "",
+});
+
+const unsupportedThinking = Object.freeze({
+  supported: false,
   modes: [],
   defaultDepth: "",
 });
@@ -92,6 +103,15 @@ export const providerPresets = Object.freeze({
     baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.xiaomimimo.com/v1" },
     model: "mimo-v2.5-pro",
     thinking: thinking.mimo,
+  },
+  kimi: {
+    label: "Kimi",
+    provider: "kimi",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.moonshot.cn/v1" },
+    model: "kimi-k3",
+    thinking: thinking.kimi,
   },
   scnet: {
     label: "SCNet",
@@ -149,6 +169,7 @@ const legacyPresetAliases = Object.freeze({
   deepseek_v4: "deepseek",
   glm_5_2: "zhipu",
   minimax_m3: "minimax",
+  kimi_k3: "kimi",
 });
 
 export function normalizeServicePreset(value = "custom") {
@@ -194,6 +215,22 @@ function modelProfileForService(settings, presetId) {
   return profile && typeof profile === "object" && !Array.isArray(profile) ? profile : null;
 }
 
+// 思考能力只由实际模型名决定：供应商名称不参与判定。
+const modelThinkingRules = Object.freeze([
+  { prefixes: ["deepseek-v4", "deepseek_v4"], thinking: thinking.deepseek },
+  { prefixes: ["minimax-m3", "minimax_m3"], thinking: thinking.minimax },
+  { prefixes: ["mimo-v2.5", "mimo_v2.5", "xiaomi-mimo-v2.5"], thinking: thinking.mimo },
+  { prefixes: ["glm-5.2", "glm_5_2"], thinking: thinking.glm },
+  { prefixes: ["kimi-k3", "kimi_k3"], thinking: thinking.kimi },
+  { prefixes: ["gpt-5", "gpt_5", "o1", "o3", "o4"], thinking: thinking.gpt },
+]);
+
+export function modelThinkingCapability(modelName = "") {
+  const model = String(modelName || "").trim().toLowerCase();
+  return modelThinkingRules.find((rule) => rule.prefixes.some((prefix) => model.startsWith(prefix)))?.thinking
+    || unsupportedThinking;
+}
+
 export function applyProviderPreset(settings, presetId, { preserveBaseUrl = false, protocolFamily = "" } = {}) {
   const serviceId = normalizeServicePreset(presetId);
   const preset = providerPresets[serviceId];
@@ -209,6 +246,10 @@ export function applyProviderPreset(settings, presetId, { preserveBaseUrl = fals
   const baseUrl = preserveBaseUrl
     ? String(settings?.modelBaseUrl || "")
     : String(profile?.base_url || profile?.modelBaseUrl || resolvePresetBaseUrl(serviceId, protocol) || "");
+  const model = String(profile?.model_name ?? profile?.modelName ?? preset.model ?? "");
+  const modelCapability = modelThinkingCapability(model);
+  const thinkingCapability = profile?.reasoning
+    || (modelCapability.supported ? modelCapability : (preset.thinking || rawOptionalThinking));
   return {
     ...settings,
     modelService: serviceId,
@@ -218,17 +259,17 @@ export function applyProviderPreset(settings, presetId, { preserveBaseUrl = fals
     modelProtocol: protocol,
     protocol_family: protocol,
     modelBaseUrl: baseUrl,
-    modelName: profile?.model_name ?? profile?.modelName ?? preset.model,
+    modelName: model,
     modelApiKey: "",
     modelThinkingEnabled: profile?.reasoning
       ? profile.reasoning.enabled !== false
-      : Boolean(profile?.modelThinkingEnabled) || Boolean(preset.thinking?.supported),
+      : Boolean(profile?.modelThinkingEnabled) || Boolean(thinkingCapability?.supported),
     modelThinkingDepth: profile?.reasoning?.configured_mode
       || profile?.reasoning?.effective_mode
       || profile?.modelThinkingDepth
-      || preset.thinking?.defaultDepth
+      || thinkingCapability?.defaultDepth
       || "",
-    modelThinkingCapability: profile?.reasoning || preset.thinking || rawOptionalThinking,
+    modelThinkingCapability: thinkingCapability,
     modelMultimodalInput: profile?.modelMultimodalInput || settings?.modelMultimodalInput || "auto",
     modelImageInput: profile?.modelImageInput || settings?.modelImageInput || "auto",
     modelVideoInput: profile?.modelVideoInput || settings?.modelVideoInput || "auto",

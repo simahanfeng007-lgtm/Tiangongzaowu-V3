@@ -1,5 +1,5 @@
 import { qrTextToSvgDataUrl } from "../core/qr-code.mjs";
-import { providerPresets, providerOptions, protocolOptionsForPreset, resolvePresetBaseUrl, normalizeServicePreset } from "./provider-presets.mjs";
+import { modelThinkingCapability, normalizeServicePreset, providerOptions, providerPresets, protocolOptionsForPreset, resolvePresetBaseUrl } from "./provider-presets.mjs";
 
 const DEFAULT_WECHAT_DIRECT = {
   enabled: false,
@@ -584,7 +584,7 @@ export const settingsPanelPlugin = {
       thinkingInput.value = capability.supported ? active : "off";
       thinkingInput.disabled = !capability.supported;
       thinkingHint.textContent = capability.supported
-        ? "设置按当前服务商、接口协议、接口地址和模型单独保存；思考过程不会显示到聊天正文。"
+        ? "可用档位由当前模型名称决定；设置按服务商、接口协议、接口地址和模型单独保存，思考过程不会显示到聊天正文。"
         : "该模型没有已验证的可配置思考参数；不会向接口发送猜测字段。";
     }
 
@@ -930,6 +930,12 @@ export const settingsPanelPlugin = {
       input.addEventListener("input", () => {
         modelFormDirty = true;
         if (input !== apiKeyInput) presetInput.value = "";
+        if (input === modelInput) {
+          // 已知模型名 → 该家族思考档位；未知模型名 → 保留通用/自定义端点的 raw-optional 通道。
+          const typedCapability = modelThinkingCapability(modelInput.value);
+          const activePreset = providerPresets[selectedPresetValue(presetInput.value)] || providerPresets.custom;
+          renderThinkingInput(typedCapability.supported ? typedCapability : (activePreset.thinking || typedCapability));
+        }
         setPill(modelSaveState, "待保存", "warn");
       });
     });

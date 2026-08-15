@@ -1,9 +1,9 @@
 """
 大模型专属通道适配
 ═══════════════════════════════════
-每个供应商的 streaming/thinking 能力配置。
+每个模型家族的 streaming/thinking 能力配置。
 统一处理 thinking 阶段的心跳，并把各家推理字段归一为仅后端可见的数据；
-前端只接收自然语言 content。具体控制项按供应商能力分别声明，不假设完全一致。
+前端只接收自然语言 content。思考能力只由实际模型名决定，供应商名称不参与判定。
 
 P18.1 adds an EffectiveModelCapability resolver beside the legacy table.  The
 legacy table remains compatibility data; connection/protocol authority lives in
@@ -119,7 +119,24 @@ MODEL_STREAM_CONFIGS: dict[str, ModelStreamConfig] = {
         default_reasoning_mode="medium",
         reasoning_control="reasoning_effort",
     ),
+
+    # ── Kimi K3 ──
+    # 官方: platform.kimi.com/docs/guide/kimi-k3-quickstart
+    # 始终开启思考；reasoning_effort 支持 low/high/max，默认 max。
+    "kimi_k3": ModelStreamConfig(
+        provider_id="kimi_k3",
+        context_window=1_048_576,
+        thinking_enabled=True,
+        thinking_param=None,
+        reasoning_split=False,
+        reasoning_field="reasoning_content",
+        heartbeat_interval=15.0,
+        reasoning_modes=("low", "high", "max"),
+        default_reasoning_mode="max",
+        reasoning_control="reasoning_effort_always_on",
+    ),
 }
+
 
 
 def get_model_stream_config(provider_id: str) -> ModelStreamConfig | None:
@@ -139,18 +156,15 @@ def get_context_window(provider_id: str) -> int:
 
 
 def get_model_reasoning_capability(provider_id: str, model_name: str = "") -> dict[str, Any]:
-    """Legacy authoritative user-configurable reasoning contract.
+    """Reasoning contract selected from the concrete model ID.
 
-    P18.1 callers that need unknown-model behavior should use
-    ``resolve_model_capability`` instead; this compatibility function keeps the
-    previous conservative API for existing tests/UI until Stage D migration.
+    ``provider_id`` remains in the signature for call-site compatibility and
+    credential routing, but it deliberately cannot grant reasoning support.
+    P18.1 callers that need the full model/protocol/endpoint picture should use
+    ``resolve_model_capability`` instead.
     """
-    cfg = get_model_stream_config(provider_id)
-    normalized_model = str(model_name or "").strip().lower()
-    if cfg is not None and cfg.provider_id == "gpt_5_6" and normalized_model:
-        known_reasoning_model = normalized_model.startswith(("gpt-5", "o1", "o3", "o4"))
-        if not known_reasoning_model:
-            cfg = None
+    family, known_model = _family_for_model(model_name, str(provider_id or ""))
+    cfg = MODEL_STREAM_CONFIGS.get(family) if known_model else None
     if cfg is None:
         return {
             "supported": False,
@@ -160,7 +174,11 @@ def get_model_reasoning_capability(provider_id: str, model_name: str = "") -> di
             "private_reasoning_visible": False,
         }
     capability = cfg.reasoning_capability()
-    capability.update({"provider_id": cfg.provider_id, "model_name": str(model_name or "")})
+    capability.update({
+        "provider_id": str(provider_id or ""),
+        "model_family": family,
+        "model_name": str(model_name or ""),
+    })
     return capability
 
 
@@ -213,6 +231,7 @@ _MODEL_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("minimax_m3", ("minimax-m3*", "minimax-m2*")),
     ("mimo", ("mimo-v2.5*", "mimo-v2*")),
     ("gpt_5_6", ("gpt-5.6*", "gpt-5*", "o1*", "o3*", "o4*")),
+    ("kimi_k3", ("kimi-k3*", "kimi_k3*")),
 )
 
 _MODEL_MAX_OUTPUT = {
@@ -321,7 +340,7 @@ def resolve_model_capability(
     # Unknown endpoints/models must prove native tool support. Known official
     # service/model combinations may use protocol capability by default.
     endpoint_proves_native = endpoint.get("native_tools_supported") is True or endpoint.get("native_tools") is True
-    preset_is_known = str(service_preset or "") in {"openai", "deepseek", "zhipu", "minimax", "mimo", "scnet"}
+    preset_is_known = str(service_preset or "") in {"openai", "deepseek", "zhipu", "minimax", "mimo", "scnet", "kimi"}
     native_tools = bool(protocol_caps.get("native_tools")) and (
         endpoint_proves_native or (known_model and preset_is_known)
     )

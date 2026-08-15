@@ -77,6 +77,12 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('reasoning_mode: next.modelThinkingDepth', frontend)
         self.assertIn('modelThinkingCapability: llm?.reasoning', frontend)
         self.assertIn('handleTrusted("model:setSettings"', electron)
+        self.assertIn(
+            'const allowed = new Set(["provider", "base_url", "model_name", "reasoning_mode"]);',
+            electron,
+        )
+        self.assertIn('Object.prototype.hasOwnProperty.call(source, "reasoning_mode")', electron)
+        self.assertIn('clean.reasoning_mode = String(source.reasoning_mode', electron)
         self.assertIn('handleTrusted("model:probeProviderApi"', electron)
         self.assertIn('const protocolFamily = String(settings.protocol_family', electron)
         self.assertIn('suffix = "responses"', electron)
