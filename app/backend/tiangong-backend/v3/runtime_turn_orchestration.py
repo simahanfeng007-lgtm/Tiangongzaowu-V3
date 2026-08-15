@@ -26,9 +26,14 @@ except ImportError:
     import sys
     from pathlib import Path
 
-    _backend_root = str(Path(__file__).resolve().parents[1])
-    if _backend_root not in sys.path:
-        sys.path.insert(0, _backend_root)
+    _module_path = Path(__file__).resolve()
+    _import_roots = (
+        str(_module_path.parents[1]),
+        str(_module_path.parents[4] / "src"),
+    )
+    for _import_root in _import_roots:
+        if _import_root not in sys.path:
+            sys.path.insert(0, _import_root)
 
     from v3.runtime_adaptive_control import (
         AdaptiveHorizonDecision,
