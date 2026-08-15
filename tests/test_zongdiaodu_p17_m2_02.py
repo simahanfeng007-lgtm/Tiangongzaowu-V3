@@ -116,7 +116,7 @@ class ZongdiaoduM202Tests(unittest.TestCase):
             "TurnLoopState",
             "turn_loop.bump_iteration",
             "turn_loop.bump_repeat",
-            "turn_loop.can_schedule",
+            "_simple_chain_prepare_tool_budget",
             "turn_loop.reserve_one",
             "turn_loop.record_batch_result",
             "turn_loop.project_live",
@@ -125,6 +125,10 @@ class ZongdiaoduM202Tests(unittest.TestCase):
             "self._jineng_zhixing",
         }
         self.assertTrue(required.issubset(calls), (required - calls, calls))
+        # P18-M1 upgrades the old single global can_schedule cutoff to the
+        # dual-budget production bridge. The executor remains in Zongdiaodu;
+        # only budget coordination semantics changed.
+        self.assertNotIn("turn_loop.can_schedule", calls)
         source = ast.get_source_segment(ZONG.read_text(encoding="utf-8"), method) or ""
         self.assertNotIn("repeat_observation_counts", source)
         self.assertNotIn("seen_parallel", source)
