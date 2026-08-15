@@ -1,0 +1,8 @@
+P18-M2 migration fixture diagnostic
+candidate=82b7d643e5b5684c9457f407de0219ac58fb27c1
+exit_code=4
+
+ERROR: file or directory not found: tests/test_gateway_store_migration_004.py
+
+
+no tests ran in 0.00s
