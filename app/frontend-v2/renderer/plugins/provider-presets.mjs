@@ -1,130 +1,189 @@
-export const providerPresets = {
-  openai_compatible: {
-    label: "OpenAI compatible",
-    provider: "openai",
-    baseUrl: "https://api.openai.com/v1",
-    model: "gpt-5.6",
-    thinking: {
-      supported: true,
-      modes: ["off", "minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, label: value })),
-      defaultDepth: "medium",
-    },
+export const PROTOCOL_FAMILIES = Object.freeze({
+  OPENAI_CHAT_COMPLETIONS: "openai_chat_completions",
+  OPENAI_RESPONSES: "openai_responses",
+  ANTHROPIC_MESSAGES: "anthropic_messages",
+});
+
+const thinking = Object.freeze({
+  gpt: {
+    supported: true,
+    modes: ["off", "minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, label: value })),
+    defaultDepth: "medium",
   },
-  deepseek_v4: {
-    label: "DeepSeek V4",
-    provider: "deepseek_v4",
-    baseUrl: "https://api.deepseek.com/v1",
-    model: "deepseek-v4-pro",
-    thinking: {
-      supported: true,
-      modes: [
-        { value: "off", label: "关闭" },
-        { value: "high", label: "高" },
-        { value: "max", label: "最大" },
-      ],
-      defaultDepth: "high",
+  deepseek: {
+    supported: true,
+    modes: [
+      { value: "off", label: "关闭" },
+      { value: "high", label: "高" },
+      { value: "max", label: "最大" },
+    ],
+    defaultDepth: "high",
+  },
+  glm: {
+    supported: true,
+    modes: ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((value) => ({ value, label: value })),
+    defaultDepth: "high",
+  },
+  minimax: {
+    supported: true,
+    modes: [{ value: "off", label: "关闭" }, { value: "auto", label: "自动" }],
+    defaultDepth: "auto",
+  },
+  mimo: {
+    supported: true,
+    modes: [{ value: "off", label: "关闭" }, { value: "on", label: "开启" }],
+    defaultDepth: "on",
+  },
+});
+
+const rawOptionalThinking = Object.freeze({
+  supported: true,
+  rawOptional: true,
+  control: "raw_optional",
+  modes: [],
+  defaultDepth: "",
+});
+
+export const providerPresets = Object.freeze({
+  openai: {
+    label: "OpenAI",
+    provider: "openai",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_RESPONSES, PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_RESPONSES,
+    baseUrls: {
+      [PROTOCOL_FAMILIES.OPENAI_RESPONSES]: "https://api.openai.com/v1",
+      [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.openai.com/v1",
     },
+    model: "gpt-5.6",
+    thinking: thinking.gpt,
+  },
+  deepseek: {
+    label: "DeepSeek",
+    provider: "deepseek",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.deepseek.com/v1" },
+    model: "deepseek-v4-pro",
+    thinking: thinking.deepseek,
+  },
+  zhipu: {
+    label: "智谱 AI",
+    provider: "zhipu",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://open.bigmodel.cn/api/paas/v4" },
+    model: "glm-5.2",
+    thinking: thinking.glm,
+  },
+  minimax: {
+    label: "MiniMax",
+    provider: "minimax",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.minimaxi.com/v1" },
+    model: "MiniMax-M3",
+    thinking: thinking.minimax,
   },
   mimo: {
     label: "MiMo",
     provider: "mimo",
-    baseUrl: "https://api.xiaomimimo.com/v1",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: { [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.xiaomimimo.com/v1" },
     model: "mimo-v2.5-pro",
-    thinking: {
-      supported: true,
-      modes: [
-        { value: "off", label: "关闭" },
-        { value: "on", label: "开启" },
-      ],
-      defaultDepth: "on",
-    },
+    thinking: thinking.mimo,
   },
-  glm_5_2: {
-    label: "Z.AI GLM-5.2",
-    provider: "glm_5_2",
-    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    model: "glm-5.2",
-    thinking: {
-      supported: true,
-      modes: [
-        { value: "off", label: "关闭" },
-        { value: "minimal", label: "最小" },
-        { value: "low", label: "低" },
-        { value: "medium", label: "中" },
-        { value: "high", label: "高" },
-        { value: "xhigh", label: "超高" },
-        { value: "max", label: "最大" },
-      ],
-      defaultDepth: "high",
-    },
-  },
-  minimax_m3: {
-    label: "MiniMax M3",
-    provider: "minimax_m3",
-    baseUrl: "https://api.minimaxi.com/v1",
-    model: "MiniMax-M3",
-    thinking: {
-      supported: true,
-      modes: [
-        { value: "off", label: "关闭" },
-        { value: "auto", label: "自动" },
-      ],
-      defaultDepth: "auto",
-    },
-  },
-  gpt_5_6: {
-    label: "OpenAI GPT-5.6",
-    provider: "gpt_5_6",
-    baseUrl: "https://api.openai.com/v1",
-    model: "gpt-5.6",
-    thinking: {
-      supported: true,
-      modes: ["off", "minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, label: value })),
-      defaultDepth: "medium",
-    },
-  },
-};
-
-const unsupportedThinking = {
-  supported: false,
-  modes: [],
-  defaultDepth: "",
-};
-
-const customProviderPreset = {
-  label: "Custom",
-  provider: "",
-  baseUrl: "",
-  model: "",
-  thinking: unsupportedThinking,
-};
-
-const providerThinkingFallbacks = {
-  deepseek: providerPresets.deepseek_v4.thinking,
-  deepseek_v4: providerPresets.deepseek_v4.thinking,
-  zhipu: providerPresets.glm_5_2.thinking,
-  glm: providerPresets.glm_5_2.thinking,
-  glm_5_1: providerPresets.glm_5_2.thinking,
-  glm_5_2: providerPresets.glm_5_2.thinking,
-  minimax: providerPresets.minimax_m3.thinking,
-  minimax_m3: providerPresets.minimax_m3.thinking,
-  mimo: providerPresets.mimo.thinking,
-  openrouter: {
-    supported: true,
-    modes: [
-      { value: "low", label: "low" },
-      { value: "medium", label: "medium" },
-      { value: "high", label: "high" },
-      { value: "xhigh", label: "xhigh" },
+  scnet: {
+    label: "SCNet",
+    provider: "scnet",
+    protocols: [
+      PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+      PROTOCOL_FAMILIES.OPENAI_RESPONSES,
+      PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES,
     ],
-    defaultDepth: "high",
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: {
+      [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "https://api.scnet.cn/api/llm/v1",
+      [PROTOCOL_FAMILIES.OPENAI_RESPONSES]: "https://api.scnet.cn/api/llm/v1",
+      [PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES]: "https://api.scnet.cn/api/llm/anthropic",
+    },
+    model: "",
+    thinking: rawOptionalThinking,
   },
-};
+  generic_openai: {
+    label: "通用 OpenAI 兼容接口",
+    provider: "custom",
+    protocols: [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS, PROTOCOL_FAMILIES.OPENAI_RESPONSES],
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+    baseUrls: {},
+    model: "",
+    thinking: rawOptionalThinking,
+  },
+  generic_anthropic: {
+    label: "通用 Anthropic 兼容接口",
+    provider: "custom",
+    protocols: [PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES],
+    defaultProtocol: PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES,
+    baseUrls: {},
+    model: "",
+    thinking: rawOptionalThinking,
+  },
+  custom: {
+    label: "自定义",
+    provider: "custom",
+    protocols: [
+      PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
+      PROTOCOL_FAMILIES.OPENAI_RESPONSES,
+      PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES,
+    ],
+    defaultProtocol: "",
+    baseUrls: {},
+    model: "",
+    thinking: rawOptionalThinking,
+  },
+});
+
+const legacyPresetAliases = Object.freeze({
+  openai_compatible: "openai",
+  gpt_5_6: "openai",
+  deepseek_v4: "deepseek",
+  glm_5_2: "zhipu",
+  minimax_m3: "minimax",
+});
+
+export function normalizeServicePreset(value = "custom") {
+  const raw = String(value || "").trim().toLowerCase();
+  const normalized = legacyPresetAliases[raw] || raw;
+  return Object.prototype.hasOwnProperty.call(providerPresets, normalized) ? normalized : "custom";
+}
 
 export function providerOptions(selected = "custom") {
+  const normalized = normalizeServicePreset(selected);
   return Object.entries(providerPresets)
-    .map(([value, preset]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${preset.label}</option>`)
+    .map(([value, preset]) => `<option value="${value}" ${value === normalized ? "selected" : ""}>${preset.label}</option>`)
     .join("");
+}
+
+export function protocolOptionsForPreset(presetId = "custom", selected = "") {
+  const service = normalizeServicePreset(presetId);
+  const preset = providerPresets[service];
+  const effective = String(selected || preset.defaultProtocol || "");
+  const labels = {
+    [PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS]: "OpenAI Chat Completions",
+    [PROTOCOL_FAMILIES.OPENAI_RESPONSES]: "OpenAI Responses",
+    [PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES]: "Anthropic Messages",
+  };
+  const empty = service === "custom" ? '<option value="">请选择接口协议</option>' : "";
+  return empty + preset.protocols
+    .map((value) => `<option value="${value}" ${value === effective ? "selected" : ""}>${labels[value] || value}</option>`)
+    .join("");
+}
+
+export function resolvePresetBaseUrl(presetId = "custom", protocolFamily = "") {
+  const service = normalizeServicePreset(presetId);
+  const preset = providerPresets[service];
+  const protocol = String(protocolFamily || preset.defaultProtocol || "");
+  return preset.baseUrls?.[protocol] || "";
 }
 
 function modelProfileForService(settings, presetId) {
@@ -135,28 +194,41 @@ function modelProfileForService(settings, presetId) {
   return profile && typeof profile === "object" && !Array.isArray(profile) ? profile : null;
 }
 
-export function applyProviderPreset(settings, presetId) {
-  const preset = providerPresets[presetId] || customProviderPreset;
-  const serviceId = providerPresets[presetId] ? presetId : "custom";
-  const profile = modelProfileForService(settings, presetId);
-  const provider = profile?.modelProvider || preset.provider;
-  const thinking = providerThinkingCapability(serviceId, provider);
+export function applyProviderPreset(settings, presetId, { preserveBaseUrl = false, protocolFamily = "" } = {}) {
+  const serviceId = normalizeServicePreset(presetId);
+  const preset = providerPresets[serviceId];
+  const profile = modelProfileForService(settings, serviceId);
+  const protocol = String(
+    protocolFamily
+    || profile?.protocol_family
+    || profile?.modelProtocol
+    || preset.defaultProtocol
+    || ""
+  );
+  const provider = String(profile?.provider_identity || profile?.modelProvider || preset.provider || "custom");
+  const baseUrl = preserveBaseUrl
+    ? String(settings?.modelBaseUrl || "")
+    : String(profile?.base_url || profile?.modelBaseUrl || resolvePresetBaseUrl(serviceId, protocol) || "");
   return {
     ...settings,
     modelService: serviceId,
+    service_preset: serviceId,
     modelProvider: provider,
-    modelBaseUrl: profile?.modelBaseUrl ?? preset.baseUrl,
-    modelName: profile?.modelName ?? preset.model,
+    provider_identity: provider,
+    modelProtocol: protocol,
+    protocol_family: protocol,
+    modelBaseUrl: baseUrl,
+    modelName: profile?.model_name ?? profile?.modelName ?? preset.model,
     modelApiKey: "",
     modelThinkingEnabled: profile?.reasoning
-      ? profile.reasoning.enabled === true
-      : Boolean(profile?.modelThinkingEnabled) && Boolean(thinking.supported),
+      ? profile.reasoning.enabled !== false
+      : Boolean(profile?.modelThinkingEnabled) || Boolean(preset.thinking?.supported),
     modelThinkingDepth: profile?.reasoning?.configured_mode
       || profile?.reasoning?.effective_mode
       || profile?.modelThinkingDepth
-      || thinking.defaultDepth
+      || preset.thinking?.defaultDepth
       || "",
-    modelThinkingCapability: profile?.reasoning || thinking,
+    modelThinkingCapability: profile?.reasoning || preset.thinking || rawOptionalThinking,
     modelMultimodalInput: profile?.modelMultimodalInput || settings?.modelMultimodalInput || "auto",
     modelImageInput: profile?.modelImageInput || settings?.modelImageInput || "auto",
     modelVideoInput: profile?.modelVideoInput || settings?.modelVideoInput || "auto",
@@ -166,10 +238,16 @@ export function applyProviderPreset(settings, presetId) {
   };
 }
 
-export function providerThinkingCapability(serviceId = "custom", providerId = "") {
-  const service = String(serviceId || "").trim();
+export function providerThinkingCapability(serviceId = "custom", providerId = "", capability = null) {
+  if (capability && typeof capability === "object") return capability;
+  const service = normalizeServicePreset(serviceId);
   const provider = String(providerId || "").trim().toLowerCase();
   const preset = providerPresets[service];
-  if (preset?.thinking?.supported) return preset.thinking;
-  return providerThinkingFallbacks[provider] || unsupportedThinking;
+  if (preset?.thinking) return preset.thinking;
+  if (provider.includes("deepseek")) return thinking.deepseek;
+  if (provider.includes("glm") || provider.includes("zhipu")) return thinking.glm;
+  if (provider.includes("minimax")) return thinking.minimax;
+  if (provider.includes("mimo")) return thinking.mimo;
+  if (provider.includes("gpt") || provider === "openai") return thinking.gpt;
+  return rawOptionalThinking;
 }
