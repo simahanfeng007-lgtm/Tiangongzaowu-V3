@@ -39,9 +39,9 @@ jobs:
           wrapper_start = text.index('def _simple_chain_regenerative_execute_tool(')
           wrapper_end = text.index('def _simple_chain_regenerative_checkpoint(', wrapper_start)
           local = text[wrapper_start:wrapper_end]
-          if local.count(old_ok) != 1:
-              raise SystemExit(f'wrapper observed ok anchor count={local.count(old_ok)}')
-          local = local.replace(old_ok, '            "ok": result_ok,\n', 1)
+          if local.count(old_ok) != 2:
+              raise SystemExit(f'wrapper result projection count={local.count(old_ok)}')
+          local = local.replace(old_ok, '            "ok": result_ok,\n')
           text = text[:wrapper_start] + local + text[wrapper_end:]
           path.write_text(text, encoding='utf-8', newline='\n')
           PY
