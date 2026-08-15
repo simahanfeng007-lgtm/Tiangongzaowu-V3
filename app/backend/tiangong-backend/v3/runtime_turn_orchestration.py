@@ -4,20 +4,39 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Iterable
 
-from .runtime_adaptive_control import (
-    AdaptiveHorizonDecision,
-    AdaptiveHorizonState,
-    HorizonControlMetrics,
-    ResourceBudget,
-    ResourceGovernorDecision,
-    ResourceUsage,
-    evaluate_resource_governor,
-)
-from .runtime_adaptive_governance import (
-    SemanticDriftDecision,
-    SemanticDriftSignals,
-    evaluate_semantic_drift,
-)
+try:
+    from .runtime_adaptive_control import (
+        AdaptiveHorizonDecision,
+        AdaptiveHorizonState,
+        HorizonControlMetrics,
+        ResourceBudget,
+        ResourceGovernorDecision,
+        ResourceUsage,
+        evaluate_resource_governor,
+    )
+    from .runtime_adaptive_governance import (
+        SemanticDriftDecision,
+        SemanticDriftSignals,
+        evaluate_semantic_drift,
+    )
+except ImportError:
+    # P17 retained a direct spec_from_file_location loader for this pure
+    # coordination module. Keep that legacy inspection path valid without
+    # changing the production package authority or creating another runtime.
+    from v3.runtime_adaptive_control import (
+        AdaptiveHorizonDecision,
+        AdaptiveHorizonState,
+        HorizonControlMetrics,
+        ResourceBudget,
+        ResourceGovernorDecision,
+        ResourceUsage,
+        evaluate_resource_governor,
+    )
+    from v3.runtime_adaptive_governance import (
+        SemanticDriftDecision,
+        SemanticDriftSignals,
+        evaluate_semantic_drift,
+    )
 
 
 @dataclass(frozen=True)
