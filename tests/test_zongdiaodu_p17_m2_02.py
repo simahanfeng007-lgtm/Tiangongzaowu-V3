@@ -122,13 +122,15 @@ class ZongdiaoduM202Tests(unittest.TestCase):
             "turn_loop.project_live",
             "evaluate_turn_budget",
             "coordinate_parallel_steps",
-            "self._jineng_zhixing",
+            "_simple_chain_regenerative_execute_tool",
         }
         self.assertTrue(required.issubset(calls), (required - calls, calls))
-        # P18-M1 upgrades the old single global can_schedule cutoff to the
-        # dual-budget production bridge. The executor remains in Zongdiaodu;
-        # only budget coordination semantics changed.
+        # P18-M1 upgrades the old single global can_schedule cutoff; P18-M2
+        # adds the Gateway-backed transactional dispatch boundary. Zongdiaodu
+        # still owns orchestration, but it may no longer call the physical
+        # executor directly from the main loop.
         self.assertNotIn("turn_loop.can_schedule", calls)
+        self.assertNotIn("self._jineng_zhixing", calls)
         source = ast.get_source_segment(ZONG.read_text(encoding="utf-8"), method) or ""
         self.assertNotIn("repeat_observation_counts", source)
         self.assertNotIn("seen_parallel", source)

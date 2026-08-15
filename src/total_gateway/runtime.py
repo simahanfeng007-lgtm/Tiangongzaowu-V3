@@ -36,6 +36,7 @@ from .soul_backup import SoulBackupManager
 from .object_store import ContentAddressedObjectStore, ObjectStoreHealth
 from .orchestration import GatewayOrchestrationWorker
 from .readiness_collector import ProductionReadinessCollector
+from .regenerative_provider import RegenerativeExecutionAuthority
 from .cutover_coordinator import ChannelCutoverCoordinator
 from .continuity import persist_working_checkpoint
 from .diagnostics import diagnostic_log
@@ -292,7 +293,10 @@ def _gateway_execution_epoch_checkpoint(
             active_plan=current.active_plan,
             verified_fact_ids=current.verified_fact_ids,
             artifact_refs=current.artifact_refs,
-            pending_effect_ids=current.pending_effect_ids,
+            pending_effect_ids=tuple(dict.fromkeys((
+                *current.pending_effect_ids,
+                *(str(item).strip() for item in payload.get("pending_effect_ids", ()) if str(item).strip()),
+            ))),
             latest_safe_step=latest_safe_step,
             next_step=next_step,
             recovery_preconditions=recovery,
@@ -1345,6 +1349,9 @@ class GatewayRuntime:
 
                 runtime.backend_service.set_continuity_checkpoint_provider(
                     execution_epoch_checkpoint
+                )
+                runtime.backend_service.set_regenerative_execution_provider(
+                    RegenerativeExecutionAuthority(runtime.store)
                 )
 
                 def pending_learning_ingest(arguments: object) -> dict[str, object]:

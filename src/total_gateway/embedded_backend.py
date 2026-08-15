@@ -132,6 +132,9 @@ class EmbeddedBackendRuntime:
         continuity_setter = getattr(scheduler_module, "set_simple_chain_continuity_checkpoint_provider", None)
         if callable(continuity_setter):
             continuity_setter(None)
+        regenerative_setter = getattr(scheduler_module, "set_simple_chain_regenerative_execution_provider", None)
+        if callable(regenerative_setter):
+            regenerative_setter(None)
         self.scheduler.life_orchestrator = None
         self.scheduler.p15_memory_remember_provider = None
         self.scheduler.p15_memory_recall_provider = None
@@ -455,6 +458,17 @@ class EmbeddedBackendRuntime:
         self._p15_memory_recall_provider = recall_provider
         self.scheduler.p15_memory_remember_provider = remember_provider
         self.scheduler.p15_memory_recall_provider = recall_provider
+
+    def set_regenerative_execution_provider(self, provider: Any) -> None:
+        """Bind P18-M2 execution requests to Total Gateway's existing canonical store."""
+        if provider is not None and not callable(provider):
+            raise TypeError("regenerative execution provider must be callable")
+        module = importlib.import_module("v3.zongdiaodu")
+        setter = getattr(module, "set_simple_chain_regenerative_execution_provider", None)
+        if not callable(setter):
+            raise EmbeddedBackendError("embedded_backend.regenerative_provider_unsupported")
+        setter(provider)
+        self._regenerative_execution_provider = provider
 
     def set_continuity_checkpoint_provider(self, provider: Any) -> None:
         """Bind Epoch checkpoints to Total Gateway's one canonical store."""

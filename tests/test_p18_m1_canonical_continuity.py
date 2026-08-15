@@ -193,6 +193,7 @@ class BackendCanonicalProviderTests(unittest.TestCase):
         from v3.zongdiaodu import (
             _simple_chain_checkpoint_continue,
             set_simple_chain_continuity_checkpoint_provider,
+            set_simple_chain_regenerative_execution_provider,
         )
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -229,7 +230,36 @@ class BackendCanonicalProviderTests(unittest.TestCase):
                         "duplicate": False,
                     }
 
+                regenerative_seen: list[dict[str, object]] = []
+
+                def regenerative_provider(payload: dict[str, object]) -> dict[str, object]:
+                    regenerative_seen.append(dict(payload))
+                    operation = str(payload.get("operation") or "")
+                    response: dict[str, object] = {
+                        "schema": "tiangong.gateway.regenerative-provider.v1",
+                        "operation": operation,
+                    }
+                    if operation == "update_frontier":
+                        frontier = payload.get("frontier") if isinstance(payload.get("frontier"), dict) else {}
+                        response.update({
+                            "committed": True,
+                            "frontier_version": int(frontier.get("frontier_version") or 1),
+                            "frontier_hash": str(frontier.get("frontier_hash") or ("8" * 64)),
+                        })
+                    elif operation == "commit_checkpoint":
+                        frontier = payload.get("frontier") if isinstance(payload.get("frontier"), dict) else {}
+                        response.update({
+                            "committed": True,
+                            "checkpoint_id": "rgc_" + "7" * 64,
+                            "checkpoint_hash": "6" * 64,
+                            "frontier_hash": str(frontier.get("frontier_hash") or ("8" * 64)),
+                        })
+                    else:
+                        raise AssertionError(f"unexpected M2 operation: {operation}")
+                    return response
+
                 set_simple_chain_continuity_checkpoint_provider(provider)
+                set_simple_chain_regenerative_execution_provider(regenerative_provider)
                 with bind_run_context(context):
                     self.assertTrue(_simple_chain_checkpoint_continue(
                         run_state, state, requested=1, loop_started_at=1.0, source="single_tool"
@@ -240,7 +270,9 @@ class BackendCanonicalProviderTests(unittest.TestCase):
                 continuation = run_state["continuation"]
                 self.assertEqual(continuation["canonical_capsule_id"], "lcp_" + "9" * 64)
                 self.assertEqual(continuation["status"], "continued")
+                self.assertEqual([item["operation"] for item in regenerative_seen], ["update_frontier", "commit_checkpoint"])
             finally:
+                set_simple_chain_regenerative_execution_provider(None)
                 set_simple_chain_continuity_checkpoint_provider(None)
                 if previous is None:
                     os.environ.pop("TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT", None)

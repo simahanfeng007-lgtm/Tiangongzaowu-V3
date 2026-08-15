@@ -100,6 +100,7 @@ class RegenerativeExecutionAuthority:
             "start_effect": self._start_effect,
             "finish_effect": self._finish_effect,
             "reconcile_effect": self._reconcile_effect,
+            "update_frontier": self._update_frontier,
             "commit_checkpoint": self._commit_checkpoint,
             "recover": self._recover,
             "verify_completion": self._verify_completion,
@@ -329,6 +330,11 @@ class RegenerativeExecutionAuthority:
                 "logical_effect_id": logical_effect_id, "attempt_id": attempt_id,
                 "step_id": step_id,
                 "effect_state": "LOGICAL_COMMITTED" if prior_disposition == "already_committed" else "AMBIGUOUS",
+                "prior_result_summary": (
+                    dict(prior_event.payload.get("result_summary") or {})
+                    if getattr(prior_event, "event_type", "") == "step.committed"
+                    else dict(prior_event.payload.get("evidence") or {})
+                ),
                 "ledger_seq": event.ledger_seq,
             }
         claim = EffectClaim(
@@ -512,6 +518,62 @@ class RegenerativeExecutionAuthority:
             "verdict": verdict, "contradiction": bool(result.get("contradiction")),
             "retry_allowed": verdict == "PROVEN_NOT_APPLIED" and not bool(result.get("contradiction")),
             "logical_committed": verdict == "APPLIED" and not bool(result.get("contradiction")),
+            "ledger_seq": event.ledger_seq,
+        }
+
+    def _update_frontier(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        identity, contract = self._bound_identity(payload)
+        frontier = _json_frontier(payload.get("frontier"))
+        if (
+            frontier.request_id != identity.request_id
+            or frontier.run_id != identity.run_id
+            or frontier.generation != identity.generation
+            or frontier.life_id != identity.life_id
+            or frontier.root_goal_hash != str(contract["root_goal_hash"])
+            or frontier.task_contract_hash != str(contract["task_contract_hash"])
+            or frontier.authority_hash != str(contract["authority_hash"])
+        ):
+            raise StoreConflictError("frontier crossed immutable task/authority identity")
+        effects = self._store.list_effects_for_request(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation
+        )
+        actual_pending = tuple(sorted(
+            record.claim.effect_id for record in effects
+            if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
+        ))
+        actual_ambiguous = tuple(sorted(
+            record.claim.effect_id for record in effects if record.state == "AMBIGUOUS"
+        ))
+        if actual_pending != frontier.pending_effect_ids or actual_ambiguous != frontier.ambiguous_effect_ids:
+            raise StoreConflictError("frontier effect projection disagrees with canonical Effect Ledger")
+        current = self._store.get_execution_frontier(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation
+        )
+        if current is not None and current.frontier_hash == frontier.frontier_hash:
+            return {
+                "committed": True, "duplicate": True,
+                "frontier_version": current.frontier_version,
+                "frontier_hash": current.frontier_hash,
+            }
+        expected_revision = 0 if current is None else current.frontier_version
+        if frontier.frontier_version != expected_revision + 1:
+            raise StoreConflictError("frontier revision is not the next authoritative CAS revision")
+        self._store.commit_execution_frontier(
+            frontier, expected_revision=expected_revision,
+            updated_at_ms=_integer(payload.get("now_ms"), label="now_ms"),
+        )
+        event, _ = self._store.append_execution_event(
+            event_key=f"frontier.updated:{frontier.frontier_version}",
+            request_id=identity.request_id, run_id=identity.run_id,
+            generation=identity.generation, epoch_index=frontier.epoch_index,
+            event_type="frontier.updated",
+            created_at_ms=_integer(payload.get("now_ms"), label="now_ms"),
+            payload={"frontier": frontier.model_dump(mode="json")},
+        )
+        return {
+            "committed": True, "duplicate": False,
+            "frontier_version": frontier.frontier_version,
+            "frontier_hash": frontier.frontier_hash,
             "ledger_seq": event.ledger_seq,
         }
 
@@ -790,11 +852,22 @@ class RegenerativeExecutionAuthority:
             created_at_ms=now_ms,
             payload={**proof_payload, "proof_hash": proof_hash},
         )
+        terminal_seq = event.ledger_seq
+        if verified:
+            terminal, _ = self._store.append_execution_event(
+                event_key=f"chain.completed:{proposal_key}",
+                request_id=identity.request_id, run_id=identity.run_id,
+                generation=identity.generation, epoch_index=epoch_index,
+                event_type="chain.completed", created_at_ms=now_ms,
+                payload={"completion_proof_hash": proof_hash, "frontier_hash": proof_payload["frontier_hash"]},
+                causal_parent_event_id=event.event_id,
+            )
+            terminal_seq = terminal.ledger_seq
         return {
             "verified_complete": verified,
             "reasons": reasons,
             "proof_hash": proof_hash,
-            "ledger_seq": event.ledger_seq,
+            "ledger_seq": terminal_seq,
         }
 
 

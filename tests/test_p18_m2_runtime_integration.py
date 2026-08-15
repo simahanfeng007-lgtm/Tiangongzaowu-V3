@@ -94,8 +94,9 @@ class P18M2RuntimeIntegrationTests(unittest.TestCase):
 
     def test_source_authority_registers_regenerative_boundary(self) -> None:
         ownership = json.loads((ROOT / "source-ownership.json").read_text(encoding="utf-8"))
-        roots = ownership["authorities"][0]["implementation_roots"]
-        self.assertTrue(any(str(item).endswith("/runtime_regenerative_boundary.py") for item in roots))
+        v3 = next(row for row in ownership["mappings"] if row.get("id") == "v3-backend-main")
+        roots = set(v3["boundary_policy"]["implementation_roots"])
+        self.assertIn("runtime_regenerative_boundary.py", roots)
 
     def test_provider_has_live_frontier_cas_and_completion_terminal_event(self) -> None:
         provider_source = (ROOT / "src" / "total_gateway" / "regenerative_provider.py").read_text(encoding="utf-8")
