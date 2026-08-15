@@ -1,0 +1,128 @@
+name: P18 M4 provider L4 certification
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  provider-l4-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile Provider L4 certification
+        run: >-
+          python -m py_compile
+          tests/p18_m4_provider_l4_harness.py
+          tests/test_p18_m4_provider_l4.py
+      - name: Run every registered provider L4 certification
+        run: python -m pytest -q tests/test_p18_m4_provider_l4.py
+      - name: Emit provider L4 evidence summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'src')
+          sys.path.insert(0, 'app/backend/tiangong-backend')
+          sys.path.insert(0, 'tests')
+          from dataclasses import asdict
+          from p18_m4_provider_l4_harness import certify_all_provider_l4
+          evidence = certify_all_provider_l4()
+          payload = [asdict(item) | {'l4_pass': item.l4_pass} for item in evidence]
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          assert len(payload) == 5
+          assert all(item['l4_pass'] for item in payload)
+          assert sum(item['model_rounds'] for item in payload) >= 1000
+          assert sum(item['simulated_tool_steps'] for item in payload) >= 5000
+          print('P18-M4.5 Provider L4: PASS')
+          PY
+      - name: Verify Provider L4 remains test certification not a second authority
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          harness = Path('tests/p18_m4_provider_l4_harness.py').read_text(encoding='utf-8')
+          adapter = Path('app/backend/tiangong-backend/tiangong_kernel/l4_action_grounding/model_provider_adapter.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          assert 'GatewayStateStore.open' not in harness
+          assert 'class LongChainRuntime' not in harness
+          assert 'LONG_HORIZON_PRODUCTION_READY' not in adapter
+          assert 'GatewayStateStore.open' not in provider
+          print('P18-M4.5 architecture boundary: PASS')
+          PY
+
+  provider-l4-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile Provider L4 certification
+        run: >-
+          python -m py_compile
+          tests/p18_m4_provider_l4_harness.py
+          tests/test_p18_m4_provider_l4.py
+      - name: Run every registered provider L4 certification
+        run: python -m pytest -q tests/test_p18_m4_provider_l4.py
+      - name: Emit provider L4 evidence summary
+        shell: pwsh
+        run: |
+          $script = @'
+          import json, sys
+          sys.path.insert(0, 'src')
+          sys.path.insert(0, 'app/backend/tiangong-backend')
+          sys.path.insert(0, 'tests')
+          from dataclasses import asdict
+          from p18_m4_provider_l4_harness import certify_all_provider_l4
+          evidence = certify_all_provider_l4()
+          payload = [asdict(item) | {'l4_pass': item.l4_pass} for item in evidence]
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          assert len(payload) == 5
+          assert all(item['l4_pass'] for item in payload)
+          assert sum(item['model_rounds'] for item in payload) >= 1000
+          assert sum(item['simulated_tool_steps'] for item in payload) >= 5000
+          print('P18-M4.5 Provider L4: PASS')
+          '@
+          $script | python -
+      - name: Verify Provider L4 remains test certification not a second authority
+        shell: pwsh
+        run: |
+          $script = @'
+          from pathlib import Path
+          harness = Path('tests/p18_m4_provider_l4_harness.py').read_text(encoding='utf-8')
+          adapter = Path('app/backend/tiangong-backend/tiangong_kernel/l4_action_grounding/model_provider_adapter.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          assert 'GatewayStateStore.open' not in harness
+          assert 'class LongChainRuntime' not in harness
+          assert 'LONG_HORIZON_PRODUCTION_READY' not in adapter
+          assert 'GatewayStateStore.open' not in provider
+          print('P18-M4.5 architecture boundary: PASS')
+          '@
+          $script | python -

@@ -36,7 +36,9 @@ from .soul_backup import SoulBackupManager
 from .object_store import ContentAddressedObjectStore, ObjectStoreHealth
 from .orchestration import GatewayOrchestrationWorker
 from .readiness_collector import ProductionReadinessCollector
+from .regenerative_provider import RegenerativeExecutionAuthority
 from .cutover_coordinator import ChannelCutoverCoordinator
+from .continuity import persist_working_checkpoint
 from .diagnostics import diagnostic_log
 from .store import ChannelOwnershipRegistration, GatewayStateStore, StoreHealthEvidence
 
@@ -217,6 +219,104 @@ def life_capability_workspace_marker(workspace_root: object) -> Callable[[object
         return {"workspace_path": relative, "marked": True, "status": status}
 
     return mark_artifact
+
+
+def _gateway_execution_epoch_checkpoint(
+    runtime: object,
+    payload: object,
+) -> dict[str, object]:
+    """Commit one backend Epoch boundary through the existing Gateway continuity SSoT."""
+    if not isinstance(payload, Mapping):
+        return {"ok": False, "error": "continuity.payload_invalid"}
+    if payload.get("schema") != "tiangong.gateway.execution-epoch-checkpoint.v1":
+        return {"ok": False, "error": "continuity.schema_invalid"}
+    request_id = str(payload.get("request_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    life_id = str(payload.get("life_id") or "").strip()
+    generation = payload.get("generation")
+    epoch_index = payload.get("epoch_index")
+    global_tool_rounds = payload.get("global_tool_rounds")
+    global_iteration_count = payload.get("global_iteration_count")
+    latest_safe_step = str(payload.get("latest_safe_step") or "").strip()[:500]
+    next_step = str(payload.get("next_step") or "").strip()[:500]
+    if (
+        not request_id
+        or not run_id
+        or not life_id
+        or type(generation) is not int
+        or generation < 0
+        or type(epoch_index) is not int
+        or epoch_index < 0
+        or type(global_tool_rounds) is not int
+        or global_tool_rounds < 0
+        or type(global_iteration_count) is not int
+        or global_iteration_count < 0
+        or not latest_safe_step
+        or not next_step
+    ):
+        return {"ok": False, "error": "continuity.identity_or_progress_invalid"}
+    store = getattr(runtime, "store", None)
+    if store is None:
+        return {"ok": False, "error": "continuity.store_unavailable"}
+    try:
+        active = store.get_active_request_capsule(
+            request_id, run_id=run_id, generation=generation
+        )
+    except Exception:
+        return {"ok": False, "error": "continuity.authority_lookup_failed"}
+    if active is None:
+        return {"ok": False, "error": "continuity.authority_not_found"}
+    current = active.capsule
+    if (
+        current.request_id != request_id
+        or current.run_id != run_id
+        or current.generation != generation
+        or current.life_id != life_id
+    ):
+        return {"ok": False, "error": "continuity.authority_binding_mismatch"}
+    recovery = tuple(dict.fromkeys((
+        *current.recovery_preconditions,
+        f"execution epoch {epoch_index} is canonically committed",
+        f"global tool round {global_tool_rounds} is the latest safe tool boundary",
+        f"global iteration {global_iteration_count} remains in the same run",
+        "request/run/generation/life authority identity remains unchanged",
+    )))
+    try:
+        record = persist_working_checkpoint(
+            store,
+            life_id=current.life_id,
+            request_id=current.request_id,
+            run_id=current.run_id,
+            generation=current.generation,
+            user_goal=current.user_goal,
+            hard_constraints=current.hard_constraints,
+            active_plan=current.active_plan,
+            verified_fact_ids=current.verified_fact_ids,
+            artifact_refs=current.artifact_refs,
+            pending_effect_ids=tuple(dict.fromkeys((
+                *current.pending_effect_ids,
+                *(str(item).strip() for item in payload.get("pending_effect_ids", ()) if str(item).strip()),
+            ))),
+            latest_safe_step=latest_safe_step,
+            next_step=next_step,
+            recovery_preconditions=recovery,
+            created_at_ms=time.time_ns() // 1_000_000,
+        )
+    except Exception:
+        return {"ok": False, "error": "continuity.checkpoint_commit_failed"}
+    capsule = record.capsule
+    return {
+        "ok": True,
+        "request_id": capsule.request_id,
+        "run_id": capsule.run_id,
+        "generation": capsule.generation,
+        "life_id": capsule.life_id,
+        "capsule_id": capsule.capsule_id,
+        "duplicate": bool(record.duplicate),
+        "epoch_index": epoch_index,
+        "global_tool_rounds": global_tool_rounds,
+        "global_iteration_count": global_iteration_count,
+    }
 
 
 def _gateway_p15_memory_remember(runtime: object, user_text: object) -> dict[str, object]:
@@ -1242,6 +1342,16 @@ class GatewayRuntime:
                 runtime.backend_service.set_p15_memory_provider(
                     remember_provider=p15_memory_remember,
                     recall_provider=p15_memory_recall,
+                )
+
+                def execution_epoch_checkpoint(payload: object) -> dict[str, object]:
+                    return _gateway_execution_epoch_checkpoint(runtime, payload)
+
+                runtime.backend_service.set_continuity_checkpoint_provider(
+                    execution_epoch_checkpoint
+                )
+                runtime.backend_service.set_regenerative_execution_provider(
+                    RegenerativeExecutionAuthority(runtime.store)
                 )
 
                 def pending_learning_ingest(arguments: object) -> dict[str, object]:

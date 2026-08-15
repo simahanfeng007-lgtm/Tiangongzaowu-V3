@@ -1,4 +1,5 @@
-from .set import KnownSet,KnownSetSnapshot,KnownRecord,ActiveCutOverflow,InvalidKnownRecord,known_ref,proposition_signature
+from .set import KnownSet,KnownSetSnapshot,KnownRecord,ActiveCutOverflow,InvalidKnownRecord,StaleKnownDependency,known_ref,proposition_signature
+from .freshness import KnownFreshnessDecision,VOLATILE_SOURCE_KINDS,evaluate_known_freshness,record_source_versions,source_key,source_version
 from .rule import RuleSpec,DerivedCandidate,DeterministicRule,ClosureDiagnostic
 from .registry import RuleRegistry
 from .authority_matrix import AuthorityIntersectionError,DerivedEnvelope,intersect_authority

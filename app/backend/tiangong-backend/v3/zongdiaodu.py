@@ -76,11 +76,25 @@ from .runtime_lifecycle import (
     start_zongdiaodu_runtime,
     stop_zongdiaodu_runtime,
 )
+from .runtime_regenerative_boundary import (
+    bounded_history as _simple_chain_bound_history,
+    build_frontier_payload as _simple_chain_build_frontier_payload,
+    canonical_sha256 as _simple_chain_regenerative_sha256,
+    task_hashes as _simple_chain_task_hashes,
+    tool_effect_descriptor as _simple_chain_tool_effect_descriptor,
+)
 from .runtime_turn_orchestration import (
     PreparedStep,
     TurnLoopState,
     coordinate_parallel_steps,
     evaluate_turn_budget,
+)
+from .runtime_adaptive_observation import (
+    EpochRealityObservation,
+    horizon_metrics_from_observation,
+    resource_budget_from_runtime,
+    resource_usage_from_observation,
+    semantic_signals_from_observation,
 )
 from .runtime_tool_result_boundary import (
     attach_tool_result_contract,
@@ -667,7 +681,13 @@ def _simple_chain_new_run_state(request_id: str, session_id: str, _unused: Any =
             "tool_rounds": 0,
             "wall_clock_used_s": 0,
             "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
-            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "global_tool_rounds": 0,
+            "epoch_index": 0,
+            "epoch_rounds_used": 0,
+            "epoch_tool_rounds": 0,
             "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
             "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
         },
@@ -717,6 +737,17 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "obligations": [item for item in (run_state.get("obligations") or []) if isinstance(item, dict)][-12:],
         "delivery": run_state.get("delivery") if isinstance(run_state.get("delivery"), dict) else {},
         "generated_attachments": list(run_state.get("generated_attachments") or [])[-8:],
+        "budget": run_state.get("budget") if isinstance(run_state.get("budget"), dict) else {},
+        "authority_identity": (
+            run_state.get("authority_identity")
+            if isinstance(run_state.get("authority_identity"), dict)
+            else {}
+        ),
+        "continuation": (
+            run_state.get("continuation")
+            if isinstance(run_state.get("continuation"), dict)
+            else {}
+        ),
         "failures": list(run_state.get("failures") or [])[-8:],
         "gaps": list(run_state.get("gaps") or [])[-8:],
         "completion_correction": (
@@ -743,9 +774,19 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
         if isinstance(budget, dict):
             started_at = float(live.get("loop_started_at") or 0)
             wall = round(time.monotonic() - started_at, 1) if started_at else float(budget.get("wall_clock_used_s") or 0)
+            global_rounds = int(live.get("global_iteration_count") or live.get("iteration_count") or 0)
+            global_tools = int(live.get("global_tool_rounds") or live.get("tool_rounds") or 0)
             budget.update({
-                "rounds_used": int(live.get("iteration_count") or 0),
-                "tool_rounds": int(live.get("tool_rounds") or 0),
+                "rounds_used": global_rounds,
+                "tool_rounds": global_tools,
+                "global_rounds_used": global_rounds,
+                "global_tool_rounds": global_tools,
+                "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                "epoch_index": int(live.get("epoch_index") or 0),
+                "epoch_rounds_used": int(live.get("epoch_iteration_count") or 0),
+                "epoch_rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                "epoch_tool_rounds": int(live.get("epoch_tool_rounds") or 0),
+                "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
                 "wall_clock_used_s": max(0.0, wall),
             })
     elif "budget" not in run_state:
@@ -754,7 +795,13 @@ def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
             "tool_rounds": 0,
             "wall_clock_used_s": 0,
             "rounds_max": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
-            "tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "global_tool_rounds_max": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+            "epoch_tool_rounds_max": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            "global_tool_rounds": 0,
+            "epoch_index": 0,
+            "epoch_rounds_used": 0,
+            "epoch_tool_rounds": 0,
             "wall_clock_max_s": _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
             "tool_seconds_max": _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
         }
@@ -930,6 +977,876 @@ def _simple_chain_emit_event(
         append_event(event)
     except Exception:
         pass
+
+
+
+_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER: Callable[[dict[str, Any]], Any] | None = None
+_SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER: Callable[[dict[str, Any]], Any] | None = None
+_SIMPLE_CHAIN_REGENERATIVE_STATE_LOCK = threading.RLock()
+
+
+def set_simple_chain_continuity_checkpoint_provider(
+    provider: Callable[[dict[str, Any]], Any] | None,
+) -> None:
+    """Bind the one Total-Gateway continuity authority into the embedded backend."""
+    if provider is not None and not callable(provider):
+        raise TypeError("continuity checkpoint provider must be callable")
+    global _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER
+    _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER = provider
+
+
+
+
+def set_simple_chain_regenerative_execution_provider(
+    provider: Callable[[dict[str, Any]], Any] | None,
+) -> None:
+    """Inject Total Gateway's one P18-M2 execution authority adapter."""
+    if provider is not None and not callable(provider):
+        raise TypeError("regenerative execution provider must be callable")
+    global _SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER
+    _SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER = provider
+
+def _simple_chain_authority_identity(run_state: dict[str, Any] | None) -> dict[str, Any]:
+    """Project existing Request/Run/Generation/Life identity; never mint authority."""
+    context = current_run_context()
+    state = run_state if isinstance(run_state, dict) else {}
+    return {
+        "request_id": str(context.request_id or state.get("request_id") or ""),
+        "run_id": str(context.run_id or state.get("run_id") or ""),
+        "generation": int(context.generation or 0),
+        "life_id": str(context.life_id or ""),
+        "session_id": str(context.session_id or state.get("session_id") or ""),
+    }
+
+
+
+
+def _simple_chain_regenerative_call(
+    run_state: dict[str, Any] | None,
+    operation: str,
+    **payload: Any,
+) -> dict[str, Any] | None:
+    context = current_run_context()
+    ticket_id = str(getattr(context, "outer_execution_ticket_id", "") or "").strip()
+    if not ticket_id:
+        return None
+    provider = _SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER
+    if not callable(provider):
+        raise RuntimeError("regenerative_execution_provider_unavailable")
+    identity = _simple_chain_authority_identity(run_state)
+    if (
+        not identity.get("request_id")
+        or not identity.get("run_id")
+        or not identity.get("life_id")
+        or type(identity.get("generation")) is not int
+        or int(identity.get("generation")) < 0
+    ):
+        raise RuntimeError("regenerative_execution_identity_unavailable")
+    request = {
+        "operation": str(operation or "").strip(),
+        "request_id": identity["request_id"],
+        "run_id": identity["run_id"],
+        "generation": int(identity["generation"]),
+        "life_id": identity["life_id"],
+        "outer_execution_ticket_id": ticket_id,
+        "now_ms": time.time_ns() // 1_000_000,
+        **payload,
+    }
+    result = provider(request)
+    if not isinstance(result, dict):
+        raise RuntimeError("regenerative_execution_provider_invalid_result")
+    if result.get("schema") != "tiangong.gateway.regenerative-provider.v1":
+        raise RuntimeError("regenerative_execution_provider_schema_mismatch")
+    if str(result.get("operation") or "") != request["operation"]:
+        raise RuntimeError("regenerative_execution_provider_operation_mismatch")
+    return dict(result)
+
+
+def _simple_chain_regenerative_state(run_state: dict[str, Any]) -> dict[str, Any]:
+    state = run_state.get("regenerative")
+    if not isinstance(state, dict):
+        state = {}
+        run_state["regenerative"] = state
+    state.setdefault("frontier_version", 0)
+    state.setdefault("frontier_hash", "")
+    state.setdefault("pending_effect_ids", [])
+    state.setdefault("ambiguous_effect_ids", [])
+    state.setdefault("active_effects", {})
+    state.setdefault("critical_fact_status", "verified")
+    return state
+
+
+def _simple_chain_regenerative_initialize(
+    run_state: dict[str, Any],
+    user_goal: str,
+) -> dict[str, Any] | None:
+    if str(run_state.get("mode") or "") != "work":
+        return None
+    task_contract = run_state.get("task_contract") if isinstance(run_state.get("task_contract"), dict) else {}
+    root_goal_hash, task_contract_hash = _simple_chain_task_hashes(user_goal, task_contract)
+    initialized = _simple_chain_regenerative_call(
+        run_state,
+        "initialize",
+        root_goal_hash=root_goal_hash,
+        task_contract_hash=task_contract_hash,
+        epoch_index=0,
+    )
+    if initialized is None:
+        return None
+    state = _simple_chain_regenerative_state(run_state)
+    state.update({
+        "root_goal_hash": str(initialized["root_goal_hash"]),
+        "task_contract_hash": str(initialized["task_contract_hash"]),
+        "authority_hash": str(initialized["authority_hash"]),
+    })
+    recovered = _simple_chain_regenerative_call(
+        run_state,
+        "recover",
+        runtime_version="tiangong-v3-p18-m2",
+        provider_version="gateway-regenerative-provider-v1",
+        model_version=str(MOREN_PROVIDER or "configured-model"),
+        tool_contract_version="omni_body.v1",
+        skill_contract_version="skill.v1",
+        task_contract_version=str((run_state.get("task_contract") or {}).get("schema") or "task.v1"),
+    )
+    if isinstance(recovered, dict) and recovered.get("recoverable") is True and recovered.get("resume_allowed") is False:
+        state["version_resume_blocked"] = {
+            "reason": str(recovered.get("reason") or "RECONCILE_REQUIRED"),
+            "reconcile_required": bool(recovered.get("reconcile_required")),
+            "migration_required": bool(recovered.get("migration_required")),
+            "revalidation_required": bool(recovered.get("revalidation_required")),
+            "version_mismatches": list(recovered.get("version_mismatches") or ()),
+        }
+        return recovered
+    if isinstance(recovered, dict) and recovered.get("recoverable") is True:
+        frontier = recovered.get("frontier") if isinstance(recovered.get("frontier"), dict) else {}
+        state["recovery_frontier"] = frontier
+        state["frontier_version"] = int(frontier.get("frontier_version") or 0)
+        state["frontier_hash"] = str(frontier.get("frontier_hash") or "")
+        state["pending_effect_ids"] = sorted({
+            str(item) for item in recovered.get("pending_effect_ids", ()) if str(item).strip()
+        })
+        state["ambiguous_effect_ids"] = sorted({
+            str(item) for item in recovered.get("ambiguous_effect_ids", ()) if str(item).strip()
+        })
+        checkpoint = recovered.get("checkpoint") if isinstance(recovered.get("checkpoint"), dict) else {}
+        state["recovered_checkpoint_id"] = str(checkpoint.get("checkpoint_id") or "")
+        state["used_previous_checkpoint"] = bool(recovered.get("used_previous_checkpoint"))
+    return recovered
+
+
+def _simple_chain_regenerative_restore_turn_loop(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+) -> None:
+    state = _simple_chain_regenerative_state(run_state)
+    frontier = state.pop("recovery_frontier", None)
+    if not isinstance(frontier, dict):
+        return
+    turn_loop.action_rounds = max(0, int(frontier.get("global_step") or 0))
+    turn_loop.epoch_index = max(0, int(frontier.get("epoch_index") or 0))
+    turn_loop.epoch_action_rounds = max(0, int(frontier.get("epoch_step") or 0))
+    provider_ref = str(frontier.get("provider_turn_state_ref") or "")
+    if provider_ref.startswith("iterations:"):
+        try:
+            turn_loop.iteration_count = max(0, int(provider_ref.split(":", 1)[1]))
+        except Exception:
+            pass
+    turn_loop.epoch_iteration_count = 0
+
+
+def _simple_chain_regenerative_obligations(run_state: dict[str, Any]) -> tuple[list[str], str | None, list[str]]:
+    completed: list[str] = []
+    pending: list[str] = []
+    active: str | None = None
+    raw = run_state.get("obligations")
+    values = raw if isinstance(raw, list) else list(raw.values()) if isinstance(raw, dict) else []
+    for index, item in enumerate(values, start=1):
+        if not isinstance(item, dict):
+            continue
+        obligation_id = str(item.get("id") or item.get("obligation_id") or f"ob_{index}").strip()[:200]
+        if not obligation_id:
+            continue
+        status = str(item.get("status") or "pending").strip().lower()
+        if status in {"satisfied", "complete", "completed", "done", "verified"}:
+            completed.append(obligation_id)
+        else:
+            pending.append(obligation_id)
+            if active is None and status in {"active", "running", "in_progress", "executing"}:
+                active = obligation_id
+    return sorted(set(completed))[:512], active, sorted(set(pending))[:512]
+
+
+def _simple_chain_regenerative_frontier(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    global_step: int | None = None,
+    epoch_step: int | None = None,
+    latest_safe_step: str = "execution state is durably observed",
+    next_action_hint: str = "continue authoritative execution",
+) -> dict[str, Any]:
+    state = _simple_chain_regenerative_state(run_state)
+    identity = _simple_chain_authority_identity(run_state)
+    completed, active, pending_obligations = _simple_chain_regenerative_obligations(run_state)
+    return _simple_chain_build_frontier_payload(
+        request_id=str(identity.get("request_id") or ""),
+        run_id=str(identity.get("run_id") or ""),
+        generation=int(identity.get("generation") or 0),
+        life_id=str(identity.get("life_id") or ""),
+        root_goal_hash=str(state.get("root_goal_hash") or ""),
+        task_contract_hash=str(state.get("task_contract_hash") or ""),
+        authority_hash=str(state.get("authority_hash") or ""),
+        global_step=max(0, int(turn_loop.action_rounds if global_step is None else global_step)),
+        epoch_index=max(0, int(turn_loop.epoch_index)),
+        epoch_step=max(0, int(turn_loop.epoch_action_rounds if epoch_step is None else epoch_step)),
+        frontier_version=max(1, int(state.get("frontier_version") or 0) + 1),
+        completed_obligation_ids=completed,
+        active_obligation_id=active,
+        pending_obligation_ids=pending_obligations,
+        pending_effect_ids=state.get("pending_effect_ids") or [],
+        ambiguous_effect_ids=state.get("ambiguous_effect_ids") or [],
+        active_blockers=run_state.get("final_reasons") or [],
+        failed_strategy_ids=state.get("failed_strategy_ids") or [],
+        latest_safe_step=latest_safe_step,
+        next_action_hint=next_action_hint,
+        provider_turn_state_ref=f"iterations:{int(turn_loop.iteration_count)}",
+    )
+
+
+def _simple_chain_regenerative_update_frontier(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    global_step: int | None = None,
+    epoch_step: int | None = None,
+    latest_safe_step: str = "execution state is durably observed",
+    next_action_hint: str = "continue authoritative execution",
+) -> dict[str, Any] | None:
+    context = current_run_context()
+    if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
+        return None
+    frontier = _simple_chain_regenerative_frontier(
+        run_state,
+        turn_loop,
+        global_step=global_step,
+        epoch_step=epoch_step,
+        latest_safe_step=latest_safe_step,
+        next_action_hint=next_action_hint,
+    )
+    committed = _simple_chain_regenerative_call(run_state, "update_frontier", frontier=frontier)
+    if not isinstance(committed, dict) or committed.get("committed") is not True:
+        raise RuntimeError("regenerative_frontier_commit_failed")
+    state = _simple_chain_regenerative_state(run_state)
+    state["frontier_version"] = int(committed.get("frontier_version") or frontier["frontier_version"])
+    state["frontier_hash"] = str(committed.get("frontier_hash") or frontier["frontier_hash"])
+    state["latest_frontier"] = frontier
+    return frontier
+
+
+def _simple_chain_regenerative_effect_state(
+    run_state: dict[str, Any],
+    effect_id: str,
+    *,
+    state: str,
+    call_id: str = "",
+    logical_effect_id: str = "",
+    attempt_id: str = "",
+    step_id: str = "",
+) -> None:
+    with _SIMPLE_CHAIN_REGENERATIVE_STATE_LOCK:
+        regenerative = _simple_chain_regenerative_state(run_state)
+        pending = set(str(item) for item in regenerative.get("pending_effect_ids") or [] if str(item).strip())
+        ambiguous = set(str(item) for item in regenerative.get("ambiguous_effect_ids") or [] if str(item).strip())
+        active = regenerative.get("active_effects") if isinstance(regenerative.get("active_effects"), dict) else {}
+        if state in {"prepared", "started"}:
+            pending.add(effect_id)
+            ambiguous.discard(effect_id)
+        elif state == "ambiguous":
+            pending.discard(effect_id)
+            ambiguous.add(effect_id)
+        else:
+            pending.discard(effect_id)
+            ambiguous.discard(effect_id)
+        if state == "started" and call_id:
+            active[call_id] = {
+                "effect_id": effect_id,
+                "logical_effect_id": logical_effect_id,
+                "attempt_id": attempt_id,
+                "step_id": step_id,
+            }
+        elif call_id:
+            active.pop(call_id, None)
+        regenerative["pending_effect_ids"] = sorted(pending)[:512]
+        regenerative["ambiguous_effect_ids"] = sorted(ambiguous)[:512]
+        regenerative["active_effects"] = dict(list(active.items())[-64:])
+
+
+def _simple_chain_regenerative_execute_tool(
+    owner: Any,
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    user_message: str,
+    call_id: str,
+    global_step: int,
+    attempted_action: str,
+    update_frontier: bool = True,
+) -> Any:
+    context = current_run_context()
+    if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
+        return owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)
+    descriptor = _simple_chain_tool_effect_descriptor(
+        request_id=str(getattr(context, "request_id", "") or ""),
+        run_id=str(getattr(context, "run_id", "") or ""),
+        generation=int(getattr(context, "generation", 0) or 0),
+        tool_name=tool_name,
+        tool_args=tool_args,
+        attempted_action=attempted_action,
+    )
+    _simple_chain_regenerative_call(
+        run_state,
+        "append_event",
+        event_key=f"step.planned:{call_id}:{global_step}",
+        epoch_index=int(turn_loop.epoch_index),
+        event_type="step.planned",
+        payload={
+            "call_id": call_id,
+            "global_step": int(global_step),
+            "tool_name": tool_name,
+            "attempted_action": attempted_action,
+            **descriptor,
+        },
+        logical_effect_id=descriptor["logical_effect_id"],
+    )
+    prepared = _simple_chain_regenerative_call(
+        run_state,
+        "prepare_effect",
+        epoch_index=int(turn_loop.epoch_index),
+        global_step=int(global_step),
+        attempt=max(1, int(global_step)),
+        **descriptor,
+    )
+    if not isinstance(prepared, dict):
+        raise RuntimeError("regenerative_effect_prepare_missing")
+    disposition = str(prepared.get("disposition") or "")
+    effect_id = str(prepared.get("effect_id") or "")
+    logical_effect_id = str(prepared.get("logical_effect_id") or descriptor["logical_effect_id"])
+    attempt_id = str(prepared.get("attempt_id") or "")
+    step_id = str(prepared.get("step_id") or "")
+    if disposition == "already_committed":
+        raw = {
+            "ok": True,
+            "status": "already_committed",
+            "deduplicated": True,
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+            "prior_result_summary": prepared.get("prior_result_summary") or {},
+        }
+        if update_frontier:
+            _simple_chain_regenerative_update_frontier(
+                run_state, turn_loop, global_step=global_step,
+                latest_safe_step=f"logical effect {logical_effect_id} was already committed",
+            )
+        return raw
+    if disposition == "in_flight":
+        _simple_chain_regenerative_effect_state(run_state, effect_id, state="prepared")
+        if update_frontier:
+            _simple_chain_regenerative_update_frontier(
+                run_state, turn_loop, global_step=global_step,
+                latest_safe_step=f"logical effect {logical_effect_id} remains in flight",
+                next_action_hint="wait for the in-flight effect to resolve; do not dispatch a duplicate",
+            )
+        return {
+            "ok": False,
+            "status": "in_flight",
+            "ambiguous_effect": False,
+            "error": "[EFFECT_IN_FLIGHT] logical action already dispatched; duplicate retry blocked",
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+        }
+    if disposition == "reconcile_required":
+        _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous")
+        if update_frontier:
+            _simple_chain_regenerative_update_frontier(
+                run_state, turn_loop, global_step=global_step,
+                latest_safe_step=f"logical effect {logical_effect_id} requires reconciliation",
+                next_action_hint="reconcile ambiguous effect before retry",
+            )
+        return {
+            "ok": False,
+            "status": "ambiguous",
+            "ambiguous_effect": True,
+            "error": "[EFFECT_RECONCILIATION_REQUIRED] logical action outcome is unknown; retry blocked",
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+        }
+    if disposition != "prepared":
+        return {
+            "ok": False,
+            "status": disposition or "blocked",
+            "error": f"[EFFECT_PREPARE_BLOCKED] {disposition or 'unknown'}",
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+        }
+    _simple_chain_regenerative_effect_state(
+        run_state, effect_id, state="prepared", call_id=call_id,
+        logical_effect_id=logical_effect_id, attempt_id=attempt_id, step_id=step_id,
+    )
+    started = _simple_chain_regenerative_call(
+        run_state,
+        "start_effect",
+        epoch_index=int(turn_loop.epoch_index),
+        effect_id=effect_id,
+        logical_effect_id=logical_effect_id,
+        attempt_id=attempt_id,
+        step_id=step_id,
+    )
+    if not isinstance(started, dict) or started.get("dispatch_permitted") is not True:
+        start_disposition = str((started or {}).get("disposition") or "blocked")
+        if start_disposition == "reconcile_required":
+            _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous", call_id=call_id)
+        else:
+            _simple_chain_regenerative_effect_state(run_state, effect_id, state="blocked", call_id=call_id)
+        return {
+            "ok": False,
+            "status": start_disposition,
+            "ambiguous_effect": start_disposition == "reconcile_required",
+            "error": f"[EFFECT_DISPATCH_BLOCKED] {start_disposition}",
+            "effect_id": effect_id,
+            "logical_effect_id": logical_effect_id,
+        }
+    _simple_chain_regenerative_effect_state(
+        run_state, effect_id, state="started", call_id=call_id,
+        logical_effect_id=logical_effect_id, attempt_id=attempt_id, step_id=step_id,
+    )
+    handler_exception = False
+    try:
+        raw = owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)
+    except Exception as exc:
+        handler_exception = True
+        raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}
+    status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""
+    result_ok = bool(tool_result_ok(tool_name, raw))
+    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {
+        "ambiguous", "unknown", "deadline", "timeout", "timed_out"
+    }
+    outcome = "ambiguous" if ambiguous else "succeeded" if result_ok else "failed_final"
+    _simple_chain_regenerative_call(
+        run_state,
+        "append_event",
+        event_key=f"step.observed:{step_id}:{attempt_id}",
+        epoch_index=int(turn_loop.epoch_index),
+        event_type="step.observed",
+        payload={
+            "status": status,
+            "ok": result_ok,
+            "result_digest": _simple_chain_regenerative_sha256({"result": str(raw)[:4000]}),
+        },
+        logical_effect_id=logical_effect_id,
+        attempt_id=attempt_id,
+        step_id=step_id,
+        effect_id=effect_id,
+    )
+    finished = _simple_chain_regenerative_call(
+        run_state,
+        "finish_effect",
+        epoch_index=int(turn_loop.epoch_index),
+        effect_id=effect_id,
+        logical_effect_id=logical_effect_id,
+        attempt_id=attempt_id,
+        step_id=step_id,
+        outcome=outcome,
+        error_code=(str(raw.get("error_code") or raw.get("error") or "")[:160] if isinstance(raw, dict) else ""),
+        result_summary={
+            "ok": result_ok,
+            "status": status,
+            "tool_name": tool_name,
+            "call_id": call_id,
+        },
+    )
+    final_effect_state = str((finished or {}).get("effect_state") or "")
+    if outcome == "ambiguous" or final_effect_state == "AMBIGUOUS":
+        _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous", call_id=call_id)
+    else:
+        _simple_chain_regenerative_effect_state(run_state, effect_id, state="terminal", call_id=call_id)
+    if update_frontier:
+        _simple_chain_regenerative_update_frontier(
+            run_state,
+            turn_loop,
+            global_step=global_step,
+            latest_safe_step=f"tool step {global_step} durably observed as {outcome}",
+        )
+    return raw
+
+
+def _simple_chain_m3_observe_checkpoint(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    frontier: dict[str, Any],
+    checkpoint_latency_seconds: float,
+) -> None:
+    """Feed M3 only from already-observed execution/checkpoint reality."""
+    state = _simple_chain_regenerative_state(run_state)
+    raw_calls = run_state.get("tool_calls") if isinstance(run_state.get("tool_calls"), list) else []
+    offset = max(0, min(len(raw_calls), int(state.get("m3_observed_tool_calls") or 0)))
+    recent_calls = [item for item in raw_calls[offset:] if isinstance(item, dict)]
+    successful = sum(1 for item in recent_calls if bool(item.get("ok")))
+    failed = sum(1 for item in recent_calls if not bool(item.get("ok")))
+    readonly = sum(
+        1 for item in recent_calls
+        if bool(item.get("ok")) and str(item.get("tool_action") or "") in SIMPLE_CHAIN_READ_ONLY_ACTIONS
+    )
+    mutating = sum(
+        1 for item in recent_calls
+        if bool(item.get("ok")) and str(item.get("tool_action") or "") in _SIMPLE_CHAIN_MUTATING_ACTIONS
+    )
+    completed_ids = {str(item) for item in frontier.get("completed_obligation_ids") or () if str(item)}
+    pending_ids = {str(item) for item in frontier.get("pending_obligation_ids") or () if str(item)}
+    active_id = str(frontier.get("active_obligation_id") or "")
+    blockers = {str(item) for item in frontier.get("active_blockers") or () if str(item)}
+    pending_effects = {str(item) for item in frontier.get("pending_effect_ids") or () if str(item)}
+    ambiguous_effects = {str(item) for item in frontier.get("ambiguous_effect_ids") or () if str(item)}
+    frontier_contradiction = bool(completed_ids.intersection(pending_ids)) or bool(active_id and active_id in completed_ids)
+
+    previous_completed = max(0, int(state.get("m3_completed_obligations") or 0))
+    progress_delta = float(max(0, len(completed_ids) - previous_completed))
+    fact_head = str(frontier.get("verified_fact_head") or "")
+    artifact_head = str(frontier.get("artifact_revision_head") or "")
+    if fact_head and fact_head != str(state.get("m3_verified_fact_head") or ""):
+        progress_delta += 1.0
+    if artifact_head and artifact_head != str(state.get("m3_artifact_revision_head") or ""):
+        progress_delta += 1.0
+
+    current_root_hash = str(frontier.get("root_goal_hash") or "")
+    current_task_contract = run_state.get("task_contract") if isinstance(run_state.get("task_contract"), dict) else {}
+    current_task_hash = _simple_chain_regenerative_sha256({
+        "domain": "tiangong.gateway.task-contract.v1",
+        "task_contract": dict(current_task_contract),
+    })
+    root_match = str(state.get("root_goal_hash") or "") in {"", current_root_hash}
+    task_match = str(state.get("task_contract_hash") or "") in {"", current_task_hash}
+    live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else {}
+    context_pressure = float(live.get("context_pressure") or 0.0)
+    loop_started_at = live.get("loop_started_at")
+    wall_clock = max(0.0, time.monotonic() - float(loop_started_at)) if loop_started_at else 0.0
+    repeat_peak = max((int(value) for value in turn_loop.repeat_counts.values()), default=0)
+
+    observation = EpochRealityObservation(
+        successful_tools=successful,
+        failed_tools=failed,
+        read_only_successes=readonly,
+        mutating_successes=mutating,
+        repeat_peak=repeat_peak,
+        ambiguous_effects=len(ambiguous_effects),
+        pending_effects=len(pending_effects),
+        pending_obligations=len(pending_ids),
+        completed_obligations=len(completed_ids),
+        blockers=len(blockers),
+        progress_delta=progress_delta,
+        context_pressure=context_pressure,
+        checkpoint_commit_latency_seconds=max(0.0, float(checkpoint_latency_seconds)),
+        wall_clock_seconds=wall_clock,
+        global_steps=max(0, int(frontier.get("global_step") or 0)),
+        epoch_index=max(0, int(frontier.get("epoch_index") or 0)),
+        root_goal_match=root_match,
+        task_contract_match=task_match,
+        authority_reference_match=True,
+        frontier_contradiction=frontier_contradiction,
+        semantic_handoff_contradiction=False,
+        critical_fact_verified=str(state.get("critical_fact_status") or "verified").lower() == "verified",
+    )
+    metrics = horizon_metrics_from_observation(observation)
+    semantic = turn_loop.observe_semantic_drift(
+        semantic_signals_from_observation(observation),
+        base_metrics=metrics,
+    )
+    no_progress_streak = 0 if progress_delta > 0.0 else max(0, int(state.get("m3_no_progress_epochs") or 0)) + 1
+    governor = turn_loop.observe_resource_governor(
+        usage=resource_usage_from_observation(observation),
+        budget=resource_budget_from_runtime(wall_clock_budget_seconds=_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS),
+        progress_delta=progress_delta,
+        regeneration_streak=no_progress_streak,
+    )
+    state.update({
+        "m3_observed_tool_calls": len(raw_calls),
+        "m3_completed_obligations": len(completed_ids),
+        "m3_verified_fact_head": fact_head,
+        "m3_artifact_revision_head": artifact_head,
+        "m3_no_progress_epochs": no_progress_streak,
+        "m3_last_risk": float(turn_loop.adaptive_horizon.ewma_risk),
+        "m3_last_epoch_limit": int(turn_loop.adaptive_horizon.current_epoch_steps),
+        "m3_last_semantic_drift": float(semantic.score),
+        "m3_resource_governor_allowed": bool(governor.allowed),
+    })
+
+def _simple_chain_regenerative_checkpoint(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    source: str,
+) -> bool:
+    context = current_run_context()
+    checkpoint_started_at = time.monotonic()
+    if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
+        return True
+    state = _simple_chain_regenerative_state(run_state)
+    canonical_capsule_id = str((run_state.get("continuation") or {}).get("canonical_capsule_id") or "").strip()
+    if not canonical_capsule_id:
+        return False
+    try:
+        frontier = _simple_chain_regenerative_update_frontier(
+            run_state,
+            turn_loop,
+            latest_safe_step=f"epoch {turn_loop.epoch_index} is ready for regenerative checkpoint",
+            next_action_hint="commit checkpoint then continue same Run in next Epoch",
+        )
+        result = _simple_chain_regenerative_call(
+            run_state,
+            "commit_checkpoint",
+            frontier=frontier,
+            continuity_capsule_id=canonical_capsule_id,
+            recovery_preconditions=[
+                "request/run/generation/life authority identity remains unchanged",
+                "reconcile ambiguous effects before retry",
+                "resume from committed Frontier and ledger head",
+            ],
+            critical_fact_status=str(state.get("critical_fact_status") or "verified"),
+            runtime_version="tiangong-v3-p18-m2",
+            provider_version="gateway-regenerative-provider-v1",
+            model_version=str(MOREN_PROVIDER or "configured-model"),
+            tool_contract_version="omni_body.v1",
+            skill_contract_version="skill.v1",
+            task_contract_version=str((run_state.get("task_contract") or {}).get("schema") or "task.v1"),
+            semantic_handoff=json.dumps(_simple_chain_run_state_view(run_state), ensure_ascii=False, default=str)[:12000],
+        )
+    except Exception as exc:
+        state["checkpoint_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+        return False
+    if not isinstance(result, dict) or result.get("committed") is not True:
+        state["checkpoint_error"] = str((result or {}).get("reason") or "regenerative_checkpoint_rejected")
+        return False
+    state["checkpoint_id"] = str(result.get("checkpoint_id") or "")
+    state["checkpoint_hash"] = str(result.get("checkpoint_hash") or "")
+    state["frontier_hash"] = str(result.get("frontier_hash") or state.get("frontier_hash") or "")
+    state["checkpoint_source"] = source
+    _simple_chain_m3_observe_checkpoint(
+        run_state,
+        turn_loop,
+        frontier=frontier,
+        checkpoint_latency_seconds=max(0.0, time.monotonic() - checkpoint_started_at),
+    )
+    return True
+
+
+def _simple_chain_regenerative_verify_completion(
+    run_state: dict[str, Any],
+    turn_loop: TurnLoopState,
+    *,
+    life_gate_allowed: bool,
+    reasons: list[str],
+    proposal_key: str,
+) -> tuple[bool, list[str], dict[str, Any] | None]:
+    context = current_run_context()
+    if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
+        return bool(life_gate_allowed), list(reasons), None
+    try:
+        _simple_chain_regenerative_update_frontier(
+            run_state,
+            turn_loop,
+            latest_safe_step="completion proposal is bound to the latest durable execution frontier",
+            next_action_hint="accept only if Runtime completion proof verifies every obligation",
+        )
+        result = _simple_chain_regenerative_call(
+            run_state,
+            "verify_completion",
+            epoch_index=int(turn_loop.epoch_index),
+            proposal_key=proposal_key,
+            runtime_blockers=list(reasons),
+            life_gate_allowed=bool(life_gate_allowed),
+            required_evidence_ready=bool(life_gate_allowed and not reasons),
+        )
+    except Exception as exc:
+        return False, list(dict.fromkeys([*reasons, f"completion_proof_failed:{type(exc).__name__}"])), None
+    if not isinstance(result, dict):
+        return False, list(dict.fromkeys([*reasons, "completion_proof_missing"])), None
+    merged = list(dict.fromkeys([
+        *[str(item) for item in reasons if str(item).strip()],
+        *[str(item) for item in result.get("reasons", ()) if str(item).strip()],
+    ]))[:32]
+    return bool(life_gate_allowed and result.get("verified_complete") is True), merged, result
+
+def _simple_chain_checkpoint_continue(
+    run_state: dict[str, Any] | None,
+    turn_loop: TurnLoopState,
+    *,
+    requested: int,
+    loop_started_at: float,
+    source: str,
+) -> bool:
+    """Persist a non-terminal local Epoch checkpoint before rollover."""
+    if not isinstance(run_state, dict):
+        return False
+    identity = _simple_chain_authority_identity(run_state)
+    epoch_index = int(turn_loop.epoch_index)
+    requested_count = max(0, int(requested))
+    turn_loop.project_live(run_state, loop_started_at)
+    run_state["authority_identity"] = identity
+    run_state["status"] = "checkpoint_continue"
+    run_state["stage"] = "epoch_checkpoint"
+    run_state["continuation"] = {
+        "schema": "tiangong.v3.simple_chain.epoch_continuation.v1",
+        "status": "checkpoint_requested",
+        "epoch_index": epoch_index,
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "requested_tool_rounds": requested_count,
+        "latest_safe_step": f"global_tool_round_{int(turn_loop.action_rounds)}",
+        "next_step": f"epoch_{epoch_index + 1}_tool_round_1",
+    }
+    meta = {
+        **identity,
+        "epoch_index": epoch_index,
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "requested_tool_rounds": requested_count,
+        "continuation_status": "checkpoint_continue",
+    }
+    _simple_chain_emit_event(run_state, "epoch.checkpoint_requested", "epoch budget reached", source, extra=meta)
+    _simple_chain_emit_event(run_state, "run.continuation_requested", "same run continuation requested", source, extra=meta)
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+
+    # A Gateway-authorized production run must commit the Epoch boundary into
+    # the existing canonical TaskContinuityCapsule chain before it can be
+    # reported as committed locally. The provider is an injected pointer to
+    # Total Gateway's already-open GatewayStateStore; it never owns state.
+    context = current_run_context()
+    provider = _SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER
+    canonical_required = bool(context.outer_execution_ticket_id)
+    if callable(provider):
+        canonical_payload = {
+            "schema": "tiangong.gateway.execution-epoch-checkpoint.v1",
+            **identity,
+            "outer_execution_ticket_id": str(context.outer_execution_ticket_id or ""),
+            "epoch_index": epoch_index,
+            "epoch_iteration_count": int(turn_loop.epoch_iteration_count),
+            "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+            "pending_effect_ids": list(dict.fromkeys([
+                *(_simple_chain_regenerative_state(run_state).get("pending_effect_ids") or []),
+                *(_simple_chain_regenerative_state(run_state).get("ambiguous_effect_ids") or []),
+            ])),
+            "global_iteration_count": int(turn_loop.iteration_count),
+            "global_tool_rounds": int(turn_loop.action_rounds),
+            "requested_tool_rounds": requested_count,
+            "latest_safe_step": str(run_state["continuation"].get("latest_safe_step") or ""),
+            "next_step": str(run_state["continuation"].get("next_step") or ""),
+            "source": str(source or "execution_epoch"),
+        }
+        try:
+            canonical_result = provider(canonical_payload)
+        except Exception:
+            canonical_result = None
+        binding_ok = (
+            isinstance(canonical_result, dict)
+            and canonical_result.get("ok") is True
+            and str(canonical_result.get("request_id") or "") == identity["request_id"]
+            and str(canonical_result.get("run_id") or "") == identity["run_id"]
+            and int(canonical_result.get("generation") if type(canonical_result.get("generation")) is int else -1)
+            == int(identity["generation"])
+            and str(canonical_result.get("life_id") or "") == identity["life_id"]
+            and bool(str(canonical_result.get("capsule_id") or ""))
+        )
+        if not binding_ok:
+            run_state["continuation"]["status"] = "canonical_checkpoint_failed"
+            _simple_chain_save_run_state(run_state)
+            return False
+        run_state["continuation"]["canonical_capsule_id"] = str(canonical_result["capsule_id"])
+        run_state["continuation"]["canonical_duplicate"] = bool(canonical_result.get("duplicate"))
+    elif canonical_required:
+        run_state["continuation"]["status"] = "canonical_checkpoint_unavailable"
+        _simple_chain_save_run_state(run_state)
+        return False
+
+    run_state["continuation"]["status"] = "checkpoint_committed"
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+    if not _simple_chain_regenerative_checkpoint(run_state, turn_loop, source=source):
+        run_state.setdefault("continuation", {})["status"] = "regenerative_checkpoint_failed"
+        _simple_chain_save_run_state(run_state)
+        return False
+    _simple_chain_emit_event(run_state, "epoch.checkpoint_committed", "epoch checkpoint persisted", source, extra=meta)
+    _simple_chain_emit_event(run_state, "epoch.completed", "epoch completed non-terminally", source, extra=meta)
+
+    next_epoch = turn_loop.begin_next_epoch()
+    # The model decision that triggered rollover is executed in the new Epoch.
+    # Keep the global iteration unchanged while accounting it once locally.
+    turn_loop.epoch_iteration_count = 1
+    turn_loop.project_live(run_state, loop_started_at)
+    run_state["status"] = "running"
+    run_state["stage"] = "execution_epoch"
+    run_state["continuation"].update({"status": "continued", "next_epoch_index": int(next_epoch)})
+    _simple_chain_save_run_state(run_state)
+    if run_state.get("persistence_degraded"):
+        return False
+    next_meta = {
+        **identity,
+        "epoch_index": int(next_epoch),
+        "next_epoch_index": int(next_epoch),
+        "epoch_tool_rounds": int(turn_loop.epoch_action_rounds),
+        "global_tool_rounds": int(turn_loop.action_rounds),
+        "requested_tool_rounds": requested_count,
+        "continuation_status": "continued",
+    }
+    _simple_chain_emit_event(run_state, "epoch.started", "next epoch started", source, extra=next_meta)
+    _simple_chain_emit_event(run_state, "run.continued", "same run continued", source, extra=next_meta)
+    return True
+
+
+def _simple_chain_prepare_tool_budget(
+    turn_loop: TurnLoopState,
+    requested: int,
+    *,
+    run_state: dict[str, Any] | None,
+    loop_started_at: float,
+    source: str,
+) -> tuple[bool, tuple[str, ...]]:
+    """Dual-budget bridge for both production tool dispatch paths."""
+    requested_count = max(0, int(requested))
+    decision = turn_loop.decide_schedule(
+        requested_count,
+        max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+        max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+    )
+    if decision.can_schedule:
+        return True, ()
+    if decision.terminal:
+        return False, tuple(decision.reasons)
+    if requested_count > _SIMPLE_CHAIN_MAX_TOOL_ROUNDS:
+        return False, ("[epoch_tool_batch_too_large] requested batch exceeds one Epoch",)
+    if not decision.should_checkpoint_continue:
+        return False, tuple(decision.reasons)
+    if not _simple_chain_checkpoint_continue(
+        run_state,
+        turn_loop,
+        requested=requested_count,
+        loop_started_at=loop_started_at,
+        source=source,
+    ):
+        return False, ("[epoch_checkpoint_failed] checkpoint persistence failed",)
+    # P18-M3 admission occurs only after durable checkpoint persistence succeeds.
+    turn_loop.activate_adaptive_control()
+    resumed = turn_loop.decide_schedule(
+        requested_count,
+        max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+        max_global_rounds=_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+    )
+    return resumed.can_schedule, (() if resumed.can_schedule else tuple(resumed.reasons))
 
 
 def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:
@@ -4020,6 +4937,9 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # the best evidence already produced.  Environment overrides exist for
 # operational tuning; defaults are the shipped contract.
 _SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
+_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", "1000")
+)
 _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 3
 _SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
 _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
@@ -6875,6 +7795,7 @@ class Zongdiaodu:
             chat_mode=response_only_without_tools,
         )
         run_state["plan_version"] = run_state["task_contract"].get("plan_version")
+        _simple_chain_regenerative_initialize(run_state, xiaoxi)
         try:
             run_state.setdefault("work_intent", {}).update({
                 "requirements": _simple_chain_parse_requirements(xiaoxi),
@@ -7054,6 +7975,7 @@ class Zongdiaodu:
             return holder["value"]
 
         turn_loop = TurnLoopState()
+        _simple_chain_regenerative_restore_turn_loop(run_state, turn_loop)
         gongju_cishu = turn_loop.action_rounds
         tool_call_counts: dict[str, int] = {}
         tool_call_results: dict[str, Any] = {}
@@ -7211,6 +8133,7 @@ class Zongdiaodu:
             if semantic_visibility == "visible":
                 native_payload = _simple_chain_native_audio_payload(native_audio_evidence, huifu)
                 quality_history.append(native_payload)
+                _simple_chain_bound_history(quality_history, limit=24)
                 last_quality_payload = native_payload
                 _simple_chain_record_observation(run_state, native_payload)
                 if run_control:
@@ -7294,14 +8217,51 @@ class Zongdiaodu:
                         },
                     )
                 break
-            budget_decision = evaluate_turn_budget(
-                iteration_count=iteration_count,
+            # P18-M1: the historical loop-turn cap is an Epoch-local context
+            # budget. Hitting it checkpoints and continues the same authoritative Run.
+            epoch_turn_decision = evaluate_turn_budget(
+                iteration_count=turn_loop.epoch_iteration_count,
+                elapsed_seconds=0.0,
+                max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                max_wall_clock_seconds=float("inf"),
+            )
+            if epoch_turn_decision.exhausted:
+                checkpointed = _simple_chain_checkpoint_continue(
+                    run_state,
+                    turn_loop,
+                    requested=0,
+                    loop_started_at=loop_started_at,
+                    source="epoch_turn_budget",
+                )
+                if not checkpointed:
+                    budget_reasons = ["[epoch_checkpoint_failed] epoch turn checkpoint persistence failed"]
+                    final_guard_exhausted = True
+                    final_chain_status = "force_stopped"
+                    shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
+                    if run_control:
+                        run_control.step(
+                            "simple_chain_epoch_turn_checkpoint",
+                            "Epoch turn checkpoint",
+                            "failed",
+                            budget_reasons[0],
+                            meta={
+                                "global_iteration_count": iteration_count,
+                                "epoch_index": turn_loop.epoch_index,
+                                "max_epoch_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                            },
+                        )
+                    break
+
+            # Wall clock remains an absolute platform/Authority deadline. Epoch
+            # rollover must never extend or bypass it.
+            wall_clock_decision = evaluate_turn_budget(
+                iteration_count=0,
                 elapsed_seconds=loop_elapsed,
                 max_iterations=_SIMPLE_CHAIN_MAX_LOOP_TURNS,
                 max_wall_clock_seconds=effective_wall_clock_seconds,
             )
-            if budget_decision.exhausted:
-                budget_reasons = list(budget_decision.reasons)
+            if wall_clock_decision.exhausted:
+                budget_reasons = list(wall_clock_decision.reasons)
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
                 shenti, huifu = _natural_closeout("force_stopped", budget_reasons)
@@ -7312,10 +8272,12 @@ class Zongdiaodu:
                         "failed",
                         "; ".join(budget_reasons)[:500],
                         meta={
-                            "iteration_count": iteration_count,
+                            "global_iteration_count": iteration_count,
+                            "epoch_iteration_count": turn_loop.epoch_iteration_count,
+                            "epoch_index": turn_loop.epoch_index,
                             "tool_rounds": gongju_cishu,
                             "elapsed_seconds": round(loop_elapsed, 1),
-                            "max_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
+                            "max_epoch_iterations": _SIMPLE_CHAIN_MAX_LOOP_TURNS,
                             "max_wall_clock_seconds": round(effective_wall_clock_seconds, 1),
                         },
                     )
@@ -7635,23 +8597,31 @@ class Zongdiaodu:
                     )
                     for offset, (tn, ta, _, _) in enumerate(prepared_parallel, start=1)
                 ]
-                if not turn_loop.can_schedule(len(tools), _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+                budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                    turn_loop,
+                    len(tools),
+                    run_state=run_state,
+                    loop_started_at=loop_started_at,
+                    source="parallel_tool_batch",
+                )
+                if not budget_ready:
                     final_guard_exhausted = True
                     final_chain_status = "force_stopped"
-                    shenti, huifu = _natural_closeout(
-                        "force_stopped",
-                        ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                    )
+                    shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
                     if run_control:
                         run_control.step(
                             "simple_chain_tool_round_budget",
                             "Tool round budget",
                             "failed",
-                            f"Batch of {len(tools)} would exceed the tool round budget.",
+                            "Global tool budget exhausted or Epoch checkpoint persistence failed.",
                             meta={
-                                "tool_rounds": gongju_cishu,
+                                "global_tool_rounds": turn_loop.action_rounds,
+                                "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                                "epoch_index": turn_loop.epoch_index,
                                 "requested": len(tools),
-                                "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                                "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                                "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                                "reasons": list(budget_reasons),
                             },
                         )
                     break
@@ -7699,7 +8669,11 @@ class Zongdiaodu:
                             "label": _gongju_xianshi_ming(tn),
                         })
                     try:
-                        raw = self._jineng_zhixing(tn, ta, xiaoxi, call_id=call_id)
+                        raw = _simple_chain_regenerative_execute_tool(
+                            self, run_state, turn_loop, tool_name=tn, tool_args=ta,
+                            user_message=xiaoxi, call_id=call_id, global_step=call_index,
+                            attempted_action=_simple_chain_tool_action(tn, ta), update_frontier=False,
+                        )
                     except Exception as exc:
                         raw = {"ok": False, "error": str(exc)}
                     raw = _tool_result_with_contract(tn, raw, source_native_id=call_id)
@@ -7901,6 +8875,7 @@ class Zongdiaodu:
                         qp["final_requirements_satisfied_by_this_step"] = bool(qp.get("ok")) and not merged_gaps
                     last_quality_payload = qp
                     quality_history.append(qp)
+                    _simple_chain_bound_history(quality_history, limit=24)
                     _simple_chain_protect_paths(protected_path_keys, tn, ta, qp, raw)
                     if bool(qp.get("ok")) and _tool_is_write_effect(tn, raw):
                         mutation_success_seen = True
@@ -7921,6 +8896,10 @@ class Zongdiaodu:
                         "result": raw,
                         "quality": qp,
                     })
+                _simple_chain_regenerative_update_frontier(
+                    run_state, turn_loop, global_step=gongju_cishu,
+                    latest_safe_step=f"parallel batch through global step {gongju_cishu} durably observed",
+                )
                 combined = {
                     "schema": "tiangong.v3.parallel_tool_results.v1",
                     "request_id": request_id,
@@ -8032,9 +9011,18 @@ class Zongdiaodu:
                     if isinstance(run_state, dict):
                         run_state["task_contract"] = contract_now
                         _simple_chain_save_run_state(run_state)
-                    if final_allowed_now:
+                    proof_allowed_now, proof_reasons_now, proof_now = _simple_chain_regenerative_verify_completion(
+                        run_state, turn_loop, life_gate_allowed=final_allowed_now,
+                        reasons=list(final_reasons_now or []),
+                        proposal_key=f"loop-{iteration_count}",
+                    )
+                    if isinstance(run_state, dict):
+                        run_state["completion_proof"] = proof_now or {}
+                        _simple_chain_save_run_state(run_state)
+                    if proof_allowed_now:
                         final_chain_status = final_status_now
                         break
+                    final_reasons_now = proof_reasons_now
 
                     correction_state = _simple_chain_completion_correction_state(run_state)
                     current_blockers = [
@@ -8450,22 +9438,30 @@ class Zongdiaodu:
                     on_reasoning_chunk=_on_reasoning_chunk,
                 )
                 continue
-            if not turn_loop.can_schedule(1, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS):
+            budget_ready, budget_reasons = _simple_chain_prepare_tool_budget(
+                turn_loop,
+                1,
+                run_state=run_state,
+                loop_started_at=loop_started_at,
+                source="single_tool",
+            )
+            if not budget_ready:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
-                shenti, huifu = _natural_closeout(
-                    "force_stopped",
-                    ["[tool_round_budget_exhausted] tool round budget exhausted"],
-                )
+                shenti, huifu = _natural_closeout("force_stopped", list(budget_reasons))
                 if run_control:
                     run_control.step(
                         "simple_chain_tool_round_budget",
                         "Tool round budget",
                         "failed",
-                        "Tool round budget exhausted.",
+                        "Global tool budget exhausted or Epoch checkpoint persistence failed.",
                         meta={
-                            "tool_rounds": gongju_cishu,
-                            "max_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            "global_tool_rounds": turn_loop.action_rounds,
+                            "epoch_tool_rounds": turn_loop.epoch_action_rounds,
+                            "epoch_index": turn_loop.epoch_index,
+                            "max_epoch_tool_rounds": _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+                            "max_global_tool_rounds": _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
+                            "reasons": list(budget_reasons),
                         },
                     )
                 break
@@ -8518,7 +9514,11 @@ class Zongdiaodu:
             )
             try:
                 gongju_jieguo = _simple_chain_execute_tool_with_timeout(
-                    lambda: self._jineng_zhixing(tool_name, tool_args, xiaoxi, call_id=tool_call_id),
+                    lambda: _simple_chain_regenerative_execute_tool(
+                        self, run_state, turn_loop, tool_name=tool_name, tool_args=tool_args,
+                        user_message=xiaoxi, call_id=tool_call_id, global_step=gongju_cishu,
+                        attempted_action=attempted_action, update_frontier=True,
+                    ),
                     tool_name=tool_name,
                     tool_args=tool_args,
                     timeout_seconds=_tool_timeout_seconds,
@@ -8643,6 +9643,7 @@ class Zongdiaodu:
                 quality_payload["final_requirements_satisfied_by_this_step"] = bool(quality_payload.get("ok")) and not merged_gaps
             last_quality_payload = quality_payload
             quality_history.append(quality_payload)
+            _simple_chain_bound_history(quality_history, limit=24)
             _simple_chain_protect_paths(protected_path_keys, tool_name, tool_args, quality_payload, gongju_jieguo)
             tool_ok = bool(quality_payload.get("ok"))
             if tool_ok and _tool_is_write_effect(tool_name, gongju_jieguo):
@@ -8782,7 +9783,17 @@ class Zongdiaodu:
                             run_state.get("task_contract"), "awaiting_user", ["clarification_required"]
                         )
                     _simple_chain_save_run_state(run_state)
-            elif not final_allowed:
+            else:
+                proof_allowed, proof_reasons, proof_result = _simple_chain_regenerative_verify_completion(
+                    run_state, turn_loop, life_gate_allowed=final_allowed,
+                    reasons=list(final_reasons or []), proposal_key="final",
+                )
+                if isinstance(run_state, dict):
+                    run_state["completion_proof"] = proof_result or {}
+                    _simple_chain_save_run_state(run_state)
+                final_allowed = proof_allowed
+                final_reasons = proof_reasons
+            if not final_allowed:
                 final_guard_exhausted = True
                 if isinstance(run_state, dict):
                     run_state["final_reasons"] = [str(item) for item in (final_reasons or [])][:8]

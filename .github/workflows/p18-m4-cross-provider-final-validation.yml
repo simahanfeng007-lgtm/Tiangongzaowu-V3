@@ -1,0 +1,95 @@
+name: P18 M4 cross provider final
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  cross-provider-final-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile final cross-provider certification
+        run: python -m py_compile tests/test_p18_m4_cross_provider_final.py
+      - name: Run DeepSeek 300-step same-run resume against every target provider
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m4_cross_provider_final.py
+          tests/test_p18_m4_cross_provider_resume.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_p18_m2_crash_matrix.py
+      - name: Verify cross-provider authority remains Gateway-owned
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          test = Path('tests/test_p18_m4_cross_provider_final.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          assert 'TARGET_PROVIDERS = ("mimo", "glm_5_2", "minimax_m3", "gpt_5_6")' in test
+          assert 'compatible_version_mismatches=["provider_profile_hash", "model_version"]' in test
+          assert 'version_revalidated=revalidated' in test
+          assert 'GatewayStateStore.open' not in provider
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          print('P18-M4.6 cross-provider authority boundary: PASS')
+          PY
+
+  cross-provider-final-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile final cross-provider certification
+        run: python -m py_compile tests/test_p18_m4_cross_provider_final.py
+      - name: Run DeepSeek 300-step same-run resume against every target provider
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m4_cross_provider_final.py
+          tests/test_p18_m4_cross_provider_resume.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_p18_m2_crash_matrix.py
+      - name: Verify cross-provider authority remains Gateway-owned
+        shell: pwsh
+        run: |
+          $script = @'
+          from pathlib import Path
+          test = Path('tests/test_p18_m4_cross_provider_final.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          assert 'TARGET_PROVIDERS = ("mimo", "glm_5_2", "minimax_m3", "gpt_5_6")' in test
+          assert 'compatible_version_mismatches=["provider_profile_hash", "model_version"]' in test
+          assert 'version_revalidated=revalidated' in test
+          assert 'GatewayStateStore.open' not in provider
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          print('P18-M4.6 cross-provider authority boundary: PASS')
+          '@
+          $script | python -

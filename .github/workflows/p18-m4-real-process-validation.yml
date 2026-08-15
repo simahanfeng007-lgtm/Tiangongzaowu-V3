@@ -1,0 +1,93 @@
+name: P18 M4 real process burn-in
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  real-process-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile real-process certification
+        run: >-
+          python -m py_compile
+          tests/p18_m4_real_process_worker.py
+          tests/test_p18_m4_real_process.py
+      - name: Run M4.4 real-process cases A-D and F
+        run: python -m pytest -q tests/test_p18_m4_real_process.py
+      - name: Verify harness is test-only and production authority remains singular
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          worker = Path('tests/p18_m4_real_process_worker.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          assert 'GatewayStateStore.open' in worker
+          assert 'RegenerativeExecutionAuthority' in worker
+          assert 'class LongChainRuntime' not in worker
+          assert '_jineng_zhixing' not in worker
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          print('P18-M4.4 real-process architecture boundary: PASS')
+          PY
+
+  real-process-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile real-process certification
+        run: >-
+          python -m py_compile
+          tests/p18_m4_real_process_worker.py
+          tests/test_p18_m4_real_process.py
+      - name: Run M4.4 real-process cases A-F including Windows long-run
+        run: python -m pytest -q tests/test_p18_m4_real_process.py
+      - name: Verify harness is test-only and production authority remains singular
+        shell: pwsh
+        run: |
+          $script = @'
+          from pathlib import Path
+          worker = Path('tests/p18_m4_real_process_worker.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          assert 'GatewayStateStore.open' in worker
+          assert 'RegenerativeExecutionAuthority' in worker
+          assert 'class LongChainRuntime' not in worker
+          assert '_jineng_zhixing' not in worker
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          print('P18-M4.4 real-process architecture boundary: PASS')
+          '@
+          $script | python -
