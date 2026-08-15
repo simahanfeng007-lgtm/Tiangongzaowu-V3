@@ -1,4 +1,4 @@
-name: P18 M2 platform fixture fix
+name: P18 M2 platform fixture diagnostic
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  patch-and-validate:
+  diagnose:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     env:
@@ -23,41 +23,41 @@ jobs:
         with: {python-version: '3.12'}
       - name: Install dependencies
         run: python -m pip install -r requirements-source.lock
-      - name: Close raw sqlite fixture connections explicitly
+      - name: Apply Windows sqlite lifecycle test fix locally
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path('tests/test_p18_m2_regenerative_store.py')
           text = path.read_text(encoding='utf-8')
-          anchor = 'import unittest\nfrom pathlib import Path\n'
-          if text.count(anchor) != 1:
-              raise SystemExit(f'import anchor count={text.count(anchor)}')
-          text = text.replace(anchor, 'import unittest\nfrom contextlib import closing\nfrom pathlib import Path\n', 1)
-          old = '        with sqlite3.connect(self.path) as connection:\n'
-          if text.count(old) != 2:
-              raise SystemExit(f'raw sqlite fixture count={text.count(old)}')
-          text = text.replace(old, '        with closing(sqlite3.connect(self.path)) as connection:\n')
+          text = text.replace('import unittest\nfrom pathlib import Path\n', 'import unittest\nfrom contextlib import closing\nfrom pathlib import Path\n', 1)
+          text = text.replace('        with sqlite3.connect(self.path) as connection:\n', '        with closing(sqlite3.connect(self.path)) as connection:\n')
           path.write_text(text, encoding='utf-8', newline='\n')
           PY
-      - name: Remove Windows diagnostic and one-shot workflow
-        run: git rm -f .github/p18_m2_windows_focused_failure.txt .github/workflows/p18-m2-platform-fixture-fix.yml
-      - name: Run migration and M2 store fixtures
-        run: >-
-          python -m pytest -q
-          tests/test_p18_m2_regenerative_store.py
-          tests/test_gateway_store_migration_004.py
-          tests/test_gateway_store_migration_005.py
-          tests/test_gateway_store_migration_006.py
-          tests/test_gateway_store_migration_007.py
-      - name: Verify source authority
-        run: |
-          python scripts/check-source-authority.py
-          python scripts/sync-generated-sources.py --check-committed
-      - name: Commit test-infrastructure fix
+      - name: Capture migration fixture failures
         shell: bash
         run: |
+          set +e
+          python -m pytest -q --tb=short \
+            tests/test_gateway_store_migration_004.py \
+            tests/test_gateway_store_migration_005.py \
+            tests/test_gateway_store_migration_006.py \
+            tests/test_gateway_store_migration_007.py \
+            > /tmp/migration.log 2>&1
+          code=$?
+          set -e
+          {
+            echo "P18-M2 migration fixture diagnostic"
+            echo "candidate=${GITHUB_SHA}"
+            echo "exit_code=${code}"
+            echo
+            cat /tmp/migration.log
+          } > .github/p18_m2_migration_failure.txt
+      - name: Remove diagnostic workflow and commit report
+        shell: bash
+        run: |
+          git rm -f .github/workflows/p18-m2-platform-fixture-fix.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'P18-M2: fix cross-platform regression fixtures'
+          git add .github/p18_m2_migration_failure.txt
+          git commit -m 'P18-M2: capture migration fixture failure detail'
           git push origin HEAD:agent/p18-m2-regenerative-execution-kernel
