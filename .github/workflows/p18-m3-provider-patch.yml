@@ -15,8 +15,7 @@ env:
   PYTHONIOENCODING: utf-8
 
 jobs:
-  apply-provider-version-guard:
-    if: github.event.head_commit.message == 'P18-M3: install temporary production patch applicator'
+  apply-m3-production-guards:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,47 +23,35 @@ jobs:
           ref: agent/p18-m3-adaptive-control-governance
           fetch-depth: 0
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Apply exact provider patch
+        with:
+          python-version: '3.12'
+      - name: Apply exact M3 production patches
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('src/total_gateway/regenerative_provider.py')
-          source = path.read_text(encoding='utf-8')
+          provider_path = Path('src/total_gateway/regenerative_provider.py')
+          provider = provider_path.read_text(encoding='utf-8')
 
-          old_import = '''from .regenerative_execution import (
-              ExecutionFrontier,
-              derive_attempt_id,
-              derive_logical_effect_id,
-              derive_step_id,
-          )
-          from .store import GatewayStateStore, StoreConflictError, StoreCorruptionError
-          '''
-          new_import = '''from .regenerative_execution import (
-              CHECKPOINT_SCHEMA_VERSION,
-              ExecutionFrontier,
-              derive_attempt_id,
-              derive_logical_effect_id,
-              derive_step_id,
-          )
-          from .regenerative_governance import (
-              evaluate_checkpoint_version_compatibility,
-              version_vector_from_mapping,
-          )
-          from .store import GatewayStateStore, StoreConflictError, StoreCorruptionError
-          '''
-          if source.count(old_import) != 1:
-              raise SystemExit('provider import seam changed; refusing non-exact patch')
-          source = source.replace(old_import, new_import, 1)
+          import_anchor = "from .regenerative_execution import (\n    ExecutionFrontier,"
+          import_replacement = "from .regenerative_execution import (\n    CHECKPOINT_SCHEMA_VERSION,\n    ExecutionFrontier,"
+          if provider.count(import_anchor) != 1:
+              raise SystemExit('provider regenerative import seam changed')
+          provider = provider.replace(import_anchor, import_replacement, 1)
 
-          old_recover = '''        if not recovered.get("recoverable"):
+          store_anchor = "    derive_step_id,\n)\nfrom .store import GatewayStateStore, StoreConflictError, StoreCorruptionError"
+          store_replacement = "    derive_step_id,\n)\nfrom .regenerative_governance import (\n    evaluate_checkpoint_version_compatibility,\n    version_vector_from_mapping,\n)\nfrom .store import GatewayStateStore, StoreConflictError, StoreCorruptionError"
+          if provider.count(store_anchor) != 1:
+              raise SystemExit('provider governance import seam changed')
+          provider = provider.replace(store_anchor, store_replacement, 1)
+
+          recover_anchor = '''        if not recovered.get("recoverable"):
               return {"recoverable": False, "reason": recovered.get("reason")}
           frontier: ExecutionFrontier = recovered["frontier"]
           event, _ = self._store.append_execution_event(
           '''
-          new_recover = '''        if not recovered.get("recoverable"):
+          recover_replacement = '''        if not recovered.get("recoverable"):
               return {"recoverable": False, "resume_allowed": False, "reason": recovered.get("reason")}
           frontier: ExecutionFrontier = recovered["frontier"]
           checkpoint = recovered["checkpoint"]
@@ -88,7 +75,8 @@ jobs:
               checkpoint_vector,
               current_vector,
               compatible_mismatches=tuple(
-                  str(item) for item in (payload.get("compatible_version_mismatches") or ())
+                  str(item)
+                  for item in (payload.get("compatible_version_mismatches") or ())
                   if str(item).strip()
               ),
               migratable_schema_pairs=migratable_pairs,
@@ -117,16 +105,16 @@ jobs:
               }
           event, _ = self._store.append_execution_event(
           '''
-          if source.count(old_recover) != 1:
-              raise SystemExit('provider recover seam changed; refusing non-exact patch')
-          source = source.replace(old_recover, new_recover, 1)
+          if provider.count(recover_anchor) != 1:
+              raise SystemExit('provider recover seam changed')
+          provider = provider.replace(recover_anchor, recover_replacement, 1)
 
-          old_return = '''        return {
+          return_anchor = '''        return {
               "recoverable": True,
               "checkpoint": recovered["checkpoint"].model_dump(mode="json"),
               "frontier": frontier.model_dump(mode="json"),
           '''
-          new_return = '''        return {
+          return_replacement = '''        return {
               "recoverable": True,
               "resume_allowed": True,
               "reconcile_required": False,
@@ -136,24 +124,44 @@ jobs:
               "checkpoint": checkpoint.model_dump(mode="json"),
               "frontier": frontier.model_dump(mode="json"),
           '''
-          if source.count(old_return) != 1:
-              raise SystemExit('provider recovery return seam changed; refusing non-exact patch')
-          source = source.replace(old_return, new_return, 1)
-          path.write_text(source, encoding='utf-8', newline='\n')
+          if provider.count(return_anchor) != 1:
+              raise SystemExit('provider recovery return seam changed')
+          provider = provider.replace(return_anchor, return_replacement, 1)
+          provider_path.write_text(provider, encoding='utf-8', newline='\n')
 
-          workflow = Path('.github/workflows/p18-m3-provider-patch.yml')
-          workflow.unlink()
+          zong_path = Path('app/backend/tiangong-backend/v3/zongdiaodu.py')
+          zong = zong_path.read_text(encoding='utf-8')
+          admission_anchor = '''        return False, ("[epoch_checkpoint_failed] checkpoint persistence failed",)
+          resumed = turn_loop.decide_schedule(
+          '''
+          admission_replacement = '''        return False, ("[epoch_checkpoint_failed] checkpoint persistence failed",)
+          # P18-M3 admission is explicit and only occurs after the authoritative
+          # durable checkpoint seam succeeds. Generic M1 epoch rollover keeps
+          # its historical fixed-budget semantics.
+          turn_loop.activate_adaptive_control()
+          resumed = turn_loop.decide_schedule(
+          '''
+          if zong.count(admission_anchor) != 1:
+              raise SystemExit(f'zong adaptive admission seam count={zong.count(admission_anchor)}')
+          zong = zong.replace(admission_anchor, admission_replacement, 1)
+          zong_path.write_text(zong, encoding='utf-8', newline='\n')
+
+          Path('.github/workflows/p18-m3-provider-patch.yml').unlink()
           PY
-      - name: Verify targeted provider recovery
+      - name: Sync generated source mirrors
+        run: python scripts/sync-generated-sources.py
+      - name: Verify targeted M3 and inherited M1 M2 behavior
         run: |
           python -m pip install -r requirements-source.lock
-          python -m py_compile src/total_gateway/regenerative_provider.py src/total_gateway/regenerative_governance.py
-          python -m pytest -q tests/test_p18_m2_regenerative_provider.py tests/test_p18_m3_version_drift_resume.py
-      - name: Commit exact patch and self-delete applicator
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+          python -m py_compile src/total_gateway/regenerative_provider.py src/total_gateway/regenerative_governance.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/zongdiaodu.py
+          python -m pytest -q tests/test_p18_m3_version_drift_resume.py tests/test_p18_m3_production_control_wiring.py tests/test_p18_m3_learning_poisoning.py tests/test_p18_m2_regenerative_provider.py tests/test_p18_m1_execution_epoch.py tests/test_p18_m1_canonical_continuity.py
+      - name: Commit production patch and remove applicator
         shell: bash
         run: |
           git config user.name "tiangong-p18-m3-bot"
           git config user.email "tiangong-p18-m3-bot@users.noreply.github.com"
           git add -A
-          git commit -m "P18-M3: enforce version compatibility before resume"
+          git commit -m "P18-M3: wire adaptive admission and version-safe resume"
           git push origin HEAD:agent/p18-m3-adaptive-control-governance
