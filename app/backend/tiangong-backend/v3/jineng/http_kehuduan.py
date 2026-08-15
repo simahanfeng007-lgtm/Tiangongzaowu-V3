@@ -618,6 +618,8 @@ class HttpKehuduan:
         on_reasoning_chunk: Callable[[str], None] | None = None,
         prior_assistant_messages: list[Any] | None = None,
         stable_user_message: str | None = None,
+        prior_provider_turn: Any = None,
+        provider_tool_results: list[dict[str, Any]] | None = None,
     ) -> str:
         """Resolve endpoint first, optimize second, then execute one native protocol turn."""
         requested_identity = normalize_provider_identity(
@@ -747,6 +749,13 @@ class HttpKehuduan:
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message,
             )
+            if isinstance(prior_provider_turn, ProviderTurnEnvelope) and provider_tool_results:
+                # Internal transport metadata only. Transports remove these keys
+                # before network release and bind results through ToolCallBinding.
+                payload["__provider_turn"] = prior_provider_turn
+                payload["__provider_tool_results"] = [
+                    dict(item) for item in provider_tool_results if isinstance(item, dict)
+                ]
             audio_paths = self._native_audio_paths.get(())
             if endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value:
                 native_audio_receipt = _inject_native_audio_input(payload, audio_paths)
@@ -929,7 +938,7 @@ class HttpKehuduan:
         """返回 Gutong 使用的 LLM 回调；provider 参数保持真实配置身份。"""
         if provider_id:
             identity = normalize_provider_identity(provider_id)
-            return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+            return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None, prior_provider_turn=None, provider_tool_results=None: self.llm_diaoyong(
                 system,
                 user,
                 identity,
@@ -937,14 +946,18 @@ class HttpKehuduan:
                 on_reasoning_chunk=on_reasoning_chunk,
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message,
+                prior_provider_turn=prior_provider_turn,
+                provider_tool_results=provider_tool_results,
             )
-        return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None: self.llm_diaoyong(
+        return lambda system, user, on_text_chunk=None, on_reasoning_chunk=None, prior_assistant_messages=None, stable_user_message=None, prior_provider_turn=None, provider_tool_results=None: self.llm_diaoyong(
             system,
             user,
             on_text_chunk=on_text_chunk,
             on_reasoning_chunk=on_reasoning_chunk,
             prior_assistant_messages=prior_assistant_messages,
             stable_user_message=stable_user_message,
+            prior_provider_turn=prior_provider_turn,
+            provider_tool_results=provider_tool_results,
         )
 
     def guanbi(self):

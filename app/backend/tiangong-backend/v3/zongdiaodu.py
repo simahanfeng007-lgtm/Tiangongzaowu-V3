@@ -7866,7 +7866,10 @@ class Zongdiaodu:
                 raise holder["error"]
             return holder["value"]
 
-        def _llm_jixu_scoped(payload: Any, on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
+        def _llm_jixu_scoped(
+            payload: Any, on_chunk=None, on_reasoning_chunk=None,
+            provider_turn: Any = None, provider_tool_results: list[dict[str, Any]] | None = None,
+        ) -> tuple[ShentiZhuangtai, str]:
             prior_texts: list[str] = []
             for item in quality_history:
                 if not isinstance(item, dict):
@@ -7887,6 +7890,8 @@ class Zongdiaodu:
                             on_reasoning_chunk=on_reasoning_chunk,
                             assistant_messages=prior_texts,
                             stable_user_message=cache_stable_user_message,
+                            provider_turn=provider_turn,
+                            provider_tool_results=provider_tool_results,
                         )
                 return self.gutong.jixu(
                     system_tishi, payload, shenti, xiaoxi,
@@ -7894,6 +7899,8 @@ class Zongdiaodu:
                     on_reasoning_chunk=on_reasoning_chunk,
                     assistant_messages=prior_texts,
                     stable_user_message=cache_stable_user_message,
+                    provider_turn=provider_turn,
+                    provider_tool_results=provider_tool_results,
                 )
 
             holder: dict[str, Any] = {}
@@ -8916,6 +8923,11 @@ class Zongdiaodu:
                         _simple_chain_model_payload(combined),
                         on_chunk=_on_text_chunk,
                         on_reasoning_chunk=_on_reasoning_chunk,
+                        provider_turn=huifu,
+                        provider_tool_results=[
+                            raw for _tn, _ta, raw, _call_id, _index in parallel_results
+                            if isinstance(raw, dict)
+                        ],
                     )
                 except Exception as exc:
                     final_guard_exhausted = True
@@ -9701,6 +9713,8 @@ class Zongdiaodu:
                     model_quality_payload,
                     on_chunk=_on_text_chunk,
                     on_reasoning_chunk=_on_reasoning_chunk,
+                    provider_turn=huifu,
+                    provider_tool_results=[gongju_jieguo] if isinstance(gongju_jieguo, dict) else None,
                 )
             except Exception as exc:
                 final_guard_exhausted = True
