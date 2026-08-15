@@ -135,8 +135,8 @@ class CorruptionRig:
             run_id=self.run_id,
             generation=self.generation,
             epoch_index=0,
-            event_type="m4.certification",
-            payload={"key": key},
+            event_type="step.observed",
+            payload={"key": key, "certification_fault_probe": True},
             created_at_ms=now_ms,
         )
         assert created is True
@@ -348,8 +348,8 @@ def test_m4_concurrent_ledger_writers_preserve_unique_monotonic_sequence() -> No
                     run_id=rig.run_id,
                     generation=rig.generation,
                     epoch_index=0,
-                    event_type="m4.concurrent-certification",
-                    payload={"writer": writer_no},
+                    event_type="step.observed",
+                    payload={"writer": writer_no, "certification_concurrency_probe": True},
                     created_at_ms=2100 + writer_no,
                 )
                 assert created is True
