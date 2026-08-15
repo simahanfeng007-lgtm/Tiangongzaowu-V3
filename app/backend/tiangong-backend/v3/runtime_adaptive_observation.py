@@ -1,8 +1,8 @@
 """Pure adapter from existing runtime observations into P18-M3 control signals.
 
 No probing, persistence, scheduling, Store access, tool execution, or synthetic
-telemetry lives here.  Callers must provide values already observed by the
-existing authoritative runtime.  Unknown dimensions remain neutral.
+telemetry lives here. Callers must provide values already observed by the
+existing authoritative runtime. Unknown dimensions remain neutral.
 """
 from __future__ import annotations
 
@@ -46,14 +46,10 @@ class EpochRealityObservation:
         return max(0, int(self.successful_tools)) + max(0, int(self.failed_tools))
 
     @property
-    def readonly_stable(self) -> bool:
-        return bool(
-            self.successful_tools > 0
-            and self.failed_tools <= 0
-            and self.mutating_successes <= 0
-            and self.read_only_successes >= self.successful_tools
-            and self.ambiguous_effects <= 0
-        )
+    def readonly_fraction(self) -> float:
+        if self.tool_total <= 0:
+            return 0.0
+        return _unit(float(max(0, int(self.read_only_successes))) / float(self.tool_total))
 
 
 def horizon_metrics_from_observation(observation: EpochRealityObservation) -> HorizonControlMetrics:
@@ -67,7 +63,11 @@ def horizon_metrics_from_observation(observation: EpochRealityObservation) -> Ho
         + max(0, int(observation.pending_effects))
         + max(0, int(observation.ambiguous_effects))
     )
-    checkpoint_cost = _unit(float(observation.checkpoint_commit_latency_seconds) / 5.0)
+    checkpoint_pressure = _unit(float(observation.checkpoint_commit_latency_seconds) / 5.0)
+    # Keep checkpoint_cost strictly positive because the existing controller
+    # treats it as a cost term, while latency pressure carries the normalized
+    # wall-clock observation.
+    checkpoint_cost = max(0.001, float(observation.checkpoint_commit_latency_seconds))
     progress_velocity = _unit(float(observation.progress_delta) / max(1.0, float(total)))
     return HorizonControlMetrics(
         tool_failure_rate=_unit(float(observation.failed_tools) / float(total)),
@@ -75,11 +75,11 @@ def horizon_metrics_from_observation(observation: EpochRealityObservation) -> Ho
         repeat_risk=_unit(float(observation.repeat_peak) / 3.0),
         ambiguous_effect_rate=_unit(float(observation.ambiguous_effects) / float(effect_total)),
         checkpoint_cost=checkpoint_cost,
-        recovery_cost=0.0,
+        recovery_cost=1.0,
         frontier_complexity=_unit(float(frontier_units) / 20.0),
         progress_velocity=progress_velocity,
-        checkpoint_commit_latency=checkpoint_cost,
-        readonly=observation.readonly_stable,
+        checkpoint_commit_latency_pressure=checkpoint_pressure,
+        readonly_fraction=observation.readonly_fraction,
     )
 
 
