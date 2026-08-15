@@ -36,12 +36,14 @@ jobs:
           tests/test_p18_m4_deterministic_1000_step.py
           tests/test_p18_m4_persistence_corruption.py
           tests/test_p18_m4_cross_provider_resume.py
-      - name: Run M4 deterministic and corruption certification regressions
+          tests/test_p18_m4_corruption_matrix.py
+      - name: Run M4 deterministic and 20-case corruption certification regressions
         run: >-
           python -m pytest -q
           tests/test_p18_m4_deterministic_1000_step.py
           tests/test_p18_m4_persistence_corruption.py
           tests/test_p18_m4_cross_provider_resume.py
+          tests/test_p18_m4_corruption_matrix.py
           tests/test_p18_m3_adaptive_control.py
           tests/test_p18_m3_turn_loop_adaptive.py
           tests/test_p18_m3_adaptive_governance.py
@@ -92,6 +94,7 @@ jobs:
           from pathlib import Path
           harness = Path('tests/p18_m4_deterministic_harness.py').read_text(encoding='utf-8')
           corruption = Path('tests/test_p18_m4_persistence_corruption.py').read_text(encoding='utf-8')
+          matrix = Path('tests/test_p18_m4_corruption_matrix.py').read_text(encoding='utf-8')
           cross_provider = Path('tests/test_p18_m4_cross_provider_resume.py').read_text(encoding='utf-8')
           runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
           provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
@@ -102,6 +105,8 @@ jobs:
           assert 'sqlite3.connect' in corruption
           assert 'recover_execution_ledger_tail' in corruption
           assert 'load_regenerative_checkpoint' in corruption
+          assert 'M4_CORRUPTION_MATRIX' in matrix
+          assert 'list(range(1, 21))' in matrix
           assert 'compatible_version_mismatches=["provider_profile_hash", "model_version"]' in cross_provider
           assert 'version_revalidated=revalidated' in cross_provider
           assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
@@ -132,12 +137,14 @@ jobs:
           tests/test_p18_m4_deterministic_1000_step.py
           tests/test_p18_m4_persistence_corruption.py
           tests/test_p18_m4_cross_provider_resume.py
-      - name: Run M4 deterministic and corruption certification regressions
+          tests/test_p18_m4_corruption_matrix.py
+      - name: Run M4 deterministic and 20-case corruption certification regressions
         run: >-
           python -m pytest -q
           tests/test_p18_m4_deterministic_1000_step.py
           tests/test_p18_m4_persistence_corruption.py
           tests/test_p18_m4_cross_provider_resume.py
+          tests/test_p18_m4_corruption_matrix.py
           tests/test_p18_m3_adaptive_control.py
           tests/test_p18_m3_turn_loop_adaptive.py
           tests/test_p18_m3_adaptive_governance.py
@@ -189,6 +196,7 @@ jobs:
           from pathlib import Path
           harness = Path('tests/p18_m4_deterministic_harness.py').read_text(encoding='utf-8')
           corruption = Path('tests/test_p18_m4_persistence_corruption.py').read_text(encoding='utf-8')
+          matrix = Path('tests/test_p18_m4_corruption_matrix.py').read_text(encoding='utf-8')
           cross_provider = Path('tests/test_p18_m4_cross_provider_resume.py').read_text(encoding='utf-8')
           runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
           provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
@@ -199,6 +207,8 @@ jobs:
           assert 'sqlite3.connect' in corruption
           assert 'recover_execution_ledger_tail' in corruption
           assert 'load_regenerative_checkpoint' in corruption
+          assert 'M4_CORRUPTION_MATRIX' in matrix
+          assert 'list(range(1, 21))' in matrix
           assert 'compatible_version_mismatches=["provider_profile_hash", "model_version"]' in cross_provider
           assert 'version_revalidated=revalidated' in cross_provider
           assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
