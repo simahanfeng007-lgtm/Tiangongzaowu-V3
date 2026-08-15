@@ -7,7 +7,6 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from .model_transport_anthropic import AnthropicMessagesTransport
-from .model_transport_contract import StreamState
 from .model_transport_openai_chat import OpenAIChatTransport
 from .model_transport_openai_responses import OpenAIResponsesTransport
 
@@ -52,12 +51,16 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
 
     The probe never upgrades unknown capabilities unless the endpoint actually
     accepts the tested shape. Tool support remains false until a dedicated tool
-    probe succeeds; a chat/text success alone does not imply function calling.
+    probe succeeds; a text success alone does not imply function calling.
     """
     transport = get_model_transport(endpoint.protocol_family)
     payload = transport.probe_payload(endpoint)
-    request = transport.build_request(endpoint, api_key, payload)
-    request.payload["stream"] = False
+    # probe_payload() is already native for its protocol. Do not feed it back
+    # through a canonical-request converter, otherwise Responses/Anthropic
+    # fields would be accidentally rewritten as Chat input.
+    url = transport.build_url(endpoint)
+    headers = transport.build_headers(endpoint, api_key)
+    payload["stream"] = False
     started = time.monotonic()
     result = {
         "endpoint_reachable": False,
@@ -72,13 +75,13 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
         "continuation_supported": False,
         "probe_evidence": {
             "protocol_family": endpoint.protocol_family,
-            "url": request.url,
+            "url": url,
             "http_status": None,
             "latency_ms": None,
         },
     }
     try:
-        response = client.post(request.url, headers=request.headers, json=request.payload, timeout=timeout)
+        response = client.post(url, headers=headers, json=payload, timeout=timeout)
         status = int(getattr(response, "status_code", 0) or 0)
         result["probe_evidence"]["http_status"] = status
         result["endpoint_reachable"] = status > 0
