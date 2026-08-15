@@ -1,0 +1,184 @@
+name: P18 M4 adversarial certification
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PYTHONHASHSEED: '0'
+
+jobs:
+  m4-foundation-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      TIANGONG_CI_ENV: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile M4 certification foundation
+        run: >-
+          python -m py_compile
+          tests/p18_m4_deterministic_harness.py
+          tests/test_p18_m4_deterministic_1000_step.py
+      - name: Run M4 deterministic harness and inherited authority regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m4_deterministic_1000_step.py
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_p18_m2_regenerative_provider.py
+          tests/test_p18_m2_crash_matrix.py
+          tests/test_p18_m1_execution_epoch.py
+          tests/test_completion_gate.py
+      - name: Emit deterministic M4.1-M4.2 report
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'tests')
+          from p18_m4_deterministic_harness import DeterministicLongHorizonHarness
+          report = DeterministicLongHorizonHarness().run()
+          payload = {
+              'tool_steps': report.tool_steps,
+              'model_decision_rounds': report.model_decision_rounds,
+              'epoch_count': report.epoch_count,
+              'checkpoint_count': report.checkpoint_count,
+              'fault_steps_seen': report.fault_steps_seen,
+              'duplicate_prevented_count': report.duplicate_prevented_count,
+              'false_completion_rejected': report.false_completion_rejected,
+              'learning_promotion_rejected': report.learning_promotion_rejected,
+              'prompt_injection_blocked': report.prompt_injection_blocked,
+              'torn_tail_recovered': report.torn_tail_recovered,
+              'checkpoint_fallback_count': report.checkpoint_fallback_count,
+              'max_model_working_set': report.max_model_working_set,
+              'max_snapshot_items': report.max_snapshot_items,
+              'hard_metrics': report.metrics.zero_violation_contract(),
+          }
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          assert report.metrics.is_clean()
+          print('P18-M4.1/M4.2 deterministic certification: PASS')
+          PY
+      - name: Verify M4 architecture boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          harness = Path('tests/p18_m4_deterministic_harness.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          zong = Path('app/backend/tiangong-backend/v3/zongdiaodu.py').read_text(encoding='utf-8')
+          assert 'from v3.runtime_turn_orchestration import TurnLoopState' in harness
+          for token in ('GatewayStateStore.open', 'sqlite3.connect', 'subprocess.run', '_jineng_zhixing', 'class LongChainRuntime'):
+              assert token not in harness
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          assert '_simple_chain_regenerative_execute_tool(' in zong
+          assert '_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS' in zong
+          print('P18-M4 foundation architecture boundary: PASS')
+          PY
+
+  m4-foundation-windows:
+    runs-on: windows-latest
+    env:
+      TIANGONG_CI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install source runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify source authority and generated mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Compile M4 certification foundation
+        run: >-
+          python -m py_compile
+          tests/p18_m4_deterministic_harness.py
+          tests/test_p18_m4_deterministic_1000_step.py
+      - name: Run M4 deterministic harness and inherited authority regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p18_m4_deterministic_1000_step.py
+          tests/test_p18_m3_adaptive_control.py
+          tests/test_p18_m3_turn_loop_adaptive.py
+          tests/test_p18_m3_adaptive_governance.py
+          tests/test_p18_m3_production_control_wiring.py
+          tests/test_p18_m3_runtime_observation.py
+          tests/test_p18_m3_tool_result_poisoning.py
+          tests/test_p18_m3_learning_poisoning.py
+          tests/test_p18_m3_known_fact_freshness.py
+          tests/test_p18_m3_version_drift_resume.py
+          tests/test_p18_m2_regenerative_provider.py
+          tests/test_p18_m2_crash_matrix.py
+          tests/test_p18_m1_execution_epoch.py
+          tests/test_completion_gate.py
+      - name: Emit deterministic M4.1-M4.2 report
+        shell: pwsh
+        run: |
+          $script = @'
+          import json, sys
+          sys.path.insert(0, 'tests')
+          from p18_m4_deterministic_harness import DeterministicLongHorizonHarness
+          report = DeterministicLongHorizonHarness().run()
+          payload = {
+              'tool_steps': report.tool_steps,
+              'model_decision_rounds': report.model_decision_rounds,
+              'epoch_count': report.epoch_count,
+              'checkpoint_count': report.checkpoint_count,
+              'fault_steps_seen': report.fault_steps_seen,
+              'duplicate_prevented_count': report.duplicate_prevented_count,
+              'false_completion_rejected': report.false_completion_rejected,
+              'learning_promotion_rejected': report.learning_promotion_rejected,
+              'prompt_injection_blocked': report.prompt_injection_blocked,
+              'torn_tail_recovered': report.torn_tail_recovered,
+              'checkpoint_fallback_count': report.checkpoint_fallback_count,
+              'max_model_working_set': report.max_model_working_set,
+              'max_snapshot_items': report.max_snapshot_items,
+              'hard_metrics': report.metrics.zero_violation_contract(),
+          }
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          assert report.metrics.is_clean()
+          print('P18-M4.1/M4.2 deterministic certification: PASS')
+          '@
+          $script | python -
+      - name: Verify M4 architecture boundary
+        shell: pwsh
+        run: |
+          $script = @'
+          from pathlib import Path
+          harness = Path('tests/p18_m4_deterministic_harness.py').read_text(encoding='utf-8')
+          runtime = Path('src/total_gateway/runtime.py').read_text(encoding='utf-8')
+          provider = Path('src/total_gateway/regenerative_provider.py').read_text(encoding='utf-8')
+          zong = Path('app/backend/tiangong-backend/v3/zongdiaodu.py').read_text(encoding='utf-8')
+          assert 'from v3.runtime_turn_orchestration import TurnLoopState' in harness
+          for token in ('GatewayStateStore.open', 'sqlite3.connect', 'subprocess.run', '_jineng_zhixing', 'class LongChainRuntime'):
+              assert token not in harness
+          assert 'RegenerativeExecutionAuthority(runtime.store)' in runtime
+          assert 'GatewayStateStore.open' not in provider
+          assert '_simple_chain_regenerative_execute_tool(' in zong
+          assert '_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS' in zong
+          print('P18-M4 foundation architecture boundary: PASS')
+          '@
+          $script | python -
