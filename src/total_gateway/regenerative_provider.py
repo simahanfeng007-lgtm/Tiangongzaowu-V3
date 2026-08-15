@@ -412,7 +412,47 @@ class RegenerativeExecutionAuthority:
             return {"dispatch_permitted": False, "disposition": "already_committed", "effect_state": record.state}
         if record.state in _RECONCILE_REQUIRED_EFFECT_STATES:
             return {"dispatch_permitted": False, "disposition": "reconcile_required", "effect_state": record.state}
-        started = self._store.mark_effect_started(effect_id, started_at_ms=now_ms)
+        fence = self._store.action_fence_status()
+        dispatch_nonce = canonical_sha256({
+            "domain": "tiangong.gateway.regenerative-dispatch-permit.v1",
+            "request_id": identity.request_id,
+            "run_id": identity.run_id,
+            "generation": identity.generation,
+            "effect_id": effect_id,
+            "attempt_id": attempt_id,
+            "step_id": step_id,
+        })
+        try:
+            permit = self._store.acquire_dispatch_permit(
+                effect_id=effect_id,
+                attempt=1,
+                expected_fence_epoch=int(fence["action_fence_epoch"]),
+                nonce_sha256=dispatch_nonce,
+                now_ms=now_ms,
+            )
+        except StoreConflictError:
+            current = self._store.get_effect(effect_id)
+            if current is None:
+                raise
+            if current.state in _TERMINAL_COMMITTED_EFFECT_STATES:
+                return {
+                    "dispatch_permitted": False,
+                    "disposition": "already_committed",
+                    "effect_state": current.state,
+                }
+            if current.state in _RECONCILE_REQUIRED_EFFECT_STATES:
+                disposition = (
+                    "in_flight" if current.state == "SIDE_EFFECT_STARTED" else "reconcile_required"
+                )
+                return {
+                    "dispatch_permitted": False,
+                    "disposition": disposition,
+                    "effect_state": current.state,
+                }
+            raise
+        started = self._store.get_effect(effect_id)
+        if started is None or started.state != "SIDE_EFFECT_STARTED":
+            raise StoreCorruptionError("dispatch permit did not advance canonical Effect head")
         event, _ = self._store.append_execution_event(
             event_key=f"step.dispatched:{step_id}:{attempt_id}",
             request_id=identity.request_id,
@@ -421,7 +461,11 @@ class RegenerativeExecutionAuthority:
             epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
             event_type="step.dispatched",
             created_at_ms=now_ms,
-            payload={"effect_state": started.state, "dispatch_boundary": "durably_started_before_handler"},
+            payload={
+                "effect_state": started.state,
+                "dispatch_boundary": "action_fence_permit_before_handler",
+                "fence_epoch": int(permit["fence_epoch"]),
+            },
             logical_effect_id=logical_effect_id,
             attempt_id=attempt_id,
             step_id=step_id,
@@ -561,7 +605,9 @@ class RegenerativeExecutionAuthority:
             if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
         ))
         actual_ambiguous = tuple(sorted(
-            record.claim.effect_id for record in effects if record.state == "AMBIGUOUS"
+            record.claim.effect_id for record in effects
+            if record.state == "AMBIGUOUS"
+            and self._store.latest_effect_verdict(record.claim.effect_id, 1) != "APPLIED"
         ))
         if actual_pending != frontier.pending_effect_ids or actual_ambiguous != frontier.ambiguous_effect_ids:
             raise StoreConflictError("frontier effect projection disagrees with canonical Effect Ledger")
@@ -630,7 +676,9 @@ class RegenerativeExecutionAuthority:
             record.claim.effect_id for record in effects if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
         ))
         actual_ambiguous = tuple(sorted(
-            record.claim.effect_id for record in effects if record.state == "AMBIGUOUS"
+            record.claim.effect_id for record in effects
+            if record.state == "AMBIGUOUS"
+            and self._store.latest_effect_verdict(record.claim.effect_id, 1) != "APPLIED"
         ))
         if actual_pending != frontier.pending_effect_ids or actual_ambiguous != frontier.ambiguous_effect_ids:
             return {
@@ -993,7 +1041,11 @@ class RegenerativeExecutionAuthority:
         )
         if any(record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"} for record in effects):
             reasons.append("effect_ledger_pending")
-        if any(record.state == "AMBIGUOUS" for record in effects):
+        if any(
+            record.state == "AMBIGUOUS"
+            and self._store.latest_effect_verdict(record.claim.effect_id, 1) != "APPLIED"
+            for record in effects
+        ):
             reasons.append("effect_reconciliation_required")
         for reason in payload.get("runtime_blockers", ()):
             value = str(reason).strip()

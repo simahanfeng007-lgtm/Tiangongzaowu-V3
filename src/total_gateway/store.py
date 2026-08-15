@@ -5933,7 +5933,9 @@ class GatewayStateStore:
             if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
         ))
         ambiguous = tuple(sorted(
-            record.claim.effect_id for record in effects if record.state == "AMBIGUOUS"
+            record.claim.effect_id for record in effects
+            if record.state == "AMBIGUOUS"
+            and self.latest_effect_verdict(record.claim.effect_id, 1) != "APPLIED"
         ))
         return {
             "recoverable": True,
