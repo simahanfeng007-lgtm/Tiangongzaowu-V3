@@ -6,7 +6,14 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
-from .model_transport_contract import StreamState, TransportRequest, content_text, json_output
+from .model_transport_contract import (
+    StreamState,
+    TransportRequest,
+    content_text,
+    drop_last_role_messages,
+    extract_native_roundtrip_context,
+    json_output,
+)
 from .model_transport_openai_chat import _legacy_wire
 
 
@@ -72,19 +79,43 @@ class AnthropicMessagesTransport:
         return "\n\n".join(part for part in system_parts if part), output
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
-        system, messages = self._convert_messages(canonical_payload.get("messages"))
+        canonical = dict(canonical_payload)
+        native = extract_native_roundtrip_context(canonical, endpoint)
+        source_messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
+        if native is not None:
+            source_messages = drop_last_role_messages(source_messages, role="assistant", count=len(native.results))
+        system, messages = self._convert_messages(source_messages)
+
+        if native is not None:
+            opaque = native.turn.provider_continuation_state.opaque_payload
+            opaque = opaque if isinstance(opaque, Mapping) else {}
+            replay_blocks = opaque.get("assistant_content_blocks") if isinstance(opaque.get("assistant_content_blocks"), list) else []
+            if replay_blocks:
+                assistant_content: list[dict[str, Any]] = []
+                if native.turn.visible_text:
+                    assistant_content.append({"type": "text", "text": native.turn.visible_text})
+                assistant_content.extend(dict(item) for item in replay_blocks if isinstance(item, Mapping))
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        self.encode_tool_result(result, binding.as_dict())
+                        for binding, result in zip(native.bindings, native.results, strict=True)
+                    ],
+                })
+
         payload: dict[str, Any] = {
-            "model": endpoint.model_name or str(canonical_payload.get("model") or ""),
+            "model": endpoint.model_name or str(canonical.get("model") or ""),
             "messages": messages,
-            "max_tokens": int(canonical_payload.get("max_tokens") or canonical_payload.get("max_output_tokens") or 8192),
+            "max_tokens": int(canonical.get("max_tokens") or canonical.get("max_completion_tokens") or canonical.get("max_output_tokens") or 8192),
             "stream": True,
         }
         if system:
             payload["system"] = system
-        tools = self._convert_tools(canonical_payload.get("tools"))
+        tools = self._convert_tools(canonical.get("tools"))
         if tools:
             payload["tools"] = tools
-        choice = canonical_payload.get("tool_choice")
+        choice = canonical.get("tool_choice")
         if choice == "auto":
             payload["tool_choice"] = {"type": "auto"}
         elif choice == "required":
@@ -94,10 +125,10 @@ class AnthropicMessagesTransport:
                 payload["tool_choice"] = {"type": "tool", "name": str(choice["function"].get("name") or "")}
             else:
                 payload["tool_choice"] = dict(choice)
-        thinking = canonical_payload.get("thinking")
+        thinking = canonical.get("thinking")
         if isinstance(thinking, Mapping):
-            # Only forward provider-native-looking thinking controls. Unknown
-            # raw modes are deliberately left absent by capability resolution.
+            # Only provider-native looking controls are forwarded. Private
+            # reasoning text is never converted into an Anthropic content block.
             payload["thinking"] = dict(thinking)
         return TransportRequest(self.build_url(endpoint), self.build_headers(endpoint, api_key), payload, self.protocol_family)
 
@@ -147,7 +178,6 @@ class AnthropicMessagesTransport:
                 if target is None:
                     key = f"index_{index}"
                     target = state.tool_items.setdefault(key, {"id": "", "name": "", "arguments_text": "", "sequence_index": index})
-                # Anthropic sends partial_json chunks that reconstruct one JSON object.
                 if target.get("arguments_text") in {"{}", ""}:
                     target["arguments_text"] = ""
                 target["arguments_text"] += str(delta.get("partial_json") or "")
