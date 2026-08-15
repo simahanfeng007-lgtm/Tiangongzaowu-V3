@@ -8,6 +8,11 @@ from typing import Protocol
 
 from .execution_integrity import decide_task_contract_completion
 from .run_context import current_run_context
+from .runtime_adaptive_governance import (
+    InstructionSourcePriority,
+    TOOL_RESULT_DATA,
+    UNTRUSTED_DATA,
+)
 from .tool_result_contract import normalize_tool_result
 
 
@@ -25,8 +30,16 @@ class EvidenceCheckPort(Protocol):
 
 
 def canonical_tool_result(tool_name: str, result: object) -> dict[str, object]:
-    """Return the one canonical ToolResult contract; this boundary owns no schema."""
-    return normalize_tool_result(tool_name, result)
+    """Return the one canonical ToolResult contract with fail-closed authority metadata."""
+    contract = dict(normalize_tool_result(tool_name, result))
+    # Tool output is evidence/data, never a control-plane instruction.  These
+    # fields are injected by the trusted runtime boundary after tool execution;
+    # tool-controlled payload text cannot upgrade them.
+    contract["trust_class"] = UNTRUSTED_DATA
+    contract["instruction_source"] = TOOL_RESULT_DATA
+    contract["instruction_priority"] = int(InstructionSourcePriority.TOOL_RESULT_DATA)
+    contract["may_change_authority"] = False
+    return contract
 
 
 def project_tool_dispatch(
