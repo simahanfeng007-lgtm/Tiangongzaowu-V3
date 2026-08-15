@@ -52,17 +52,17 @@ SERVICE_PRESETS: dict[str, ServicePreset] = {
         "gpt-5.6",
     ),
     "deepseek": ServicePreset(
-        "deepseek", "deepseek_v4", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
+        "deepseek", "deepseek", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
         {ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://api.deepseek.com/v1"},
         "deepseek-v4-pro",
     ),
     "zhipu": ServicePreset(
-        "zhipu", "glm_5_2", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
+        "zhipu", "zhipu", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
         {ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://open.bigmodel.cn/api/paas/v4"},
         "glm-5.2",
     ),
     "minimax": ServicePreset(
-        "minimax", "minimax_m3", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
+        "minimax", "minimax", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
         {ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://api.minimaxi.com/v1"},
         "MiniMax-M3",
     ),
@@ -265,12 +265,15 @@ def duqu_model_endpoint_config(provider_identity: str | None = None) -> ModelEnd
     # endpoint/protocol/model authority has been fixed.
     optimization_family = peizhi.infer_provider_id(literal_provider, base_url, model_name)
 
-    reasoning_mode = ""
-    try:
-        reasoning = peizhi.duqu_model_reasoning_config(optimization_family, base_url, model_name)
-        reasoning_mode = str(reasoning.get("configured_mode") or "")
-    except Exception:
-        reasoning_mode = ""
+    # Endpoint-scoped raw reasoning is authoritative for unknown models. Known
+    # model family settings remain compatible with the existing L4 config.
+    reasoning_mode = str(profile.get("reasoning_mode") or "").strip()
+    if not reasoning_mode:
+        try:
+            reasoning = peizhi.duqu_model_reasoning_config(optimization_family, base_url, model_name)
+            reasoning_mode = str(reasoning.get("configured_mode") or "")
+        except Exception:
+            reasoning_mode = ""
 
     fingerprint_payload = {
         "service_preset": service_preset,

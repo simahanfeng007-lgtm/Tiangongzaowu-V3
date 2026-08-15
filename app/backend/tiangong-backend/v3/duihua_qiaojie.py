@@ -3382,6 +3382,7 @@ def _openai_chat_completion(qiaojie, payload: dict) -> dict:
 
 
 
+
 def _llm_settings() -> dict:
     """Return P18.1 endpoint authority plus legacy UI projections."""
     from .endpoint_security import validate_model_endpoint
@@ -3527,6 +3528,7 @@ def _llm_match_display_name(match: dict, raw_provider: str, provider_display_nam
 
 
 
+
 def _save_llm_settings(payload: dict) -> dict:
     """Persist endpoint/protocol identity without allowing family write-back."""
     from .endpoint_security import validate_model_endpoint
@@ -3551,7 +3553,6 @@ def _save_llm_settings(payload: dict) -> dict:
         provider_match_info,
         save_model_reasoning_config,
     )
-    from .settings_persistence import atomic_write_json
 
     api_key = str(payload.get("modelApiKey") or payload.get("api_key") or "").strip()
     if api_key:
@@ -3680,7 +3681,7 @@ def _save_llm_settings(payload: dict) -> dict:
         except ValueError as exc:
             return {"ok": False, "error": str(exc), "error_code": "model_reasoning_mode_unsupported"}
 
-    atomic_write_json(API_PEIZHI_LUJING, data)
+    _atomic_write_json(API_PEIZHI_LUJING, data)
     result = _llm_settings()
     match = provider_match_info(identity_provider, base_url, model_name)
     matched_display_name = _llm_match_display_name(match, identity_provider, l4_provider_display_name(optimization_family))

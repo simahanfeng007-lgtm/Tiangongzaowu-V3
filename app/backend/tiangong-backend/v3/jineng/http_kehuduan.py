@@ -793,6 +793,8 @@ class HttpKehuduan:
             )
             raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
             reasoning_trace.update(raw_reasoning_trace)
+            raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
+            reasoning_trace.update(raw_reasoning_trace)
             if isinstance(optimization_trace, dict):
                 optimization_trace.update(reasoning_trace)
                 optimization_trace.update(_cache_prefix_observation(payload))
