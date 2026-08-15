@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 from ..model_endpoint import ModelEndpointConfig
-from ..model_protocol_contract import ProviderTurnEnvelope
+from ..model_protocol_contract import ProviderTurnEnvelope, ToolCallBinding
 
 
 @dataclass(slots=True)
@@ -40,6 +40,20 @@ class StreamState:
     @property
     def private_reasoning(self) -> str:
         return "".join(self.reasoning_parts)
+
+
+@dataclass(frozen=True, slots=True)
+class NativeRoundtripContext:
+    """Ephemeral same-provider binding for exactly one tool-result continuation.
+
+    It is built from the immediately preceding ProviderTurnEnvelope and the
+    Runtime's already-produced canonical results.  It is never persisted and
+    never becomes task/continuity authority.
+    """
+
+    turn: ProviderTurnEnvelope
+    bindings: tuple[ToolCallBinding, ...]
+    results: tuple[dict[str, Any], ...]
 
 
 class ModelTransport(Protocol):
@@ -89,3 +103,59 @@ def bounded_items(items: Iterable[Mapping[str, Any]], limit: int = 32) -> list[d
         if len(out) >= max(1, limit):
             break
     return out
+
+
+def extract_native_roundtrip_context(
+    payload: dict[str, Any],
+    endpoint: ModelEndpointConfig,
+) -> NativeRoundtripContext | None:
+    """Remove internal metadata and return a verified exact binding context.
+
+    Failure is deliberately conservative: internal keys are always stripped,
+    and no native continuation is emitted unless provider/protocol/model match
+    and the number of Runtime results exactly equals the number of provider
+    ToolCallBindings.  There is no text/name based call-id guessing.
+    """
+    turn = payload.pop("__provider_turn", None)
+    raw_results = payload.pop("__provider_tool_results", None)
+    if not isinstance(turn, ProviderTurnEnvelope) or not isinstance(raw_results, Sequence):
+        return None
+    results = tuple(dict(item) for item in raw_results if isinstance(item, Mapping))
+    bindings = tuple(sorted(turn.tool_call_bindings, key=lambda item: int(item.sequence_index)))
+    if not results or not bindings or len(results) != len(bindings):
+        return None
+    if (
+        turn.provider_identity != endpoint.provider_identity
+        or turn.protocol_family != endpoint.protocol_family
+        or turn.model_id != endpoint.model_name
+    ):
+        return None
+    continuation = turn.provider_continuation_state
+    if not continuation.compatible_with(
+        provider_identity=endpoint.provider_identity,
+        protocol_family=endpoint.protocol_family,
+        model_id=endpoint.model_name,
+    ):
+        return None
+    return NativeRoundtripContext(turn=turn, bindings=bindings, results=results)
+
+
+def drop_last_role_messages(
+    messages: Sequence[Any],
+    *,
+    role: str,
+    count: int,
+) -> list[Any]:
+    """Drop the newest N legacy messages only after native binding is verified."""
+    output = list(messages)
+    remaining = max(0, int(count))
+    if not remaining:
+        return output
+    for index in range(len(output) - 1, -1, -1):
+        item = output[index]
+        if isinstance(item, Mapping) and str(item.get("role") or "") == role:
+            del output[index]
+            remaining -= 1
+            if remaining <= 0:
+                break
+    return output
