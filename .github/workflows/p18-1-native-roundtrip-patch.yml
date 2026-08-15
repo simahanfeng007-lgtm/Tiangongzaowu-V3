@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   patch-existing-production-chain:
-    if: ${{ !startsWith(github.event.head_commit.message, 'C4 P18.1: apply native roundtrip patch') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'C4 P18.1: apply native roundtrip patch') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
