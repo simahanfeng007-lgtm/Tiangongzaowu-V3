@@ -8,16 +8,31 @@ from total_gateway import store as store_module
 
 
 def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
-    """Undo only the additive/rebuild v12 test fixture layer.
+    """Undo current additive layers through the exact v12 fixture, then rebuild v11.
 
     Migration tests start from the current schema so they can preserve selected
     rows, then reconstruct an older on-disk version.  Because v12 rebuilds the
     outbox constraint, merely dropping its new tables would leave a false v11
-    schema.  This helper restores the exact v11 DDL before an individual test
-    removes any still-older layers.
+    schema.  This helper first removes all post-v12 additive/rebuild layers,
+    including the P18-M2 v21 regenerative-execution layer, then restores the
+    exact v11 DDL before an individual test removes any still-older layers.
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 21:
+        # v21 is additive inside the existing GatewayStateStore.  Drop the
+        # checkpoint head before its referenced checkpoint table, then remove
+        # Frontier/Ledger/immutable execution-contract state.  The indexes on
+        # execution_ledger/regenerative_checkpoint disappear with their tables.
+        connection.execute("DROP TABLE regenerative_checkpoint_head")
+        connection.execute("DROP TABLE regenerative_checkpoint")
+        connection.execute("DROP TABLE execution_frontier")
+        connection.execute("DROP TABLE execution_ledger")
+        connection.execute("DROP TABLE execution_ledger_head")
+        connection.execute("DROP TABLE execution_task_contract")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 21")
+        connection.execute("PRAGMA user_version = 20")
+        version = 20
     if version == 20:
         # v20 additive: remove the v2.1 life proposal registration layer.
         connection.execute("DROP TABLE life_proposal_registration")
@@ -53,7 +68,7 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
         connection.execute("PRAGMA user_version = 16")
         version = 16
     if version == 16:
-        # v16 逆向：nonce 表重建层按 v5 原 DDL 恢复，clarification 表整层移除
+        # v16 逆向：nonce 表重建层按 v5 原 DDL恢复，clarification 表整层移除
         connection.execute("DROP TABLE clarification_questions")
         connection.execute("ALTER TABLE security_nonce_ledger RENAME TO security_nonce_ledger_v16_old")
         connection.execute(store_module._MIGRATION_V5_STATEMENTS[0])  # noqa: SLF001
