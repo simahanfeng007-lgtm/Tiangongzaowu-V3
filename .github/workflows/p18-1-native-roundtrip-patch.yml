@@ -1,0 +1,48 @@
+name: P18.1 native roundtrip source patch
+
+on:
+  push:
+    branches:
+      - agent/p18-1-universal-endpoint-protocol-harness
+    paths:
+      - scripts/p18_1_apply_native_roundtrip.py
+      - .github/workflows/p18-1-native-roundtrip-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-existing-production-chain:
+    if: ${{ !startsWith(github.event.head_commit.message, 'C4 P18.1: apply native roundtrip patch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p18-1-universal-endpoint-protocol-harness
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply deterministic patch
+        run: python scripts/p18_1_apply_native_roundtrip.py
+      - name: Compile touched Python files
+        run: |
+          python -m py_compile \
+            app/backend/tiangong-backend/v3/zongdiaodu.py \
+            app/backend/tiangong-backend/v3/gutong/gutong_ceng.py \
+            app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+      - name: Commit patched authoritative production files
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No patch diff"
+            exit 0
+          fi
+          git config user.name "tiangong-p18-1-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            app/backend/tiangong-backend/v3/zongdiaodu.py \
+            app/backend/tiangong-backend/v3/gutong/gutong_ceng.py \
+            app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+          git commit -m "C4 P18.1: apply native roundtrip patch"
+          git push origin HEAD:agent/p18-1-universal-endpoint-protocol-harness
