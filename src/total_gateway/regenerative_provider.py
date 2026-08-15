@@ -715,50 +715,155 @@ class RegenerativeExecutionAuthority:
     def _recover(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         identity, _contract = self._bound_identity(payload)
         now_ms = _integer(payload.get("now_ms"), label="now_ms")
-        # A crashed process cannot prove the outcome of effects that were over
-        # the STARTED boundary. Convert only this Run's effects to AMBIGUOUS.
-        for record in self._store.list_effects_for_request(
-            identity.request_id, run_id=identity.run_id, generation=identity.generation
-        ):
-            if record.state != "SIDE_EFFECT_STARTED":
-                continue
-            result = EffectResult(
-                result_id="rlt_" + canonical_sha256({"effect_id": record.claim.effect_id, "restart": now_ms}),
-                effect_id=record.claim.effect_id,
-                status="AMBIGUOUS",
-                fact_id="fact_" + canonical_sha256({"effect_id": record.claim.effect_id, "restart": "ambiguous"}),
+
+        def execution_events(effect_id: str) -> list[Any]:
+            return [
+                event for event in self._store.list_execution_events(
+                    identity.request_id, run_id=identity.run_id, generation=identity.generation
+                ) if event.effect_id == effect_id
+            ]
+
+        def result_for(effect_id: str, status: str, reason: str) -> EffectResult:
+            evidence = canonical_sha256({
+                "domain": "tiangong.gateway.crash-window-effect-recovery.v1",
+                "effect_id": effect_id,
+                "status": status,
+                "reason": reason,
+            })
+            return EffectResult(
+                result_id="rlt_" + canonical_sha256({
+                    "effect_id": effect_id, "status": status, "recovery": reason
+                }),
+                effect_id=effect_id,
+                status=status,
+                fact_id="fact_" + canonical_sha256({"effect_id": effect_id, "evidence": evidence}),
                 result_object_id=None,
                 result_object_sha256=None,
-                evidence_sha256=canonical_sha256({"effect_id": record.claim.effect_id, "reason": "process_restart"}),
-                error_code="process_restart_after_dispatch",
-                observed_at_ms=max(now_ms, record.side_effect_started_at_ms or now_ms),
+                evidence_sha256=evidence,
+                error_code=None if status == "SUCCEEDED" else reason,
+                observed_at_ms=now_ms,
                 model_generated=False,
                 result_sha256="0" * 64,
             ).with_computed_sha256()
-            dispatched = next((
-                event for event in reversed(self._store.list_execution_events(
-                    identity.request_id, run_id=identity.run_id, generation=identity.generation
-                ))
-                if event.effect_id == record.claim.effect_id
-                and event.event_type == "step.dispatched"
+
+        # Repair cross-table crash windows from the canonical physical Effect
+        # ledger back into the append-only execution ledger.  This does not
+        # guess whether a STARTED action applied: it deliberately marks it
+        # AMBIGUOUS.  A CLAIMED-only effect is proven not dispatched.
+        for record in self._store.list_effects_for_request(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation
+        ):
+            effect_id = record.claim.effect_id
+            events = execution_events(effect_id)
+            terminal = next((
+                event for event in reversed(events)
+                if event.event_type in {"step.committed", "step.failed", "step.ambiguous"}
             ), None)
-            self._store.complete_effect(result)
-            if dispatched is None or not dispatched.logical_effect_id or not dispatched.attempt_id or not dispatched.step_id:
-                raise StoreCorruptionError("started effect has no canonical dispatch event for crash recovery")
-            self._store.append_execution_event(
-                event_key=f"step.ambiguous:{dispatched.step_id}:{dispatched.attempt_id}:restart",
-                request_id=identity.request_id, run_id=identity.run_id,
-                generation=identity.generation, epoch_index=dispatched.epoch_index,
-                event_type="step.ambiguous", created_at_ms=now_ms,
-                payload={
-                    "effect_state": "AMBIGUOUS",
-                    "reason": "process_restart_after_dispatch",
-                    "result_sha256": result.result_sha256,
-                },
-                logical_effect_id=dispatched.logical_effect_id,
-                attempt_id=dispatched.attempt_id, step_id=dispatched.step_id,
-                effect_id=record.claim.effect_id, causal_parent_event_id=dispatched.event_id,
-            )
+            if terminal is not None:
+                continue
+            dispatched = next((
+                event for event in reversed(events) if event.event_type == "step.dispatched"
+            ), None)
+            prepared = next((
+                event for event in reversed(events) if event.event_type == "step.prepared"
+            ), None)
+            source = dispatched or prepared
+
+            if record.state == "CLAIMED":
+                # No STARTED fence exists, therefore this physical attempt was
+                # durably prepared but never dispatched.  Finalize the stale
+                # attempt as non-applied so it cannot poison Completion Proof.
+                self._store.complete_effect(result_for(
+                    effect_id, "FAILED_FINAL", "process_restart_before_dispatch"
+                ))
+                if source and source.logical_effect_id and source.attempt_id and source.step_id:
+                    self._store.append_execution_event(
+                        event_key=f"step.failed:{source.step_id}:{source.attempt_id}:restart-before-dispatch",
+                        request_id=identity.request_id, run_id=identity.run_id,
+                        generation=identity.generation, epoch_index=source.epoch_index,
+                        event_type="step.failed", created_at_ms=now_ms,
+                        payload={
+                            "effect_state": "FAILED_FINAL",
+                            "reason": "process_restart_before_dispatch",
+                            "proven_not_applied": True,
+                        },
+                        logical_effect_id=source.logical_effect_id,
+                        attempt_id=source.attempt_id,
+                        step_id=source.step_id,
+                        effect_id=effect_id,
+                        causal_parent_event_id=source.event_id,
+                    )
+                continue
+
+            if record.state == "SIDE_EFFECT_STARTED":
+                if source is None or not source.logical_effect_id or not source.attempt_id or not source.step_id:
+                    raise StoreCorruptionError(
+                        "started effect has no prepared/dispatch event for crash recovery"
+                    )
+                if dispatched is None:
+                    dispatched, _ = self._store.append_execution_event(
+                        event_key=f"step.dispatched:{source.step_id}:{source.attempt_id}:recovered",
+                        request_id=identity.request_id, run_id=identity.run_id,
+                        generation=identity.generation, epoch_index=source.epoch_index,
+                        event_type="step.dispatched", created_at_ms=now_ms,
+                        payload={
+                            "effect_state": "SIDE_EFFECT_STARTED",
+                            "dispatch_boundary": "reconstructed_from_effect_started_fence",
+                        },
+                        logical_effect_id=source.logical_effect_id,
+                        attempt_id=source.attempt_id,
+                        step_id=source.step_id,
+                        effect_id=effect_id,
+                        causal_parent_event_id=source.event_id,
+                    )
+                    source = dispatched
+                result = result_for(effect_id, "AMBIGUOUS", "process_restart_after_dispatch")
+                self._store.complete_effect(result)
+                self._store.append_execution_event(
+                    event_key=f"step.ambiguous:{source.step_id}:{source.attempt_id}:restart",
+                    request_id=identity.request_id, run_id=identity.run_id,
+                    generation=identity.generation, epoch_index=source.epoch_index,
+                    event_type="step.ambiguous", created_at_ms=now_ms,
+                    payload={
+                        "effect_state": "AMBIGUOUS",
+                        "reason": "process_restart_after_dispatch",
+                        "result_sha256": result.result_sha256,
+                    },
+                    logical_effect_id=source.logical_effect_id,
+                    attempt_id=source.attempt_id,
+                    step_id=source.step_id,
+                    effect_id=effect_id,
+                    causal_parent_event_id=source.event_id,
+                )
+                continue
+
+            if record.state in {"SUCCEEDED", "AMBIGUOUS", "FAILED_FINAL"}:
+                if source is None or not source.logical_effect_id or not source.attempt_id or not source.step_id:
+                    raise StoreCorruptionError(
+                        "terminal effect has no prepared/dispatch event for execution-ledger healing"
+                    )
+                event_type = {
+                    "SUCCEEDED": "step.committed",
+                    "AMBIGUOUS": "step.ambiguous",
+                    "FAILED_FINAL": "step.failed",
+                }[record.state]
+                self._store.append_execution_event(
+                    event_key=f"{event_type}:{source.step_id}:{source.attempt_id}:recovered",
+                    request_id=identity.request_id, run_id=identity.run_id,
+                    generation=identity.generation, epoch_index=source.epoch_index,
+                    event_type=event_type, created_at_ms=now_ms,
+                    payload={
+                        "effect_state": record.state,
+                        "reason": "healed_from_canonical_effect_ledger",
+                        "recovered_terminal_event": True,
+                    },
+                    logical_effect_id=source.logical_effect_id,
+                    attempt_id=source.attempt_id,
+                    step_id=source.step_id,
+                    effect_id=effect_id,
+                    causal_parent_event_id=source.event_id,
+                )
+
         recovered = self._store.recover_regenerative_execution(
             identity.request_id,
             run_id=identity.run_id,
