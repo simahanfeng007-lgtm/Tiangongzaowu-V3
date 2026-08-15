@@ -1,12 +1,14 @@
 """Finite, life-scoped active Known cut with canonical indexes."""
 from __future__ import annotations
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from contracts.canonical import canonical_sha256
 from contracts.world_understanding.known import DirectKnownRecord, DerivedKnownRecord
 from contracts.world_understanding.scope import WorldScope
 from world_understanding.scope_guard import require_same_world_scope
+
+from .freshness import KnownFreshnessDecision, evaluate_known_freshness
 
 KnownRecord = DirectKnownRecord | DerivedKnownRecord
 
@@ -15,6 +17,19 @@ class ActiveCutOverflow(ValueError):
 
 class InvalidKnownRecord(ValueError):
     pass
+
+class StaleKnownDependency(ValueError):
+    """Raised when a caller attempts to depend on Known without revalidation."""
+
+    def __init__(self, record_hash: str, decision: KnownFreshnessDecision) -> None:
+        self.record_hash = str(record_hash)
+        self.decision = decision
+        super().__init__(
+            "KNOWN_REVALIDATION_REQUIRED:"
+            + self.record_hash
+            + ":"
+            + ",".join(decision.reasons)
+        )
 
 
 def known_ref(record: KnownRecord):
@@ -77,7 +92,51 @@ class KnownSet:
         return tuple(self._by_hash[key] for key in sorted(self._by_hash))
 
     def get_hash(self, record_hash: str) -> KnownRecord | None:
+        """Introspection lookup; does not imply the fact is safe to depend on."""
         return self._by_hash.get(record_hash)
+
+    def require_dependency_reusable(
+        self,
+        record: KnownRecord,
+        *,
+        now_ms: int,
+        current_source_versions: Mapping[str, str] | None = None,
+        revalidated_source_keys: frozenset[str] = frozenset(),
+    ) -> KnownRecord:
+        """Canonical M3.8 dependency gate for stale/volatile Known facts."""
+        require_same_world_scope(self.scope, record.world_scope)
+        decision = evaluate_known_freshness(
+            record,
+            now_ms=now_ms,
+            current_source_versions=current_source_versions,
+            revalidated_source_keys=revalidated_source_keys,
+        )
+        if not decision.reusable:
+            raise StaleKnownDependency(record.record_hash, decision)
+        return record
+
+    def get_hash_for_dependency(
+        self,
+        record_hash: str,
+        *,
+        now_ms: int,
+        current_source_versions: Mapping[str, str] | None = None,
+        revalidated_source_keys: frozenset[str] = frozenset(),
+    ) -> KnownRecord | None:
+        """Lookup used by execution/derivation dependency reuse.
+
+        Missing remains ``None``; a present but stale fact fails closed rather
+        than being silently reused.
+        """
+        record = self._by_hash.get(record_hash)
+        if record is None:
+            return None
+        return self.require_dependency_reusable(
+            record,
+            now_ms=now_ms,
+            current_source_versions=current_source_versions,
+            revalidated_source_keys=revalidated_source_keys,
+        )
 
     def by_proposition(self, proposition_type: str) -> tuple[KnownRecord, ...]:
         return tuple(self._by_prop.get(proposition_type, ()))
