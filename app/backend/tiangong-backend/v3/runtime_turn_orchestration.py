@@ -93,10 +93,9 @@ class TurnLoopState:
     authority or make previously committed work disappear.
 
     M3 deliberately upgrades this same state machine rather than introducing a
-    second Scheduler. The first inherited M1 epoch keeps its historical hard
-    limit. Once a real checkpoint rollover occurs (or M3 receives a reality
-    sample) ``adaptive_execution_active`` becomes true and all subsequent
-    production calls to ``decide_schedule`` consume the adaptive horizon.
+    second Scheduler. Generic M1 epoch rollover remains semantics-preserving;
+    the production checkpoint seam explicitly calls ``activate_adaptive_control``
+    only after durable checkpoint persistence succeeds.
     """
 
     action_rounds: int = 0
@@ -122,12 +121,7 @@ class TurnLoopState:
         return count
 
     def can_schedule(self, requested: int, max_rounds: int) -> bool:
-        """Legacy single-budget check.
-
-        Existing callers still see exactly the old global-counter behaviour.
-        Long-chain callers use :meth:`decide_schedule`; after the first durable
-        epoch rollover that same method is adaptively governed.
-        """
+        """Legacy single-budget check with unchanged global-counter behaviour."""
 
         return self.action_rounds + max(0, int(requested)) <= max(0, int(max_rounds))
 
@@ -160,9 +154,6 @@ class TurnLoopState:
                 reasons=tuple(reasons or ("[resource_governor_blocked] execution blocked",)),
             )
 
-        # High semantic drift never receives a larger local horizon. Force a
-        # checkpoint boundary so the existing continuation authority can run a
-        # reality audit/frontier rebuild/replan before more tool dispatch.
         drift = self.last_semantic_drift
         if requested_count > 0 and drift is not None and drift.high_risk:
             return EpochBudgetDecision(
@@ -200,14 +191,7 @@ class TurnLoopState:
         max_epoch_rounds: int,
         max_global_rounds: int,
     ) -> EpochBudgetDecision:
-        """Evaluate the existing production scheduler with M3 in-place upgrade.
-
-        Before the first M1 checkpoint rollover the inherited configured local
-        limit is preserved. Afterwards the same method uses the adaptive local
-        horizon, bounded by that configured hard ceiling. This keeps old M1
-        contracts intact while making the long-running production chain
-        adaptive without a second scheduling authority.
-        """
+        """Evaluate the one production scheduler, adaptive only when admitted."""
 
         epoch_limit = max(0, int(max_epoch_rounds))
         if self.adaptive_execution_active:
@@ -217,6 +201,11 @@ class TurnLoopState:
             epoch_limit=epoch_limit,
             global_limit=max_global_rounds,
         )
+
+    def activate_adaptive_control(self) -> None:
+        """Admit M3 control after the authoritative production checkpoint seam."""
+
+        self.adaptive_execution_active = True
 
     def current_epoch_round_limit(self, configured_max: int) -> int:
         """Return the M3 local horizon bounded by the configured hard ceiling."""
@@ -242,7 +231,7 @@ class TurnLoopState:
     def observe_epoch_metrics(self, metrics: HorizonControlMetrics) -> AdaptiveHorizonDecision:
         """Feed one bounded reality-derived Epoch sample into the M3 controller."""
 
-        self.adaptive_execution_active = True
+        self.activate_adaptive_control()
         return self.adaptive_horizon.observe_epoch(metrics)
 
     def observe_semantic_drift(
@@ -255,7 +244,7 @@ class TurnLoopState:
 
         decision = evaluate_semantic_drift(signals)
         self.last_semantic_drift = decision
-        self.adaptive_execution_active = True
+        self.activate_adaptive_control()
         sample = base_metrics or HorizonControlMetrics()
         self.adaptive_horizon.observe_epoch(
             HorizonControlMetrics(
@@ -292,7 +281,7 @@ class TurnLoopState:
             regeneration_streak=regeneration_streak,
         )
         self.last_resource_governor = decision
-        self.adaptive_execution_active = True
+        self.activate_adaptive_control()
         return decision
 
     def reserve_one(self) -> int:
@@ -311,11 +300,6 @@ class TurnLoopState:
         self.epoch_index += 1
         self.epoch_action_rounds = 0
         self.epoch_iteration_count = 0
-        # A durable rollover is the production admission point from M1's fixed
-        # initial epoch into M3 adaptive control. No new Scheduler is created.
-        self.adaptive_execution_active = True
-        # Repeat/stuck observations are window-local. Durable step identity and
-        # committed facts live outside this transient loop state.
         self.repeat_counts.clear()
         return self.epoch_index
 
@@ -326,11 +310,9 @@ class TurnLoopState:
         if not isinstance(live, dict):
             live = {}
             run_state["_live"] = live
-        # Legacy keys remain for existing UI/tests.
         live["iteration_count"] = self.iteration_count
         live["tool_rounds"] = self.action_rounds
         live["loop_started_at"] = float(loop_started_at)
-        # P18-M1 long-chain counters make local rollover explicit.
         live["global_iteration_count"] = self.iteration_count
         live["global_tool_rounds"] = self.action_rounds
         live["epoch_index"] = self.epoch_index
