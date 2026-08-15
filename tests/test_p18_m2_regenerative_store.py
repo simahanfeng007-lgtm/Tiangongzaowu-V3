@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from contracts import InboundEnvelope, InboundScope, canonical_sha256, derive_inbound_scope_keys, derive_run_identity
@@ -250,7 +251,7 @@ class RegenerativeStoreTests(unittest.TestCase):
         checkpoint2 = self.commit_checkpoint(second, now_ms=2_300)
         self.assertTrue(checkpoint2.has_valid_hashes())
         self.assertEqual(checkpoint2.previous_checkpoint_hash, checkpoint1.checkpoint_hash)
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection:
             connection.execute(
                 "UPDATE regenerative_checkpoint SET checkpoint_json='{}' WHERE checkpoint_id=?",
                 (checkpoint2.checkpoint_id,),
@@ -277,7 +278,7 @@ class RegenerativeStoreTests(unittest.TestCase):
             generation=self.generation, epoch_index=1, event_type="step.observed",
             payload={"tail": "candidate"}, created_at_ms=2_200,
         )
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection:
             connection.execute(
                 "UPDATE execution_ledger SET event_json='{}' WHERE event_id=?",
                 (bad.event_id,),
