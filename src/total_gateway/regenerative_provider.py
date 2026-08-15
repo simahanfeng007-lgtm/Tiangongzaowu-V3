@@ -16,10 +16,15 @@ from contracts import canonical_sha256, derive_effect_identity
 
 from .effects import EffectClaim, EffectResult
 from .regenerative_execution import (
+    CHECKPOINT_SCHEMA_VERSION,
     ExecutionFrontier,
     derive_attempt_id,
     derive_logical_effect_id,
     derive_step_id,
+)
+from .regenerative_governance import (
+    evaluate_checkpoint_version_compatibility,
+    version_vector_from_mapping,
 )
 from .store import GatewayStateStore, StoreConflictError, StoreCorruptionError
 
@@ -871,8 +876,53 @@ class RegenerativeExecutionAuthority:
             recovered_at_ms=now_ms,
         )
         if not recovered.get("recoverable"):
-            return {"recoverable": False, "reason": recovered.get("reason")}
+            return {"recoverable": False, "resume_allowed": False, "reason": recovered.get("reason")}
         frontier: ExecutionFrontier = recovered["frontier"]
+        checkpoint = recovered["checkpoint"]
+        checkpoint_vector = version_vector_from_mapping(checkpoint.model_dump(mode="json"))
+        current_vector = version_vector_from_mapping({
+            "checkpoint_schema_version": str(payload.get("checkpoint_schema_version") or CHECKPOINT_SCHEMA_VERSION),
+            "runtime_version": str(payload.get("runtime_version") or "tiangong-v3"),
+            "provider_version": str(payload.get("provider_version") or "unknown"),
+            "model_version": str(payload.get("model_version") or "unknown"),
+            "tool_contract_version": str(payload.get("tool_contract_version") or "omni_body.v1"),
+            "skill_contract_version": str(payload.get("skill_contract_version") or "skill.v1"),
+            "task_contract_version": str(payload.get("task_contract_version") or "task.v1"),
+        })
+        raw_pairs = payload.get("migratable_schema_pairs") or ()
+        migratable_pairs = tuple(
+            (str(item[0]), str(item[1]))
+            for item in raw_pairs
+            if isinstance(item, (list, tuple)) and len(item) == 2
+        )
+        version_decision = evaluate_checkpoint_version_compatibility(
+            checkpoint_vector,
+            current_vector,
+            compatible_mismatches=tuple(
+                str(item)
+                for item in (payload.get("compatible_version_mismatches") or ())
+                if str(item).strip()
+            ),
+            migratable_schema_pairs=migratable_pairs,
+            migration_completed=payload.get("version_migration_completed") is True,
+            revalidated=payload.get("version_revalidated") is True,
+        )
+        if not version_decision.resume_allowed:
+            return {
+                "recoverable": True,
+                "resume_allowed": False,
+                "reconcile_required": bool(version_decision.reconcile_required),
+                "migration_required": bool(version_decision.migration_required),
+                "revalidation_required": bool(version_decision.revalidation_required),
+                "reason": ("RECONCILE_REQUIRED" if version_decision.reconcile_required else "VERSION_REVALIDATION_REQUIRED"),
+                "version_mismatches": list(version_decision.mismatches),
+                "version_reasons": list(version_decision.reasons),
+                "checkpoint": checkpoint.model_dump(mode="json"),
+                "frontier": frontier.model_dump(mode="json"),
+                "pending_effect_ids": list(recovered["pending_effect_ids"]),
+                "ambiguous_effect_ids": list(recovered["ambiguous_effect_ids"]),
+                "used_previous_checkpoint": bool(recovered["used_previous_checkpoint"]),
+            }
         event, _ = self._store.append_execution_event(
             event_key=f"run.resumed:{frontier.frontier_version}:{frontier.global_step}",
             request_id=identity.request_id,
@@ -891,7 +941,12 @@ class RegenerativeExecutionAuthority:
         )
         return {
             "recoverable": True,
-            "checkpoint": recovered["checkpoint"].model_dump(mode="json"),
+            "resume_allowed": True,
+            "reconcile_required": False,
+            "migration_required": bool(version_decision.migration_required),
+            "revalidation_required": False,
+            "version_mismatches": list(version_decision.mismatches),
+            "checkpoint": checkpoint.model_dump(mode="json"),
             "frontier": frontier.model_dump(mode="json"),
             "pending_effect_ids": list(recovered["pending_effect_ids"]),
             "ambiguous_effect_ids": list(recovered["ambiguous_effect_ids"]),

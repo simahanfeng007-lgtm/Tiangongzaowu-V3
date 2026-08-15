@@ -1706,6 +1706,8 @@ def _simple_chain_prepare_tool_budget(
         source=source,
     ):
         return False, ("[epoch_checkpoint_failed] checkpoint persistence failed",)
+    # P18-M3 admission occurs only after durable checkpoint persistence succeeds.
+    turn_loop.activate_adaptive_control()
     resumed = turn_loop.decide_schedule(
         requested_count,
         max_epoch_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
