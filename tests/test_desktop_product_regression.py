@@ -261,6 +261,7 @@ await runtime.setSettings({{
   modelBaseUrl: "https://models.example.test/v1",
   modelName: "custom-model",
   modelApiKey: "secret-value",
+  modelThinkingDepth: "auto",
 }});
 console.log(JSON.stringify({{
   calls,
@@ -277,6 +278,7 @@ console.log(JSON.stringify({{
         model_payload = payload["calls"][0][1]
         self.assertEqual(model_payload["api_key"], "secret-value")
         self.assertEqual(model_payload["base_url"], "https://models.example.test/v1")
+        self.assertEqual(model_payload["reasoning_mode"], "auto")
         self.assertNotIn("secret-value", payload["stored"])
 
     def test_model_credential_never_falls_back_to_renderer_http(self):

@@ -3104,14 +3104,22 @@ function backendControlJsonRequest(method, relativePath, payload = null, timeout
 
 function normalizedModelSettingsPayload(payload = {}) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  const allowed = new Set(["provider", "base_url", "model_name"]);
+  const allowed = new Set(["provider", "base_url", "model_name", "reasoning_mode"]);
   if (Object.keys(source).some((key) => !allowed.has(key))) throw new Error("model_settings_fields_invalid");
   const clean = {
     provider: String(source.provider || "").trim(),
     base_url: String(source.base_url || "").trim(),
     model_name: String(source.model_name || "").trim(),
   };
-  if (clean.provider.length > 128 || clean.base_url.length > 4096 || clean.model_name.length > 512) {
+  if (Object.prototype.hasOwnProperty.call(source, "reasoning_mode")) {
+    clean.reasoning_mode = String(source.reasoning_mode || "").trim().toLowerCase();
+  }
+  if (
+    clean.provider.length > 128
+    || clean.base_url.length > 4096
+    || clean.model_name.length > 512
+    || (clean.reasoning_mode?.length || 0) > 64
+  ) {
     throw new Error("model_settings_value_too_large");
   }
   if (Object.values(clean).some((value) => value.includes("\0"))) throw new Error("model_settings_value_invalid");

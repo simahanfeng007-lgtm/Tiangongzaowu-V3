@@ -5,7 +5,7 @@ import { createState } from "../app/frontend-v2/renderer/core/state.mjs";
 import { createHttpRuntime } from "../app/frontend-v2/renderer/runtime/http-runtime.mjs";
 import {
   applyProviderPreset,
-  providerThinkingCapability,
+  modelThinkingCapability,
 } from "../app/frontend-v2/renderer/plugins/provider-presets.mjs";
 
 const storage = new Map();
@@ -128,7 +128,7 @@ function assistantText(state) {
           enabled: !["off", "none", ""].includes(String(body.reasoning_mode || "")),
           configured_mode: body.reasoning_mode,
           effective_mode: body.reasoning_mode,
-          modes: providerThinkingCapability(body.provider, body.provider).modes.map((item) => item.value),
+          modes: modelThinkingCapability(body.model_name).modes.map((item) => item.value),
         },
       };
     },
@@ -140,11 +140,12 @@ function assistantText(state) {
     ["glm_5_2", "low"],
     ["minimax_m3", "auto"],
     ["gpt_5_6", "high"],
+    ["kimi_k3", "max"],
   ];
 
   for (const [service, mode] of cases) {
     const preset = applyProviderPreset({}, service);
-    const capability = providerThinkingCapability(service, preset.modelProvider);
+    const capability = modelThinkingCapability(preset.modelName);
     assert.equal(capability.supported, true, `${service} 应显示思考设置`);
     assert.equal(
       capability.modes.some((item) => item.value === mode),
@@ -162,13 +163,18 @@ function assistantText(state) {
 
   assert.deepEqual(
     savedBodies.map((item) => [item.provider, item.reasoning_mode]),
-    cases,
+    cases.map(([service, mode]) => [applyProviderPreset({}, service).modelProvider, mode]),
     "每次保存必须把用户选择的真实档位送到可信模型配置通道",
   );
   assert.equal(
     [...storage.values()].some((value) => /api[_-]?key/i.test(value)),
     false,
     "前端持久化不得夹带凭据",
+  );
+  assert.equal(modelThinkingCapability("gpt-4o").supported, false);
+  assert.deepEqual(
+    modelThinkingCapability("kimi-k3").modes.map((item) => item.value),
+    ["low", "high", "max"],
   );
 }
 

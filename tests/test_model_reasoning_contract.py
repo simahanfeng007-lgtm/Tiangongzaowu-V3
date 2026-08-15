@@ -48,32 +48,37 @@ class ModelTurnContractTests(unittest.TestCase):
 
 
 class ReasoningCapabilityTests(unittest.TestCase):
-    def test_provider_capabilities_do_not_fake_uniform_depths(self) -> None:
+    def test_model_names_determine_capabilities_independent_of_provider(self) -> None:
         from v3.model_stream_config import get_model_reasoning_capability
 
-        self.assertEqual(get_model_reasoning_capability("deepseek_v4")["modes"], ["off", "high", "max"])
-        self.assertEqual(get_model_reasoning_capability("mimo")["modes"], ["off", "on"])
-        self.assertEqual(get_model_reasoning_capability("minimax_m3")["modes"], ["off", "auto"])
+        self.assertEqual(get_model_reasoning_capability("custom", "deepseek-v4-pro")["modes"], ["off", "high", "max"])
+        self.assertEqual(get_model_reasoning_capability("relay", "mimo-v2.5-pro")["modes"], ["off", "on"])
+        self.assertEqual(get_model_reasoning_capability("openai", "MiniMax-M3")["modes"], ["off", "auto"])
         self.assertFalse(get_model_reasoning_capability("gpt_5_6", "gpt-4o")["supported"])
-        self.assertTrue(get_model_reasoning_capability("gpt_5_6", "gpt-5.6")["supported"])
+        self.assertTrue(get_model_reasoning_capability("unrelated-provider", "gpt-5.6")["supported"])
+        kimi = get_model_reasoning_capability("custom", "kimi-k3")
+        self.assertEqual(kimi["modes"], ["low", "high", "max"])
+        self.assertEqual(kimi["default_mode"], "max")
+        self.assertNotIn("off", kimi["modes"])
 
     def test_request_mapping_matches_provider_protocol(self) -> None:
         from v3.jineng import http_kehuduan
 
         cases = (
-            ("deepseek_v4", "max", {"thinking": {"type": "enabled"}, "reasoning_effort": "max"}),
-            ("glm_5_2", "low", {"thinking": {"type": "enabled"}, "reasoning_effort": "low"}),
-            ("mimo", "off", {"thinking": {"type": "disabled"}}),
-            ("gpt_5_6", "high", {"reasoning_effort": "high"}),
+            ("custom", "deepseek-v4-pro", "max", "thinking_and_effort", {"thinking": {"type": "enabled"}, "reasoning_effort": "max"}),
+            ("relay", "glm-5.2", "low", "thinking_and_effort", {"thinking": {"type": "enabled"}, "reasoning_effort": "low"}),
+            ("openai", "mimo-v2.5-pro", "off", "thinking_toggle", {"thinking": {"type": "disabled"}}),
+            ("relay", "gpt-5.6", "high", "reasoning_effort", {"reasoning_effort": "high"}),
+            ("custom", "kimi-k3", "max", "reasoning_effort_always_on", {"reasoning_effort": "max"}),
         )
-        for provider, mode, expected in cases:
-            with self.subTest(provider=provider, mode=mode), mock.patch.object(
+        for provider, model_name, mode, control, expected in cases:
+            with self.subTest(provider=provider, model_name=model_name, mode=mode), mock.patch.object(
                 http_kehuduan,
                 "duqu_model_reasoning_config",
                 return_value={
                     "supported": True,
                     "effective_mode": mode,
-                    "control": "test",
+                    "control": control,
                     "binding_key": "b",
                 },
             ):
@@ -82,7 +87,7 @@ class ReasoningCapabilityTests(unittest.TestCase):
                     provider,
                     payload,
                     base_url="https://example.test/v1",
-                    model_name="model",
+                    model_name=model_name,
                 )
                 for key, value in expected.items():
                     self.assertEqual(payload.get(key), value)

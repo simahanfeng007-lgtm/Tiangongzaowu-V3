@@ -130,30 +130,28 @@ def _apply_reasoning_profile(
             "reasoning_binding_key": profile.get("binding_key") or "",
             "private_reasoning_visible": False,
         }
-    if pid == "deepseek_v4":
-        payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
-        if mode == "off":
-            payload.pop("reasoning_effort", None)
-        else:
-            payload["reasoning_effort"] = "max" if mode == "max" else "high"
-    elif pid == "glm_5_2":
+    control = str(profile.get("control") or "unsupported")
+    if control == "thinking_and_effort":
         payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
         if mode == "off":
             payload.pop("reasoning_effort", None)
         else:
             payload["reasoning_effort"] = mode
-    elif pid == "mimo":
+    elif control == "thinking_toggle":
         payload["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
         payload.pop("reasoning_effort", None)
-    elif pid == "minimax_m3":
+    elif control == "adaptive_toggle":
         if mode == "off":
             payload["thinking"] = {"type": "disabled"}
             payload.pop("reasoning_split", None)
-    elif pid == "gpt_5_6":
+        # auto deliberately preserves the adapter's task-sensitive profile.
+    elif control == "reasoning_effort":
         payload["reasoning_effort"] = "none" if mode == "off" else mode
+    elif control == "reasoning_effort_always_on":
+        payload["reasoning_effort"] = mode
     return {
         "reasoning_mode": mode,
-        "reasoning_control": profile.get("control") or "unsupported",
+        "reasoning_control": control,
         "reasoning_binding_key": profile.get("binding_key") or "",
         "private_reasoning_visible": False,
     }
