@@ -34,7 +34,6 @@ jobs:
           provider_path = Path('src/total_gateway/regenerative_provider.py')
           lines = provider_path.read_text(encoding='utf-8').splitlines()
 
-          # Imports: find exact semantic lines, not indentation-sensitive blocks.
           exec_import = next(i for i, line in enumerate(lines) if line == 'from .regenerative_execution import (')
           if '    CHECKPOINT_SCHEMA_VERSION,' not in lines[exec_import:exec_import + 12]:
               lines.insert(exec_import + 1, '    CHECKPOINT_SCHEMA_VERSION,')
@@ -51,7 +50,6 @@ jobs:
                   ')',
               ]
 
-          # Locate the _recover() post-healing seam by stable statement sequence.
           recover_if_candidates = [
               i for i, line in enumerate(lines)
               if line.strip() == 'if not recovered.get("recoverable"):'
@@ -121,7 +119,6 @@ jobs:
           ]
           lines[recover_if:event_idx] = replacement
 
-          # Add allowed-resume metadata to the existing return object and use the normalized checkpoint.
           event_idx = next(
               i for i in range(recover_if + len(replacement), len(lines))
               if lines[i].strip() == 'event, _ = self._store.append_execution_event('
@@ -145,10 +142,8 @@ jobs:
                   break
           else:
               raise SystemExit('provider final checkpoint return not found')
-
           provider_path.write_text('\n'.join(lines) + '\n', encoding='utf-8', newline='\n')
 
-          # Production adaptive admission: only after durable checkpoint persistence succeeds.
           zong_path = Path('app/backend/tiangong-backend/v3/zongdiaodu.py')
           zong_lines = zong_path.read_text(encoding='utf-8').splitlines()
           failure_candidates = [
@@ -170,19 +165,18 @@ jobs:
               ]
           zong_path.write_text('\n'.join(zong_lines) + '\n', encoding='utf-8', newline='\n')
 
-          # One-shot applicator: remove itself from the final production tree.
           Path('.github/workflows/p18-m3-provider-patch.yml').unlink()
           print('P18-M3 exact production patches applied')
           PY
       - name: Sync generated source mirrors
-        run: python scripts/sync-generated-sources.py
+        run: python scripts/sync-generated-sources.py --write
       - name: Verify targeted M3 and inherited M1 M2 behavior
         run: |
           python -m pip install -r requirements-source.lock
           python scripts/check-source-authority.py
           python scripts/sync-generated-sources.py --check-committed
-          python -m py_compile src/total_gateway/regenerative_provider.py src/total_gateway/regenerative_governance.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/zongdiaodu.py
-          python -m pytest -q tests/test_p18_m3_version_drift_resume.py tests/test_p18_m3_production_control_wiring.py tests/test_p18_m3_learning_poisoning.py tests/test_p18_m2_regenerative_provider.py tests/test_p18_m1_execution_epoch.py tests/test_p18_m1_canonical_continuity.py
+          python -m py_compile src/total_gateway/regenerative_provider.py src/total_gateway/regenerative_governance.py src/world_understanding/known/freshness.py src/world_understanding/known/set.py app/backend/tiangong-backend/v3/runtime_turn_orchestration.py app/backend/tiangong-backend/v3/zongdiaodu.py
+          python -m pytest -q tests/test_p18_m3_version_drift_resume.py tests/test_p18_m3_production_control_wiring.py tests/test_p18_m3_learning_poisoning.py tests/test_p18_m3_known_fact_freshness.py tests/test_p18_m2_regenerative_provider.py tests/test_p18_m1_execution_epoch.py tests/test_p18_m1_canonical_continuity.py tests/test_world_understanding_p4_known_closure.py
       - name: Commit production patch and remove applicator
         shell: bash
         run: |
