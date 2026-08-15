@@ -1521,9 +1521,14 @@ def _simple_chain_m3_observe_checkpoint(
     if artifact_head and artifact_head != str(state.get("m3_artifact_revision_head") or ""):
         progress_delta += 1.0
 
-    current_root_hash, current_task_hash = _simple_chain_task_hashes(run_state)
-    root_match = str(state.get("root_goal_hash") or "") in {"", str(current_root_hash or "")}
-    task_match = str(state.get("task_contract_hash") or "") in {"", str(current_task_hash or "")}
+    current_root_hash = str(frontier.get("root_goal_hash") or "")
+    current_task_contract = run_state.get("task_contract") if isinstance(run_state.get("task_contract"), dict) else {}
+    current_task_hash = _simple_chain_regenerative_sha256({
+        "domain": "tiangong.gateway.task-contract.v1",
+        "task_contract": dict(current_task_contract),
+    })
+    root_match = str(state.get("root_goal_hash") or "") in {"", current_root_hash}
+    task_match = str(state.get("task_contract_hash") or "") in {"", current_task_hash}
     live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else {}
     context_pressure = float(live.get("context_pressure") or 0.0)
     loop_started_at = live.get("loop_started_at")
