@@ -8,6 +8,15 @@ from .runtime_adaptive_control import (
     AdaptiveHorizonDecision,
     AdaptiveHorizonState,
     HorizonControlMetrics,
+    ResourceBudget,
+    ResourceGovernorDecision,
+    ResourceUsage,
+    evaluate_resource_governor,
+)
+from .runtime_adaptive_governance import (
+    SemanticDriftDecision,
+    SemanticDriftSignals,
+    evaluate_semantic_drift,
 )
 
 
@@ -22,13 +31,15 @@ class EpochBudgetDisposition(str, Enum):
 
     ``CHECKPOINT_CONTINUE`` is deliberately non-terminal: the current epoch is
     full, but the request/run may continue after a durable checkpoint and
-    bounded-context rollover. ``GLOBAL_EXHAUSTED`` is terminal for the current
-    run unless a higher authority grants a new global budget.
+    bounded-context rollover. ``GLOBAL_EXHAUSTED`` remains the inherited hard
+    run budget. ``CONTROL_BLOCKED`` is an M3 governance stop (for example a
+    runaway/resource guard) and must not be confused with an epoch rollover.
     """
 
     CONTINUE = "continue"
     CHECKPOINT_CONTINUE = "checkpoint_continue"
     GLOBAL_EXHAUSTED = "global_exhausted"
+    CONTROL_BLOCKED = "control_blocked"
 
 
 @dataclass(frozen=True)
@@ -48,7 +59,10 @@ class EpochBudgetDecision:
 
     @property
     def terminal(self) -> bool:
-        return self.disposition is EpochBudgetDisposition.GLOBAL_EXHAUSTED
+        return self.disposition in {
+            EpochBudgetDisposition.GLOBAL_EXHAUSTED,
+            EpochBudgetDisposition.CONTROL_BLOCKED,
+        }
 
 
 @dataclass(frozen=True)
@@ -71,12 +85,18 @@ class ParallelCoordination:
 
 @dataclass
 class TurnLoopState:
-    """Mutable counters for one authoritative request/run.
+    """Mutable counters/control state for one authoritative request/run.
 
     ``action_rounds`` and ``iteration_count`` remain the global counters for
     backwards compatibility. Epoch counters are a bounded execution window
     inside the *same* request/run; advancing an epoch must never reset global
     authority or make previously committed work disappear.
+
+    M3 deliberately upgrades this same state machine rather than introducing a
+    second Scheduler. The first inherited M1 epoch keeps its historical hard
+    limit. Once a real checkpoint rollover occurs (or M3 receives a reality
+    sample) ``adaptive_execution_active`` becomes true and all subsequent
+    production calls to ``decide_schedule`` consume the adaptive horizon.
     """
 
     action_rounds: int = 0
@@ -86,6 +106,9 @@ class TurnLoopState:
     epoch_action_rounds: int = 0
     epoch_iteration_count: int = 0
     adaptive_horizon: AdaptiveHorizonState = field(default_factory=AdaptiveHorizonState)
+    adaptive_execution_active: bool = False
+    last_semantic_drift: SemanticDriftDecision | None = None
+    last_resource_governor: ResourceGovernorDecision | None = None
 
     def bump_iteration(self) -> int:
         self.iteration_count += 1
@@ -102,26 +125,52 @@ class TurnLoopState:
         """Legacy single-budget check.
 
         Existing callers still see exactly the old global-counter behaviour.
-        Long-chain callers should migrate to :meth:`decide_schedule` so local
-        epoch exhaustion can checkpoint/continue instead of force-stopping.
+        Long-chain callers use :meth:`decide_schedule`; after the first durable
+        epoch rollover that same method is adaptively governed.
         """
 
         return self.action_rounds + max(0, int(requested)) <= max(0, int(max_rounds))
 
-    def decide_schedule(
+    def _decide_schedule_with_limit(
         self,
         requested: int,
         *,
-        max_epoch_rounds: int,
-        max_global_rounds: int,
+        epoch_limit: int,
+        global_limit: int,
     ) -> EpochBudgetDecision:
-        """Evaluate local epoch and global run budgets without reserving work."""
-
         requested_count = max(0, int(requested))
-        epoch_limit = max(0, int(max_epoch_rounds))
-        global_limit = max(0, int(max_global_rounds))
+        epoch_limit = max(0, int(epoch_limit))
+        global_limit = max(0, int(global_limit))
         projected_epoch = self.epoch_action_rounds + requested_count
         projected_global = self.action_rounds + requested_count
+
+        governor = self.last_resource_governor
+        if governor is not None and not governor.allowed:
+            reasons: list[str] = []
+            if governor.runaway_guard:
+                reasons.append("[runaway_guard] regeneration cost is rising without frontier progress")
+            reasons.extend(
+                f"[resource_budget_exhausted] {name} exhausted"
+                for name in governor.exhausted_dimensions
+            )
+            return EpochBudgetDecision(
+                disposition=EpochBudgetDisposition.CONTROL_BLOCKED,
+                epoch_exhausted=False,
+                global_exhausted=False,
+                reasons=tuple(reasons or ("[resource_governor_blocked] execution blocked",)),
+            )
+
+        # High semantic drift never receives a larger local horizon. Force a
+        # checkpoint boundary so the existing continuation authority can run a
+        # reality audit/frontier rebuild/replan before more tool dispatch.
+        drift = self.last_semantic_drift
+        if requested_count > 0 and drift is not None and drift.high_risk:
+            return EpochBudgetDecision(
+                disposition=EpochBudgetDisposition.CHECKPOINT_CONTINUE,
+                epoch_exhausted=False,
+                global_exhausted=False,
+                reasons=("[semantic_drift_audit_replan] checkpoint and reality audit required",),
+            )
 
         if projected_global > global_limit:
             return EpochBudgetDecision(
@@ -144,6 +193,31 @@ class TurnLoopState:
             reasons=(),
         )
 
+    def decide_schedule(
+        self,
+        requested: int,
+        *,
+        max_epoch_rounds: int,
+        max_global_rounds: int,
+    ) -> EpochBudgetDecision:
+        """Evaluate the existing production scheduler with M3 in-place upgrade.
+
+        Before the first M1 checkpoint rollover the inherited configured local
+        limit is preserved. Afterwards the same method uses the adaptive local
+        horizon, bounded by that configured hard ceiling. This keeps old M1
+        contracts intact while making the long-running production chain
+        adaptive without a second scheduling authority.
+        """
+
+        epoch_limit = max(0, int(max_epoch_rounds))
+        if self.adaptive_execution_active:
+            epoch_limit = self.current_epoch_round_limit(epoch_limit)
+        return self._decide_schedule_with_limit(
+            requested,
+            epoch_limit=epoch_limit,
+            global_limit=max_global_rounds,
+        )
+
     def current_epoch_round_limit(self, configured_max: int) -> int:
         """Return the M3 local horizon bounded by the configured hard ceiling."""
 
@@ -157,18 +231,69 @@ class TurnLoopState:
         configured_max_epoch_rounds: int,
         max_global_rounds: int,
     ) -> EpochBudgetDecision:
-        """Evaluate budgets using the current adaptive local horizon."""
+        """Explicit M3 entry used by focused policy/integration tests."""
 
-        return self.decide_schedule(
+        return self._decide_schedule_with_limit(
             requested,
-            max_epoch_rounds=self.current_epoch_round_limit(configured_max_epoch_rounds),
-            max_global_rounds=max_global_rounds,
+            epoch_limit=self.current_epoch_round_limit(configured_max_epoch_rounds),
+            global_limit=max_global_rounds,
         )
 
     def observe_epoch_metrics(self, metrics: HorizonControlMetrics) -> AdaptiveHorizonDecision:
         """Feed one bounded reality-derived Epoch sample into the M3 controller."""
 
+        self.adaptive_execution_active = True
         return self.adaptive_horizon.observe_epoch(metrics)
+
+    def observe_semantic_drift(
+        self,
+        signals: SemanticDriftSignals,
+        *,
+        base_metrics: HorizonControlMetrics | None = None,
+    ) -> SemanticDriftDecision:
+        """Attach M3 semantic drift to the same adaptive execution authority."""
+
+        decision = evaluate_semantic_drift(signals)
+        self.last_semantic_drift = decision
+        self.adaptive_execution_active = True
+        sample = base_metrics or HorizonControlMetrics()
+        self.adaptive_horizon.observe_epoch(
+            HorizonControlMetrics(
+                **{
+                    **sample.__dict__,
+                    "semantic_drift_score": max(
+                        float(sample.semantic_drift_score),
+                        float(decision.score),
+                    ),
+                }
+            )
+        )
+        return decision
+
+    def clear_semantic_drift_after_replan(self) -> None:
+        """Clear only after the authoritative reality-audit/replan completes."""
+
+        self.last_semantic_drift = None
+
+    def observe_resource_governor(
+        self,
+        *,
+        usage: ResourceUsage,
+        budget: ResourceBudget,
+        progress_delta: float,
+        regeneration_streak: int,
+    ) -> ResourceGovernorDecision:
+        """Bind the pure Resource Governor to this one scheduling state."""
+
+        decision = evaluate_resource_governor(
+            usage=usage,
+            budget=budget,
+            progress_delta=progress_delta,
+            regeneration_streak=regeneration_streak,
+        )
+        self.last_resource_governor = decision
+        self.adaptive_execution_active = True
+        return decision
 
     def reserve_one(self) -> int:
         self.action_rounds += 1
@@ -186,6 +311,9 @@ class TurnLoopState:
         self.epoch_index += 1
         self.epoch_action_rounds = 0
         self.epoch_iteration_count = 0
+        # A durable rollover is the production admission point from M1's fixed
+        # initial epoch into M3 adaptive control. No new Scheduler is created.
+        self.adaptive_execution_active = True
         # Repeat/stuck observations are window-local. Durable step identity and
         # committed facts live outside this transient loop state.
         self.repeat_counts.clear()
@@ -208,8 +336,16 @@ class TurnLoopState:
         live["epoch_index"] = self.epoch_index
         live["epoch_iteration_count"] = self.epoch_iteration_count
         live["epoch_tool_rounds"] = self.epoch_action_rounds
+        live["adaptive_control_active"] = bool(self.adaptive_execution_active)
         live["adaptive_epoch_tool_limit"] = int(self.adaptive_horizon.current_epoch_steps)
         live["adaptive_ewma_risk"] = round(float(self.adaptive_horizon.ewma_risk), 6)
+        live["semantic_drift_score"] = round(
+            float(self.last_semantic_drift.score if self.last_semantic_drift else 0.0),
+            6,
+        )
+        live["resource_governor_allowed"] = bool(
+            self.last_resource_governor.allowed if self.last_resource_governor else True
+        )
 
 
 def evaluate_turn_budget(
