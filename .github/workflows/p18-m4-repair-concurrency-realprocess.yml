@@ -1,0 +1,86 @@
+name: P18 M4 repair concurrency and real process
+
+on:
+  push:
+    branches:
+      - agent/p18-m4-adversarial-certification
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Patch canonical prepare event and real-process harness timestamps
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          provider = Path('src/total_gateway/regenerative_provider.py')
+          text = provider.read_text(encoding='utf-8')
+          replacements = [
+              ('                    "claimed_now": False,\n', ''),
+              ('                "claimed_now": claimed, "obligation_key": payload.get("obligation_key"),\n', '                "obligation_key": payload.get("obligation_key"),\n'),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'provider seam count for {old!r}: {text.count(old)}')
+              text = text.replace(old, new)
+          provider.write_text(text, encoding='utf-8')
+
+          matrix = Path('tests/test_p18_m4_corruption_matrix.py')
+          text = matrix.read_text(encoding='utf-8')
+          old = 'prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100 + worker_no))'
+          new = 'prepared = provider(_effect_payload(rig, "prepare_effect", step=1, attempt=1, now_ms=2_100))'
+          if text.count(old) != 1:
+              raise SystemExit(f'matrix seam count: {text.count(old)}')
+          matrix.write_text(text.replace(old, new), encoding='utf-8')
+
+          worker = Path('tests/p18_m4_real_process_worker.py')
+          text = worker.read_text(encoding='utf-8')
+          worker_replacements = [
+              ('            issued_at_ms=1_200,\n', '            issued_at_ms=now_ms,\n'),
+              ('            lease_duration_ms=86_400_000,\n', '            lease_duration_ms=3_600_000,\n'),
+              ('                payload={"scenario": args.scenario, "step": step, "process_id": os.getpid()},\n', '                payload={"scenario": args.scenario, "step": step},\n'),
+          ]
+          for old, new in worker_replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'worker seam count for {old!r}: {text.count(old)}')
+              text = text.replace(old, new)
+          worker.write_text(text, encoding='utf-8')
+          PY
+      - name: Sync generated source mirrors
+        run: |
+          python scripts/sync-generated-sources.py --write
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check-committed
+      - name: Remove temporary applicators and commit repair
+        run: |
+          rm -f .github/workflows/p18-m4-fix-concurrency-probe.yml
+          rm -f .github/workflows/p18-m4-repair-concurrency-realprocess.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/total_gateway/regenerative_provider.py app tests .github/workflows
+          git commit -m "P18-M4: harden concurrent prepare and real-process certification"
+          git push origin HEAD:agent/p18-m4-adversarial-certification
+      - name: Install dependencies for targeted verification
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify concurrency and worker initialization
+        run: |
+          python -m pytest -q tests/test_p18_m4_corruption_matrix.py::test_m4_corruption_10_two_agents_targeting_same_file_cannot_both_dispatch
+          tmpdir=$(mktemp -d)
+          python tests/p18_m4_real_process_worker.py --mode init --db "$tmpdir/probe.sqlite3" --state "$tmpdir/state.json" --scenario repair_probe
+          test -s "$tmpdir/state.json"
