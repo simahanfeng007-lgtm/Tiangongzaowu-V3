@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - name: Print backend settings/probe functions and frontend event seams
+      - name: Print backend settings, desktop probe, and frontend seams
         shell: bash
         run: |
           python - <<'PY'
@@ -27,30 +27,61 @@ jobs:
           tree = ast.parse(source)
           lines = source.splitlines()
           for node in tree.body:
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-                  node.name in {'_llm_settings', '_save_llm_settings'}
-                  or 'probe' in node.name.lower()
-                  or ('llm' in node.name.lower() and 'setting' in node.name.lower())
-              ):
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {'_llm_settings', '_save_llm_settings'}:
                   print(f'===== BACKEND {node.name} L{node.lineno}-L{node.end_lineno} =====')
                   print('\n'.join(lines[node.lineno-1:node.end_lineno]))
 
+          main = Path('app/main.js').read_text(encoding='utf-8')
+          def js_function(name):
+              needle = f'async function {name}('
+              start = main.find(needle)
+              if start < 0:
+                  needle = f'function {name}('
+                  start = main.find(needle)
+              if start < 0:
+                  print(f'===== MAIN {name} NOT FOUND =====')
+                  return
+              brace = main.find('{', start)
+              depth = 0
+              quote = None
+              escape = False
+              i = brace
+              while i < len(main):
+                  ch = main[i]
+                  if quote:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == quote:
+                          quote = None
+                  else:
+                      if ch in {'\"', "'", '`'}:
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              i += 1
+                              break
+                  i += 1
+              print(f'===== MAIN {name} =====')
+              print(main[start:i])
+          for name in ['probeProviderApiConnection', 'desktopModelSettingsRequest', 'readModelCredential', 'modelCredentialKey', 'providerCredentialScope']:
+              js_function(name)
+
           js = Path('app/frontend-v2/renderer/plugins/settings-panel.mjs').read_text(encoding='utf-8')
           for needle in [
-              'settingsModelPreset', 'settingsModelProvider', 'settingsProbeProviderApi',
-              'probeProviderApi', 'saveModel', 'modelBaseUrl', 'modelProvider', 'modelThinkingDepth'
+              'const saveModel =', 'presetInput?.addEventListener', 'presetInput.addEventListener',
+              'saveModel.addEventListener', 'probeProviderApi?.addEventListener', 'function applyModel',
+              'const applyModel', 'function renderModel', 'const renderModel'
           ]:
-              print(f'===== FRONTEND needle={needle} =====')
-              start = 0
-              while True:
-                  idx = js.find(needle, start)
-                  if idx < 0:
-                      break
-                  lo = max(0, js.rfind('\n', 0, max(0, idx-1200)))
-                  hi = min(len(js), js.find('\n', idx+2200))
-                  if hi < 0:
-                      hi = len(js)
-                  print(js[lo:hi])
-                  print('-----')
-                  start = idx + len(needle)
+              idx = js.find(needle)
+              if idx < 0:
+                  continue
+              lo = max(0, js.rfind('\n', 0, max(0, idx-1800)))
+              hi = min(len(js), idx+6500)
+              print(f'===== FRONTEND {needle} =====')
+              print(js[lo:hi])
           PY
