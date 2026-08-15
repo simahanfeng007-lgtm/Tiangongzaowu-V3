@@ -38,6 +38,60 @@ jobs:
           PY
       - name: Apply P18-M2 production integration
         run: python .github/p18_m2_runtime_integration_patch.py
+      - name: Upgrade inherited architecture assertions for M2 hard gates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+
+          m2 = Path('tests/test_p18_m2_runtime_integration.py')
+          replace_once(
+              m2,
+              '        roots = ownership["authorities"][0]["implementation_roots"]\n        self.assertTrue(any(str(item).endswith("/runtime_regenerative_boundary.py") for item in roots))\n',
+              '        v3 = next(row for row in ownership["mappings"] if row.get("id") == "v3-backend-main")\n        roots = set(v3["boundary_policy"]["implementation_roots"])\n        self.assertIn("runtime_regenerative_boundary.py", roots)\n',
+              'M2 source ownership assertion',
+          )
+
+          m1 = Path('tests/test_p18_m1_canonical_continuity.py')
+          replace_once(
+              m1,
+              '            _simple_chain_checkpoint_continue,\n            set_simple_chain_continuity_checkpoint_provider,\n        )\n',
+              '            _simple_chain_checkpoint_continue,\n            set_simple_chain_continuity_checkpoint_provider,\n            set_simple_chain_regenerative_execution_provider,\n        )\n',
+              'M1 imports M2 hard gate',
+          )
+          replace_once(
+              m1,
+              '                set_simple_chain_continuity_checkpoint_provider(provider)\n                with bind_run_context(context):\n',
+              '''                regenerative_seen: list[dict[str, object]] = []\n\n                def regenerative_provider(payload: dict[str, object]) -> dict[str, object]:\n                    regenerative_seen.append(dict(payload))\n                    operation = str(payload.get("operation") or "")\n                    response: dict[str, object] = {\n                        "schema": "tiangong.gateway.regenerative-provider.v1",\n                        "operation": operation,\n                    }\n                    if operation == "update_frontier":\n                        frontier = payload.get("frontier") if isinstance(payload.get("frontier"), dict) else {}\n                        response.update({\n                            "committed": True,\n                            "frontier_version": int(frontier.get("frontier_version") or 1),\n                            "frontier_hash": str(frontier.get("frontier_hash") or ("8" * 64)),\n                        })\n                    elif operation == "commit_checkpoint":\n                        frontier = payload.get("frontier") if isinstance(payload.get("frontier"), dict) else {}\n                        response.update({\n                            "committed": True,\n                            "checkpoint_id": "rgc_" + "7" * 64,\n                            "checkpoint_hash": "6" * 64,\n                            "frontier_hash": str(frontier.get("frontier_hash") or ("8" * 64)),\n                        })\n                    else:\n                        raise AssertionError(f"unexpected M2 operation: {operation}")\n                    return response\n\n                set_simple_chain_continuity_checkpoint_provider(provider)\n                set_simple_chain_regenerative_execution_provider(regenerative_provider)\n                with bind_run_context(context):\n''',
+              'M1 injects M2 checkpoint authority',
+          )
+          replace_once(
+              m1,
+              '                self.assertEqual(continuation["canonical_capsule_id"], "lcp_" + "9" * 64)\n                self.assertEqual(continuation["status"], "continued")\n            finally:\n                set_simple_chain_continuity_checkpoint_provider(None)\n',
+              '                self.assertEqual(continuation["canonical_capsule_id"], "lcp_" + "9" * 64)\n                self.assertEqual(continuation["status"], "continued")\n                self.assertEqual([item["operation"] for item in regenerative_seen], ["update_frontier", "commit_checkpoint"])\n            finally:\n                set_simple_chain_regenerative_execution_provider(None)\n                set_simple_chain_continuity_checkpoint_provider(None)\n',
+              'M1 verifies and clears M2 hard gate',
+          )
+
+          p17 = Path('tests/test_zongdiaodu_p17_m2_02.py')
+          replace_once(
+              p17,
+              '            "coordinate_parallel_steps",\n            "self._jineng_zhixing",\n        }\n',
+              '            "coordinate_parallel_steps",\n            "_simple_chain_regenerative_execute_tool",\n        }\n',
+              'P17 executor boundary assertion',
+          )
+          replace_once(
+              p17,
+              '        # P18-M1 upgrades the old single global can_schedule cutoff to the\n        # dual-budget production bridge. The executor remains in Zongdiaodu;\n        # only budget coordination semantics changed.\n        self.assertNotIn("turn_loop.can_schedule", calls)\n',
+              '        # P18-M1 upgrades the old single global can_schedule cutoff; P18-M2\n        # adds the Gateway-backed transactional dispatch boundary. Zongdiaodu\n        # still owns orchestration, but it may no longer call the physical\n        # executor directly from the main loop.\n        self.assertNotIn("turn_loop.can_schedule", calls)\n        self.assertNotIn("self._jineng_zhixing", calls)\n',
+              'P17 M2 architecture comment and no-direct-dispatch guard',
+          )
+          PY
       - name: Synchronize generated source mirrors
         run: python scripts/sync-generated-sources.py --write
       - name: Remove one-shot integration carriers
@@ -55,6 +109,8 @@ jobs:
           tests/test_p18_m2_regenerative_store.py
           tests/test_p18_m2_regenerative_provider.py
           tests/test_p18_m2_runtime_integration.py
+          tests/test_p18_m1_canonical_continuity.py
+          tests/test_zongdiaodu_p17_m2_02.py
       - name: Verify source authority and mirrors
         run: |
           python scripts/check-source-authority.py
