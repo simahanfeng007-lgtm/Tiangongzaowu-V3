@@ -26,7 +26,18 @@ jobs:
       - name: Install source runtime dependencies
         run: python -m pip install -r requirements-source.lock
       - name: Apply canonical store patch
-        run: python .github/p18_m2_store_patch.py
+        run: |
+          python .github/p18_m2_store_patch.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/total_gateway/store.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'candidate = ExecutionFrontier.model_validate(raw, strict=True)'
+          new = 'candidate = ExecutionFrontier.model_validate_json(json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False), strict=True)'
+          if text.count(old) != 1:
+              raise SystemExit(f'replay frontier parser anchor count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+          PY
       - name: Remove one-shot carriers
         run: git rm -f .github/p18_m2_store_patch.py .github/workflows/p18-m2-bootstrap-store.yml
       - name: Compile regenerative seams
