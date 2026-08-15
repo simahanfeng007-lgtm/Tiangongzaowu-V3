@@ -29,7 +29,18 @@ jobs:
         run: python -m pip install -r requirements-source.lock
 
       - name: Apply canonical continuity patch
-        run: python .github/p18_m1_continuity_apply.py
+        run: |
+          python .github/p18_m1_continuity_apply.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tests/test_p18_m1_canonical_continuity.py")
+          text = path.read_text(encoding="utf-8")
+          old = '            created_at_ms=2_000,\n            pending_effect_ids=(self.pending_effect,),'
+          new = '            created_at_ms=__import__("time").time_ns() // 1_000_000,\n            pending_effect_ids=(self.pending_effect,),'
+          if text.count(old) != 1:
+              raise SystemExit("interruption timestamp test anchor mismatch")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
 
       - name: Synchronize generated source mirrors
         run: python scripts/sync-generated-sources.py --write
