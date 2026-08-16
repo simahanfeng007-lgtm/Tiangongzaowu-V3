@@ -7,6 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from v3.jineng import http_kehuduan
+from v3.jineng.model_transport_contract import StreamState
+from v3.jineng.model_transport_openai_chat import OpenAIChatTransport
+from v3.model_endpoint import ModelEndpointConfig, ProtocolFamily
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,18 +131,46 @@ class ModelCacheObservabilityTests(unittest.TestCase):
         self.assertNotIn("system_tishi += dynamic_context", simple_chain)
 
     def test_streaming_requests_explicitly_request_final_usage_chunk(self) -> None:
-        source = (
-            ROOT
-            / "app"
-            / "backend"
-            / "tiangong-backend"
-            / "v3"
-            / "jineng"
-            / "http_kehuduan.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn('payload["stream_options"] = {"include_usage": True}', source)
-        self.assertIn('chunk_usage = chunk.get("usage")', source)
-        self.assertIn("usage=stream_usage", source)
+        endpoint = ModelEndpointConfig(
+            service_preset="deepseek",
+            provider_identity="deepseek_v4",
+            protocol_family=ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
+            base_url="https://api.deepseek.com/v1",
+            model_name="deepseek-v4-pro",
+            credential_scope="official_provider",
+            reasoning_mode="off",
+            endpoint_overrides={},
+            optimization_family="deepseek_v4",
+            config_fingerprint="test",
+        )
+        transport = OpenAIChatTransport()
+        request = transport.build_request(
+            endpoint,
+            "test-key",
+            {"messages": [{"role": "user", "content": "ping"}]},
+        )
+
+        self.assertTrue(request.payload["stream"])
+        self.assertEqual(request.payload["stream_options"], {"include_usage": True})
+
+        state = StreamState()
+        usage = {
+            "prompt_tokens": 12,
+            "completion_tokens": 3,
+            "total_tokens": 15,
+            "prompt_cache_hit_tokens": 8,
+        }
+        # OpenAI-compatible providers may send the final usage as a dedicated
+        # SSE event with no choices. The protocol transport must still consume
+        # it so observability survives the P18.1 transport boundary.
+        text, reasoning = transport.consume_stream_event(state, {"choices": [], "usage": usage})
+        self.assertEqual(text, "")
+        self.assertEqual(reasoning, "")
+        self.assertEqual(state.usage, usage)
+
+        turn = transport.finalize_turn(endpoint, state)
+        self.assertEqual(turn.usage, usage)
+        self.assertEqual(turn.protocol_family, ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value)
 
 
 if __name__ == "__main__":
