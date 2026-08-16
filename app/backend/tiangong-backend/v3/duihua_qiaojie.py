@@ -3381,76 +3381,122 @@ def _openai_chat_completion(qiaojie, payload: dict) -> dict:
     }
 
 
+
+
+
 def _llm_settings() -> dict:
+    """Return P18.1 endpoint authority plus legacy UI projections."""
+    from .endpoint_security import validate_model_endpoint
+    from .model_endpoint import SERVICE_PRESETS, duqu_model_endpoint_config
+    from .model_stream_config import resolve_model_capability
     from .peizhi import (
         MOREN_PROVIDER,
-        duqu_api_miyao,
+        _load_api_config,
         duqu_endpoint_api_miyao,
-        duqu_configured_model_ming,
-        duqu_configured_provider_base_url,
-        duqu_model_ming,
-        duqu_moren_provider,
-        duqu_provider_input_config,
-        duqu_provider_base_url,
         duqu_model_reasoning_config,
-        l4_provider_profiles,
+        duqu_moren_provider,
         l4_provider_display_name,
         l4_provider_presets,
+        l4_provider_profiles,
         provider_match_info,
     )
 
-    provider = duqu_moren_provider(MOREN_PROVIDER)
-    configured = duqu_provider_input_config(provider)
-    configured_provider = str(configured.get("provider") or "")
-    configured_base_url = duqu_configured_provider_base_url(provider)
-    configured_model_name = duqu_configured_model_ming(provider)
-    effective_model = duqu_model_ming(provider)
-    effective_base_url = duqu_provider_base_url(provider) or ""
-    from .endpoint_security import validate_model_endpoint
+    identity = duqu_moren_provider(MOREN_PROVIDER)
+    endpoint = duqu_model_endpoint_config(identity)
     try:
-        binding = validate_model_endpoint(provider, effective_base_url, resolve_dns=False)
-        endpoint_key = duqu_endpoint_api_miyao(provider, effective_base_url)
+        binding = validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=False)
+        endpoint_key = duqu_endpoint_api_miyao(endpoint.provider_identity, endpoint.base_url)
         endpoint_state = "ready"
     except ValueError:
         binding = None
         endpoint_key = None
         endpoint_state = "rejected"
     credential_state = "configured" if endpoint_key else "not_configured"
+
+    capability = resolve_model_capability(
+        endpoint.model_name,
+        endpoint.optimization_family,
+        endpoint.protocol_family,
+        endpoint.service_preset,
+        endpoint.endpoint_overrides.get("capability_override")
+        if isinstance(endpoint.endpoint_overrides, dict)
+        and isinstance(endpoint.endpoint_overrides.get("capability_override"), dict)
+        else None,
+    )
+    if capability.known_model:
+        reasoning = duqu_model_reasoning_config(
+            endpoint.optimization_family, endpoint.base_url, endpoint.model_name
+        )
+    else:
+        reasoning = {
+            "supported": True,
+            "control": "raw_optional",
+            "raw_optional": True,
+            "modes": [],
+            "default_mode": "",
+            "configured_mode": endpoint.reasoning_mode,
+            "effective_mode": endpoint.reasoning_mode,
+            "enabled": bool(endpoint.reasoning_mode),
+            "private_reasoning_visible": False,
+            "known_model": False,
+        }
+
     optimization = _llm_optimization_status()
     active_provider = optimization.get("active_provider") if isinstance(optimization, dict) else {}
-    match = provider_match_info(
-        configured_provider or provider,
-        configured_base_url or effective_base_url,
-        configured_model_name or effective_model,
-    )
-    matched_provider = str(match.get("provider") or provider)
+    match = provider_match_info(endpoint.provider_identity, endpoint.base_url, endpoint.model_name)
     matched_display_name = _llm_match_display_name(
-        match,
-        configured_provider,
-        l4_provider_display_name(matched_provider),
+        match, endpoint.provider_identity, l4_provider_display_name(endpoint.optimization_family)
     )
     match["display_name"] = matched_display_name
-    reasoning = duqu_model_reasoning_config(matched_provider, effective_base_url, effective_model)
+
+    raw = _load_api_config()
+    raw_profiles = raw.get("_endpoint_profiles") if isinstance(raw, dict) and isinstance(raw.get("_endpoint_profiles"), dict) else {}
+    model_provider_profiles = {}
+    for provider_id, profile in raw_profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        model_provider_profiles[str(profile.get("service_preset") or provider_id)] = {
+            **profile,
+            "provider_identity": provider_id,
+        }
+
+    preset = SERVICE_PRESETS.get(endpoint.service_preset)
     return {
         "ok": True,
-        "provider": provider,
-        "provider_display_name": l4_provider_display_name(provider),
-        "matched_provider": matched_provider,
+        # P18.1 first-class authority.
+        "service_preset": endpoint.service_preset,
+        "provider_identity": endpoint.provider_identity,
+        "protocol_family": endpoint.protocol_family,
+        "optimization_family": endpoint.optimization_family,
+        "base_url": endpoint.base_url,
+        "model_name": endpoint.model_name,
+        "endpoint_overrides": dict(endpoint.endpoint_overrides),
+        "config_fingerprint": endpoint.config_fingerprint,
+        "protocol_source": endpoint.protocol_source,
+        "effective_capability": capability.as_dict(),
+        # Compatibility projection for the existing renderer/diagnostics.
+        "provider": endpoint.provider_identity,
+        "provider_display_name": preset.preset_id if preset else endpoint.provider_identity,
+        "matched_provider": endpoint.optimization_family,
         "matched_provider_display_name": matched_display_name,
-        "configured_provider": configured_provider,
-        "model": effective_model,
-        "model_name": effective_model,
-        "configured_model_name": configured_model_name,
-        "base_url": effective_base_url,
-        "configured_base_url": configured_base_url,
+        "configured_provider": endpoint.provider_identity,
+        "model": endpoint.model_name,
+        "configured_model_name": endpoint.model_name,
+        "configured_base_url": endpoint.base_url,
+        "modelService": endpoint.service_preset,
+        "modelProtocol": endpoint.protocol_family,
         "api_key": "configured" if credential_state == "configured" else "missing",
         "credential_state": credential_state,
         "endpoint_state": endpoint_state,
         "provider_match": match,
         "providers": l4_provider_presets(),
         "provider_profiles": l4_provider_profiles(),
+        "modelProviderProfiles": model_provider_profiles,
         "reasoning": reasoning,
-        "credential_scope": ("official_provider" if binding and binding.official else binding.custom_scope if binding else "rejected"),
+        "credential_scope": (
+            "official_provider" if binding and binding.official
+            else binding.custom_scope if binding else "rejected"
+        ),
         "endpoint_official": bool(binding and binding.official),
         "optimization": {
             "ok": bool(optimization.get("ok")) if isinstance(optimization, dict) else False,
@@ -3482,77 +3528,113 @@ def _llm_match_display_name(match: dict, raw_provider: str, provider_display_nam
     return provider_display_name
 
 
+
+
+
 def _save_llm_settings(payload: dict) -> dict:
+    """Persist endpoint/protocol identity without allowing family write-back."""
+    from .endpoint_security import validate_model_endpoint
+    from .model_endpoint import (
+        SERVICE_PRESETS,
+        endpoint_profile_patch,
+        normalize_service_preset,
+        service_default_base_url,
+    )
+    from .model_stream_config import resolve_model_capability
     from .peizhi import (
         API_PEIZHI_LUJING,
         MOREN_PROVIDER,
         duqu_configured_model_ming,
         duqu_configured_provider_base_url,
-        duqu_model_ming,
         duqu_moren_provider,
         duqu_provider_input_config,
-        l4_provider_profiles,
+        infer_provider_id,
         l4_provider_display_name,
-        save_model_reasoning_config,
         normalize_provider_base_url,
         normalize_provider_identity,
         provider_match_info,
-        duqu_provider_base_url,
+        save_model_reasoning_config,
     )
-    from .endpoint_security import validate_model_endpoint
 
-    has_provider = any(key in payload for key in ("provider", "modelProvider"))
-    provider_value = payload.get("provider") if "provider" in payload else payload.get("modelProvider")
-    raw_provider = str(provider_value or "").strip() if has_provider else ""
     api_key = str(payload.get("modelApiKey") or payload.get("api_key") or "").strip()
     if api_key:
         return {"ok": False, "error": "credential_must_use_desktop_vault", "error_code": "credential_plaintext_forbidden"}
+
+    current_identity = duqu_moren_provider(MOREN_PROVIDER)
+    current_input = duqu_provider_input_config(current_identity)
+    has_provider = any(key in payload for key in ("provider_identity", "provider", "modelProvider"))
+    raw_provider = str(
+        payload.get("provider_identity")
+        if "provider_identity" in payload else payload.get("provider")
+        if "provider" in payload else payload.get("modelProvider") or ""
+    ).strip()
+
+    service_value = payload.get("service_preset") if "service_preset" in payload else payload.get("modelService")
+    # Legacy callers may provide only a historical provider/family identity.
+    # Do not pre-empt provider->service alias resolution with an eager custom
+    # default; an explicit service_preset still remains authoritative.
+    service_preset = normalize_service_preset(
+        service_value or current_input.get("service_preset") or "",
+        raw_provider or current_identity,
+    )
+    preset = SERVICE_PRESETS[service_preset]
+    identity_provider = normalize_provider_identity(
+        raw_provider if has_provider and raw_provider else preset.provider_identity or current_identity
+    )
+
+    protocol_value = payload.get("protocol_family") if "protocol_family" in payload else payload.get("modelProtocol")
+    if service_preset == "custom" and not str(protocol_value or "").strip():
+        return {"ok": False, "error": "protocol_family_required_for_custom", "error_code": "protocol_family_required"}
+    try:
+        endpoint_profile = endpoint_profile_patch(
+            service_preset=service_preset,
+            protocol_family=protocol_value or preset.default_protocol,
+            endpoint_overrides=payload.get("endpoint_overrides") if isinstance(payload.get("endpoint_overrides"), dict) else {},
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "error_code": "protocol_family_invalid"}
+    protocol_family = endpoint_profile["protocol_family"]
+
     has_base_url = any(key in payload for key in ("base_url", "modelBaseUrl"))
+    raw_base = payload.get("base_url") if "base_url" in payload else payload.get("modelBaseUrl")
+    previous_base = duqu_configured_provider_base_url(current_identity) if identity_provider == current_identity else ""
+    if has_base_url:
+        base_url = normalize_provider_base_url(raw_base)
+    else:
+        base_url = normalize_provider_base_url(previous_base) if previous_base else service_default_base_url(service_preset, protocol_family)
+    if not base_url:
+        base_url = service_default_base_url(service_preset, protocol_family)
+    if not base_url:
+        return {"ok": False, "error": "model_base_url_required", "error_code": "model_base_url_required"}
+
     has_model_name = any(key in payload for key in ("model_name", "modelName", "model"))
-    base_url_value = payload.get("base_url") if "base_url" in payload else payload.get("modelBaseUrl")
-    model_name_value = (
-        payload.get("model_name")
-        if "model_name" in payload
-        else payload.get("modelName")
-        if "modelName" in payload
-        else payload.get("model")
+    raw_model = payload.get("model_name") if "model_name" in payload else payload.get("modelName") if "modelName" in payload else payload.get("model")
+    previous_model = duqu_configured_model_ming(current_identity) if identity_provider == current_identity else ""
+    model_name = str(raw_model if has_model_name else previous_model or preset.default_model or "").strip()
+    if not model_name:
+        return {"ok": False, "error": "model_name_required", "error_code": "model_name_required"}
+
+    try:
+        binding = validate_model_endpoint(identity_provider, base_url, resolve_dns=False)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "error_code": "model_endpoint_rejected"}
+
+    optimization_family = infer_provider_id(identity_provider, base_url, model_name)
+    capability = resolve_model_capability(
+        model_name, optimization_family, protocol_family, service_preset,
+        endpoint_profile["endpoint_overrides"].get("capability_override")
+        if isinstance(endpoint_profile.get("endpoint_overrides"), dict)
+        and isinstance(endpoint_profile["endpoint_overrides"].get("capability_override"), dict)
+        else None,
     )
-    base_url = normalize_provider_base_url(base_url_value)
-    model_name = str(model_name_value or "").strip()
-    clear = bool(payload.get("clear_api_key"))
-    has_reasoning_mode = any(
-        key in payload
-        for key in ("reasoning_mode", "modelThinkingDepth", "modelThinkingEnabled")
-    )
+    has_reasoning_mode = any(key in payload for key in ("reasoning_mode", "modelThinkingDepth", "modelThinkingEnabled"))
     reasoning_mode = str(
-        payload.get("reasoning_mode")
-        if "reasoning_mode" in payload
-        else payload.get("modelThinkingDepth")
-        if "modelThinkingDepth" in payload
-        else ""
+        payload.get("reasoning_mode") if "reasoning_mode" in payload
+        else payload.get("modelThinkingDepth") if "modelThinkingDepth" in payload else ""
     ).strip().lower()
     if "modelThinkingEnabled" in payload and not bool(payload.get("modelThinkingEnabled")):
-        reasoning_mode = "off"
-    current_provider = duqu_moren_provider(MOREN_PROVIDER)
-    current_inputs = duqu_provider_input_config(current_provider)
-    same_saved_provider = (
-        not has_provider
-        or raw_provider == str(current_inputs.get("provider") or "")
-        or raw_provider == current_provider
-    )
-    match_provider = raw_provider if has_provider else str(current_inputs.get("provider") or current_provider)
-    match_base_url = base_url if has_base_url else (duqu_configured_provider_base_url(current_provider) if same_saved_provider else "")
-    match_model_name = model_name if has_model_name else (duqu_configured_model_ming(current_provider) if same_saved_provider else "")
-    match = provider_match_info(match_provider, match_base_url, match_model_name)
-    # 路由家族：只用于端点校验 / L4 优化 / 思考能力配置，绝不写回持久化身份。
-    routing_provider = str(match.get("provider") or MOREN_PROVIDER)
-    # 配置身份：用户显式或已保存身份的忠实规范化；空值即 custom。
-    # 第一性原理：身份与路由分离——即使路由回退为 gpt_5_6，用户身份仍
-    # 保持自身（custom/原始名称），设置界面永不把回退值钉成用户选择。
-    identity_provider = (
-        normalize_provider_identity(raw_provider) if has_provider
-        else normalize_provider_identity(current_provider)
-    )
+        reasoning_mode = "off" if capability.known_model else ""
+
     API_PEIZHI_LUJING.parent.mkdir(parents=True, exist_ok=True)
     try:
         data = json.loads(API_PEIZHI_LUJING.read_text(encoding="utf-8-sig")) if API_PEIZHI_LUJING.exists() else {}
@@ -3560,93 +3642,69 @@ def _save_llm_settings(payload: dict) -> dict:
             data = {}
     except Exception:
         data = {}
-    effective_base_url = base_url if has_base_url and base_url else (match_base_url or duqu_provider_base_url(identity_provider) or "")
-    try:
-        binding = validate_model_endpoint(routing_provider, effective_base_url, resolve_dns=False)
-    except ValueError as exc:
-        return {"ok": False, "error": str(exc), "error_code": "model_endpoint_rejected"}
-    # Credentials are owned by Electron safeStorage and injected only into the
-    # backend process environment.  The JSON settings file is deliberately
-    # non-secret.  ``clear_api_key`` is processed by the desktop vault before
-    # this request reaches the backend.
-    data["_default_provider"] = identity_provider
 
-    provider_inputs = data.get("_provider_inputs")
-    if not isinstance(provider_inputs, dict):
-        provider_inputs = {}
-    previous_input = provider_inputs.get(identity_provider) if isinstance(provider_inputs.get(identity_provider), dict) else {}
-    display_provider = raw_provider if has_provider else str(previous_input.get("provider") or current_inputs.get("provider") or "")
-    display_base_url = base_url if has_base_url else str(previous_input.get("base_url") or match_base_url or "")
-    display_model_name = model_name if has_model_name else str(previous_input.get("model_name") or match_model_name or "")
-    matched_display_name = _llm_match_display_name(match, display_provider, l4_provider_display_name(routing_provider))
-    match["display_name"] = matched_display_name
-    if has_provider or has_base_url or has_model_name or identity_provider not in provider_inputs:
-        provider_inputs[identity_provider] = {
-            "provider": display_provider,
-            "base_url": display_base_url,
-            "model_name": display_model_name,
-        }
+    data["_default_provider"] = identity_provider
+    data["_model_service"] = service_preset
+    provider_inputs = data.get("_provider_inputs") if isinstance(data.get("_provider_inputs"), dict) else {}
+    provider_inputs[identity_provider] = {
+        "provider": identity_provider,
+        "service_preset": service_preset,
+        "protocol_family": protocol_family,
+        "base_url": base_url,
+        "model_name": model_name,
+    }
     data["_provider_inputs"] = provider_inputs
 
-    base_urls = data.get("_base_urls")
-    if not isinstance(base_urls, dict):
-        base_urls = {}
-    if has_base_url:
-        if base_url:
-            base_urls[identity_provider] = base_url
-        else:
-            base_urls.pop(identity_provider, None)
+    base_urls = data.get("_base_urls") if isinstance(data.get("_base_urls"), dict) else {}
+    base_urls[identity_provider] = base_url
     data["_base_urls"] = base_urls
-    model_names = data.get("_model_names")
-    if not isinstance(model_names, dict):
-        model_names = {}
-    if has_model_name:
-        if model_name:
-            model_names[identity_provider] = model_name
-        else:
-            model_names.pop(identity_provider, None)
+    model_names = data.get("_model_names") if isinstance(data.get("_model_names"), dict) else {}
+    model_names[identity_provider] = model_name
     data["_model_names"] = model_names
-    if has_reasoning_mode:
-        reasoning_base_url = base_url or match_base_url or duqu_provider_base_url(identity_provider) or ""
-        reasoning_model_name = model_name or match_model_name or duqu_model_ming(identity_provider)
-        if not reasoning_mode:
-            from .peizhi import model_reasoning_capability
-            reasoning_mode = str(
-                model_reasoning_capability(routing_provider, reasoning_model_name).get("default_mode") or "off"
-            )
+
+    endpoint_profiles = data.get("_endpoint_profiles") if isinstance(data.get("_endpoint_profiles"), dict) else {}
+    previous_profile = endpoint_profiles.get(identity_provider) if isinstance(endpoint_profiles.get(identity_provider), dict) else {}
+    endpoint_profiles[identity_provider] = {
+        **previous_profile,
+        **endpoint_profile,
+        "reasoning_mode": reasoning_mode if has_reasoning_mode else str(previous_profile.get("reasoning_mode") or ""),
+    }
+    data["_endpoint_profiles"] = endpoint_profiles
+
+    if has_reasoning_mode and capability.known_model:
+        mode = reasoning_mode
+        if not mode:
+            mode = capability.reasoning_modes[0] if capability.reasoning_modes else "off"
         try:
             save_model_reasoning_config(
                 data,
-                provider_id=routing_provider,
-                base_url=reasoning_base_url,
-                model_name=reasoning_model_name,
-                mode=reasoning_mode,
+                provider_id=optimization_family,
+                base_url=base_url,
+                model_name=model_name,
+                mode=mode,
             )
         except ValueError as exc:
-            return {
-                "ok": False,
-                "error": str(exc),
-                "error_code": "model_reasoning_mode_unsupported",
-            }
-    from .settings_persistence import atomic_write_json
+            return {"ok": False, "error": str(exc), "error_code": "model_reasoning_mode_unsupported"}
 
-    atomic_write_json(API_PEIZHI_LUJING, data)
+    _atomic_write_json(API_PEIZHI_LUJING, data)
     result = _llm_settings()
+    match = provider_match_info(identity_provider, base_url, model_name)
+    matched_display_name = _llm_match_display_name(match, identity_provider, l4_provider_display_name(optimization_family))
     result.update({
-        "provider": routing_provider,
-        "provider_display_name": l4_provider_display_name(routing_provider),
-        "matched_provider": routing_provider,
+        "provider": identity_provider,
+        "provider_identity": identity_provider,
+        "service_preset": service_preset,
+        "protocol_family": protocol_family,
+        "optimization_family": optimization_family,
+        "matched_provider": optimization_family,
         "matched_provider_display_name": matched_display_name,
-        "configured_provider": display_provider or identity_provider,
-        "model": model_name or duqu_model_ming(identity_provider),
-        "model_name": model_name or duqu_model_ming(identity_provider),
-        "configured_model_name": display_model_name,
-        "base_url": base_url or result.get("base_url", ""),
-        "configured_base_url": display_base_url,
-        "api_key": result.get("api_key", "missing"),
-        "credential_state": result.get("credential_state", "not_configured"),
+        "configured_provider": identity_provider,
+        "model": model_name,
+        "model_name": model_name,
+        "configured_model_name": model_name,
+        "base_url": base_url,
+        "configured_base_url": base_url,
         "provider_match": match,
-        "provider_profiles": l4_provider_profiles(),
         "credential_scope": "official_provider" if binding.official else binding.custom_scope,
         "endpoint_official": binding.official,
     })

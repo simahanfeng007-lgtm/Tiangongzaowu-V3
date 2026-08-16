@@ -89,6 +89,8 @@ def _profile_match_score(profile_id: str, profile: Dict[str, Any], provider: str
     if profile_id in {"gpt_openai_chat", "deepseek_openai", "minimax_openai", "glm_openai", "mimo_openai", "kimi_openai", "doubao_openai"}:
         if _payload_has_openai_tool_calls(payload):
             score += 20
+    if profile.get("call_style") == "openai_responses_function_call" and _payload_has_openai_responses_function_call(payload):
+        score += 70
     if profile.get("call_style") == "anthropic_tool_use" and _payload_has_anthropic_tool_use(payload):
         score += 30
     if profile.get("call_style") == "xml_or_tag_tool_call" and isinstance(payload, str) and ("<tool" in payload.lower() or "<function" in payload.lower()):
@@ -235,6 +237,17 @@ def render_tool_schema(profile_id: str | None = None, provider: str | None = Non
             "profile": prof,
             "tool_schema": [{"name": TOOL_NAME, "description": _tool_description(), "input_schema": params}],
         }
+    if schema_style == "openai_responses_tools":
+        return {
+            "profile": prof,
+            "tool_schema": [{
+                "type": "function",
+                "name": TOOL_NAME,
+                "description": _tool_description(),
+                "parameters": params,
+                "strict": bool(prof.get("supports_strict_schema")),
+            }],
+        }
     if schema_style == "gemini_function_declarations":
         return {
             "profile": prof,
@@ -275,6 +288,15 @@ def _payload_has_openai_tool_calls(payload: Any) -> bool:
         return False
 
 
+def _payload_has_openai_responses_function_call(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("type") == "function_call":
+        return True
+    output = payload.get("output")
+    return isinstance(output, list) and any(isinstance(item, dict) and item.get("type") == "function_call" for item in output)
+
+
 def _payload_has_anthropic_tool_use(payload: Any) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -297,6 +319,17 @@ def _extract_openai_tool_calls(payload: Any) -> List[Dict[str, Any]]:
         except Exception:
             return []
     return []
+
+
+def _extract_openai_responses_calls(payload: Any) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("type") == "function_call":
+        return [payload]
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return []
+    return [dict(item) for item in output if isinstance(item, dict) and item.get("type") == "function_call"]
 
 
 def _canonical_from_arguments(arguments: Any, call_id: str | None, provider: str, profile: str, raw_name: str | None = None) -> Dict[str, Any]:
@@ -341,7 +374,16 @@ def parse_tool_calls(payload: Any = None, text: str | None = None, provider: str
     profile = prof["profile_id"]
     call_style = prof.get("call_style")
     calls: List[Dict[str, Any]] = []
-    if call_style == "anthropic_tool_use" or _payload_has_anthropic_tool_use(payload):
+    if call_style == "openai_responses_function_call" or _payload_has_openai_responses_function_call(payload):
+        for item in _extract_openai_responses_calls(payload):
+            calls.append(_canonical_from_arguments(
+                item.get("arguments") or {},
+                item.get("call_id") or item.get("id"),
+                prof.get("provider", ""),
+                profile,
+                item.get("name") or TOOL_NAME,
+            ))
+    elif call_style == "anthropic_tool_use" or _payload_has_anthropic_tool_use(payload):
         for block in (payload or {}).get("content", []):
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 calls.append(_canonical_from_arguments(block.get("input") or {}, block.get("id"), prof.get("provider", ""), profile, block.get("name") or TOOL_NAME))
@@ -418,6 +460,8 @@ def render_tool_result(result: Dict[str, Any], call_id: str | None = None, profi
     cid = call_id or result.get("call_id") or result.get("tool_call_id") or f"call_{uuid.uuid4().hex[:12]}"
     if style == "anthropic_tool_result":
         return {"profile": prof, "tool_result": {"type": "tool_result", "tool_use_id": cid, "content": json.dumps(result, ensure_ascii=False)}}
+    if style == "openai_responses_function_call_output":
+        return {"profile": prof, "tool_result": {"type": "function_call_output", "call_id": cid, "output": json.dumps(result, ensure_ascii=False)}}
     if style == "gemini_function_response":
         return {"profile": prof, "tool_result": {"functionResponse": {"name": TOOL_NAME, "response": result}}}
     if style == "xml_tool_result":
@@ -428,6 +472,8 @@ def render_tool_result(result: Dict[str, Any], call_id: str | None = None, profi
 def _fixture_for(profile_id: str) -> Any:
     if profile_id == "mimo_anthropic":
         return {"content": [{"type": "tool_use", "id": "toolu_1", "name": "omni_body", "input": {"action": "skill.route", "args": {"job": "做一份商业PPT"}}}]}
+    if profile_id == "gpt_openai_responses":
+        return {"id": "resp_1", "output": [{"type": "function_call", "id": "fc_1", "call_id": "call_resp_1", "name": "omni_body", "arguments": "{\"action\":\"skill.route\",\"args\":{\"job\":\"做一份企业AI培训方案Word\"}}"}]}
     if profile_id == "minimax_raw_xml":
         return '<tool_call><id>mm_1</id><name>omni_body</name><arguments>{"action":"skill.route","args":{"job":"写会议纪要"}}</arguments></tool_call>'
     return {"choices": [{"message": {"tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "omni_body", "arguments": "{\"action\":\"skill.route\",\"args\":{\"job\":\"做一份企业AI培训方案Word\"}}"}}]}}]}

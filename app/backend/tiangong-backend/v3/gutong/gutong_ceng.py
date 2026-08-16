@@ -110,6 +110,8 @@ class GutongCeng:
         on_reasoning_chunk=None,
         assistant_messages: list[str] | None = None,
         stable_user_message: str = "",
+        provider_turn: Any = None,
+        provider_tool_results: list[dict[str, Any]] | None = None,
     ) -> tuple[ShentiZhuangtai, str]:
         """工具结果回传LLM，继续思考"""
         jieguo_wenben = json.dumps(gongju_jieguo, ensure_ascii=False, indent=2)
@@ -174,6 +176,8 @@ class GutongCeng:
                 on_reasoning_chunk=on_reasoning_chunk,
                 prior_assistant_messages=prior_assistant_messages,
                 stable_user_message=stable_user_message or None,
+                prior_provider_turn=provider_turn,
+                provider_tool_results=provider_tool_results,
             )
         except TypeError:
             # 旧回调不支持关键字参数：退化为单消息（无前缀缓存）。
