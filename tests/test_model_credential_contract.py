@@ -66,7 +66,9 @@ class ModelCredentialContractTests(unittest.TestCase):
         life = LIFE_RUNTIME.read_text(encoding="utf-8")
 
         # Model provider, endpoint, model id and secret: renderer -> trusted
-        # Electron vault -> backend configuration reader.
+        # Electron vault -> backend configuration reader. Probe routing follows
+        # the configured protocol family rather than assuming a legacy /models
+        # endpoint, so custom/SCNet providers preserve their real wire protocol.
         self.assertIn('id="settingsModelApiKey"', panel)
         self.assertIn('id="settingsModelThinking"', panel)
         self.assertIn('writeModelSettings(secureLlmBody)', frontend)
@@ -74,7 +76,14 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('modelThinkingCapability: llm?.reasoning', frontend)
         self.assertIn('handleTrusted("model:setSettings"', electron)
         self.assertIn('handleTrusted("model:probeProviderApi"', electron)
-        self.assertIn('requestProviderProbe(providerProbeEndpoint(baseUrl, "models")', electron)
+        self.assertIn('const protocolFamily = String(settings.protocol_family', electron)
+        self.assertIn('suffix = "responses"', electron)
+        self.assertIn('suffix = "v1/messages"', electron)
+        self.assertIn('headers = { "anthropic-version": "2023-06-01" }', electron)
+        self.assertIn('headers["x-api-key"] = apiKey', electron)
+        self.assertIn('suffix = "chat/completions"', electron)
+        self.assertIn('const endpoint = providerProbeEndpoint(baseUrl, suffix)', electron)
+        self.assertIn('const response = await requestProviderProbe(endpoint', electron)
         self.assertIn('error_code: "plaintext_http_forbidden"', electron)
         self.assertIn('stage: "gateway_credential"', electron)
         self.assertIn('error_code: "gateway_credential_not_injected"', electron)
