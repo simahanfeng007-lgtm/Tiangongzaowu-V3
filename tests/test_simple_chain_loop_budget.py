@@ -126,13 +126,76 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertLessEqual(_LLM_CALL_MAX_SECONDS, 900)
 
     def test_llm_call_deadline_guard_is_enforced_inside_stream(self) -> None:
-        from v3.jineng import http_kehuduan
         from pathlib import Path as _Path
 
+        from v3.jineng import http_kehuduan
+        from v3.jineng.model_transport_executor import (
+            TransportExecutionError,
+            execute_streaming_turn,
+        )
+        from v3.model_endpoint import ModelEndpointConfig, ProtocolFamily
+
+        # The caller owns the effective Runtime/Gateway deadline and passes it
+        # into the protocol-neutral transport executor.
         source = _Path(http_kehuduan.__file__).read_text(encoding="utf-8")
-        self.assertIn("llm_call_wall_clock_deadline", source)
-        self.assertIn("_LLM_CALL_MAX_SECONDS", source)
+        self.assertIn("effective_llm_max_seconds = _effective_llm_deadline_seconds()", source)
         self.assertIn("current_execution_deadline_ms", source)
+        self.assertIn("max_wall_clock_seconds=effective_llm_max_seconds", source)
+
+        class _FakeResponse:
+            status_code = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def iter_lines(self):
+                yield 'data: {"choices":[{"delta":{"content":"keepalive"}}]}'
+
+        class _FakeClient:
+            def stream(self, method, url, **kwargs):
+                return _FakeResponse()
+
+        endpoint = ModelEndpointConfig(
+            service_preset="deepseek",
+            provider_identity="deepseek_v4",
+            protocol_family=ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
+            base_url="https://api.deepseek.com/v1",
+            model_name="deepseek-v4-pro",
+            credential_scope="official_provider",
+            reasoning_mode="off",
+            endpoint_overrides={},
+            optimization_family="deepseek_v4",
+            config_fingerprint="deadline-test",
+        )
+        with (
+            mock.patch(
+                "v3.jineng.model_transport_executor.validate_model_endpoint"
+            ),
+            mock.patch(
+                "v3.jineng.model_transport_executor.time.perf_counter",
+                side_effect=[0.0, 0.0, 0.0, 301.0, 301.0],
+            ),
+        ):
+            with self.assertRaises(TransportExecutionError) as caught:
+                execute_streaming_turn(
+                    client=_FakeClient(),
+                    endpoint=endpoint,
+                    api_key="test-key",
+                    canonical_payload={
+                        "messages": [{"role": "user", "content": "ping"}]
+                    },
+                    retry_limit=1,
+                    max_wall_clock_seconds=300.0,
+                )
+
+        self.assertTrue(caught.exception.deadline_exceeded)
+        self.assertIn("llm_call_wall_clock_deadline", str(caught.exception))
 
     def test_simple_chain_honors_gateway_effect_deadline(self) -> None:
         from pathlib import Path as _Path
