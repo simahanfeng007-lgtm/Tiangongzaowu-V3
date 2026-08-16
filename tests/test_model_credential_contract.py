@@ -13,6 +13,7 @@ PAGES_CSS = ROOT / "app" / "frontend-v2" / "styles" / "pages.css"
 PRELOAD = ROOT / "app" / "preload.js"
 GATEWAY_API = ROOT / "src" / "total_gateway" / "desktop_api.py"
 BACKEND_HTTP = ROOT / "app" / "backend" / "tiangong-backend" / "v3" / "duihua_qiaojie.py"
+ENDPOINT_SECURITY = ROOT / "app" / "backend" / "tiangong-backend" / "v3" / "endpoint_security.py"
 LIFE_RUNTIME = ROOT / "src" / "life_service" / "embedded_runtime.py"
 
 
@@ -63,6 +64,7 @@ class ModelCredentialContractTests(unittest.TestCase):
         electron = ELECTRON_MAIN.read_text(encoding="utf-8")
         gateway = GATEWAY_API.read_text(encoding="utf-8")
         backend = BACKEND_HTTP.read_text(encoding="utf-8")
+        endpoint_security = ENDPOINT_SECURITY.read_text(encoding="utf-8")
         life = LIFE_RUNTIME.read_text(encoding="utf-8")
 
         # Model provider, endpoint, model id and secret: renderer -> trusted
@@ -84,9 +86,19 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('suffix = "chat/completions"', electron)
         self.assertIn('const endpoint = providerProbeEndpoint(baseUrl, suffix)', electron)
         self.assertIn('const response = await requestProviderProbe(endpoint', electron)
-        self.assertIn('error_code: "plaintext_http_forbidden"', electron)
-        self.assertIn('stage: "gateway_credential"', electron)
-        self.assertIn('error_code: "gateway_credential_not_injected"', electron)
+
+        # P18.1 endpoint security authority lives in the backend. Electron owns
+        # only encrypted credential storage/binding; it must not duplicate URL
+        # policy or expose a vendor key to a different custom endpoint.
+        self.assertIn('credentialId = modelCredentialBindingId(provider, baseUrl)', electron)
+        self.assertIn('item.backend !== "electron_safe_storage"', electron)
+        self.assertIn('safeStorage.decryptString(', electron)
+        self.assertIn('safeStorage.encryptString(', electron)
+        self.assertIn('raise EndpointSecurityError("endpoint_https_required")', endpoint_security)
+        self.assertIn('raise EndpointSecurityError("endpoint_private_or_local_address_forbidden")', endpoint_security)
+        self.assertIn('binding = validate_model_endpoint(identity_provider, base_url, resolve_dns=False)', backend)
+        self.assertIn('"error_code": "model_endpoint_rejected"', backend)
+
         self.assertIn('id="settingsProbeProviderApi"', panel)
         self.assertIn('probeProviderApi: () => ipcRenderer.invoke("model:probeProviderApi")', preload)
         gateway_env = electron[
