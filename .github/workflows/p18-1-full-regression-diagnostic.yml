@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -x -vv --tb=long --junitxml=pytest-p18-1-diagnostic.xml 2>&1 | tee pytest-p18-1-diagnostic.log
+          python -m pytest -vv --tb=short --junitxml=pytest-p18-1-diagnostic.xml 2>&1 | tee pytest-p18-1-diagnostic.log
 
       - name: Upload diagnostic report
         if: always()
