@@ -156,7 +156,9 @@ export const providerPresets = Object.freeze({
       PROTOCOL_FAMILIES.OPENAI_RESPONSES,
       PROTOCOL_FAMILIES.ANTHROPIC_MESSAGES,
     ],
-    defaultProtocol: "",
+    // 与后端 SERVICE_PRESETS["custom"].default_protocol 对齐：
+    // 自定义端点也需要显式协议，默认选中最常见的 OpenAI Chat Completions。
+    defaultProtocol: PROTOCOL_FAMILIES.OPENAI_CHAT_COMPLETIONS,
     baseUrls: {},
     model: "",
     thinking: rawOptionalThinking,

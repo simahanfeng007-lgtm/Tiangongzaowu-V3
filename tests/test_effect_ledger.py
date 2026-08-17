@@ -77,7 +77,7 @@ class EffectLedgerTests(unittest.TestCase):
         with self.assertRaises(StoreConflictError):
             self.store.complete_effect(result(effect_claim.effect_id, evidence_sha256=HASH_B))
 
-    def test_restart_recovery_turns_unresolved_started_effect_ambiguous(self) -> None:
+    def test_restart_recovery_turns_orchestration_started_effect_failed_final(self) -> None:
         effect_claim = claim()
         self.store.claim_effect(effect_claim)
         self.store.mark_effect_started(effect_claim.effect_id, started_at_ms=1_100)
@@ -85,8 +85,26 @@ class EffectLedgerTests(unittest.TestCase):
         self.store = GatewayStateStore.open(self.path, now_ms=1_200)
         recovered = self.store.recover_started_effects(now_ms=1_300)
         self.assertEqual(len(recovered), 1)
-        self.assertEqual(recovered[0].state, "AMBIGUOUS")
+        self.assertEqual(recovered[0].state, "FAILED_FINAL")
+        self.assertEqual(
+            recovered[0].result.error_code, "effect.execution_interrupted_by_restart"
+        )
         self.assertEqual(self.store.recover_started_effects(now_ms=1_400), ())
+
+    def test_restart_recovery_turns_provider_started_effect_ambiguous(self) -> None:
+        effect_claim = claim().model_copy(
+            update={"owner_component_id": "tiangong-total-gateway"}
+        ).with_computed_sha256()
+        self.store.claim_effect(effect_claim)
+        self.store.mark_effect_started(effect_claim.effect_id, started_at_ms=1_100)
+        self.store.close()
+        self.store = GatewayStateStore.open(self.path, now_ms=1_200)
+        recovered = self.store.recover_started_effects(now_ms=1_300)
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0].state, "AMBIGUOUS")
+        self.assertEqual(
+            recovered[0].result.error_code, "effect.result_missing_after_restart"
+        )
 
     def test_result_write_fault_leaves_effect_at_started_boundary(self) -> None:
         effect_claim = claim()

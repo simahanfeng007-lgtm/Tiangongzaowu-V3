@@ -4654,23 +4654,47 @@ class GatewayStateStore:
         recovered = []
         for row in rows:
             claim = _effect_record_from_row(row).claim
-            evidence = canonical_sha256(
-                {
-                    "domain": "tiangong.gateway.effect-recovery.v1",
-                    "effect_id": claim.effect_id,
-                    "reason": "result_missing_after_restart",
-                }
-            )
-            result = EffectResult(
-                result_id="effect_result_ambiguous_" + claim.effect_id[4:20],
-                effect_id=claim.effect_id,
-                status="AMBIGUOUS",
-                fact_id="fact_effect_recovery_" + claim.effect_id[4:20],
-                evidence_sha256=evidence,
-                error_code="effect.result_missing_after_restart",
-                observed_at_ms=now_ms,
-                result_sha256="0" * 64,
-            ).with_computed_sha256()
+            if str(claim.owner_component_id) == "tiangong-backend":
+                # The gateway's own execution wrapper never recorded a terminal
+                # result, which is provable: no terminal fact exists.  Finalize
+                # FAILED_FINAL so the Run terminalizes cleanly instead of
+                # freezing in RECONCILE_REQUIRED — a wrapper effect has no
+                # reconcile party, so ambiguity would be a dead end.
+                evidence = canonical_sha256(
+                    {
+                        "domain": "tiangong.gateway.effect-recovery.v1",
+                        "effect_id": claim.effect_id,
+                        "reason": "execution_interrupted_by_restart",
+                    }
+                )
+                result = EffectResult(
+                    result_id="effect_result_interrupted_" + claim.effect_id[4:20],
+                    effect_id=claim.effect_id,
+                    status="FAILED_FINAL",
+                    fact_id="fact_effect_interrupted_" + claim.effect_id[4:20],
+                    evidence_sha256=evidence,
+                    error_code="effect.execution_interrupted_by_restart",
+                    observed_at_ms=now_ms,
+                    result_sha256="0" * 64,
+                ).with_computed_sha256()
+            else:
+                evidence = canonical_sha256(
+                    {
+                        "domain": "tiangong.gateway.effect-recovery.v1",
+                        "effect_id": claim.effect_id,
+                        "reason": "result_missing_after_restart",
+                    }
+                )
+                result = EffectResult(
+                    result_id="effect_result_ambiguous_" + claim.effect_id[4:20],
+                    effect_id=claim.effect_id,
+                    status="AMBIGUOUS",
+                    fact_id="fact_effect_recovery_" + claim.effect_id[4:20],
+                    evidence_sha256=evidence,
+                    error_code="effect.result_missing_after_restart",
+                    observed_at_ms=now_ms,
+                    result_sha256="0" * 64,
+                ).with_computed_sha256()
             recovered.append(self.complete_effect(result))
         return tuple(recovered)
 

@@ -1556,9 +1556,9 @@ async function probeProviderApiConnection() {
   let apiKey;
   try {
     credentialId = modelCredentialBindingId(provider, baseUrl);
-    const envelope = readDesktopCredentialEnvelope(desktopCredentialStorePath());
+    const envelope = readDesktopCredentialEnvelope(desktopProviderCredentialsPath());
     const item = envelope.providers?.[credentialId];
-    if (!item || item.backend !== "electron_safe_storage" || !safeStorage.isEncryptionAvailable()) {
+    if (!item || item.scheme !== "electron-safe-storage-v1" || !safeStorage.isEncryptionAvailable()) {
       return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
     }
     apiKey = safeStorage.decryptString(Buffer.from(String(item.value || ""), "base64"));
@@ -3104,7 +3104,15 @@ function backendControlJsonRequest(method, relativePath, payload = null, timeout
 
 function normalizedModelSettingsPayload(payload = {}) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  const allowed = new Set(["provider", "base_url", "model_name", "reasoning_mode"]);
+  const allowed = new Set([
+    "provider",
+    "base_url",
+    "model_name",
+    "reasoning_mode",
+    "service_preset",
+    "provider_identity",
+    "protocol_family",
+  ]);
   if (Object.keys(source).some((key) => !allowed.has(key))) throw new Error("model_settings_fields_invalid");
   const clean = {
     provider: String(source.provider || "").trim(),
@@ -3114,11 +3122,23 @@ function normalizedModelSettingsPayload(payload = {}) {
   if (Object.prototype.hasOwnProperty.call(source, "reasoning_mode")) {
     clean.reasoning_mode = String(source.reasoning_mode || "").trim().toLowerCase();
   }
+  if (Object.prototype.hasOwnProperty.call(source, "service_preset")) {
+    clean.service_preset = String(source.service_preset || "").trim().toLowerCase();
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "provider_identity")) {
+    clean.provider_identity = String(source.provider_identity || "").trim().toLowerCase();
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "protocol_family")) {
+    clean.protocol_family = String(source.protocol_family || "").trim().toLowerCase();
+  }
   if (
     clean.provider.length > 128
     || clean.base_url.length > 4096
     || clean.model_name.length > 512
     || (clean.reasoning_mode?.length || 0) > 64
+    || (clean.service_preset?.length || 0) > 128
+    || (clean.provider_identity?.length || 0) > 128
+    || (clean.protocol_family?.length || 0) > 64
   ) {
     throw new Error("model_settings_value_too_large");
   }
