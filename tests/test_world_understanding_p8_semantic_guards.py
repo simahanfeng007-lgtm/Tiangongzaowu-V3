@@ -130,7 +130,7 @@ def test_semantic_package_has_no_runtime_gateway_tool_or_cognition_write_imports
         "world_understanding.cognition.evidence", "world_understanding.cognition.store",
     )
     for path in root.glob("*.py"):
-        tree = ast.parse(path.read_text(), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         modules = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

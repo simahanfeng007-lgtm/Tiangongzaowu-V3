@@ -107,21 +107,24 @@ def _append_orchestration_effect_event(
         if effect_id.startswith("eff_") and len(effect_id) == 68
         else hashlib.sha256(effect_id.encode("utf-8")).hexdigest()
     )
-    store.append_execution_event(
-        event_key=event_key,
-        request_id=request_id,
-        run_id=run_id,
-        generation=generation,
-        epoch_index=0,
-        event_type=event_type,
-        created_at_ms=created_at_ms,
-        payload=payload,
-        logical_effect_id=f"lef_{hex_suffix}",
-        attempt_id=f"att_{hex_suffix}",
-        step_id=f"stp_{hex_suffix}",
-        effect_id=effect_id,
-    )
-    return True
+    try:
+        store.append_execution_event(
+            event_key=event_key,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation,
+            epoch_index=0,
+            event_type=event_type,
+            created_at_ms=created_at_ms,
+            payload=payload,
+            logical_effect_id=f"lef_{hex_suffix}",
+            attempt_id=f"att_{hex_suffix}",
+            step_id=f"stp_{hex_suffix}",
+            effect_id=effect_id,
+        )
+        return True
+    except Exception:
+        return False
 from .communication_client import CommunicationControlClient
 from .context_projection import SessionContextProjector, estimate_projected_context_tokens
 from .continuity import (
@@ -1346,20 +1349,25 @@ class GatewayOrchestrationWorker:
             ).with_computed_sha256()
             try:
                 self._store.complete_effect(result)
+                reconciled += 1
+            except Exception:
+                continue
+            # 统一事件契约补写（best-effort）：事件补写失败绝不影响回收计数。
+            try:
+                claim = getattr(effect, "claim", None)
                 _append_orchestration_effect_event(
                     self._store,
                     event_key=f"step.ambiguous:{effect_id}",
                     event_type="step.ambiguous",
                     payload={"effect_state": "AMBIGUOUS", "source": "gateway_orchestration_stale_reap"},
-                    request_id=str(effect.claim.request_id),
-                    run_id=str(effect.claim.run_id),
-                    generation=int(effect.claim.generation),
+                    request_id=str(getattr(claim, "request_id", "") or ""),
+                    run_id=str(getattr(claim, "run_id", "") or ""),
+                    generation=int(getattr(claim, "generation", 0) or 0),
                     effect_id=effect_id,
                     created_at_ms=now_ms,
                 )
-                reconciled += 1
             except Exception:
-                continue
+                pass
         if reconciled:
             diagnostic_log(
                 f"orchestration.watchdog.reconciled count={reconciled} at_ms={now_ms}"
