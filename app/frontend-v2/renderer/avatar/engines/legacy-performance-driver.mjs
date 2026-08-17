@@ -192,7 +192,11 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme,
     }
     const alignable = ["co_speech", "nod", "tilt", "hand_to_chest"].includes(active.gesture);
     const gestureAge = state.idleTime - Number(stored.channelTiming?.gesture?.startedAt ?? state.idleTime);
-    const waitingForSpeech = alignable && gestureAge < 0.75;
+    // 2026-08-16 修复：等待窗口只在语音链真实活跃时有意义。无 TTS 场景
+    // speaking/speechPlan/gestureProsody 恒为空，0.75s 抑制纯属空白等待；
+    // 有 TTS 时韵律计划到达后 prosody 分支仍会接管（下方条件含 state.gestureProsody）。
+    const speechChainLive = state.speaking || state.speechPlan !== null || state.gestureProsody !== null;
+    const waitingForSpeech = alignable && speechChainLive && gestureAge < 0.75;
     if (alignable && (waitingForSpeech || state.gestureProsody || state.speaking || state.speechPlan)) {
       delete active.gesture;
       activeCount -= 1;
@@ -286,7 +290,13 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme,
       const field = requestedChannel;
       const raw = field === "gesture" && typeof data?.gesture === "object" ? data.gesture.semanticId : data?.[field];
       if (typeof raw !== "string" || !ALLOWED_PERFORMANCE[field].includes(raw)) return false;
-      const duration = THREE.MathUtils.clamp(Number(data?.duration) || 2.0, 0.1, 8);
+      // §15.1 wire 契约时长字段是 durationMs（毫秒）；旧代码只读 duration（秒），
+      // 导致 biaoxian 经 adapter 进入本路径时 LLM 自报时长被丢弃、永远回退 2.0s。
+      const wireDurationMs = Number(data?.durationMs);
+      const durationSeconds = Number.isFinite(wireDurationMs) && wireDurationMs > 0
+        ? wireDurationMs / 1000
+        : Number(data?.duration);
+      const duration = THREE.MathUtils.clamp(durationSeconds || 2.0, 0.1, 8);
       const previous = state.performance?.channelUntil ? state.performance : {
         source: data?.source || "client",
         channelUntil: {},
@@ -561,6 +571,19 @@ export function createLegacyPerformanceDriver({ vrm, applyExpression, mapViseme,
         lLowerZ -= Math.sin(state.idleTime * 2.8 + 0.6) * 0.010 * coSpeech;
         rHandX += Math.sin(state.idleTime * 4.3 + 0.3) * 0.008 * coSpeech;
         lHandX += Math.sin(state.idleTime * 3.9 + 1.2) * 0.006 * coSpeech;
+      }
+      if (coSpeech && !softTalk) {
+        // 2026-08-16 修复：无 TTS 时 speechPulse=0，上方语音同步项全部失效
+        // （残余 ≤0.3°，肉眼不可见）——这就是"回复时身体没有动作"的根因。
+        // 这里给 co_speech 一个自激励的可见前臂/手腕摆动，幅度随 pWave 包络
+        // 起落，手势结束自然归位；有语音时本分支不启用（行为与 parity 一致）。
+        const g = coSpeech * (0.55 + 0.45 * Math.sin(state.idleTime * 4.3 + state.idleShiftSeed));
+        rLowerX += g * 0.34;
+        lLowerX += g * 0.30;
+        rUpperZ += g * 0.10;
+        lUpperZ -= g * 0.08;
+        rHandZ += Math.sin(state.idleTime * 5.1 + 0.4) * g * 0.18;
+        lHandZ -= Math.sin(state.idleTime * 4.7 + 1.0) * g * 0.15;
       }
       if (gesture === "greet_wave" || gesture === "small_wave") {
         const greetT = THREE.MathUtils.clamp(pAge / Math.min(3.1, Math.max(2.45, perf?.duration || 2.8)), 0, 1);
