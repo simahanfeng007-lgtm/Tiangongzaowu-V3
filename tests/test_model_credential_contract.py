@@ -77,10 +77,9 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('reasoning_mode: next.modelThinkingDepth', frontend)
         self.assertIn('modelThinkingCapability: llm?.reasoning', frontend)
         self.assertIn('handleTrusted("model:setSettings"', electron)
-        self.assertIn(
-            'const allowed = new Set(["provider", "base_url", "model_name", "reasoning_mode"]);',
-            electron,
-        )
+        self.assertIn('const allowed = new Set([', electron)
+        for key in ("provider", "base_url", "model_name", "reasoning_mode", "service_preset", "provider_identity", "protocol_family"):
+            self.assertIn(f'"{key}",', electron)
         self.assertIn('Object.prototype.hasOwnProperty.call(source, "reasoning_mode")', electron)
         self.assertIn('clean.reasoning_mode = String(source.reasoning_mode', electron)
         self.assertIn('handleTrusted("model:probeProviderApi"', electron)
@@ -97,7 +96,7 @@ class ModelCredentialContractTests(unittest.TestCase):
         # only encrypted credential storage/binding; it must not duplicate URL
         # policy or expose a vendor key to a different custom endpoint.
         self.assertIn('credentialId = modelCredentialBindingId(provider, baseUrl)', electron)
-        self.assertIn('item.backend !== "electron_safe_storage"', electron)
+        self.assertIn('item.scheme !== "electron-safe-storage-v1"', electron)
         self.assertIn('safeStorage.decryptString(', electron)
         self.assertIn('safeStorage.encryptString(', electron)
         self.assertIn('raise EndpointSecurityError("endpoint_https_required")', endpoint_security)
