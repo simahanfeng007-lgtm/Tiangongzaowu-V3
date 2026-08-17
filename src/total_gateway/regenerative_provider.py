@@ -805,6 +805,13 @@ class RegenerativeExecutionAuthority:
         for record in self._store.list_effects_for_request(
             identity.request_id, run_id=identity.run_id, generation=identity.generation
         ):
+            if str(record.claim.owner_component_id) == "tiangong-backend":
+                # Orchestration-owned effects are claimed/started/completed by
+                # GatewayOrchestrationWorker while the chain is live; the
+                # provider must never finalize them.  Their crash window is
+                # owned by the gateway's own startup recovery
+                # (recover_started_effects, owner-aware), not by chain recover.
+                continue
             effect_id = record.claim.effect_id
             events = execution_events(effect_id)
             terminal = next((

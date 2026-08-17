@@ -151,6 +151,125 @@ class RegenerativeProviderTests(unittest.TestCase):
         duplicate = self.provider(self.effect_payload("prepare_effect", global_step=2, now_ms=2500))
         self.assertEqual(duplicate["disposition"], "reconcile_required")
 
+    def test_orchestration_owned_started_effect_is_untouched_by_chain_recover(self) -> None:
+        from contracts import derive_effect_identity
+        from total_gateway.effects import EffectClaim, EffectResult
+
+        intent = canonical_sha256({"orchestration": "backend-owned live effect"})
+        effect = derive_effect_identity(
+            request_id=self.request_id, run_id=self.run_id, run_sequence=1,
+            generation=self.generation, effect_kind="execution", ordinal=0, intent_sha256=intent,
+        )
+        claim = EffectClaim(
+            effect_id=effect.effect_id, request_id=self.request_id, run_id=self.run_id,
+            run_sequence=1, generation=self.generation, effect_kind="execution", ordinal=0,
+            intent_sha256=intent, owner_component_id="tiangong-backend", claimed_at_ms=2000,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.claim_effect(claim)
+        self.store.mark_effect_started(effect.effect_id, started_at_ms=2100)
+        # 活体执行视角：编排层在链初始化前就 claim/start 外层效果（此时契约
+        # 尚不存在，按设计无 step.* 事件）。链启动时的 recover 绝不能把它
+        # 当作崩溃窗口收尾——它归网关编排所有，recover 必须原样跳过。
+        recovered = self.provider(self.payload("recover", now_ms=2400))
+        self.assertIsInstance(recovered, dict)
+        self.assertEqual(self.store.get_effect(effect.effect_id).state, "SIDE_EFFECT_STARTED")
+        # 活体执行随后正常完成，recover 也不干预。
+        result = EffectResult(
+            result_id="result_live", effect_id=effect.effect_id, status="SUCCEEDED",
+            fact_id="fact_live", evidence_sha256=canonical_sha256({"done": True}),
+            observed_at_ms=2500, result_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.complete_effect(result)
+        self.assertEqual(self.store.get_effect(effect.effect_id).state, "SUCCEEDED")
+        self.provider(self.payload("recover", now_ms=2600))
+
+    def test_orchestration_owned_terminal_effect_without_events_skips_healing(self) -> None:
+        from contracts import derive_effect_identity
+        from total_gateway.effects import EffectClaim, EffectResult
+
+        intent = canonical_sha256({"orchestration": "terminal effect"})
+        effect = derive_effect_identity(
+            request_id=self.request_id, run_id=self.run_id, run_sequence=1,
+            generation=self.generation, effect_kind="execution", ordinal=0, intent_sha256=intent,
+        )
+        claim = EffectClaim(
+            effect_id=effect.effect_id, request_id=self.request_id, run_id=self.run_id,
+            run_sequence=1, generation=self.generation, effect_kind="execution", ordinal=0,
+            intent_sha256=intent, owner_component_id="tiangong-backend", claimed_at_ms=2000,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.claim_effect(claim)
+        self.store.mark_effect_started(effect.effect_id, started_at_ms=2100)
+        result = EffectResult(
+            result_id="result_orchestration", effect_id=effect.effect_id, status="SUCCEEDED",
+            fact_id="fact_orchestration", evidence_sha256=canonical_sha256({"done": True}),
+            observed_at_ms=2200, result_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.complete_effect(result)
+        # 终态 + 无执行事件的后端编排效果：规范账本已终态，recover 直接跳过，不抛损坏异常。
+        recovered = self.provider(self.payload("recover", now_ms=2400))
+        self.assertIsInstance(recovered, dict)
+        self.assertEqual(self.store.get_effect(effect.effect_id).state, "SUCCEEDED")
+
+    def test_orchestration_event_helper_appends_when_provider_authority_exists(self) -> None:
+        from total_gateway.orchestration import _append_orchestration_effect_event
+
+        effect_id = "eff_" + "ab" * 32
+        appended = _append_orchestration_effect_event(
+            self.store,
+            event_key=f"step.prepared:{effect_id}",
+            event_type="step.prepared",
+            payload={"effect_state": "CLAIMED", "source": "gateway_orchestration"},
+            request_id=self.request_id,
+            run_id=self.run_id,
+            generation=self.generation,
+            effect_id=effect_id,
+            created_at_ms=2000,
+        )
+        self.assertTrue(appended)
+        events = self.store.list_execution_events(
+            self.request_id, run_id=self.run_id, generation=self.generation
+        )
+        prepared = [e for e in events if e.effect_id == effect_id and e.event_type == "step.prepared"]
+        self.assertEqual(len(prepared), 1)
+        self.assertEqual(prepared[0].logical_effect_id, f"lef_{'ab' * 32}")
+        self.assertEqual(prepared[0].attempt_id, f"att_{'ab' * 32}")
+        self.assertEqual(prepared[0].step_id, f"stp_{'ab' * 32}")
+
+    def test_orchestration_event_helper_skips_without_task_contract(self) -> None:
+        from total_gateway.orchestration import _append_orchestration_effect_event
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fresh_path = Path(temporary) / "gateway.sqlite3"
+            store = GatewayStateStore.open(fresh_path, now_ms=900)
+            try:
+                registration = store.register_request(inbound("no-contract"), ingress_sha256=HASH_A, created_at_ms=1100)
+                request_id = registration.entry.request_id
+                run_id = derive_run_identity(request_id, 1).run_id
+                store.acquire_generation_lease(
+                    request_id=request_id, run_id=run_id, run_sequence=1,
+                    generation=1, gateway_epoch=1, lease_id="lease_no_contract",
+                    owner_instance_id="gateway_no_contract", issued_at_ms=1200, lease_duration_ms=500_000,
+                )
+                effect_id = "eff_" + "cd" * 32
+                appended = _append_orchestration_effect_event(
+                    store,
+                    event_key=f"step.prepared:{effect_id}",
+                    event_type="step.prepared",
+                    payload={"effect_state": "CLAIMED"},
+                    request_id=request_id,
+                    run_id=run_id,
+                    generation=1,
+                    effect_id=effect_id,
+                    created_at_ms=2000,
+                )
+                self.assertFalse(appended)
+                events = store.list_execution_events(request_id, run_id=run_id, generation=1)
+                self.assertEqual(len(events), 0)
+            finally:
+                store.close()
+
     def test_proven_not_applied_reconciliation_allows_new_physical_attempt(self) -> None:
         first = self.provider(self.effect_payload("prepare_effect", global_step=1, now_ms=2000))
         self.provider(self.payload(

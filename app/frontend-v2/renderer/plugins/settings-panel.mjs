@@ -589,7 +589,7 @@ export const settingsPanelPlugin = {
     }
 
     function keepModelDraft() {
-      return modelFormDirty && [presetInput, providerInput, modelInput, thinkingInput, baseUrlInput, apiKeyInput].includes(document.activeElement);
+      return modelFormDirty && [presetInput, providerInput, protocolInput, modelInput, thinkingInput, baseUrlInput, apiKeyInput].includes(document.activeElement);
     }
 
     function renderPermissionFields(mode, riskMax = "A4") {
@@ -1006,6 +1006,11 @@ export const settingsPanelPlugin = {
       setPill(modelSaveState, "保存中");
       saveModel.disabled = true;
       try {
+        if (!protocolInput.value) {
+          setPill(modelSaveState, "请先选择接口协议", "warn");
+          protocolInput.focus();
+          return;
+        }
         const keyValue = isMaskedApiKey(apiKeyInput.value) ? "" : apiKeyInput.value.trim();
         const selectedPreset = selectedPresetValue(presetInput.value);
         const selectedConfig = providerPresets[selectedPreset] || providerPresets.custom;
@@ -1043,6 +1048,10 @@ export const settingsPanelPlugin = {
         setPill(modelSaveState, "安全探针通道不可用", "failed");
         return;
       }
+      if (modelFormDirty) {
+        setPill(modelSaveState, "请先保存模型配置：探针测试的是已保存的配置，而不是表单草稿", "warn");
+        return;
+      }
       setPill(modelSaveState, "探测中");
       probeProviderApi.disabled = true;
       try {
@@ -1059,24 +1068,25 @@ export const settingsPanelPlugin = {
           );
         } else {
           const status = result?.http_status ? ` HTTP ${result.http_status}` : "";
-          const code = String(result?.error_code || result?.stage || "").toLowerCase();
+          const code = String(result?.error_code || result?.stage || result?.error || "").toLowerCase();
           let human = "模型服务探测失败";
-          if (code.includes("model_endpoint_invalid") || code.includes("endpoint_missing")) {
-            human = "请先保存有效的模型服务地址（Base URL）";
+          if (code.includes("api_key_missing") || code.includes("credential_read")) {
+            human = "未找到已保存的 API Key：请填写密钥并保存后再探测";
+          } else if (code.includes("endpoint_or_model_missing") || code.includes("model_endpoint_invalid") || code.includes("endpoint_missing")) {
+            human = "请先保存有效的模型服务地址（Base URL）和模型名称";
+          } else if (code.includes("model_settings_unavailable") || code.includes("backend_http_0")) {
+            human = "后台网关启动中（约 20-60 秒），请稍候再探测";
           } else if (code.includes("untrusted") || code.includes("not_trusted") || code.includes("forbidden")) {
             human = "该模型服务地址不在允许的范围内";
-          } else if (code.includes("auth") || code.includes("401") || code.includes("403") || code.includes("key")) {
+          } else if (code.includes("auth") || code.includes("401") || code.includes("403")) {
             human = "鉴权失败：请检查 API Key、权限、余额或服务商控制台配置";
           } else if (code.includes("timeout") || code.includes("timed_out")) {
             human = "连接超时：请检查网络或服务商状态";
-          } else if (code.includes("dns") || code.includes("network") || code.includes("econn") || code.includes("fetch")) {
+          } else if (code.includes("dns") || code.includes("network") || code.includes("econn") || code.includes("fetch") || code.includes("econnrefused")) {
             human = "无法连接模型服务：请检查网络";
           }
-          setPill(
-            modelSaveState,
-            `${human}${status}${latency}${result?.error_code ? `（${result.error_code}）` : ""}`,
-            "failed",
-          );
+          const detail = result?.error_code || result?.error ? `（${result?.error_code || result?.error}）` : "";
+          setPill(modelSaveState, `${human}${status}${latency}${detail}`, "failed");
         }
       } catch (error) {
         setPill(modelSaveState, error?.message || "API 探测失败", "failed");

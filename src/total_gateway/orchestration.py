@@ -7,6 +7,7 @@ from .diagnostics import diagnostic_log
 import base64
 import concurrent.futures
 import contextvars
+import hashlib
 from contextlib import contextmanager
 import os
 import queue
@@ -54,6 +55,73 @@ _EXECUTION_WATCHDOG_POOL = concurrent.futures.ThreadPoolExecutor(
     max_workers=8,
     thread_name_prefix="execution-watchdog",
 )
+
+
+def _append_orchestration_effect_event(
+    store,
+    *,
+    event_key: str,
+    event_type: str,
+    payload: dict[str, object],
+    request_id: str,
+    run_id: str,
+    generation: int,
+    effect_id: str,
+    created_at_ms: int,
+) -> bool:
+    """Append the unified execution event when this Run has provider authority.
+
+    GatewayOrchestrationWorker and RegenerativeExecutionAuthority share the
+    canonical effect ledger.  Historically only the provider appended step.*
+    events to the execution ledger, which made crash recovery misread
+    orchestration-owned effects as ledger corruption.  This helper closes that
+    gap: whenever the regenerative provider has initialized the task contract
+    and generation authority for the Run, the orchestration path records the
+    same step.prepared / step.dispatched / terminal events.
+
+    Orchestration-only flows (life capability or delivery requests that never
+    initialize the provider) keep the canonical effect ledger as their sole
+    authority and are skipped here; crash recovery already finalizes such
+    effects conservatively (AMBIGUOUS / skip).
+    """
+    try:
+        contract = store.get_execution_task_contract(
+            request_id, run_id=run_id, generation=generation
+        )
+        binding = store.get_request_generation_binding(request_id)
+    except Exception:
+        return False
+    if contract is None or binding is None:
+        return False
+    if (
+        str(binding.get("run_id") or "") != run_id
+        or int(binding.get("current_generation") or -1) != generation
+        or str(binding.get("status") or "") != "ACTIVE"
+    ):
+        return False
+    # Execution ledger identities must satisfy the canonical id patterns
+    # (lef_/att_/stp_ + 64 hex).  Derive them deterministically from the
+    # canonical effect id so every append is idempotent across retries.
+    hex_suffix = (
+        effect_id[4:]
+        if effect_id.startswith("eff_") and len(effect_id) == 68
+        else hashlib.sha256(effect_id.encode("utf-8")).hexdigest()
+    )
+    store.append_execution_event(
+        event_key=event_key,
+        request_id=request_id,
+        run_id=run_id,
+        generation=generation,
+        epoch_index=0,
+        event_type=event_type,
+        created_at_ms=created_at_ms,
+        payload=payload,
+        logical_effect_id=f"lef_{hex_suffix}",
+        attempt_id=f"att_{hex_suffix}",
+        step_id=f"stp_{hex_suffix}",
+        effect_id=effect_id,
+    )
+    return True
 from .communication_client import CommunicationControlClient
 from .context_projection import SessionContextProjector, estimate_projected_context_tokens
 from .continuity import (
@@ -1278,6 +1346,17 @@ class GatewayOrchestrationWorker:
             ).with_computed_sha256()
             try:
                 self._store.complete_effect(result)
+                _append_orchestration_effect_event(
+                    self._store,
+                    event_key=f"step.ambiguous:{effect_id}",
+                    event_type="step.ambiguous",
+                    payload={"effect_state": "AMBIGUOUS", "source": "gateway_orchestration_stale_reap"},
+                    request_id=str(effect.claim.request_id),
+                    run_id=str(effect.claim.run_id),
+                    generation=int(effect.claim.generation),
+                    effect_id=effect_id,
+                    created_at_ms=now_ms,
+                )
                 reconciled += 1
             except Exception:
                 continue
@@ -1496,7 +1575,13 @@ class GatewayOrchestrationWorker:
         if execution is not None and not execution.is_terminal:
             crossed = any(
                 item.claim.effect_kind == "execution"
-                and item.state in {"SIDE_EFFECT_STARTED", "AMBIGUOUS"}
+                and (
+                    item.state == "SIDE_EFFECT_STARTED"
+                    or (
+                        item.state == "AMBIGUOUS"
+                        and str(item.claim.owner_component_id) != "tiangong-backend"
+                    )
+                )
                 for item in effects
             )
             if crossed:
@@ -1760,6 +1845,21 @@ class GatewayOrchestrationWorker:
         existing_effect, created = self._store.claim_effect(claim)
         if not created and existing_effect.result is not None:
             raise OrchestrationError("orchestration.execution.already_terminal")
+        _append_orchestration_effect_event(
+            self._store,
+            event_key=f"step.prepared:{effect.effect_id}",
+            event_type="step.prepared",
+            payload={
+                "disposition": "prepared",
+                "effect_state": existing_effect.state,
+                "source": "gateway_orchestration",
+            },
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation.generation,
+            effect_id=effect.effect_id,
+            created_at_ms=now_ms,
+        )
         persist_working_checkpoint(
             self._store,
             life_id=life.snapshot.identity_ref,
@@ -2009,6 +2109,20 @@ class GatewayOrchestrationWorker:
 
         def started(started_at_ms: int) -> None:
             self._store.mark_effect_started(effect.effect_id, started_at_ms=started_at_ms)
+            _append_orchestration_effect_event(
+                self._store,
+                event_key=f"step.dispatched:{effect.effect_id}",
+                event_type="step.dispatched",
+                payload={
+                    "effect_state": "SIDE_EFFECT_STARTED",
+                    "dispatch_boundary": "gateway_orchestration",
+                },
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation.generation,
+                effect_id=effect.effect_id,
+                created_at_ms=started_at_ms,
+            )
             self._advance("execution", execution_entity, "RUNNING", now_ms=started_at_ms)
 
         def context_compacted(context_envelope: dict[str, Any], compacted_at_ms: int) -> None:
@@ -2152,6 +2266,17 @@ class GatewayOrchestrationWorker:
             ).with_computed_sha256()
             self._store.complete_effect(result)
             terminal = "AMBIGUOUS" if status == "AMBIGUOUS" else "FAILED_FINAL"
+            _append_orchestration_effect_event(
+                self._store,
+                event_key=f"step.{"ambiguous" if terminal == "AMBIGUOUS" else "failed"}:{effect.effect_id}",
+                event_type=f"step.{"ambiguous" if terminal == "AMBIGUOUS" else "failed"}",
+                payload={"effect_state": terminal, "source": "gateway_orchestration"},
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation.generation,
+                effect_id=effect.effect_id,
+                created_at_ms=result.observed_at_ms,
+            )
             self._advance(
                 "execution",
                 execution_entity,
@@ -2214,6 +2339,17 @@ class GatewayOrchestrationWorker:
             result_sha256="0" * 64,
         ).with_computed_sha256()
         self._store.complete_effect(effect_result)
+        _append_orchestration_effect_event(
+            self._store,
+            event_key=f"step.{"committed" if effect_status == "SUCCEEDED" else "ambiguous" if effect_status == "AMBIGUOUS" else "failed"}:{effect.effect_id}",
+            event_type=f"step.{"committed" if effect_status == "SUCCEEDED" else "ambiguous" if effect_status == "AMBIGUOUS" else "failed"}",
+            payload={"effect_state": effect_status, "source": "gateway_orchestration"},
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation.generation,
+            effect_id=effect.effect_id,
+            created_at_ms=observed_at,
+        )
         self._advance(
             "execution",
             execution_entity,
