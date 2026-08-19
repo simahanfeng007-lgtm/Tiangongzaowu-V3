@@ -43,6 +43,7 @@ from .legacy_layer_migration import (
     legacy_layer_for_assertion,
 )
 from .store import LifeShadowStore, LifeShadowStoreError
+from .complete_core import utc_now
 
 
 L1_POLICY_VERSION = "p15-l1-v1"
@@ -1359,7 +1360,9 @@ class MemoryCoordinator:
                 state,
                 evidence_refs=(derivation.derivation_id,),
                 trait_delta_micro=deltas,
-                updated_at=str(now_ms),
+                # temperament state stores ISO-8601 timestamps like every
+                # other writer here; a raw millisecond string breaks the format.
+                updated_at=utc_now(),
             )
             delta_sha256 = str(outcome.get("trait_delta_sha256") or "")
             self._store.put_temperament_receipt(

@@ -240,6 +240,44 @@ class GatewayDeliveryOutboxWorker:
             created_at_ms=at_ms,
         ).reference
 
+    def _abandon_cancelled_outbox(
+        self, record: OutboxRecord, *, reason: str, now_ms: int
+    ) -> None:
+        """Settle an outbox intent whose generation was cancelled as AMBIGUOUS.
+
+        The payload failed validation only because its execution fact (the
+        ACTIVE generation) is gone; the payload JSON itself parsed fine, so
+        re-read it for the object-store scope binding and record a terminal
+        ambiguity result instead of retrying the claim forever.
+        """
+        raw = self._objects.read_bytes(record.intent.payload_object_id)
+        document = json.loads(raw.decode("utf-8"))
+        plan = document.get("plan") if isinstance(document, dict) else None
+        if not isinstance(plan, dict):
+            raise DeliveryOutboxError("delivery_outbox.payload.unreadable")
+        result_raw = canonical_json_bytes(
+            {
+                "kind": "error",
+                "outbox_id": record.intent.outbox_id,
+                "reason_code": "delivery_outbox.generation_cancelled",
+                "detail": reason[:200],
+            }
+        )
+        reference = self._objects.put_bytes(
+            result_raw,
+            kind="payload",
+            tenant_id=str(plan.get("tenant_id") or ""),
+            link_account_id=str(plan.get("link_account_id") or ""),
+            conversation_scope_hash=str(plan.get("conversation_scope_hash") or ""),
+            created_at_ms=now_ms,
+        ).reference
+        self._store.mark_expired_outbox_ambiguous(
+            record.intent.outbox_id,
+            observed_at_ms=now_ms,
+            result_object_id=reference.object_id,
+            result_sha256=reference.sha256,
+        )
+
     def _record_error_result(
         self,
         record: OutboxRecord,
@@ -309,7 +347,18 @@ class GatewayDeliveryOutboxWorker:
             now_ms=now_ms,
             lease_ms=120_000,
         )
-        payload = self._load_payload(claimed)
+        try:
+            payload = self._load_payload(claimed)
+        except DeliveryOutboxError as exc:
+            # A cancelled/fenced generation can never become ACTIVE again,
+            # so this intent is permanently undispatchable. Settle it as
+            # AMBIGUOUS here; raising instead would loop the orchestration
+            # worker on the same record every 120s lease expiry forever.
+            generation = self._store.get_generation(claimed.intent.request_id)
+            if generation is not None and generation.status == "ACTIVE":
+                raise
+            self._abandon_cancelled_outbox(claimed, reason=str(exc), now_ms=now_ms)
+            return True
         ticket = self._issue_ticket(payload.plan, issued_at_ms=now_ms)
         ticket_raw = canonical_json_bytes(ticket.model_dump(mode="json"))
         ticket_reference = self._objects.put_bytes(

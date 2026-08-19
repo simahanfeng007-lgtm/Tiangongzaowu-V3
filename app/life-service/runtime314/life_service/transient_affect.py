@@ -283,7 +283,7 @@ def _signal_scores(text: str) -> dict[str, int]:
         matches = sum(min(2, clean.count(term.casefold())) for term in terms)
         if matches:
             scores[emotion] = min(1000, 310 + matches * 145)
-    if "!" in text or "！" in text:
+    if "!" in clean or "！" in clean:
         scores["vigilance"] = min(1000, scores["vigilance"] + 100)
         if scores["frustration"]:
             scores["frustration"] = min(1000, scores["frustration"] + 100)
@@ -321,7 +321,7 @@ def appraise_user_turn(
         if score <= 0:
             continue
         retained = int(before[emotion] * 0.72)
-        state["emotions"][emotion] = max(retained, min(1000, retained + int(score * 0.85)))
+        state["emotions"][emotion] = min(1000, retained + int(score * 0.85))
     strongest_negative = max((scores[name] for name in _NEGATIVE), default=0)
     strongest_positive = max((scores[name] for name in _POSITIVE), default=0)
     if strongest_negative >= 450:

@@ -1527,7 +1527,12 @@ class GatewayRuntime:
                 )
                 runtime.cutover.start()
         except Exception:
-            runtime.close()
+            # close() must never mask the original startup failure: if closing
+            # also fails, keep the startup exception as the primary error.
+            try:
+                runtime.close()
+            except Exception:
+                pass
             raise
         return runtime
 

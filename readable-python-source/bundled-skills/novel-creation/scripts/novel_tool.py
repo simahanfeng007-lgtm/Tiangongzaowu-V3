@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -58,14 +59,20 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
 
 
-def write_text(path: Path, text: str) -> None:
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via temp file + rename so a crash cannot leave a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def write_text(path: Path, text: str) -> None:
+    _atomic_write(path, text)
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def read_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -74,7 +81,10 @@ def read_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, An
     try:
         data = json.loads(read_text(path))
         return data if isinstance(data, dict) else dict(default or {})
-    except Exception:
+    except Exception as exc:
+        # A corrupt file silently resetting the contract to defaults is worse
+        # than a loud warning; keep the default-return behavior but report it.
+        print(f"[novel_tool] read_json failed ({path}): {exc}", file=sys.stderr)
         return dict(default or {})
 
 

@@ -2120,7 +2120,10 @@ class EmbeddedLifeRuntime:
             return {"created": 0, "deduped": 0, "coalesced": 0}
         triggers = self._cognition_trigger_candidates(life_id)
         stats = shadow.enqueue_many(life_id, triggers)
-        if self._cognition_decider is not None and stats["created"]:
+        # Start the worker when anything is pending, not only on fresh enqueues:
+        # a backlog with fully deduped triggers would otherwise never drain.
+        pending = int(self._contract_store().cognition_health(life_id).get("pending") or 0)
+        if self._cognition_decider is not None and (stats["created"] or pending > 0):
             worker = threading.Thread(
                 target=self._cognition_worker,
                 args=(life_id,),
@@ -2132,7 +2135,7 @@ class EmbeddedLifeRuntime:
 
     def _cognition_worker(self, life_id: str) -> None:
         try:
-            self.run_cognition_shadow_pass(life_id)
+            self.run_cognition_shadow_drain(life_id)
         except Exception:
             # Shadow diagnostics never crash the heartbeat.
             return
@@ -2151,6 +2154,21 @@ class EmbeddedLifeRuntime:
         )
         owner = self._lease.instance_id if self._lease is not None else "life"
         return shadow.run_pass(life_id, owner_instance_id=owner)
+
+    def run_cognition_shadow_drain(self, life_id: str) -> dict[str, Any]:
+        """Drain the whole pending cognition shadow backlog (worker entry)."""
+        store = self._contract_store()
+        shadow = UnifiedCognitionShadow(
+            store,
+            cognition_decider=self._cognition_decider,
+            binding_factory=(
+                lambda current_life_id, event_id, now_ms: self._cognition_binding_factory(
+                    store, current_life_id, event_id, now_ms
+                )
+            ),
+        )
+        owner = self._lease.instance_id if self._lease is not None else "life"
+        return shadow.run_drain(life_id, owner_instance_id=owner)
 
     def _cognition_binding_factory(
         self,
@@ -2499,8 +2517,8 @@ class EmbeddedLifeRuntime:
         risk_rank = {"A0": 0, "A1": 1, "A2": 2, "A3": 3, "A4": 4}
         configured_risk = str(settings.get("autonomous_risk_max") or "A4")
         configured_risk_rank = risk_rank.get(configured_risk, 0)
-        success_limit = max(0, int(settings.get("llm_daily_budget") or 20))
-        attempt_limit = max(0, int(settings.get("llm_daily_attempt_budget") or 30))
+        success_limit = self._daily_limit_setting(settings, "llm_daily_budget", 20)
+        attempt_limit = self._daily_limit_setting(settings, "llm_daily_attempt_budget", 30)
         if (
             (success_limit and int(scheduler.get("model_successes") or 0) >= success_limit)
             or (attempt_limit and int(scheduler.get("model_attempts") or 0) >= attempt_limit)
@@ -3212,6 +3230,14 @@ class EmbeddedLifeRuntime:
                 "proactive_model_skipped": 0,
             })
 
+    @staticmethod
+    def _daily_limit_setting(settings: Mapping[str, Any], key: str, default: int) -> int:
+        """Daily budget limits: 0 is a valid value (means disabled); only missing/None falls back."""
+        value = settings.get(key)
+        if value is None:
+            return default
+        return max(0, int(value))
+
     def _reserve_proactive_model_call_locked(
         self,
         *,
@@ -3220,10 +3246,10 @@ class EmbeddedLifeRuntime:
     ) -> bool:
         """Reserve one real LLM call against both global and proactive pools."""
         self._reset_proactive_model_budget_if_needed(scheduler)
-        global_success_limit = max(0, int(settings.get("llm_daily_budget") or 20))
-        global_attempt_limit = max(0, int(settings.get("llm_daily_attempt_budget") or 30))
-        proactive_success_limit = max(0, int(settings.get("proactive_llm_daily_budget") or 6))
-        proactive_attempt_limit = max(0, int(settings.get("proactive_llm_daily_attempt_budget") or 8))
+        global_success_limit = self._daily_limit_setting(settings, "llm_daily_budget", 20)
+        global_attempt_limit = self._daily_limit_setting(settings, "llm_daily_attempt_budget", 30)
+        proactive_success_limit = self._daily_limit_setting(settings, "proactive_llm_daily_budget", 6)
+        proactive_attempt_limit = self._daily_limit_setting(settings, "proactive_llm_daily_attempt_budget", 8)
         exhausted = (
             (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
             or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
@@ -4719,7 +4745,13 @@ class EmbeddedLifeRuntime:
                 journal_event, memory_id=contract_id
             ),
             causal_utility_milli=500 if classification.get("causal") else 0,
-            user_importance_milli=max(0, min(1000, priority)),
+            # priority is the -3000..5000 contract scale (contracts/memory.py
+            # MemoryAssertionV3.priority); map it linearly onto milli so the
+            # full range stays distinguishable instead of clamping 76% of it
+            # to saturation: -3000 -> 0, 0 -> 375, 5000 -> 1000.
+            user_importance_milli=max(
+                0, min(1000, ((priority + 3000) * 1000) // 8000)
+            ),
             verification_strength_milli=max(0, min(1000, confidence)),
             future_dependency_milli=(
                 500 if assertion_kind in {"goal", "hard_constraint"} else 0
@@ -5804,6 +5836,24 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.memory.not_found", status=404)
         if row.get("status") == "deleted":
             raise EmbeddedLifeError("life.memory.deleted_immutable", status=409)
+        # The idempotency key includes the transition origin (the row's
+        # pre-transition updated_at): re-entering the same status from a
+        # different state is a new transition, not a replay of the old one.
+        retry_key = (
+            f"memory.status:{memory_id}:{status}:{str(row.get('updated_at') or '')}"
+        )
+        prior_status_change = self.system.journal.event_by_idempotency_key(
+            life_id, retry_key
+        )
+        if prior_status_change is not None and row.get("status") != status:
+            # Journal committed this transition but a later step failed and
+            # rolled the scope back: converge the projection, never re-append.
+            prior_payload = prior_status_change.get("payload")
+            prior_updated_at = ""
+            if isinstance(prior_payload, Mapping):
+                prior_updated_at = str(prior_payload.get("updated_at") or "")
+            row["status"] = status
+            row["updated_at"] = prior_updated_at or str(row.get("updated_at") or "")
         if row.get("status") == status:
             self._ensure_memory_contract_synced(life_id)
             contract_memory_id, change_seq = self._contract_store_assert(
@@ -5826,7 +5876,9 @@ class EmbeddedLifeRuntime:
                 "memory.status_changed",
                 {"memory_id": memory_id, "status": status, "updated_at": updated_at},
                 actor=str(payload.get("actor") or "user"),
-                idempotency_key=f"memory.status:{memory_id}:{status}",
+                idempotency_key=(
+                    f"memory.status:{memory_id}:{status}:{previous.get('updated_at') or ''}"
+                ),
             )
             contract_memory_id, change_seq = self._contract_store_assert(
                 life_id,
@@ -5931,6 +5983,21 @@ class EmbeddedLifeRuntime:
         row = scope["memories"].get(memory_id)
         if not isinstance(row, dict):
             raise EmbeddedLifeError("life.memory.not_found", status=404)
+        prior_delete = self.system.journal.event_by_idempotency_key(
+            life_id, f"memory.delete:{memory_id}"
+        )
+        if prior_delete is not None and row.get("status") != "deleted":
+            # The journal already committed this deletion (a later projection
+            # step failed and rolled back the scope). Converge the projection
+            # instead of re-appending: the same key with a fresh timestamp
+            # would be rejected as journal_idempotency_conflict forever.
+            prior_payload = prior_delete.get("payload")
+            prior_updated_at = ""
+            if isinstance(prior_payload, Mapping):
+                prior_updated_at = str(prior_payload.get("updated_at") or "")
+            row["status"] = "deleted"
+            row["content"] = {"tombstone": True}
+            row["updated_at"] = prior_updated_at or str(row.get("updated_at") or "")
         if row.get("status") == "deleted":
             contract_memory_id, change_seq, tombstone_id = self._contract_store_delete(
                 life_id, memory_id, updated_at=str(row.get("updated_at") or "")

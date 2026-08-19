@@ -176,6 +176,26 @@ class UnifiedCognitionShadow:
                 "event_id": item["event_id"],
                 "decision": dict(decision),
             }
+        except Exception:
+            # A crashing decider pass must not strand the stimulus in
+            # `selected` forever. Record a `failed` shadow and consume the
+            # stimulus so the queue keeps flowing; releasing it back to
+            # pending would re-select the same failing item head-of-line.
+            self._record_shadow(
+                life_id,
+                item,
+                root_experience_id=root_experience_id,
+                status="failed",
+                slot_no=1,
+                now_ms=now_ms,
+            )
+            self._store.commit_stimulus(
+                life_id,
+                enqueue_seq=int(item["enqueue_seq"]),
+                claim_token=claim,
+                now_ms=now_ms,
+            )
+            raise
         finally:
             self._store.release_lane(life_id, str(item["lane"]), lease_id=lease)
 

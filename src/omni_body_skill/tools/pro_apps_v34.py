@@ -718,7 +718,16 @@ def _office_native_action(runtime: Any, action: str, target: str | None, args: D
         tmp = _resolve(runtime, f".omni_temp/office_{int(time.time())}.py")
         tmp.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(script, encoding="utf-8")
-        res = subprocess.run([sys.executable, str(tmp)], cwd=str(runtime.workspace), capture_output=True, text=True, timeout=int(args.get("timeout", 120)))
+        # Delayed import: omni_body_tool imports this module chain at load time.
+        # In frozen builds sys.executable is the backend exe, never reuse it.
+        try:
+            from .omni_body_tool import _resolve_python_interpreter
+            interpreter = _resolve_python_interpreter()
+        except Exception:
+            interpreter = None
+        if interpreter is None:
+            return _office_com_script(runtime, str(args.get("bridge_output") or f"bridges/{action.replace('.', '_')}.py"), {**args, "app": "powerpoint" if "powerpoint" in action else "excel" if "excel" in action else "word", "input": target or args.get("input")})
+        res = subprocess.run([interpreter, str(tmp)], cwd=str(runtime.workspace), capture_output=True, text=True, timeout=int(args.get("timeout", 120)))
         return {"success": res.returncode == 0, "result": {"stdout": res.stdout, "stderr": res.stderr, "returncode": res.returncode}, "evidence": {"path": args.get("output") or "", "exists": bool(args.get("output") and _resolve(runtime, args.get("output")).exists())}}
     # Professional behavior: return executable bridge, not fake PDF/export.
     return _office_com_script(runtime, str(args.get("bridge_output") or f"bridges/{action.replace('.', '_')}.py"), {**args, "app": "powerpoint" if "powerpoint" in action else "excel" if "excel" in action else "word", "input": target or args.get("input")})

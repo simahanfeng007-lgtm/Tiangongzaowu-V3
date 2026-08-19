@@ -92,9 +92,9 @@ def evaluate_affect_gate(
 ) -> AffectGateDecision:
     if repetition_count < 1:
         raise ValueError("affect repetition count is invalid")
-    # Exponential habituation reaches zero after bounded repeats, so identical
-    # content cannot self-excite forever even if an upstream feed loops.
-    repetition_factor = 1000 // (1 << min(repetition_count - 1, 20))
+    # Exponential habituation reaches zero after 11 repeats (2^10 = 1024 > 1000),
+    # so identical content cannot self-excite forever even if an upstream feed loops.
+    repetition_factor = 1000 // (1 << min(repetition_count - 1, 10))
     reason = "affect.accepted"
     if signal.prompt_injection_detected:
         reason = "affect.rejected.prompt_injection"

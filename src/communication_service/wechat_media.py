@@ -368,8 +368,10 @@ class WechatMediaDownloader:
         if not self.staging_root.exists():
             return 0
         removed = 0
-        for path in self.staging_root.glob("*.part"):
-            if path.is_file() and not path.is_symlink():
+        # iterdir instead of glob("*.part"): glob skips dot-prefixed names, so
+        # the ".wechat-*.cipher.part" staging files would never be cleaned.
+        for path in self.staging_root.iterdir():
+            if path.name.endswith(".part") and path.is_file() and not path.is_symlink():
                 path.unlink()
                 removed += 1
         return removed

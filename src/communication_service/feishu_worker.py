@@ -300,9 +300,24 @@ class FeishuProductionAdapter:
                 "classification": outcome.classification,
                 "forwarded": False,
             }
+        if outcome.duplicate:
+            # Platform redelivery: re-ACK with the receipt already recorded
+            # for this permit. A fresh acceptance carries a new accepted_at_ms;
+            # ACKing with it raises AckConflictError, the SDK answers 500, and
+            # the platform redelivers the same event forever.
+            stored_receipt = self._inbox.ack_permit_receipt(
+                outcome.ack_permit.permit_id
+            )
+            receipt_sha256 = (
+                stored_receipt
+                if stored_receipt is not None
+                else canonical_sha256(evidence)
+            )
+        else:
+            receipt_sha256 = canonical_sha256(evidence)
         self._inbox.mark_acknowledged(
             outcome.ack_permit.permit_id,
-            platform_receipt_sha256=canonical_sha256(evidence),
+            platform_receipt_sha256=receipt_sha256,
             acknowledged_at_ms=self._clock_ms(),
         )
 

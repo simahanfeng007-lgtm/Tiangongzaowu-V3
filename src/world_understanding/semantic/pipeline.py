@@ -182,7 +182,7 @@ class SemanticPipeline:
         except Exception:
             trace = SemanticTrace("MODEL_ERROR", admission.attention_milli, admission.voi_milli, admission.disposition, admission.reason_code,
                                   None, None, SEMANTIC_PROMPT_VERSION, SEMANTIC_SCHEMA_VERSION, 0, 0, 0, refs, None, (), "MODEL_ERROR")
-            return SemanticRunResult("MODEL_ERROR", (), trace, _empty_cost(created_at_ms=created_at_ms, input_count=len(refs), success=Falsl , failure_type="MODEL_ERROR"))
+            return SemanticRunResult("MODEL_ERROR", (), trace, _empty_cost(created_at_ms=created_at_ms, input_count=len(refs), success=False, failure_type="MODEL_ERROR"))
 
         try:
             proposals = parse_semantic_output(response.output_text, refs=refs, prior_indices=bundle.prior_indices)

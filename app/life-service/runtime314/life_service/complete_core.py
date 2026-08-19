@@ -923,6 +923,24 @@ class SemanticJournal:
         with self._lock:
             return self._read_events_strict(life_id)
 
+    def event_by_idempotency_key(
+        self, life_id: str, idempotency_key: str
+    ) -> dict[str, Any] | None:
+        """Return the already-recorded event for a key, or None.
+
+        Callers use this to converge retries: when the journal committed but a
+        later projection step failed, re-appending with the same key would hit
+        ``journal_idempotency_conflict`` because fresh timestamps change the
+        payload. Looking the event up first lets the caller replay the side
+        effects instead of the journal append.
+        """
+        if not idempotency_key:
+            return None
+        for event in reversed(self.events(life_id)):
+            if str(event.get("idempotency_key") or "") == idempotency_key:
+                return event
+        return None
+
     def _verify_chain_only(self, life_id: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         previous = self.GENESIS_SHA256
         for index, event in enumerate(events, 1):
