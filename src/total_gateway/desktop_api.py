@@ -1181,8 +1181,6 @@ class DesktopApiRouter:
                 headers["X-Tiangong-Communication-Token"] = (
                     self._config.communication_internal_token
                 )
-            import sys
-            print(f"[GW_FORWARD] {route.method} {target} → upstream={route.upstream} host={host}:{port}", file=sys.stderr, flush=True)
             connection.request(
                 route.method,
                 target,
@@ -1208,7 +1206,6 @@ class DesktopApiRouter:
                     raise DesktopApiError(502, "desktop_api.upstream.response_too_large")
                 chunks.append(chunk)
             resp_body = b"".join(chunks)
-            print(f"[GW_FORWARD] response status={response.status} body={resp_body[:500]!r}", file=sys.stderr, flush=True)
             return DesktopProxyResponse(int(response.status), content_type, resp_body)
         except DesktopApiError:
             raise

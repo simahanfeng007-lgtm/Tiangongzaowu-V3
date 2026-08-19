@@ -297,7 +297,10 @@ def run_omni_body(args: dict[str, Any] | None = None) -> dict[str, Any]:
     if not isinstance(result, dict):
         result = {"result": result, "success": True}
 
-    ok = bool(result.get("success", result.get("ok", False)))
+    if result.get("ok") is False:
+        ok = False
+    else:
+        ok = bool(result.get("success", result.get("ok", False)))
     evidence = _extract_evidence(result, target, workspace)
     response: dict[str, Any] = {
         "schema": TOOL_SCHEMA,

@@ -472,24 +472,31 @@ class SandboxRunner:
                     ) from exc
         if run_root.exists():
             shutil.rmtree(run_root, ignore_errors=True)
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        _copy_workspace(self.workspace, sandbox_workspace, self.limits.max_workspace_bytes)
-        before = _snapshot(sandbox_workspace)
-        real_cwd = (cwd or self.workspace).expanduser().resolve(strict=False)
-        sandbox_cwd = sandbox_workspace / _safe_rel(self.workspace, real_cwd)
-        sandbox_cwd.mkdir(parents=True, exist_ok=True)
-        rewritten = _rewrite_workspace_paths(command, self.workspace, sandbox_workspace)
-        if os.name == "nt":
-            rewritten = _prepare_windows_utf8_shell_command(rewritten, cwd=sandbox_cwd)
-        limits = SandboxLimits(
-            timeout_seconds=max(1, int(timeout_seconds or self.limits.timeout_seconds)),
-            max_workspace_bytes=self.limits.max_workspace_bytes,
-            max_changed_bytes=self.limits.max_changed_bytes,
-            max_output_bytes=self.limits.max_output_bytes,
-            max_memory_bytes=self.limits.max_memory_bytes,
-            max_processes=self.limits.max_processes,
-        )
-        env = subprocess_environment(sanitized_environment(os.environ, temp_dir))
+        # Preparation failures (workspace copy, snapshot, shell rewrite) must
+        # not leak run_root: the main try/finally below only covers execution.
+        try:
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            _copy_workspace(self.workspace, sandbox_workspace, self.limits.max_workspace_bytes)
+            before = _snapshot(sandbox_workspace)
+            real_cwd = (cwd or self.workspace).expanduser().resolve(strict=False)
+            sandbox_cwd = sandbox_workspace / _safe_rel(self.workspace, real_cwd)
+            sandbox_cwd.mkdir(parents=True, exist_ok=True)
+            rewritten = _rewrite_workspace_paths(command, self.workspace, sandbox_workspace)
+            if os.name == "nt":
+                rewritten = _prepare_windows_utf8_shell_command(rewritten, cwd=sandbox_cwd)
+            limits = SandboxLimits(
+                timeout_seconds=max(1, int(timeout_seconds or self.limits.timeout_seconds)),
+                max_workspace_bytes=self.limits.max_workspace_bytes,
+                max_changed_bytes=self.limits.max_changed_bytes,
+                max_output_bytes=self.limits.max_output_bytes,
+                max_memory_bytes=self.limits.max_memory_bytes,
+                max_processes=self.limits.max_processes,
+            )
+            env = subprocess_environment(sanitized_environment(os.environ, temp_dir))
+        except BaseException:
+            if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+                shutil.rmtree(run_root, ignore_errors=True)
+            raise
         started = time.monotonic()
         try:
             if os.name == "nt":

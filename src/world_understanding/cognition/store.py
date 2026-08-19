@@ -459,14 +459,15 @@ class WorldCognitionStore:
             rows = connection.execute(
                 "SELECT payload_json FROM evidence"
             ).fetchall()
+            # Parse each row once; corrupt rows still raise exactly as before.
+            evidence_rows = [
+                CognitionEvidence.model_validate_json(str(row[0])) for row in rows
+            ]
             return tuple(
-                CognitionEvidence.model_validate_json(str(row[0]))
-                for row in rows
+                evidence
+                for evidence in evidence_rows
                 if lineage_root_hash in {
-                    str(item)
-                    for item in CognitionEvidence.model_validate_json(
-                        str(row[0])
-                    ).lineage_root_hashes
+                    str(item) for item in evidence.lineage_root_hashes
                 }
             )
         finally:

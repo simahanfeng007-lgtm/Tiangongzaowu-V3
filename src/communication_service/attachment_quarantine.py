@@ -279,19 +279,22 @@ class AttachmentQuarantineLedger:
         if now_ms < 0 or self._closed:
             return AttachmentLedgerHealth(False, "attachment.ledger.closed", None)
         try:
-            check = "integrity_check" if full else "quick_check"
-            if self._connection.execute(f"PRAGMA {check}").fetchone()[0] != "ok":
-                raise AttachmentQuotaError("attachment.ledger.sqlite_corrupt")
-            if _schema_sha256(self._connection) != expected_attachment_ledger_schema_sha256():
-                raise AttachmentQuotaError("attachment.ledger.schema_mismatch")
-            self._verify_rows()
-            with self._transaction():
-                self._connection.execute("SELECT 1")
-            return AttachmentLedgerHealth(
-                True,
-                "attachment.ledger.ok",
-                expected_attachment_ledger_schema_sha256(),
-            )
+            # Hold the instance lock: the sqlite connection is shared with
+            # admit/expire on other threads (same pattern as the other ledgers).
+            with self._lock:
+                check = "integrity_check" if full else "quick_check"
+                if self._connection.execute(f"PRAGMA {check}").fetchone()[0] != "ok":
+                    raise AttachmentQuotaError("attachment.ledger.sqlite_corrupt")
+                if _schema_sha256(self._connection) != expected_attachment_ledger_schema_sha256():
+                    raise AttachmentQuotaError("attachment.ledger.schema_mismatch")
+                self._verify_rows()
+                with self._transaction():
+                    self._connection.execute("SELECT 1")
+                return AttachmentLedgerHealth(
+                    True,
+                    "attachment.ledger.ok",
+                    expected_attachment_ledger_schema_sha256(),
+                )
         except Exception:
             return AttachmentLedgerHealth(False, "attachment.ledger.check_failed", None)
 

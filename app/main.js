@@ -1268,7 +1268,14 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
     process.env.TIANGONG_FORCE_WORKSPACE_ROOT = previousWorkspace;
     process.env.TIANGONG_OMNI_BODY_WORKSPACE = previousWorkspace;
     process.env.TIANGONG_WORKSPACE_MODE = previousMode;
-    const rollbackServices = await startServicesForWorkspaceChange();
+    let rollbackServices;
+    try {
+      rollbackServices = await startServicesForWorkspaceChange();
+    } finally {
+      // Restore the supervisor watchdog even when the rollback restart itself
+      // fails; otherwise nothing will ever bring the gateway back up.
+      if (mainWindow && !mainWindow.isDestroyed()) startBackendWatchdog();
+    }
     const rolledBack = sameWindowsPath(
       process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT || previousWorkspace,
       previousWorkspace,
@@ -2271,6 +2278,7 @@ function serviceListenerPids(rawUrl, fallbackPort) {
     const output = execFileSync("netstat", ["-ano", "-p", "tcp"], {
       encoding: "utf8",
       windowsHide: true,
+      timeout: 10_000,
       stdio: ["ignore", "pipe", "ignore"],
     });
     const pids = new Set();
@@ -3682,6 +3690,7 @@ function backendListenerPids() {
     const output = execFileSync("netstat", ["-ano", "-p", "tcp"], {
       encoding: "utf8",
       windowsHide: true,
+      timeout: 10_000,
       stdio: ["ignore", "pipe", "ignore"],
     });
     const pids = new Set();
@@ -3707,6 +3716,7 @@ function killProcessTreeSync(pid) {
     if (process.platform === "win32") {
       execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
         windowsHide: true,
+        timeout: 10_000,
         stdio: "ignore",
       });
     } else {

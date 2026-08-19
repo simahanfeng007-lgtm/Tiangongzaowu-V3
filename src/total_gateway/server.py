@@ -825,9 +825,6 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
-        import sys, datetime
-        if self.path not in ("/health", "/ready"):
-            print(f"[REQ] {datetime.datetime.now().isoformat()} GET {self.path}", file=sys.stderr, flush=True)
         if self.path == "/health":
             payload = self.gateway.runtime.health_payload()
             self._send_json(200, payload)

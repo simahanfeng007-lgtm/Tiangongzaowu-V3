@@ -230,7 +230,9 @@ def compute_viability_deficit(
         for name in normalized_weights
     ) // weight_total
     critical = max(by_name[name] for name in CRITICAL_DIMENSIONS)
-    total = weighted + (critical * critical_weight_milli // 1000)
+    # Keep the total inside the milli convention [0, 1000]: weighted and the
+    # critical contribution are each independently bounded by 1000.
+    total = min(1000, weighted + (critical * critical_weight_milli // 1000))
     policy_sha256 = canonical_sha256(
         {
             "critical_dimensions": sorted(CRITICAL_DIMENSIONS),

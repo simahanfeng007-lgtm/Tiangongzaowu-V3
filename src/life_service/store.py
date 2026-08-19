@@ -629,12 +629,19 @@ class LifeShadowStore:
         try:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT status FROM cognition_lane_leases WHERE life_id=? AND lane=?",
+                "SELECT status, expires_at_ms FROM cognition_lane_leases WHERE life_id=? AND lane=?",
                 (life_id, lane),
             ).fetchone()
             if existing is not None and str(existing["status"]) == "active":
-                connection.execute("COMMIT")
-                return None
+                if int(existing["expires_at_ms"]) > now_ms:
+                    connection.execute("COMMIT")
+                    return None
+                # An active lease past its deadline means the holder died
+                # without releasing: preempt it so the lane can never deadlock.
+                connection.execute(
+                    "DELETE FROM cognition_lane_leases WHERE life_id=? AND lane=? AND status='active'",
+                    (life_id, lane),
+                )
             if lane == "foreground":
                 connection.execute(
                     "DELETE FROM cognition_lane_leases WHERE life_id=? AND lane='background' AND status='active'",

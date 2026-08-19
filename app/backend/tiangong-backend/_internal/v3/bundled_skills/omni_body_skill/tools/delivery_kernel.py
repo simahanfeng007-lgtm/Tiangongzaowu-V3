@@ -830,7 +830,14 @@ def _qc_code(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str
             issues.append(_issue("miniapp_test_command_required","小程序工程必须提供可执行的离线测试命令。","critical","提供 node 测试脚本或项目自带测试命令。"))
             command=[]
         elif not command:
-            command=[sys.executable,"-m","pytest","-q"]
+            # Delayed import: omni_body_tool imports this module at load time.
+            # In frozen builds sys.executable is the backend exe, never reuse it.
+            try:
+                from .omni_body_tool import _resolve_python_interpreter
+                command=[_resolve_python_interpreter(),"-m","pytest","-q"]
+            except Exception as exc:
+                issues.append(_issue("tests_not_executable",f"测试无法执行：{exc}","critical","修复测试环境和命令。"))
+                command=[]
         if isinstance(command,str): command=command.split()
         if command:
             try:
@@ -1081,10 +1088,16 @@ def _deliverable_package(runtime: Any, target: str | None, args: Dict[str, Any])
             child_resolved = child.resolve(strict=True)
             if child_resolved == output_resolved:
                 raise ValueError("deliverable.package input and output must be different paths")
+            # Items may live in user-authorized roots outside the workspace;
+            # those are archived relative to their own source directory.
             archive_name = (
                 child.name
                 if source.is_file()
-                else child.relative_to(runtime.workspace).as_posix()
+                else (
+                    child.relative_to(runtime.workspace).as_posix()
+                    if child.is_relative_to(runtime.workspace)
+                    else f"{source.name}/{child.relative_to(source).as_posix()}"
+                )
             )
             folded = archive_name.casefold()
             if folded in seen_archives or folded == "delivery_manifest.json":

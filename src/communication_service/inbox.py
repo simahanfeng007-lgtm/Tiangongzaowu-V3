@@ -642,6 +642,22 @@ class CommunicationInbox:
                 raise InboxCorruptionError("ACK permit and inbox state disagree")
         return True
 
+    def ack_permit_receipt(self, permit_id: str) -> str | None:
+        """Return the stored platform receipt digest for an ACK permit, if any.
+
+        Redelivery handlers use this to re-ACK with the originally recorded
+        receipt instead of a freshly generated one, which would collide.
+        """
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT platform_receipt_sha256 FROM ack_permits WHERE permit_id = ?",
+                (permit_id,),
+            ).fetchone()
+            if row is None:
+                raise InboxConflictError("ACK permit does not exist")
+            digest = row["platform_receipt_sha256"]
+            return str(digest) if digest is not None else None
+
     def get_cursor(self, cursor_stream_key: str) -> CursorSnapshot | None:
         with self._lock:
             row = self._connection.execute(
