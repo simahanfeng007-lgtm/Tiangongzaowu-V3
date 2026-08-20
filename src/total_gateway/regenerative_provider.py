@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from contracts import canonical_sha256, derive_effect_identity
 
+from .diagnostics import diagnostic_log
 from .effects import EffectClaim, EffectResult
 from .regenerative_execution import (
     CHECKPOINT_SCHEMA_VERSION,
@@ -32,6 +33,11 @@ from .store import GatewayStateStore, StoreConflictError, StoreCorruptionError
 _PROVIDER_SCHEMA = "tiangong.gateway.regenerative-provider.v1"
 _TERMINAL_COMMITTED_EFFECT_STATES = frozenset({"SUCCEEDED", "RECONCILED"})
 _RECONCILE_REQUIRED_EFFECT_STATES = frozenset({"SIDE_EFFECT_STARTED", "AMBIGUOUS"})
+# Effects of this pipeline claim this version; the shared ledger also holds
+# orchestrator run-boundary effects ("unspecified") and omni admission
+# sub-effects ("tiangong.omni-grant-authority.v1"), which the execution
+# frontier does not govern.
+_REGENERATIVE_PIPELINE_VERSION = "p18-m2-regenerative-effect-v1"
 
 
 def _text(value: Any, *, label: str) -> str:
@@ -600,16 +606,48 @@ class RegenerativeExecutionAuthority:
         effects = self._store.list_effects_for_request(
             identity.request_id, run_id=identity.run_id, generation=identity.generation
         )
+        # Scope the projection check to effects this pipeline governs: the
+        # ledger is shared with the orchestrator's run-boundary parent effect
+        # and omni admission sub-effects, whose lifecycles bracket the whole
+        # run and are invisible to the backend's local pending set. Including
+        # them made every end-of-step frontier commit conflict (the parent
+        # effect is open by definition while the run is executing).
+        governed_effects = tuple(
+            record
+            for record in effects
+            if record.claim.pipeline_version == _REGENERATIVE_PIPELINE_VERSION
+        )
         actual_pending = tuple(sorted(
-            record.claim.effect_id for record in effects
+            record.claim.effect_id for record in governed_effects
             if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
         ))
         actual_ambiguous = tuple(sorted(
-            record.claim.effect_id for record in effects
+            record.claim.effect_id for record in governed_effects
             if record.state == "AMBIGUOUS"
             and self._store.latest_effect_verdict(record.claim.effect_id, 1) != "APPLIED"
         ))
         if actual_pending != frontier.pending_effect_ids or actual_ambiguous != frontier.ambiguous_effect_ids:
+            # QA diagnosis: pinpoint which side of the projection diverged.
+            ledger_states = {
+                record.claim.effect_id: (record.state, record.claim.owner_component_id)
+                for record in effects
+                if record.state in {"CLAIMED", "SIDE_EFFECT_STARTED", "AMBIGUOUS"}
+            }
+            diagnostic_log(
+                "[FRONTIER_CONFLICT] "
+                + json.dumps(
+                    {
+                        "request_id": identity.request_id,
+                        "frontier_pending": list(frontier.pending_effect_ids),
+                        "ledger_pending": list(actual_pending),
+                        "frontier_ambiguous": list(frontier.ambiguous_effect_ids),
+                        "ledger_ambiguous": list(actual_ambiguous),
+                        "ledger_open_states": ledger_states,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
             raise StoreConflictError("frontier effect projection disagrees with canonical Effect Ledger")
         current = self._store.get_execution_frontier(
             identity.request_id, run_id=identity.run_id, generation=identity.generation
