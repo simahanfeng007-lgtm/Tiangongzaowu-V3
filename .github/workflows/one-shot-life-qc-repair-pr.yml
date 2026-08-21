@@ -1,0 +1,77 @@
+name: One-shot Life QC repair PR launcher
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-life-qc-repair-pr
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.head_ref == 'fix/life-reflection-budget-qc-20260821'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/life-reflection-budget-qc-20260821
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Execute audited one-shot repair recipe
+        shell: bash
+        run: |
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import yaml
+
+          workflow = Path('.github/workflows/one-shot-life-qc-repair.yml')
+          data = yaml.safe_load(workflow.read_text(encoding='utf-8'))
+          steps = data['jobs']['repair-and-test']['steps']
+          allowed = {
+              'Apply in-place authoritative-source repair',
+              'Install test dependencies',
+              'Run focused Life QC regressions',
+              'Run architecture-sensitive regressions',
+              'Commit repaired authoritative source and remove one-shot workflow',
+          }
+          for step in steps:
+              name = str(step.get('name') or '')
+              script = step.get('run')
+              if name not in allowed or not isinstance(script, str):
+                  continue
+              print(f'::group::{name}', flush=True)
+              subprocess.run(
+                  script,
+                  cwd='.',
+                  shell=True,
+                  executable='/bin/bash',
+                  check=True,
+              )
+              print('::endgroup::', flush=True)
+          PY
+
+      - name: Remove launcher and trigger marker
+        if: success()
+        shell: bash
+        run: |
+          rm -f .github/one-shot-life-qc-repair.trigger
+          rm -f .github/workflows/one-shot-life-qc-repair-pr.yml
+          git config user.name "tiangong-qc-repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: remove one-shot Life QC repair launcher"
+            git push origin HEAD:fix/life-reflection-budget-qc-20260821
+          fi
