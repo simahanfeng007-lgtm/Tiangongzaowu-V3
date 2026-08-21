@@ -27,12 +27,14 @@ from contracts import (
     CausalContextItem,
     CausalEpisodeVNext,
     LifeAuthorityHead,
+    LifeEventEnvelope,
     LifeRevisionVector,
     RootExperienceHead,
     RunLifeBinding,
     canonical_json_bytes,
     canonical_sha256,
 )
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .autonomous_tasks import (
     ACTIVE_TASK_STATES,
@@ -62,6 +64,7 @@ from .legacy_fusion import default_body, default_schedule, normalize_body, norma
 from .panel_projection import (
     action_value_projection,
     boundary_projection,
+    capability_profile_projection,
     catalog_tasks_for_day,
     fallback_context_projection,
     long_term_goals,
@@ -70,6 +73,7 @@ from .panel_projection import (
     preference_projection,
     record_day,
     records_for_day,
+    reflection_card_projection,
     reflection_projection,
 )
 from .artifact_executor import (
@@ -87,13 +91,28 @@ from .learning_executor import execute_learning_preview
 from .capability_health import (
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
     DEFAULT_MAX_PATCH_ROUNDS,
+    HEALTH_FRESHNESS_HALF_LIFE_MS,
     attach_health,
     degrade_pointer,
+    health_score_milli,
     ingest_outcome,
     propose_patch,
     reactivate_pointer,
     runtime_usable,
     settle_patch,
+)
+from .capability_learning import build_capability_evidence
+from .episode_builder import (
+    build_action_impact,
+    build_life_event,
+    build_open_episode,
+    build_outcome_evidence,
+    build_prediction,
+    failure_category_from_error,
+    failure_category_from_step_error,
+    fingerprint,
+    observed_quality_from_steps,
+    prediction_from_snapshot,
 )
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
@@ -707,6 +726,14 @@ class EmbeddedLifeRuntime:
                 "heartbeat_enabled": True,
                 "llm_daily_budget": 20,
                 "llm_daily_attempt_budget": 30,
+                # 学习/自我迭代/能力补丁三个调度器各自的子预算：与 proactive
+                # 同样隔离于全局生命模型预算，防止单一子系统吃满整天的量。
+                "learning_llm_daily_budget": 6,
+                "learning_llm_daily_attempt_budget": 8,
+                "self_iteration_llm_daily_budget": 4,
+                "self_iteration_llm_daily_attempt_budget": 6,
+                "capability_patch_llm_daily_budget": 6,
+                "capability_patch_llm_daily_attempt_budget": 8,
                 "share_enabled": True,
                 "share_quiet_if_user_active": True,
                 "share_min_interval_seconds": 2700,
@@ -738,6 +765,9 @@ class EmbeddedLifeRuntime:
                 "proactive_min_utility_lcb_milli": 120,
                 "proactive_min_margin_milli": 80,
                 "proactive_reply_link_window_seconds": 21600,
+                # F1 忽略率门禁：用户持续不回复时抬高开口门槛（0 = 禁用门禁）。
+                "proactive_engagement_window_size": 8,
+                "proactive_min_reply_rate_milli": 200,
                 "learned_boundary_rules": [],
             },
             "inbox": [],
@@ -785,6 +815,24 @@ class EmbeddedLifeRuntime:
                 "proactive_model_failures": 0,
                 "proactive_model_timeouts": 0,
                 "proactive_model_skipped": 0,
+                "learning_model_budget_date": "",
+                "learning_model_attempts": 0,
+                "learning_model_successes": 0,
+                "learning_model_failures": 0,
+                "learning_model_timeouts": 0,
+                "learning_model_skipped": 0,
+                "self_iteration_model_budget_date": "",
+                "self_iteration_model_attempts": 0,
+                "self_iteration_model_successes": 0,
+                "self_iteration_model_failures": 0,
+                "self_iteration_model_timeouts": 0,
+                "self_iteration_model_skipped": 0,
+                "capability_patch_model_budget_date": "",
+                "capability_patch_model_attempts": 0,
+                "capability_patch_model_successes": 0,
+                "capability_patch_model_failures": 0,
+                "capability_patch_model_timeouts": 0,
+                "capability_patch_model_skipped": 0,
                 "last_user_run_id": "",
             },
             "updated_at": utc_now(),
@@ -2410,12 +2458,528 @@ class EmbeddedLifeRuntime:
                         f"{recovered.get('attempt_count', 0)}"
                     ),
                 )
+                # F3 挂点4：陈旧恢复 → 仍 OPEN 的 episode 以 ABORTED 收尾，消孤儿。
+                with self._lock:
+                    self._abort_runtime_episode_locked(
+                        life_id=life_id,
+                        source="autonomy",
+                        ref_id=task_id,
+                        reason="life.autonomy.stale_running_recovered",
+                    )
                 self._persist(life_id)
             except Exception:
                 scope["autonomy"] = before
                 raise
             recovered_count += 1
         return recovered_count
+
+    # ---------- P8 反思链生产接线（F3：任务/能力双源，事前预测先落账） ----------
+    # 决策 E：所有 life_events 链操作（读 head→构造→append）在 self._lock 内；
+    # 任一环节失败即放弃该次反思并 journal（life.episode.failed），绝不向上抛。
+
+    _REFLECTION_EPISODE_REGISTRY_CAP = 32
+
+    def _reflection_chain_enabled(self) -> bool:
+        """熔断开关：TIANGONG_LIFE_REFLECTION_CHAIN=0 时整条反思链停摆。"""
+        return str(os.environ.get("TIANGONG_LIFE_REFLECTION_CHAIN") or "1").strip() != "0"
+
+    def _recent_reflection_rows(self, life_id: str) -> list[Any] | None:
+        """最近反思卡（供 activity scope 注入；store 不可用时返回 None 零影响）。"""
+        try:
+            return list(self._contract_store().list_reflection_cards(life_id, limit=5))
+        except Exception:
+            return None
+
+    def _reflection_signer(self) -> tuple[str, Any]:
+        """进程内 Ed25519 写者。链只校验哈希连续性不验签；密钥随进程。"""
+        key = getattr(self, "_reflection_signer_key", None)
+        if key is None:
+            key = Ed25519PrivateKey.generate()
+            self._reflection_signer_key = key
+        return "life_reflection_chain", lambda digest: key.sign(digest).hex()
+
+    def _reflection_journal_failure(
+        self, life_id: str, phase: str, exc: BaseException | None
+    ) -> None:
+        try:
+            self.system.journal.append(
+                life_id,
+                "life.episode.failed",
+                {
+                    "phase": str(phase),
+                    "error_type": type(exc).__name__ if exc else "",
+                    "detail": re.sub(r"\s+", " ", str(exc or ""))[:160],
+                },
+                actor="life_reflection",
+                idempotency_key=(
+                    f"life.reflection.failed:{phase}:{time.time_ns() // 1_000_000}"
+                ),
+            )
+        except Exception:
+            pass  # 观测性日志失败不得影响主流程
+
+    def _runtime_life_event_locked(
+        self,
+        *,
+        life_id: str,
+        event_kind: str,
+        content: Mapping[str, Any],
+        correlation_id: str,
+        causation_id: str | None = None,
+    ) -> LifeEventEnvelope | None:
+        """向权威链追加一个反思链事件；不可用/失败时返回 None。"""
+        try:
+            store = self._contract_store()
+            head = store.life_event_head(life_id)
+            now_ms = time.time_ns() // 1_000_000
+            key_id, sign = self._reflection_signer()
+            event = build_life_event(
+                life_id=life_id,
+                sequence=1 if head is None else head.sequence + 1,
+                writer_epoch=1 if head is None else head.writer_epoch,
+                previous_event_hash=None if head is None else head.event_hash,
+                event_kind=event_kind,
+                content=content,
+                occurred_at_ms=now_ms,
+                observed_at_ms=now_ms,
+                correlation_id=correlation_id,
+                causation_id=causation_id,
+                signer_key_id=key_id,
+                sign=sign,
+            )
+            store.append_event(event)
+            return event
+        except Exception as exc:
+            self._reflection_journal_failure(life_id, f"event:{event_kind}", exc)
+            return None
+
+    def _open_runtime_episode_locked(
+        self,
+        *,
+        life_id: str,
+        source: str,
+        ref_id: str,
+        event_kind: str,
+        intention: str,
+        context_sha256: str,
+        prediction: Any,
+        action_risk: str,
+        candidate_action_ids: tuple[str, ...] = (),
+        selected_action_id: str | None = None,
+        started_event: LifeEventEnvelope | None = None,
+        registry_extra: Mapping[str, Any] | None = None,
+    ) -> str | None:
+        """事前落账：started 事件 → OPEN episode → 注册表登记（FIFO 32）。"""
+        if not self._reflection_chain_enabled():
+            return None
+        try:
+            started = started_event or self._runtime_life_event_locked(
+                life_id=life_id,
+                event_kind=event_kind,
+                content={
+                    "ref": ref_id,
+                    "source": source,
+                    "intention": intention[:800],
+                    "predicted_success_milli": prediction.predicted_success_milli,
+                    "prediction_snapshot_sha256": prediction.snapshot_sha256,
+                    "action_risk": action_risk,
+                },
+                correlation_id=f"{source}:{ref_id}",
+            )
+            if started is None:
+                return None
+            episode = build_open_episode(
+                life_id=life_id,
+                trigger_event_ids=[started.event_id],
+                context_state_hashes=[context_sha256 or started.event_hash],
+                intention=intention[:20_000],
+                prediction=prediction,
+                candidate_action_ids=candidate_action_ids,
+                selected_action_id=selected_action_id,
+                created_at_ms=time.time_ns() // 1_000_000,
+            )
+            self._contract_store().put_causal_episode(episode)
+        except Exception as exc:
+            self._reflection_journal_failure(life_id, "open", exc)
+            return None
+        scheduler = self._scope_state(life_id).setdefault("scheduler", {})
+        registry = [
+            row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
+        ]
+        registry.append({
+            "source": source,
+            "ref": ref_id,
+            "episode_id": episode.episode_id,
+            "correlation_id": f"{source}:{ref_id}",
+            "predicted_success_milli": prediction.predicted_success_milli,
+            "prediction_snapshot": prediction.snapshot,
+            "context_sha256": context_sha256,
+            "action_risk": action_risk,
+            "opened_at_ms": time.time_ns() // 1_000_000,
+            **(dict(registry_extra) if registry_extra else {}),
+        })
+        scheduler["open_episodes"] = registry[-self._REFLECTION_EPISODE_REGISTRY_CAP:]
+        try:
+            self.system.journal.append(
+                life_id,
+                "life.episode.opened",
+                {"episode_id": episode.episode_id, "source": source, "ref": ref_id},
+                actor="life_reflection",
+                idempotency_key=f"life.reflection.open:{episode.episode_id}",
+            )
+        except Exception:
+            pass
+        self._persist(life_id)
+        return episode.episode_id
+
+    def _commit_runtime_reflection_locked(
+        self,
+        *,
+        life_id: str,
+        source: str,
+        ref_id: str,
+        outcome_status: str,
+        observed_outcome: str,
+        observed_quality_milli: int,
+        completion_decision: Mapping[str, Any],
+        terminal_fact_parts: Mapping[str, Any],
+        event_kind: str,
+        failure_category: str | None = None,
+        journal_event: str = "life.episode.committed",
+    ) -> None:
+        """事后收尾：outcome 事件 → 结果证据 → 原子闭环反思 → 注册表移除。"""
+        if not self._reflection_chain_enabled():
+            return
+        try:
+            scheduler = self._scope_state(life_id).setdefault("scheduler", {})
+            registry = [
+                row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
+            ]
+            entry = next(
+                (
+                    row for row in registry
+                    if str(row.get("source") or "") == source
+                    and str(row.get("ref") or "") == ref_id
+                ),
+                None,
+            )
+            if entry is None:
+                return  # 没有事前落账（链路关闭或 opening 失败），无从收尾
+            outcome_event = self._runtime_life_event_locked(
+                life_id=life_id,
+                event_kind=event_kind,
+                content={
+                    "ref": ref_id,
+                    "source": source,
+                    "outcome_status": outcome_status,
+                    "quality_milli": observed_quality_milli,
+                    **{str(key): value for key, value in terminal_fact_parts.items()},
+                },
+                correlation_id=str(entry.get("correlation_id") or f"{source}:{ref_id}"),
+            )
+            if outcome_event is None:
+                return
+            prediction = prediction_from_snapshot(entry.get("prediction_snapshot") or {})
+            outcome = build_outcome_evidence(
+                life_id=life_id,
+                episode_id=str(entry.get("episode_id") or ""),
+                outcome_status=outcome_status,
+                observed_outcome=observed_outcome[:50_000],
+                observed_quality_milli=observed_quality_milli,
+                prediction=prediction,
+                completion_decision_sha256=fingerprint(dict(completion_decision)),
+                terminal_fact_hashes=[outcome_event.event_hash],
+                outcome_event_ids=[outcome_event.event_id],
+                context_fingerprint_sha256=str(entry.get("context_sha256") or ""),
+                action_risk=str(entry.get("action_risk") or "A1"),
+                failure_category=failure_category,
+                occurred_at_ms=time.time_ns() // 1_000_000,
+            )
+            result = self._contract_store().commit_episode_reflection(
+                outcome, now_ms=time.time_ns() // 1_000_000
+            )
+            scheduler["open_episodes"] = [
+                row for row in registry if row is not entry
+            ][-self._REFLECTION_EPISODE_REGISTRY_CAP:]
+            try:
+                self.system.journal.append(
+                    life_id,
+                    journal_event,
+                    {
+                        "episode_id": entry.get("episode_id"),
+                        "source": source,
+                        "ref": ref_id,
+                        "outcome_status": outcome_status,
+                        "reflection_id": result.reflection.reflection_id,
+                    },
+                    actor="life_reflection",
+                    idempotency_key=f"life.reflection.commit:{entry.get('episode_id')}",
+                )
+            except Exception:
+                pass
+            self._persist(life_id)
+        except Exception as exc:
+            self._reflection_journal_failure(life_id, "commit", exc)
+
+    def _abort_runtime_episode_locked(
+        self, *, life_id: str, source: str, ref_id: str, reason: str
+    ) -> None:
+        """陈旧恢复：仍 OPEN 的 episode 以 ABORTED 收尾，消除孤儿。"""
+        if not self._reflection_chain_enabled():
+            return
+        self._commit_runtime_reflection_locked(
+            life_id=life_id,
+            source=source,
+            ref_id=ref_id,
+            outcome_status="aborted",
+            observed_outcome=f"运行中断，任务未收尾：{reason}"[:50_000],
+            observed_quality_milli=0,
+            completion_decision={"ref": ref_id, "status": "aborted", "reason": reason},
+            terminal_fact_parts={"abort_reason": reason[:200]},
+            event_kind=f"{source}.attempt.aborted",
+        )
+
+    def _open_capability_episode_locked(
+        self,
+        *,
+        life_id: str,
+        artifact: Mapping[str, Any],
+        pointer: Mapping[str, Any],
+        execution_id: str,
+    ) -> None:
+        """F3 挂点5：能力执行前 → health 基线预测 + started 事件 + 影响面 + OPEN episode。"""
+        if not self._reflection_chain_enabled():
+            return
+        try:
+            health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+            prediction = build_prediction(
+                basis_inputs={
+                    "source": "capability",
+                    "artifact_id": str(artifact.get("artifact_id") or ""),
+                    "version": str(artifact.get("version") or ""),
+                },
+                successes=int(health.get("successes") or 0),
+                uses=int(health.get("uses") or 0),
+            )
+            started = self._runtime_life_event_locked(
+                life_id=life_id,
+                event_kind="capability.invoke.started",
+                content={
+                    "execution_id": execution_id,
+                    "artifact_id": str(artifact.get("artifact_id") or ""),
+                    "predicted_success_milli": prediction.predicted_success_milli,
+                    "prediction_snapshot_sha256": prediction.snapshot_sha256,
+                    "action_risk": str(artifact.get("risk_level") or "A3"),
+                },
+                correlation_id=f"capability:{execution_id}",
+            )
+            if started is None:
+                return
+            impact = build_action_impact(
+                life_id=life_id,
+                action_id=str(artifact.get("artifact_id") or ""),
+                risk_class=str(artifact.get("risk_level") or "A3"),
+                source_event_ids=[started.event_id],
+                created_at_ms=time.time_ns() // 1_000_000,
+            )
+            self._contract_store().put_action_impact(impact)
+            self._open_runtime_episode_locked(
+                life_id=life_id,
+                source="capability",
+                ref_id=execution_id,
+                event_kind="capability.invoke.started",
+                intention=str(artifact.get("summary") or artifact.get("title") or "能力执行")[:20_000],
+                context_sha256=str(artifact.get("artifact_sha256") or ""),
+                prediction=prediction,
+                action_risk=str(artifact.get("risk_level") or "A3"),
+                candidate_action_ids=(str(artifact.get("artifact_id") or ""),),
+                selected_action_id=str(artifact.get("artifact_id") or ""),
+                started_event=started,
+                registry_extra={
+                    "capability_id": str(artifact.get("artifact_id") or ""),
+                    "capability_version": str(artifact.get("version") or ""),
+                    "capability_scope": str(artifact.get("title") or ""),
+                    "action_impact": impact.model_dump(mode="json"),
+                },
+            )
+        except Exception as exc:
+            self._reflection_journal_failure(life_id, "capability_open", exc)
+
+    # 决策 A：verified + capability 归因的失败证据累积到该阈值且影响面
+    # A0-A2 时才自动回滚（熟练度归零）；A3+ 只升 HUMAN_REVIEW/CORE_REVIEW。
+    CAPABILITY_AUTO_ROLLBACK_FAILURES = 3
+
+    def _commit_capability_reflection_locked(
+        self,
+        *,
+        life_id: str,
+        artifact: Mapping[str, Any],
+        execution: Mapping[str, Any],
+        records: list[dict[str, Any]],
+        execution_id: str,
+        completed: bool,
+    ) -> dict[str, Any] | None:
+        """F3 挂点6：能力执行后 → 闭环反思 → 能力证据 → 学习 → 回滚规则。"""
+        if not self._reflection_chain_enabled():
+            return None
+        try:
+            store = self._contract_store()
+            scheduler = self._scope_state(life_id).setdefault("scheduler", {})
+            registry = [
+                row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
+            ]
+            entry = next(
+                (
+                    row for row in registry
+                    if str(row.get("source") or "") == "capability"
+                    and str(row.get("ref") or "") == execution_id
+                ),
+                None,
+            )
+            if entry is None:
+                return None
+            from contracts import ActionImpact
+
+            impact = ActionImpact.model_validate_json(
+                canonical_json_bytes(entry.get("action_impact") or {})
+            )
+            failed_steps = [row for row in records if row.get("ok") is not True]
+            quality = observed_quality_from_steps(records)
+            summary = {
+                "execution_id": execution_id,
+                "artifact_id": entry.get("capability_id"),
+                "status": str(execution.get("status") or ""),
+                "quality_milli": quality,
+                "failed_steps": len(failed_steps),
+            }
+            outcome_event = self._runtime_life_event_locked(
+                life_id=life_id,
+                event_kind="capability.outcome.recorded",
+                content=summary,
+                correlation_id=str(entry.get("correlation_id") or f"capability:{execution_id}"),
+            )
+            if outcome_event is None:
+                return None
+            prediction = prediction_from_snapshot(entry.get("prediction_snapshot") or {})
+            # 步骤错误码在执行记录的 result 里，合并后做九类映射。
+            category = (
+                failure_category_from_step_error(
+                    {**(failed_steps[0].get("result") or {}), **failed_steps[0]}
+                )
+                if failed_steps
+                else None
+            )
+            outcome = build_outcome_evidence(
+                life_id=life_id,
+                episode_id=str(entry.get("episode_id") or ""),
+                outcome_status="success" if completed else "failure",
+                observed_outcome=(
+                    f"能力执行{'成功' if completed else '失败'}：{entry.get('capability_scope') or ''}"
+                )[:50_000],
+                observed_quality_milli=quality,
+                prediction=prediction,
+                completion_decision_sha256=fingerprint(dict(summary)),
+                terminal_fact_hashes=[outcome_event.event_hash],
+                outcome_event_ids=[outcome_event.event_id],
+                context_fingerprint_sha256=str(entry.get("context_sha256") or ""),
+                action_risk=str(entry.get("action_risk") or "A3"),
+                failure_category=category,
+                occurred_at_ms=time.time_ns() // 1_000_000,
+            )
+            reflected = store.commit_episode_reflection(
+                outcome, now_ms=time.time_ns() // 1_000_000
+            )
+            evidence = build_capability_evidence(
+                outcome,
+                reflected.reflection,
+                impact,
+                capability_id=str(entry.get("capability_id") or ""),
+                capability_version=str(entry.get("capability_version") or ""),
+                now_ms=time.time_ns() // 1_000_000,
+            )
+            # 决策 C 诚实基线：生产路径成功证据 correlation_only，两个
+            # eligible 位均为 False。profile 契约要求证据集至少含一条
+            # eligible 证据，因此只在 eligible（失败或未来假设支持的成败）
+            # 时提交学习；成功反思照常闭环，熟练度晋升等未来假设管线。
+            learned = None
+            if evidence.eligible_success or evidence.eligible_failure:
+                learned = store.commit_capability_learning(
+                    (evidence,),
+                    scope=str(entry.get("capability_scope") or "能力学习"),
+                    now_ms=time.time_ns() // 1_000_000,
+                )
+            rollback_applied = False
+            version = str(entry.get("capability_version") or "")
+            historical = [
+                row for row in store.list_capability_evidence(
+                    life_id, capability_id=str(entry.get("capability_id") or ""), limit=200
+                )
+                if row.capability_version == version
+                and row.eligible_failure
+                and row.impact_floor in {"A0", "A1", "A2"}
+            ]
+            if len(historical) >= self.CAPABILITY_AUTO_ROLLBACK_FAILURES:
+                store.apply_capability_rollback(
+                    capability_id=str(entry.get("capability_id") or ""),
+                    capability_version=version,
+                    life_id=life_id,
+                    trigger_evidence_ids=tuple(
+                        sorted(row.evidence_id for row in historical)
+                    ),
+                    now_ms=time.time_ns() // 1_000_000,
+                )
+                rollback_applied = True
+            scheduler["open_episodes"] = [
+                row for row in registry if row is not entry
+            ][-self._REFLECTION_EPISODE_REGISTRY_CAP:]
+            if learned is not None:
+                try:
+                    self.system.journal.append(
+                        life_id,
+                        "life.capability.learning.committed",
+                        {
+                            "episode_id": entry.get("episode_id"),
+                            "capability_id": entry.get("capability_id"),
+                            "outcome": learned.decision.outcome,
+                            "review_level": learned.decision.review_level,
+                            "rollback_applied": rollback_applied,
+                        },
+                        actor="life_reflection",
+                        idempotency_key=f"life.capability.learning:{entry.get('episode_id')}",
+                    )
+                except Exception:
+                    pass
+            self._persist(life_id)
+            learning_summary = (
+                {
+                    "profile_sha256": learned.profile.profile_sha256,
+                    "decision_id": learned.decision.learning_decision_id,
+                    "outcome": learned.decision.outcome,
+                    "review_level": learned.decision.review_level,
+                    "proficiency_lower_bound_milli": learned.profile.proficiency_lower_bound_milli,
+                }
+                if learned is not None
+                else {
+                    # 诚实基线：证据未达 eligible（如 correlation_only 的成功），
+                    # 本次不进入能力学习，反思照常闭环。
+                    "outcome": "not_committed",
+                    "reason": "capability.evidence_not_eligible",
+                }
+            )
+            learning_summary["rollback_applied"] = rollback_applied
+            return {
+                "reflection": {
+                    "reflection_id": reflected.reflection.reflection_id,
+                    "episode_id": reflected.reflection.episode_id,
+                    "source": "causal_reflection_chain",
+                    "observed_outcome": reflected.reflection.observed_outcome,
+                    "prediction_error_milli": reflected.reflection.prediction_error_milli,
+                },
+                "capability_learning": learning_summary,
+            }
+        except Exception as exc:
+            self._reflection_journal_failure(life_id, "capability_commit", exc)
+            return None
 
     _ACTIVITY_WINDOW_HOURS = {
         "上午": (6, 11),
@@ -2467,6 +3031,58 @@ class EmbeddedLifeRuntime:
                 weighted = bonus * milli // 1000
                 if weighted > affinity.get(activity_id, 0):
                     affinity[activity_id] = weighted
+        return affinity
+
+    # 动机漂移：最近行动分布偏离长期偏好时，给欠采样活动加分，把自由行动
+    # 拉回用户配置的方向。只读（不写回 kind_weights 等用户可见配置）。
+    _DRIFT_AFFINITY_COEFFICIENT = 150
+    _DRIFT_AFFINITY_MIN_SAMPLE = 10
+
+    def _drift_affinity(self, scope: Mapping[str, Any]) -> dict[str, int]:
+        """Boost under-sampled activities when recent actions drift from preferences."""
+        autonomy = scope.get("autonomy") if isinstance(scope.get("autonomy"), Mapping) else {}
+        completed = [
+            row for row in (autonomy.get("tasks") or {}).values()
+            if isinstance(row, Mapping)
+            and str(row.get("status") or "") == "completed"
+            and str(row.get("source") or "") == "life_activity_catalog"
+        ]
+        completed.sort(
+            key=lambda row: (int(row.get("updated_at_ms") or 0), int(row.get("sequence") or 0)),
+            reverse=True,
+        )
+        settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        preferences = preference_projection(sorted({
+            str(value)
+            for value in settings.get("autonomy_activity_types") or []
+            if str(value)
+        }))
+        rows = motivation_drift_projection(completed[:30], preferences)
+        if not rows:
+            return {}
+        row = rows[0]
+        # 样本不足时漂移抖动大（insufficient_evidence 或低于最小样本），不加分。
+        if int(row.get("observed_actions") or 0) < self._DRIFT_AFFINITY_MIN_SAMPLE:
+            return {}
+        if not row.get("drift_detected"):
+            return {}
+        observed = row.get("observed_distribution")
+        observed = observed if isinstance(observed, Mapping) else {}
+        expected = preferences.get("kind_weights")
+        expected = expected if isinstance(expected, Mapping) else {}
+        observed_total = sum(int(value or 0) for value in observed.values()) or 1
+        expected_total = sum(max(0.0, float(value or 0)) for value in expected.values()) or 1.0
+        score = min(1.0, max(0.0, float(row.get("drift_score") or 0)))
+        affinity: dict[str, int] = {}
+        for activity_id, weight in expected.items():
+            gap = max(
+                0.0,
+                max(0.0, float(weight or 0)) / expected_total
+                - int(observed.get(activity_id) or 0) / observed_total,
+            )
+            bonus = int(score * gap * self._DRIFT_AFFINITY_COEFFICIENT)
+            if bonus > 0:
+                affinity[str(activity_id)] = bonus
         return affinity
 
     def _schedule_autonomous_activity_decision(self, *, life_id: str) -> None:
@@ -2548,11 +3164,15 @@ class EmbeddedLifeRuntime:
         ]
         pool = due if due else eligible
         desire = self._desire_affinity(scope)
+        # 漂移加分只在自由行动分支生效：到点计划保持"高优先级先做"的确定性，
+        # 不被欠采样补偿改写次序。
+        drift = {} if due else self._drift_affinity(scope)
         pool.sort(
             key=lambda task: (
                 -(
                     int(task.get("priority") or 0)
                     + desire.get(str(task.get("activity_id") or ""), 0)
+                    + drift.get(str(task.get("activity_id") or ""), 0)
                 ),
                 int(task.get("sequence") or 0),
                 str(task.get("task_id") or ""),
@@ -2585,8 +3205,40 @@ class EmbeddedLifeRuntime:
                         life_id=life_id,
                         soul=self._soul(),
                         scope=self._scope_state(life_id),
+                        reflection_rows=self._recent_reflection_rows(life_id),
                     )
                     task = deepcopy(self._autonomy_state(life_id)["tasks"][task_id])
+                    # F3 挂点1：事前预测先落账（OPEN episode），事后不可编造；
+                    # 预测依据 = 该活动的真实完成历史。
+                    activity_id = str(task.get("activity_id") or "")
+                    history = [
+                        row for row in self._autonomy_state(life_id)["tasks"].values()
+                        if isinstance(row, Mapping)
+                        and str(row.get("activity_id") or "") == activity_id
+                        and str(row.get("status") or "") in {"completed", "failed"}
+                    ]
+                    self._open_runtime_episode_locked(
+                        life_id=life_id,
+                        source="autonomy",
+                        ref_id=task_id,
+                        event_kind="autonomy.task.attempt.started",
+                        intention=str(task.get("objective") or task.get("title") or "自主行动"),
+                        context_sha256=str(activity_scope.get("scope_sha256") or ""),
+                        prediction=build_prediction(
+                            basis_inputs={
+                                "source": "autonomy",
+                                "task_id": task_id,
+                                "activity_id": activity_id,
+                            },
+                            successes=sum(
+                                1 for row in history if str(row.get("status") or "") == "completed"
+                            ),
+                            uses=len(history),
+                        ),
+                        action_risk=str(task.get("risk_class") or "A0"),
+                        candidate_action_ids=(task_id,),
+                        selected_action_id=task_id,
+                    )
                 decision = self._autonomy_decider(activity_scope, task)
                 if not isinstance(decision, Mapping):
                     raise ValueError("autonomy model result is invalid")
@@ -2623,6 +3275,24 @@ class EmbeddedLifeRuntime:
                         actor="life_autonomy",
                         idempotency_key=f"autonomy.task.model-complete:{task_id}:{completed.get('attempt_count', 0)}",
                     )
+                    # F3 挂点2：任务完成 → 闭环反思（质量 900，终态事实=结果哈希）。
+                    self._commit_runtime_reflection_locked(
+                        life_id=life_id,
+                        source="autonomy",
+                        ref_id=task_id,
+                        outcome_status="success",
+                        observed_outcome=str(result.get("summary") or "任务完成。"),
+                        observed_quality_milli=900,
+                        completion_decision={
+                            "task_id": task_id,
+                            "status": "completed",
+                            "attempt_count": completed.get("attempt_count"),
+                        },
+                        terminal_fact_parts={
+                            "summary": str(result.get("summary") or "")[:800],
+                        },
+                        event_kind="autonomy.task.attempt.finished",
+                    )
                     self._sync_daily_summary(life_id)
                     self._persist(life_id)
             except Exception as exc:
@@ -2646,6 +3316,23 @@ class EmbeddedLifeRuntime:
                             {"task_id": task_id, "task": blocked},
                             actor="life_autonomy",
                             idempotency_key=f"autonomy.task.model-blocked:{task_id}:{blocked.get('attempt_count', 0)}",
+                        )
+                        # F3 挂点3：任务异常 → 失败闭环（九类映射 + 反事实模板）。
+                        self._commit_runtime_reflection_locked(
+                            life_id=life_id,
+                            source="autonomy",
+                            ref_id=task_id,
+                            outcome_status="failure",
+                            observed_outcome=f"任务失败：{type(exc).__name__}",
+                            observed_quality_milli=100,
+                            completion_decision={
+                                "task_id": task_id,
+                                "status": "failed",
+                                "attempt_count": blocked.get("attempt_count"),
+                            },
+                            terminal_fact_parts={"error_type": type(exc).__name__},
+                            event_kind="autonomy.task.attempt.failed",
+                            failure_category=failure_category_from_error(exc),
                         )
                     scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
                     activity_detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
@@ -2867,6 +3554,11 @@ class EmbeddedLifeRuntime:
         if not callable(getattr(self, "_learning_decider", None)):
             scheduler["last_learning_decision_error"] = "life.learning.model_bridge_unavailable"
             return
+        if not self._reserve_sub_model_call_locked(scheduler=scheduler, settings=settings, pool="learning"):
+            scheduler["last_learning_decision_at_ms"] = now_ms
+            scheduler["last_learning_decision_error"] = "life.learning.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["learning_decision_inflight"] = True
         scheduler["last_learning_decision_at_ms"] = now_ms
         scheduler["last_learning_decision_error"] = ""
@@ -2874,10 +3566,15 @@ class EmbeddedLifeRuntime:
 
         def worker() -> None:
             try:
-                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id))
+                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id), reflection_rows=self._recent_reflection_rows(life_id))
                 decision = self._learning_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("learning model decision is invalid")
+                with self._lock:
+                    self._account_sub_model_success_locked(
+                        self._scope_state(life_id).setdefault("scheduler", {}),
+                        pool="learning",
+                    )
                 target = str(decision.get("target") or decision.get("artifact_kind") or "").strip().casefold()
                 with self._lock:
                     if target in {"", "none", "no_learning", "no-learning"}:
@@ -2915,7 +3612,13 @@ class EmbeddedLifeRuntime:
                 # instead of recording only the exception type.
                 detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
                 with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})[
+                    scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                    self._account_sub_model_failure_locked(
+                        scheduler_state,
+                        pool="learning",
+                        timeout=isinstance(exc, TimeoutError),
+                    )
+                    scheduler_state[
                         "last_learning_decision_error"
                     ] = f"life.learning.decision_failed:{type(exc).__name__}:{detail}"
             finally:
@@ -2949,6 +3652,11 @@ class EmbeddedLifeRuntime:
         if not callable(getattr(self, "_self_iteration_decider", None)):
             scheduler["last_self_iteration_decision_error"] = "life.self_iteration.model_bridge_unavailable"
             return
+        if not self._reserve_sub_model_call_locked(scheduler=scheduler, settings=settings, pool="self_iteration"):
+            scheduler["last_self_iteration_decision_at_ms"] = now_ms
+            scheduler["last_self_iteration_decision_error"] = "life.self_iteration.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["self_iteration_decision_inflight"] = True
         scheduler["last_self_iteration_decision_at_ms"] = now_ms
         scheduler["last_self_iteration_decision_error"] = ""
@@ -2956,10 +3664,15 @@ class EmbeddedLifeRuntime:
 
         def worker() -> None:
             try:
-                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id))
+                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id), reflection_rows=self._recent_reflection_rows(life_id))
                 decision = self._self_iteration_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("self-iteration model decision is invalid")
+                with self._lock:
+                    self._account_sub_model_success_locked(
+                        self._scope_state(life_id).setdefault("scheduler", {}),
+                        pool="self_iteration",
+                    )
                 target = str(decision.get("target") or "").strip().casefold()
                 with self._lock:
                     if target in {"", "none", "no_upgrade", "no-upgrade"}:
@@ -2972,7 +3685,13 @@ class EmbeddedLifeRuntime:
             except Exception as exc:
                 detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
                 with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})[
+                    scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                    self._account_sub_model_failure_locked(
+                        scheduler_state,
+                        pool="self_iteration",
+                        timeout=isinstance(exc, TimeoutError),
+                    )
+                    scheduler_state[
                         "last_self_iteration_decision_error"
                     ] = f"life.self_iteration.decision_failed:{type(exc).__name__}:{detail}"
             finally:
@@ -3185,6 +3904,25 @@ class EmbeddedLifeRuntime:
             and str(row.get("reason") or "") == "life.proactive.native"
             and int(row.get("created_at_ms") or 0) > 0
         ]
+        context_settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        # F1：投递结果投影（replied/acked）供忽略率门禁消费。仍在回复链接
+        # 窗口内的投递不算数——用户还来得及回，不能提前记为忽略。
+        reply_window_ms = max(
+            60, int(context_settings.get("proactive_reply_link_window_seconds") or 21600)
+        ) * 1000
+        delivery_outcomes = [
+            {
+                "created_at_ms": int(row.get("created_at_ms") or 0),
+                "candidate_kind": str(row.get("candidate_kind") or ""),
+                "replied": bool(row.get("replied")),
+                "acked": bool(row.get("acked")),
+            }
+            for row in scope.get("proactive_chats", [])
+            if isinstance(row, Mapping)
+            and str(row.get("reason") or "") == "life.proactive.native"
+            and int(row.get("created_at_ms") or 0) > 0
+            and now_ms - int(row.get("created_at_ms") or 0) > reply_window_ms
+        ]
         affect = scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {}
         return {
             "schema": "tiangong.life.initiative-context.v1",
@@ -3195,6 +3933,7 @@ class EmbeddedLifeRuntime:
             "last_user_activity_at_ms": int(scheduler.get("last_user_activity_at_ms") or 0),
             "last_user_run_id": str(scheduler.get("last_user_run_id") or ""),
             "recent_delivery_times_ms": deliveries[-64:],
+            "recent_delivery_outcomes": delivery_outcomes[-64:],
             "observations": observations[:40],
             "recent_tasks": task_projection,
             "relationships": self._project_proactive_relationships(life_id=life_id),
@@ -3263,6 +4002,117 @@ class EmbeddedLifeRuntime:
         scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
         scheduler["proactive_model_attempts"] = int(scheduler.get("proactive_model_attempts") or 0) + 1
         return True
+
+    # 学习/自我迭代/能力补丁三个调度器的子预算隔离：与 proactive 同模式，
+    # 全局池 + 子池双检查双累加，防止任何一个子系统占满全局生命模型预算。
+    _MODEL_SUB_BUDGET_POOLS = {
+        "learning": {
+            "prefix": "learning_model_",
+            "success_key": "learning_llm_daily_budget",
+            "success_default": 6,
+            "attempt_key": "learning_llm_daily_attempt_budget",
+            "attempt_default": 8,
+        },
+        "self_iteration": {
+            "prefix": "self_iteration_model_",
+            "success_key": "self_iteration_llm_daily_budget",
+            "success_default": 4,
+            "attempt_key": "self_iteration_llm_daily_attempt_budget",
+            "attempt_default": 6,
+        },
+        "capability_patch": {
+            "prefix": "capability_patch_model_",
+            "success_key": "capability_patch_llm_daily_budget",
+            "success_default": 6,
+            "attempt_key": "capability_patch_llm_daily_attempt_budget",
+            "attempt_default": 8,
+        },
+    }
+
+    def _reset_sub_model_budget_if_needed(self, scheduler: dict[str, Any], *, pool: str) -> None:
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        budget_day = utc_now()[:10]
+        # Preserve the existing global Life-model hard cap.
+        if str(scheduler.get("model_budget_date") or "") != budget_day:
+            scheduler.update({
+                "model_budget_date": budget_day,
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_failures": 0,
+                "model_timeouts": 0,
+                "model_skipped": 0,
+            })
+        if str(scheduler.get(f"{prefix}budget_date") or "") != budget_day:
+            scheduler.update({
+                f"{prefix}budget_date": budget_day,
+                f"{prefix}attempts": 0,
+                f"{prefix}successes": 0,
+                f"{prefix}failures": 0,
+                f"{prefix}timeouts": 0,
+                f"{prefix}skipped": 0,
+            })
+
+    def _sub_model_budget_exhausted(
+        self,
+        scheduler: dict[str, Any],
+        *,
+        settings: Mapping[str, Any],
+        pool: str,
+    ) -> bool:
+        """Check-only peek (no counter changes); performs the daily reset."""
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        global_success_limit = self._daily_limit_setting(settings, "llm_daily_budget", 20)
+        global_attempt_limit = self._daily_limit_setting(settings, "llm_daily_attempt_budget", 30)
+        sub_success_limit = self._daily_limit_setting(settings, str(config["success_key"]), int(config["success_default"]))
+        sub_attempt_limit = self._daily_limit_setting(settings, str(config["attempt_key"]), int(config["attempt_default"]))
+        return (
+            (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
+            or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
+            or (sub_success_limit and int(scheduler.get(f"{prefix}successes") or 0) >= sub_success_limit)
+            or (sub_attempt_limit and int(scheduler.get(f"{prefix}attempts") or 0) >= sub_attempt_limit)
+        )
+
+    def _reserve_sub_model_call_locked(
+        self,
+        *,
+        scheduler: dict[str, Any],
+        settings: Mapping[str, Any],
+        pool: str,
+    ) -> bool:
+        """Reserve one real LLM call against both the global and the sub pool."""
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        if self._sub_model_budget_exhausted(scheduler, settings=settings, pool=pool):
+            scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
+            scheduler[f"{prefix}skipped"] = int(scheduler.get(f"{prefix}skipped") or 0) + 1
+            return False
+        scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
+        scheduler[f"{prefix}attempts"] = int(scheduler.get(f"{prefix}attempts") or 0) + 1
+        return True
+
+    def _account_sub_model_success_locked(self, scheduler: dict[str, Any], *, pool: str) -> None:
+        prefix = str(self._MODEL_SUB_BUDGET_POOLS[pool]["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+        scheduler[f"{prefix}successes"] = int(scheduler.get(f"{prefix}successes") or 0) + 1
+
+    def _account_sub_model_failure_locked(
+        self,
+        scheduler: dict[str, Any],
+        *,
+        pool: str,
+        timeout: bool = False,
+    ) -> None:
+        prefix = str(self._MODEL_SUB_BUDGET_POOLS[pool]["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+        scheduler[f"{prefix}failures"] = int(scheduler.get(f"{prefix}failures") or 0) + 1
+        if timeout:
+            scheduler["model_timeouts"] = int(scheduler.get("model_timeouts") or 0) + 1
+            scheduler[f"{prefix}timeouts"] = int(scheduler.get(f"{prefix}timeouts") or 0) + 1
 
     def _schedule_native_proactive(self, *, life_id: str) -> None:
         """Schedule the sole post-P15 proactive producer without blocking heartbeat."""
@@ -4260,6 +5110,17 @@ class EmbeddedLifeRuntime:
             completed_autonomous_tasks,
             preferences,
         )
+        # P8 反思链卡片（只读独立键，不动现有 reflections/action_values）。
+        reflection_cards: list[dict[str, Any]] = []
+        try:
+            reflection_cards = [
+                reflection_card_projection(card)
+                for card in self._contract_store().list_reflection_cards(
+                    str(self._active().get("life_id") or ""), limit=20
+                )
+            ]
+        except Exception:
+            reflection_cards = []
         affect_state = deepcopy(scope["affect"])
         affect_state.setdefault(
             "drives",
@@ -4395,6 +5256,7 @@ class EmbeddedLifeRuntime:
             },
             "drift": drift_rows,
             "reflections": reflection_rows,
+            "reflection_cards": reflection_cards,
             "action_values": action_value_rows,
             "learning": {
                 "candidate_count": len(learning_pending),
@@ -6289,6 +7151,16 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.identity.id_invalid", status=409)
         scope = self._scope_state(life_id)
         pointers = scope.get("capability_pointers") if isinstance(scope.get("capability_pointers"), Mapping) else {}
+        now_ms = time.time_ns() // 1_000_000
+        # 认知层 profile（capability_learning 双体系之认知侧，只读输入）。
+        profiles_by_capability: dict[str, Any] = {}
+        try:
+            profiles_by_capability = {
+                str(profile.capability_id): profile
+                for profile in self._contract_store().latest_capability_profiles(life_id)
+            }
+        except Exception:
+            profiles_by_capability = {}
         rows = []
         for raw in scope["capabilities"].values():
             if not isinstance(raw, Mapping) or raw.get("status") != "published" or raw.get("kind") not in {"skill", "tool"}:
@@ -6301,8 +7173,36 @@ class EmbeddedLifeRuntime:
             activation_status = str(pointer.get("status") or "pending")
             row["activation_status"] = activation_status
             row["runtime_usable"] = activation_status == "active"
+            health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+            row["health_score_milli"] = health_score_milli(health, now_ms)
+            row["last_outcome_at_ms"] = int(health.get("last_outcome_at_ms") or 0)
+            profile = profiles_by_capability.get(str(row.get("artifact_id") or ""))
+            proficiency = int(getattr(profile, "proficiency_lower_bound_milli", 0) or 0) if profile else 0
+            row["profile"] = capability_profile_projection(profile) if profile else None
+            row["proficiency_lower_bound_milli"] = proficiency
+            # 决策 D：双体系综合分——运行时健康与认知熟练度任一看好即靠前。
+            row["composite_score_milli"] = max(int(row["health_score_milli"]), proficiency)
+            # 闲置标记（派生，不持久化）：>7 天无真实执行结果的 active 能力。
+            # 只影响排序自然沉底与 32 条截断淘汰，不降级、不禁用；补丁验证中的不算闲置。
+            last_outcome_ms = row["last_outcome_at_ms"]
+            row["idle"] = bool(
+                activation_status == "active"
+                and last_outcome_ms > 0
+                and now_ms - last_outcome_ms > HEALTH_FRESHNESS_HALF_LIFE_MS
+                and not health.get("patch_pending")
+            )
             rows.append(row)
-        rows.sort(key=lambda item: (str(item.get("kind")), str(item.get("title")), int(item.get("version") or 0)))
+        # 综合分排序：成功、常用、有认知熟练度的能力靠前，闲置者自然沉底
+        # （32 条截断即淘汰）。
+        rows.sort(
+            key=lambda item: (
+                -int(item.get("composite_score_milli") or 0),
+                -int(item.get("last_outcome_at_ms") or 0),
+                str(item.get("kind")),
+                str(item.get("title")),
+                int(item.get("version") or 0),
+            )
+        )
         model_context = []
         active_rows = [row for row in rows if row.get("activation_status") == "active"]
         for row in active_rows[:32]:
@@ -6314,6 +7214,8 @@ class EmbeddedLifeRuntime:
                 "title": row.get("title"),
                 "summary": row.get("summary"),
                 "risk_level": row.get("risk_level"),
+                "health_score_milli": row.get("health_score_milli"),
+                "proficiency_lower_bound_milli": row.get("proficiency_lower_bound_milli"),
                 "task_intents": list(spec.get("task_intents") or [])[:24],
                 "required_actions": list(row.get("required_actions") or [])[:16],
                 "steps": list(spec.get("steps") or [])[:16],
@@ -6614,6 +7516,7 @@ class EmbeddedLifeRuntime:
                 key: health.get(key)
                 for key in (
                     "uses", "successes", "failures", "consecutive_failures",
+                    "success_streak", "last_success_at_ms", "last_outcome_at_ms",
                     "patch_rounds", "patch_history",
                 )
             },
@@ -7090,6 +7993,12 @@ class EmbeddedLifeRuntime:
             return
         if not callable(getattr(self, "_capability_patch_decider", None)):
             return
+        # 子池已耗尽时不再起线程；真正的按次记账在 worker 内每个补丁目标前完成。
+        if self._sub_model_budget_exhausted(scheduler, settings=scope_state["settings"], pool="capability_patch"):
+            scheduler["last_capability_health_at_ms"] = now_ms
+            scheduler["last_capability_health_error"] = "life.capability_patch.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["capability_health_inflight"] = True
         scheduler["last_capability_health_at_ms"] = now_ms
         self._persist(life_id)
@@ -7123,10 +8032,39 @@ class EmbeddedLifeRuntime:
                         pointer=target["pointer"],
                         scope=self._scope_state(life_id),
                     )
-                    decision = self._capability_patch_decider(material)
-                    if not isinstance(decision, Mapping):
+                    # 每个补丁目标一次真实的模型调用，逐一记账。
+                    with self._lock:
+                        scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                        if not self._reserve_sub_model_call_locked(
+                            scheduler=scheduler_state,
+                            settings=self._scope_state(life_id)["settings"],
+                            pool="capability_patch",
+                        ):
+                            scheduler_state["last_capability_health_error"] = "life.capability_patch.model_budget_exhausted"
+                            self._persist(life_id)
+                            return
+                    try:
+                        decision = self._capability_patch_decider(material)
+                        valid_decision = isinstance(decision, Mapping)
+                    except Exception:
+                        with self._lock:
+                            self._account_sub_model_failure_locked(
+                                self._scope_state(life_id).setdefault("scheduler", {}),
+                                pool="capability_patch",
+                            )
+                        continue
+                    if not valid_decision:
+                        with self._lock:
+                            self._account_sub_model_failure_locked(
+                                self._scope_state(life_id).setdefault("scheduler", {}),
+                                pool="capability_patch",
+                            )
                         continue
                     with self._lock:
+                        self._account_sub_model_success_locked(
+                            self._scope_state(life_id).setdefault("scheduler", {}),
+                            pool="capability_patch",
+                        )
                         proposed = self._capability_patch_propose(
                             {"life_id": life_id, "artifact_id": artifact["artifact_id"], "actor": "life_health"},
                             decision=decision,
@@ -7676,6 +8614,15 @@ class EmbeddedLifeRuntime:
         existing = scope["executions"].get(execution_id)
         if isinstance(existing, Mapping):
             return {"ok": True, "replayed": True, "execution": deepcopy(existing)}
+        # F3 挂点5：能力执行前 → health 基线预测 + started 事件 + 影响面 + OPEN
+        # episode（事前落账；失败不影响能力执行本身）。
+        with self._lock:
+            self._open_capability_episode_locked(
+                life_id=life_id,
+                artifact=artifact,
+                pointer=pointer,
+                execution_id=execution_id,
+            )
         records: list[dict[str, Any]] = []
         completed = True
         for position, raw_step in enumerate(steps):
@@ -7770,11 +8717,23 @@ class EmbeddedLifeRuntime:
             scope["executions"] = before
             scope["capability_pointers"][lineage_id] = pointer_before
             raise
+        # F3 挂点6：能力执行后 → 闭环反思 + 能力证据 + 学习 + 回滚规则；
+        # 返回体追加只读观测键，不改变调用契约。
+        with self._lock:
+            reflection_summary = self._commit_capability_reflection_locked(
+                life_id=life_id,
+                artifact=artifact,
+                execution=execution,
+                records=records,
+                execution_id=execution_id,
+                completed=completed,
+            )
         return {
             "ok": completed,
             "execution": deepcopy(execution),
             "pointer": deepcopy(updated_pointer),
             "event": event,
+            **(reflection_summary or {}),
         }
 
     def _execution_recover(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -8403,6 +9362,12 @@ class EmbeddedLifeRuntime:
                         "heartbeat_enabled",
                         "llm_daily_budget",
                         "llm_daily_attempt_budget",
+                        "learning_llm_daily_budget",
+                        "learning_llm_daily_attempt_budget",
+                        "self_iteration_llm_daily_budget",
+                        "self_iteration_llm_daily_attempt_budget",
+                        "capability_patch_llm_daily_budget",
+                        "capability_patch_llm_daily_attempt_budget",
                         "share_enabled",
                         "share_quiet_if_user_active",
                         "share_min_interval_seconds",
@@ -8430,6 +9395,8 @@ class EmbeddedLifeRuntime:
                         "proactive_min_utility_lcb_milli",
                         "proactive_min_margin_milli",
                         "proactive_reply_link_window_seconds",
+                        "proactive_engagement_window_size",
+                        "proactive_min_reply_rate_milli",
                     }
                     # Preserve namespaced/extension settings used by plugins and
                     # tests.  Known safety-sensitive keys are strongly typed;
@@ -8495,6 +9462,8 @@ class EmbeddedLifeRuntime:
                         "proactive_min_utility_lcb_milli": (0, 4000),
                         "proactive_min_margin_milli": (0, 4000),
                         "proactive_reply_link_window_seconds": (60, 604800),
+                        "proactive_engagement_window_size": (0, 64),
+                        "proactive_min_reply_rate_milli": (0, 1000),
                     }
                     for key, (minimum, maximum) in limits.items():
                         if key not in updates:

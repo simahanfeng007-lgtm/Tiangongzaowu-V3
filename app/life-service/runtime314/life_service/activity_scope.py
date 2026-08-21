@@ -16,6 +16,7 @@ from contracts import canonical_sha256
 from .panel_projection import (
     boundary_projection,
     long_term_goals,
+    motivation_drift_projection,
     preference_projection,
 )
 
@@ -182,6 +183,7 @@ def build_activity_scope(
     soul: Mapping[str, Any] | None,
     scope: Mapping[str, Any],
     derivation_store: Any | None = None,
+    reflection_rows: Any | None = None,
 ) -> dict[str, Any]:
     """Build a bounded, canonical evidence projection for one learning turn."""
     memory_rows, memory_terms = _memory_refs(scope)
@@ -238,6 +240,30 @@ def build_activity_scope(
     preferences = _canonical_safe(preference_projection(
         list(settings.get("autonomy_activity_types") or [])
     ))
+    # 动机漂移摘要（只读）：让模型在决策时感知"最近行为偏离长期偏好"，
+    # 与自由行动排序的 _drift_affinity 使用同一投影函数，口径一致。
+    completed_catalog = [
+        row for row in (autonomy.get("tasks") or {}).values()
+        if isinstance(row, Mapping)
+        and str(row.get("status") or "") == "completed"
+        and str(row.get("source") or "") == "life_activity_catalog"
+    ]
+    completed_catalog.sort(
+        key=lambda row: (int(row.get("updated_at_ms") or 0), int(row.get("sequence") or 0)),
+        reverse=True,
+    )
+    motivation_drift = [
+        {
+            "title": str(row.get("title") or ""),
+            "status": str(row.get("status") or ""),
+            "drift_detected": bool(row.get("drift_detected")),
+            # canonical 契约禁用 float，漂移分以毫值整数表示（0-1000）。
+            "drift_score_milli": int(round(float(row.get("drift_score") or 0) * 1000)),
+            "summary": str(row.get("summary") or ""),
+            "observed_actions": int(row.get("observed_actions") or 0),
+        }
+        for row in motivation_drift_projection(completed_catalog[:30], preferences)
+    ]
     declared_boundaries = [
         str(value)
         for value in soul_view.get("boundaries", [])
@@ -263,6 +289,20 @@ def build_activity_scope(
         "capabilities": capabilities,
         "long_term_goals": goals,
         "preferences": preferences,
+        "motivation_drift": motivation_drift,
+        # P8 反思链最近摘要（可选注入，默认缺省零影响）：让决策模型感知
+        # 上一次行动的预测偏差与教训，只读不改权重。
+        "recent_reflections": [
+            {
+                "reflection_id": str(row.get("reflection_id") or ""),
+                "observed_outcome": str(row.get("observed_outcome") or "")[:400],
+                "prediction_error_milli": int(row.get("prediction_error_milli") or 0),
+                "failure_dimensions": list(row.get("failure_dimensions") or [])[:4],
+                "next_minimal_experiment": str(row.get("next_minimal_experiment") or "")[:200] or None,
+            }
+            for row in (reflection_rows or [])[:5]
+            if isinstance(row, Mapping)
+        ],
         "boundaries": boundaries,
         "rejected_learning_fingerprints": sorted(set(item for item in rejected if item)),
         "repository_evidence": repository_evidence,

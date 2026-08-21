@@ -405,3 +405,50 @@ def test_reply_lineage_expires_after_bounded_temporal_window():
             assert row["replied"] is False
         finally:
             life.close()
+
+
+def test_proactive_context_excludes_deliveries_inside_reply_window():
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            life_id = str(life._active()["life_id"])
+            scope = life._scope_state(life_id)
+            day = 86_400_000
+            now_ms = int(time.time() * 1000)
+            scope["proactive_chats"] = [
+                # 旧的未回复投递（10 天前，已过 6h 回复窗口）：计入忽略率样本。
+                {
+                    "message_id": "m_old",
+                    "reason": "life.proactive.native",
+                    "created_at_ms": now_ms - 10 * day,
+                    "replied": False,
+                    "acked": True,
+                    "candidate_kind": "respond",
+                },
+                # 新投递（1 小时前，仍在回复窗口内）：不计入，不能提前记为忽略。
+                {
+                    "message_id": "m_new",
+                    "reason": "life.proactive.native",
+                    "created_at_ms": now_ms - 3_600_000,
+                    "replied": False,
+                    "acked": False,
+                    "candidate_kind": "respond",
+                },
+                # 非本生产者的记录不计入。
+                {
+                    "message_id": "m_other",
+                    "reason": "legacy_share",
+                    "created_at_ms": now_ms - 10 * day,
+                    "replied": False,
+                },
+            ]
+            context = life._build_proactive_context(life_id=life_id, now_ms=now_ms)
+            outcomes = context["recent_delivery_outcomes"]
+            assert [row["created_at_ms"] for row in outcomes] == [now_ms - 10 * day]
+            assert outcomes[0]["replied"] is False
+            assert outcomes[0]["acked"] is True
+            assert outcomes[0]["candidate_kind"] == "respond"
+            # 时间线投影不受影响（仍包含两条本生产者投递）。
+            assert len(context["recent_delivery_times_ms"]) == 2
+        finally:
+            life.close()

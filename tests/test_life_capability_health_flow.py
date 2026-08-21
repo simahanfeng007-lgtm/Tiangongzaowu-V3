@@ -368,3 +368,84 @@ def test_reactivate_requires_user_and_unmarks_mapping(tmp_path):
         assert "runtime_usable: true" in content
     finally:
         life.close()
+
+
+# ---------- F5：正向强化排序 + 闲置标记 ----------
+
+
+def test_overlay_ranks_recent_successes_above_idle_and_marks_idle(tmp_path):
+    from life_service.capability_health import ingest_outcome
+
+    life, life_id, fresh = _setup_runtime(tmp_path)
+    try:
+        day = 86_400_000
+        now_ms = time.time_ns() // 1_000_000
+        scope = life._scope_state(life_id)
+        # 第二个能力：标题字典序更靠前（旧排序会排第一），但最近成功在 8 天前。
+        idle_learning = _learning(life_id)
+        idle_learning["learning_id"] = "learn_idle_test"
+        idle_learning["title"] = "AAA闲置技能"
+        compiled = compile_artifact(idle_learning, action_catalog=list(_ACTION_CATALOG))
+        idle_artifact = publish_artifact(compiled)
+        scope["capabilities"][idle_artifact["artifact_id"]] = {
+            **idle_artifact,
+            "origin": "life_learning",
+        }
+        idle_pointer = {
+            "schema": "tiangong.life.capability-pointer.v1",
+            "life_id": life_id,
+            "lineage_id": idle_artifact["lineage_id"],
+            "kind": "skill",
+            "status": "active",
+            "current_artifact_id": idle_artifact["artifact_id"],
+            "current_artifact_sha256": idle_artifact["artifact_sha256"],
+            "history": [],
+            "pointer_sha256": "",
+        }
+        from life_service.capability_health import attach_health as _attach
+
+        idle_pointer = _attach(idle_pointer, artifact=idle_artifact, now_ms=now_ms)
+        idle_pointer, _, _ = ingest_outcome(
+            idle_pointer,
+            {
+                "outcome_id": "idle_ok_1",
+                "artifact_id": idle_artifact["artifact_id"],
+                "outcome": "success",
+                "occurred_at_ms": now_ms - 8 * day,
+            },
+            now_ms=now_ms,
+        )
+        scope["capability_pointers"][idle_artifact["lineage_id"]] = idle_pointer
+        # 第一个能力改名让字典序落后，并连续成功 10 次（最近）。
+        fresh_pointer = scope["capability_pointers"][fresh["lineage_id"]]
+        for index in range(10):
+            fresh_pointer, _, _ = ingest_outcome(
+                fresh_pointer,
+                {
+                    "outcome_id": f"fresh_ok_{index}",
+                    "artifact_id": fresh["artifact_id"],
+                    "outcome": "success",
+                    "occurred_at_ms": now_ms - index * 1000,
+                },
+                now_ms=now_ms,
+            )
+        scope["capability_pointers"][fresh["lineage_id"]] = fresh_pointer
+        life._persist(life_id)
+
+        overlay = life._capability_overlay_payload({"life_id": life_id})
+        rows = overlay["artifacts"]
+        assert len(rows) == 2
+        # 健康分排序：最近连续成功的能力必须排在闲置能力之前（与标题字典序相反）。
+        assert rows[0]["artifact_id"] == fresh["artifact_id"]
+        assert rows[1]["artifact_id"] == idle_artifact["artifact_id"]
+        assert rows[1]["idle"] is True
+        assert rows[0]["idle"] is False
+        assert rows[0]["health_score_milli"] > rows[1]["health_score_milli"]
+        # 模型上下文携带健康分（模型可见）。
+        context = {
+            row["artifact_id"]: row
+            for row in overlay["model_context"]
+        }
+        assert context[fresh["artifact_id"]]["health_score_milli"] == rows[0]["health_score_milli"]
+    finally:
+        life.close()

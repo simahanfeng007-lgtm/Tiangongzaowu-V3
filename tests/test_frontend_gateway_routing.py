@@ -273,6 +273,7 @@ class FrontendGatewayRoutingTests(unittest.TestCase):
             bound_client_methods,
             {
                 "ackProactiveChat",
+                "getProactiveStatus",
                 "activateIdentity",
                 "bindIdentity",
                 "capabilityDiscard",

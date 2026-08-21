@@ -518,6 +518,17 @@ const SETTING_FIELDS = [
   { key: "share_daily_limit", label: "每日分享上限", type: "number", min: 0, max: 1000, step: 1, help: "0 表示当天不主动分享。" },
   { key: "share_dnd_start", label: "免打扰开始", type: "time", help: "进入免打扰时段后不主动推送。" },
   { key: "share_dnd_end", label: "免打扰结束", type: "time", help: "离开免打扰时段后恢复正常策略。" },
+  { key: "proactive_enabled", label: "启用主动沟通", type: "checkbox", help: "允许生命在合适时机主动开口；影子模式只记录不发送。" },
+  {
+    key: "proactive_mode",
+    label: "主动沟通模式",
+    type: "select",
+    options: [
+      ["shadow", "影子（只记录不发送）"],
+      ["live", "正式发送"]
+    ],
+    help: "影子模式只把主动消息写入生命记录，不发送到对话；正式发送才会真正开口。"
+  },
   { key: "privacy.redact_llm", label: "模型调用脱敏", type: "checkbox", help: "发送给模型前隐藏受保护内容。" },
   { key: "privacy.redact_share", label: "分享内容脱敏", type: "checkbox", help: "生成对外分享内容前隐藏受保护内容。" }
 ];
@@ -540,6 +551,12 @@ const SETTING_GROUPS = [
     title: "主动分享",
     description: "控制生命信箱总结的发送条件、频率与免打扰时段。",
     fields: ["share_enabled", "share_quiet_if_user_active", "share_min_interval_seconds", "share_hourly_limit", "share_daily_limit", "share_dnd_start", "share_dnd_end"]
+  },
+  {
+    id: "proactive",
+    title: "主动沟通",
+    description: "控制生命主动发消息的总开关与模式；频率、预算与免打扰仍由后端权威设置约束。",
+    fields: ["proactive_enabled", "proactive_mode"]
   },
   {
     id: "privacy",
@@ -846,14 +863,15 @@ async function optionalGatewayPayload(path) {
 }
 
 async function fetchLifePanelPayload(settings = {}) {
-  const [panel, skills, tools] = await Promise.all([
+  const [panel, skills, tools, proactiveStatus] = await Promise.all([
     lifeApi.getPanel(),
     optionalGatewayPayload("/api/v1/v3/skills"),
-    optionalGatewayPayload("/api/v1/v3/tools")
+    optionalGatewayPayload("/api/v1/v3/tools"),
+    lifeApi.getProactiveStatus().catch(() => ({}))
   ]);
   const skillSummary = safeObject(skills.summary);
   const toolSummary = safeObject(tools.summary);
-  return buildLifeViewModel({
+  const view = buildLifeViewModel({
     ...safeObject(panel),
     system_capabilities: {
       skill_count: numberValue(skillSummary.skillCount ?? safeArray(skills.skills).length),
@@ -864,6 +882,8 @@ async function fetchLifePanelPayload(settings = {}) {
       validated: tools.ok !== false && skills.ok !== false
     }
   }, settings);
+  // view-model 是冻结的权威投影；主动沟通实时状态在投影之外，按只读附加。
+  return { ...view, proactive_status: safeObject(proactiveStatus) };
 }
 
 function shellCard({ icon = "sprout", label = "", value = "", hint = "", tone = "" }) {
@@ -1946,6 +1966,22 @@ function renderSettingField(field, settings) {
   `;
 }
 
+function renderProactiveStatus(payload) {
+  const status = safeObject(payload?.proactive_status);
+  if (!Object.keys(status).length) return "";
+  const statusSettings = safeObject(status.settings);
+  const scheduler = safeObject(status.scheduler);
+  const mode = statusSettings.proactive_mode === "live" ? "正式发送" : "影子（只记录不发送）";
+  const parts = [
+    `当前模式：${mode}`,
+    `待处理：${Number(status.pending || 0)} 条`,
+    `今日决策：${Number(scheduler.proactive_model_attempts || 0)} 次`
+  ];
+  const reason = String(scheduler.last_proactive_reason || "").trim();
+  if (reason) parts.push(`最近原因：${reason}`);
+  return `<small class="life-proactive-status">${esc(parts.join(" · "))}</small>`;
+}
+
 export function renderSettings(payload) {
   const settings = safeObject(payload.settings);
   const source = firstText(settings.source, "未挂载");
@@ -1975,6 +2011,7 @@ export function renderSettings(payload) {
                   <header>
                     <h4>${esc(group.title)}</h4>
                     <p>${esc(group.description)}</p>
+                    ${group.id === "proactive" ? renderProactiveStatus(payload) : ""}
                   </header>
                   <div class="life-settings-grid">
                     ${groupFields.map((field) => renderSettingField(field, settings)).join("")}

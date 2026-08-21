@@ -137,6 +137,15 @@ def _patch_life_autonomy_scheduler() -> None:
     if getattr(original, "_hotfix_20260727", False):
         _log("Bug B 补丁已生效，跳过重复打补丁")
         return
+    # 源码版本守卫：本补丁只为冻结 exe 里的旧版 life_service 服务。若当前
+    # 加载的模块已内置陈旧恢复逻辑且带有后续新增能力（如 _drift_affinity，
+    # 2026-08 引入），说明是更新的原生实现——用本补丁覆盖会把漂移排序、
+    # 反思链接线等新逻辑整体回退（全量测试下 test_foundation_closeout 导入
+    # v3.peizhi 即触发）。原生实现自 2026-07-27 起已包含 Bug B 语义，跳过。
+    if hasattr(cls, "_recover_stale_running_autonomy_tasks") and hasattr(cls, "_drift_affinity"):
+        APPLIED.append("bugB:skipped-native-source-newer")
+        _log("Bug B 跳过：当前 life_service 为更新的原生实现（内置恢复逻辑），猴子补丁不覆盖")
+        return
 
     # 以下别名来自冻结模块本身，保证与冻结版常量/函数完全一致。
     utc_now = er.utc_now
