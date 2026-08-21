@@ -365,3 +365,121 @@ def test_c2_c3_three_verified_failures_auto_rollback_pointer_stays_active(tmp_pa
             assert pointer["health"]["success_streak"] == 0
         finally:
             life.close()
+
+
+# ---------- F3 步骤 5：消费面 P1/P2/S1/S2 ----------
+
+
+def test_p1_panel_exposes_reflection_cards(tmp_path: Path) -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            seed(life)
+            life_id = str(life._active()["life_id"])
+
+            def decide(_scope: dict, _task: dict) -> dict:
+                return {
+                    "title": "今日规划",
+                    "summary": "已完成内部规划，推进一个可验证的小步骤。",
+                    "findings": [],
+                    "next_steps": [],
+                    "uncertainties": [],
+                }
+
+            life.set_autonomy_decider(decide)
+            first = request(life, "POST", "/api/v1/v3/life/autonomy/tick", {"reason": "p1"})
+            task_id = next(
+                item["task_id"] for item in first["tasks"]
+                if item.get("source") == "life_activity_catalog"
+            )
+            wait_task_status(life, life_id, task_id, {"completed"})
+            wait_reflection_closed(life, life_id)
+            panel = request(life, "GET", "/api/v1/v3/life/panel")
+            cards = panel["reflection_cards"]
+            assert len(cards) == 1
+            assert cards[0]["source"] == "causal_reflection_chain"
+            assert cards[0]["revision"]
+            assert "已完成内部规划" in cards[0]["observed_outcome"]
+        finally:
+            life.close()
+
+
+def test_p2_overlay_carries_profile_and_composite_score(tmp_path: Path) -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        # 两次失败 + 一次成功：失败证据 eligible → profile 落库（hold）。
+        calls = {"n": 0}
+
+        def flaky_invoker(action_id, arguments, ctx):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                return {"ok": False, "error_code": "tool_error"}
+            return {"ok": True, "zhuangtai": "wancheng"}
+
+        life, life_id, artifact = _capability_runtime(
+            Path(temporary), risk_level="A1", invoker=flaky_invoker
+        )
+        try:
+            for index in range(3):
+                life._capability_invoke(
+                    {
+                        "life_id": life_id,
+                        "artifact_id": artifact["artifact_id"],
+                        "request_id": f"p2-{index}",
+                    }
+                )
+            overlay = life._capability_overlay_payload({"life_id": life_id})
+            rows = overlay["artifacts"]
+            assert len(rows) == 1
+            row = rows[0]
+            # profile 字段挂载 + 双体系综合分。
+            assert row["profile"]["rollback_count"] == 0
+            assert row["proficiency_lower_bound_milli"] == 0
+            assert row["composite_score_milli"] == max(
+                row["health_score_milli"], row["proficiency_lower_bound_milli"]
+            )
+            context = overlay["model_context"][0]
+            assert "proficiency_lower_bound_milli" in context
+            assert "health_score_milli" in context
+        finally:
+            life.close()
+
+
+def test_s1_s2_activity_scope_injects_recent_reflections_without_secret_keys(tmp_path: Path) -> None:
+    from life_service.activity_scope import build_activity_scope
+
+    with tempfile.TemporaryDirectory() as temporary:
+        life = runtime(Path(temporary))
+        try:
+            life_id = str(life._active()["life_id"])
+            rows = [
+                {
+                    "reflection_id": "rfc_test_1",
+                    "observed_outcome": "任务失败：工具返回错误。" + "长" * 600,
+                    "prediction_error_milli": 300,
+                    "failure_dimensions": ["tool_error"],
+                    "next_minimal_experiment": "先执行只读探针。",
+                }
+            ] * 7
+            scope = build_activity_scope(
+                life_id=life_id,
+                soul=None,
+                scope=life._scope_state(life_id),
+                reflection_rows=rows,
+            )
+            # S1：注入最近 5 条、文本截断。
+            assert len(scope["recent_reflections"]) == 5
+            trimmed = scope["recent_reflections"][0]
+            assert len(trimmed["observed_outcome"]) <= 400
+            assert trimmed["prediction_error_milli"] == 300
+            # S2：顶层键不含 credential 类词（防泄密守卫在构建时执行）。
+            top_keys = {str(key).casefold() for key in scope}
+            assert not top_keys & {
+                "api_key", "apikey", "token", "password", "secret", "credential",
+            }
+            # 缺省参数零影响：不传 reflection_rows 时不注入内容。
+            default_scope = build_activity_scope(
+                life_id=life_id, soul=None, scope=life._scope_state(life_id)
+            )
+            assert default_scope["recent_reflections"] == []
+        finally:
+            life.close()

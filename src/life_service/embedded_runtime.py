@@ -64,6 +64,7 @@ from .legacy_fusion import default_body, default_schedule, normalize_body, norma
 from .panel_projection import (
     action_value_projection,
     boundary_projection,
+    capability_profile_projection,
     catalog_tasks_for_day,
     fallback_context_projection,
     long_term_goals,
@@ -72,6 +73,7 @@ from .panel_projection import (
     preference_projection,
     record_day,
     records_for_day,
+    reflection_card_projection,
     reflection_projection,
 )
 from .artifact_executor import (
@@ -2481,6 +2483,13 @@ class EmbeddedLifeRuntime:
         """熔断开关：TIANGONG_LIFE_REFLECTION_CHAIN=0 时整条反思链停摆。"""
         return str(os.environ.get("TIANGONG_LIFE_REFLECTION_CHAIN") or "1").strip() != "0"
 
+    def _recent_reflection_rows(self, life_id: str) -> list[Any] | None:
+        """最近反思卡（供 activity scope 注入；store 不可用时返回 None 零影响）。"""
+        try:
+            return list(self._contract_store().list_reflection_cards(life_id, limit=5))
+        except Exception:
+            return None
+
     def _reflection_signer(self) -> tuple[str, Any]:
         """进程内 Ed25519 写者。链只校验哈希连续性不验签；密钥随进程。"""
         key = getattr(self, "_reflection_signer_key", None)
@@ -3196,6 +3205,7 @@ class EmbeddedLifeRuntime:
                         life_id=life_id,
                         soul=self._soul(),
                         scope=self._scope_state(life_id),
+                        reflection_rows=self._recent_reflection_rows(life_id),
                     )
                     task = deepcopy(self._autonomy_state(life_id)["tasks"][task_id])
                     # F3 挂点1：事前预测先落账（OPEN episode），事后不可编造；
@@ -3556,7 +3566,7 @@ class EmbeddedLifeRuntime:
 
         def worker() -> None:
             try:
-                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id))
+                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id), reflection_rows=self._recent_reflection_rows(life_id))
                 decision = self._learning_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("learning model decision is invalid")
@@ -3654,7 +3664,7 @@ class EmbeddedLifeRuntime:
 
         def worker() -> None:
             try:
-                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id))
+                scope = build_activity_scope(life_id=life_id, soul=self._soul(), scope=self._scope_state(life_id), reflection_rows=self._recent_reflection_rows(life_id))
                 decision = self._self_iteration_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("self-iteration model decision is invalid")
@@ -5100,6 +5110,17 @@ class EmbeddedLifeRuntime:
             completed_autonomous_tasks,
             preferences,
         )
+        # P8 反思链卡片（只读独立键，不动现有 reflections/action_values）。
+        reflection_cards: list[dict[str, Any]] = []
+        try:
+            reflection_cards = [
+                reflection_card_projection(card)
+                for card in self._contract_store().list_reflection_cards(
+                    str(self._active().get("life_id") or ""), limit=20
+                )
+            ]
+        except Exception:
+            reflection_cards = []
         affect_state = deepcopy(scope["affect"])
         affect_state.setdefault(
             "drives",
@@ -5235,6 +5256,7 @@ class EmbeddedLifeRuntime:
             },
             "drift": drift_rows,
             "reflections": reflection_rows,
+            "reflection_cards": reflection_cards,
             "action_values": action_value_rows,
             "learning": {
                 "candidate_count": len(learning_pending),
@@ -7130,6 +7152,15 @@ class EmbeddedLifeRuntime:
         scope = self._scope_state(life_id)
         pointers = scope.get("capability_pointers") if isinstance(scope.get("capability_pointers"), Mapping) else {}
         now_ms = time.time_ns() // 1_000_000
+        # 认知层 profile（capability_learning 双体系之认知侧，只读输入）。
+        profiles_by_capability: dict[str, Any] = {}
+        try:
+            profiles_by_capability = {
+                str(profile.capability_id): profile
+                for profile in self._contract_store().latest_capability_profiles(life_id)
+            }
+        except Exception:
+            profiles_by_capability = {}
         rows = []
         for raw in scope["capabilities"].values():
             if not isinstance(raw, Mapping) or raw.get("status") != "published" or raw.get("kind") not in {"skill", "tool"}:
@@ -7145,6 +7176,12 @@ class EmbeddedLifeRuntime:
             health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
             row["health_score_milli"] = health_score_milli(health, now_ms)
             row["last_outcome_at_ms"] = int(health.get("last_outcome_at_ms") or 0)
+            profile = profiles_by_capability.get(str(row.get("artifact_id") or ""))
+            proficiency = int(getattr(profile, "proficiency_lower_bound_milli", 0) or 0) if profile else 0
+            row["profile"] = capability_profile_projection(profile) if profile else None
+            row["proficiency_lower_bound_milli"] = proficiency
+            # 决策 D：双体系综合分——运行时健康与认知熟练度任一看好即靠前。
+            row["composite_score_milli"] = max(int(row["health_score_milli"]), proficiency)
             # 闲置标记（派生，不持久化）：>7 天无真实执行结果的 active 能力。
             # 只影响排序自然沉底与 32 条截断淘汰，不降级、不禁用；补丁验证中的不算闲置。
             last_outcome_ms = row["last_outcome_at_ms"]
@@ -7155,10 +7192,11 @@ class EmbeddedLifeRuntime:
                 and not health.get("patch_pending")
             )
             rows.append(row)
-        # 健康分排序：成功且常用的能力靠前，闲置者自然沉底（32 条截断即淘汰）。
+        # 综合分排序：成功、常用、有认知熟练度的能力靠前，闲置者自然沉底
+        # （32 条截断即淘汰）。
         rows.sort(
             key=lambda item: (
-                -int(item.get("health_score_milli") or 0),
+                -int(item.get("composite_score_milli") or 0),
                 -int(item.get("last_outcome_at_ms") or 0),
                 str(item.get("kind")),
                 str(item.get("title")),
@@ -7177,6 +7215,7 @@ class EmbeddedLifeRuntime:
                 "summary": row.get("summary"),
                 "risk_level": row.get("risk_level"),
                 "health_score_milli": row.get("health_score_milli"),
+                "proficiency_lower_bound_milli": row.get("proficiency_lower_bound_milli"),
                 "task_intents": list(spec.get("task_intents") or [])[:24],
                 "required_actions": list(row.get("required_actions") or [])[:16],
                 "steps": list(spec.get("steps") or [])[:16],

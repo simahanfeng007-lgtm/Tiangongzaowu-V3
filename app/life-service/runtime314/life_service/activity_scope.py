@@ -183,6 +183,7 @@ def build_activity_scope(
     soul: Mapping[str, Any] | None,
     scope: Mapping[str, Any],
     derivation_store: Any | None = None,
+    reflection_rows: Any | None = None,
 ) -> dict[str, Any]:
     """Build a bounded, canonical evidence projection for one learning turn."""
     memory_rows, memory_terms = _memory_refs(scope)
@@ -289,6 +290,19 @@ def build_activity_scope(
         "long_term_goals": goals,
         "preferences": preferences,
         "motivation_drift": motivation_drift,
+        # P8 反思链最近摘要（可选注入，默认缺省零影响）：让决策模型感知
+        # 上一次行动的预测偏差与教训，只读不改权重。
+        "recent_reflections": [
+            {
+                "reflection_id": str(row.get("reflection_id") or ""),
+                "observed_outcome": str(row.get("observed_outcome") or "")[:400],
+                "prediction_error_milli": int(row.get("prediction_error_milli") or 0),
+                "failure_dimensions": list(row.get("failure_dimensions") or [])[:4],
+                "next_minimal_experiment": str(row.get("next_minimal_experiment") or "")[:200] or None,
+            }
+            for row in (reflection_rows or [])[:5]
+            if isinstance(row, Mapping)
+        ],
         "boundaries": boundaries,
         "rejected_learning_fingerprints": sorted(set(item for item in rejected if item)),
         "repository_evidence": repository_evidence,

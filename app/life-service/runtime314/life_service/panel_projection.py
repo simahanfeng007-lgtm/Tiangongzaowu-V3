@@ -282,6 +282,44 @@ def motivation_drift_projection(
     }]
 
 
+def reflection_card_projection(card: Any) -> dict[str, Any]:
+    """P8 反思卡面板投影（只读）：来自因果反思链的权威记录。"""
+    return {
+        "reflection_id": str(getattr(card, "reflection_id", "") or ""),
+        "episode_id": str(getattr(card, "episode_id", "") or ""),
+        "expected_outcome": str(getattr(card, "expected_outcome", "") or "")[:800],
+        "observed_outcome": str(getattr(card, "observed_outcome", "") or "")[:800],
+        "prediction_error_milli": int(getattr(card, "prediction_error_milli", 0) or 0),
+        "failure_dimensions": list(getattr(card, "failure_dimensions", ()) or ()),
+        "counterfactual_actions": list(getattr(card, "counterfactual_actions", ()) or ()),
+        "next_minimal_experiment": getattr(card, "next_minimal_experiment", None),
+        "confidence_milli": int(getattr(card, "confidence_milli", 0) or 0),
+        "created_at_ms": int(getattr(card, "created_at_ms", 0) or 0),
+        "source": "causal_reflection_chain",
+        "revision": str(getattr(card, "reflection_sha256", "") or "")[:12],
+    }
+
+
+def capability_profile_projection(profile: Any) -> dict[str, Any]:
+    """能力认知层 profile 面板投影（只读）：熟练度与审查级别。"""
+    return {
+        "capability_id": str(getattr(profile, "capability_id", "") or ""),
+        "version": str(getattr(profile, "version", "") or ""),
+        "profile_revision": int(getattr(profile, "profile_revision", 0) or 0),
+        "verified_successes": int(getattr(profile, "verified_successes", 0) or 0),
+        "verified_failures": int(getattr(profile, "verified_failures", 0) or 0),
+        "independent_context_count": int(getattr(profile, "independent_context_count", 0) or 0),
+        "proficiency_mean_milli": int(getattr(profile, "proficiency_mean_milli", 0) or 0),
+        "proficiency_lower_bound_milli": int(
+            getattr(profile, "proficiency_lower_bound_milli", 0) or 0
+        ),
+        "review_level": str(getattr(profile, "review_level", "") or ""),
+        "rollback_count": int(getattr(profile, "rollback_count", 0) or 0),
+        "impact_floor": str(getattr(profile, "impact_floor", "") or ""),
+        "updated_at_ms": int(getattr(profile, "updated_at_ms", 0) or 0),
+    }
+
+
 def model_budget_projection(
     settings: Mapping[str, Any],
     scheduler: Mapping[str, Any],
@@ -400,6 +438,7 @@ def fallback_context_projection(
 
 __all__ = [
     "boundary_projection",
+    "capability_profile_projection",
     "catalog_tasks_for_day",
     "fallback_context_projection",
     "long_term_goals",
@@ -408,6 +447,7 @@ __all__ = [
     "preference_projection",
     "record_day",
     "records_for_day",
+    "reflection_card_projection",
     "reflection_projection",
     "action_value_projection",
 ]
