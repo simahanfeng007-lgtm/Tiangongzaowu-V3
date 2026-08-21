@@ -283,3 +283,115 @@ def test_world_evidence_requires_committed_world_authority():
         now_ms=NOW,
     )
     assert allowed["allowed"] is True
+
+
+# ---------- F1：忽略率门禁（用户不理会时学会闭嘴） ----------
+
+
+def _outcome(created_at_ms: int, *, replied: bool = False) -> dict:
+    return {
+        "created_at_ms": created_at_ms,
+        "candidate_kind": "respond",
+        "replied": replied,
+        "acked": True,
+    }
+
+
+def marginal_proposal() -> dict:
+    """效用 LCB=150 的边缘提案：默认门槛 120 放行，抬高后拦截。"""
+    base = proposal()
+    base["score"] = {**base["score"], "goal_gain_milli": 20}
+    return base
+
+
+def test_engagement_gate_silent_on_missing_or_empty_history():
+    # 旧上下文（无新键）与空历史：不加门禁，边缘提案照常放行。
+    decision = evaluate_proactive_candidate(
+        marginal_proposal(), context=context(), settings=settings(), now_ms=NOW
+    )
+    assert decision["allowed"] is True
+    decision = evaluate_proactive_candidate(
+        marginal_proposal(),
+        context=context(recent_delivery_outcomes=[]),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert decision["allowed"] is True
+
+
+def test_engagement_gate_requires_minimum_sample_size():
+    # 7 条样本（< 默认窗口 8）：样本不足不加门禁。
+    outcomes = [_outcome(NOW - (index + 1) * 7_200_000) for index in range(7)]
+    decision = evaluate_proactive_candidate(
+        marginal_proposal(),
+        context=context(recent_delivery_outcomes=outcomes),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert decision["allowed"] is True
+
+
+def test_low_reply_rate_raises_utility_threshold():
+    # 8 条全部未回复：忽略率门禁抬高门槛（120+60=180 > LCB 150）→ 拦截。
+    outcomes = [_outcome(NOW - (index + 1) * 9_000_000) for index in range(8)]
+    decision = evaluate_proactive_candidate(
+        marginal_proposal(),
+        context=context(recent_delivery_outcomes=outcomes),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert decision["allowed"] is False
+    assert decision["reason_code"] == "life.proactive.utility_below_threshold"
+    # 高回复率的对照：门槛不抬高，同一提案放行。
+    replied_outcomes = [_outcome(NOW - (index + 1) * 9_000_000, replied=True) for index in range(8)]
+    control = evaluate_proactive_candidate(
+        marginal_proposal(),
+        context=context(recent_delivery_outcomes=replied_outcomes),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert control["allowed"] is True
+
+
+def test_low_reply_rate_extends_effective_interval():
+    # 回复率过低时有效最小间隔 ×4：2 小时前的投递满足默认 1 小时间隔，
+    # 但不满足扩展间隔 → engagement_low 拒绝。
+    delivery_at = NOW - 7_200_000
+    outcomes = [_outcome(delivery_at - index * 7_200_000) for index in range(8)]
+    decision = evaluate_proactive_candidate(
+        proposal(),
+        context=context(
+            recent_delivery_times_ms=[delivery_at],
+            recent_delivery_outcomes=outcomes,
+        ),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert decision["allowed"] is False
+    assert decision["reason_code"] == "life.proactive.engagement_low"
+    # 对照：部分回复（2/8=250 ≥ 200）不触发间隔扩展。
+    mixed = [_outcome(delivery_at - 0 * 7_200_000, replied=True) for _ in range(1)] + \
+            [_outcome(delivery_at - index * 7_200_000, replied=True) for index in range(1, 2)] + \
+            [_outcome(delivery_at - index * 7_200_000) for index in range(2, 8)]
+    control = evaluate_proactive_candidate(
+        proposal(),
+        context=context(
+            recent_delivery_times_ms=[delivery_at],
+            recent_delivery_outcomes=mixed,
+        ),
+        settings=settings(),
+        now_ms=NOW,
+    )
+    assert control["allowed"] is True
+
+
+def test_engagement_gate_disabled_via_zero_reply_rate_setting():
+    # proactive_min_reply_rate_milli=0 显式禁用门禁：全忽略也不拦截。
+    outcomes = [_outcome(NOW - (index + 1) * 9_000_000) for index in range(8)]
+    decision = evaluate_proactive_candidate(
+        marginal_proposal(),
+        context=context(recent_delivery_outcomes=outcomes),
+        settings=settings(proactive_min_reply_rate_milli=0),
+        now_ms=NOW,
+    )
+    assert decision["allowed"] is True

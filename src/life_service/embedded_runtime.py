@@ -748,6 +748,9 @@ class EmbeddedLifeRuntime:
                 "proactive_min_utility_lcb_milli": 120,
                 "proactive_min_margin_milli": 80,
                 "proactive_reply_link_window_seconds": 21600,
+                # F1 忽略率门禁：用户持续不回复时抬高开口门槛（0 = 禁用门禁）。
+                "proactive_engagement_window_size": 8,
+                "proactive_min_reply_rate_milli": 200,
                 "learned_boundary_rules": [],
             },
             "inbox": [],
@@ -3301,6 +3304,25 @@ class EmbeddedLifeRuntime:
             and str(row.get("reason") or "") == "life.proactive.native"
             and int(row.get("created_at_ms") or 0) > 0
         ]
+        context_settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        # F1：投递结果投影（replied/acked）供忽略率门禁消费。仍在回复链接
+        # 窗口内的投递不算数——用户还来得及回，不能提前记为忽略。
+        reply_window_ms = max(
+            60, int(context_settings.get("proactive_reply_link_window_seconds") or 21600)
+        ) * 1000
+        delivery_outcomes = [
+            {
+                "created_at_ms": int(row.get("created_at_ms") or 0),
+                "candidate_kind": str(row.get("candidate_kind") or ""),
+                "replied": bool(row.get("replied")),
+                "acked": bool(row.get("acked")),
+            }
+            for row in scope.get("proactive_chats", [])
+            if isinstance(row, Mapping)
+            and str(row.get("reason") or "") == "life.proactive.native"
+            and int(row.get("created_at_ms") or 0) > 0
+            and now_ms - int(row.get("created_at_ms") or 0) > reply_window_ms
+        ]
         affect = scope.get("affect") if isinstance(scope.get("affect"), Mapping) else {}
         return {
             "schema": "tiangong.life.initiative-context.v1",
@@ -3311,6 +3333,7 @@ class EmbeddedLifeRuntime:
             "last_user_activity_at_ms": int(scheduler.get("last_user_activity_at_ms") or 0),
             "last_user_run_id": str(scheduler.get("last_user_run_id") or ""),
             "recent_delivery_times_ms": deliveries[-64:],
+            "recent_delivery_outcomes": delivery_outcomes[-64:],
             "observations": observations[:40],
             "recent_tasks": task_projection,
             "relationships": self._project_proactive_relationships(life_id=life_id),
@@ -8722,6 +8745,8 @@ class EmbeddedLifeRuntime:
                         "proactive_min_utility_lcb_milli",
                         "proactive_min_margin_milli",
                         "proactive_reply_link_window_seconds",
+                        "proactive_engagement_window_size",
+                        "proactive_min_reply_rate_milli",
                     }
                     # Preserve namespaced/extension settings used by plugins and
                     # tests.  Known safety-sensitive keys are strongly typed;
@@ -8787,6 +8812,8 @@ class EmbeddedLifeRuntime:
                         "proactive_min_utility_lcb_milli": (0, 4000),
                         "proactive_min_margin_milli": (0, 4000),
                         "proactive_reply_link_window_seconds": (60, 604800),
+                        "proactive_engagement_window_size": (0, 64),
+                        "proactive_min_reply_rate_milli": (0, 1000),
                     }
                     for key, (minimum, maximum) in limits.items():
                         if key not in updates:

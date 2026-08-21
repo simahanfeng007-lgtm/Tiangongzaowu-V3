@@ -237,6 +237,49 @@ def evaluate_proactive_candidate(
     if daily_limit <= 0 or sum(1 for value in deliveries if now_ms - value < 86_400_000) >= daily_limit:
         return _decision(kind="no_op", reason_code="life.proactive.daily_limit", allowed=False)
 
+    # F1 忽略率门禁：用户持续不理会时抬高开口门槛并拉长间隔，学会"闭嘴"。
+    # 样本不足（新键缺失/为空的旧上下文，或未过回复窗口）一律不加门禁。
+    engagement_window = _strict_nonnegative_int(
+        settings.get("proactive_engagement_window_size"), default=8
+    )
+    min_reply_rate_milli = _strict_nonnegative_int(
+        settings.get("proactive_min_reply_rate_milli"), default=200
+    )
+    engagement_required_bonus = 0
+    if engagement_window > 0 and min_reply_rate_milli > 0:
+        outcome_rows = [
+            row for row in (context.get("recent_delivery_outcomes") or [])
+            if isinstance(row, Mapping)
+        ]
+        samples = sorted(
+            (
+                row for row in outcome_rows
+                if isinstance(row.get("created_at_ms"), int)
+                and not isinstance(row.get("created_at_ms"), bool)
+                and row.get("created_at_ms") >= 0
+                and isinstance(row.get("replied"), bool)
+            ),
+            key=lambda row: -row["created_at_ms"],
+        )[:engagement_window]
+        if len(samples) >= engagement_window:
+            replies = sum(1 for row in samples if row["replied"])
+            reply_rate_milli = replies * 1000 // len(samples)
+            if reply_rate_milli < min_reply_rate_milli:
+                interval_multiplier = 4 if reply_rate_milli == 0 else 2
+                if (
+                    last_delivery_ms
+                    and min_interval_ms
+                    and now_ms - last_delivery_ms < min_interval_ms * interval_multiplier
+                ):
+                    return _decision(
+                        kind="no_op",
+                        reason_code="life.proactive.engagement_low",
+                        allowed=False,
+                    )
+                # 按忽略程度动态抬高效用门槛：回复率越低要求越高。
+                severity_milli = min(1000, min_reply_rate_milli - reply_rate_milli)
+                engagement_required_bonus = (severity_milli * 300) // 1000
+
     stale_after_ms = _strict_nonnegative_int(
         settings.get("proactive_evidence_stale_after_seconds"), default=86_400
     ) * 1000
@@ -287,7 +330,8 @@ def evaluate_proactive_candidate(
     score = compute_agency_score(**score_inputs).model_dump(mode="json")
     threshold = _strict_nonnegative_int(settings.get("proactive_min_utility_lcb_milli"), default=120)
     margin = _strict_nonnegative_int(settings.get("proactive_min_margin_milli"), default=80)
-    required = max(threshold, margin)
+    engagement_adjusted = threshold + engagement_required_bonus
+    required = max(threshold, margin, engagement_adjusted)
     if int(score.get("utility_lcb_milli") or 0) < required:
         return _decision(
             kind="no_op",
