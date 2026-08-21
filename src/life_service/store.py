@@ -4006,6 +4006,124 @@ class LifeShadowStore:
             raise LifeShadowStoreError("life projection head disagrees with replay")
         return summary
 
+    # ---------- P8 反思链只读投影（生产接线用；零 schema 变更零迁移） ----------
+
+    def life_event_head(self, life_id: str) -> LifeEventEnvelope | None:
+        """One life's chain-head event, or None before genesis."""
+        row = self._connection.execute(
+            """
+            SELECT envelope FROM life_events
+            WHERE life_id = ? AND event_id = (
+                SELECT head_event_id FROM projection_heads WHERE life_id = ?
+            )
+            """,
+            (life_id, life_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return _parse_stored_contract(
+            bytes(row["envelope"]), LifeEventEnvelope, "life event"
+        )
+
+    def list_reflection_cards(
+        self, life_id: str, *, limit: int = 20
+    ) -> tuple[ReflectionCard, ...]:
+        """Most recent reflection cards for panel display (newest first)."""
+        rows = self._connection.execute(
+            """
+            SELECT payload FROM reflection_cards
+            WHERE life_id = ?
+            ORDER BY created_at_ms DESC, reflection_id DESC
+            LIMIT ?
+            """,
+            (life_id, max(1, min(int(limit), 100))),
+        ).fetchall()
+        return tuple(
+            _parse_stored_contract(bytes(row["payload"]), ReflectionCard, "reflection card")
+            for row in rows
+        )
+
+    def latest_capability_profiles(self, life_id: str) -> tuple[CapabilityProfile, ...]:
+        """Latest profile revision per (capability_id, version), sorted by id."""
+        rows = self._connection.execute(
+            """
+            SELECT p.payload FROM capability_profiles AS p
+            JOIN (
+                SELECT capability_id, version, life_id, MAX(profile_revision) AS max_revision
+                FROM capability_profiles
+                WHERE life_id = ?
+                GROUP BY capability_id, version, life_id
+            ) AS latest
+              ON latest.capability_id = p.capability_id
+             AND latest.version = p.version
+             AND latest.life_id = p.life_id
+             AND latest.max_revision = p.profile_revision
+            ORDER BY p.capability_id, p.version
+            """,
+            (life_id,),
+        ).fetchall()
+        return tuple(
+            _parse_stored_contract(bytes(row["payload"]), CapabilityProfile, "capability profile")
+            for row in rows
+        )
+
+    def list_capability_evidence(
+        self,
+        life_id: str,
+        *,
+        capability_id: str | None = None,
+        limit: int = 50,
+    ) -> tuple[CapabilityEvidence, ...]:
+        """Most recent capability evidence (newest first), optionally filtered."""
+        filter_sql = "" if not capability_id else "AND capability_id = ?"
+        params: list[Any] = [life_id]
+        if capability_id:
+            params.append(capability_id)
+        params.append(max(1, min(int(limit), 200)))
+        rows = self._connection.execute(
+            f"""
+            SELECT payload FROM capability_evidence
+            WHERE life_id = ? {filter_sql}
+            ORDER BY created_at_ms DESC, evidence_id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return tuple(
+            _parse_stored_contract(bytes(row["payload"]), CapabilityEvidence, "capability evidence")
+            for row in rows
+        )
+
+    def open_causal_episodes(
+        self, life_id: str, *, limit: int = 32
+    ) -> tuple[CausalEpisode, ...]:
+        """Episodes whose LATEST revision is still OPEN, oldest first.
+
+        Closed episodes keep their OPEN revision-1 rows as history, so a plain
+        terminal_status filter would resurrect closed episodes as orphans.
+        """
+        rows = self._connection.execute(
+            """
+            SELECT e.payload FROM causal_episodes AS e
+            JOIN (
+                SELECT episode_id, MAX(revision) AS max_revision
+                FROM causal_episodes
+                WHERE life_id = ?
+                GROUP BY episode_id
+            ) AS latest
+              ON latest.episode_id = e.episode_id
+             AND latest.max_revision = e.revision
+            WHERE e.life_id = ? AND e.terminal_status = 'OPEN'
+            ORDER BY e.created_at_ms, e.episode_id
+            LIMIT ?
+            """,
+            (life_id, life_id, max(1, min(int(limit), 256))),
+        ).fetchall()
+        return tuple(
+            _parse_stored_contract(bytes(row["payload"]), CausalEpisode, "causal episode")
+            for row in rows
+        )
+
     def _verify_causal_memory_state(self) -> None:
         tombstones: dict[str, PrivacyDeletionTombstone] = {}
         destroyed_payload_ids: set[str] = set()
