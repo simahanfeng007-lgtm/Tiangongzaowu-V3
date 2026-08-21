@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-python@v5
         if: steps.guard.outputs.run == 'true'
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Install focused test dependencies
         if: steps.guard.outputs.run == 'true'
