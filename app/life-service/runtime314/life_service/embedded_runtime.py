@@ -485,12 +485,20 @@ class EmbeddedLifeRuntime:
                 binding_factory=None,
             )
             self._state = self._load_state()
+            reflection_recovered = self._reconcile_open_reflection_episodes(active_life_id)
             heartbeat_recovered = self._reconcile_scheduler_heartbeat(active_life_id)
             recovered_inflight = recover_inflight_scheduler_flags(self._state)
             projection_changed = self._reconcile_authoritative_journal(active_life_id)
             classification_changed = self._ensure_memory_classification(active_life_id)
             memory_contract_changed = self._reconcile_memory_contract(active_life_id)
-            if projection_changed or classification_changed or memory_contract_changed or heartbeat_recovered or recovered_inflight:
+            if (
+                projection_changed
+                or classification_changed
+                or memory_contract_changed
+                or heartbeat_recovered
+                or recovered_inflight
+                or reflection_recovered
+            ):
                 self._persist(active_life_id)
             heartbeat_seconds = float(os.environ.get("TIANGONG_LIFE_HEARTBEAT_SECONDS") or 30.0)
             self.scheduler = start_embedded_scheduler(
@@ -2479,6 +2487,156 @@ class EmbeddedLifeRuntime:
 
     _REFLECTION_EPISODE_REGISTRY_CAP = 32
 
+    def _reflection_registry_entry_from_episode_locked(
+        self, *, life_id: str, episode: Any, event_by_id: Mapping[str, Any] | None = None
+    ) -> dict[str, Any] | None:
+        """Rehydrate one OPEN episode cache row from authoritative evidence."""
+        if str(getattr(episode, "life_id", "") or "") != life_id:
+            return None
+        if str(getattr(episode, "terminal_status", "") or "") != "OPEN":
+            return None
+        trigger_ids = tuple(getattr(episode, "trigger_event_ids", ()) or ())
+        if not trigger_ids:
+            return None
+        store = self._contract_store()
+        events = event_by_id or {
+            str(event.event_id): event for event in store.load_events(life_id)
+        }
+        trigger_id = str(trigger_ids[0])
+        trigger = events.get(trigger_id)
+        if trigger is None:
+            return None
+        correlation_id = str(getattr(trigger, "correlation_id", "") or "")
+        if ":" not in correlation_id:
+            return None
+        source, ref_id = correlation_id.split(":", 1)
+        source, ref_id = source.strip(), ref_id.strip()
+        if not source or not ref_id:
+            return None
+        try:
+            snapshot = json.loads(str(getattr(episode, "prior_prediction", "") or ""))
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(snapshot, Mapping):
+            return None
+        context_hashes = tuple(getattr(episode, "context_state_hashes", ()) or ())
+        entry: dict[str, Any] = {
+            "source": source,
+            "ref": ref_id,
+            "episode_id": str(getattr(episode, "episode_id", "") or ""),
+            "correlation_id": correlation_id,
+            "predicted_success_milli": int(snapshot.get("predicted_success_milli") or 0),
+            "prediction_snapshot": deepcopy(dict(snapshot)),
+            "context_sha256": str(context_hashes[0] if context_hashes else ""),
+            "action_risk": "A1",
+            "opened_at_ms": int(getattr(episode, "created_at_ms", 0) or 0),
+        }
+        scope = self._scope_state(life_id)
+        if source == "autonomy":
+            task = (self._autonomy_state(life_id).get("tasks") or {}).get(ref_id)
+            if isinstance(task, Mapping):
+                entry["action_risk"] = str(task.get("risk_class") or "A0")
+        elif source == "capability":
+            capability_id = str(
+                getattr(episode, "selected_action_id", "")
+                or snapshot.get("artifact_id")
+                or ""
+            )
+            artifact = (scope.get("capabilities") or {}).get(capability_id)
+            artifact = artifact if isinstance(artifact, Mapping) else {}
+            entry.update({
+                "capability_id": capability_id,
+                "capability_version": str(artifact.get("version") or snapshot.get("version") or ""),
+                "capability_scope": str(artifact.get("title") or getattr(episode, "intention", "") or "能力学习"),
+                "action_risk": str(artifact.get("risk_level") or "A3"),
+            })
+            impact = store.find_action_impact_for_source_event(
+                life_id=life_id,
+                action_id=capability_id,
+                source_event_id=trigger_id,
+            )
+            if impact is not None:
+                entry["action_impact"] = impact.model_dump(mode="json")
+        return entry
+
+    def _resolve_runtime_episode_entry_locked(
+        self, *, life_id: str, source: str, ref_id: str
+    ) -> dict[str, Any] | None:
+        """Resolve OPEN episode from cache, then from the authoritative Store."""
+        scheduler = self._scope_state(life_id).setdefault("scheduler", {})
+        registry = [
+            row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
+        ]
+        for row in registry:
+            if (
+                str(row.get("source") or "") == source
+                and str(row.get("ref") or "") == ref_id
+            ):
+                return dict(row)
+        store = self._contract_store()
+        event_by_id = {str(event.event_id): event for event in store.load_events(life_id)}
+        offset = 0
+        while True:
+            batch = store.open_causal_episodes(life_id, limit=256, offset=offset)
+            if not batch:
+                return None
+            for episode in batch:
+                entry = self._reflection_registry_entry_from_episode_locked(
+                    life_id=life_id, episode=episode, event_by_id=event_by_id
+                )
+                if entry is None:
+                    continue
+                if (
+                    str(entry.get("source") or "") == source
+                    and str(entry.get("ref") or "") == ref_id
+                ):
+                    registry.append(entry)
+                    scheduler["open_episodes"] = registry[-self._REFLECTION_EPISODE_REGISTRY_CAP:]
+                    return entry
+            if len(batch) < 256:
+                return None
+            offset += len(batch)
+
+    def _reconcile_open_reflection_episodes(self, life_id: str) -> int:
+        """Abort OPEN episodes orphaned by a previous process before scheduling."""
+        if not self._reflection_chain_enabled():
+            return 0
+        store = self._contract_store()
+        event_by_id = {str(event.event_id): event for event in store.load_events(life_id)}
+        episodes: list[Any] = []
+        offset = 0
+        while True:
+            batch = store.open_causal_episodes(life_id, limit=256, offset=offset)
+            episodes.extend(batch)
+            if len(batch) < 256:
+                break
+            offset += len(batch)
+        recovered = 0
+        for episode in episodes:
+            entry = self._reflection_registry_entry_from_episode_locked(
+                life_id=life_id, episode=episode, event_by_id=event_by_id
+            )
+            if entry is None:
+                self._reflection_journal_failure(life_id, "rehydrate_open", None)
+                continue
+            scheduler = self._scope_state(life_id).setdefault("scheduler", {})
+            registry = [
+                row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
+            ]
+            registry.append(entry)
+            scheduler["open_episodes"] = registry[-self._REFLECTION_EPISODE_REGISTRY_CAP:]
+            self._abort_runtime_episode_locked(
+                life_id=life_id,
+                source=str(entry["source"]),
+                ref_id=str(entry["ref"]),
+                reason="restart_recovery",
+            )
+            if not store.is_causal_episode_open(
+                life_id, str(getattr(episode, "episode_id", "") or "")
+            ):
+                recovered += 1
+        return recovered
+
     def _reflection_chain_enabled(self) -> bool:
         """熔断开关：TIANGONG_LIFE_REFLECTION_CHAIN=0 时整条反思链停摆。"""
         return str(os.environ.get("TIANGONG_LIFE_REFLECTION_CHAIN") or "1").strip() != "0"
@@ -2652,19 +2810,11 @@ class EmbeddedLifeRuntime:
             return
         try:
             scheduler = self._scope_state(life_id).setdefault("scheduler", {})
-            registry = [
-                row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
-            ]
-            entry = next(
-                (
-                    row for row in registry
-                    if str(row.get("source") or "") == source
-                    and str(row.get("ref") or "") == ref_id
-                ),
-                None,
+            entry = self._resolve_runtime_episode_entry_locked(
+                life_id=life_id, source=source, ref_id=ref_id
             )
             if entry is None:
-                return  # 没有事前落账（链路关闭或 opening 失败），无从收尾
+                return  # Store 中没有事前 OPEN 证据，无法合法收尾
             outcome_event = self._runtime_life_event_locked(
                 life_id=life_id,
                 event_kind=event_kind,
@@ -2699,7 +2849,10 @@ class EmbeddedLifeRuntime:
                 outcome, now_ms=time.time_ns() // 1_000_000
             )
             scheduler["open_episodes"] = [
-                row for row in registry if row is not entry
+                row
+                for row in scheduler.get("open_episodes") or []
+                if isinstance(row, Mapping)
+                and str(row.get("episode_id") or "") != str(entry.get("episode_id") or "")
             ][-self._REFLECTION_EPISODE_REGISTRY_CAP:]
             try:
                 self.system.journal.append(
@@ -2825,16 +2978,8 @@ class EmbeddedLifeRuntime:
         try:
             store = self._contract_store()
             scheduler = self._scope_state(life_id).setdefault("scheduler", {})
-            registry = [
-                row for row in scheduler.get("open_episodes") or [] if isinstance(row, Mapping)
-            ]
-            entry = next(
-                (
-                    row for row in registry
-                    if str(row.get("source") or "") == "capability"
-                    and str(row.get("ref") or "") == execution_id
-                ),
-                None,
+            entry = self._resolve_runtime_episode_entry_locked(
+                life_id=life_id, source="capability", ref_id=execution_id
             )
             if entry is None:
                 return None
@@ -2930,7 +3075,10 @@ class EmbeddedLifeRuntime:
                 )
                 rollback_applied = True
             scheduler["open_episodes"] = [
-                row for row in registry if row is not entry
+                row
+                for row in scheduler.get("open_episodes") or []
+                if isinstance(row, Mapping)
+                and str(row.get("episode_id") or "") != str(entry.get("episode_id") or "")
             ][-self._REFLECTION_EPISODE_REGISTRY_CAP:]
             if learned is not None:
                 try:
@@ -3136,8 +3284,8 @@ class EmbeddedLifeRuntime:
         success_limit = self._daily_limit_setting(settings, "llm_daily_budget", 20)
         attempt_limit = self._daily_limit_setting(settings, "llm_daily_attempt_budget", 30)
         if (
-            (success_limit and int(scheduler.get("model_successes") or 0) >= success_limit)
-            or (attempt_limit and int(scheduler.get("model_attempts") or 0) >= attempt_limit)
+            int(scheduler.get("model_successes") or 0) >= success_limit
+            or int(scheduler.get("model_attempts") or 0) >= attempt_limit
         ):
             scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
             scheduler["last_autonomy_decision_at_ms"] = now_ms
@@ -3990,10 +4138,10 @@ class EmbeddedLifeRuntime:
         proactive_success_limit = self._daily_limit_setting(settings, "proactive_llm_daily_budget", 6)
         proactive_attempt_limit = self._daily_limit_setting(settings, "proactive_llm_daily_attempt_budget", 8)
         exhausted = (
-            (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
-            or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
-            or (proactive_success_limit and int(scheduler.get("proactive_model_successes") or 0) >= proactive_success_limit)
-            or (proactive_attempt_limit and int(scheduler.get("proactive_model_attempts") or 0) >= proactive_attempt_limit)
+            int(scheduler.get("model_successes") or 0) >= global_success_limit
+            or int(scheduler.get("model_attempts") or 0) >= global_attempt_limit
+            or int(scheduler.get("proactive_model_successes") or 0) >= proactive_success_limit
+            or int(scheduler.get("proactive_model_attempts") or 0) >= proactive_attempt_limit
         )
         if exhausted:
             scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
@@ -4069,10 +4217,10 @@ class EmbeddedLifeRuntime:
         sub_success_limit = self._daily_limit_setting(settings, str(config["success_key"]), int(config["success_default"]))
         sub_attempt_limit = self._daily_limit_setting(settings, str(config["attempt_key"]), int(config["attempt_default"]))
         return (
-            (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
-            or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
-            or (sub_success_limit and int(scheduler.get(f"{prefix}successes") or 0) >= sub_success_limit)
-            or (sub_attempt_limit and int(scheduler.get(f"{prefix}attempts") or 0) >= sub_attempt_limit)
+            int(scheduler.get("model_successes") or 0) >= global_success_limit
+            or int(scheduler.get("model_attempts") or 0) >= global_attempt_limit
+            or int(scheduler.get(f"{prefix}successes") or 0) >= sub_success_limit
+            or int(scheduler.get(f"{prefix}attempts") or 0) >= sub_attempt_limit
         )
 
     def _reserve_sub_model_call_locked(
@@ -7196,6 +7344,7 @@ class EmbeddedLifeRuntime:
         # （32 条截断即淘汰）。
         rows.sort(
             key=lambda item: (
+                int(bool(item.get("idle"))),
                 -int(item.get("composite_score_milli") or 0),
                 -int(item.get("last_outcome_at_ms") or 0),
                 str(item.get("kind")),
@@ -8046,11 +8195,12 @@ class EmbeddedLifeRuntime:
                     try:
                         decision = self._capability_patch_decider(material)
                         valid_decision = isinstance(decision, Mapping)
-                    except Exception:
+                    except Exception as exc:
                         with self._lock:
                             self._account_sub_model_failure_locked(
                                 self._scope_state(life_id).setdefault("scheduler", {}),
                                 pool="capability_patch",
+                                timeout=isinstance(exc, TimeoutError),
                             )
                         continue
                     if not valid_decision:
@@ -9443,6 +9593,12 @@ class EmbeddedLifeRuntime:
                     limits = {
                         "llm_daily_budget": (0, 1000),
                         "llm_daily_attempt_budget": (0, 2000),
+                        "learning_llm_daily_budget": (0, 1000),
+                        "learning_llm_daily_attempt_budget": (0, 2000),
+                        "self_iteration_llm_daily_budget": (0, 1000),
+                        "self_iteration_llm_daily_attempt_budget": (0, 2000),
+                        "capability_patch_llm_daily_budget": (0, 1000),
+                        "capability_patch_llm_daily_attempt_budget": (0, 2000),
                         "share_min_interval_seconds": (60, 604800),
                         "share_hourly_limit": (0, 60),
                         "share_daily_limit": (0, 1000),
