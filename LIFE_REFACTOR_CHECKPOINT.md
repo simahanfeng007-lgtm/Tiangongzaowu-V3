@@ -266,6 +266,34 @@ P8 质检证据：
 - `scripts/check.ps1`：39 个 JavaScript 文件语法通过，Python 语法通过，unittest 650/650 通过。
 - `scripts/sync-life-source.ps1`：18 个文件一致；`git diff --check` 通过。
 
+### 补记：P8.1 反思链生产接线（2026-08-21，P8 收尾补课）
+
+P8 建成了完整的因果反思与能力学习合约层，但生产运行时零调用——反思链从未
+在真实任务/能力执行中运转。P8.1 补上完整链（评价驱动 QC，详见
+`docs/repair-logs/2026-08-21_P8.1_reflection-lane-production-wiring.md`）：
+
+1. store 增 5 个只读方法（零 schema 变更）；`episode_builder.py` 纯函数构建
+   预测快照/链形事件/OPEN episode/结果证据/影响面/九类失败映射。
+2. 任务源四挂点：worker 执行前以活动真实完成历史做确定性预测并 OPEN
+   episode 落账（先于执行、事后可审计）；完成/异常原子闭环反思；陈旧恢复
+   把孤儿 OPEN episode 以 ABORTED 收尾。
+3. 能力源两挂点：pointer.health 成功率做基线预测 + 影响面 + OPEN；执行后
+   闭环反思 → 能力证据 → 学习（仅 eligible 证据；correlation_only 成功按
+   诚实基线不进学习）→ verified 失败累积 ≥3 且 A0-A2 自动回滚（熟练度归
+   零，pointer 不动，双体系互斥）。
+4. 消费面：面板新键 `reflection_cards`；能力 overlay 按双体系综合分
+   `max(health_score_milli, proficiency_lower_bound_milli)` 排序；activity
+   scope 注入最近 5 条反思摘要供决策模型感知。
+5. 熔断 `TIANGONG_LIFE_REFLECTION_CHAIN=0`；所有链操作在 runtime 锁内，
+   失败 journal 不重试；新 journal 类型由权威重放静默跳过。
+6. 同批评价驱动修复：F1 proactive 忽略率门禁（消费 replied 信号）、F2
+   live 模式 UI 开关、F4 motivation_drift 接入自由行动排序、F5 能力正向
+   强化与闲置淘汰、F6 三调度器子预算记账。
+
+质检证据：`test_episode_builder.py` B1-B5、`test_life_reflection_chain_wiring.py`
+T1-T4/C1-C3/P1/P2/S1/S2 全绿；三不碰守卫（不进记忆晋升/不产生用户提问/
+不进 proactive）由测试锁死。
+
 ## 已完成：P9 Skill 双通道合一
 
 已完成内容：

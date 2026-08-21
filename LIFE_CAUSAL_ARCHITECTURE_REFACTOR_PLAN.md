@@ -1959,3 +1959,25 @@ event → episode → candidate → decision → policy → confirmation → ski
 - app、runtime314、contracts、bootstrap、release manifest 和运维 CLI 已同步；life 22 文件、contracts 26 文件源码/运行时逐文件一致。
 - 质检：P11 专项 12/12；生命门 202/202；完整仓库 unittest 673/673；40 个 JavaScript 文件语法、Python 语法和 `git diff --check` 全部通过。
 - source release manifest hash 为 `1ef133069e1fc40f59ea8c0d5dd3b29f0b3500fea1a23030eb1cb37a9faa3b33`，life-source 发布树 hash 为 `9c9b9ff850c97b8b959211266b7194869c9b151daae43039fc856adeea5422ee`；P0–P11 改造计划闭环。
+
+### 2026-08-21：P8.1 反思链生产接线（P8 收尾补课）
+
+评价驱动 QC 发现：P8 的因果反思与能力学习合约层完整但生产运行时零调用。
+P8.1 以六个独立可测的步骤补上完整链，架构决策如下（代码证据验证）：
+
+- 双体系共存：capability_health 管"当前哪个版本可用"（patch/降级，唯一写
+  pointer），capability_learning 管认知层熟练度（Hoeffding 下界、审查级
+  别），二者写路径零交集；verified+capability 失败 ≥3 且 A0-A2 才自动回滚
+  （熟练度归零），A3+ 只升审查，rollback 不改 pointer。
+- 确定性预测基线：预测 = 真实完成率的毫值映射（无历史回退 700），快照连
+  同依据哈希随 OPEN episode 先于执行落账，事后可审计防编造。
+- 诚实基线：生产无因果假设写入口 → 成功证据 correlation_only、
+  eligible_success=False，能力学习只在证据 eligible 时提交；成功晋升等
+  未来假设管线（认识论分层保持）。
+- 消费只读：面板 reflection_cards 独立键、overlay 双体系综合分排序
+  （max(health_score, proficiency_lcb)）、activity scope 注入最近反思摘要。
+- 并发与容错：链操作全在 runtime 锁内，失败 journal 不重试不外抛；
+  TIANGONG_LIFE_REFLECTION_CHAIN=0 熔断；新 journal 类型由权威重放静默跳过。
+- 三不碰：不进记忆晋升、不产生用户提问、不进 proactive。
+
+详见 `docs/repair-logs/2026-08-21_P8.1_reflection-lane-production-wiring.md`。
