@@ -27,7 +27,7 @@ jobs:
         id: guard
         shell: bash
         run: |
-          if [ -f scripts/temporary_credential_contract_repair.py ] && [ -f .github/workflows/one-shot-life-qc-repair.yml ]; then
+          if [ -f scripts/temporary_life_qc_repair.py ] && [ -f scripts/temporary_credential_contract_repair.py ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -38,49 +38,38 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Execute audited Life QC repair recipe
+      - name: Install focused test dependencies
         if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
-          python -m pip install --quiet pyyaml
-          python - <<'PY'
-          from pathlib import Path
-          import subprocess
-          import yaml
+          python -m pip install --quiet pytest pydantic cryptography
 
-          workflow = Path('.github/workflows/one-shot-life-qc-repair.yml')
-          data = yaml.safe_load(workflow.read_text(encoding='utf-8'))
-          steps = data['jobs']['repair-and-test']['steps']
-          allowed = {
-              'Apply in-place authoritative-source repair',
-              'Install test dependencies',
-              'Run focused Life QC regressions',
-              'Run architecture-sensitive regressions',
-          }
-          for step in steps:
-              name = str(step.get('name') or '')
-              script = step.get('run')
-              if name not in allowed or not isinstance(script, str):
-                  continue
-              print(f'::group::{name}', flush=True)
-              subprocess.run(
-                  script,
-                  cwd='.',
-                  shell=True,
-                  executable='/bin/bash',
-                  check=True,
-              )
-              print('::endgroup::', flush=True)
-          PY
-
-      - name: Repair and verify provider credential identity contract
+      - name: Apply direct authoritative-source repairs
         if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
+          python scripts/temporary_life_qc_repair.py
           python scripts/temporary_credential_contract_repair.py
+          python scripts/sync-generated-sources.py --write
+
+      - name: Run focused regressions
+        if: steps.guard.outputs.run == 'true'
+        shell: bash
+        run: |
           python -m pytest -q \
+            tests/test_life_qc_regressions_20260821.py \
+            tests/test_life_scheduler_budgets.py \
+            tests/test_life_reflection_chain_wiring.py \
             tests/test_model_credential_identity_contract.py \
             tests/test_model_credential_contract.py
+
+      - name: Run architecture-sensitive regressions
+        if: steps.guard.outputs.run == 'true'
+        shell: bash
+        run: |
+          python -m pytest -q \
+            tests/test_p17_m4_architecture_guards.py \
+            tests/test_p17_1_runtime_integrity.py
 
       - name: Commit verified repair to isolated fix branch
         if: steps.guard.outputs.run == 'true'
@@ -89,6 +78,7 @@ jobs:
           rm -f .github/one-shot-life-qc-repair.trigger
           rm -f .github/workflows/one-shot-life-qc-repair.yml
           rm -f .github/workflows/one-shot-life-qc-repair-pr.yml
+          rm -f scripts/temporary_life_qc_repair.py
           rm -f scripts/temporary_credential_contract_repair.py
           git config user.name "tiangong-qc-repair"
           git config user.email "actions@users.noreply.github.com"
