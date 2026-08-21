@@ -211,6 +211,27 @@ PROVIDER_MATCH_WEIGHTS = {
 MOREN_PROVIDER = L4_OPENAI_FALLBACK_PROVIDER   # 默认对话Provider；未命中时走 OpenAI 兼容优化
 CUSTOM_PROVIDER_ID = "custom"                  # 用户自定义/未命名服务商的持久化身份
 
+# P18.1 credential authority: new desktop writes are keyed by persisted
+# provider identity, never by the L4 optimization family. Historical family
+# IDs remain read-compatible so upgrades do not orphan an existing vault/env.
+CREDENTIAL_IDENTITY_ALIASES = {
+    "deepseek_v4": "deepseek",
+    "glm_5_1": "zhipu",
+    "glm_5_2": "zhipu",
+    "minimax_m3": "minimax",
+    "gpt_5_5": "openai",
+    "gpt_5_6": "openai",
+}
+CREDENTIAL_IDENTITY_ENV_NAMES = {
+    "deepseek": ("TIANGONG_DEEPSEEK_API_KEY",),
+    "openai": ("TIANGONG_OPENAI_API_KEY",),
+    "zhipu": ("TIANGONG_ZHIPU_API_KEY",),
+    "minimax": ("TIANGONG_MINIMAX_API_KEY",),
+    "mimo": ("TIANGONG_MIMO_API_KEY",),
+    "anthropic": ("TIANGONG_ANTHROPIC_API_KEY",),
+    "google": ("TIANGONG_GOOGLE_API_KEY",),
+}
+
 
 def normalize_provider_id(provider_id: str | None) -> str:
     raw = str(provider_id or "").strip()
@@ -258,6 +279,20 @@ def normalize_provider_identity(provider_id: str | None) -> str:
         "gpt_5_6": "gpt_5_6",
     }
     return identity_aliases.get(key, raw)
+
+
+def provider_identity_env_names(provider_id: str | None) -> tuple[str, ...]:
+    """Return canonical desktop env slots for persisted provider identity.
+
+    L4 family IDs are accepted only as read-compatibility aliases. Returned
+    slots always use the provider-identity namespace written by Electron.
+    """
+
+    normalized_identity = normalize_provider_identity(provider_id)
+    credential_identity = CREDENTIAL_IDENTITY_ALIASES.get(
+        normalized_identity, normalized_identity
+    )
+    return CREDENTIAL_IDENTITY_ENV_NAMES.get(credential_identity, ())
 
 
 def normalize_provider_base_url(base_url: str | None) -> str:
@@ -550,10 +585,17 @@ def _candidate_provider_keys(provider_id: str | None) -> tuple[str, ...]:
     return tuple(keys)
 
 def duqu_api_miyao(provider_id: str) -> str | None:
-    """读取API密钥：先环境变量 → 再配置文件 → 再默认文件"""
+    """读取API密钥：identity env → legacy family env → 配置文件。"""
     import os, json as _json
-    provider_id = normalize_provider_id(provider_id)
-    # 环境变量
+    raw_provider_id = str(provider_id or "").strip()
+    # P18.1 new authority: Electron persists/injects the provider IDENTITY.
+    # Read that slot first. Family/vendor slots below are migration fallbacks.
+    for env_name in provider_identity_env_names(raw_provider_id):
+        val = os.environ.get(env_name)
+        if val:
+            return val
+    provider_id = normalize_provider_id(raw_provider_id)
+    # 旧 family / vendor 环境变量（只读兼容）
     env_map = {
         "gpt_5_6": ("TIANGONG_GPT_5_6_API_KEY", "OPENAI_API_KEY"),
         "openai": ("TIANGONG_GPT_5_6_API_KEY", "OPENAI_API_KEY"),
@@ -594,15 +636,15 @@ def duqu_api_miyao(provider_id: str) -> str | None:
 def duqu_endpoint_api_miyao(provider_id: str, base_url: str) -> str | None:
     """Return only a credential explicitly bound to ``base_url``.
 
-    Official vendor origins use the vendor slot. Every custom origin has an
-    independent slot under ``_custom_endpoint_keys`` and never inherits a
-    provider key. Local/private endpoints are keyless unless the user stores a
-    custom key for that exact canonical origin.
+    Official vendor origins use the persisted provider-identity slot first.
+    Historical L4-family/vendor slots are read-only migration fallbacks. Every
+    custom origin keeps its independent endpoint-hash slot and never inherits a
+    provider key.
     """
-    provider_id = normalize_provider_id(provider_id)
-    binding = validate_model_endpoint(provider_id, base_url, resolve_dns=False)
+    identity_provider = normalize_provider_identity(provider_id)
+    binding = validate_model_endpoint(identity_provider, base_url, resolve_dns=False)
     if binding.official:
-        return duqu_api_miyao(provider_id)
+        return duqu_api_miyao(identity_provider)
     scope = str(binding.custom_scope or "")
     env_name = f"TIANGONG_{scope.upper().replace('-', '_')}_API_KEY"
     value = str(os.environ.get(env_name) or "").strip()
