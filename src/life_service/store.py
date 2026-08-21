@@ -4095,13 +4095,15 @@ class LifeShadowStore:
         )
 
     def open_causal_episodes(
-        self, life_id: str, *, limit: int = 32
+        self, life_id: str, *, limit: int = 32, offset: int = 0
     ) -> tuple[CausalEpisode, ...]:
-        """Episodes whose LATEST revision is still OPEN, oldest first.
+        """Episodes whose latest revision is still OPEN, oldest first.
 
-        Closed episodes keep their OPEN revision-1 rows as history, so a plain
-        terminal_status filter would resurrect closed episodes as orphans.
+        Runtime registries are bounded caches, not authorities. ``offset``
+        allows recovery to page the complete authoritative OPEN set.
         """
+        bounded_limit = max(1, min(int(limit), 256))
+        bounded_offset = max(0, int(offset))
         rows = self._connection.execute(
             """
             SELECT e.payload FROM causal_episodes AS e
@@ -4115,14 +4117,46 @@ class LifeShadowStore:
              AND latest.max_revision = e.revision
             WHERE e.life_id = ? AND e.terminal_status = 'OPEN'
             ORDER BY e.created_at_ms, e.episode_id
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (life_id, life_id, max(1, min(int(limit), 256))),
+            (life_id, life_id, bounded_limit, bounded_offset),
         ).fetchall()
         return tuple(
             _parse_stored_contract(bytes(row["payload"]), CausalEpisode, "causal episode")
             for row in rows
         )
+
+    def is_causal_episode_open(self, life_id: str, episode_id: str) -> bool:
+        """Return whether the latest authoritative revision is still OPEN."""
+        row = self._connection.execute(
+            """
+            SELECT terminal_status FROM causal_episodes
+            WHERE life_id = ? AND episode_id = ?
+            ORDER BY revision DESC LIMIT 1
+            """,
+            (life_id, episode_id),
+        ).fetchone()
+        return row is not None and str(row["terminal_status"]) == "OPEN"
+
+    def find_action_impact_for_source_event(
+        self, *, life_id: str, action_id: str, source_event_id: str
+    ) -> ActionImpact | None:
+        """Read the immutable ActionImpact bound to one trigger event."""
+        rows = self._connection.execute(
+            """
+            SELECT payload FROM action_impacts
+            WHERE life_id = ? AND action_id = ?
+            ORDER BY created_at_ms, impact_id
+            """,
+            (life_id, action_id),
+        ).fetchall()
+        for row in rows:
+            impact = _parse_stored_contract(
+                bytes(row["payload"]), ActionImpact, "action impact"
+            )
+            if source_event_id in impact.source_event_ids:
+                return impact
+        return None
 
     def _verify_causal_memory_state(self) -> None:
         tombstones: dict[str, PrivacyDeletionTombstone] = {}
