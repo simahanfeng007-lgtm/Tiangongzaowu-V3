@@ -707,6 +707,14 @@ class EmbeddedLifeRuntime:
                 "heartbeat_enabled": True,
                 "llm_daily_budget": 20,
                 "llm_daily_attempt_budget": 30,
+                # 学习/自我迭代/能力补丁三个调度器各自的子预算：与 proactive
+                # 同样隔离于全局生命模型预算，防止单一子系统吃满整天的量。
+                "learning_llm_daily_budget": 6,
+                "learning_llm_daily_attempt_budget": 8,
+                "self_iteration_llm_daily_budget": 4,
+                "self_iteration_llm_daily_attempt_budget": 6,
+                "capability_patch_llm_daily_budget": 6,
+                "capability_patch_llm_daily_attempt_budget": 8,
                 "share_enabled": True,
                 "share_quiet_if_user_active": True,
                 "share_min_interval_seconds": 2700,
@@ -785,6 +793,24 @@ class EmbeddedLifeRuntime:
                 "proactive_model_failures": 0,
                 "proactive_model_timeouts": 0,
                 "proactive_model_skipped": 0,
+                "learning_model_budget_date": "",
+                "learning_model_attempts": 0,
+                "learning_model_successes": 0,
+                "learning_model_failures": 0,
+                "learning_model_timeouts": 0,
+                "learning_model_skipped": 0,
+                "self_iteration_model_budget_date": "",
+                "self_iteration_model_attempts": 0,
+                "self_iteration_model_successes": 0,
+                "self_iteration_model_failures": 0,
+                "self_iteration_model_timeouts": 0,
+                "self_iteration_model_skipped": 0,
+                "capability_patch_model_budget_date": "",
+                "capability_patch_model_attempts": 0,
+                "capability_patch_model_successes": 0,
+                "capability_patch_model_failures": 0,
+                "capability_patch_model_timeouts": 0,
+                "capability_patch_model_skipped": 0,
                 "last_user_run_id": "",
             },
             "updated_at": utc_now(),
@@ -2923,6 +2949,11 @@ class EmbeddedLifeRuntime:
         if not callable(getattr(self, "_learning_decider", None)):
             scheduler["last_learning_decision_error"] = "life.learning.model_bridge_unavailable"
             return
+        if not self._reserve_sub_model_call_locked(scheduler=scheduler, settings=settings, pool="learning"):
+            scheduler["last_learning_decision_at_ms"] = now_ms
+            scheduler["last_learning_decision_error"] = "life.learning.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["learning_decision_inflight"] = True
         scheduler["last_learning_decision_at_ms"] = now_ms
         scheduler["last_learning_decision_error"] = ""
@@ -2934,6 +2965,11 @@ class EmbeddedLifeRuntime:
                 decision = self._learning_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("learning model decision is invalid")
+                with self._lock:
+                    self._account_sub_model_success_locked(
+                        self._scope_state(life_id).setdefault("scheduler", {}),
+                        pool="learning",
+                    )
                 target = str(decision.get("target") or decision.get("artifact_kind") or "").strip().casefold()
                 with self._lock:
                     if target in {"", "none", "no_learning", "no-learning"}:
@@ -2971,7 +3007,13 @@ class EmbeddedLifeRuntime:
                 # instead of recording only the exception type.
                 detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
                 with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})[
+                    scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                    self._account_sub_model_failure_locked(
+                        scheduler_state,
+                        pool="learning",
+                        timeout=isinstance(exc, TimeoutError),
+                    )
+                    scheduler_state[
                         "last_learning_decision_error"
                     ] = f"life.learning.decision_failed:{type(exc).__name__}:{detail}"
             finally:
@@ -3005,6 +3047,11 @@ class EmbeddedLifeRuntime:
         if not callable(getattr(self, "_self_iteration_decider", None)):
             scheduler["last_self_iteration_decision_error"] = "life.self_iteration.model_bridge_unavailable"
             return
+        if not self._reserve_sub_model_call_locked(scheduler=scheduler, settings=settings, pool="self_iteration"):
+            scheduler["last_self_iteration_decision_at_ms"] = now_ms
+            scheduler["last_self_iteration_decision_error"] = "life.self_iteration.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["self_iteration_decision_inflight"] = True
         scheduler["last_self_iteration_decision_at_ms"] = now_ms
         scheduler["last_self_iteration_decision_error"] = ""
@@ -3016,6 +3063,11 @@ class EmbeddedLifeRuntime:
                 decision = self._self_iteration_decider(scope)
                 if not isinstance(decision, Mapping):
                     raise ValueError("self-iteration model decision is invalid")
+                with self._lock:
+                    self._account_sub_model_success_locked(
+                        self._scope_state(life_id).setdefault("scheduler", {}),
+                        pool="self_iteration",
+                    )
                 target = str(decision.get("target") or "").strip().casefold()
                 with self._lock:
                     if target in {"", "none", "no_upgrade", "no-upgrade"}:
@@ -3028,7 +3080,13 @@ class EmbeddedLifeRuntime:
             except Exception as exc:
                 detail = re.sub(r"\s+", " ", str(exc)).strip()[:160]
                 with self._lock:
-                    self._scope_state(life_id).setdefault("scheduler", {})[
+                    scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                    self._account_sub_model_failure_locked(
+                        scheduler_state,
+                        pool="self_iteration",
+                        timeout=isinstance(exc, TimeoutError),
+                    )
+                    scheduler_state[
                         "last_self_iteration_decision_error"
                     ] = f"life.self_iteration.decision_failed:{type(exc).__name__}:{detail}"
             finally:
@@ -3319,6 +3377,117 @@ class EmbeddedLifeRuntime:
         scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
         scheduler["proactive_model_attempts"] = int(scheduler.get("proactive_model_attempts") or 0) + 1
         return True
+
+    # 学习/自我迭代/能力补丁三个调度器的子预算隔离：与 proactive 同模式，
+    # 全局池 + 子池双检查双累加，防止任何一个子系统占满全局生命模型预算。
+    _MODEL_SUB_BUDGET_POOLS = {
+        "learning": {
+            "prefix": "learning_model_",
+            "success_key": "learning_llm_daily_budget",
+            "success_default": 6,
+            "attempt_key": "learning_llm_daily_attempt_budget",
+            "attempt_default": 8,
+        },
+        "self_iteration": {
+            "prefix": "self_iteration_model_",
+            "success_key": "self_iteration_llm_daily_budget",
+            "success_default": 4,
+            "attempt_key": "self_iteration_llm_daily_attempt_budget",
+            "attempt_default": 6,
+        },
+        "capability_patch": {
+            "prefix": "capability_patch_model_",
+            "success_key": "capability_patch_llm_daily_budget",
+            "success_default": 6,
+            "attempt_key": "capability_patch_llm_daily_attempt_budget",
+            "attempt_default": 8,
+        },
+    }
+
+    def _reset_sub_model_budget_if_needed(self, scheduler: dict[str, Any], *, pool: str) -> None:
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        budget_day = utc_now()[:10]
+        # Preserve the existing global Life-model hard cap.
+        if str(scheduler.get("model_budget_date") or "") != budget_day:
+            scheduler.update({
+                "model_budget_date": budget_day,
+                "model_attempts": 0,
+                "model_successes": 0,
+                "model_failures": 0,
+                "model_timeouts": 0,
+                "model_skipped": 0,
+            })
+        if str(scheduler.get(f"{prefix}budget_date") or "") != budget_day:
+            scheduler.update({
+                f"{prefix}budget_date": budget_day,
+                f"{prefix}attempts": 0,
+                f"{prefix}successes": 0,
+                f"{prefix}failures": 0,
+                f"{prefix}timeouts": 0,
+                f"{prefix}skipped": 0,
+            })
+
+    def _sub_model_budget_exhausted(
+        self,
+        scheduler: dict[str, Any],
+        *,
+        settings: Mapping[str, Any],
+        pool: str,
+    ) -> bool:
+        """Check-only peek (no counter changes); performs the daily reset."""
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        global_success_limit = self._daily_limit_setting(settings, "llm_daily_budget", 20)
+        global_attempt_limit = self._daily_limit_setting(settings, "llm_daily_attempt_budget", 30)
+        sub_success_limit = self._daily_limit_setting(settings, str(config["success_key"]), int(config["success_default"]))
+        sub_attempt_limit = self._daily_limit_setting(settings, str(config["attempt_key"]), int(config["attempt_default"]))
+        return (
+            (global_success_limit and int(scheduler.get("model_successes") or 0) >= global_success_limit)
+            or (global_attempt_limit and int(scheduler.get("model_attempts") or 0) >= global_attempt_limit)
+            or (sub_success_limit and int(scheduler.get(f"{prefix}successes") or 0) >= sub_success_limit)
+            or (sub_attempt_limit and int(scheduler.get(f"{prefix}attempts") or 0) >= sub_attempt_limit)
+        )
+
+    def _reserve_sub_model_call_locked(
+        self,
+        *,
+        scheduler: dict[str, Any],
+        settings: Mapping[str, Any],
+        pool: str,
+    ) -> bool:
+        """Reserve one real LLM call against both the global and the sub pool."""
+        config = self._MODEL_SUB_BUDGET_POOLS[pool]
+        prefix = str(config["prefix"])
+        if self._sub_model_budget_exhausted(scheduler, settings=settings, pool=pool):
+            scheduler["model_skipped"] = int(scheduler.get("model_skipped") or 0) + 1
+            scheduler[f"{prefix}skipped"] = int(scheduler.get(f"{prefix}skipped") or 0) + 1
+            return False
+        scheduler["model_attempts"] = int(scheduler.get("model_attempts") or 0) + 1
+        scheduler[f"{prefix}attempts"] = int(scheduler.get(f"{prefix}attempts") or 0) + 1
+        return True
+
+    def _account_sub_model_success_locked(self, scheduler: dict[str, Any], *, pool: str) -> None:
+        prefix = str(self._MODEL_SUB_BUDGET_POOLS[pool]["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        scheduler["model_successes"] = int(scheduler.get("model_successes") or 0) + 1
+        scheduler[f"{prefix}successes"] = int(scheduler.get(f"{prefix}successes") or 0) + 1
+
+    def _account_sub_model_failure_locked(
+        self,
+        scheduler: dict[str, Any],
+        *,
+        pool: str,
+        timeout: bool = False,
+    ) -> None:
+        prefix = str(self._MODEL_SUB_BUDGET_POOLS[pool]["prefix"])
+        self._reset_sub_model_budget_if_needed(scheduler, pool=pool)
+        scheduler["model_failures"] = int(scheduler.get("model_failures") or 0) + 1
+        scheduler[f"{prefix}failures"] = int(scheduler.get(f"{prefix}failures") or 0) + 1
+        if timeout:
+            scheduler["model_timeouts"] = int(scheduler.get("model_timeouts") or 0) + 1
+            scheduler[f"{prefix}timeouts"] = int(scheduler.get(f"{prefix}timeouts") or 0) + 1
 
     def _schedule_native_proactive(self, *, life_id: str) -> None:
         """Schedule the sole post-P15 proactive producer without blocking heartbeat."""
@@ -7146,6 +7315,12 @@ class EmbeddedLifeRuntime:
             return
         if not callable(getattr(self, "_capability_patch_decider", None)):
             return
+        # 子池已耗尽时不再起线程；真正的按次记账在 worker 内每个补丁目标前完成。
+        if self._sub_model_budget_exhausted(scheduler, settings=scope_state["settings"], pool="capability_patch"):
+            scheduler["last_capability_health_at_ms"] = now_ms
+            scheduler["last_capability_health_error"] = "life.capability_patch.model_budget_exhausted"
+            self._persist(life_id)
+            return
         scheduler["capability_health_inflight"] = True
         scheduler["last_capability_health_at_ms"] = now_ms
         self._persist(life_id)
@@ -7179,10 +7354,39 @@ class EmbeddedLifeRuntime:
                         pointer=target["pointer"],
                         scope=self._scope_state(life_id),
                     )
-                    decision = self._capability_patch_decider(material)
-                    if not isinstance(decision, Mapping):
+                    # 每个补丁目标一次真实的模型调用，逐一记账。
+                    with self._lock:
+                        scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
+                        if not self._reserve_sub_model_call_locked(
+                            scheduler=scheduler_state,
+                            settings=self._scope_state(life_id)["settings"],
+                            pool="capability_patch",
+                        ):
+                            scheduler_state["last_capability_health_error"] = "life.capability_patch.model_budget_exhausted"
+                            self._persist(life_id)
+                            return
+                    try:
+                        decision = self._capability_patch_decider(material)
+                        valid_decision = isinstance(decision, Mapping)
+                    except Exception:
+                        with self._lock:
+                            self._account_sub_model_failure_locked(
+                                self._scope_state(life_id).setdefault("scheduler", {}),
+                                pool="capability_patch",
+                            )
+                        continue
+                    if not valid_decision:
+                        with self._lock:
+                            self._account_sub_model_failure_locked(
+                                self._scope_state(life_id).setdefault("scheduler", {}),
+                                pool="capability_patch",
+                            )
                         continue
                     with self._lock:
+                        self._account_sub_model_success_locked(
+                            self._scope_state(life_id).setdefault("scheduler", {}),
+                            pool="capability_patch",
+                        )
                         proposed = self._capability_patch_propose(
                             {"life_id": life_id, "artifact_id": artifact["artifact_id"], "actor": "life_health"},
                             decision=decision,
@@ -8459,6 +8663,12 @@ class EmbeddedLifeRuntime:
                         "heartbeat_enabled",
                         "llm_daily_budget",
                         "llm_daily_attempt_budget",
+                        "learning_llm_daily_budget",
+                        "learning_llm_daily_attempt_budget",
+                        "self_iteration_llm_daily_budget",
+                        "self_iteration_llm_daily_attempt_budget",
+                        "capability_patch_llm_daily_budget",
+                        "capability_patch_llm_daily_attempt_budget",
                         "share_enabled",
                         "share_quiet_if_user_active",
                         "share_min_interval_seconds",
