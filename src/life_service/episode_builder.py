@@ -385,6 +385,24 @@ def observed_quality_from_steps(steps: Sequence[Mapping[str, Any]]) -> int:
     return ok_count * 1000 // len(rows)
 
 
+def prediction_from_snapshot(snapshot: Mapping[str, Any]) -> PredictionSnapshot:
+    """从注册表持久化的快照字典重建预测（哈希与文本按 canonical 重算）。"""
+    from contracts import canonical_json_bytes
+
+    payload = {str(key): value for key, value in snapshot.items()}
+    try:
+        predicted = int(payload.get("predicted_success_milli"))
+    except (TypeError, ValueError):
+        predicted = DEFAULT_PREDICTED_SUCCESS_MILLI
+    return PredictionSnapshot(
+        predicted_success_milli=max(0, min(1000, predicted)),
+        basis=str(payload.get("basis") or "default"),
+        snapshot=payload,
+        snapshot_sha256=canonical_sha256(payload),
+        prior_prediction=canonical_json_bytes(payload).decode("utf-8"),
+    )
+
+
 __all__ = [
     "DEFAULT_PREDICTED_SUCCESS_MILLI",
     "PredictionSnapshot",
@@ -398,4 +416,5 @@ __all__ = [
     "failure_category_from_step_error",
     "fingerprint",
     "observed_quality_from_steps",
+    "prediction_from_snapshot",
 ]
