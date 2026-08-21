@@ -2469,6 +2469,58 @@ class EmbeddedLifeRuntime:
                     affinity[activity_id] = weighted
         return affinity
 
+    # 动机漂移：最近行动分布偏离长期偏好时，给欠采样活动加分，把自由行动
+    # 拉回用户配置的方向。只读（不写回 kind_weights 等用户可见配置）。
+    _DRIFT_AFFINITY_COEFFICIENT = 150
+    _DRIFT_AFFINITY_MIN_SAMPLE = 10
+
+    def _drift_affinity(self, scope: Mapping[str, Any]) -> dict[str, int]:
+        """Boost under-sampled activities when recent actions drift from preferences."""
+        autonomy = scope.get("autonomy") if isinstance(scope.get("autonomy"), Mapping) else {}
+        completed = [
+            row for row in (autonomy.get("tasks") or {}).values()
+            if isinstance(row, Mapping)
+            and str(row.get("status") or "") == "completed"
+            and str(row.get("source") or "") == "life_activity_catalog"
+        ]
+        completed.sort(
+            key=lambda row: (int(row.get("updated_at_ms") or 0), int(row.get("sequence") or 0)),
+            reverse=True,
+        )
+        settings = scope.get("settings") if isinstance(scope.get("settings"), Mapping) else {}
+        preferences = preference_projection(sorted({
+            str(value)
+            for value in settings.get("autonomy_activity_types") or []
+            if str(value)
+        }))
+        rows = motivation_drift_projection(completed[:30], preferences)
+        if not rows:
+            return {}
+        row = rows[0]
+        # 样本不足时漂移抖动大（insufficient_evidence 或低于最小样本），不加分。
+        if int(row.get("observed_actions") or 0) < self._DRIFT_AFFINITY_MIN_SAMPLE:
+            return {}
+        if not row.get("drift_detected"):
+            return {}
+        observed = row.get("observed_distribution")
+        observed = observed if isinstance(observed, Mapping) else {}
+        expected = preferences.get("kind_weights")
+        expected = expected if isinstance(expected, Mapping) else {}
+        observed_total = sum(int(value or 0) for value in observed.values()) or 1
+        expected_total = sum(max(0.0, float(value or 0)) for value in expected.values()) or 1.0
+        score = min(1.0, max(0.0, float(row.get("drift_score") or 0)))
+        affinity: dict[str, int] = {}
+        for activity_id, weight in expected.items():
+            gap = max(
+                0.0,
+                max(0.0, float(weight or 0)) / expected_total
+                - int(observed.get(activity_id) or 0) / observed_total,
+            )
+            bonus = int(score * gap * self._DRIFT_AFFINITY_COEFFICIENT)
+            if bonus > 0:
+                affinity[str(activity_id)] = bonus
+        return affinity
+
     def _schedule_autonomous_activity_decision(self, *, life_id: str) -> None:
         """Execute one catalog activity through the gateway model bridge.
 
@@ -2548,11 +2600,15 @@ class EmbeddedLifeRuntime:
         ]
         pool = due if due else eligible
         desire = self._desire_affinity(scope)
+        # 漂移加分只在自由行动分支生效：到点计划保持"高优先级先做"的确定性，
+        # 不被欠采样补偿改写次序。
+        drift = {} if due else self._drift_affinity(scope)
         pool.sort(
             key=lambda task: (
                 -(
                     int(task.get("priority") or 0)
                     + desire.get(str(task.get("activity_id") or ""), 0)
+                    + drift.get(str(task.get("activity_id") or ""), 0)
                 ),
                 int(task.get("sequence") or 0),
                 str(task.get("task_id") or ""),

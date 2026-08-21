@@ -16,6 +16,7 @@ from contracts import canonical_sha256
 from .panel_projection import (
     boundary_projection,
     long_term_goals,
+    motivation_drift_projection,
     preference_projection,
 )
 
@@ -238,6 +239,30 @@ def build_activity_scope(
     preferences = _canonical_safe(preference_projection(
         list(settings.get("autonomy_activity_types") or [])
     ))
+    # 动机漂移摘要（只读）：让模型在决策时感知"最近行为偏离长期偏好"，
+    # 与自由行动排序的 _drift_affinity 使用同一投影函数，口径一致。
+    completed_catalog = [
+        row for row in (autonomy.get("tasks") or {}).values()
+        if isinstance(row, Mapping)
+        and str(row.get("status") or "") == "completed"
+        and str(row.get("source") or "") == "life_activity_catalog"
+    ]
+    completed_catalog.sort(
+        key=lambda row: (int(row.get("updated_at_ms") or 0), int(row.get("sequence") or 0)),
+        reverse=True,
+    )
+    motivation_drift = [
+        {
+            "title": str(row.get("title") or ""),
+            "status": str(row.get("status") or ""),
+            "drift_detected": bool(row.get("drift_detected")),
+            # canonical 契约禁用 float，漂移分以毫值整数表示（0-1000）。
+            "drift_score_milli": int(round(float(row.get("drift_score") or 0) * 1000)),
+            "summary": str(row.get("summary") or ""),
+            "observed_actions": int(row.get("observed_actions") or 0),
+        }
+        for row in motivation_drift_projection(completed_catalog[:30], preferences)
+    ]
     declared_boundaries = [
         str(value)
         for value in soul_view.get("boundaries", [])
@@ -263,6 +288,7 @@ def build_activity_scope(
         "capabilities": capabilities,
         "long_term_goals": goals,
         "preferences": preferences,
+        "motivation_drift": motivation_drift,
         "boundaries": boundaries,
         "rejected_learning_fingerprints": sorted(set(item for item in rejected if item)),
         "repository_evidence": repository_evidence,
