@@ -16,7 +16,7 @@ jobs:
   repair:
     if: github.head_ref == 'fix/life-reflection-budget-qc-20260821'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Execute audited one-shot repair recipe
+      - name: Execute audited one-shot Life QC repair recipe
         shell: bash
         run: |
           python -m pip install --quiet pyyaml
@@ -61,6 +61,207 @@ jobs:
               )
               print('::endgroup::', flush=True)
           PY
+
+      - name: Repair P18.1 provider-identity credential contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          peizhi = Path('app/backend/tiangong-backend/v3/peizhi.py')
+          text = peizhi.read_text(encoding='utf-8')
+
+          marker = 'CREDENTIAL_IDENTITY_ALIASES = {'
+          if marker not in text:
+              anchor = 'CUSTOM_PROVIDER_ID = "custom"                  # 用户自定义/未命名服务商的持久化身份\n'
+              if text.count(anchor) != 1:
+                  raise SystemExit('credential repair: CUSTOM_PROVIDER_ID anchor mismatch')
+              insertion = anchor + '''\n# P18.1 credential authority: new desktop writes are keyed by persisted\n# provider identity, never by the L4 optimization family.  Historical family\n# IDs remain read-compatible so upgrades do not orphan an existing vault/env.\nCREDENTIAL_IDENTITY_ALIASES = {\n    "deepseek_v4": "deepseek",\n    "glm_5_1": "zhipu",\n    "glm_5_2": "zhipu",\n    "minimax_m3": "minimax",\n    "gpt_5_5": "openai",\n    "gpt_5_6": "openai",\n}\nCREDENTIAL_IDENTITY_ENV_NAMES = {\n    "deepseek": ("TIANGONG_DEEPSEEK_API_KEY",),\n    "openai": ("TIANGONG_OPENAI_API_KEY",),\n    "zhipu": ("TIANGONG_ZHIPU_API_KEY",),\n    "minimax": ("TIANGONG_MINIMAX_API_KEY",),\n    "mimo": ("TIANGONG_MIMO_API_KEY",),\n    "anthropic": ("TIANGONG_ANTHROPIC_API_KEY",),\n    "google": ("TIANGONG_GOOGLE_API_KEY",),\n}\n'''
+              text = text.replace(anchor, insertion, 1)
+
+          helper_anchor = '''def normalize_provider_base_url(base_url: str | None) -> str:\n'''
+          if 'def provider_identity_env_names(' not in text:
+              if text.count(helper_anchor) != 1:
+                  raise SystemExit('credential repair: normalize_provider_base_url anchor mismatch')
+              helper = '''def provider_identity_env_names(provider_id: str | None) -> tuple[str, ...]:\n    """Return the canonical desktop env slots for a persisted provider identity.\n\n    L4 family IDs are accepted only as read-compatibility aliases.  The returned\n    slots always use the provider-identity namespace written by Electron.\n    """\n\n    normalized_identity = normalize_provider_identity(provider_id)\n    credential_identity = CREDENTIAL_IDENTITY_ALIASES.get(\n        normalized_identity, normalized_identity\n    )\n    return CREDENTIAL_IDENTITY_ENV_NAMES.get(credential_identity, ())\n\n\n'''
+              text = text.replace(helper_anchor, helper + helper_anchor, 1)
+
+          old = '''def duqu_api_miyao(provider_id: str) -> str | None:\n    """读取API密钥：先环境变量 → 再配置文件 → 再默认文件"""\n    import os, json as _json\n    provider_id = normalize_provider_id(provider_id)\n    # 环境变量\n'''
+          new = '''def duqu_api_miyao(provider_id: str) -> str | None:\n    """读取API密钥：identity env → legacy family env → 配置文件。"""\n    import os, json as _json\n    raw_provider_id = str(provider_id or "").strip()\n    # P18.1 new authority: Electron persists/injects the provider IDENTITY.\n    # Read that slot first.  Family/vendor slots below are migration fallbacks.\n    for env_name in provider_identity_env_names(raw_provider_id):\n        val = os.environ.get(env_name)\n        if val:\n            return val\n    provider_id = normalize_provider_id(raw_provider_id)\n    # 旧 family / vendor 环境变量（只读兼容）\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif 'raw_provider_id = str(provider_id or "").strip()' not in text:
+              raise SystemExit('credential repair: duqu_api_miyao anchor mismatch')
+
+          old_endpoint = '''def duqu_endpoint_api_miyao(provider_id: str, base_url: str) -> str | None:\n    """Return only a credential explicitly bound to ``base_url``.\n\n    Official vendor origins use the vendor slot. Every custom origin has an\n    independent slot under ``_custom_endpoint_keys`` and never inherits a\n    provider key. Local/private endpoints are keyless unless the user stores a\n    custom key for that exact canonical origin.\n    """\n    provider_id = normalize_provider_id(provider_id)\n    binding = validate_model_endpoint(provider_id, base_url, resolve_dns=False)\n    if binding.official:\n        return duqu_api_miyao(provider_id)\n'''
+          new_endpoint = '''def duqu_endpoint_api_miyao(provider_id: str, base_url: str) -> str | None:\n    """Return only a credential explicitly bound to ``base_url``.\n\n    Official vendor origins use the persisted provider-identity slot first.\n    Historical L4-family/vendor slots are read-only migration fallbacks. Every\n    custom origin keeps its independent endpoint-hash slot and never inherits a\n    provider key.\n    """\n    identity_provider = normalize_provider_identity(provider_id)\n    binding = validate_model_endpoint(identity_provider, base_url, resolve_dns=False)\n    if binding.official:\n        return duqu_api_miyao(identity_provider)\n'''
+          if old_endpoint in text:
+              text = text.replace(old_endpoint, new_endpoint, 1)
+          elif 'identity_provider = normalize_provider_identity(provider_id)' not in text:
+              raise SystemExit('credential repair: duqu_endpoint_api_miyao anchor mismatch')
+
+          peizhi.write_text(text, encoding='utf-8', newline='\n')
+
+          test_path = Path('tests/test_model_credential_identity_contract.py')
+          test_path.write_text(r'''from __future__ import annotations
+
+import importlib
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+V3_DIR = ROOT / "app" / "backend" / "tiangong-backend" / "v3"
+PACKAGE_NAME = "tiangong_backend_v3_credential_contract_test"
+
+
+def _load_peizhi(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    for name in tuple(sys.modules):
+        if name == PACKAGE_NAME or name.startswith(PACKAGE_NAME + "."):
+            sys.modules.pop(name, None)
+    package = types.ModuleType(PACKAGE_NAME)
+    package.__path__ = [str(V3_DIR)]
+    sys.modules[PACKAGE_NAME] = package
+    module = importlib.import_module(f"{PACKAGE_NAME}.peizhi")
+    monkeypatch.setattr(module, "API_PEIZHI_LUJING", tmp_path / "api_keys.json")
+    return module
+
+
+ALL_MODEL_ENV_KEYS = (
+    "TIANGONG_DEEPSEEK_API_KEY",
+    "TIANGONG_DEEPSEEK_V4_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "TIANGONG_OPENAI_API_KEY",
+    "TIANGONG_GPT_5_6_API_KEY",
+    "OPENAI_API_KEY",
+    "TIANGONG_ZHIPU_API_KEY",
+    "TIANGONG_GLM_5_2_API_KEY",
+    "ZAI_API_KEY",
+    "ZHIPUAI_API_KEY",
+    "ZHIPU_API_KEY",
+    "TIANGONG_MINIMAX_API_KEY",
+    "TIANGONG_MINIMAX_M3_API_KEY",
+    "MINIMAX_API_KEY",
+    "TIANGONG_MIMO_API_KEY",
+    "MIMO_API_KEY",
+    "TIANGONG_ANTHROPIC_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "TIANGONG_GOOGLE_API_KEY",
+    "GOOGLE_API_KEY",
+)
+
+
+def _clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ALL_MODEL_ENV_KEYS:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize(
+    ("identity", "base_url", "env_name"),
+    (
+        ("deepseek", "https://api.deepseek.com/v1", "TIANGONG_DEEPSEEK_API_KEY"),
+        ("openai", "https://api.openai.com/v1", "TIANGONG_OPENAI_API_KEY"),
+        ("zhipu", "https://open.bigmodel.cn/api/paas/v4", "TIANGONG_ZHIPU_API_KEY"),
+        ("minimax", "https://api.minimaxi.com/v1", "TIANGONG_MINIMAX_API_KEY"),
+        ("mimo", "https://api.xiaomimimo.com/v1", "TIANGONG_MIMO_API_KEY"),
+        ("anthropic", "https://api.anthropic.com", "TIANGONG_ANTHROPIC_API_KEY"),
+        ("google", "https://generativelanguage.googleapis.com/v1beta", "TIANGONG_GOOGLE_API_KEY"),
+    ),
+)
+def test_official_provider_identity_env_round_trips(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    identity: str,
+    base_url: str,
+    env_name: str,
+) -> None:
+    peizhi = _load_peizhi(monkeypatch, tmp_path)
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv(env_name, f"identity-key:{identity}")
+    assert peizhi.duqu_endpoint_api_miyao(identity, base_url) == f"identity-key:{identity}"
+    assert peizhi.provider_identity_env_names(identity) == (env_name,)
+
+
+@pytest.mark.parametrize(
+    ("family", "identity_env"),
+    (
+        ("deepseek_v4", "TIANGONG_DEEPSEEK_API_KEY"),
+        ("gpt_5_6", "TIANGONG_OPENAI_API_KEY"),
+        ("glm_5_2", "TIANGONG_ZHIPU_API_KEY"),
+        ("minimax_m3", "TIANGONG_MINIMAX_API_KEY"),
+    ),
+)
+def test_legacy_family_callers_can_read_new_identity_slot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    family: str,
+    identity_env: str,
+) -> None:
+    peizhi = _load_peizhi(monkeypatch, tmp_path)
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv(identity_env, "new-identity-key")
+    assert peizhi.duqu_api_miyao(family) == "new-identity-key"
+
+
+def test_identity_slot_precedes_legacy_family_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    peizhi = _load_peizhi(monkeypatch, tmp_path)
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("TIANGONG_DEEPSEEK_API_KEY", "identity-key")
+    monkeypatch.setenv("TIANGONG_DEEPSEEK_V4_API_KEY", "legacy-family-key")
+    assert peizhi.duqu_endpoint_api_miyao(
+        "deepseek", "https://api.deepseek.com/v1"
+    ) == "identity-key"
+
+
+def test_legacy_family_slot_still_reads_when_identity_slot_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    peizhi = _load_peizhi(monkeypatch, tmp_path)
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("TIANGONG_DEEPSEEK_V4_API_KEY", "legacy-family-key")
+    assert peizhi.duqu_endpoint_api_miyao(
+        "deepseek", "https://api.deepseek.com/v1"
+    ) == "legacy-family-key"
+
+
+def test_custom_endpoint_never_inherits_official_provider_identity_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    peizhi = _load_peizhi(monkeypatch, tmp_path)
+    _clear_model_env(monkeypatch)
+    custom_url = "https://models.example.com/v1"
+    monkeypatch.setenv("TIANGONG_DEEPSEEK_API_KEY", "must-not-leak")
+    assert peizhi.duqu_endpoint_api_miyao("deepseek", custom_url) is None
+
+    scope = peizhi.custom_scope_id(custom_url)
+    endpoint_env = f"TIANGONG_{scope.upper().replace('-', '_')}_API_KEY"
+    monkeypatch.setenv(endpoint_env, "endpoint-only-key")
+    assert peizhi.duqu_endpoint_api_miyao("deepseek", custom_url) == "endpoint-only-key"
+
+
+def test_electron_writer_and_python_reader_share_identity_namespace() -> None:
+    electron = (ROOT / "app" / "main.js").read_text(encoding="utf-8")
+    assert 'function providerApiKeyEnvName(provider)' in electron
+    assert 'return `TIANGONG_${String(provider || "").toUpperCase().replace(/-/g, "_")}_API_KEY`;' in electron
+''', encoding='utf-8', newline='\n')
+          PY
+
+          python -m pytest -q \
+            tests/test_model_credential_identity_contract.py \
+            tests/test_model_credential_contract.py
+
+          git config user.name "tiangong-qc-repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/backend/tiangong-backend/v3/peizhi.py tests/test_model_credential_identity_contract.py
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: bind model credentials to provider identity"
+            git push origin HEAD:fix/life-reflection-budget-qc-20260821
+          fi
 
       - name: Remove launcher and trigger marker
         if: success()
