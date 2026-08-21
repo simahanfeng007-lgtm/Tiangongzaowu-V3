@@ -4119,7 +4119,7 @@ class EmbeddedLifeRuntime:
 
     @staticmethod
     def _daily_limit_setting(settings: Mapping[str, Any], key: str, default: int) -> int:
-        """Daily budget limits: 0 is a valid value (means disabled); only missing/None falls back."""
+        """Daily budget limits: 0 closes the pool (no calls allowed that day); only missing/None falls back."""
         value = settings.get(key)
         if value is None:
             return default
