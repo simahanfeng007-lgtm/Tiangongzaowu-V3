@@ -88,6 +88,46 @@ class LifeFrontendP10Tests(unittest.TestCase):
         self.assertNotIn("灵魂 · 生命上下文配置", html)
         self.assertNotIn("打开灵魂配置", html)
 
+    def test_proactive_settings_group_offers_live_mode_switch(self) -> None:
+        payload = {
+            "settings": {
+                "available": True,
+                "editable": True,
+                "readonly": False,
+                "source": "embedded_life_runtime",
+                "proactive_enabled": True,
+                "proactive_mode": "shadow",
+            },
+            "proactive_status": {
+                "ok": True,
+                "pending": 2,
+                "settings": {"proactive_mode": "shadow"},
+                "scheduler": {
+                    "proactive_model_attempts": 3,
+                    "last_proactive_reason": "life.proactive.quiet_hours",
+                },
+            },
+        }
+        script = f"""
+          import {{ renderSettings }} from {json.dumps(LIFE_PANEL.as_uri())};
+          const html = renderSettings({json.dumps(payload, ensure_ascii=False)});
+          process.stdout.write(JSON.stringify({{ html }}));
+        """
+        html = run_node(script)["html"]
+        for expected in (
+            "主动沟通",
+            'name="proactive_enabled"',
+            'name="proactive_mode"',
+            'value="shadow" selected',
+            "影子（只记录不发送）",
+            "正式发送",
+            "当前模式：影子（只记录不发送）",
+            "待处理：2 条",
+            "今日决策：3 次",
+            "life.proactive.quiet_hours",
+        ):
+            self.assertIn(expected, html)
+
     def test_life_inbox_opens_full_message_in_main_chat_only(self) -> None:
         script = f"""
           import {{ deliverInboxMessageToChat }} from {json.dumps(LIFE_SUMMARY.as_uri())};
