@@ -87,8 +87,10 @@ from .learning_executor import execute_learning_preview
 from .capability_health import (
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
     DEFAULT_MAX_PATCH_ROUNDS,
+    HEALTH_FRESHNESS_HALF_LIFE_MS,
     attach_health,
     degrade_pointer,
+    health_score_milli,
     ingest_outcome,
     propose_patch,
     reactivate_pointer,
@@ -6514,6 +6516,7 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.identity.id_invalid", status=409)
         scope = self._scope_state(life_id)
         pointers = scope.get("capability_pointers") if isinstance(scope.get("capability_pointers"), Mapping) else {}
+        now_ms = time.time_ns() // 1_000_000
         rows = []
         for raw in scope["capabilities"].values():
             if not isinstance(raw, Mapping) or raw.get("status") != "published" or raw.get("kind") not in {"skill", "tool"}:
@@ -6526,8 +6529,29 @@ class EmbeddedLifeRuntime:
             activation_status = str(pointer.get("status") or "pending")
             row["activation_status"] = activation_status
             row["runtime_usable"] = activation_status == "active"
+            health = pointer.get("health") if isinstance(pointer.get("health"), Mapping) else {}
+            row["health_score_milli"] = health_score_milli(health, now_ms)
+            row["last_outcome_at_ms"] = int(health.get("last_outcome_at_ms") or 0)
+            # 闲置标记（派生，不持久化）：>7 天无真实执行结果的 active 能力。
+            # 只影响排序自然沉底与 32 条截断淘汰，不降级、不禁用；补丁验证中的不算闲置。
+            last_outcome_ms = row["last_outcome_at_ms"]
+            row["idle"] = bool(
+                activation_status == "active"
+                and last_outcome_ms > 0
+                and now_ms - last_outcome_ms > HEALTH_FRESHNESS_HALF_LIFE_MS
+                and not health.get("patch_pending")
+            )
             rows.append(row)
-        rows.sort(key=lambda item: (str(item.get("kind")), str(item.get("title")), int(item.get("version") or 0)))
+        # 健康分排序：成功且常用的能力靠前，闲置者自然沉底（32 条截断即淘汰）。
+        rows.sort(
+            key=lambda item: (
+                -int(item.get("health_score_milli") or 0),
+                -int(item.get("last_outcome_at_ms") or 0),
+                str(item.get("kind")),
+                str(item.get("title")),
+                int(item.get("version") or 0),
+            )
+        )
         model_context = []
         active_rows = [row for row in rows if row.get("activation_status") == "active"]
         for row in active_rows[:32]:
@@ -6539,6 +6563,7 @@ class EmbeddedLifeRuntime:
                 "title": row.get("title"),
                 "summary": row.get("summary"),
                 "risk_level": row.get("risk_level"),
+                "health_score_milli": row.get("health_score_milli"),
                 "task_intents": list(spec.get("task_intents") or [])[:24],
                 "required_actions": list(row.get("required_actions") or [])[:16],
                 "steps": list(spec.get("steps") or [])[:16],
@@ -6839,6 +6864,7 @@ class EmbeddedLifeRuntime:
                 key: health.get(key)
                 for key in (
                     "uses", "successes", "failures", "consecutive_failures",
+                    "success_streak", "last_success_at_ms", "last_outcome_at_ms",
                     "patch_rounds", "patch_history",
                 )
             },

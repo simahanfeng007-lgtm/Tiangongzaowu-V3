@@ -213,3 +213,84 @@ def test_patch_round_limit_is_parameterized_not_hardcoded():
     )
     assert applied is False
     assert reason == "degraded"
+
+
+# ---------- F5：正向强化（streak / 最近成功）与综合健康分 ----------
+
+
+def test_success_streak_accumulates_resets_and_records_last_success():
+    pointer = make_pointer()
+    pointer, _, _ = ingest_outcome(
+        pointer, {**make_outcome("s1", outcome="success"), "occurred_at_ms": 1000}, now_ms=1000
+    )
+    assert pointer["health"]["success_streak"] == 1
+    assert pointer["health"]["last_success_at_ms"] == 1000
+    pointer, _, _ = ingest_outcome(
+        pointer, {**make_outcome("s2", outcome="success"), "occurred_at_ms": 2000}, now_ms=2000
+    )
+    assert pointer["health"]["success_streak"] == 2
+    assert pointer["health"]["last_success_at_ms"] == 2000
+    pointer, _, _ = ingest_outcome(
+        pointer, {**make_outcome("f1"), "occurred_at_ms": 3000}, now_ms=3000
+    )
+    assert pointer["health"]["success_streak"] == 0
+    # 失败不清除最近成功时间：那是历史事实，供健康分新鲜度使用。
+    assert pointer["health"]["last_success_at_ms"] == 2000
+
+
+def test_reactivate_resets_success_streak():
+    pointer = make_pointer()
+    for index in range(3):
+        pointer, _, _ = ingest_outcome(
+            pointer,
+            {**make_outcome(f"s{index}", outcome="success"), "occurred_at_ms": 1000 + index},
+            now_ms=1000 + index,
+        )
+    pointer = degrade_pointer(pointer, reason="test", now_ms=5000)
+    pointer = reactivate_pointer(pointer, actor="user", now_ms=6000)
+    assert pointer["health"]["success_streak"] == 0
+
+
+def test_health_score_milli_neutral_without_evidence_and_rises_with_successes():
+    from life_service.capability_health import health_score_milli
+
+    # 无任何执行结果：中性 500。
+    assert health_score_milli({"uses": 0, "successes": 0}, now_ms=10_000) == 500
+    fresh = {
+        "uses": 20,
+        "successes": 20,
+        "success_streak": 20,
+        "last_outcome_at_ms": 9_000,
+    }
+    high = health_score_milli(fresh, now_ms=10_000)
+    assert high > 600
+    # 失败为主且近期：低于中性。
+    bad = {
+        "uses": 5,
+        "successes": 0,
+        "success_streak": 0,
+        "last_outcome_at_ms": 9_000,
+    }
+    assert health_score_milli(bad, now_ms=10_000) < 500
+
+
+def test_health_score_milli_decays_toward_neutral_when_idle():
+    from life_service.capability_health import health_score_milli
+
+    health = {
+        "uses": 20,
+        "successes": 20,
+        "success_streak": 20,
+        "last_outcome_at_ms": 0,
+    }
+    day = 86_400_000
+    now_ms = 100 * day
+    fresh = dict(health, last_outcome_at_ms=now_ms - 1 * day)
+    week_idle = dict(health, last_outcome_at_ms=now_ms - 8 * day)
+    month_idle = dict(health, last_outcome_at_ms=now_ms - 30 * day)
+    score_fresh = health_score_milli(fresh, now_ms)
+    score_week = health_score_milli(week_idle, now_ms)
+    score_month = health_score_milli(month_idle, now_ms)
+    # 7 天半衰：闲置越久越向中性收缩，但历史成功者仍略高于完全未知。
+    assert score_fresh > score_week > score_month
+    assert 500 < score_month < score_week < score_fresh

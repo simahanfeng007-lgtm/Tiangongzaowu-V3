@@ -31,6 +31,8 @@ DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
 DEFAULT_MAX_PATCH_ROUNDS = 2
 # 幂等 outcome_id 保留上限（FIFO），避免健康档案无限膨胀。
 SEEN_OUTCOME_CAP = 200
+# 健康分新鲜度半衰期：7 天未用衰减一半（与能力学习的 LEARNING_COOLDOWN_MS 对齐）。
+HEALTH_FRESHNESS_HALF_LIFE_MS = 7 * 86_400_000
 
 
 def canonical_sha256(value: Mapping[str, Any]) -> str:
@@ -62,6 +64,8 @@ def initial_health(artifact_id: str, *, now_ms: int) -> dict[str, Any]:
         "successes": 0,
         "failures": 0,
         "consecutive_failures": 0,
+        "success_streak": 0,
+        "last_success_at_ms": 0,
         "patch_rounds": 0,
         "patch_pending": None,
         "patch_history": [],
@@ -137,9 +141,13 @@ def ingest_outcome(
     if result == "success":
         health["successes"] = int(health.get("successes") or 0) + 1
         health["consecutive_failures"] = 0
+        # 正向强化：连胜与最近成功时间是健康分的组成部分。
+        health["success_streak"] = int(health.get("success_streak") or 0) + 1
+        health["last_success_at_ms"] = occurred_ms
     else:
         health["failures"] = int(health.get("failures") or 0) + 1
         health["consecutive_failures"] = int(health.get("consecutive_failures") or 0) + 1
+        health["success_streak"] = 0
     health["seen_outcome_ids"] = seen
     health["last_outcome_at_ms"] = occurred_ms
     value["health"] = health
@@ -152,6 +160,36 @@ def ingest_outcome(
     ):
         return value, "request_patch", "consecutive_failures"
     return value, "none", "recorded"
+
+
+def health_score_milli(health: Mapping[str, Any], now_ms: int) -> int:
+    """综合健康分（0-1000 毫值），用于能力排序：成功者靠前、闲置者自然沉底。
+
+    组成：保守成功率（Hoeffding 风格下界，样本少时向中性 500 收缩）
+    × 新鲜度（7 天半衰，越久未用越向 500 衰减） + 连胜加成（封顶 100）。
+    """
+    _int(now_ms, "now_ms")
+    uses = int(health.get("uses") or 0)
+    successes = int(health.get("successes") or 0)
+    if uses <= 0:
+        rate = 0.5
+    else:
+        raw = successes / uses
+        # Hoeffding 风格保守下界（α=0.05，ln(1/α)≈3）：样本少时显著低于观测率。
+        penalty = (3.0 / (2.0 * uses)) ** 0.5
+        conservative = max(0.0, raw - penalty)
+        # 向中性 0.5 收缩：样本越少越接近"不知道"，而不是"差"。
+        weight = uses / (uses + 10)
+        rate = 0.5 + weight * (conservative - 0.5)
+    last_ms = int(health.get("last_outcome_at_ms") or 0)
+    if last_ms <= 0:
+        decay = 1.0
+    else:
+        half_lives = max(0, int(now_ms) - last_ms) / HEALTH_FRESHNESS_HALF_LIFE_MS
+        decay = 1.0 - 0.5 ** half_lives
+    rate_milli = 500.0 + (rate - 0.5) * 1000.0 * (1.0 - decay)
+    streak_bonus = min(100, int(health.get("success_streak") or 0) * 10)
+    return max(0, min(1000, int(round(rate_milli)) + streak_bonus))
 
 
 def propose_patch(
@@ -310,6 +348,8 @@ def reactivate_pointer(
     health["consecutive_failures"] = 0
     health["patch_rounds"] = 0
     health["patch_pending"] = None
+    # 重新激活等于重新赢得信任：连胜清零，从头积累。
+    health["success_streak"] = 0
     health["reactivated_at_ms"] = _int(now_ms, "now_ms")
     value["health"] = health
     value["status"] = "active"
@@ -344,6 +384,7 @@ __all__ = [
     "initial_health",
     "attach_health",
     "ingest_outcome",
+    "health_score_milli",
     "propose_patch",
     "settle_patch",
     "degrade_pointer",
