@@ -114,6 +114,7 @@ from .episode_builder import (
     observed_quality_from_steps,
     prediction_from_snapshot,
 )
+from .journal_replay import JournalReplayError, replay_journal_events
 from .memory_classification import classify_memory, normalize_relations
 from .memory_lifecycle import advance_lifecycle, initial_lifecycle, normalize_lifecycle, recall_lifecycle
 from .memory_coordinator import MemoryCoordinator
@@ -1305,202 +1306,24 @@ class EmbeddedLifeRuntime:
             self._persist(life_id)
         return {"changed": changed, "frozen": frozen}
 
-    @staticmethod
-    def _merge_asserted_memory_projection(existing: dict[str, Any], asserted: Mapping[str, Any]) -> bool:
-        """Validate immutable assertion semantics while allowing later events.
-
-        ``status`` and ``updated_at`` are projection fields changed by later
-        journal events.  A deleted row also intentionally replaces content
-        with a tombstone.  Missing classifier fields from a legacy projection
-        are restored from the journal assertion; conflicting present semantic
-        fields still fail closed.
-        """
-
-        changed = False
-        # Classification is deterministic from the assertion, whereas
-        # lifecycle deliberately evolves through decay and cue-driven recall.
-        # It must never make a historic assertion look conflicting on replay.
-        mutable = {"status", "updated_at", "lifecycle"}
-        deleted = existing.get("status") == "deleted"
-        for key, value in asserted.items():
-            if key in mutable or (deleted and key == "content"):
-                continue
-            if key not in existing:
-                existing[key] = deepcopy(value)
-                changed = True
-                continue
-            if canonical_sha256(existing.get(key)) != canonical_sha256(value):
-                raise EmbeddedLifeError("life.projection.memory_conflict", status=409)
-        return changed
-
-    @staticmethod
-    def _merge_generated_task_projection(existing: dict[str, Any], generated: Mapping[str, Any]) -> bool:
-        """Validate immutable task proposal fields across later transitions."""
-
-        changed = False
-        mutable = {"status", "updated_at_ms", "attempt_count", "result", "task_sha256"}
-        for key, value in generated.items():
-            if key in mutable:
-                continue
-            if key not in existing:
-                existing[key] = deepcopy(value)
-                changed = True
-                continue
-            if canonical_sha256(existing.get(key)) != canonical_sha256(value):
-                raise EmbeddedLifeError("life.projection.autonomy_task_conflict", status=409)
-        return changed
-
     def _reconcile_authoritative_journal(self, life_id: str) -> bool:
-        """Rebuild immutable projections after a crash between journal and state writes.
+        """Rebuild projections after a crash between journal and state writes.
 
-        The semantic journal is the authoritative write-ahead record for
-        memories, autonomy tasks and terminal executions.  State JSON is a
-        replaceable projection.  Missing projection rows are restored;
-        conflicting immutable rows fail closed instead of being overwritten.
+        P1-5（H3）：重放由 ``journal_replay`` 注册表驱动——每个持久化事件
+        必须登记三分类（replayable / audit-only / external terminal
+        evidence），未登记类型 fail-closed。journal 是权威 WAL；state JSON
+        是可重建投影；同一事件的内容冲突同样 fail-closed。
         """
-
-        changed = False
         scope = self._scope_state(life_id)
-        for event in self.system.journal.events(life_id):
-            event_type = str(event.get("event_type") or "")
-            payload = event.get("payload")
-            if event_type in {"memory.asserted", "memory.corrected"} and isinstance(payload, Mapping):
-                assertion = payload.get("assertion")
-                if not isinstance(assertion, Mapping):
-                    raise EmbeddedLifeError("life.projection.memory_event_invalid", status=409)
-                record = deepcopy(dict(assertion))
-                memory_id = str(record.get("memory_id") or "")
-                if not _OPAQUE.fullmatch(memory_id):
-                    raise EmbeddedLifeError("life.projection.memory_id_invalid", status=409)
-                record.setdefault("life_id", life_id)
-                existing_memory = scope["memories"].get(memory_id)
-                if existing_memory is None:
-                    scope["memories"][memory_id] = record
-                    changed = True
-                elif not isinstance(existing_memory, dict):
-                    raise EmbeddedLifeError("life.projection.memory_conflict", status=409)
-                elif self._merge_asserted_memory_projection(existing_memory, record):
-                    changed = True
-                if event_type == "memory.corrected":
-                    target_memory_id = str(payload.get("target_memory_id") or "")
-                    target = scope["memories"].get(target_memory_id)
-                    if not isinstance(target, dict):
-                        raise EmbeddedLifeError("life.projection.memory_target_missing", status=409)
-                    if target.get("status") != "corrected":
-                        target["status"] = "corrected"
-                        target["updated_at"] = str(payload.get("updated_at") or record.get("created_at") or utc_now())
-                        changed = True
-            elif event_type == "memory.status_changed" and isinstance(payload, Mapping):
-                memory_id = str(payload.get("memory_id") or "")
-                row = scope["memories"].get(memory_id)
-                if not isinstance(row, dict):
-                    raise EmbeddedLifeError("life.projection.memory_target_missing", status=409)
-                status = str(payload.get("status") or "")
-                if row.get("status") != status or row.get("updated_at") != payload.get("updated_at"):
-                    row["status"] = status
-                    row["updated_at"] = str(payload.get("updated_at") or utc_now())
-                    changed = True
-            elif event_type == "memory.deleted" and isinstance(payload, Mapping):
-                memory_id = str(payload.get("memory_id") or "")
-                row = scope["memories"].get(memory_id)
-                if not isinstance(row, dict):
-                    raise EmbeddedLifeError("life.projection.memory_target_missing", status=409)
-                if row.get("status") != "deleted" or row.get("content") != {"tombstone": True}:
-                    row["status"] = "deleted"
-                    row["content"] = {"tombstone": True}
-                    row["updated_at"] = str(payload.get("updated_at") or utc_now())
-                    changed = True
-            elif event_type == "memory.relation_added" and isinstance(payload, Mapping):
-                relation = payload.get("relation")
-                if not isinstance(relation, Mapping):
-                    raise EmbeddedLifeError("life.projection.memory_relation_invalid", status=409)
-                record = deepcopy(dict(relation))
-                relation_id = str(record.get("relation_id") or "")
-                if not _OPAQUE.fullmatch(relation_id):
-                    raise EmbeddedLifeError("life.projection.memory_relation_invalid", status=409)
-                existing_relations = scope["memory_relations"]
-                found = next(
-                    (
-                        item
-                        for item in existing_relations
-                        if isinstance(item, Mapping) and item.get("relation_id") == relation_id
-                    ),
-                    None,
-                )
-                if found is None:
-                    existing_relations.append(record)
-                    changed = True
-                elif canonical_sha256(found) != canonical_sha256(record):
-                    raise EmbeddedLifeError("life.projection.memory_relation_conflict", status=409)
-            elif event_type == "memory.candidates_proposed" and isinstance(payload, Mapping):
-                candidates = payload.get("candidates")
-                if not isinstance(candidates, list):
-                    raise EmbeddedLifeError("life.projection.memory_candidate_invalid", status=409)
-                queue = scope.setdefault("memory_candidates", {})
-                if not isinstance(queue, dict):
-                    raise EmbeddedLifeError("life.projection.memory_candidate_invalid", status=409)
-                for raw_candidate in candidates:
-                    if not isinstance(raw_candidate, Mapping):
-                        raise EmbeddedLifeError("life.projection.memory_candidate_invalid", status=409)
-                    record = deepcopy(dict(raw_candidate))
-                    candidate_id = str(record.get("candidate_id") or "")
-                    if not _OPAQUE.fullmatch(candidate_id):
-                        raise EmbeddedLifeError("life.projection.memory_candidate_invalid", status=409)
-                    found_candidate = queue.get(candidate_id)
-                    if found_candidate is None:
-                        queue[candidate_id] = record
-                        changed = True
-                    elif canonical_sha256(found_candidate) != canonical_sha256(record):
-                        raise EmbeddedLifeError("life.projection.memory_candidate_conflict", status=409)
-            elif event_type == "autonomy.task_generated" and isinstance(payload, Mapping):
-                task = payload.get("task")
-                if not isinstance(task, Mapping):
-                    raise EmbeddedLifeError("life.projection.autonomy_task_invalid", status=409)
-                record = deepcopy(dict(task))
-                task_id = str(record.get("task_id") or "")
-                if not _OPAQUE.fullmatch(task_id):
-                    raise EmbeddedLifeError("life.projection.autonomy_task_invalid", status=409)
-                autonomy = normalize_autonomy_state(scope.get("autonomy"))
-                existing_task = autonomy["tasks"].get(task_id)
-                if existing_task is None:
-                    autonomy["tasks"][task_id] = record
-                    autonomy["task_sequence"] = max(
-                        int(autonomy.get("task_sequence") or 0),
-                        int(record.get("sequence") or 0),
-                    )
-                    autonomy["generated_total"] = max(
-                        int(autonomy.get("generated_total") or 0),
-                        len(autonomy["tasks"]),
-                    )
-                    scope["autonomy"] = autonomy
-                    changed = True
-                elif not isinstance(existing_task, dict):
-                    raise EmbeddedLifeError("life.projection.autonomy_task_conflict", status=409)
-                elif self._merge_generated_task_projection(existing_task, record):
-                    changed = True
-            elif event_type == "autonomy.task_status_changed" and isinstance(payload, Mapping):
-                task_id = str(payload.get("task_id") or "")
-                task = normalize_autonomy_state(scope.get("autonomy"))["tasks"].get(task_id)
-                if not isinstance(task, dict):
-                    raise EmbeddedLifeError("life.projection.autonomy_task_missing", status=409)
-                projected = payload.get("task")
-                if not isinstance(projected, Mapping):
-                    raise EmbeddedLifeError("life.projection.autonomy_task_invalid", status=409)
-                if canonical_sha256(task) != canonical_sha256(projected):
-                    scope["autonomy"]["tasks"][task_id] = deepcopy(dict(projected))
-                    changed = True
-            elif event_type == "execution.committed" and isinstance(payload, Mapping):
-                record = deepcopy(dict(payload))
-                request_id = str(record.get("request_id") or "")
-                commit_sha256 = str(record.get("commit_sha256") or "")
-                if not _OPAQUE.fullmatch(request_id) or not re.fullmatch(r"[0-9a-f]{64}", commit_sha256):
-                    raise EmbeddedLifeError("life.projection.execution_event_invalid", status=409)
-                existing = scope["executions"].get(request_id)
-                if existing is None:
-                    scope["executions"][request_id] = record
-                    changed = True
-                elif not isinstance(existing, Mapping) or existing.get("commit_sha256") != commit_sha256:
-                    raise EmbeddedLifeError("life.projection.execution_conflict", status=409)
+        try:
+            changed = replay_journal_events(
+                scope,
+                self.system.journal.events(life_id),
+                life_id=life_id,
+                normalize_autonomy_state=normalize_autonomy_state,
+            )
+        except JournalReplayError as exc:
+            raise EmbeddedLifeError(exc.code, status=exc.status) from exc
         autonomy = normalize_autonomy_state(scope.get("autonomy"))
         tasks = autonomy.get("tasks") if isinstance(autonomy.get("tasks"), Mapping) else {}
         derived = {
