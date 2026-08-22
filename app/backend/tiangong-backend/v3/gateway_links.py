@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import mimetypes
 import os
@@ -2258,6 +2259,45 @@ class _WechatHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
 
+# P0 防重放：timestamp 新鲜性 + nonce 窗口内唯一（加密与明文消息共用）。
+_WECHAT_REPLAY_WINDOW_SECONDS = 600
+_wechat_nonce_seen: dict[str, float] = {}
+_wechat_nonce_lock = threading.Lock()
+
+
+def _wechat_replay_guard(timestamp: Any, nonce: Any) -> str | None:
+    """校验回调时间戳与 nonce；返回拒绝原因，None 表示通过。"""
+    try:
+        ts = int(str(timestamp or "").strip())
+    except (TypeError, ValueError):
+        return "invalid_timestamp"
+    now = time.time()
+    if abs(now - ts) > _WECHAT_REPLAY_WINDOW_SECONDS:
+        return "stale_timestamp"
+    nonce_value = str(nonce or "").strip()
+    if not nonce_value:
+        return "missing_nonce"
+    key = f"{ts}:{nonce_value}"
+    with _wechat_nonce_lock:
+        cutoff = now - _WECHAT_REPLAY_WINDOW_SECONDS * 2
+        for stale in [k for k, seen_at in _wechat_nonce_seen.items() if seen_at < cutoff]:
+            _wechat_nonce_seen.pop(stale, None)
+        if key in _wechat_nonce_seen:
+            return "replayed_nonce"
+        _wechat_nonce_seen[key] = now
+    return None
+
+
+def _is_loopback_host(host: str) -> bool:
+    value = str(host or "").strip().lower()
+    if value in {"localhost", "::1"} or value.startswith("127."):
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
 class _WeChatCallbackHandler(BaseHTTPRequestHandler):
     manager: "GatewayLinkManager"
 
@@ -2315,7 +2355,7 @@ class _WeChatCallbackHandler(BaseHTTPRequestHandler):
             self._send_text(echostr)
         except Exception as exc:
             self.manager._set_status("wechat_callback", "error", error=str(exc))
-            self._send_text(f"error:{exc}", 500)
+            self._send_text("internal_error", 500)
 
     def do_POST(self):
         parsed_url = urlparse(self.path)
@@ -2342,8 +2382,24 @@ class _WeChatCallbackHandler(BaseHTTPRequestHandler):
                     self._send_text("invalid_receive_id", 403)
                     return
                 xml_data = _xml_to_dict(xml_text)
-            elif query.get("signature") and _sha1_sorted(token, query.get("timestamp", ""), query.get("nonce", "")) != query.get("signature"):
-                self._send_text("invalid_signature", 403)
+            else:
+                # P0：明文回调与加密回调同一强度——签名必须存在且有效。
+                # 旧行为只在"签名存在但错误"时拒绝，无签名明文 POST 可
+                # 直接触发 AI 调度（无凭证外呼面）。
+                if not token:
+                    self._send_text("callback_token_unconfigured", 403)
+                    return
+                signature = str(query.get("signature") or "")
+                if not signature:
+                    self._send_text("missing_signature", 403)
+                    return
+                if _sha1_sorted(token, query.get("timestamp", ""), query.get("nonce", "")) != signature:
+                    self._send_text("invalid_signature", 403)
+                    return
+            # P0 防重放：签名有效 ≠ 本次投递新鲜；timestamp/nonce 双查。
+            replay_reason = _wechat_replay_guard(query.get("timestamp", ""), query.get("nonce", ""))
+            if replay_reason:
+                self._send_text(f"replay_rejected:{replay_reason}", 403)
                 return
 
             text = _extract_wechat_text(xml_data)
@@ -2400,8 +2456,9 @@ class _WeChatCallbackHandler(BaseHTTPRequestHandler):
                     )
             self._send_text("success")
         except Exception as exc:
+            # 细节只进内部状态，不回显给请求方（避免实现泄露）。
             self.manager._set_status("wechat_callback", "error", error=str(exc))
-            self._send_text(f"error:{exc}", 500)
+            self._send_text("internal_error", 500)
 
     def log_message(self, *args):
         pass
@@ -4003,9 +4060,27 @@ class GatewayLinkManager:
         }
 
     def _start_wechat_callback(self, callback: dict[str, Any]):
-        host = str(callback.get("host") or "127.0.0.1")
+        host = str(callback.get("host") or "127.0.0.1").strip() or "127.0.0.1"
         port = int(callback.get("port") or 7188)
         path = str(callback.get("path") or "/wechat/callback")
+
+        # P0 监听边界：默认仅回环。回调面有完整的签名+防重放，但把监听
+        # 暴露到外网仍是放大面——需要用户显式开启（allow_external_listener
+        # 或环境变量），拒绝静默扩大攻击面。
+        allow_external = bool(callback.get("allow_external_listener")) or str(
+            os.environ.get("TIANGONG_ALLOW_EXTERNAL_CALLBACK") or ""
+        ).lower() in {"1", "true", "yes", "on"}
+        if not _is_loopback_host(host) and not allow_external:
+            self._set_status(
+                "wechat_callback",
+                "error",
+                error="external_listener_forbidden",
+                host=host,
+                port=port,
+                path=path,
+                hint="非回环监听需在回调设置中显式 allow_external_listener=true（并确保 token/加密配置完整）",
+            )
+            return
 
         manager = self
 

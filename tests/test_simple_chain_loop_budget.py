@@ -158,7 +158,10 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
                 yield 'data: {"choices":[{"delta":{"content":"keepalive"}}]}'
 
         class _FakeClient:
-            def stream(self, method, url, **kwargs):
+            def build_request(self, method, url, **kwargs):
+                return object()
+
+            def send(self, request, stream: bool = False):
                 return _FakeResponse()
 
         endpoint = ModelEndpointConfig(
@@ -173,9 +176,22 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             optimization_family="deepseek_v4",
             config_fingerprint="deadline-test",
         )
+        from v3.endpoint_security import EndpointBinding
+
+        pinned_binding = EndpointBinding(
+            provider_id="deepseek_v4",
+            base_url="https://api.deepseek.com/v1",
+            origin="https://api.deepseek.com",
+            host="api.deepseek.com",
+            port=443,
+            official=True,
+            custom_scope=None,
+            resolved_ips=("203.0.113.99",),
+        )
         with (
             mock.patch(
-                "v3.jineng.model_transport_executor.validate_model_endpoint"
+                "v3.jineng.model_transport_executor.validate_model_endpoint",
+                return_value=pinned_binding,
             ),
             mock.patch(
                 "v3.jineng.model_transport_executor.time.perf_counter",
