@@ -1,0 +1,75 @@
+name: temporary-main-qc-hardening-20260822
+
+on:
+  push:
+    branches:
+      - fix/main-qc-hardening-20260822
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest httpx cryptography pydantic
+      - name: Apply hardening patch
+        run: python .github/scripts/apply_main_qc_hardening_20260822.py
+      - name: Compile changed Python
+        run: |
+          python -m py_compile \
+            src/runtime_security/model_endpoint.py \
+            src/life_service/embedded_runtime.py \
+            src/life_service/store.py \
+            src/life_service/store_schema.py \
+            app/backend/tiangong-backend/v3/jineng/model_transport_executor.py \
+            app/backend/tiangong-backend/v3/jineng/http_kehuduan.py
+      - name: Focused regression
+        run: |
+          python -m pytest -q \
+            tests/test_main_qc_hardening_20260822.py \
+            tests/test_model_credential_contract.py \
+            tests/test_model_credential_identity_contract.py \
+            tests/test_simple_chain_loop_budget.py \
+            tests/test_life_qc_regressions_20260821.py \
+            tests/test_life_capability_health_flow.py \
+            tests/test_life_shadow_store.py \
+            tests/test_reflection_capability_p8.py
+      - name: Remove one-shot machinery
+        run: |
+          rm -f .github/scripts/apply_main_qc_hardening_20260822.py
+          rm -f .github/workflows/temporary-main-qc-hardening-20260822.yml
+      - name: Commit repaired source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            src/runtime_security/model_endpoint.py \
+            app/backend/tiangong-backend/v3/endpoint_security.py \
+            app/backend/tiangong-backend/v3/jineng/model_transport_executor.py \
+            app/backend/tiangong-backend/v3/jineng/http_kehuduan.py \
+            app/main.js \
+            src/life_service/embedded_runtime.py \
+            app/life-service/runtime314/life_service/embedded_runtime.py \
+            src/life_service/store.py \
+            app/life-service/runtime314/life_service/store.py \
+            src/life_service/store_schema.py \
+            app/life-service/runtime314/life_service/store_schema.py \
+            tests/test_main_qc_hardening_20260822.py \
+            .github/scripts/apply_main_qc_hardening_20260822.py \
+            .github/workflows/temporary-main-qc-hardening-20260822.yml
+          git commit -m "fix: harden endpoint, deadline, Life recovery and indexes"
+          git push origin HEAD:fix/main-qc-hardening-20260822
