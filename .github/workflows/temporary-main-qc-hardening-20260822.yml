@@ -44,6 +44,61 @@ jobs:
           PY
       - name: Apply hardening patch
         run: python .github/scripts/apply_main_qc_hardening_20260822.py
+      - name: Close v18 health ledger and pinned transport test contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          store = Path('src/life_service/store.py')
+          text = store.read_text(encoding='utf-8')
+          old = '''            (16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256),
+                      (17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256),
+                  )
+                  if len(migration) != len(expected_migrations)'''
+          if old not in text:
+              old = '''            (16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256),
+                      (17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256),
+                  )
+                  if len(migration) != len(expected_migrations)'''.replace('                      ', '            ').replace('                  ', '        ')
+          new = '''            (16, _P16_TEMPERAMENT_RECEIPT_MIGRATION_ID, _P16_TEMPERAMENT_RECEIPT_SHA256),
+            (17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256),
+            (18, _P18_ACTION_IMPACT_SOURCE_INDEX_MIGRATION_ID, _P18_ACTION_IMPACT_SOURCE_INDEX_SHA256),
+        )
+        if len(migration) != len(expected_migrations)'''
+          if old not in text:
+              raise SystemExit('LifeShadowStore.health v18 ledger anchor missing')
+          text = text.replace(old, new, 1)
+          store.write_text(text, encoding='utf-8', newline='\n')
+          shutil.copyfile(store, Path('app/life-service/runtime314/life_service/store.py'))
+
+          test = Path('tests/test_simple_chain_loop_budget.py')
+          source = test.read_text(encoding='utf-8')
+          old_test = '''            mock.patch(
+                "v3.jineng.model_transport_executor.validate_model_endpoint"
+            ),
+            mock.patch(
+                "v3.jineng.model_transport_executor.time.perf_counter",
+'''
+          new_test = '''            mock.patch(
+                "v3.jineng.model_transport_executor.validate_model_endpoint"
+            ),
+            mock.patch(
+                "v3.jineng.model_transport_executor.pin_model_request",
+                return_value=mock.Mock(
+                    url="https://93.184.216.34/v1/chat/completions",
+                    host_header="api.deepseek.com",
+                    sni_hostname="api.deepseek.com",
+                    resolved_ip="93.184.216.34",
+                ),
+            ),
+            mock.patch(
+                "v3.jineng.model_transport_executor.time.perf_counter",
+'''
+          if old_test not in source:
+              raise SystemExit('deadline transport mock anchor missing')
+          test.write_text(source.replace(old_test, new_test, 1), encoding='utf-8', newline='\n')
+          PY
       - name: Compile changed Python
         run: |
           python -m py_compile \
@@ -85,6 +140,7 @@ jobs:
             src/life_service/store_schema.py \
             app/life-service/runtime314/life_service/store_schema.py \
             tests/test_main_qc_hardening_20260822.py \
+            tests/test_simple_chain_loop_budget.py \
             .github/scripts/apply_main_qc_hardening_20260822.py \
             .github/workflows/temporary-main-qc-hardening-20260822.yml
           git commit -m "fix: harden endpoint, deadline, Life recovery and indexes"
