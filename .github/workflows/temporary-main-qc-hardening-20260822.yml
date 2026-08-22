@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/main-qc-hardening-20260822
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -16,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: fix/main-qc-hardening-20260822
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
