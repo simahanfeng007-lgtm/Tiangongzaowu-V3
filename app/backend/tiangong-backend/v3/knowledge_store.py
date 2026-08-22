@@ -210,20 +210,84 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+class KnowledgeIndexCorrupted(RuntimeError):
+    """index.json 已存在但不可读/不可解析——fail-closed，禁止当空索引使用。"""
+
+
+def _fresh_index() -> dict[str, Any]:
+    return {"schema": "tiangong.v3.knowledge.index.v1", "updated_at": "", "documents": {}, "last_document_id": ""}
+
+
 def _load_index(root: Path) -> dict[str, Any]:
     path = _index_path(root)
     if not path.exists():
-        return {"schema": "tiangong.v3.knowledge.index.v1", "updated_at": "", "documents": {}, "last_document_id": ""}
+        return _fresh_index()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            data.setdefault("schema", "tiangong.v3.knowledge.index.v1")
-            data.setdefault("documents", {})
-            data.setdefault("last_document_id", "")
-            return data
+    except Exception as exc:
+        raise KnowledgeIndexCorrupted(f"index_unreadable:{type(exc).__name__}") from exc
+    if not isinstance(data, dict):
+        raise KnowledgeIndexCorrupted("index_not_a_json_object")
+    data.setdefault("schema", "tiangong.v3.knowledge.index.v1")
+    data.setdefault("documents", {})
+    data.setdefault("last_document_id", "")
+    return data
+
+
+def _quarantine_corrupt_index(root: Path) -> Path | None:
+    """把损坏的索引移出原路径，保留诊断证据；原路径留给重建结果。"""
+    path = _index_path(root)
+    if not path.exists():
+        return None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = root / f"index.corrupt-{stamp}.json"
+    try:
+        path.replace(target)
+        return target
     except Exception:
-        pass
-    return {"schema": "tiangong.v3.knowledge.index.v1", "updated_at": "", "documents": {}, "last_document_id": ""}
+        return None
+
+
+def _rebuild_index_from_contexts(root: Path) -> dict[str, Any]:
+    """显式重建：contexts/ 目录的每文档 JSON 才是权威，索引只是投影。"""
+    index = _fresh_index()
+    documents = index["documents"]
+    latest_id, latest_at = "", ""
+    for ctx_path in sorted(_contexts_dir(root).glob("*.json")):
+        try:
+            ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(ctx, dict) or not ctx.get("document_id"):
+            continue
+        document_id = str(ctx["document_id"])
+        documents[document_id] = _public_doc(ctx)
+        at = str(ctx.get("updated_at") or ctx.get("created_at") or "")
+        if at >= latest_at:
+            latest_at, latest_id = at, document_id
+    index["last_document_id"] = latest_id
+    return index
+
+
+def _load_index_recovered(root: Path) -> dict[str, Any]:
+    """所有入口的统一读索引路径：损坏即隔离 + 从 contexts 显式重建。
+
+    绝不把"已存在但读不出"静默降级为空索引——那会让下一次保存把全部
+    知识登记无声蒸发（P0 fail-closed 修复）。
+    """
+    try:
+        return _load_index(root)
+    except KnowledgeIndexCorrupted as exc:
+        quarantine = _quarantine_corrupt_index(root)
+        rebuilt = _rebuild_index_from_contexts(root)
+        _save_index(root, rebuilt)
+        try:
+            recovery_log = root / "index.recovery.log"
+            with recovery_log.open("a", encoding="utf-8") as fh:
+                fh.write(f"{_now_iso()} recovered from {exc}; quarantine={quarantine}; documents={len(rebuilt['documents'])}\n")
+        except Exception:
+            pass
+        return rebuilt
 
 
 def _save_index(root: Path, index: dict[str, Any]) -> None:
@@ -618,7 +682,7 @@ def _import_one(root: Path, path: Path, payload: dict[str, Any] | None = None, *
     if previous and previous.get("created_at"):
         ctx["created_at"] = previous["created_at"]
     _save_context(root, ctx)
-    index = _load_index(root)
+    index = _load_index_recovered(root)
     documents = index.setdefault("documents", {})
     documents[document_id] = _public_doc(ctx)
     index["last_document_id"] = document_id
@@ -664,7 +728,7 @@ def _inline_paths(root: Path, payload: dict[str, Any], *, handoff: bool = False)
 
 def knowledge_list(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     root = knowledge_root(payload)
-    index = _load_index(root)
+    index = _load_index_recovered(root)
     docs: list[dict[str, Any]] = []
     for document_id, entry in (index.get("documents") or {}).items():
         ctx = _load_context(root, str(document_id))
@@ -810,7 +874,7 @@ def search_knowledge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"ok": False, "error": "missing_query", "cards": []}
     limit = max(1, min(int(payload.get("top_k") or payload.get("limit") or 8), 30))
     per_doc = max(1, min(int(payload.get("per_doc") or 3), 10))
-    index = _load_index(root)
+    index = _load_index_recovered(root)
     cards: list[dict[str, Any]] = []
     for document_id in (index.get("documents") or {}).keys():
         ctx = _load_context(root, str(document_id))
@@ -957,7 +1021,7 @@ def remove_knowledge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     document_id = _safe_text(payload.get("document_id") or payload.get("documentId"), 120)
     if not document_id:
         return {"ok": False, "error": "missing_document_id"}
-    index = _load_index(root)
+    index = _load_index_recovered(root)
     docs = dict(index.get("documents") or {})
     entry = docs.get(document_id) if isinstance(docs.get(document_id), dict) else {}
     stored_path = Path(str(entry.get("stored_path") or "")).resolve(strict=False) if entry.get("stored_path") else None

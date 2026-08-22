@@ -9,10 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 from typing import Any, Callable, Mapping
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from ..endpoint_security import validate_model_endpoint
+from ..endpoint_security import EndpointBinding, validate_model_endpoint
 from ..model_endpoint import ModelEndpointConfig
 from ..model_protocol_contract import ProviderTurnEnvelope
 from .model_transport_contract import StreamState
@@ -52,6 +53,33 @@ def _response_preview(response: Any) -> str:
             return ""
 
 
+def _pinned_request(url: str, binding: EndpointBinding) -> tuple[str, dict[str, str], str]:
+    """把请求钉扎到已验证 IP：连接层用 IP，Host 头与 TLS SNI 仍用原域名。
+
+    安全性质：validate_model_endpoint 解析并拒绝过私网/回环地址，本次连接
+    固定到该已验证 IP——校验与真实连接成为同一事实，DNS rebinding 在
+    "校验解析"与"客户端二次解析"之间的 TOCTOU 窗口被消除。证书校验以
+    SNI 域名为准，不受 IP 直连影响。
+    """
+    ips = tuple(binding.resolved_ips or ())
+    if not ips:
+        raise TransportExecutionError("endpoint_pinning_no_validated_ip", str(url))
+    ip = str(ips[0]).strip()
+    parts = urlsplit(str(url))
+    hostname = (parts.hostname or "").lower()
+    if not hostname:
+        raise TransportExecutionError("endpoint_pinning_url_invalid", str(url))
+    scheme = parts.scheme.lower() or "https"
+    port = parts.port
+    default_port = (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
+    netloc = f"[{ip}]" if ":" in ip else ip
+    if port is not None and not default_port:
+        netloc = f"{netloc}:{port}"
+    pinned_url = urlunsplit((scheme, netloc, parts.path or "/", parts.query, ""))
+    host_header = hostname if port is None or default_port else f"{hostname}:{port}"
+    return pinned_url, {"Host": host_header}, hostname
+
+
 def execute_streaming_turn(
     *,
     client: httpx.Client,
@@ -83,10 +111,21 @@ def execute_streaming_turn(
             )
         started = time.perf_counter()
         try:
-            # Revalidate immediately before credential-bearing network release.
-            validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=True)
+            # Revalidate immediately before credential-bearing network release,
+            # then pin this attempt's connection to the validated IP.  Every
+            # retry re-resolves and re-pins; the credential and body only ever
+            # travel to an address that passed the private/loopback checks.
+            binding = validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=True)
+            pinned_url, host_headers, sni_hostname = _pinned_request(request.url, binding)
             state = StreamState()
-            with client.stream("POST", request.url, json=request.payload, headers=request.headers) as response:
+            pinned_http_request = client.build_request(
+                "POST",
+                pinned_url,
+                json=request.payload,
+                headers={**request.headers, **host_headers},
+                extensions={"sni_hostname": sni_hostname},
+            )
+            with client.send(pinned_http_request, stream=True) as response:
                 status = int(response.status_code)
                 if status in transient and attempt < retry_limit:
                     last_reason = f"HTTP {status}"

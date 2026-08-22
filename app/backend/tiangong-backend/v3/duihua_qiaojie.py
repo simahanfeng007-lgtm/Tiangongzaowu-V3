@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import shutil
 import hashlib
 import hmac
 import os
@@ -3636,12 +3637,34 @@ def _save_llm_settings(payload: dict) -> dict:
         reasoning_mode = "off" if capability.known_model else ""
 
     API_PEIZHI_LUJING.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        data = json.loads(API_PEIZHI_LUJING.read_text(encoding="utf-8-sig")) if API_PEIZHI_LUJING.exists() else {}
+    # P0 fail-closed：已存在的配置文件不可读/损坏时拒绝保存并隔离副本。
+    # 旧行为（读失败当 {} 继续整体重写）会把其他 provider 的凭证与端点
+    # 配置无声清空——一次磁盘抖动即造成不可逆数据丢失。
+    data: dict = {}
+    if API_PEIZHI_LUJING.exists():
+        try:
+            data = json.loads(API_PEIZHI_LUJING.read_text(encoding="utf-8-sig"))
+        except Exception:
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            quarantine = API_PEIZHI_LUJING.with_name(f"api_keys.corrupt-{stamp}.json")
+            try:
+                shutil.copyfile(API_PEIZHI_LUJING, quarantine)
+            except Exception:
+                quarantine = None
+            return {
+                "ok": False,
+                "error": "config_file_unreadable_refused_save",
+                "error_code": "config_file_unreadable",
+                "quarantine": str(quarantine) if quarantine else "",
+                "hint": "api_keys.json 已损坏，本次保存被拒绝（防止清空全部配置）；已保留隔离副本供修复。",
+            }
         if not isinstance(data, dict):
-            data = {}
-    except Exception:
-        data = {}
+            return {
+                "ok": False,
+                "error": "config_file_invalid_refused_save",
+                "error_code": "config_file_invalid",
+                "hint": "api_keys.json 结构异常（非 JSON 对象），本次保存被拒绝。",
+            }
 
     data["_default_provider"] = identity_provider
     data["_model_service"] = service_preset
