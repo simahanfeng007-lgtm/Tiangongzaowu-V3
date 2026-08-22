@@ -1237,8 +1237,9 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
   process.env.TIANGONG_FORCE_WORKSPACE_ROOT = workspace;
   process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspace;
   process.env.TIANGONG_WORKSPACE_MODE = nextMode;
+  let services = null;
   try {
-    const services = await startServicesForWorkspaceChange();
+    services = await startServicesForWorkspaceChange();
     if (
       !services.backendReady
       || !services.totalGatewayReady
@@ -1292,6 +1293,9 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
       revision: workspaceChangeRevision,
       changing: false,
       rolledBack,
+      // 附失败现场快照：跨盘切换失败时用户与日志都能看到是哪个服务没起来，
+      // 而不是只有一个裸错误码（"设置静默未生效"主诉的一部分）。
+      services,
       rollbackServices,
     };
   }
@@ -3394,7 +3398,15 @@ function totalGatewayEnvironment(entry) {
   } catch (error) {
     writeDesktopDiagnostic("provider-credentials-gateway-inject-failed", error?.message || error);
   }
+  // 随包分发的 Playwright Chromium（provision 脚本装进运行时目录）。
+  // 注入后 playwright 默认启动直接命中包内浏览器；无此目录时按序回退
+  // 用户缓存与本机 Chrome/Edge（"浏览器控不了"修复的一部分）。
+  const packagedBrowsersRoot = [
+    process.env.TIANGONG_PLAYWRIGHT_BROWSERS_PATH,
+    path.join(app.getAppPath(), "runtime", "ms-playwright"),
+  ].filter(Boolean).find((candidate) => isDirectory(candidate));
   const env = { ...process.env };
+  if (packagedBrowsersRoot) env.PLAYWRIGHT_BROWSERS_PATH = packagedBrowsersRoot;
   const rawReleaseCandidates = releaseManifestCandidatePaths();
   const boundReleases = verifiedReleaseBindings();
   const explicitSkillRoot = String(process.env.TIANGONG_GATEWAY_SKILL_ROOT || "").trim();

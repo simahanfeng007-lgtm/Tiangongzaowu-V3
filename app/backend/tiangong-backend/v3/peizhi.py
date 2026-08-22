@@ -40,7 +40,12 @@ ZHUODONG_JIANCE_MIAO = 120      # 用户活跃检测窗口
 ZIZHU_ZUIDA_LIANXU = 5          # 连续自主行动上限
 
 # 生命链 v3.6：轻心跳 + 15分钟重生命任务
-SHENGMING_LIFE_CHAIN_ENABLED = False
+# 生命链对话注入：让模型在每轮对话中感知后台生命状态。
+# 2026-08-22 默认启用（旧实现 import 不存在的模块且被吞异常，等于从未
+# 注入）。环境变量 TIANGONG_SHENGMING_CONTEXT=0 可关闭。
+SHENGMING_LIFE_CHAIN_ENABLED = str(
+    os.environ.get("TIANGONG_SHENGMING_CONTEXT") or "1"
+).strip().lower() not in {"0", "false", "off", "no", "disabled"}
 SHENGMING_ZHONG_XINTIAO_MIAO = 15 * 60       # 重生命任务间隔：15分钟
 SHENGMING_USER_IDLE_MIAO = 3 * 60            # 用户闲置超过3分钟才跑重自主任务
 SHENGMING_MAX_JOBS_PER_TICK = 2              # 每次重心跳最多执行几个生命任务

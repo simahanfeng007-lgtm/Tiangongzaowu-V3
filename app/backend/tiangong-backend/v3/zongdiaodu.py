@@ -2302,40 +2302,67 @@ def _minimax_m3_context_packing_enabled() -> bool:
 
 
 def _shengming_context_string() -> str:
-    """生命链摘要，注入 dynamic_context 让模型感知后台状态。"""
+    """生命链摘要，注入 dynamic_context 让模型感知后台状态。
+
+    权威数据源是 7184 网关的生命面板（embedded runtime 投影）。旧实现
+    import 一个不存在的 v3.shengming.life_panel 模块，且被双层
+    ``except: return ""`` 吞掉——生命状态从未真正进入对话（2026-08-22
+    修复）。失效时返回可见的降级说明而不是空串，让模型与日志都能感知
+    生命上下文缺席，而不是无声缺失。
+    """
+    # 运行时开关：调用时实时读环境（TIANGONG_SHENGMING_CONTEXT=0 关闭），
+    # 与 peizhi.SHENGMING_LIFE_CHAIN_ENABLED 的启动默认保持一致。
+    if str(os.environ.get("TIANGONG_SHENGMING_CONTEXT") or "1").strip().lower() in {
+        "0", "false", "off", "no", "disabled",
+    }:
+        return ""
+    import httpx
+
+    gateway_url = (
+        os.environ.get("TIANGONG_GATEWAY_URL")
+        or "http://127.0.0.1:7184"
+    ).rstrip("/")
+    token = str(
+        os.environ.get("TIANGONG_BACKEND_INTERNAL_TOKEN")
+        or os.environ.get("TIANGONG_DESKTOP_TOKEN")
+        or ""
+    )
     try:
-        from .shengming.life_panel import build_life_panel_payload
-        from .peizhi import SHENGMING_LIFE_CHAIN_ENABLED
-        if not SHENGMING_LIFE_CHAIN_ENABLED:
-            return ""
-        payload = build_life_panel_payload()
-        s = payload.get("summary", {})
-        b = payload.get("budget", {})
-        bd = payload.get("boundaries", {})
-        share = bd.get("share", {})
+        response = httpx.get(
+            f"{gateway_url}/api/v1/v3/life/panel",
+            headers={"X-Tiangong-Token": token} if token else {},
+            timeout=2.0,
+        )
+        payload = response.json() if response.status_code == 200 else {}
+        if not isinstance(payload, dict) or payload.get("ok") is False:
+            raise ValueError(f"panel_http_{response.status_code}")
+        s = payload.get("summary", {}) or {}
+        b = payload.get("budget", {}) or {}
+        bd = payload.get("boundaries", {}) or {}
+        share = bd.get("share", {}) or {}
         lines = ["[后台生命链]"]
         lines.append(
             f"完成 {s.get('completed_tasks_today', 0)} 项 · "
-            f"LLM 预算 {b.get('used', 0)}/{b.get('attempts', 20)} · "
+            f"LLM 预算 {b.get('used', 0)}/{b.get('success_limit', 20)} · "
             f"下次心跳 {s.get('next_heavy_tick_minutes', '—')}min 后"
         )
-        ra = s.get("recent_action", {})
-        if ra.get("kind"):
+        ra = s.get("recent_action", {}) or {}
+        if ra.get("title"):
             lines.append(
-                f"最近：{ra.get('title', '')} "
+                f"最近行动：{ra.get('title', '')} "
                 f"(价值分 {ra.get('value_score', '—')})"
             )
         rules = []
         if share.get("quiet_if_user_active"):
             rules.append("用户活跃时不主动打扰")
-        autonomy = bd.get("autonomy", {})
+        autonomy = bd.get("autonomy", {}) or {}
         if "A3" in str(autonomy.get("card_only_risks", [])):
             rules.append("A3+任务仅生成卡片")
         if rules:
             lines.append("边界：" + " · ".join(rules))
         return "\n".join(lines)
-    except Exception:
-        return ""
+    except Exception as exc:
+        return f"[后台生命链] 状态暂不可用（{type(exc).__name__}）；涉及其后台状态时先询问用户，不要臆测。"
 
 
 def _user_prompt_with_context(user_prompt: str, dynamic_context: str) -> str:

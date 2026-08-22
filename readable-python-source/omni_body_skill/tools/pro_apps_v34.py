@@ -519,16 +519,29 @@ def _launch_playwright_chromium(playwright: Any) -> Tuple[Any, str, List[str]]:
     configured = str(os.environ.get("TIANGONG_PLAYWRIGHT_EXECUTABLE") or "").strip()
     if configured:
         candidates.append(Path(configured))
+    # 随包分发的浏览器目录（main.js 注入 PLAYWRIGHT_BROWSERS_PATH）。
+    packaged_root = str(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if packaged_root:
+        packaged = Path(packaged_root)
+        if packaged.is_dir():
+            candidates.extend(sorted(packaged.glob("chromium-*/chrome-win64/chrome.exe"), reverse=True))
     local_app_data = str(os.environ.get("LOCALAPPDATA") or "").strip()
     if local_app_data:
         cache_root = Path(local_app_data) / "ms-playwright"
         if cache_root.is_dir():
             candidates.extend(sorted(cache_root.glob("chromium-*/chrome-win64/chrome.exe"), reverse=True))
+        # 每用户安装的 Chrome（Windows 最常见安装形态）此前不在候选里，
+        # 导致"发布包没带浏览器 + Chrome 装在 LOCALAPPDATA"的机器上
+        # browser.* 全部失败（2026-08-22 修复）。
+        candidates.append(Path(local_app_data) / "Google" / "Chrome" / "Application" / "chrome.exe")
     program_files = str(os.environ.get("PROGRAMFILES") or "").strip()
     if program_files:
         candidates.append(Path(program_files) / "Google" / "Chrome" / "Application" / "chrome.exe")
+        # 64 位 Edge 的常规安装位置。
+        candidates.append(Path(program_files) / "Microsoft" / "Edge" / "Application" / "msedge.exe")
     program_files_x86 = str(os.environ.get("PROGRAMFILES(X86)") or "").strip()
     if program_files_x86:
+        candidates.append(Path(program_files_x86) / "Google" / "Chrome" / "Application" / "chrome.exe")
         candidates.append(Path(program_files_x86) / "Microsoft" / "Edge" / "Application" / "msedge.exe")
 
     seen: set[str] = set()
