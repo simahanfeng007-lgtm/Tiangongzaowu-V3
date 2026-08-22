@@ -30,6 +30,18 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest httpx cryptography pydantic
+      - name: Normalize one-shot patcher signature parser
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/apply_main_qc_hardening_20260822.py')
+          text = path.read_text(encoding='utf-8')
+          old = "header_match = re.match(r'(    def find_action_impact_for_source_event\\(.*?\\):\\n)', match.group(0), flags=re.S)"
+          new = "header_match = re.match(r'(    def find_action_impact_for_source_event\\(.*?\\) -> ActionImpact \\| None:\\n)', match.group(0), flags=re.S)"
+          if old not in text:
+              raise SystemExit('action-impact signature parser anchor missing')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+          PY
       - name: Apply hardening patch
         run: python .github/scripts/apply_main_qc_hardening_20260822.py
       - name: Compile changed Python
