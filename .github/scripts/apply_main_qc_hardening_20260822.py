@@ -60,7 +60,7 @@ def pin_model_request(
     """Pin one request to an IP from the validated DNS snapshot.
 
     Credentials are released only after the target URL origin is proven to
-    match the validated endpoint.  Connecting to the IP literal prevents a
+    match the validated endpoint. Connecting to the IP literal prevents a
     second resolver lookup (DNS rebinding/TOCTOU), while Host and TLS SNI keep
     virtual-host routing and certificate verification bound to the original
     hostname.
@@ -98,7 +98,7 @@ text = replace_once(
 )
 text = replace_once(
     text,
-    """            validate_model_endpoint(\n                endpoint.provider_identity, endpoint.base_url, resolve_dns=True\n            )\n            state = StreamState()\n            with client.stream(\"POST\", request.url, json=request.payload, headers=request.headers) as response:\n""",
+    """            validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=True)\n            state = StreamState()\n            with client.stream(\"POST\", request.url, json=request.payload, headers=request.headers) as response:\n""",
     """            endpoint_binding = validate_model_endpoint(\n                endpoint.provider_identity, endpoint.base_url, resolve_dns=True\n            )\n            pinned = pin_model_request(endpoint_binding, request.url, attempt=attempt)\n            pinned_headers = dict(request.headers)\n            pinned_headers[\"Host\"] = pinned.host_header\n            state = StreamState()\n            with client.stream(\n                \"POST\",\n                pinned.url,\n                json=request.payload,\n                headers=pinned_headers,\n                extensions={\"sni_hostname\": pinned.sni_hostname},\n            ) as response:\n""",
     label="transport pinned stream",
 )
@@ -106,7 +106,7 @@ write(path, text)
 
 # Electron credential probe: reuse the already hardened remote-URL resolver and
 # pass its validated addresses to Node's lookup callback. This removes the
-# credential-bearing second DNS lookup even before the backend probe migration.
+# credential-bearing second DNS lookup while keeping the current UX contract.
 path = "app/main.js"
 text = read(path)
 old = """function requestProviderProbe(url, { method = \"GET\", apiKey = \"\", payload = null, headers = {} } = {}) {\n  return new Promise((resolve, reject) => {\n    const started = Date.now();\n    const body = payload ? JSON.stringify(payload) : \"\";\n    const transport = url.protocol === \"http:\" ? http : https;\n"""
@@ -139,7 +139,7 @@ anchor = """        effective_llm_max_seconds = _effective_llm_deadline_seconds(
 replacement = """        effective_llm_max_seconds = _effective_llm_deadline_seconds()\n        if effective_llm_max_seconds <= 0:\n            _jilu_l4_youhua_zhuizong(optimization_trace, api_status=\"effect_deadline_exhausted\")\n            return _with_native_audio(\n                _error_turn(\n                    \"[LLM错误: 当前执行授权的 Effect Deadline 已到期，未发起新的模型请求]\",\n                    provider_identity=provider_identity,\n                    service_preset=endpoint.service_preset,\n                    protocol_family=endpoint.protocol_family,\n                    optimization_family=pid,\n                    model_name=model_name,\n                ),\n                native_audio_receipt,\n                reason=\"native_audio_effect_deadline_exhausted\",\n            )\n        try:\n            executed = execute_streaming_turn(\n"""
 text = replace_once(text, anchor, replacement, label="deadline preflight")
 rescue_anchor = """            rescue_payload = _minimax_empty_length_rescue_payload(payload)\n            try:\n                rescue = execute_streaming_turn(\n"""
-rescue_repl = """            rescue_payload = _minimax_empty_length_rescue_payload(payload)\n            rescue_deadline_seconds = _effective_llm_deadline_seconds()\n            if rescue_deadline_seconds <= 0:\n                rescue_deadline_seconds = 0.0\n            try:\n                if rescue_deadline_seconds <= 0:\n                    raise TransportExecutionError(\n                        \"effect deadline exhausted before rescue\",\n                        url=base_url,\n                        deadline_exceeded=True,\n                    )\n                rescue = execute_streaming_turn(\n"""
+rescue_repl = """            rescue_payload = _minimax_empty_length_rescue_payload(payload)\n            rescue_deadline_seconds = _effective_llm_deadline_seconds()\n            if rescue_deadline_seconds <= 0:\n                rescue_deadline_seconds = 0.0\n            try:\n                if rescue_deadline_seconds <= 0:\n                    raise TransportExecutionError(\n                        \"effect deadline exhausted before rescue\",\n                        base_url,\n                        deadline_exceeded=True,\n                    )\n                rescue = execute_streaming_turn(\n"""
 text = replace_once(text, rescue_anchor, rescue_repl, label="rescue deadline preflight")
 text = replace_once(
     text,
@@ -223,14 +223,12 @@ text = replace_once(
     '        "action_impacts",\n        "action_impact_source_events",\n',
     label="expected p18 table",
 )
-# Fresh database migration evidence row 18.
 text = replace_once(
     text,
     '''        connection.execute(\n            "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (17, ?, ?, ?)",\n            (_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256, now_ms),\n        )\n''',
     '''        connection.execute(\n            "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (17, ?, ?, ?)",\n            (_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256, now_ms),\n        )\n        connection.execute(\n            "INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (18, ?, ?, ?)",\n            (_P18_ACTION_IMPACT_SOURCE_INDEX_MIGRATION_ID, _P18_ACTION_IMPACT_SOURCE_INDEX_SHA256, now_ms),\n        )\n''',
     label="initialize migration 18",
 )
-# Existing database evidence calculation.
 text = replace_once(
     text,
     '''    if user_version >= 17:\n        expected_migrations.append((17, _P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256))\n        expected_schema_sha256 = hashlib.sha256((_P7_SCHEMA_SQL + "\\n" + _P8_MEMORY_CHANGE_SQL + "\\n" + _P9_V21_LIFE_BINDING_SQL + "\\n" + _P10_V21_CAUSAL_CHILD_SQL + "\\n" + _P11_V21_COGNITION_SHADOW_SQL + "\\n" + _P12_V21_LIFE_TURN_COMMIT_SQL + "\\n" + _P13_V21_CAPABILITY_LIFECYCLE_SQL + "\\n" + _P14_MEMORY_DERIVATION_SQL + "\\n" + _P15_MEMORY_INVALIDATION_SQL + "\\n" + _P16_TEMPERAMENT_RECEIPT_SQL + "\\n" + _P17_MEMORY_WORLD_CANDIDATE_SQL).encode("utf-8")).hexdigest()\n''',
@@ -243,14 +241,12 @@ text = replace_once(
     '''        if user_version < 17:\n            for statement in _P17_MEMORY_WORLD_CANDIDATE_STATEMENTS:\n                connection.execute(statement)\n            connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (17, ?, ?, ?)", (_P17_MEMORY_WORLD_CANDIDATE_MIGRATION_ID, _P17_MEMORY_WORLD_CANDIDATE_SHA256, now_ms))\n        if user_version < 18:\n            for statement in _P18_ACTION_IMPACT_SOURCE_INDEX_STATEMENTS:\n                connection.execute(statement)\n            for row in connection.execute("SELECT impact_id, life_id, action_id, payload FROM action_impacts").fetchall():\n                try:\n                    payload = json.loads(bytes(row["payload"]).decode("utf-8"))\n                    source_event_ids = tuple(payload.get("source_event_ids") or ())\n                except Exception as exc:\n                    raise error_factory("action impact source-event backfill payload is invalid") from exc\n                for source_event_id in source_event_ids:\n                    connection.execute(\n                        "INSERT OR IGNORE INTO action_impact_source_events(impact_id,life_id,action_id,source_event_id) VALUES (?,?,?,?)",\n                        (str(row["impact_id"]), str(row["life_id"]), str(row["action_id"]), str(source_event_id)),\n                    )\n            connection.execute("INSERT INTO schema_migrations(version, migration_id, sql_sha256, applied_at_ms) VALUES (18, ?, ?, ?)", (_P18_ACTION_IMPACT_SOURCE_INDEX_MIGRATION_ID, _P18_ACTION_IMPACT_SOURCE_INDEX_SHA256, now_ms))\n        connection.execute(\n''',
     label="migrate p18 and backfill",
 )
-# json is needed by the data backfill.
 text = replace_once(text, "import hashlib\nimport sqlite3\n", "import hashlib\nimport json\nimport sqlite3\n", label="schema json import")
 write(path, text)
 shutil.copyfile(ROOT / path, ROOT / "app/life-service/runtime314/life_service/store_schema.py")
 
 path = "src/life_service/store.py"
 text = read(path)
-# Re-export/import the new migration metadata so schema authority remains one source.
 text = replace_once(
     text,
     """    _P17_MEMORY_WORLD_CANDIDATE_SHA256,\n    _SCHEMA_SHA256,\n""",
@@ -260,7 +256,6 @@ text = replace_once(
 old_put = r'''    def put_action_impact\(self, impact: ActionImpact\) -> bool:\n        impact, payload = _revalidate_contract\(impact, ActionImpact, "action impact"\)\n        if not impact\.has_valid_impact_sha256\(\):\n            raise LifeShadowStoreError\("action impact digest is invalid"\)\n        return self\._insert_immutable\(\n.*?            identity="action impact",\n        \)\n'''
 new_put = '''    def put_action_impact(self, impact: ActionImpact) -> bool:\n        impact, payload = _revalidate_contract(impact, ActionImpact, "action impact")\n        if not impact.has_valid_impact_sha256():\n            raise LifeShadowStoreError("action impact digest is invalid")\n        connection = self._connection\n        try:\n            connection.execute("BEGIN IMMEDIATE")\n            existing = connection.execute(\n                "SELECT payload FROM action_impacts WHERE impact_id = ?",\n                (impact.impact_id,),\n            ).fetchone()\n            if existing is not None:\n                if bytes(existing["payload"]) != payload:\n                    raise LifeShadowStoreError("action impact identity was rebound")\n                connection.execute("COMMIT")\n                return False\n            connection.execute(\n                """\n                INSERT INTO action_impacts(\n                    impact_id, life_id, action_id, payload, payload_sha256, created_at_ms\n                ) VALUES (?, ?, ?, ?, ?, ?)\n                """,\n                (\n                    impact.impact_id, impact.life_id, impact.action_id, payload,\n                    impact.impact_sha256, impact.created_at_ms,\n                ),\n            )\n            for source_event_id in impact.source_event_ids:\n                connection.execute(\n                    "INSERT INTO action_impact_source_events(impact_id,life_id,action_id,source_event_id) VALUES (?,?,?,?)",\n                    (impact.impact_id, impact.life_id, impact.action_id, source_event_id),\n                )\n            connection.execute("COMMIT")\n            return True\n        except Exception:\n            if connection.in_transaction:\n                connection.execute("ROLLBACK")\n            raise\n'''
 text = regex_once(text, old_put, new_put, label="indexed put action impact", flags=re.S)
-# Replace the linear payload scan body, regardless of formatting of annotations.
 pattern = r'''    def find_action_impact_for_source_event\(.*?\n(?=    def )'''
 match = re.search(pattern, text, flags=re.S)
 if not match:
@@ -280,9 +275,7 @@ shutil.copyfile(ROOT / path, ROOT / "app/life-service/runtime314/life_service/st
 test_path = ROOT / "tests" / "test_main_qc_hardening_20260822.py"
 test_path.write_text(r'''from __future__ import annotations
 
-import importlib.util
 import sys
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -368,7 +361,6 @@ if __name__ == "__main__":
     unittest.main()
 ''', encoding="utf-8", newline="\n")
 
-# Mirrors must be byte-identical to their authorities.
 for authority, mirror in (
     ("src/runtime_security/model_endpoint.py", "app/backend/tiangong-backend/v3/endpoint_security.py"),
     ("src/life_service/embedded_runtime.py", "app/life-service/runtime314/life_service/embedded_runtime.py"),
