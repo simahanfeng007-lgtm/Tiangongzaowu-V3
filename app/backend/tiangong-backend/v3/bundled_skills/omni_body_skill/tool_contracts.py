@@ -102,11 +102,11 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         },
     },
     "template.apply": {
-        "target": "optional workspace-relative story/outline output path",
+        "target": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) story/outline output path",
         "args": {
             "template_id": "template id such as executive_ppt",
             "variables": "optional content variables object",
-            "design_output": "optional workspace-relative machine-readable design output .json path",
+            "design_output": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) machine-readable design output .json path",
         },
     },
     "qc.ppt.delivery_check": {
@@ -133,37 +133,37 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "any_of": ["target", "args.skill_id"],
     },
     "file.write": {
-        "target": "workspace-relative file path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
         "args": {"content": "string, or base64 when binary=true", "binary": "optional boolean", "encoding": "optional string"},
         "any_of": ["args.content", "args.base64"],
     },
     "file.append": {
-        "target": "workspace-relative file path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
         "args": {"content": "string (required)", "encoding": "optional string"},
         "required": ["args.content"],
     },
     "file.mkdir": {
-        "target": "workspace-relative directory path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) directory path (required)",
         "args": {"exist_ok": "optional boolean"},
     },
     "file.copy": {
-        "target": "workspace-relative source path (required)",
-        "args": {"destination": "workspace-relative destination path (required)", "overwrite": "optional boolean"},
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
+        "args": {"destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)", "overwrite": "optional boolean"},
         "required": ["args.destination"],
     },
     "file.move": {
-        "target": "workspace-relative source path (required)",
-        "args": {"destination": "workspace-relative destination path (required)", "overwrite": "optional boolean"},
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
+        "args": {"destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)", "overwrite": "optional boolean"},
         "required": ["args.destination"],
     },
     "file.rename": {
-        "target": "workspace-relative source path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
         "args": {"new_name": "new basename only (required)", "overwrite": "optional boolean"},
         "required": ["args.new_name"],
     },
     "code.patch_replace": {
         "aliases": ["file.patch_replace", "file.patch", "code.patch"],
-        "target": "workspace-relative existing file path (required, never a directory)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) existing file path (required, never a directory)",
         "args": {
             "find": "non-empty literal or regex string (required)",
             "replace": "replacement string (optional; empty deletes the match)",
@@ -175,7 +175,7 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["args.find"],
     },
     "quality.javascript_syntax": {
-        "target": "workspace-relative .js/.mjs/.cjs file or directory (required)",
+        "target": "workspace-relative (or absolute when allowed) .js/.mjs/.cjs file or directory (required)",
         "args": {"recursive": "optional boolean"},
     },
     "git.clone": {
@@ -194,13 +194,13 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "windows_note": "cmd.exe semantics; prefer typed file/code actions",
     },
     "python.run": {
-        "target": "optional workspace-relative existing .py script",
+        "target": "optional workspace-relative (or absolute when allowed) existing .py script",
         "args": {"code": "Python source string required when target is empty", "argv": "optional array", "timeout": "optional positive integer"},
         "any_of": ["target", "args.code"],
         "note": "Use file.write/code.write for file creation; python.run is not a file-writing substitute.",
     },
     "docx.create": {
-        "target": "workspace-relative output .docx path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)",
         "args": {
             "source": "optional existing workspace .md or .txt source; preferred for long documents",
             "content": "optional inline Markdown/plain text",
@@ -211,7 +211,7 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "any_of": ["args.source", "args.content", "args.title", "args.sections"],
     },
     "pptx.create": {
-        "target": "workspace-relative output .pptx path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)",
         "args": {
             "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
             "content": "optional inline slide Markdown",
@@ -229,7 +229,7 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "args": {"max_chars_per_slide": "optional integer from 200 to 20000"},
     },
     "mindmap.create": {
-        "target": "workspace-relative output .md path (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .md path (required)",
         "args": {
             "source": "optional existing workspace .md or .txt indented outline",
             "content": "optional inline indented outline",
@@ -240,7 +240,7 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "any_of": ["args.source", "args.content", "args.tree"],
     },
     "novel.project.create": {
-        "target": "workspace-relative new or empty novel project directory (required)",
+        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) new or empty novel project directory (required)",
         "args": {"title": "non-empty string", "genre": "non-empty string", "planned_chapters": "full-book count, integer >= ceil(target_words/5000), never a writing checkpoint", "target_words": "integer >= 1000"},
         "required": ["args.title", "args.genre", "args.planned_chapters", "args.target_words"],
     },

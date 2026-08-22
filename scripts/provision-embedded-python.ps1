@@ -104,6 +104,20 @@ if ($LASTEXITCODE -ne 0) { throw "Embedded Python dependency installation failed
 & $Python -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Embedded Python dependency verification failed" }
 
+# 2026-08-22：随包分发 Playwright 的 Chromium（"浏览器控不了"主诉）。
+# requirements-source.lock 已含 playwright 模块，但浏览器二进制此前从不
+# 安装——用户机器既无 ms-playwright 缓存又无可发现的本机 Chrome/Edge 时，
+# browser.* 全部降级失败。装进运行时目录（PLAYWRIGHT_BROWSERS_PATH），
+# main.js 启动网关时注入同一路径；运行时仍按序回退本机 Chrome/Edge。
+# 设 TIANGONG_SKIP_PLAYWRIGHT_BROWSERS=1 可跳过（约 120MB 下载）。
+if ($env:TIANGONG_SKIP_PLAYWRIGHT_BROWSERS -ne "1") {
+    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeRoot "ms-playwright"
+    & $Python -m playwright install chromium
+    if ($LASTEXITCODE -ne 0) { Write-Warning "playwright chromium install failed; browser actions will fall back to local Chrome/Edge" }
+} else {
+    Write-Warning "TIANGONG_SKIP_PLAYWRIGHT_BROWSERS=1：跳过随包 Chromium，browser.* 依赖本机 Chrome/Edge"
+}
+
 # A local-path pip install records the publisher machine in direct_url.json.
 # The embedded product packages are synchronized from source during setup, and
 # the release portability gate intentionally rejects this host provenance.

@@ -1306,12 +1306,32 @@ async function commitDesktopWorkspace(workspaceRoot, workspaceMode = "") {
   }));
   if (saved?.error === "workspace_revision_conflict") {
     const current = await readDesktopWorkspaceAuthority();
-    if (current?.ok && sameWorkspacePath(current.workspace, workspace)) return current;
+    if (current?.ok && sameWorkspacePath(current.workspace, workspace)) {
+      // 冲突等值但模式可能没跟上：仅工作区相同就提前返回会静默丢掉
+      // 用户这次要切的 full/workspace 模式（跨盘读写主诉之一）。
+      if (workspaceMode && current.workspace_mode !== workspaceMode) {
+        const retried = rememberWorkspaceAuthority(await bridge.setWorkspaceRoot({
+          workspace: current.workspace,
+          expectedRevision: current.revision,
+          workspace_mode: workspaceMode === "full" ? "full" : "workspace",
+        }));
+        if (retried?.ok) return retried;
+      }
+      return current;
+    }
     const error = new Error("工作区已被另一个操作更新，请重新选择后再试");
     error.code = "workspace_revision_conflict";
     throw error;
   }
-  if (!saved?.ok || !saved?.workspace) throw new Error(saved?.error || "工作区切换失败");
+  if (!saved?.ok || !saved?.workspace) {
+    // 服务重启失败已回滚到原工作区：把回滚事实说清楚，避免"设置静默未生效"。
+    if (saved?.rolledBack) {
+      const error = new Error(`切换后服务重启失败，已回滚到原工作区（${saved.workspace || ""}）`);
+      error.code = saved?.error || "workspace_service_restart_failed";
+      throw error;
+    }
+    throw new Error(saved?.error || "工作区切换失败");
+  }
   return saved;
 }
 

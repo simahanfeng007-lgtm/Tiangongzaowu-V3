@@ -752,8 +752,11 @@ class EmbeddedLifeRuntime:
                 "share_dnd_end": "08:00",
                 # P16 native proactive cognition. Legacy share/greeting settings
                 # remain compatibility-only and cannot authorize this producer.
+                # 2026-08-22：默认 live（产品决策）——影子模式默认值让生命
+                # 永远不真正开口（"久不回话"主诉）；F1 忽略率门禁/F6 预算/
+                # 免打扰/最小间隔已把打扰面收敛，且设置面板可随时切回 shadow。
                 "proactive_enabled": True,
-                "proactive_mode": "shadow",
+                "proactive_mode": "live",
                 # P16 has a sub-budget in addition to the existing global Life LLM cap.
                 "proactive_llm_daily_budget": 6,
                 "proactive_llm_daily_attempt_budget": 8,
@@ -3066,7 +3069,12 @@ class EmbeddedLifeRuntime:
         scope = self._scope_state(life_id)
         scheduler = scope.setdefault("scheduler", {})
         autonomy = self._autonomy_state(life_id)
-        if not autonomy.get("enabled") or not callable(getattr(self, "_autonomy_decider", None)):
+        if not autonomy.get("enabled"):
+            # 停摆不静默：把原因写进面板可见的调度器状态（P1 修复）。
+            scheduler["last_autonomy_decision_error"] = "life.autonomy.disabled"
+            return
+        if not callable(getattr(self, "_autonomy_decider", None)):
+            scheduler["last_autonomy_decision_error"] = "life.autonomy.model_bridge_unavailable"
             return
         if bool(scheduler.get("autonomy_decision_inflight")):
             return
@@ -5146,7 +5154,24 @@ class EmbeddedLifeRuntime:
             "state": {
                 "status": "ALIVE" if health.get("life_ready") else "NOT_READY",
                 "last_heavy_reason": str(autonomy_state.get("last_tick_reason") or "scheduled"),
-                "last_heavy_tick_at": str(scheduler_status.get("last_heartbeat_at") or ""),
+                # 真实活跃 = 最近一次自主/学习/迭代决策或主动投递；心跳每 30 秒
+                # 一次，用心跳冒充"最近活动"会把完全停摆伪装成活跃（P1 修复）。
+                "last_heavy_tick_at": (
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(latest_activity_ms / 1000))
+                    if (latest_activity_ms := max(
+                        (
+                            int(scheduler_status.get(key) or 0)
+                            for key in (
+                                "last_autonomy_decision_at_ms",
+                                "last_learning_decision_at_ms",
+                                "last_self_iteration_decision_at_ms",
+                                "last_proactive_delivery_at_ms",
+                            )
+                        ),
+                        default=0,
+                    )) > 0
+                    else ""
+                ),
                 "last_execution_at": str(recent_execution.get("committed_at") or ""),
                 "updated_at": now,
             },
@@ -7964,6 +7989,8 @@ class EmbeddedLifeRuntime:
         if now_ms - int(scheduler.get("last_capability_health_at_ms") or 0) < 600_000:
             return
         if not callable(getattr(self, "_capability_patch_decider", None)):
+            # 停摆不静默：补丁桥缺失时记录原因，面板可见（P1 修复）。
+            scheduler["last_capability_health_error"] = "life.capability.patch_bridge_unavailable"
             return
         # 子池已耗尽时不再起线程；真正的按次记账在 worker 内每个补丁目标前完成。
         if self._sub_model_budget_exhausted(scheduler, settings=scope_state["settings"], pool="capability_patch"):
