@@ -695,7 +695,15 @@ def replay_event(
         raise JournalReplayError("life.projection.event_payload_invalid")
     if event_type in {"autonomy.task_generated", "autonomy.task_status_changed"}:
         return reducer(scope, payload, event, normalize_autonomy_state=normalize_autonomy_state)
-    if event_type in {"memory.asserted", "memory.corrected", "execution.committed"}:
+    if event_type in {
+        "memory.asserted",
+        "memory.corrected",
+        "memory.status_changed",
+        "memory.deleted",
+        "memory.relation_added",
+        "memory.candidates_proposed",
+        "execution.committed",
+    }:
         return reducer(scope, payload, event, life_id=life_id)
     return reducer(scope, payload, event, event_type=event_type)
 
