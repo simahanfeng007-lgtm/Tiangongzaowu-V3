@@ -1996,7 +1996,18 @@ function processExecutablePath(pid) {
     const match = output.match(/ExecutablePath=(.*)/i);
     return (match?.[1] || "").trim();
   } catch (_error) {
-    return "";
+    // Windows 11 24H2+ 移除了 wmic；回退 PowerShell CIM。取不到路径时
+    // 调用方（isReplaceableBackendListener*）必须保守地视为"不可替换"，
+    // 绝不能因为探测手段缺失就 taskkill 无关进程。
+    try {
+      return execFileSync(
+        "powershell",
+        ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').ExecutablePath`],
+        { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }
+      ).trim();
+    } catch (_fallbackError) {
+      return "";
+    }
   }
 }
 
@@ -2007,7 +2018,9 @@ function isReplaceableBackendListener(pid, dir) {
   const expectedExe = frozenBackendExecutablePath(dir);
   if (!expectedExe) return isSourceBackendDir(dir) && imageName.includes("tiangong-backend");
   const actualExe = processExecutablePath(pid);
-  return !actualExe || normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
+  // 探测失败（wmic/PowerShell 均不可用）时保守拒绝：宁可漏替换自家旧
+  // 监听（退化为端口占用报错），不可误杀恰好叫 python.exe 的无关进程。
+  return Boolean(actualExe) && normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
 }
 
 function shouldReplaceExistingBackend(dir) {
@@ -3844,7 +3857,19 @@ async function processExecutablePathAsync(pid) {
     const match = output.match(/ExecutablePath=(.*)/i);
     return (match?.[1] || "").trim();
   } catch (_error) {
-    return "";
+    // 与同步版一致：wmic 缺失（Win11 24H2+）时回退 PowerShell CIM。
+    try {
+      return (
+        await execFileText("powershell", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').ExecutablePath`,
+        ])
+      ).trim();
+    } catch (_fallbackError) {
+      return "";
+    }
   }
 }
 
@@ -3894,7 +3919,8 @@ async function isReplaceableBackendListenerAsync(pid, dir) {
   const expectedExe = frozenBackendExecutablePath(dir);
   if (!expectedExe) return isSourceBackendDir(dir) && imageName.includes("tiangong-backend");
   const actualExe = await processExecutablePathAsync(pid);
-  return !actualExe || normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
+  // 探测失败时保守拒绝（与同步版一致），防误杀无关进程。
+  return Boolean(actualExe) && normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
 }
 
 async function killProcessTreeAsync(pid) {
