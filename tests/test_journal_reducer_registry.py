@@ -101,7 +101,17 @@ def test_unknown_event_type_fails_closed() -> None:
 
 def test_audit_only_events_are_noop() -> None:
     scope: dict = {"memories": {}, "memory_relations": [], "executions": {}, "autonomy": {}}
-    for event_type in ("life.heartbeat", "affect.decayed", "life.episode.opened", "memory.recalled"):
+    for event_type in (
+        "life.heartbeat",
+        "affect.decayed",
+        "life.episode.opened",
+        "memory.recalled",
+        # 历史遗漏回归：noop 决策与 standalone 自主行动事实必须已登记，
+        # 否则含这些事件的 journal 重放即 fail-closed，生命无法启动。
+        "self_iteration.decision_noop",
+        "autonomy.action_completed",
+        "autonomy.action_failed",
+    ):
         assert _replay(scope, event_type, {}) is False
 
 
@@ -157,7 +167,37 @@ def test_capability_outcome_uses_idempotency_key_identity() -> None:
     assert health["seen_outcome_ids"] == ["outcome_r1"]
 
 
-def test_learning_published_rebuilds_card_and_artifact_entry() -> None:
+def test_capability_executed_with_float_telemetry_replays_without_error() -> None:
+    """回归 P0-2：journal 载荷合法携带有限 float（工具 telemetry），
+
+    写侧哈希链允许 float；重放比较若用签名契约的 canonical_sha256 会在
+    第二次启动（投影已存在的幂等比较）抛裸 TypeError，生命无法启动。
+    """
+    scope = {
+        "capability_pointers": {"lineage_test": _pointer("art_v1")},
+        "executions": {},
+    }
+    execution = {
+        "execution_id": "caprun_float1",
+        "artifact_id": "art_v1",
+        "status": "completed",
+        "steps": [{"ok": True, "telemetry": {"latency_s": 1.25, "score": 0.98}}],
+    }
+    assert _replay(scope, "capability.executed", {"execution": execution}) is True
+    # 幂等重放（existing 已存在，走 _same 指纹比较）：不再 TypeError。
+    assert _replay(scope, "capability.executed", {"execution": execution}) is False
+    # 内容真正变化时指纹仍能检出差异（没退化成恒等），事件权威覆盖投影。
+    changed_execution = {**execution, "status": "failed", "steps": [{"ok": False, "telemetry": {"retry_s": 2.5}}]}
+    assert _replay(scope, "capability.executed", {"execution": changed_execution}) is True
+    assert scope["executions"]["caprun_float1"]["status"] == "failed"
+
+
+def test_memory_assert_with_float_content_replays_idempotently() -> None:
+    scope: dict = {"memories": {}, "memory_relations": [], "executions": {}, "autonomy": {}}
+    assertion = {"memory_id": "mem_float_1", "content": {"weight_kg": 62.5}, "created_at": "2026-08-22T12:00:00Z"}
+    assert _replay(scope, "memory.asserted", {"assertion": assertion}) is True
+    # 第二次重放走不可变字段指纹比较：float content 不得触发 TypeError。
+    assert _replay(scope, "memory.asserted", {"assertion": assertion}) is False
     scope: dict = {"learning": {}, "capabilities": {}, "knowledge": {}}
     artifact = {"artifact_id": "art_learn_1", "kind": "skill", "title": "测试技能"}
     card = {
