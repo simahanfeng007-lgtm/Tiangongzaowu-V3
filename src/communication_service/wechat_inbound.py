@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, Self
@@ -13,6 +14,7 @@ from contracts import (
     AttachmentRef,
     InboundEnvelope,
     InboundScope,
+    canonical_json_bytes,
     canonical_sha256,
     derive_inbound_scope_keys,
 )
@@ -31,6 +33,30 @@ def _sorted_unique(values: tuple[str, ...]) -> tuple[str, ...]:
     if tuple(sorted(set(values))) != values:
         raise ValueError("policy set fields must be sorted and unique")
     return values
+
+
+_LOCAL_BATCH_CURSOR_PREFIX = "tg-local-wechat-batch-v1:"
+
+
+def external_cursor_from_local(token: str) -> str:
+    """Map a persisted cursor token to the token the platform will accept.
+
+    A mid-batch crash leaves a local checkpoint token in cursor state; that
+    checkpoint carries the batch's external ``get_updates_buf`` token (JSON
+    encoded) and only the external form may be sent to the platform. Returns
+    "" when the checkpoint predates this encoding or fails to parse — the
+    caller falls back to the credentials cursor instead of replaying the
+    local token at the platform (which it would reject).
+    """
+
+    if not token.startswith(_LOCAL_BATCH_CURSOR_PREFIX):
+        return token
+    try:
+        payload = json.loads(token[len(_LOCAL_BATCH_CURSOR_PREFIX):])
+    except ValueError:
+        return ""
+    external = payload.get("external_cursor_token") if isinstance(payload, dict) else None
+    return external if isinstance(external, str) and external else ""
 
 
 class WechatInboundPolicy(BaseModel):
@@ -356,25 +382,6 @@ class WechatTextInboundProcessor:
                 attachments=attachments,
                 sequence=sequence,
             )
-        ingress = InboxIngress(
-            ingress_id=envelope.inbound_id,
-            envelope=envelope,
-            raw_payload_object_id=poll.raw_payload_object_id,
-            raw_payload_sha256=poll.raw_payload_sha256,
-            raw_payload_size_bytes=poll.raw_payload_size_bytes,
-            cursor_stream_key=derive_cursor_stream_key(
-                "wechat", policy.tenant_id, policy.link_account_id
-            ),
-            previous_cursor_sha256=poll.previous_cursor_sha256,
-            next_cursor_token=poll.next_cursor_token,
-            next_cursor_sha256=cursor_token_sha256(poll.next_cursor_token),
-            captured_at_ms=poll.captured_at_ms,
-            ingress_sha256="0" * 64,
-        ).with_computed_sha256()
-        persisted = self._inbox.persist_and_advance_cursor(
-            ingress,
-            persisted_at_ms=poll.persisted_at_ms,
-        )
         session = self._sessions.decide(
             account_id=policy.account_id,
             sender_ref=sender_ref,
@@ -392,6 +399,37 @@ class WechatTextInboundProcessor:
             sequence=sequence,
             received_at_ms=poll.captured_at_ms,
             incoming_context_token=incoming_context_token,
+        )
+        if existing_ingress is not None:
+            # 平台重投已持久化消息：存量 ingress 原样重放（对照飞书实现）。
+            # 绝不能按新 poll 重建——raw 对象 id、游标链、captured_at_ms
+            # 等易变字段必然不同，会触发 InboxConflictError 让 duplicate
+            # 分支永远不可达，轮询器在重投循环里永久报错。
+            if (
+                existing_ingress.raw_payload_sha256 != poll.raw_payload_sha256
+                or existing_ingress.raw_payload_size_bytes != poll.raw_payload_size_bytes
+            ):
+                raise WechatInboundError("wechat duplicate event changed its raw payload")
+            ingress = existing_ingress
+        else:
+            ingress = InboxIngress(
+                ingress_id=envelope.inbound_id,
+                envelope=envelope,
+                raw_payload_object_id=poll.raw_payload_object_id,
+                raw_payload_sha256=poll.raw_payload_sha256,
+                raw_payload_size_bytes=poll.raw_payload_size_bytes,
+                cursor_stream_key=derive_cursor_stream_key(
+                    "wechat", policy.tenant_id, policy.link_account_id
+                ),
+                previous_cursor_sha256=poll.previous_cursor_sha256,
+                next_cursor_token=poll.next_cursor_token,
+                next_cursor_sha256=cursor_token_sha256(poll.next_cursor_token),
+                captured_at_ms=poll.captured_at_ms,
+                ingress_sha256="0" * 64,
+            ).with_computed_sha256()
+        persisted = self._inbox.persist_and_advance_cursor(
+            ingress,
+            persisted_at_ms=poll.persisted_at_ms,
         )
         return WechatInboundOutcome(
             envelope=envelope,
@@ -411,7 +449,10 @@ class WechatTextInboundProcessor:
         """Persist a getupdates message batch before exposing its final external cursor.
 
         Intermediate cursor tokens are local recovery checkpoints bound to the immutable
-        raw batch object. Only the final member stores the platform get_updates_buf.
+        raw batch object. Only the final member stores the platform get_updates_buf;
+        every intermediate checkpoint also carries that external token (JSON
+        encoded) so a crash mid-batch can resume polling the platform instead of
+        replaying the local checkpoint token at it.
         """
 
         if not raw_messages or len(raw_messages) > 1_000:
@@ -422,16 +463,16 @@ class WechatTextInboundProcessor:
         for index, raw_message in enumerate(raw_messages):
             final = index == len(raw_messages) - 1
             next_token = poll.next_cursor_token if final else (
-                "tg-local-wechat-batch-v1:"
-                + canonical_sha256(
+                _LOCAL_BATCH_CURSOR_PREFIX
+                + canonical_json_bytes(
                     {
                         "raw_payload_object_id": poll.raw_payload_object_id,
                         "raw_payload_sha256": poll.raw_payload_sha256,
                         "member_index": index + 1,
                         "member_count": len(raw_messages),
-                        "external_cursor_sha256": final_cursor_sha256,
+                        "external_cursor_token": poll.next_cursor_token,
                     }
-                )
+                ).decode("utf-8")
             )
             member_poll = poll.model_copy(
                 update={
@@ -452,6 +493,7 @@ __all__ = [
     "WechatInboundPolicy",
     "WechatPollRecord",
     "WechatTextInboundProcessor",
+    "external_cursor_from_local",
     "extract_ilink_text",
     "extract_ilink_media_items",
 ]

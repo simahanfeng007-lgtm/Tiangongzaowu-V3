@@ -232,7 +232,7 @@ class CommunicationRuntime:
                 source_instance_id=instance_id,
             )
         )
-        return cls(
+        runtime = cls(
             config,
             instance_id,
             lease,
@@ -248,6 +248,12 @@ class CommunicationRuntime:
             raw_inbound,
             time.monotonic_ns(),
         )
+        # 崩溃恢复接线：上一进程在 SEND 副作用中途退出时留下的
+        # SIDE_EFFECT_STARTED 投递没有网关重发的保证，只能在启动时
+        # 主动转入 RECONCILE_REQUIRED，否则它们永久悬空，
+        # unresolved_delivery_count 恒 >0，drain/割接被永久阻塞。
+        runtime.deliveries.recover_ambiguous(now_ms=observed_ms)
+        return runtime
 
     def health_payload(self) -> dict[str, object]:
         uptime_ms = max(0, (time.monotonic_ns() - self._started_monotonic_ns) // 1_000_000)

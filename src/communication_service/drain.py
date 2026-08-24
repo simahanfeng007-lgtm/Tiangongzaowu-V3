@@ -46,36 +46,47 @@ class CommunicationDrainInspector:
             tenant_id=tenant_id,
             link_account_id=link_account_id,
         )
-        inbox = self._inbox.channel_drain_facts(
-            channel=channel,
-            tenant_id=tenant_id,
-            link_account_id=link_account_id,
-        )
-        deliveries = self._deliveries.channel_drain_facts(
-            channel=channel,
-            tenant_id=tenant_id,
-            link_account_id=link_account_id,
-        )
-        if inflight_poll_count:
-            raise ChannelDrainNotReady("channel.drain.poll_inflight")
-        if gate_inflight_send_count or deliveries.inflight_send_count:
-            raise ChannelDrainNotReady("channel.drain.send_inflight")
-        if inbox.unacknowledged_count:
-            raise ChannelDrainNotReady("channel.drain.inbox_unacknowledged")
-        if deliveries.unresolved_delivery_count:
-            raise ChannelDrainNotReady("channel.drain.delivery_unresolved")
-        return build_channel_drain_evidence(
-            channel=channel,
-            tenant_id=tenant_id,
-            link_account_id=link_account_id,
-            gateway_epoch=gateway_epoch,
-            legacy_owner_component_id=legacy_owner_component_id,
-            legacy_owner_instance_id=legacy_owner_instance_id,
-            inbox_ledger_sha256=inbox.ledger_sha256,
-            delivery_ledger_sha256=deliveries.ledger_sha256,
-            last_cursor_sha256=inbox.last_cursor_sha256,
-            observed_at_ms=observed_at_ms,
-        )
+        try:
+            inbox = self._inbox.channel_drain_facts(
+                channel=channel,
+                tenant_id=tenant_id,
+                link_account_id=link_account_id,
+            )
+            deliveries = self._deliveries.channel_drain_facts(
+                channel=channel,
+                tenant_id=tenant_id,
+                link_account_id=link_account_id,
+            )
+            if inflight_poll_count:
+                raise ChannelDrainNotReady("channel.drain.poll_inflight")
+            if gate_inflight_send_count or deliveries.inflight_send_count:
+                raise ChannelDrainNotReady("channel.drain.send_inflight")
+            if inbox.unacknowledged_count:
+                raise ChannelDrainNotReady("channel.drain.inbox_unacknowledged")
+            if deliveries.unresolved_delivery_count:
+                raise ChannelDrainNotReady("channel.drain.delivery_unresolved")
+            return build_channel_drain_evidence(
+                channel=channel,
+                tenant_id=tenant_id,
+                link_account_id=link_account_id,
+                gateway_epoch=gateway_epoch,
+                legacy_owner_component_id=legacy_owner_component_id,
+                legacy_owner_instance_id=legacy_owner_instance_id,
+                inbox_ledger_sha256=inbox.ledger_sha256,
+                delivery_ledger_sha256=deliveries.ledger_sha256,
+                last_cursor_sha256=inbox.last_cursor_sha256,
+                observed_at_ms=observed_at_ms,
+            )
+        except Exception:
+            # 前置校验失败：回滚 begin_drain 摘掉的租约与 draining 状态，
+            # 否则一次失败的 drain 会让该通道停止轮询/发送，直到外部
+            # 重新安装租约才能恢复。
+            self._channel_authority.abort_drain(
+                channel=channel,
+                tenant_id=tenant_id,
+                link_account_id=link_account_id,
+            )
+            raise
 
 
 __all__ = ["ChannelDrainNotReady", "CommunicationDrainInspector"]
