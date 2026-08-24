@@ -1451,12 +1451,13 @@ setTimeout(() => {
         self.assertNotIn("'unsafe-eval'", html)
         self.assertIn("Invoke-Rollback", helper)
         self.assertIn("update-baseline", installer)
-        # 便携模式重定向必须先于模块加载期的 workspace/runtime root 解析，
-        # 否则运行时状态被永久缓存到本机固定目录，便携语义失效。
+        # 启动三段式顺序：source 隔离 → 便携 userData 重定向 → workspace/
+        # runtime root 解析。portable 的 setPath 晚于 resolveWorkspaceMode
+        # 的话，运行时状态会被永久缓存到本机固定目录，便携语义失效。
         self.assertLess(
+            main.index("const SOURCE_ISOLATION = configureSourceIsolation();"),
             main.index('app.setPath("userData", portableUserData)'),
-            main.index("const SOURCE_ISOLATION = configureSourceIsolation()"),
-            "portable userData redirect must run before source isolation / workspace resolution",
+            "source isolation must stay ahead of the portable redirect",
         )
         self.assertLess(
             main.index('app.setPath("userData", portableUserData)'),

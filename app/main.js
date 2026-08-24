@@ -92,10 +92,13 @@ function configureSourceIsolation() {
   return Object.freeze({ profileRoot, userData, runtimeRoot, workspaceRoot });
 }
 
-// 便携模式（U 盘 TiangongData）必须先于任何 runtime root 解析执行：
-// resolveWorkspaceMode()/runtimeStateRoot() 在模块加载期就会读取并
-// 永久缓存 userData 派生路径，若 setPath 晚于它们，全部运行时状态
-// （日志/gateway 状态/恢复密钥）会写进本机固定目录，便携语义失效。
+const SOURCE_ISOLATION = configureSourceIsolation();
+
+// 便携模式（U 盘 TiangongData）必须在 resolveWorkspaceMode()/runtimeStateRoot()
+// 之前执行：它们在模块加载期就会读取并永久缓存 userData 派生路径，
+// setPath 晚于它们的话，全部运行时状态（日志/gateway 状态/恢复密钥）
+// 会写进本机固定目录，便携语义失效。source 隔离与 portable 互斥
+// （SOURCE_MODE 下 portableExecutableDir 恒空），先后仅是架构约束。
 const portableExecutableDir = SOURCE_MODE
   ? ""
   : String(process.env.PORTABLE_EXECUTABLE_DIR || "").trim();
@@ -112,8 +115,6 @@ if (portableExecutableDir) {
     delete process.env.TIANGONG_PORTABLE_MODE;
   }
 }
-
-const SOURCE_ISOLATION = configureSourceIsolation();
 
 // 工作区写入模式：workspace（默认，写边界=工作区）/ full（全盘，硬禁区除外）。
 // 由后端保存在 workspace_settings.json，启动时注入子进程；切换模式后重启应用生效。
