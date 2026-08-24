@@ -303,6 +303,47 @@ class DesktopApiError(RuntimeError):
         self.reason_code = reason_code
 
 
+def _validated_soul_backup_destination(raw: str):
+    """校验 soul-backup/create 的 destination（请求方控制，威胁模型为
+    被攻陷的渲染进程即持有 desktop token）。
+
+    允许"导出到指定位置"，但绝不给任意路径写：绝对路径、固定后缀、
+    父目录必须已存在（不递归建目录）、目标不得已存在（不覆盖任何
+    文件）。无效即 raise ValueError。
+    """
+
+    import pathlib
+
+    raw_path = pathlib.Path(str(raw or ""))
+    # 必须先于 resolve 检查原始形态：resolve 会把相对路径就地转成
+    # cwd 下的绝对路径，等价于把"当前工作目录"开放为写目标。
+    if not raw_path.is_absolute():
+        raise ValueError("soul backup destination must be absolute")
+    candidate = raw_path.expanduser().resolve(strict=False)
+    if (
+        candidate.suffix.lower() != ".tgsoul"
+        or candidate.exists()
+        or not candidate.parent.is_dir()
+    ):
+        raise ValueError("soul backup destination is invalid")
+    return candidate
+
+
+def _validated_soul_backup_verify_path(raw: str, backup_root):
+    """verify 只服务"我们生成的备份"：限定在备份根目录内，否则
+    desktop token 持有者获得任意文件存在性/格式 oracle。"""
+
+    import pathlib
+
+    raw_path = pathlib.Path(str(raw or ""))
+    if not raw_path.is_absolute():
+        raise ValueError("soul backup verify path must be absolute")
+    candidate = raw_path.expanduser().resolve(strict=False)
+    if not candidate.is_relative_to(pathlib.Path(backup_root).resolve(strict=False)):
+        raise ValueError("soul backup verify path is outside the backup root")
+    return candidate
+
+
 def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -848,15 +889,26 @@ class DesktopApiRouter:
                     if not set(payload).issubset(allowed):
                         raise DesktopApiError(400, "desktop_api.soul_backup.fields_invalid")
                     destination = str(payload.get("destination") or "").strip()
+                    try:
+                        target = _validated_soul_backup_destination(destination) if destination else None
+                    except ValueError:
+                        raise DesktopApiError(400, "desktop_api.soul_backup.destination_invalid") from None
                     result = self._runtime.soul_backup.create(
-                        None if not destination else __import__("pathlib").Path(destination),
+                        target,
                         passphrase=passphrase,
                     )
                 else:
                     if set(payload) != {"passphrase", "path"}:
                         raise DesktopApiError(400, "desktop_api.soul_backup.fields_invalid")
+                    try:
+                        verify_path = _validated_soul_backup_verify_path(
+                            str(payload.get("path") or ""),
+                            self._runtime.soul_backup.backup_root,
+                        )
+                    except ValueError:
+                        raise DesktopApiError(400, "desktop_api.soul_backup.path_outside_backups") from None
                     result = self._runtime.soul_backup.verify(
-                        __import__("pathlib").Path(str(payload.get("path") or "")),
+                        verify_path,
                         passphrase=passphrase,
                     )
             except DesktopApiError:

@@ -19,6 +19,13 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 22:
+        # v22 additive: dispatch-permit release accounting for action fence
+        # inflight.  Purely additive, drop the table and step back to v21.
+        connection.execute("DROP TABLE dispatch_permit_release")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 22")
+        connection.execute("PRAGMA user_version = 21")
+        version = 21
     if version == 21:
         # v21 is additive inside the existing GatewayStateStore.  Drop the
         # checkpoint head before its referenced checkpoint table, then remove
