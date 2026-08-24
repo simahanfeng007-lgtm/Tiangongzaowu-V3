@@ -103,7 +103,11 @@ class EmbeddedCommunicationService:
                 if action in {"wechat_login_start", "wechat.login.start", "login_start"}:
                     result = self.runtime.wechat_login_start(dict(body.get("payload") or {}), now_ms=now_ms)
                 elif action in {"wechat_login_wait", "wechat.login.wait", "login_wait"}:
-                    result = self.runtime.wechat_login_wait(dict(body.get("payload") or body), now_ms=now_ms)
+                    # 扁平调用形式下 body 带 action 键，wait 的字段白名单
+                    # 只认 session_key/verify_code——与 login_start 的取参
+                    # 方式对齐，payload 优先、扁平回退时剔除 action。
+                    flat = {key: value for key, value in body.items() if key not in {"action", "type"}}
+                    result = self.runtime.wechat_login_wait(dict(body.get("payload") or flat), now_ms=now_ms)
                 elif action in {"wechat_start", "wechat.adapter.start", "start"}:
                     result = self.runtime.wechat_adapter_start({}, now_ms=now_ms)
                 elif action in {"wechat_stop", "wechat.adapter.stop", "stop"}:

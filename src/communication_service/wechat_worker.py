@@ -114,6 +114,12 @@ class WechatIlinkPollTransport:
                 raise WechatPollError("wechat.poll.response_shape_invalid")
             ret = value.get("ret")
             if isinstance(ret, bool) or ret not in {None, 0, "0"}:
+                if ret in {-14, "-14"}:
+                    # 会话/凭据过期（与出站侧 WECHAT_SESSION_EXPIRED_CODE 对齐）：
+                    # 不能并进 platform_rejected 的 1 秒重试——那会退化成每秒
+                    # 打一次平台直到人工干预。进入可见的过期状态并长退避，
+                    # 等待重新扫码后 vault 换发新 token 自然恢复。
+                    raise WechatPollError("wechat.poll.context_expired")
                 raise WechatPollError("wechat.poll.platform_rejected")
             return value, raw
         except WechatPollError:
@@ -379,8 +385,12 @@ class WechatProductionAdapter:
                 self._set_state("starting", exc.code)
                 self._closed.wait(0.5)
             except (ProductionIngressError, WechatPollError) as exc:
-                self._set_state("degraded", str(exc))
-                self._closed.wait(1.0)
+                if str(exc) == "wechat.poll.context_expired":
+                    self._set_state("credentials_expired", "wechat.poll.context_expired")
+                    self._closed.wait(60.0)
+                else:
+                    self._set_state("degraded", str(exc))
+                    self._closed.wait(1.0)
             except Exception:
                 self._set_state("error", "wechat.poll.internal_error")
                 self._closed.wait(1.0)

@@ -1019,9 +1019,14 @@ function renderOverview(payload) {
   const attemptBudget = numberValue(budget.attempt_limit, numberValue(settings.llm_daily_attempt_budget));
   const used = numberValue(budget.used);
   const attempts = numberValue(budget.attempts);
-  const budgetTotal = dailyBudget > 0 ? dailyBudget : attemptBudget;
-  const budgetValue = dailyBudget > 0 ? used : attempts;
-  const budgetText = budgetTotal > 0 ? `${budgetValue}/${budgetTotal}` : displayValue(used || attempts || 0);
+  // budget=0 是新语义的"当天完全禁止模型调用"，不是"未配置"：
+  // 字段存在（含 0）就按字面值渲染（0/0 即禁用条），只有字段缺失
+  // 才回退尝试预算或"未配置"文案。
+  const dailyConfigured = budget.success_limit !== undefined && budget.success_limit !== null
+    || settings.llm_daily_budget !== undefined && settings.llm_daily_budget !== null;
+  const budgetTotal = dailyConfigured ? dailyBudget : attemptBudget;
+  const budgetValue = dailyConfigured ? used : attempts;
+  const budgetText = dailyConfigured || attemptBudget > 0 ? `${budgetValue}/${budgetTotal}` : displayValue(used || attempts || 0);
   const recent = safeObject(
     Object.keys(safeObject(summary.recent_autonomous_action)).length
       ? summary.recent_autonomous_action
@@ -1043,7 +1048,7 @@ function renderOverview(payload) {
       <section class="life-card">
         ${sectionTitle("模型预算", "今日 · 不含必做日程")}
         ${budgetAvailable ? `
-          ${progressBar("非日程调用预算", budgetValue, budgetTotal || Math.max(used, attempts, 1), budgetTotal > 0 ? budgetText : "未配置预算上限")}
+          ${progressBar("非日程调用预算", budgetValue, budgetTotal || Math.max(used, attempts, 1), dailyConfigured || attemptBudget > 0 ? budgetText : "未配置预算上限")}
           <div class="life-budget-grid">
             ${kvRows([
               ["成功", budget.successes ?? 0, "ok"],
@@ -2158,8 +2163,13 @@ function collectSettings(form) {
     if (!input || input.disabled) continue;
     let value = field.type === "checkbox" ? Boolean(input.checked) : input.value;
     if (field.type === "number") {
-      const number = Number(value);
-      value = Number.isFinite(number) ? number : 0;
+      const raw = String(input.value || "").trim();
+      const number = Number(raw);
+      // 空输入/非法输入=保留后端现值，绝不静默折叠为 0——预算类字段
+      // 的 0 在新语义下意味着"当天完全禁止模型调用"（Number("")===0，
+      // 空串必须单独拦截）。
+      if (!raw || !Number.isFinite(number)) continue;
+      value = number;
     }
     setNested(payload, field.key, value);
   }

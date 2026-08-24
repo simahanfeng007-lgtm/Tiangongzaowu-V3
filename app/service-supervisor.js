@@ -380,6 +380,9 @@ class ServiceSupervisor {
       return await operation;
     } finally {
       if (this._drainPromise === operation) this._drainPromise = null;
+      // 复位 draining：唯一旧复位点是 startAll()，drainAll 后走 start()/
+      // restart() 的调用方会恒收 services_draining，服务永远拉不起来。
+      if (!this._drainPromise) this._draining = false;
     }
   }
 }

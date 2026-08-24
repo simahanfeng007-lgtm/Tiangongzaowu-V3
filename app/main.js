@@ -1934,16 +1934,24 @@ async function copyMediaToClipboard(payload = {}) {
   }
   try {
     const materialized = await materializeMediaTarget(target);
-    const ext = targetImageExtension(materialized.path || target);
-    if (materialized.path && CHAT_IMAGE_EXTENSIONS.includes(ext) && ext !== "svg") {
-      const image = nativeImage.createFromPath(materialized.path);
-      if (!image.isEmpty()) {
-        clipboard.writeImage(image);
-        return { ok: true, copiedAs: "image", target, path: materialized.path };
+    try {
+      const ext = targetImageExtension(materialized.path || target);
+      if (materialized.path && CHAT_IMAGE_EXTENSIONS.includes(ext) && ext !== "svg") {
+        const image = nativeImage.createFromPath(materialized.path);
+        if (!image.isEmpty()) {
+          clipboard.writeImage(image);
+          return { ok: true, copiedAs: "image", target };
+        }
+      }
+      clipboard.writeText(target);
+      return { ok: true, copiedAs: "path", target, warning: "media_clipboard_fell_back_to_path" };
+    } finally {
+      // 下载的临时文件在剪贴板拿到内容后立即删除：旧实现从不清理，
+      // 反复复制远程图片会让 tiangong-media-cache 无限增长。
+      if (materialized.temporary && materialized.path) {
+        fs.promises.unlink(materialized.path).catch(() => {});
       }
     }
-    clipboard.writeText(target);
-    return { ok: true, copiedAs: "path", target, warning: "media_clipboard_fell_back_to_path" };
   } catch (error) {
     return { ok: false, error: error?.message || String(error), target };
   }

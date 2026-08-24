@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 from typing import Any, Mapping
 
 from contracts import (
@@ -22,6 +23,20 @@ class CommunicationClientError(RuntimeError):
         super().__init__(code)
         self.code = code
         self.ambiguous = ambiguous
+
+
+_REASON_CODE_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,160}")
+
+
+def _sanitized_reason_code(value: Any) -> str:
+    """通信服务回传的 reason_code 只接受受限字符集。
+
+    异常/被攻陷的对端返回含换行或控制字符的 reason_code 时，直接透传
+    会注入日志与 UI（对照 backend_client 的同款白名单）。
+    """
+
+    raw = str(value or "")
+    return raw if _REASON_CODE_PATTERN.fullmatch(raw) else "communication_client.rejected"
 
 
 def _strict_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -136,7 +151,7 @@ class CommunicationControlClient:
                 )
             if response.status < 200 or response.status >= 300 or value.get("ok") is not True:
                 raise CommunicationClientError(
-                    str(value.get("reason_code") or "communication_client.rejected"),
+                    _sanitized_reason_code(value.get("reason_code")),
                     ambiguous=(
                         external_send_started
                         and value.get("outcome_unknown") is not False
@@ -185,7 +200,7 @@ class CommunicationControlClient:
                 raise CommunicationClientError("communication_client.response.invalid_json")
             if response.status != 200 or value.get("ok") is not True:
                 raise CommunicationClientError(
-                    str(value.get("reason_code") or "communication_client.rejected")
+                    _sanitized_reason_code(value.get("reason_code"))
                 )
             return value
         except CommunicationClientError:

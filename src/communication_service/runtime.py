@@ -57,6 +57,7 @@ from .wechat_login import WECHAT_LOGIN_TTL_MS, WechatLoginError, WechatLoginMana
 from .wechat_typing import WechatTypingManager
 from .wechat_text_outbound import (
     HttpWechatIlinkTextTransport,
+    WechatRateGate,
     WechatTextDeliveryService,
     default_wechat_text_policy,
 )
@@ -106,10 +107,17 @@ class CommunicationRuntime:
         self._workers_lock = threading.RLock()
         self._delivery_lock = threading.RLock()
         self._delivery_dispatcher: VerifiedDeliveryDispatcher | None = None
+        # 文本与文件投递共享同一把账号级限流闸：各持独立 RateGate 时
+        # min_attempt_interval 的账号级限速实际可达两倍。
+        self._wechat_rate_gate = WechatRateGate(
+            clock_ms=lambda: time.time_ns() // 1_000_000,
+            sleeper=time.sleep,
+        )
         self._wechat_text_delivery = WechatTextDeliveryService(
             deliveries,
             wechat_sessions,
             HttpWechatIlinkTextTransport(),
+            rate_gate=self._wechat_rate_gate,
         )
         self._artifact_source = (
             None
@@ -130,6 +138,7 @@ class CommunicationRuntime:
                 staging_root=config.state_root / "staging" / "wechat-outbound",
                 clock_ms=lambda: time.time_ns() // 1_000_000,
                 sleeper=time.sleep,
+                rate_gate=self._wechat_rate_gate,
             )
         )
         self._feishu_transport = HttpFeishuApiTransport()
