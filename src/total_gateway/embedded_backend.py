@@ -610,6 +610,19 @@ class EmbeddedBackendRuntime:
 
     _SELF_ITERATION_SUFFIXES = {".py", ".mjs", ".cjs", ".js", ".html", ".css", ".json", ".md", ".yaml", ".yml"}
     _SELF_ITERATION_FORBIDDEN_PARTS = {"__pycache__", ".git", "_internal", "node_modules", "site-packages"}
+    # 安全关键面（提示词的 "Never touch tests/credentials/security
+    # policy/authority" 在此代码强制）：自迭代补丁不得热改写网关自身的
+    # 信任根——验签客户端、权威 store、desktop token 面与票据签发，
+    # 也不得改 tests/ 来自掩或触碰凭据/密钥命名的路径。
+    _SELF_ITERATION_FORBIDDEN_ROOTS = {"tests", "runtime_security", "contracts", "credentials", "secrets", "keys"}
+    _SELF_ITERATION_FORBIDDEN_FILES = {
+        "total_gateway/backend_client.py",
+        "total_gateway/store.py",
+        "total_gateway/desktop_api.py",
+        "total_gateway/runtime_authority.py",
+        "total_gateway/ticket_verification.py",
+        "total_gateway/server.py",
+    }
 
     def _resolve_self_iteration_target(self, target: str) -> Path:
         clean = str(target or "").strip().replace("\\", "/")
@@ -618,6 +631,12 @@ class EmbeddedBackendRuntime:
             raise ValueError("self-iteration target path is invalid")
         if any(part.casefold() in self._SELF_ITERATION_FORBIDDEN_PARTS for part in parts):
             raise ValueError("self-iteration target path is forbidden")
+        if parts[0].casefold() in self._SELF_ITERATION_FORBIDDEN_ROOTS:
+            raise ValueError("self-iteration target is a forbidden source root")
+        if "/".join(parts).casefold() in self._SELF_ITERATION_FORBIDDEN_FILES:
+            raise ValueError("self-iteration target is a security-critical file")
+        if any("credential" in part.casefold() or "secret" in part.casefold() for part in parts):
+            raise ValueError("self-iteration target looks like a credential path")
         if ("." + parts[-1].rsplit(".", 1)[-1]).casefold() not in self._SELF_ITERATION_SUFFIXES:
             raise ValueError("self-iteration target suffix is not patchable")
         resolved: Path | None = None

@@ -82,7 +82,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 21
+STORE_SCHEMA_VERSION = 22
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1462,6 +1462,19 @@ def _migration_sha256(version: int, migration_id: str, statements: tuple[str, ..
     )
 
 
+_MIGRATION_V22_ID = "gateway-dispatch-permit-release-v22"
+_MIGRATION_V22_STATEMENTS = (
+    """
+    CREATE TABLE dispatch_permit_release (
+        effect_id TEXT NOT NULL,
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        released_by TEXT NOT NULL,
+        released_at_ms INTEGER NOT NULL CHECK (released_at_ms >= 0),
+        PRIMARY KEY (effect_id, attempt)
+    ) STRICT
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1484,6 +1497,7 @@ _MIGRATIONS = (
     (19, _MIGRATION_V19_ID, _MIGRATION_V19_STATEMENTS),
     (20, _MIGRATION_V20_ID, _MIGRATION_V20_STATEMENTS),
     (21, _MIGRATION_V21_ID, _MIGRATION_V21_STATEMENTS),
+    (22, _MIGRATION_V22_ID, _MIGRATION_V22_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -4540,8 +4554,12 @@ class GatewayStateStore:
             if claim_fact is not None:
                 try:
                     anchor_epoch = int(json.loads(claim_fact["payload_json"]).get("action_fence_epoch") or 0)
-                except Exception:
-                    anchor_epoch = 0
+                except Exception as exc:
+                    # 读损坏 fail-closed：CLAIM fact 半写/损坏时静默当作
+                    # epoch 0 放行，等于把 fence 锚点校验整体架空。
+                    raise StoreCorruptionError(
+                        f"effect claim fact payload is corrupt: {effect_id}"
+                    ) from exc
             current_epoch = int(self._action_fence_row_locked()["action_fence_epoch"])
             if current_epoch != anchor_epoch:
                 raise StoreConflictError(
@@ -4628,16 +4646,39 @@ class GatewayStateStore:
                 effect_id=result.effect_id, attempt=1, fact_kind="RECEIPT", verdict=None,
                 payload=json.loads(result_json), created_at_ms=result.observed_at_ms,
             )
-            self._connection.execute(
+            # inflight 只能归还"确实持有未释放 dispatch permit"的 effect：
+            # 从 CLAIMED 直接完结（未走过 permit）或已归还过的 effect 递减，
+            # 都是在盗扣他人在途计数，让 drained 判定提前成真。
+            open_permit = self._connection.execute(
                 """
-                UPDATE action_fence
-                SET inflight_count = MAX(inflight_count - 1, 0),
-                    draining = CASE WHEN inflight_count - 1 <= 0 THEN 0 ELSE draining END,
-                    updated_at_ms = ?
-                WHERE fence_id = 1 AND inflight_count > 0
+                SELECT f.attempt FROM effect_facts f
+                WHERE f.effect_id = ? AND f.fact_kind = 'DISPATCH_PERMIT'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM dispatch_permit_release r
+                    WHERE r.effect_id = f.effect_id AND r.attempt = f.attempt
+                  )
+                ORDER BY f.attempt LIMIT 1
                 """,
-                (result.observed_at_ms,),
-            )
+                (result.effect_id,),
+            ).fetchone()
+            if open_permit is not None:
+                self._connection.execute(
+                    """
+                    UPDATE action_fence
+                    SET inflight_count = MAX(inflight_count - 1, 0),
+                        draining = CASE WHEN inflight_count - 1 <= 0 THEN 0 ELSE draining END,
+                        updated_at_ms = ?
+                    WHERE fence_id = 1 AND inflight_count > 0
+                    """,
+                    (result.observed_at_ms,),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO dispatch_permit_release(effect_id, attempt, released_by, released_at_ms)
+                    VALUES (?, ?, 'effect_receipt', ?)
+                    """,
+                    (result.effect_id, int(open_permit["attempt"]), result.observed_at_ms),
+                )
             return _effect_record_from_row(
                 self._connection.execute(
                     "SELECT * FROM effect_ledger WHERE effect_id = ?", (result.effect_id,)
@@ -6079,18 +6120,20 @@ class GatewayStateStore:
             "dispositions": dispositions,
         }
         digest = canonical_sha256(receipt_payload)
-        fence_epoch = int(self._action_fence_row_locked()["action_fence_epoch"])
-        if fence_epoch == 0:
-            raise StoreConflictError("execution contract cutover requires an active fence first")
-        if int(self._action_fence_row_locked()["inflight_count"]) != 0:
-            raise StoreConflictError("execution contract cutover requires drained inflight")
-        nonterminal = self._connection.execute(
-            "SELECT COUNT(*) AS n FROM effect_attempts WHERE state NOT IN ('SUCCEEDED','FAILED_FINAL','RECONCILED','FENCED')"
-        ).fetchone()["n"]
-        if nonterminal != 0:
-            raise StoreConflictError(f"execution contract cutover has {nonterminal} effects without disposition")
         dispo_json = json.dumps(dispositions, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         with self._lock, self._write_transaction():
+            # 前置检查必须在写事务内读取：事务外检查与插入之间存在窗口，
+            # 并发的 permit 发放/完成会让"drained"结论过期（TOCTOU）。
+            fence_epoch = int(self._action_fence_row_locked()["action_fence_epoch"])
+            if fence_epoch == 0:
+                raise StoreConflictError("execution contract cutover requires an active fence first")
+            if int(self._action_fence_row_locked()["inflight_count"]) != 0:
+                raise StoreConflictError("execution contract cutover requires drained inflight")
+            nonterminal = self._connection.execute(
+                "SELECT COUNT(*) AS n FROM effect_attempts WHERE state NOT IN ('SUCCEEDED','FAILED_FINAL','RECONCILED','FENCED')"
+            ).fetchone()["n"]
+            if nonterminal != 0:
+                raise StoreConflictError(f"execution contract cutover has {nonterminal} effects without disposition")
             row = self._connection.execute(
                 "SELECT contract_epoch, receipt_sha256 FROM execution_contract_epoch WHERE epoch_id = 1"
             ).fetchone()
@@ -6242,17 +6285,53 @@ class GatewayStateStore:
             return {"fence_epoch": epoch, "started_fact": started}
 
     def release_dispatch_permit(self, *, effect_id: str, attempt: int, now_ms: int) -> None:
-        """attempt 收尾：inflight 归还（receipt 落地后调用）。"""
+        """attempt 收尾：inflight 归还（receipt 落地后调用）。
+
+        归还必须凭据化：只允许归还"确实发放过且未归还过"的 permit，
+        否则重复释放/无证释放会系统性压低 inflight，让 drained 判定
+        在在途 effect 未清空时提前成真。
+        """
         with self._lock, self._write_transaction():
+            permit = self._connection.execute(
+                """
+                SELECT seq FROM effect_facts
+                WHERE effect_id = ? AND attempt = ? AND fact_kind = 'DISPATCH_PERMIT'
+                LIMIT 1
+                """,
+                (effect_id, attempt),
+            ).fetchone()
+            if permit is None:
+                raise StoreConflictError("dispatch permit was never issued for this attempt")
+            released = self._connection.execute(
+                """
+                SELECT effect_id FROM dispatch_permit_release
+                WHERE effect_id = ? AND attempt = ?
+                LIMIT 1
+                """,
+                (effect_id, attempt),
+            ).fetchone()
+            if released is not None:
+                # 幂等吸收成对调用（complete_effect 落 receipt 后调用方
+                # 仍会显式 release 一次）：permit 只归还一次，重复释放
+                # 静默返回而不是再递减——旧实现靠 MAX(...,0) 钳位吞掉
+                # 第二次递减，掩盖了"重复释放本就不该再减"的事实。
+                return
             self._connection.execute(
                 """
                 UPDATE action_fence
                 SET inflight_count = MAX(inflight_count - 1, 0),
                     draining = CASE WHEN inflight_count - 1 <= 0 THEN 0 ELSE draining END,
                     updated_at_ms = ?
-                WHERE fence_id = 1
+                WHERE fence_id = 1 AND inflight_count > 0
                 """,
                 (now_ms,),
+            )
+            self._connection.execute(
+                """
+                INSERT INTO dispatch_permit_release(effect_id, attempt, released_by, released_at_ms)
+                VALUES (?, ?, 'explicit_release', ?)
+                """,
+                (effect_id, attempt, now_ms),
             )
 
     def recover_started_attempts(self, *, now_ms: int) -> tuple[dict, ...]:
@@ -6392,6 +6471,12 @@ class GatewayStateStore:
                     raise StoreConflictError("new generation must advance exactly once")
                 if gateway_epoch < current.gateway_epoch:
                     raise StoreConflictError("generation lease cannot move to an older gateway epoch")
+                if current.status != "ACTIVE":
+                    # 终态（CANCELLED 等）的请求不能被一次普通的
+                    # generation+1 获取静默复活并抹掉取消痕迹。
+                    raise StoreConflictError(
+                        f"cannot supersede a terminal request generation ({current.status})"
+                    )
                 supersedes = current.fence.fence_id
                 fence = derive_generation_fence(
                     gateway_epoch=gateway_epoch,
@@ -6404,10 +6489,14 @@ class GatewayStateStore:
                     expires_at_ms=expires_at_ms,
                     supersedes_fence_id=supersedes,
                 )
-                self._connection.execute(
-                    "UPDATE generation_fences SET state = 'SUPERSEDED' WHERE fence_id = ?",
+                superseded = self._connection.execute(
+                    "UPDATE generation_fences SET state = 'SUPERSEDED' WHERE fence_id = ? AND state = 'ACTIVE'",
                     (supersedes,),
                 )
+                if superseded.rowcount != 1:
+                    raise StoreConflictError(
+                        "current fence is not ACTIVE; refusing to revive a terminal generation"
+                    )
                 updated = self._connection.execute(
                     """
                     UPDATE request_generation
