@@ -86,7 +86,9 @@ class SoulBackupPathValidationTests(unittest.TestCase):
             ok = _validated_soul_backup_verify_path(
                 str(backup_root / "soul-1.tgsoul"), backup_root
             )
-            self.assertTrue(ok.is_relative_to(backup_root))
+            # CI Windows 的 TEMP 是 8.3 短路径（RUNNER~1），函数内 resolve
+            # 会展开为长路径——断言两侧统一 resolve 再比较。
+            self.assertTrue(ok.is_relative_to(backup_root.resolve(strict=False)))
             with self.assertRaises(ValueError):
                 _validated_soul_backup_verify_path(str(root / "outside.tgsoul"), backup_root)
             with self.assertRaises(ValueError):
