@@ -48,6 +48,7 @@ class ChannelAuthorityGate:
         self._lock = threading.RLock()
         self._leases: dict[tuple[str, str, str], ChannelOwnershipLease] = {}
         self._draining: set[tuple[str, str, str]] = set()
+        self._drain_backup: dict[tuple[str, str, str], ChannelOwnershipLease] = {}
         self._inflight: dict[tuple[str, str, str], dict[str, int]] = {}
 
     def install_lease(self, lease: ChannelOwnershipLease, *, now_ms: int) -> bool:
@@ -99,10 +100,36 @@ class ChannelAuthorityGate:
     ) -> tuple[int, int]:
         key = _scope_key(channel, tenant_id, link_account_id)
         with self._lock:
-            self._leases.pop(key, None)
+            lease = self._leases.pop(key, None)
             self._draining.add(key)
+            # 暂存被摘除的租约：drain 前置检查失败时 abort_drain 恢复，
+            # 否则一次失败的 drain 会永久停用该通道的轮询与发送。
+            if lease is not None:
+                self._drain_backup[key] = lease
             counts = self._inflight.get(key, {})
             return counts.get("POLL", 0), counts.get("SEND", 0)
+
+    def abort_drain(
+        self,
+        *,
+        channel: str,
+        tenant_id: str,
+        link_account_id: str,
+    ) -> bool:
+        """Drain 前置校验失败：回滚到 begin_drain 之前的状态。
+
+        恢复的租约若已过期，后续 authorize 会按既有 lease_expired 语义
+        自行清理——通道回到正常租约生命周期，而不是卡在 draining。
+        """
+
+        key = _scope_key(channel, tenant_id, link_account_id)
+        with self._lock:
+            self._draining.discard(key)
+            lease = self._drain_backup.pop(key, None)
+            if lease is None or key in self._leases:
+                return False
+            self._leases[key] = lease
+            return True
 
     def _authorize_locked(
         self,

@@ -60,8 +60,13 @@ function boundedHttpsGet(rawUrl, maxBytes, allowedOrigins, onChunk) {
       res.on("data", (chunk) => {
         total += chunk.length;
         if (total > maxBytes) { req.destroy(new Error("update_response_too_large")); return; }
-        if (onChunk) onChunk(chunk, total, contentLength);
-        else chunks.push(chunk);
+        if (onChunk) {
+          // onChunk 在流事件回调内同步执行（writeSync 落盘）；磁盘满等
+          // 异常若任其冒泡会成为主进程 uncaughtException 且外层 Promise
+          // 永不 settle。统一转成 req.destroy -> reject。
+          try { onChunk(chunk, total, contentLength); }
+          catch (error) { req.destroy(error); }
+        } else chunks.push(chunk);
       });
       res.on("end", () => resolve(onChunk ? { total, contentLength } : Buffer.concat(chunks)));
       res.on("error", reject);
@@ -82,7 +87,11 @@ function verifyManifestEnvelope({ envelope, trust, state = {}, currentVersion = 
   const signed = envelope.signed;
   if (signed.schema !== "tiangong.update.manifest.v1") throw new Error("update_manifest_schema_invalid");
   const metadataVersion = Number(signed.metadata_version);
-  if (!Number.isSafeInteger(metadataVersion) || metadataVersion <= Number(state.highest_metadata_version || 0)) throw new Error("update_metadata_rollback_or_replay");
+  // 只拒绝更旧的 metadata_version：相同的必然出自签名方（签名/过期/
+  // 版本三重校验在前），是幂等重查而非重放。旧实现用 <= 会把"服务器
+  // 尚未发布新 manifest 时的再次检查"判成 replay，已就绪的更新被
+  // recordError 打成 ERROR 后永远无法下载。
+  if (!Number.isSafeInteger(metadataVersion) || metadataVersion < Number(state.highest_metadata_version || 0)) throw new Error("update_metadata_rollback_or_replay");
   const expires = Date.parse(String(signed.expires || ""));
   if (!Number.isFinite(expires) || expires <= now) throw new Error("update_manifest_expired");
   const releaseVersion = String(signed.release_version || "");
@@ -139,7 +148,11 @@ class SecureUpdater {
 
   recordError(error) {
     const message = error?.message || String(error || "update_failed");
-    this._save({ phase: "ERROR", error: message });
+    // DOWNLOADED/APPLYING/COMMITTED 是资产已就绪状态：检查/网络失败只
+    // 记录错误，绝不作废已下载（哈希已验证）或已提交的更新，否则
+    // "下载完再点一次检查且失败"就会让 apply() 的前置条件永远不满足。
+    const assetPhase = ["DOWNLOADED", "APPLYING", "COMMITTED"].includes(this.state.phase);
+    this._save({ phase: assetPhase ? this.state.phase : "ERROR", error: message });
     return { ok: false, error: message, status: this.status() };
   }
 
@@ -148,7 +161,11 @@ class SecureUpdater {
     const manifestUrl = String(this.trust.manifest_url || "");
     const allowedOrigins = this._origins();
     if (!manifestUrl || !this.trust.public_key_pem || !this.trust.key_id || !this.trust.expected_publisher || !allowedOrigins.size) throw new Error("update_trust_root_incomplete");
-    this._save({ phase: "CHECKING", error: "" });
+    // 已就绪的下载不因再次检查而作废：失败时 recordError 保留资产
+    // phase；成功且仍是同一版本时保持 DOWNLOADED，只有服务器发布
+    // 新版本才回到 AVAILABLE。
+    const previouslyDownloaded = this.state.phase === "DOWNLOADED" ? this.state.available : null;
+    this._save({ phase: this.state.phase === "DOWNLOADED" ? "DOWNLOADED" : "CHECKING", error: "" });
     const raw = await boundedHttpsGet(manifestUrl, MAX_METADATA_BYTES, allowedOrigins);
     let envelope;
     try { envelope = JSON.parse(raw.toString("utf8")); } catch { throw new Error("update_manifest_json_invalid"); }
@@ -158,8 +175,10 @@ class SecureUpdater {
       state: this.state,
       currentVersion: this.currentVersion,
     });
+    const sameRelease = previouslyDownloaded
+      && compareVersion(String(signed.release_version), String(previouslyDownloaded.release_version)) === 0;
     this._save({
-      phase: "AVAILABLE",
+      phase: sameRelease ? "DOWNLOADED" : "AVAILABLE",
       available: signed,
       highest_metadata_version: Number(signed.metadata_version),
       error: "",
@@ -175,13 +194,24 @@ class SecureUpdater {
     const partial = `${destination}.partial`;
     await fsp.rm(partial, { force: true });
     const fd = fs.openSync(partial, "w", 0o600); let written = 0;
+    const writeAll = (buffer) => {
+      // writeSync 对大 buffer 可能部分写，循环到写完。
+      let offset = 0;
+      while (offset < buffer.length) offset += fs.writeSync(fd, buffer, offset);
+    };
     try {
-      await boundedHttpsGet(String(target.url), Number(target.size), this._origins(), (chunk, total) => {
-        fs.writeSync(fd, chunk); written = total;
-        this.onProgress({ phase: "DOWNLOADING", written, total: Number(target.size), percent: Math.min(100, Math.round(written * 100 / Number(target.size))) });
-      });
-      fs.fsyncSync(fd);
-    } finally { fs.closeSync(fd); }
+      try {
+        await boundedHttpsGet(String(target.url), Number(target.size), this._origins(), (chunk, total) => {
+          writeAll(chunk); written = total;
+          this.onProgress({ phase: "DOWNLOADING", written, total: Number(target.size), percent: Math.min(100, Math.round(written * 100 / Number(target.size))) });
+        });
+        fs.fsyncSync(fd);
+      } finally { fs.closeSync(fd); }
+    } catch (error) {
+      // 网络中断/磁盘满等任何失败都清掉半成品，不留无法通过哈希校验的 partial。
+      await fsp.rm(partial, { force: true });
+      throw error;
+    }
     if (written !== Number(target.size)) { await fsp.rm(partial, { force: true }); throw new Error("update_download_size_mismatch"); }
     const digest = await sha256File(partial);
     if (digest.toLowerCase() !== String(target.sha256).toLowerCase()) { await fsp.rm(partial, { force: true }); throw new Error("update_download_hash_mismatch"); }
@@ -266,14 +296,24 @@ class SecureUpdater {
         error: "",
       });
     }).catch(() => {
-      this._save({
+      // 新安装包哈希不可得（文件被杀毒隔离/删除等）：绝不能把基线指向
+      // 无法验证的文件而保留旧哈希——那会让之后每次 apply() 的基线复核
+      // 恒抛 update_rollback_hash_mismatch，永久无法升级。旧基线仍完整
+      // 时保留旧基线；旧基线也缺失则清空，让 _seedLastKnownGoodInstaller
+      // 从打包基线重建。
+      const patch = {
         phase: "COMMITTED",
         highest_release_version: this.currentVersion,
-        last_known_good_installer: installer,
         transaction_token: "",
         health_marker: "",
-        error: "",
-      });
+        error: "update_baseline_hash_unavailable",
+      };
+      const previousInstaller = String(this.state.last_known_good_installer || "");
+      if (previousInstaller && fs.existsSync(previousInstaller)) {
+        this._save(patch);
+      } else {
+        this._save({ ...patch, last_known_good_installer: "", last_known_good_installer_sha256: "" });
+      }
     });
     return true;
   }

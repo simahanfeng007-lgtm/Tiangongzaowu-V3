@@ -70,6 +70,10 @@ PRO_APP_ACTIONS: Dict[str, Dict[str, Any]] = {
     "docker.compose.config": {"risk": "A0", "implemented": True, "summary": "Validate/print docker compose config for a compose file."},
 
     "sqlite.query": {"risk": "A2", "implemented": True, "summary": "Run a SQLite query against a workspace database; SELECT by default, writes require confirmed=true."},
+
+    "mcp.servers.list": {"risk": "A0", "implemented": True, "summary": "List user-configured MCP servers from ~/.tiangong/v3/mcp_servers.json (read-only, no env values)."},
+    "mcp.tools.list": {"risk": "A0", "implemented": True, "summary": "Connect to a configured MCP server and list its tools with input schemas."},
+    "mcp.tool.call": {"risk": "A3", "implemented": True, "summary": "Call one tool on a configured MCP server; A3 confirmation chain applies because MCP tools can have arbitrary side effects."},
 }
 
 APP_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -190,6 +194,15 @@ APP_PROFILES: Dict[str, Dict[str, Any]] = {
         "bridge_actions": [],
         "official_path": "stdlib sqlite3 local database query/limited update executor.",
     },
+    "mcp": {
+        "label": "Model Context Protocol",
+        "modules": [],
+        "executables": [],
+        "env": [],
+        "native_actions": ["mcp.servers.list", "mcp.tools.list", "mcp.tool.call"],
+        "bridge_actions": [],
+        "official_path": "MCP stdio servers declared by the user in ~/.tiangong/v3/mcp_servers.json; the model can only reference configured server names and can never invent spawn commands.",
+    },
 }
 
 
@@ -208,6 +221,8 @@ def handle_pro_app_action(runtime: Any, op_id: str, action: str, target: str | N
         return _bridge_pack_create(runtime, target, args)
     if action.startswith("browser.playwright."):
         return _browser_playwright(runtime, action, target, args)
+    if action.startswith("mcp."):
+        return _mcp_action(runtime, action, target, args)
     if action == "microsoft.graph.request_pack.create":
         return _request_pack(runtime, target, args, provider="microsoft_graph")
     if action == "microsoft.office.com.script.create":
@@ -926,6 +941,59 @@ def _docker_action(runtime: Any, action: str, target: str | None, args: Dict[str
         return {"success": False, "message": f"unsupported docker action: {action}"}
     res = subprocess.run(cmd, cwd=str(runtime.workspace), capture_output=True, text=True, timeout=int(args.get("timeout", 60)))
     return {"success": res.returncode == 0, "result": {"cmd": cmd[1:], "returncode": res.returncode, "stdout": res.stdout, "stderr": res.stderr}, "evidence": {"path": "docker", "exists": True, "bytes": len(res.stdout)}}
+
+
+def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP 接入（v1）：服务器只能来自用户配置文件，模型不可自造命令。
+
+    权限链全复用：mcp.tool.call 注册为 A3，由网关确认链把关——任何
+    MCP 工具都可能有任意副作用，宁可多确认一次。
+    """
+    from .mcp_client import (
+        DEFAULT_TIMEOUT_MS,
+        McpClientError,
+        call_tool,
+        list_servers,
+        list_tools,
+    )
+
+    def _timeout_ms() -> int:
+        try:
+            return int(args.get("timeout_ms") or DEFAULT_TIMEOUT_MS)
+        except (TypeError, ValueError):
+            return DEFAULT_TIMEOUT_MS
+
+    try:
+        if action == "mcp.servers.list":
+            servers = list_servers()
+            return {
+                "success": True,
+                "result": {
+                    "servers": servers,
+                    "count": len(servers),
+                    "hint": "服务器在 ~/.tiangong/v3/mcp_servers.json 中由用户配置；模型只能引用 server 名。",
+                },
+            }
+        if action == "mcp.tools.list":
+            server = str(target or args.get("server") or "").strip()
+            result = list_tools(server, timeout_ms=_timeout_ms())
+            return {"success": True, "result": result}
+        if action == "mcp.tool.call":
+            server = str(target or args.get("server") or "").strip()
+            tool = str(args.get("tool") or args.get("name") or "").strip()
+            arguments = args.get("arguments") or {}
+            result = call_tool(server, tool, arguments, timeout_ms=_timeout_ms())
+            return {
+                "success": not result.get("is_error"),
+                # 两种失败（isError / McpClientError）保持同一形状：
+                # error + message + result 三键齐全，下游按 error 分类。
+                "error": "" if not result.get("is_error") else "mcp.tool.is_error",
+                "result": result,
+                "message": "MCP tool reported isError" if result.get("is_error") else "",
+            }
+    except McpClientError as exc:
+        return {"success": False, "error": exc.code, "result": None, "message": str(exc)}
+    return {"success": False, "error": "mcp.action.unknown", "result": None, "message": f"unknown mcp action: {action}"}
 
 
 def _sqlite_query(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:

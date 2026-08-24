@@ -94,6 +94,28 @@ function configureSourceIsolation() {
 
 const SOURCE_ISOLATION = configureSourceIsolation();
 
+// 便携模式（U 盘 TiangongData）必须在 resolveWorkspaceMode()/runtimeStateRoot()
+// 之前执行：它们在模块加载期就会读取并永久缓存 userData 派生路径，
+// setPath 晚于它们的话，全部运行时状态（日志/gateway 状态/恢复密钥）
+// 会写进本机固定目录，便携语义失效。source 隔离与 portable 互斥
+// （SOURCE_MODE 下 portableExecutableDir 恒空），先后仅是架构约束。
+const portableExecutableDir = SOURCE_MODE
+  ? ""
+  : String(process.env.PORTABLE_EXECUTABLE_DIR || "").trim();
+if (portableExecutableDir) {
+  const portableUserData = path.join(portableExecutableDir, "TiangongData");
+  try {
+    fs.mkdirSync(portableUserData, { recursive: true });
+    fs.accessSync(portableUserData, fs.constants.R_OK | fs.constants.W_OK);
+    app.setPath("userData", portableUserData);
+    process.env.TIANGONG_PORTABLE_MODE = "1";
+  } catch (_error) {
+    // Read-only/removing portable media must not crash before the first
+    // window.  The normal per-user data path remains the authority.
+    delete process.env.TIANGONG_PORTABLE_MODE;
+  }
+}
+
 // 工作区写入模式：workspace（默认，写边界=工作区）/ full（全盘，硬禁区除外）。
 // 由后端保存在 workspace_settings.json，启动时注入子进程；切换模式后重启应用生效。
 (function resolveWorkspaceMode() {
@@ -142,23 +164,6 @@ const WEB_QA_MODE = Boolean(WEB_QA_TARGET && WEB_QA_WORKSPACE);
 // The desktop has exactly one application runtime: Total Gateway on 7184.
 // 7174/7175/7176 are retired listener ports, never a selectable deployment
 // mode.  Startup only clears a verified stale listener left by an old build.
-
-const portableExecutableDir = SOURCE_MODE
-  ? ""
-  : String(process.env.PORTABLE_EXECUTABLE_DIR || "").trim();
-if (portableExecutableDir) {
-  const portableUserData = path.join(portableExecutableDir, "TiangongData");
-  try {
-    fs.mkdirSync(portableUserData, { recursive: true });
-    fs.accessSync(portableUserData, fs.constants.R_OK | fs.constants.W_OK);
-    app.setPath("userData", portableUserData);
-    process.env.TIANGONG_PORTABLE_MODE = "1";
-  } catch (_error) {
-    // Read-only/removing portable media must not crash before the first
-    // window.  The normal per-user data path remains the authority.
-    delete process.env.TIANGONG_PORTABLE_MODE;
-  }
-}
 
 // The application runtime (and legacy diagnostic child processes, when explicitly enabled)
 // must call provider APIs directly. Proxy variables inherited from the host shell can
@@ -1996,7 +2001,18 @@ function processExecutablePath(pid) {
     const match = output.match(/ExecutablePath=(.*)/i);
     return (match?.[1] || "").trim();
   } catch (_error) {
-    return "";
+    // Windows 11 24H2+ 移除了 wmic；回退 PowerShell CIM。取不到路径时
+    // 调用方（isReplaceableBackendListener*）必须保守地视为"不可替换"，
+    // 绝不能因为探测手段缺失就 taskkill 无关进程。
+    try {
+      return execFileSync(
+        "powershell",
+        ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').ExecutablePath`],
+        { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }
+      ).trim();
+    } catch (_fallbackError) {
+      return "";
+    }
   }
 }
 
@@ -2007,7 +2023,9 @@ function isReplaceableBackendListener(pid, dir) {
   const expectedExe = frozenBackendExecutablePath(dir);
   if (!expectedExe) return isSourceBackendDir(dir) && imageName.includes("tiangong-backend");
   const actualExe = processExecutablePath(pid);
-  return !actualExe || normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
+  // 探测失败（wmic/PowerShell 均不可用）时保守拒绝：宁可漏替换自家旧
+  // 监听（退化为端口占用报错），不可误杀恰好叫 python.exe 的无关进程。
+  return Boolean(actualExe) && normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
 }
 
 function shouldReplaceExistingBackend(dir) {
@@ -3844,7 +3862,19 @@ async function processExecutablePathAsync(pid) {
     const match = output.match(/ExecutablePath=(.*)/i);
     return (match?.[1] || "").trim();
   } catch (_error) {
-    return "";
+    // 与同步版一致：wmic 缺失（Win11 24H2+）时回退 PowerShell CIM。
+    try {
+      return (
+        await execFileText("powershell", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').ExecutablePath`,
+        ])
+      ).trim();
+    } catch (_fallbackError) {
+      return "";
+    }
   }
 }
 
@@ -3894,7 +3924,8 @@ async function isReplaceableBackendListenerAsync(pid, dir) {
   const expectedExe = frozenBackendExecutablePath(dir);
   if (!expectedExe) return isSourceBackendDir(dir) && imageName.includes("tiangong-backend");
   const actualExe = await processExecutablePathAsync(pid);
-  return !actualExe || normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
+  // 探测失败时保守拒绝（与同步版一致），防误杀无关进程。
+  return Boolean(actualExe) && normalizeFsPath(actualExe) !== normalizeFsPath(expectedExe);
 }
 
 async function killProcessTreeAsync(pid) {

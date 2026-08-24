@@ -1,5 +1,13 @@
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function row(label, value) {
-  return `<div class="rs-line"><span class="rs-label">${label}:</span><span class="rs-value">${value}</span></div>`;
+  return `<div class="rs-line"><span class="rs-label">${esc(label)}:</span><span class="rs-value">${esc(value)}</span></div>`;
 }
 
 function fmt(value, fallback = "未读取") {

@@ -442,11 +442,16 @@ class FeishuRouteLedger:
             ).fetchone()
             if previous is not None:
                 old = self._unprotect_resource(previous)
-                if old != FeishuProtectedResource(
+                # created_at_ms 是观测时间而非身份字段：附件下载窗口崩溃
+                # 后平台重投同一事件时捕获时间必然不同，若参与身份比对
+                # 该事件将永远无法持久化/ACK。身份 = resource_id 派生所
+                # 用的全部字段。
+                identity = FeishuProtectedResource(
                     resource_id=resource_id,
-                    created_at_ms=created_at_ms,
+                    created_at_ms=0,
                     **payload,
-                ):
+                )
+                if old.model_copy(update={"created_at_ms": 0}) != identity:
                     raise FeishuRouteConflict("Feishu resource identity changed")
                 return resource_id
             self._connection.execute(

@@ -25,6 +25,7 @@ from .wechat_inbound import (
     WechatInboundPolicy,
     WechatPollRecord,
     WechatTextInboundProcessor,
+    external_cursor_from_local,
 )
 from .wechat_session import WechatSessionLedger
 
@@ -255,7 +256,12 @@ class WechatProductionAdapter:
         ):
             decision = self._sessions.get_decision(pending.ingress.envelope.channel_message_ref)
             if decision is None:
-                raise WechatPollError("wechat.poll.pending_decision_missing")
+                # 旧版本"先 persist 后 decide"崩溃窗口留下的无决策记录：
+                # 跳过并记状态，绝不 raise——那会让本账号每次轮询循环的
+                # 第一步就失败，所有入站消息永久阻塞。新写入顺序（decide
+                # 先于 persist）已杜绝产生新的此类记录。
+                self._set_state("degraded")
+                continue
             if decision.should_forward:
                 acceptance = self._forward(pending.ingress.envelope, pending.permit, now_ms=now_ms)
                 evidence = (
@@ -296,6 +302,13 @@ class WechatProductionAdapter:
                 stream_key = derive_cursor_stream_key("wechat", self._tenant_id, self._link_account_id)
                 cursor_state = self._inbox.get_cursor(stream_key)
                 cursor = cursor_state.cursor_token if cursor_state is not None else values["cursor"]
+                # 批处理中途崩溃后 cursor state 里是本地检查点 token，平台
+                # 不认识它；解码出检查点携带的外部游标，解码不了（旧格式/
+                # 损坏）就退回凭据里的初始游标，绝不能把本地 token 发给平台。
+                external = external_cursor_from_local(str(cursor))
+                if not external:
+                    external = str(values["cursor"])
+                cursor = external
                 previous_sha = None if cursor_state is None else cursor_state.cursor_sha256
                 with self._authority(now_ms=self._clock_ms()):
                     response, raw = self._transport.get_updates(

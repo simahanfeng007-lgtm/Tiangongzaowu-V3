@@ -606,14 +606,18 @@ class CommunicationDrainInspectorTests(unittest.TestCase):
                     legacy_owner_instance_id="legacy-instance",
                     observed_at_ms=1_300,
                 )
-        with self.assertRaisesRegex(ChannelAuthorityError, "draining"):
-            gate.authorize(
-                channel="wechat",
-                tenant_id="tenant-1",
-                link_account_id="account-1",
-                operation="POLL",
-                now_ms=1_301,
-            )
+        # drain 前置失败必须回滚（租约恢复、退出 draining）：调用方的
+        # 模式就是失败后重试 capture，通道在重试间隙绝不能被打断——
+        # 旧语义"失败也保持 draining"会让一次失败的 drain 永久停用
+        # 轮询与发送，直到人工重装租约。
+        restored_lease = gate.authorize(
+            channel="wechat",
+            tenant_id="tenant-1",
+            link_account_id="account-1",
+            operation="POLL",
+            now_ms=1_301,
+        )
+        self.assertIsNotNone(restored_lease)
         evidence = inspector.capture(
             channel="wechat",
             tenant_id="tenant-1",

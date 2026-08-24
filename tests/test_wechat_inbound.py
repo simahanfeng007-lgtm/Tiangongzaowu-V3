@@ -256,6 +256,99 @@ class WechatInboundTests(unittest.TestCase):
         self.assertEqual(cursor.revision, 2)
         self.assertEqual(self.inbox.count_records(), 2)
 
+    def _poll_with_object(self, object_id, *, previous=None, next_token="cursor-1", captured=2_000):
+        return WechatPollRecord(
+            raw_payload_object_id=object_id,
+            raw_payload_sha256="a" * 64,
+            raw_payload_size_bytes=100,
+            previous_cursor_sha256=previous,
+            next_cursor_token=next_token,
+            captured_at_ms=captured,
+            persisted_at_ms=captured + 1,
+        )
+
+    def test_redelivery_with_fresh_volatile_fields_replays_stored_ingress(self):
+        """平台重投：raw 对象 id/捕获时间全新，必须走 duplicate 而非冲突。
+
+        旧实现按新 poll 重建 InboxIngress，volatile 字段必然与存量不同，
+        InboxConflictError 让 duplicate 分支永远不可达、轮询器死循环。
+        """
+        first = self.processor.process(
+            message(), policy=self.policy, poll=self.poll(captured=2_000)
+        )
+        self.assertFalse(first.inbox_duplicate)
+        # 新一轮轮询：同一消息被平台重发，本地 raw store 落了新对象、
+        # 捕获时间也变了——只有内容 sha 与首投一致。
+        redelivered = self.processor.process(
+            message(),
+            policy=self.policy,
+            poll=self._poll_with_object("raw-wechat-batch-2", captured=9_000),
+        )
+        self.assertTrue(redelivered.inbox_duplicate)
+        self.assertTrue(redelivered.decision.duplicate)
+        self.assertEqual(redelivered.envelope.text, "你好")
+        self.assertEqual(self.inbox.count_records(), 1)
+
+    def test_local_checkpoint_cursor_carries_external_token(self):
+        """批中途崩溃后 cursor state 是本地检查点：必须能解码回外部游标。"""
+        from contracts import canonical_json_bytes
+        from communication_service.wechat_inbound import external_cursor_from_local
+
+        poll = self.poll(next_token="external-buffer-9")
+        batch = self.processor.process_batch(
+            (
+                message("message-1", sequence=1),
+                message("message-2", sequence=2, context_token=None),
+            ),
+            policy=self.policy,
+            poll=poll,
+        )
+        # 成员 0 的检查点在 permit 链上只暴露 sha；用同源构造验证解析。
+        checkpoint = "tg-local-wechat-batch-v1:" + canonical_json_bytes(
+            {
+                "raw_payload_object_id": "raw-wechat-batch-1",
+                "raw_payload_sha256": "a" * 64,
+                "member_index": 1,
+                "member_count": 2,
+                "external_cursor_token": "external-buffer-9",
+            }
+        ).decode("utf-8")
+        # 崩溃重启：worker 读到的合成检查点可还原出整批的外部游标。
+        self.assertEqual(external_cursor_from_local(checkpoint), "external-buffer-9")
+        # 批正常完成时 cursor state 落的是外部游标本身。
+        cursor = self.inbox.get_cursor(batch.ack_permit.cursor_stream_key)
+        self.assertEqual(cursor.cursor_token, "external-buffer-9")
+        # 普通外部游标原样返回；旧格式/损坏的检查点返回空串（调用方回退）。
+        self.assertEqual(external_cursor_from_local("plain-token"), "plain-token")
+        self.assertEqual(external_cursor_from_local("tg-local-wechat-batch-v1:not-json"), "")
+
+    def test_mid_batch_crash_then_full_redelivery_recovers_without_conflict(self):
+        """批处理中途崩溃：重发整批，已持久化成员走 duplicate、其余正常插入。"""
+        poll = self.poll(next_token="external-buffer-2")
+        batch = self.processor.process_batch(
+            (
+                message("message-1", sequence=1, context_token="token-1"),
+                message("message-2", sequence=2, context_token=None),
+            ),
+            policy=self.policy,
+            poll=poll,
+        )
+        self.assertEqual(self.inbox.count_records(), 2)
+        # 平台视角整批重发（新 raw 对象/新捕获时间，内容 sha 相同）。
+        redelivered = self.processor.process_batch(
+            (
+                message("message-1", sequence=1, context_token="token-1"),
+                message("message-2", sequence=2, context_token=None),
+            ),
+            policy=self.policy,
+            poll=self._poll_with_object(
+                "raw-wechat-batch-2", previous=None, next_token="external-buffer-3", captured=9_000
+            ),
+        )
+        self.assertTrue(redelivered.outcomes[0].inbox_duplicate)
+        self.assertTrue(redelivered.outcomes[1].inbox_duplicate)
+        self.assertEqual(self.inbox.count_records(), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

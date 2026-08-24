@@ -39,8 +39,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-from contracts import canonical_sha256
 from .capability_health import ingest_outcome
+from .complete_core import canonical as journal_canonical
 
 
 class JournalReplayError(RuntimeError):
@@ -71,6 +71,10 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     # ---- 自主任务 ----
     "autonomy.task_generated": EventClass.REPLAYABLE_PROJECTION,
     "autonomy.task_status_changed": EventClass.REPLAYABLE_PROJECTION,
+    # standalone 冻结运行时（P11 handoff 缺失回退形态）的自主行动审计
+    # 事实；投影权威在 fact cache，嵌入式重放只需放行不崩溃。
+    "autonomy.action_completed": EventClass.AUDIT_ONLY,
+    "autonomy.action_failed": EventClass.AUDIT_ONLY,
     # ---- 终态执行（不可逆外部效果证据） ----
     "execution.committed": EventClass.EXTERNAL_TERMINAL_EVIDENCE,
     # ---- 能力治理（指针事件 payload 自带完整新状态） ----
@@ -90,6 +94,8 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "learning.discarded": EventClass.REPLAYABLE_PROJECTION,
     "learning.decision_noop": EventClass.AUDIT_ONLY,
     # ---- 自我迭代升级卡 ----
+    # noop 决策只落审计事件，投影门控键由调度器写侧维护，audit-only。
+    "self_iteration.decision_noop": EventClass.AUDIT_ONLY,
     "upgrade.card_created": EventClass.REPLAYABLE_PROJECTION,
     "upgrade.card_confirmed": EventClass.REPLAYABLE_PROJECTION,
     "upgrade.card_cancelled": EventClass.REPLAYABLE_PROJECTION,
@@ -137,8 +143,22 @@ def _event_ms(event: Mapping[str, Any]) -> int:
         return 0
 
 
+def _journal_fingerprint(value: Any) -> str:
+    """Journal 载荷指纹：与写侧哈希链（complete_core.canonical）同一序列化。
+
+    journal 事件载荷不是签名契约：工具 receipt 可合法携带有限 float
+    telemetry（见 embedded_runtime 写侧注释）。contracts.canonical_sha256
+    对 float/int 超 2^53 直接 raise，用它比较既有投影会在启动重放抛裸
+    TypeError——journal 是权威 WAL，重放必须总能启动。两侧统一用写侧
+    序列化后，指纹对含 float 的载荷稳定且与落盘哈希链一致。
+    """
+    import hashlib
+
+    return hashlib.sha256(journal_canonical(value)).hexdigest()
+
+
 def _same(a: Any, b: Any) -> bool:
-    return canonical_sha256(a) == canonical_sha256(b)
+    return _journal_fingerprint(a) == _journal_fingerprint(b)
 
 
 def _require_mapping(value: Any, code: str) -> dict[str, Any]:
@@ -164,7 +184,7 @@ def _merge_asserted_memory_projection(existing: dict[str, Any], asserted: Mappin
             existing[key] = deepcopy(value)
             changed = True
             continue
-        if canonical_sha256(existing.get(key)) != canonical_sha256(value):
+        if _journal_fingerprint(existing.get(key)) != _journal_fingerprint(value):
             raise JournalReplayError("life.projection.memory_conflict")
     return changed
 
@@ -180,7 +200,7 @@ def _merge_generated_task_projection(existing: dict[str, Any], generated: Mappin
             existing[key] = deepcopy(value)
             changed = True
             continue
-        if canonical_sha256(existing.get(key)) != canonical_sha256(value):
+        if _journal_fingerprint(existing.get(key)) != _journal_fingerprint(value):
             raise JournalReplayError("life.projection.autonomy_task_conflict")
     return changed
 
