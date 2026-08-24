@@ -607,6 +607,11 @@ export const settingsPanelPlugin = {
         actions.refreshConfig?.();
         await loadLinks();
         await ensureWechatQrIfNeeded();
+      } else {
+        // 微信登录轮询的生命周期绑定设置页：离开即停，否则隐藏面板
+        // 每 2.5s 仍请求一次状态直到登录过期；重新进入时 loadLinks 会
+        // 立即刷新一次，轮询由登录动作按需重启。
+        stopWechatStatusTimer();
       }
     }
 

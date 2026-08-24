@@ -301,15 +301,19 @@ class WechatRateGate:
         self._next_attempt_ms: dict[str, int] = {}
 
     def wait(self, account_key: str, *, minimum_interval_ms: int) -> None:
-        with self._lock:
-            now = self._clock_ms()
-            earliest = self._next_attempt_ms.get(account_key, now)
-            if now < earliest:
-                self._sleeper((earliest - now) / 1_000)
+        while True:
+            with self._lock:
                 now = self._clock_ms()
-                if now < earliest:
+                earliest = self._next_attempt_ms.get(account_key, now)
+                if now >= earliest:
+                    self._next_attempt_ms[account_key] = now + minimum_interval_ms
+                    return
+            # 退避窗口在锁外睡眠：持锁睡眠会让无关账号的发送全部排队
+            # 等这一个账号的退避结束（跨账号队头阻塞）。
+            self._sleeper((earliest - now) / 1_000)
+            with self._lock:
+                if self._clock_ms() < earliest:
                     raise WechatTextOutboundError("wechat.send.rate_gate.clock_stalled")
-            self._next_attempt_ms[account_key] = max(now, earliest) + minimum_interval_ms
 
 
 def split_wechat_text(text: str, *, limit: int) -> tuple[str, ...]:

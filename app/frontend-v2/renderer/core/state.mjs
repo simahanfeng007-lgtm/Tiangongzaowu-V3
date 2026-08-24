@@ -256,7 +256,7 @@ function cleanMessages(messages, sessionId = "") {
         sessionId: boundedText(item?.sessionId || item?.session_id || item?.conversationId || item?.conversation_id || sessionId || "", 256),
         kind: item?.kind ? boundedText(item.kind, 64) : null,
         requestId: item?.requestId || item?.request_id ? boundedText(item?.requestId || item?.request_id, 256) : null
-      })).filter((item) => item.role && item.content).slice(-80)
+      })).filter((item) => item.role && (item.content || item.kind === "work")).slice(-80)
     : [];
 }
 
