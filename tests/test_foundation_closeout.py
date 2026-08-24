@@ -1374,15 +1374,70 @@ const signed = {
 const sig = crypto.sign(null, Buffer.from(canonicalJson(signed)), pair.privateKey).toString("base64");
 const envelope = {signed, signature:{key_id:"root-1", sig}};
 const accepted = verifyManifestEnvelope({envelope, trust, state:{highest_metadata_version:0,highest_release_version:"3.0.3"}, currentVersion:"3.0.3"});
+// 相同 metadata_version 是幂等重查（服务器尚未发布新 manifest），必须放行；
+// 更旧的才是重放/降级攻击。
+let idempotent = "ok";
+try { verifyManifestEnvelope({envelope, trust, state:{highest_metadata_version:1,highest_release_version:"3.0.3"}, currentVersion:"3.0.3"}); } catch (error) { idempotent = error.message; }
 let replay = "";
-try { verifyManifestEnvelope({envelope, trust, state:{highest_metadata_version:1,highest_release_version:"3.0.3"}, currentVersion:"3.0.3"}); } catch (error) { replay = error.message; }
-console.log(JSON.stringify({version: accepted.release_version, replay}));
+try { verifyManifestEnvelope({envelope, trust, state:{highest_metadata_version:2,highest_release_version:"3.0.3"}, currentVersion:"3.0.3"}); } catch (error) { replay = error.message; }
+console.log(JSON.stringify({version: accepted.release_version, idempotent, replay}));
 '''
         completed = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         data = json.loads(completed.stdout)
         self.assertEqual(data["version"], "3.0.4")
+        self.assertEqual(data["idempotent"], "ok")
         self.assertIn("rollback_or_replay", data["replay"])
+
+    def test_updater_phase_preservation_and_baseline_recovery(self) -> None:
+        """资产 phase 不被检查失败作废；基线哈希不可得时保留旧基线。"""
+        script = r'''
+const fs = require("fs"); const os = require("os"); const path = require("path");
+const { SecureUpdater } = require("./app/secure-updater");
+function makeUpdater(tag) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "updater-" + tag + "-"));
+  return new SecureUpdater({ app: null, userData: tmp, currentVersion: "3.0.4",
+    trustPath: path.join(tmp, "trust.json") });
+}
+const assert = (cond, label) => { if (!cond) { console.error("ASSERT_FAIL:" + label); process.exit(1); } };
+
+// 1) DOWNLOADED 是资产状态：recordError 只记错误，不作废下载。
+const a = makeUpdater("asset");
+a._save({ phase: "DOWNLOADED", available: { release_version: "3.0.5" },
+  download_path: path.join(a.root, "pkg.exe"), download_sha256: "a".repeat(64) });
+fs.writeFileSync(a.state.download_path, "x");
+a.recordError(new Error("update_http_500"));
+assert(a.status().phase === "DOWNLOADED", "phase_downloaded_kept");
+
+// 2) 无资产状态失败正常进入 ERROR。
+const b = makeUpdater("idle");
+b._save({ phase: "AVAILABLE" });
+b.recordError(new Error("boom"));
+assert(b.status().phase === "ERROR", "phase_error_reached");
+
+// 3) markHealthy 新包哈希不可得：保留旧基线与旧哈希，绝不提交
+//    "新文件+旧哈希"的错配基线（那会永久锁死后续 apply）。
+const c = makeUpdater("baseline");
+const good = path.join(c.root, "good.exe");
+fs.writeFileSync(good, "baseline");
+c._save({ phase: "APPLYING", transaction_token: "tok",
+  health_marker: path.join(c.root, "m.json"),
+  download_path: path.join(c.root, "vanished.exe"),
+  last_known_good_installer: good, last_known_good_installer_sha256: "b".repeat(64) });
+assert(c.markHealthy("tok") === true, "markhealthy_accepted");
+setTimeout(() => {
+  const state = JSON.parse(fs.readFileSync(c.statePath, "utf8"));
+  assert(state.phase === "COMMITTED", "committed");
+  assert(state.last_known_good_installer === good, "old_baseline_kept");
+  assert(state.last_known_good_installer_sha256 === "b".repeat(64), "old_baseline_hash_kept");
+  assert(String(state.error).includes("baseline_hash_unavailable"), "error_recorded");
+  console.log(JSON.stringify({ ok: true }));
+}, 150);
+'''
+        completed = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        data = json.loads(completed.stdout)
+        self.assertTrue(data["ok"])
 
     def test_electron_update_and_security_boundaries_are_present(self) -> None:
         main = (ROOT / "app" / "main.js").read_text(encoding="utf-8")
@@ -1396,6 +1451,18 @@ console.log(JSON.stringify({version: accepted.release_version, replay}));
         self.assertNotIn("'unsafe-eval'", html)
         self.assertIn("Invoke-Rollback", helper)
         self.assertIn("update-baseline", installer)
+        # 便携模式重定向必须先于模块加载期的 workspace/runtime root 解析，
+        # 否则运行时状态被永久缓存到本机固定目录，便携语义失效。
+        self.assertLess(
+            main.index('app.setPath("userData", portableUserData)'),
+            main.index("const SOURCE_ISOLATION = configureSourceIsolation()"),
+            "portable userData redirect must run before source isolation / workspace resolution",
+        )
+        self.assertLess(
+            main.index('app.setPath("userData", portableUserData)'),
+            main.index("(function resolveWorkspaceMode()"),
+            "portable userData redirect must run before resolveWorkspaceMode IIFE",
+        )
 
     def test_generated_source_mirrors_are_in_sync(self) -> None:
         completed = subprocess.run(
