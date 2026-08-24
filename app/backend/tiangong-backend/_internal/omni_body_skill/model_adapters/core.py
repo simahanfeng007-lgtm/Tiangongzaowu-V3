@@ -129,7 +129,7 @@ def _omni_parameters_schema(strict: bool = False) -> Dict[str, Any]:
     schema: Dict[str, Any] = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "要执行的 Omni Body 动作。直接从已实现 action 中选择，例如 file.write/file.read/file.list/code.read/code.write/code.patch_replace/shell.run/quality.run_tests/qc.*/deliverable.package/docx.create/pptx.create/sheet.create/pdf.extract_text/web.search。优先直接调用生产 action。"},
+            "action": {"type": "string", "description": "要执行的 Omni Body 动作。直接从已实现 action 中选择，例如 file.write/file.read/file.list/code.read/code.write/code.patch_replace/shell.run/quality.run_tests/qc.*/deliverable.package/docx.create/pptx.create/sheet.create/pdf.extract_text/web.search/mcp.servers.list/mcp.tools.list/mcp.tool.call。优先直接调用生产 action。"},
             "target": {"type": "string", "description": "主目标：文件路径、URL、对象ID、输出路径或空字符串。"},
             "args": {
                 "type": "object",
@@ -223,6 +223,7 @@ def _tool_description() -> str:
         "搜索: browser.search_web(网页搜索)/web.search/http.get(读URL)/browser.open.\n"
         "质检交付: qc.*(质量检查)/deliverable.package(交付打包).\n"
         "系统: life.body.state.query/life.activity.query/system.capabilities/system.health/rollback.list/rollback.apply.\n"
+        "扩展: mcp.servers.list(列出用户配置的 MCP 服务器)/mcp.tools.list(列出某服务器的工具)/mcp.tool.call(调用 MCP 工具，A3 需用户确认；服务器只能引用用户已配置的名字，不可自造命令)。\n"
         "受托管小说能力采用最小暴露：通用工具说明不公布其动作名。只有用户明确要求全书/长期多章工程或续作已有托管项目，并且模型实际读取对应受托管 Skill 后，才按该 Skill 公布的动作执行。单章、少量章节、一次性协作资料包不得升级为整书项目。\n"
         "技能选择有双通道：系统已提供 active/related Skill 时直接读取该 Skill；没有匹配且任务需要专用流程时，模型可调用 skill.route 再 skill.get/skill.read。选定后以具体 Skill 的作用域和工作流为准，通用动作说明不得覆盖它。\n"
     )
