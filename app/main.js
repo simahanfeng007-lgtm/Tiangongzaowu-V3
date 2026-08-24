@@ -92,6 +92,27 @@ function configureSourceIsolation() {
   return Object.freeze({ profileRoot, userData, runtimeRoot, workspaceRoot });
 }
 
+// 便携模式（U 盘 TiangongData）必须先于任何 runtime root 解析执行：
+// resolveWorkspaceMode()/runtimeStateRoot() 在模块加载期就会读取并
+// 永久缓存 userData 派生路径，若 setPath 晚于它们，全部运行时状态
+// （日志/gateway 状态/恢复密钥）会写进本机固定目录，便携语义失效。
+const portableExecutableDir = SOURCE_MODE
+  ? ""
+  : String(process.env.PORTABLE_EXECUTABLE_DIR || "").trim();
+if (portableExecutableDir) {
+  const portableUserData = path.join(portableExecutableDir, "TiangongData");
+  try {
+    fs.mkdirSync(portableUserData, { recursive: true });
+    fs.accessSync(portableUserData, fs.constants.R_OK | fs.constants.W_OK);
+    app.setPath("userData", portableUserData);
+    process.env.TIANGONG_PORTABLE_MODE = "1";
+  } catch (_error) {
+    // Read-only/removing portable media must not crash before the first
+    // window.  The normal per-user data path remains the authority.
+    delete process.env.TIANGONG_PORTABLE_MODE;
+  }
+}
+
 const SOURCE_ISOLATION = configureSourceIsolation();
 
 // 工作区写入模式：workspace（默认，写边界=工作区）/ full（全盘，硬禁区除外）。
@@ -142,23 +163,6 @@ const WEB_QA_MODE = Boolean(WEB_QA_TARGET && WEB_QA_WORKSPACE);
 // The desktop has exactly one application runtime: Total Gateway on 7184.
 // 7174/7175/7176 are retired listener ports, never a selectable deployment
 // mode.  Startup only clears a verified stale listener left by an old build.
-
-const portableExecutableDir = SOURCE_MODE
-  ? ""
-  : String(process.env.PORTABLE_EXECUTABLE_DIR || "").trim();
-if (portableExecutableDir) {
-  const portableUserData = path.join(portableExecutableDir, "TiangongData");
-  try {
-    fs.mkdirSync(portableUserData, { recursive: true });
-    fs.accessSync(portableUserData, fs.constants.R_OK | fs.constants.W_OK);
-    app.setPath("userData", portableUserData);
-    process.env.TIANGONG_PORTABLE_MODE = "1";
-  } catch (_error) {
-    // Read-only/removing portable media must not crash before the first
-    // window.  The normal per-user data path remains the authority.
-    delete process.env.TIANGONG_PORTABLE_MODE;
-  }
-}
 
 // The application runtime (and legacy diagnostic child processes, when explicitly enabled)
 // must call provider APIs directly. Proxy variables inherited from the host shell can
