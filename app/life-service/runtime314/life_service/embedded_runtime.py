@@ -8358,11 +8358,22 @@ class EmbeddedLifeRuntime:
             }
             scope["learning"][learning_id] = published
             if artifact["kind"] in {"skill", "tool"}:
-                scope["capabilities"][artifact["artifact_id"]] = {
+                # 工具发布分级（capability-based 权限的后半段）：低风险
+                #（A0/A1，与自主层可用级一致，只读/无外部副作用）学习成果
+                # 发布时自动申请工具发布，激活后即可进入工具面；A2 及以上
+                # 保留人工发布流程（l0 层 not_requested → 显式评审）。
+                risk_level = str(artifact.get("risk_level") or "A3").upper()
+                auto_release = risk_level in {"A0", "A1"}
+                enhanced_artifact = {
                     **artifact,
                     "origin": "life_learning",
                     "publication": deepcopy(dict(publication)),
+                    "tool_release_state": "released" if auto_release else "not_requested",
                 }
+                if auto_release:
+                    enhanced_artifact["tool_callable"] = True
+                    enhanced_artifact["registers_tool"] = True
+                scope["capabilities"][artifact["artifact_id"]] = enhanced_artifact
                 self._set_capability_pointer(
                     life_id=life_id,
                     scope=scope,
