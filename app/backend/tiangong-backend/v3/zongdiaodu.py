@@ -2,6 +2,8 @@
 天工造物 v3：起源 — 总调度
 唤醒入口，编排全部引擎。函数式管道。
 """
+# 2026-08-25 fix: 多次思考路径根治 - completion correction 入口加“通顺文本答复短路”：
+# 全程零工具调用且模型已给出通顺最终答复时跳过强插续写，文本问答不再多出 2-3 轮思考。
 from __future__ import annotations
 
 from .simple_chain.kernel import ( 
@@ -126,6 +128,8 @@ from .simple_chain.kernel import (
     _simple_chain_explicit_read_paths,
     _simple_chain_explicit_retry_authorized,
     _simple_chain_explicit_skill_context,
+    # bug-fix: 多次思考路径根治 - 通顺答复判定，用于跳过 completion correction
+    _simple_chain_fluent_text_reply,
     _simple_chain_failure_text,
     _simple_chain_force_stopped_reply,
     _simple_chain_has_explicit_learning_intent,
@@ -4058,6 +4062,33 @@ class Zongdiaodu:
                         final_chain_status = final_status_now
                         break
                     final_reasons_now = proof_reasons_now
+
+                    # bug-fix: 多次思考路径根治 - 全程零工具调用且模型已给出通顺最终答复时，
+                    # 跳过 completion correction 强插续写：被误判为 work 的文本问答不再被
+                    # 强迫“再思考 N 轮”。宁放过不误杀——承诺行动却未行动（“我来帮你写”）、
+                    # 工具调用残迹、脏标记等情形仍走原 correction 路径。
+                    if (
+                        not quality_history
+                        and not generated_attachments
+                        and not required_read_paths
+                        and _simple_chain_fluent_text_reply(huifu)
+                    ):
+                        final_guard_exhausted = True
+                        final_chain_status = "chat_reply"
+                        if isinstance(run_state, dict):
+                            run_state["status"] = "chat_reply"
+                            run_state["stage"] = "chat_reply"
+                            run_state["terminal_reason"] = "fluent_text_reply_no_tool_work"
+                            _simple_chain_save_run_state(run_state)
+                        if run_control:
+                            run_control.step(
+                                "simple_chain_completion_correction",
+                                "Completion evidence correction",
+                                "skipped",
+                                "Model already produced a fluent final reply without any tool call; delivered as-is without forced continuation.",
+                                meta={"skipped_reason": "fluent_text_reply"},
+                            )
+                        break
 
                     correction_state = _simple_chain_completion_correction_state(run_state)
                     current_blockers = [
