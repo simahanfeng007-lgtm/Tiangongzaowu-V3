@@ -284,17 +284,14 @@ def test_execute_streaming_turn_sends_to_pinned_ip(monkeypatch: pytest.MonkeyPat
     class _StubResponse:
         status_code = 200
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
         def raise_for_status(self) -> None:
             return None
 
         def iter_lines(self):
             return iter([])
+
+        def close(self) -> None:
+            captured["response_closed"] = True
 
     class _StubClient:
         def build_request(self, method, url, **kwargs):
@@ -349,3 +346,6 @@ def test_execute_streaming_turn_sends_to_pinned_ip(monkeypatch: pytest.MonkeyPat
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["extensions"] == {"sni_hostname": "api.example.test"}
     assert captured["stream"] is True
+    # Match real httpx.Response: send() results are not context managers and
+    # the executor, rather than the response object, owns explicit cleanup.
+    assert captured["response_closed"] is True

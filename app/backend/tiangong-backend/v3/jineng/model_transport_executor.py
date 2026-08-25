@@ -125,7 +125,12 @@ def execute_streaming_turn(
                 headers={**request.headers, **host_headers},
                 extensions={"sni_hostname": sni_hostname},
             )
-            with client.send(pinned_http_request, stream=True) as response:
+            # ``Client.send(..., stream=True)`` returns an ``httpx.Response``;
+            # unlike ``Client.stream(...)``, that object is not a context
+            # manager.  Own its lifetime explicitly so every success, retry,
+            # and exception path releases the streaming connection.
+            response = client.send(pinned_http_request, stream=True)
+            try:
                 status = int(response.status_code)
                 if status in transient and attempt < retry_limit:
                     last_reason = f"HTTP {status}"
@@ -145,6 +150,8 @@ def execute_streaming_turn(
                         on_text_chunk(text)
                     if reasoning and on_reasoning_chunk:
                         on_reasoning_chunk(reasoning)
+            finally:
+                response.close()
             turn = transport.finalize_turn(endpoint, state)
             latency = round((time.perf_counter() - started) * 1000)
             return TransportExecutionResult(

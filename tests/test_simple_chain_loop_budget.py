@@ -148,17 +148,14 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         class _FakeResponse:
             status_code = 200
 
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
             def raise_for_status(self) -> None:
                 return None
 
             def iter_lines(self):
                 yield 'data: {"choices":[{"delta":{"content":"keepalive"}}]}'
+
+            def close(self) -> None:
+                return None
 
         class _FakeClient:
             def build_request(self, method, url, **kwargs):
