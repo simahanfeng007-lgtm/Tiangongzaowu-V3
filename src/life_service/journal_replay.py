@@ -122,6 +122,8 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "life.episode.aborted": EventClass.AUDIT_ONLY,
     "life.episode.failed": EventClass.AUDIT_ONLY,
     "life.capability.learning.committed": EventClass.AUDIT_ONLY,
+    # ---- 历史遗留（旧版本写入、现行代码已不再产生；仅审计跳过） ----
+    "life.greeting_published": EventClass.AUDIT_ONLY,
 }
 
 
