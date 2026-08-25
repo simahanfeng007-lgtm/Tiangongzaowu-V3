@@ -114,6 +114,7 @@ class GutongCeng:
         provider_tool_results: list[dict[str, Any]] | None = None,
     ) -> tuple[ShentiZhuangtai, str]:
         """工具结果回传LLM，继续思考"""
+        notice = ""
         jieguo_wenben = json.dumps(gongju_jieguo, ensure_ascii=False, indent=2)
         current_result_text = (
             f"{_source_partition_open(SOURCE_TYPE_TOOL_DATA, object_id='tool_result', note='untrusted_tool_output')}\n"
@@ -127,20 +128,36 @@ class GutongCeng:
         else:
             # 缓存友好：工具结果作为 assistant 消息追加，末条 user 消息保持稳定指令。
             # 前缀 [system, 原始请求, 已累积结果…] 逐轮不变，MiniMax 可命中 ~99%。
-            yonghu_tishi = JIXU_ZHILING_WENBEN
             # 确定性预算护栏：每条结果文本定长截断；超窗口时从最旧开始丢弃，
-            # 保留最近结果。丢弃/截断规则逐轮稳定，不破坏后续前缀一致性。
+            # 保留最近结果。丢弃/截断必须显式告知模型——静默残缺会让模型
+            # 把半截输出当成完整事实（Anthropic 上下文工程指南：截断可见）。
+            truncated_count = 0
+            dropped_count = 0
+            yonghu_tishi = JIXU_ZHILING_WENBEN
             bounded_results: list[str] = []
             for item in assistant_messages:
                 text = str(item or "")
                 if len(text) > 8000:
-                    text = text[:8000]
+                    truncated_count += 1
+                    text = text[:8000] + f"\n[CONTENT_TRUNCATED:原长{len(str(item or ''))}字符,仅保留前8000,后续内容未读]"
                 if text:
                     bounded_results.append(text)
             history_tokens = estimate_tokens("\n".join(bounded_results)) + estimate_tokens(system_tishi) + estimate_tokens(yonghu_tishi)
             while len(bounded_results) > 1 and history_tokens > DEFAULT_WINDOW_TOKENS * COMPACT_WARN:
                 dropped = bounded_results.pop(0)
+                dropped_count += 1
                 history_tokens -= estimate_tokens(dropped)
+            notice = ""
+            if truncated_count or dropped_count:
+                parts = []
+                if truncated_count:
+                    parts.append(f"{truncated_count}条工具结果被截断（内容不完整）")
+                if dropped_count:
+                    parts.append(f"最早的{dropped_count}条工具结果已被移出上下文（你已看不到它们，如仍需要请重新调用工具获取）")
+                notice = (
+                    "\n\n[上下文完整性提示] " + "；".join(parts)
+                    + "。基于残缺信息得出的结论请标注不确定，或重新获取完整数据。"
+                )
             prior_assistant_messages = bounded_results
 
         # ── 上下文压缩 ──
@@ -157,16 +174,27 @@ class GutongCeng:
                 _log.error("jixu 压缩审查否决（%s），已保留原文，不发送压缩内容",
                            report.get("veto_reason") or review.get("veto_reason") or "")
                 if estimate_tokens(yonghu_tishi) > DEFAULT_WINDOW_TOKENS:
+                    overflow = estimate_tokens(yonghu_tishi) - DEFAULT_WINDOW_TOKENS
                     return shenti, (
-                        "工具结果体量超出模型上下文窗口，且压缩审查未通过"
-                        "（原子事实可能失真）。为避免基于失真内容作答，本次调用已中止；"
-                        "请缩小任务范围或分批提供数据后重试。"
+                        "[CONTEXT_OVERFLOW_NEED_RESTRATEGY] "
+                        f"当前累积的工具结果约{estimate_tokens(yonghu_tishi)}tokens，超出窗口{overflow}tokens，"
+                        "且自动压缩会失真（已按原文保留、未发送失真版本）。\n"
+                        "不要宣告任务失败。请改用更小的获取粒度继续：\n"
+                        "1) 文件/长文本 → 分段读取（指定行号范围或偏移量），先读结构再读关键段；\n"
+                        "2) 大量数据 → 用过滤/搜索/聚合类工具先缩小范围再取明细；\n"
+                        "3) 已读过的部分如果仍然有效，直接基于它继续，不要重复获取。\n"
+                        "若当前这一步确实无法缩小（工具不支持分块），再向用户说明已完成的进展和剩余障碍。"
                     )
             elif report.get("compacted"):
                 _log.info("jixu 压缩完成: score=%.3f veto=%s passed=%s",
                           review.get("total_score", 0),
                           review.get("veto", False),
                           review.get("passed", False))
+
+        # 完整性提示在压缩之后统一附加（系统对模型的元信息，
+        # 不能被压缩流程吞掉；veto 早退路径返回的是引导文本）。
+        if notice:
+            yonghu_tishi = yonghu_tishi + notice
 
         try:
             huifu = self.llm(

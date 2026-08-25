@@ -2727,7 +2727,9 @@ def _latest_session_recovery_checkpoint(conversation_context: dict | None, curre
     return {}
 
 
-def _timeline_envelope_items(messages: list[dict], current: str, *, limit: int = 10, max_chars: int = 300) -> list[dict]:
+def _timeline_envelope_items(messages: list[dict], current: str, *, limit: int = 32, max_chars: int = 1000) -> list[dict]:
+    # 32 轮 × 1000 字符：与 48k envelope 窗口匹配的时间线容量（旧值
+    # 10×300 会把 gateway 投影的 64 轮历史砍掉两个数量级）。
     output: list[dict] = []
     for item in messages[-max(limit * 3, 12):]:
         if not isinstance(item, dict):
@@ -2742,7 +2744,7 @@ def _timeline_envelope_items(messages: list[dict], current: str, *, limit: int =
             continue
         content = " ".join(content.split())
         if len(content) > max_chars:
-            content = content[:max_chars] + "..."
+            content = content[:max_chars] + f"...[TRUNCATED {len(content)}->{max_chars}]"
         output.append({"role": role, "content": content, "at": item.get("at")})
     return output[-limit:]
 
@@ -2755,10 +2757,11 @@ def _envelope_token_budget() -> dict:
         "current_attachments": "no_truncate",
         "recovery_checkpoint": "no_truncate",
         "run_state": "no_truncate",
-        "timeline": 3000,
-        "summary": 1000,
-        "memory": 1200,
-        "kb": 2000,
+        # 与 32 轮 × 1000 字符时间线及 48k envelope 窗口匹配的分段预算。
+        "timeline": 24000,
+        "summary": 2000,
+        "memory": 2400,
+        "kb": 2400,
     }
 
 
@@ -2899,10 +2902,10 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
         "historical_attachments": _attachment_envelope_items(historical_attachments, limit=8, historical=True),
         "recovery_checkpoint": _latest_session_recovery_checkpoint(ctx, current),
         "run_state": _latest_context_run_state(ctx),
-        "recent_timeline": _timeline_envelope_items(messages, current, limit=10, max_chars=300),
-        "summary": summary[:1000],
-        "memory": memory_items[:5] if isinstance(memory_items, list) else [],
-        "kb": kb_items[:5] if isinstance(kb_items, list) else [],
+        "recent_timeline": _timeline_envelope_items(messages, current, limit=32, max_chars=1000),
+        "summary": summary[:2000],
+        "memory": memory_items[:8] if isinstance(memory_items, list) else [],
+        "kb": kb_items[:8] if isinstance(kb_items, list) else [],
         "life_skill_overlay": ctx.get("life_skill_overlay")[:32] if isinstance(ctx.get("life_skill_overlay"), list) else [],
         "conflict_policy": "current_user_text_wins",
         "token_budget": _envelope_token_budget(),
@@ -3138,8 +3141,10 @@ def _minimax_m3_context_enabled() -> bool:
 
 
 def _minimax_m3_context_limit() -> int:
-    if not _minimax_m3_context_enabled():
-        return 12000
+    # 48k 字符基线对全部 L4 provider 安全（deepseek_v4/mimo/glm_5_2/
+    # minimax_m3/gpt_5_6 输入窗口均 >> 128k token，48k 字符约 15-30k
+    # token）：旧实现仅 minimax_m3 放开、其余模型锁 12k，长对话在渲染
+    # 层被硬截断。环境变量保留覆盖（MINIMAX_M3_CONTEXT_CHARS）。
     raw = os.environ.get("MINIMAX_M3_CONTEXT_CHARS", "").strip()
     try:
         value = int(raw) if raw else 48000
