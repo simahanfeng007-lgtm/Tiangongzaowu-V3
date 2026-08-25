@@ -22,3 +22,5 @@
 .env.*
 !.env.example
 /.tiangong-release-hash-cache.json
+**/.tiangong-release-hash-cache.json
+**/.in/

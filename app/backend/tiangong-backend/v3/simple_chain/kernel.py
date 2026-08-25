@@ -3,6 +3,9 @@
 P17-M2 拆分工程的延续：`_simple_chain_*` 家族与依赖闭包的整体迁出。
 后续新功能应落在本包的分层模块，不再向 zongdiaodu.py 添加顶层符号。
 """
+# 2026-08-25 fix: 多次思考路径根治 - 收紧 _runtime_detects_work_intent 弱信号 markers
+# （帮我查/查资料/写代码/裸扩展名等不再单独判 work），并新增
+# _simple_chain_fluent_text_reply 供 zongdiaodu 跳过 completion correction 强插续写。
 
 from __future__ import annotations
 
@@ -53,7 +56,8 @@ from ..duihua_qiaojie import (
 )
 from ..json_guards import error_payload
 from ..permission_settings import build_runtime_context_prompt, check_tool_permission
-from ..reply_sanitizer import extract_biaoxian_payload, strip_internal_reply_markers
+# bug-fix: 多次思考路径根治 - has_unknown_internal_markup 用于通顺答复判定
+from ..reply_sanitizer import extract_biaoxian_payload, has_unknown_internal_markup, strip_internal_reply_markers
 from ..run_context import (
     current_run_context,
     get_last_expression,
@@ -197,6 +201,27 @@ def _safe_visible_chat_reply(reply: str, raw: str = "") -> str:
         return raw_text
     return "我明白。"
 
+# bug-fix: 多次思考路径根治 - 明确动作动词：裸出现即构成“请求语境”。
+# 单字“写”、“生成”等泛化动词不在此列（“写代码”“生成是什么意思”只是提到动作词）。
+_WORK_STRONG_MUTATION_MARKERS = (
+    "创建", "新建", "写入", "保存", "修改", "修复", "更新", "追加", "覆盖",
+    "删除", "移动", "搬到", "放到", "复制", "重命名", "改名", "整理", "清理",
+    "打包", "压缩", "解压", "提交", "改成", "替换", "实现", "跑起来", "做完",
+)
+
+def _simple_chain_has_explicit_work_frame(user_text: str) -> bool:
+    """bug-fix: 多次思考路径根治 - 区分“请求干活”与“提到某个动作词”。
+
+    有命令语境（帮我/请/把/将/给我/执行/直接/开始…）或明确动作动词
+    （创建/修改/删除/打包…）才算请求干活；“help me with X”与裸提“X”分开。
+    """
+    compact = re.sub(r"\s+", "", str(user_text or "")).lower()
+    if not compact:
+        return False
+    if any(marker in compact for marker in _MUTATION_COMMAND_MARKERS):
+        return True
+    return any(marker in compact for marker in _WORK_STRONG_MUTATION_MARKERS)
+
 def _runtime_detects_work_intent(user_text: str) -> bool:
     text = _simple_chain_user_goal_text(user_text)
     lower = text.lower()
@@ -207,17 +232,41 @@ def _runtime_detects_work_intent(user_text: str) -> bool:
     # High-confidence read/list requests are work even when no mutation/deliverable exists.
     if build_action_obligations(text):
         return True
-    if _requires_real_mutation(text) or _has_delivery_intent(text) or _simple_chain_expected_suffixes(text):
+    # bug-fix: 多次思考路径根治 - mutation 命中须叠加“请求语境”：
+    # 裸泛化动词（“写代码”“我会写代码”里的单字“写”）不再直接判 work；
+    # “请帮我写代码”“修改这个文件”“把 X 整理成表格”等明确请求仍判 work。
+    if _requires_real_mutation(text) and _simple_chain_has_explicit_work_frame(text):
         return True
+    if _has_delivery_intent(text):
+        return True
+    # bug-fix: 多次思考路径根治 - 裸提扩展名（“什么是.docx文件”）不算干活；
+    # 扩展名叠加请求语境（“帮我转成 report.pdf”）才是交付契约。
+    if _simple_chain_expected_suffixes(text) and _simple_chain_has_explicit_work_frame(text):
+        return True
+    # bug-fix: 多次思考路径根治 - 收紧弱信号 markers：
+    # “查资料/搜资料/写代码/写小说/长链/多步骤/裸扩展名(docx/.txt/.zip)”
+    # 等泛化词不再单独判 work——纯文本问答被误判为 work 后，完成门必然不通过，
+    # 会触发 completion correction 强插续写（“多思考几轮”的头号来源）。
+    # 其中真命令已被上游判定覆盖：请帮我写代码/打包/修改→_requires_real_mutation
+    # 叠加请求语境判定，发我文档/根据附件→_has_delivery_intent，
+    # docx/.txt/.zip→_simple_chain_expected_suffixes，
+    # 因此“请帮我写代码”“整理成表格”“修改这个文件”等核心用例仍判 work。
+    # 这里只保留明确“干活”信号：具体产物（做成文件/txt）、明确执行（跑一下/运行一下/放桌面）、
+    # 具体查询对象（查这个/搜这个）。
     markers = (
         "生成word", "生成 word", "生成ppt", "生成 ppt", "生成excel", "生成 excel",
-        "做成文件", "发我文档", "整理成表格", "根据附件", "处理附件", "修改这个文件",
-        "做成txt", "做成 txt", "写代码", "跑一下", "运行一下", "帮我查", "帮我搜",
-        "查资料", "搜资料", "打包", "压缩", "放桌面", "写小说", "写一章", "续写",
-        "长链", "多步骤", "docx", "pptx", "xlsx", ".txt", ".zip",
+        "做成文件", "做成txt", "做成 txt", "跑一下", "运行一下", "放桌面",
+        "查这个", "查一下这", "搜这个", "搜一下这", "看下这个", "看一下这个",
     )
     compact = re.sub(r"\s+", "", lower)
     if any(marker.replace(" ", "").lower() in compact for marker in markers):
+        return True
+    # bug-fix: 多次思考路径根治 - “查/看/读 + 具体 URL”是明确干活信号；
+    # 裸提 URL（无动作词）仍按普通文本处理，避免闲聊被误判。
+    if re.search(r"https?://|www\.", lower) and re.search(
+        r"查|看|读|访问|打开|总结|分析|\b(?:fetch|open|read|check|look|browse|visit|summarize)\b",
+        lower,
+    ):
         return True
     english_action = re.search(
         r"\b(create|write|modify|edit|rename|move|copy|delete|remove|generate|build|run|execute|test|verify|search|find|summarize|analyse|analyze|read|package|compress|export|save|upload|download|send)\b",
@@ -228,6 +277,31 @@ def _runtime_detects_work_intent(user_text: str) -> bool:
         lower,
     )
     return bool(english_action and english_request_context)
+
+def _simple_chain_fluent_text_reply(huifu: Any) -> bool:
+    """bug-fix: 多次思考路径根治 - 判定模型回复是否已是可交付的通顺最终答复。
+
+    门槛刻意宽松（宁放过不误杀）：达到最短答复长度、无疑似工具调用残迹、
+    无未知内部标记、无未闭合代码围栏、无“我来帮你写 / I'll use X”式
+    只承诺未行动的过渡话术。命中即允许上层跳过 completion correction。
+    """
+    text = str(getattr(huifu, "visible_text", "") or huifu or "").strip()
+    if _count_nonspace_chars(text) < 6:
+        return False
+    if _SUSPECTED_TOOL_CALL_PATTERN.search(text):
+        return False
+    if has_unknown_internal_markup(text):
+        return False
+    if text.count("```") % 2 == 1:
+        return False
+    if re.search(
+        r"我来帮你|我来写|我来做|我来处理|我这就|马上给你|让我先"
+        r"|\b(?:i'?ll|let\s+me|i\s+will)\s+(?:use|call|run|invoke|check|read|search|open)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return False
+    return True
 
 def _is_capability_or_meta_question(user_text: str) -> bool:
     text = str(user_text or "")

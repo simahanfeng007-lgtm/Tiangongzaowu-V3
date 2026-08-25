@@ -5,6 +5,15 @@ P18.1 production boundary:
 configured Endpoint -> Protocol Transport -> ProviderTurnEnvelope.
 L4 optimization remains advisory and can never choose the endpoint/protocol.
 """
+# 2026-08-25 fix: 多次思考路径 — 流式期间过滤内联 <think>/<thinking>/<reasoning> 块，
+# 避免思考文本进入正文流；_qingli_sikao 支持三种标签成对删除与未闭合兜底。
+# 2026-08-25 fix: 多次思考路径根治 - cc 修复：
+#   1) 接通 Kimi 遗留的流式过滤器 dead code（llm_diaoyong 两个 execute_streaming_turn
+#      调用点原先传原始 on_text_chunk，过滤器从未生效）；
+#   2) 修复 _LiushiSikaoGuolvqi 两处 bug：部分标签前缀持留分支缺 break 导致死循环、
+#      前缀判定过宽（“a < b”等普通文本会被无限持留卡住流式输出）；
+#   3) _qingli_sikao 真正实现三种标签（think/thinking/reasoning）成对删除与
+#      未闭合兜底（删到文本末尾），与头注释声明一致。
 from __future__ import annotations
 
 import base64
@@ -67,6 +76,125 @@ if _LLM_CALL_MAX_SECONDS <= 0:
     _LLM_CALL_MAX_SECONDS = 300.0
 L4_OPTIMIZATION_TRACE_PATH = ZHUIZONG_LUJING / "l4_model_optimization.jsonl"
 _MODEL_ADAPTER_CORE: Any | None = None
+
+
+# bug-fix: 多次思考路径 - 流式 think 标签状态机过滤
+_SIKAO_BIAOQIAN_MING = ("think", "thinking", "reasoning")
+_SIKAO_KAI_RE = re.compile(
+    r"<\s*(?:think|thinking|reasoning)\b[^>]*>",
+    flags=re.IGNORECASE,
+)
+_SIKAO_BI_RE = re.compile(
+    r"<\s*/\s*(?:think|thinking|reasoning)\b[^>]*>",
+    flags=re.IGNORECASE,
+)
+# bug-fix: 多次思考路径根治 - 成对删除与未闭合兜底（供 _qingli_sikao 使用）：
+# 未闭合的开标签从标签起删到文本末尾，避免截断残留触发外层整轮重跑。
+_SIKAO_CHENGDUI_RE = re.compile(
+    _SIKAO_KAI_RE.pattern + r".*?" + _SIKAO_BI_RE.pattern + r"\s*",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_SIKAO_WEIBI_RE = re.compile(
+    _SIKAO_KAI_RE.pattern + r".*\Z",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+# bug-fix: 多次思考路径根治 - 前缀判定收紧：尾部必须是 "<"、"</" 或
+# “<标签名前缀[ 属性]”形态；普通文本里的 "<"（如代码 “a < b”）不再被误持留。
+_SIKAO_KEWANC_QIANZHUI_RE = re.compile(
+    r"^<\s*/?\s*([A-Za-z]{1,12})(?:\s[^>]*)?$",
+    flags=re.DOTALL,
+)
+
+
+def _keneng_sikao_biaoqian_qianzhui(tail: str) -> bool:
+    """判断缓冲区尾部是否可能是 think 系列开/闭标签的未完成前缀。"""
+    if tail in ("<", "</"):
+        return True  # 仅 "<" / "</"，标签名未定，先留住
+    pipei = _SIKAO_KEWANC_QIANZHUI_RE.match(tail)
+    if not pipei:
+        return False
+    zimu = pipei.group(1).lower()
+    return any(ming.startswith(zimu) for ming in _SIKAO_BIAOQIAN_MING)
+
+
+class _LiushiSikaoGuolvqi:
+    """流式 think 标签状态机过滤器。
+
+    跨 chunk 保留内部缓冲区：识别 <think>/<thinking>/<reasoning>（含属性、
+    大小写不敏感）的内联思考块并丢弃；思考块外的文本即时透传。
+    流结束（jieshu）时：仍在思考块内 → 剩余整段丢弃；在块外 → 剩余透传。
+    """
+
+    def __init__(self) -> None:
+        self._huanchong = ""
+        self._zai_sikao = False
+
+    def push(self, chunk: str) -> str:
+        self._huanchong += str(chunk or "")
+        return self._chouqu()
+
+    def jieshu(self) -> str:
+        if self._zai_sikao:
+            self._huanchong = ""
+            self._zai_sikao = False
+            return ""
+        shengyu, self._huanchong = self._huanchong, ""
+        return shengyu
+
+    def _chouqu(self) -> str:
+        shuchu: list[str] = []
+        while self._huanchong:
+            if self._zai_sikao:
+                bi = _SIKAO_BI_RE.search(self._huanchong)
+                if bi:
+                    self._huanchong = self._huanchong[bi.end():]
+                    self._zai_sikao = False
+                    continue
+                # 未找到闭合：尾部可能是不完整闭合标签，留住；其余丢弃
+                qie_dian = self._huanchong.rfind("<")
+                if qie_dian >= 0 and _keneng_sikao_biaoqian_qianzhui(self._huanchong[qie_dian:]):
+                    self._huanchong = self._huanchong[qie_dian:]
+                else:
+                    self._huanchong = ""
+                break
+            kai = _SIKAO_KAI_RE.search(self._huanchong)
+            if kai:
+                shuchu.append(self._huanchong[:kai.start()])
+                self._huanchong = self._huanchong[kai.end():]
+                self._zai_sikao = True
+                continue
+            qie_dian = self._huanchong.rfind("<")
+            if qie_dian >= 0 and _keneng_sikao_biaoqian_qianzhui(self._huanchong[qie_dian:]):
+                shuchu.append(self._huanchong[:qie_dian])
+                self._huanchong = self._huanchong[qie_dian:]
+                # bug-fix: 多次思考路径根治 - 持留部分标签前缀后必须 break：
+                # 缺少 break 时缓冲区不变，while 循环原地打转（流式 hang）。
+                break
+            else:
+                shuchu.append(self._huanchong)
+                self._huanchong = ""
+        return "".join(shuchu)
+
+
+def _baozhuang_liushi_sikao_guolv(
+    on_text_chunk: Callable[[str], None] | None,
+) -> tuple[Callable[[str], None] | None, Callable[[], None] | None]:
+    """每次 llm_diaoyong 调用创建一个新过滤器，过滤后的 chunk 转发给原回调。"""
+    if on_text_chunk is None:
+        return None, None
+    guolvqi = _LiushiSikaoGuolvqi()
+
+    def _chunk(text: str) -> None:
+        guolv_hou = guolvqi.push(text)
+        if guolv_hou:
+            on_text_chunk(guolv_hou)
+
+    def _flush() -> None:
+        shengyu = guolvqi.jieshu()
+        if shengyu:
+            on_text_chunk(shengyu)
+
+    return _chunk, _flush
 
 
 class NativeAudioModelReply(ModelTurnReply):
@@ -837,13 +965,16 @@ class HttpKehuduan:
             payload["stream_options"] = {"include_usage": True}
 
         effective_llm_max_seconds = _effective_llm_deadline_seconds()
+        # bug-fix: 多次思考路径根治 - 接通流式 think 过滤器（原为 dead code）：
+        # 本次 llm_diaoyong 独立一个过滤器实例，流式 chunk 先滤掉内联思考块再回调。
+        liushi_on_chunk, liushi_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
         try:
             executed = execute_streaming_turn(
                 client=self._kehuduan,
                 endpoint=endpoint,
                 api_key=miyao,
                 canonical_payload=payload,
-                on_text_chunk=on_text_chunk,
+                on_text_chunk=liushi_on_chunk,
                 on_reasoning_chunk=on_reasoning_chunk,
                 retry_limit=HTTP_RETRY_LIMIT,
                 retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
@@ -893,6 +1024,10 @@ class HttpKehuduan:
                 reason="native_audio_model_deadline" if exc.deadline_exceeded else "native_audio_model_error",
             )
 
+        # bug-fix: 多次思考路径根治 - 流结束 flush 过滤器：未配对 "<" 尾巴等
+        # 持留文本在此放出；仍在思考块内则整段丢弃（截断思考不进正文）。
+        if liushi_flush:
+            liushi_flush()
         turn = _canonicalize_provider_turn(executed.turn)
 
         # MiniMax legacy safety rescue is retained, but only after a turn with
@@ -904,19 +1039,24 @@ class HttpKehuduan:
             and not turn.tool_calls
         ):
             rescue_payload = _minimax_empty_length_rescue_payload(payload)
+            # bug-fix: 多次思考路径根治 - rescue 是一次全新模型调用：新建独立过滤器，
+            # 避免沿用上一次可能停留在思考块内的状态把 rescue 正文整段丢掉。
+            rescue_on_chunk, rescue_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
             try:
                 rescue = execute_streaming_turn(
                     client=self._kehuduan,
                     endpoint=endpoint,
                     api_key=miyao,
                     canonical_payload=rescue_payload,
-                    on_text_chunk=on_text_chunk,
+                    on_text_chunk=rescue_on_chunk,
                     on_reasoning_chunk=on_reasoning_chunk,
                     retry_limit=HTTP_RETRY_LIMIT,
                     retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
                     transient_status_codes=TRANSIENT_STATUS_CODES,
                     max_wall_clock_seconds=effective_llm_max_seconds,
                 )
+                if rescue_flush:
+                    rescue_flush()
                 turn = _canonicalize_provider_turn(rescue.turn)
                 optimization_trace["empty_length_rescue"] = True
             except TransportExecutionError:
@@ -1414,5 +1554,14 @@ def _zhuanhuan_openai_geshi(gongju_yuanshi: list[dict]) -> list[dict]:
 
 
 def _qingli_sikao(neirong: str) -> str:
-    """Remove provider reasoning blocks that arrive inside assistant content."""
-    return re.sub(r"<think>.*?</think>\s*", "", str(neirong or ""), flags=re.DOTALL | re.IGNORECASE).strip()
+    """Remove provider reasoning blocks that arrive inside assistant content.
+
+    bug-fix: 多次思考路径根治 - 支持三种标签（think/thinking/reasoning，含属性、
+    大小写不敏感）的成对删除与未闭合兜底：未闭合的开标签删到文本末尾，
+    孤立闭合标签一并清理，避免残留触发外层“未知内部标记”整轮重跑。
+    """
+    # bug-fix: 多次思考路径根治 - 先删成对块，再兜底删未闭合块，最后清孤立闭标签
+    wenben = _SIKAO_CHENGDUI_RE.sub("", str(neirong or ""))
+    wenben = _SIKAO_WEIBI_RE.sub("", wenben)
+    wenben = _SIKAO_BI_RE.sub("", wenben)
+    return wenben.strip()

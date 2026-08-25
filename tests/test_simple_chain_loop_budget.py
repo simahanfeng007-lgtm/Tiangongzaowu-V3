@@ -160,6 +160,10 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             def iter_lines(self):
                 yield 'data: {"choices":[{"delta":{"content":"keepalive"}}]}'
 
+            # bug-fix: 同 _StubResponse，httpx 0.28 兼容（2026-08-25，凌霜）。
+            def close(self) -> None:
+                return None
+
         class _FakeClient:
             def build_request(self, method, url, **kwargs):
                 return object()

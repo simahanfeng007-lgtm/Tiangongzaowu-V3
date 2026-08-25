@@ -66,9 +66,13 @@ SERVICE_PRESETS: dict[str, ServicePreset] = {
         {ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://api.minimaxi.com/v1"},
         "MiniMax-M3",
     ),
+    # bug-fix: MiMo Token Plan endpoint 支持（2026-08-25）
     "mimo": ServicePreset(
         "mimo", "mimo", ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value,
-        {ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://api.xiaomimimo.com/v1"},
+        {
+            ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value: "https://api.xiaomimimo.com/v1",
+            "mimo_token_plan": "https://token-plan-cn.xiaomimimo.com/v1",
+        },
         "mimo-v2.5-pro",
     ),
     "scnet": ServicePreset(

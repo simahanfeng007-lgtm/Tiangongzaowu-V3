@@ -296,6 +296,12 @@ def test_execute_streaming_turn_sends_to_pinned_ip(monkeypatch: pytest.MonkeyPat
         def iter_lines(self):
             return iter([])
 
+        # bug-fix: httpx 0.28 取消 client.send(stream=True) context manager 协议，
+        # 凌霜在 model_transport_executor.py 改为 try/finally 显式 response.close()。
+        # 测试 stub 必须同步支持（2026-08-25）。
+        def close(self) -> None:
+            return None
+
     class _StubClient:
         def build_request(self, method, url, **kwargs):
             captured["method"] = method
