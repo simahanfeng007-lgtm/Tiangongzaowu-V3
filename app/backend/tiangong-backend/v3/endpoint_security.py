@@ -32,7 +32,8 @@ _OFFICIAL_HOSTS: dict[str, frozenset[str]] = {
     "minimax_m3": frozenset({"api.minimaxi.com"}),
     "minimax": frozenset({"api.minimaxi.com"}),
     "google": frozenset({"generativelanguage.googleapis.com"}),
-    "mimo": frozenset({"api.xiaomimimo.com"}),
+    # bug-fix: MiMo Token Plan endpoint 支持（2026-08-25）
+    "mimo": frozenset({"api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com"}),
 }
 
 

@@ -125,7 +125,12 @@ def execute_streaming_turn(
                 headers={**request.headers, **host_headers},
                 extensions={"sni_hostname": sni_hostname},
             )
-            with client.send(pinned_http_request, stream=True) as response:
+            # bug-fix: httpx 0.28 取消了 client.send(stream=True) 返回值的
+            # context manager 支持（2026-08-25，凌霜）。改为直接 send + try-finally
+            # 显式关闭 stream，避免 LLM 真实调用时立刻抛
+            # "'httpx.Response' object does not support the context manager protocol"。
+            response = client.send(pinned_http_request, stream=True)
+            try:
                 status = int(response.status_code)
                 if status in transient and attempt < retry_limit:
                     last_reason = f"HTTP {status}"
@@ -145,6 +150,8 @@ def execute_streaming_turn(
                         on_text_chunk(text)
                     if reasoning and on_reasoning_chunk:
                         on_reasoning_chunk(reasoning)
+            finally:
+                response.close()
             turn = transport.finalize_turn(endpoint, state)
             latency = round((time.perf_counter() - started) * 1000)
             return TransportExecutionResult(
