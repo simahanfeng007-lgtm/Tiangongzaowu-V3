@@ -3,6 +3,6 @@
   "mapping_id": "life-service-runtime",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "src/life_service",
-  "tree_sha256": "7906849ffaa1a2c1ba239b7031ff905eb5d8f26cfa97385ea1331a9657f32856",
+  "tree_sha256": "77dc9438f4a64f7ac7fd1aa24db862569a52d90a3b7b66e7ea8464528940a6e4",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }
