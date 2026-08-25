@@ -149,8 +149,14 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
     .slice(-16);
   const verificationDebt = /requested verification\/test step is missing after the latest mutation|(?:修改|变更).*缺少.*(?:验证|测试)|缺少.*(?:验证|测试).*(?:修改|变更)/i
     .test(`${text}\n${String(result?.stderr || "")}\n${structuredBlockingLines.join("\n")}`);
+  // budget 类中断（平台预算/时长上限收口）是"段落结束"而非失败：
+  // 进度已保留、回复「继续」即可续跑——必须按 recoverable 分类，
+  // 否则 stopReason 误报 not_recoverable，UI 提示会把可续跑当成终局失败。
+  const budgetInterrupted = status === "force_stopped"
+    && /(?:预算|budget|继续.*进度|进度接着做)/i.test(`${text}\n${String(result?.stderr || "")}`);
   const recoverable = status === "incomplete"
     || status === "needs_continue"
+    || budgetInterrupted
     || /simple_chain_incomplete|needs_continue/i.test(String(result?.stderr || ""))
     || leaseBatchMismatch
     || deterministicVerificationFailure
@@ -202,7 +208,7 @@ export function autoContinuationDecision({ result, displayText, sendMode, runOpt
     verificationDebt,
     responseRequestsContinue,
     checkpointEvidence,
-    reason: deterministicVerificationFailure ? "deterministic_web_qa_failed" : verificationDebt ? "verification_debt" : leaseBatchMismatch ? "tool_batch_lease_mismatch" : thinCompletion ? "thin_completion" : recoverableFailure ? "recoverable_failure" : responseRequestsContinue ? "explicit_checkpoint" : recoverable ? "checkpoint" : "",
+    reason: deterministicVerificationFailure ? "deterministic_web_qa_failed" : verificationDebt ? "verification_debt" : leaseBatchMismatch ? "tool_batch_lease_mismatch" : thinCompletion ? "thin_completion" : recoverableFailure ? "recoverable_failure" : budgetInterrupted ? "budget_interrupted" : responseRequestsContinue ? "explicit_checkpoint" : recoverable ? "checkpoint" : "",
     nextState: {
       count: count + 1,
       startedAt,

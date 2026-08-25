@@ -1254,6 +1254,48 @@ class GatewayOrchestrationWorker:
                         run_id=recovered.generation.run_id,
                         generation=recovered.generation.generation,
                     )
+                    if not outboxes and (
+                        os.environ.get("TIANGONG_REQUEST_REEXECUTION", "1").strip().lower()
+                        not in {"0", "false", "off"}
+                        and recovered.generation.revision <= 3
+                    ):
+                        # 崩溃于执行中（无 outbox）：重新执行而非直接判死。
+                        # backend 的 simple_chain 按 request_id 恢复
+                        #（checkpoint/frontier），effect 层幂等挡住重复
+                        # 副作用；recover 每次 revision+1，超过 3 次按
+                        # 循环防护判死。P18 regenerative 机器由此被真正消费。
+                        reexec_stop = threading.Event()
+
+                        def reexec_heartbeat() -> None:
+                            consecutive_failures = 0
+                            while not reexec_stop.wait(10.0):
+                                try:
+                                    self._activator.heartbeat(
+                                        recovered,
+                                        now_ms=time.time_ns() // 1_000_000,
+                                    )
+                                    consecutive_failures = 0
+                                except Exception:
+                                    consecutive_failures += 1
+                                    if consecutive_failures >= 3:
+                                        reexec_stop.set()
+
+                        reexec_thread = threading.Thread(
+                            target=reexec_heartbeat,
+                            name="tiangong-request-reexecution-heartbeat",
+                            daemon=True,
+                        )
+                        reexec_thread.start()
+                        try:
+                            self.process(recovered)
+                        finally:
+                            reexec_stop.set()
+                            reexec_thread.join(timeout=5.0)
+                        with self._last_error_lock:
+                            self._processed_count += 1
+                            self._last_error = None
+                        self._set_error(None)
+                        continue
                     if not outboxes:
                         self._finalize_unhandled(
                             recovered,
@@ -1274,15 +1316,22 @@ class GatewayOrchestrationWorker:
                 heartbeat_stop = threading.Event()
 
                 def maintain_generation() -> None:
+                    # 心跳退避：单次失败（瞬时 DB 锁/系统打盹）不清零
+                    # 直接放弃会让长执行在交付边界被整体废弃。连续 3 次
+                    # 失败（约 30s 无有效心跳）才判定租约真正失联。
+                    consecutive_failures = 0
                     while not heartbeat_stop.wait(10.0):
                         try:
                             self._activator.heartbeat(
                                 activation,
                                 now_ms=time.time_ns() // 1_000_000,
                             )
+                            consecutive_failures = 0
                         except Exception as heartbeat_error:
+                            consecutive_failures += 1
                             self._set_error(self._safe_error_code(heartbeat_error))
-                            heartbeat_stop.set()
+                            if consecutive_failures >= 3:
+                                heartbeat_stop.set()
 
                 heartbeat = threading.Thread(
                     target=maintain_generation,
@@ -2624,7 +2673,23 @@ class GatewayOrchestrationWorker:
             return
 
         delivery_now = time.time_ns() // 1_000_000
-        self._activator.heartbeat(activation, now_ms=delivery_now)
+        try:
+            self._activator.heartbeat(activation, now_ms=delivery_now)
+        except Exception:
+            # 交付边界租约过期（系统睡眠/心跳失联）：执行已经完成，
+            # 绝不能因租约过期而废弃已产出的结果——先按 ID 重新接管
+            #（generation+1 recovery lease）再续约，接管失败才上抛。
+            recovered_activation = None
+            try:
+                recovered_activation = self._activator.recover(
+                    activation.entry.request_id,
+                    now_ms=time.time_ns() // 1_000_000,
+                )
+            except Exception:
+                recovered_activation = None
+            if recovered_activation is None:
+                raise
+            activation = recovered_activation
         scope = OutboundScope(
             channel=envelope.channel,
             tenant_id=envelope.tenant_id,
