@@ -219,8 +219,8 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
     def test_simple_chain_honors_gateway_effect_deadline(self) -> None:
         from pathlib import Path as _Path
 
-        source = _Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3" / "zongdiaodu.py"
-        text = source.read_text(encoding="utf-8")
+        v3_root = _Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+        text = (v3_root / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3_root / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
         self.assertIn("current_execution_deadline_ms", text)
         self.assertIn("effective_wall_clock_seconds", text)
         self.assertIn("_simple_chain_remaining_deadline_seconds", text)
@@ -485,7 +485,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             "failures": [],
         }
         args = {"action": "shell.run", "args": {"command": "do-something"}}
-        with mock.patch.object(scheduler, "_simple_chain_save_run_state") as save:
+        with mock.patch.object(__import__("v3.simple_chain.kernel", fromlist=["_simple_chain_save_run_state"]), "_simple_chain_save_run_state") as save:
             recovery = scheduler._simple_chain_record_execution_deadline(
                 state,
                 tool_name="omni_body",
@@ -527,7 +527,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         from v3 import zongdiaodu as scheduler
 
         state = {"run_id": "req_read", "round": 0}
-        with mock.patch.object(scheduler, "_simple_chain_save_run_state"):
+        with mock.patch.object(__import__("v3.simple_chain.kernel", fromlist=["_simple_chain_save_run_state"]), "_simple_chain_save_run_state"):
             recovery = scheduler._simple_chain_record_execution_deadline(
                 state,
                 tool_name="omni_body",
@@ -713,7 +713,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             target = target_dir / "15-course.pptx"
             target.write_bytes(b"pptx-bytes")
             with mock.patch(
-                "v3.zongdiaodu._delivery_workspace_root",
+                "v3.simple_chain.kernel._delivery_workspace_root",
                 return_value=str(workspace),
             ):
                 missing = _simple_chain_missing_deliverable_paths(

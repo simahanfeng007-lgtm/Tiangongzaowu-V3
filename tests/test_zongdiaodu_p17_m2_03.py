@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 V3 = ROOT / "app" / "backend" / "tiangong-backend" / "v3"
 BOUNDARY = V3 / "runtime_tool_result_boundary.py"
 ZONG = V3 / "zongdiaodu.py"
+KERNEL = V3 / "simple_chain" / "kernel.py"  # P17-M2 拆分：simple-chain 机器已迁出
 OWNERSHIP = ROOT / "source-ownership.json"
 
 
@@ -36,6 +37,13 @@ def _calls(node: ast.AST) -> set[str]:
         elif isinstance(target, ast.Attribute):
             names.add(target.attr)
     return names
+
+
+
+def _zd_combined_source():
+    """P17-M2 拆分后：逻辑总调度源 = zongdiaodu + simple_chain/kernel 拼接。"""
+    v3 = Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+    return (v3 / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3 / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
 
 
 class ZongdiaoduM203Tests(unittest.TestCase):
@@ -94,7 +102,7 @@ class ZongdiaoduM203Tests(unittest.TestCase):
             self.assertNotIn(name, source)
 
     def test_zongdiaodu_facades_delegate_but_executor_authority_stays_local(self) -> None:
-        tree = _tree(ZONG)
+        tree = ast.parse(_zd_combined_source())
         expected = {
             "_tool_dispatch_with_result": "project_tool_dispatch",
             "_tool_result_with_contract": "attach_tool_result_contract",
@@ -105,7 +113,7 @@ class ZongdiaoduM203Tests(unittest.TestCase):
         for name, delegated in expected.items():
             fn = _function(tree, name)
             self.assertIn(delegated, _calls(fn), name)
-        zong_source = ZONG.read_text(encoding="utf-8")
+        zong_source = _zd_combined_source()
         self.assertIn("self._jineng_zhixing(", zong_source)
         self.assertNotIn("decide_task_contract_completion(", zong_source)
         self.assertNotIn("normalize_tool_result(", zong_source)

@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 V3 = ROOT / "app/backend/tiangong-backend/v3"
 ZONG = V3 / "zongdiaodu.py"
+KERNEL = V3 / "simple_chain" / "kernel.py"  # P17-M2 拆分：simple-chain 机器已迁出
 COMPOSITION = V3 / "runtime_composition.py"
 LIFECYCLE = V3 / "runtime_lifecycle.py"
 BOOTSTRAP = V3 / "runtime_bootstrap.py"
@@ -55,9 +56,16 @@ def _call_names(node: ast.AST) -> list[str]:
     return names
 
 
+
+def _zd_combined_source():
+    """P17-M2 拆分后：逻辑总调度源 = zongdiaodu + simple_chain/kernel 拼接。"""
+    v3 = Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+    return (v3 / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3 / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
+
+
 class ZongdiaoduM201Tests(unittest.TestCase):
     def test_import_bootstrap_is_delegated_but_semantics_are_preserved(self) -> None:
-        source = ZONG.read_text(encoding="utf-8")
+        source = _zd_combined_source()
         self.assertNotIn(
             "from .world_understanding_production import install_world_understanding_observer",
             source,
@@ -65,7 +73,7 @@ class ZongdiaoduM201Tests(unittest.TestCase):
         self.assertNotIn("install_world_understanding_observer()", source)
         self.assertIn("install_zongdiaodu_import_observers", source)
 
-        tree = _tree(ZONG)
+        tree = ast.parse(_zd_combined_source())
         top_level_calls = [
             _qualified_name(node.value.func)
             for node in tree.body
@@ -78,7 +86,7 @@ class ZongdiaoduM201Tests(unittest.TestCase):
         )
 
     def test_constructor_consumes_composition_instead_of_building_engines(self) -> None:
-        init = _method(_tree(ZONG), "Zongdiaodu", "__init__")
+        init = _method(ast.parse(_zd_combined_source()), "Zongdiaodu", "__init__")
         calls = _call_names(init)
         self.assertEqual(1, calls.count("build_zongdiaodu_composition"))
         forbidden = {
@@ -114,7 +122,7 @@ class ZongdiaoduM201Tests(unittest.TestCase):
         self.assertTrue(required.issubset(calls), (required - calls, calls))
 
     def test_start_and_stop_are_lifecycle_port_delegations(self) -> None:
-        tree = _tree(ZONG)
+        tree = ast.parse(_zd_combined_source())
         start_calls = set(_call_names(_method(tree, "Zongdiaodu", "qidong")))
         stop_calls = set(_call_names(_method(tree, "Zongdiaodu", "tingzhi")))
         self.assertIn("start_zongdiaodu_runtime", start_calls)

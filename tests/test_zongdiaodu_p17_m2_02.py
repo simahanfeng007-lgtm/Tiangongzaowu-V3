@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 V3 = ROOT / "app/backend/tiangong-backend/v3"
 ZONG = V3 / "zongdiaodu.py"
+KERNEL = V3 / "simple_chain" / "kernel.py"  # P17-M2 拆分：simple-chain 机器已迁出
 TURN = V3 / "runtime_turn_orchestration.py"
 
 
@@ -53,6 +54,13 @@ def _load_turn_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+
+def _zd_combined_source():
+    """P17-M2 拆分后：逻辑总调度源 = zongdiaodu + simple_chain/kernel 拼接。"""
+    v3 = Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+    return (v3 / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3 / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
 
 
 class ZongdiaoduM202Tests(unittest.TestCase):
@@ -110,7 +118,7 @@ class ZongdiaoduM202Tests(unittest.TestCase):
         self.assertEqual(["c"], [item.identity_key for item in result.guarded])
 
     def test_zongdiaodu_delegates_coordination_but_keeps_executor_authority(self) -> None:
-        method = _method(_tree(ZONG), "Zongdiaodu", "_huanxing_simple_chain")
+        method = _method(ast.parse(_zd_combined_source()), "Zongdiaodu", "_huanxing_simple_chain")
         calls = set(_call_names(method))
         required = {
             "TurnLoopState",
@@ -131,7 +139,7 @@ class ZongdiaoduM202Tests(unittest.TestCase):
         # executor directly from the main loop.
         self.assertNotIn("turn_loop.can_schedule", calls)
         self.assertNotIn("self._jineng_zhixing", calls)
-        source = ast.get_source_segment(ZONG.read_text(encoding="utf-8"), method) or ""
+        source = ast.get_source_segment(_zd_combined_source(), method) or ""
         self.assertNotIn("repeat_observation_counts", source)
         self.assertNotIn("seen_parallel", source)
         self.assertNotIn("iteration_count > _SIMPLE_CHAIN_MAX_LOOP_TURNS", source)

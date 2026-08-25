@@ -166,10 +166,8 @@ class ExecutionEpochBudgetTests(unittest.TestCase):
         self.assertTrue(decision.global_exhausted)
 
     def test_real_zongdiaodu_paths_use_p18_dual_budget_bridge(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[1]
-            / "app" / "backend" / "tiangong-backend" / "v3" / "zongdiaodu.py"
-        ).read_text(encoding="utf-8")
+        v3_root = Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+        source = (v3_root / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3_root / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
         self.assertNotIn("turn_loop.can_schedule(", source)
         self.assertIn("_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", source)
         self.assertIn('source="parallel_tool_batch"', source)
@@ -196,7 +194,7 @@ class ExecutionEpochBudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch.dict(os.environ, {"TIANGONG_SIMPLE_CHAIN_RUN_STATE_ROOT": temp_dir}, clear=False):
                 run_state = _simple_chain_new_run_state("req-p18-turn", "session-p18")
-                with mock.patch("v3.zongdiaodu._simple_chain_emit_event", return_value=True):
+                with mock.patch("v3.simple_chain.kernel._simple_chain_emit_event", return_value=True):
                     ok = _simple_chain_checkpoint_continue(
                         run_state,
                         state,
@@ -218,10 +216,8 @@ class ExecutionEpochBudgetTests(unittest.TestCase):
         self.assertEqual(run_state["continuation"]["status"], "continued")
 
     def test_loop_turn_cutoff_is_epoch_local_but_wall_clock_remains_global(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[1]
-            / "app" / "backend" / "tiangong-backend" / "v3" / "zongdiaodu.py"
-        ).read_text(encoding="utf-8")
+        v3_root = Path(__file__).resolve().parents[1] / "app" / "backend" / "tiangong-backend" / "v3"
+        source = (v3_root / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (v3_root / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
         self.assertIn("iteration_count=turn_loop.epoch_iteration_count", source)
         self.assertIn('source="epoch_turn_budget"', source)
         self.assertIn("wall_clock_decision = evaluate_turn_budget", source)
