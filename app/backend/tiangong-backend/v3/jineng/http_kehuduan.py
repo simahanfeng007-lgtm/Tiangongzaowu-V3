@@ -249,7 +249,10 @@ def _native_audio_unavailable_for_protocol(paths: tuple[str, ...], protocol_fami
 
 
 def _learned_skill_context(limit: int = 8) -> str:
-    if os.environ.get("TIANGONG_ENABLE_LEARNED_SKILL_CONTEXT", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+    # 默认开启：激活技能对模型可见是"先读"的前提（capability-based
+    # 权限的前半段）。此前默认关闭导致理念管道建好但进水阀关着。
+    # 环境变量仍可显式关闭（0/false/off/no）。
+    if os.environ.get("TIANGONG_ENABLE_LEARNED_SKILL_CONTEXT", "1").strip().lower() in {"0", "false", "off", "no"}:
         return ""
     raw = read_json_compat(NENGLI_ZHUCE_LUJING, {})
     lines: list[str] = []

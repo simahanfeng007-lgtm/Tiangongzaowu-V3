@@ -142,10 +142,21 @@ def _repository_evidence(scope: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _memory_refs(scope: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
-    rows: list[dict[str, Any]] = []
+    semantic_rows: list[dict[str, Any]] = []
+    turn_rows: list[dict[str, Any]] = []
     terms: list[str] = []
     memories = scope.get("memories") if isinstance(scope.get("memories"), Mapping) else {}
-    for memory_id, raw in list(memories.items())[-64:]:
+    # 对话流水（mem_turn_*）与语义记忆分窗：流水只是近况语境，长期运行
+    # 后每轮一条的流水会把真正的语义记忆挤出观察窗口。两窗各自取尾部
+    #（先分流再截尾——共用尾部窗口会让早写入的语义记忆永远进不来）。
+    semantic_items: list[tuple[str, Any]] = []
+    turn_items: list[tuple[str, Any]] = []
+    for memory_id, raw in memories.items():
+        if str(memory_id).startswith("mem_turn_"):
+            turn_items.append((memory_id, raw))
+        else:
+            semantic_items.append((memory_id, raw))
+    for memory_id, raw in semantic_items[-96:] + turn_items[-24:]:
         if not isinstance(raw, Mapping) or str(raw.get("status") or "active") != "active":
             continue
         classification = raw.get("classification") if isinstance(raw.get("classification"), Mapping) else {}
@@ -171,10 +182,15 @@ def _memory_refs(scope: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[s
                 "trigger_terms": list(lifecycle.get("trigger_terms") or [])[:12],
             },
         }
-        rows.append(row)
+        if str(memory_id).startswith("mem_turn_"):
+            turn_rows.append(row)
+        else:
+            semantic_rows.append(row)
         terms.extend(_terms(str(raw.get("content") or "")))
         terms.extend(str(item) for item in lifecycle.get("trigger_terms") or [])
-    return rows[-24:], list(dict.fromkeys(terms))[:48]
+    # 语义记忆独占 24 条主窗口；流水最多 8 条且排在末尾（近况语境）。
+    rows = semantic_rows[-24:] + turn_rows[-8:]
+    return rows, list(dict.fromkeys(terms))[:48]
 
 
 def build_activity_scope(
