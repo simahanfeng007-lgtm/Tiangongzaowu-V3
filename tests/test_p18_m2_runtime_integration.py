@@ -64,7 +64,7 @@ class P18M2RuntimeIntegrationTests(unittest.TestCase):
         self.assertLessEqual(len(frontier.active_blockers), 128)
 
     def test_production_source_wires_single_parallel_checkpoint_resume_and_completion(self) -> None:
-        source = (BACKEND / "zongdiaodu.py").read_text(encoding="utf-8")
+        source = (BACKEND / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (BACKEND / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
         self.assertIn("set_simple_chain_regenerative_execution_provider", source)
         self.assertIn("_simple_chain_regenerative_initialize(run_state, xiaoxi)", source)
         self.assertIn("_simple_chain_regenerative_restore_turn_loop(run_state, turn_loop)", source)

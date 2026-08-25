@@ -98,7 +98,7 @@ class PrivateReasoningIsolationTests(unittest.TestCase):
         self.assertEqual(received[-1], "正文第一段正文第二段")
 
     def test_scheduler_has_no_reasoning_projection_router(self) -> None:
-        source = (BACKEND_ROOT / "v3" / "zongdiaodu.py").read_text(encoding="utf-8")
+        source = (BACKEND_ROOT / "v3" / "zongdiaodu.py").read_text(encoding="utf-8") + "\n\n" + (BACKEND_ROOT / "v3" / "simple_chain" / "kernel.py").read_text(encoding="utf-8")
         self.assertNotIn("class _InterimStreamRouter", source)
         self.assertNotIn("push_reasoning", source)
         self.assertIn("_on_reasoning_chunk = None", source)

@@ -210,7 +210,12 @@ class CleanupStaleRunStateTests(unittest.TestCase):
             os.environ,
             self._isolated_env(tmp),
             clear=False,
-        ), mock.patch.object(zd, "_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT", 1):
+        ), mock.patch.object(
+            zd, "_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT", 1
+        ), mock.patch.object(
+            __import__("v3.simple_chain.kernel", fromlist=["_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT"]),
+            "_SIMPLE_CHAIN_RUN_STATE_RETAIN_COUNT", 1,
+        ):
             root = Path(tmp) / "simple-chain"
             root.mkdir(parents=True, exist_ok=True)
             for name in ("old.json", "new.json"):

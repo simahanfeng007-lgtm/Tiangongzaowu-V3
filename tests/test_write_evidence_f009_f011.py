@@ -202,8 +202,8 @@ def test_desktop_deliverable_format_magic_check(tmp_path: Path) -> None:
     real.write_bytes(buf.getvalue())
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("v3.zongdiaodu._path_under_desktop", lambda p: str(p).startswith(str(desktop)))
-        mp.setattr("v3.zongdiaodu._simple_chain_expected_suffixes", lambda m: {".docx"} if "word" in m or "docx" in m else set())
+        mp.setattr("v3.simple_chain.kernel._path_under_desktop", lambda p: str(p).startswith(str(desktop)))
+        mp.setattr("v3.simple_chain.kernel._simple_chain_expected_suffixes", lambda m: {".docx"} if "word" in m or "docx" in m else set())
         msg = "帮我在桌面上写个作文，我要word格式"
         assert _simple_chain_paths_match_desktop([str(fake)], msg) is False
         assert _simple_chain_paths_match_desktop([str(real)], msg) is True

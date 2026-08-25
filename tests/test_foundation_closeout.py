@@ -278,7 +278,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
             "final_requirement_gaps": [],
         }
         run_state = _simple_chain_new_run_state("req-qc-failed", "session-qc")
-        with mock.patch("v3.zongdiaodu._simple_chain_save_run_state"):
+        with mock.patch("v3.simple_chain.kernel._simple_chain_save_run_state"):
             _simple_chain_record_observation(run_state, failed_acceptance)
             _simple_chain_record_observation(run_state, transport_failure)
             _simple_chain_record_observation(run_state, hash_payload)
@@ -300,7 +300,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         from v3.zongdiaodu import _simple_chain_new_run_state, _simple_chain_record_observation
 
         state = _simple_chain_new_run_state("req-state", "session-state")
-        with mock.patch("v3.zongdiaodu._simple_chain_save_run_state"):
+        with mock.patch("v3.simple_chain.kernel._simple_chain_save_run_state"):
             _simple_chain_record_observation(state, {
                 "ok": True,
                 "tool_name": "omni_body",
@@ -414,6 +414,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_skill_context_uses_exact_registered_id_or_name_only(self) -> None:
         from v3 import zongdiaodu as scheduler
+        from v3.simple_chain import kernel as scheduler_kernel_sc
 
         with tempfile.TemporaryDirectory() as td:
             index_path = Path(td) / "skill_router_index.json"
@@ -432,7 +433,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with mock.patch.object(scheduler, "_SKILL_INDEX_PATH", index_path):
+            with mock.patch.object(scheduler_kernel_sc, "_SKILL_INDEX_PATH", index_path):
                 self.assertEqual(
                     scheduler._simple_chain_explicit_named_skill_ids(
                         "请使用 skill_exact_demo_v1 完成任务"
@@ -460,6 +461,7 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
 
     def test_ordinary_task_does_not_preinject_skill_content(self) -> None:
         from v3 import zongdiaodu as scheduler
+        from v3.simple_chain import kernel as scheduler_kernel_sc
 
         self.assertEqual(
             scheduler._simple_chain_explicit_skill_context("帮我生成一份 Word 文档"),

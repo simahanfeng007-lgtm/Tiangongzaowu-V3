@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 import unittest
 
@@ -12,6 +13,12 @@ assert spec.loader is not None
 spec.loader.exec_module(integrity)
 
 
+def _zongdiaodu_full_source(root_path):
+    # P17-M2 拆分后 simple-chain 机器在 v3/simple_chain/kernel.py；
+    # 架构断言按“逻辑总调度源 = zongdiaodu + kernel 拼接”读取。
+    main = (root_path / "app/backend/tiangong-backend/v3/zongdiaodu.py").read_text(encoding="utf-8")
+    kernel = (root_path / "app/backend/tiangong-backend/v3/simple_chain/kernel.py").read_text(encoding="utf-8")
+    return main + "\n\n" + kernel
 class ExecutionIntegrityFloorTests(unittest.TestCase):
     def test_runtime_floor_requires_unambiguous_tool_actions(self):
         cases = (
@@ -998,7 +1005,7 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.zong = (ROOT / "app/backend/tiangong-backend/v3/zongdiaodu.py").read_text(encoding="utf-8")
+        cls.zong = _zongdiaodu_full_source(ROOT)
         cls.xujie = (ROOT / "app/backend/tiangong-backend/v3/shangxiawen_xujie.py").read_text(encoding="utf-8")
 
     def test_public_api_required_by_zongdiaodu_is_preserved(self):
@@ -1033,6 +1040,11 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
         self.assertIn("decide_task_contract_completion(", boundary)
         self.assertIn("decide_simple_chain_completion", self.zong)
         runtime_block = self.zong[self.zong.index("def _huanxing_simple_chain("):]
+        # 方法块边界：下一个顶层 def/class 之前（拼接源尾部是迁出的
+        # kernel 全文，不带边界的旧截取会把 kernel 内容误算进方法块）。
+        boundary_match = re.search(r"\n(?=def |class )", runtime_block[1:])
+        if boundary_match:
+            runtime_block = runtime_block[: boundary_match.start() + 1]
         self.assertIn("_simple_chain_life_completion_gate(", runtime_block)
         self.assertNotIn("_simple_chain_evidence_check(", runtime_block)
         self.assertNotIn("_simple_chain_final_hard_gate", self.zong)
