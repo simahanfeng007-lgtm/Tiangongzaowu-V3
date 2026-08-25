@@ -79,6 +79,25 @@ class ActiveRequestActivator:
             lease_duration_ms=self._lease_duration_ms,
         )
 
+    def recover(
+        self,
+        request_id: str,
+        *,
+        now_ms: int,
+    ) -> ActiveRequestActivation | None:
+        """按 ID 恢复自己过期的租约（交付边界自愈通道）。
+
+        系统睡眠/长 GC 把 fence 拖过期时，已完成的执行结果不该被整体
+        废弃：重新接管（generation+1 新 recovery lease）后继续交付。
+        """
+        return self._store.recover_expired_active_request(
+            gateway_epoch=self._gateway_epoch,
+            owner_instance_id=self._owner_instance_id,
+            recovered_at_ms=now_ms,
+            lease_duration_ms=self._lease_duration_ms,
+            request_id=request_id,
+        )
+
     def heartbeat(
         self,
         activation: ActiveRequestActivation,

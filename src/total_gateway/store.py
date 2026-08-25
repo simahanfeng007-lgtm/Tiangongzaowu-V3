@@ -8819,6 +8819,7 @@ class GatewayStateStore:
         owner_instance_id: str,
         recovered_at_ms: int,
         lease_duration_ms: int = 30_000,
+        request_id: str | None = None,
     ) -> ActiveRequestActivation | None:
         if (
             gateway_epoch < 1
@@ -8828,27 +8829,47 @@ class GatewayStateStore:
         ):
             raise ValueError("active request recovery arguments are invalid")
         with self._lock, self._write_transaction():
-            candidate = self._connection.execute(
-                """
-                SELECT g.request_id
-                FROM request_generation AS g
-                JOIN generation_fences AS f ON f.fence_id = g.current_fence_id
-                JOIN session_queue AS q ON q.request_id = g.request_id
-                JOIN request_inbound_payload AS i ON i.request_id = g.request_id
-                JOIN aggregate_state AS s
-                  ON s.machine = 'request' AND s.entity_id = g.request_id
-                WHERE g.status = 'ACTIVE'
-                  AND g.gateway_epoch < ?
-                  AND f.state = 'ACTIVE'
-                  AND json_extract(f.fence_json, '$.expires_at_ms') <= ?
-                  AND q.state = 'ACTIVE'
-                  AND i.availability = 'AVAILABLE'
-                  AND s.state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED','SUPERSEDED')
-                ORDER BY q.activated_at_ms, q.session_scope_hash, q.sequence
-                LIMIT 1
-                """,
-                (gateway_epoch, recovered_at_ms),
-            ).fetchone()
+            if request_id is not None:
+                # 指定恢复（交付边界租约过期自愈）：只认"确实 ACTIVE、
+                # fence 已过期、同 epoch 或更老"的目标，其余一律冲突。
+                candidate = self._connection.execute(
+                    """
+                    SELECT g.request_id
+                    FROM request_generation AS g
+                    JOIN generation_fences AS f ON f.fence_id = g.current_fence_id
+                    JOIN session_queue AS q ON q.request_id = g.request_id
+                    WHERE g.request_id = ?
+                      AND g.status = 'ACTIVE'
+                      AND g.gateway_epoch <= ?
+                      AND f.state = 'ACTIVE'
+                      AND json_extract(f.fence_json, '$.expires_at_ms') <= ?
+                      AND q.state = 'ACTIVE'
+                    LIMIT 1
+                    """,
+                    (request_id, gateway_epoch, recovered_at_ms),
+                ).fetchone()
+            else:
+                candidate = self._connection.execute(
+                    """
+                    SELECT g.request_id
+                    FROM request_generation AS g
+                    JOIN generation_fences AS f ON f.fence_id = g.current_fence_id
+                    JOIN session_queue AS q ON q.request_id = g.request_id
+                    JOIN request_inbound_payload AS i ON i.request_id = g.request_id
+                    JOIN aggregate_state AS s
+                      ON s.machine = 'request' AND s.entity_id = g.request_id
+                    WHERE g.status = 'ACTIVE'
+                      AND g.gateway_epoch <= ?
+                      AND f.state = 'ACTIVE'
+                      AND json_extract(f.fence_json, '$.expires_at_ms') <= ?
+                      AND q.state = 'ACTIVE'
+                      AND i.availability = 'AVAILABLE'
+                      AND s.state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED','SUPERSEDED')
+                    ORDER BY q.activated_at_ms, q.session_scope_hash, q.sequence
+                    LIMIT 1
+                    """,
+                    (gateway_epoch, recovered_at_ms),
+                ).fetchone()
             if candidate is None:
                 return None
             request_id = candidate["request_id"]
@@ -8859,7 +8880,7 @@ class GatewayStateStore:
             current = _generation_view(self._connection, generation_row)
             if (
                 current.status != "ACTIVE"
-                or current.gateway_epoch >= gateway_epoch
+                or current.gateway_epoch > gateway_epoch
                 or current.fence.expires_at_ms > recovered_at_ms
                 or current.lease_id is None
             ):
