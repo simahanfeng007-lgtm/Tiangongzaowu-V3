@@ -6576,6 +6576,17 @@ class EmbeddedLifeRuntime:
                 lifecycle_changed += 1
             thawed += int(did_thaw)
             row = deepcopy(record)
+            # 时间视图（Zep 式事实有效期）：检索结果均为当前有效事实；
+            # supersedes 链指出它修正了哪条旧事实（旧事实已随 corrected
+            # 退出检索面）。归一化到顶层方便下游直接消费。
+            row["validity"] = {
+                "valid_from": str(record.get("created_at") or ""),
+                "supersedes": [
+                    str(rel.get("target_memory_id"))
+                    for rel in (record.get("relations") or [])
+                    if isinstance(rel, Mapping) and rel.get("kind") == "supersedes"
+                ],
+            }
             lexical = haystack.count(query) if query else 0
             causal_bonus = 250 if classification.get("causal") else 0
             graph_bonus = min(600, 300 * len(linked_seeds))
