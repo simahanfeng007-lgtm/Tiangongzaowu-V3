@@ -735,8 +735,32 @@ class EmbeddedBackendRuntime:
             raise ValueError("autonomy activity source is not eligible")
         if str(task.get("risk_class") or "") not in {"A0", "A1"}:
             raise ValueError("autonomy activity risk is not eligible")
+        # 已激活能力只读接入：自主思考可以看到自己学会了什么（"先读"），
+        # 但本执行器仍不执行任何工具——行动依旧走确认链。
+        scope_payload = dict(activity_scope)
+        active_skills: list[str] = []
+        overlay_provider = getattr(self, "_life_skill_overlay_provider", None)
+        if callable(overlay_provider):
+            try:
+                overlay = overlay_provider()
+                if isinstance(overlay, Mapping) and overlay.get("ok") is True:
+                    for item in overlay.get("artifacts") if isinstance(overlay.get("artifacts"), list) else []:
+                        if (
+                            isinstance(item, Mapping)
+                            and str(item.get("activation_status") or "") == "active"
+                            and item.get("kind") in {"skill", "tool"}
+                        ):
+                            title = str(item.get("title") or item.get("artifact_id") or "")[:80]
+                            summary = str(item.get("summary") or "")[:160]
+                            active_skills.append(f"{title}: {summary}" if summary else title)
+                        if len(active_skills) >= 8:
+                            break
+            except Exception:
+                active_skills = []
+        if active_skills:
+            scope_payload["active_skills"] = active_skills
         encoded = json.dumps(
-            {"activity_scope": dict(activity_scope), "task": dict(task)},
+            {"activity_scope": scope_payload, "task": dict(task)},
             ensure_ascii=False,
             sort_keys=True,
         )
@@ -745,6 +769,8 @@ class EmbeddedBackendRuntime:
         system_prompt = (
             "你是天工生命体的内部自主活动执行器。只完成给定的低风险内部思考任务，"
             "不得调用工具、访问网络、修改文件、发送消息、注册能力或声称这些外部动作已经发生。"
+            "activity_scope.active_skills 是你已学会并激活的能力清单（只读参考，"
+            "本任务不得调用它们，思考时可作为已知方法引用）。"
             "所有结论必须来自提供的生命活动范围；证据不足时明确写出不确定性。"
             "只返回一个 JSON 对象，不要 Markdown。字段为：title（中文标题）、"
             "summary（本次实际完成内容的中文摘要）、findings（最多8条）、"
