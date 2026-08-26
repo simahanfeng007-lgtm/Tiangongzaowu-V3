@@ -1,3 +1,8 @@
 # The release toolchain extends the source runtime with the frozen-runtime builder.
 -r requirements-source.lock
 pyinstaller==6.19.0
+# bug-fix: v3 起源版桌面壳 UI 依赖入锁 —— 此前 customtkinter 不在任何依赖锁，
+# provision 自检只 Write-Host 跳过，装机产品必挂（2026-08-26，凌霜修 UX）
+customtkinter==5.2.2
+darkdetect==2.0.1
+packaging==23.2
