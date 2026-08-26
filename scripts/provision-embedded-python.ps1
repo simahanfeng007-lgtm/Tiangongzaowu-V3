@@ -82,7 +82,10 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     Expand-Archive -LiteralPath $Archive -DestinationPath $RuntimeRoot -Force
     $Pth = Get-ChildItem -LiteralPath $RuntimeRoot -Filter "python*._pth" | Select-Object -First 1
     if (-not $Pth) { throw "Embedded Python path configuration is missing" }
-    @("python312.zip", ".", "Lib\\site-packages", "", "import site") | Set-Content -LiteralPath $Pth.FullName -Encoding ascii
+    # bug-fix: ._pth 追加 ..\..\backend —— 存在 ._pth 时 python -m 不把 cwd 加进 sys.path，
+    # pythonw -m total_gateway 会秒退；条目相对 exe 目录（app\runtime\python312）上跳两级
+    # 恰为 $INSTDIR\app\backend（total_gateway 包所在层），保留原有 zip/site-packages 条目（2026-08-26，凌霜修 UX）
+    @("python312.zip", ".", "Lib\\site-packages", "..\\..\\backend", "", "import site") | Set-Content -LiteralPath $Pth.FullName -Encoding ascii
     if (-not (Test-Path -LiteralPath $Bootstrap -PathType Leaf)) {
         Invoke-DownloadWithFallback `
             -PrimaryUri "https://bootstrap.pypa.io/get-pip.py" `
@@ -152,3 +155,63 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $RuntimeRoot "runtime-manifest.json") -Encoding utf8
 Write-Host "Embedded CPython runtime ready: $Python"
+
+# bug-fix: 补 tkinter 运行时供 customtkinter 壳启动（2026-08-26，凌霜）
+# 官方 embeddable zip 不含 tkinter，customtkinter 壳启动前必须补齐：
+# 从完整版 CPython 3.12 拷贝 tcl/（TCL_LIBRARY 指向）、tk/、DLLs/_tkinter.pyd、
+# tcl86t.dll + tk86t.dll 到运行时根目录（._pth 已含 "."，根目录可直接 import）。
+function Copy-TkinterRuntime {
+    $Source = "C:\Python312"
+    if (-not (Test-Path -LiteralPath (Join-Path $Source "python.exe") -PathType Leaf)) {
+        $Detected = $null
+        try {
+            $Detected = (& python -c "import sys; print(sys.base_prefix)" 2>$null).Trim()
+        } catch {
+            $Detected = $null
+        }
+        if (-not $Detected -or -not (Test-Path -LiteralPath (Join-Path $Detected "python.exe") -PathType Leaf)) {
+            Write-Warning "未找到完整版 CPython 3.12（C:\Python312 与 base_prefix 探测均失败），跳过 tkinter 补齐"
+            return
+        }
+        $Source = $Detected
+    }
+    & (Join-Path $Source "python.exe") -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
+    if ($LASTEXITCODE -ne 0) { throw "tkinter source is not CPython 3.12: $Source" }
+
+    foreach ($Directory in @("tcl", "tk")) {
+        $SourceDirectory = Join-Path $Source $Directory
+        if (-not (Test-Path -LiteralPath $SourceDirectory -PathType Container)) {
+            if ($Directory -eq "tk") { continue }  # 3.12 安装版只有 tcl\（内含 tk8.6），无独立 tk\
+            throw "tkinter source directory is missing: $SourceDirectory"
+        }
+        Copy-Item -LiteralPath $SourceDirectory -Destination (Join-Path $RuntimeRoot $Directory) -Recurse -Force
+    }
+    foreach ($File in @("DLLs\_tkinter.pyd", "DLLs\tcl86t.dll", "DLLs\tk86t.dll")) {
+        $SourceFile = Join-Path $Source $File
+        if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
+            $SourceFile = Join-Path $Source (Split-Path $File -Leaf)  # 旧布局把 dll 放在安装根目录
+        }
+        if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) { throw "tkinter source file is missing: $File" }
+        Copy-Item -LiteralPath $SourceFile -Destination (Join-Path $RuntimeRoot (Split-Path $File -Leaf)) -Force
+    }
+
+    # bug-fix: embeddable zip 的 python312.zip 不含 tkinter 纯 Python 包，只拷 tcl/tk 运行时
+    # 会让下方自检抛 ModuleNotFoundError —— 补拷 Lib\tkinter 到 Lib\site-packages
+    # （._pth 已含 Lib\site-packages 搜索路径，无需再改 ._pth）（2026-08-26，凌霜修 UX）
+    $TkinterPackage = Join-Path $Source "Lib\tkinter"
+    if (-not (Test-Path -LiteralPath $TkinterPackage -PathType Container)) {
+        throw "tkinter source package is missing: $TkinterPackage"
+    }
+    Copy-Item -LiteralPath $TkinterPackage -Destination (Join-Path $RuntimeRoot "Lib\site-packages\tkinter") -Recurse -Force
+
+    # 装机自检：tkinter / customtkinter 均为壳 UI 硬依赖，必须可导入
+    & $Python -c "import tkinter; print('tkinter', tkinter.TkVersion)"
+    if ($LASTEXITCODE -ne 0) { throw "Embedded Python tkinter self-check failed" }
+    # bug-fix: customtkinter 已入 requirements-release.lock（本脚本上方统一安装），
+    # 自检由"未装则跳过"改为硬失败 —— 装机产品缺它必挂（2026-08-26，凌霜修 UX）
+    & $Python -c "import customtkinter"
+    if ($LASTEXITCODE -ne 0) { throw "Embedded Python customtkinter self-check failed" }
+    Write-Host "Embedded Python tkinter runtime ready (source: $Source)"
+}
+
+Copy-TkinterRuntime
