@@ -209,16 +209,38 @@ _WORK_STRONG_MUTATION_MARKERS = (
     "打包", "压缩", "解压", "提交", "改成", "替换", "实现", "跑起来", "做完",
 )
 
+# bug-fix: 单字命令 marker（按/将/把/请）单用不构成“请求干活”，须与动作动词共现；
+# 否则中文闲聊（“请问…”“把它当…”“将信将疑”）恒判 work（2026-08-26，凌霜修 logic 类）
+_DANZI_MINGLING_MARKERS = ("请", "按", "把", "将")
+_DANZI_PEI_DONGCI = (
+    "查询", "读取", "查找", "搜索", "打开", "发送", "执行", "修改", "删除",
+    "写入", "保存", "创建", "新建", "移动", "复制", "重命名", "整理", "清理",
+    "打包", "压缩", "解压", "分析", "总结", "翻译", "转换", "生成", "制作",
+    "计算", "对比", "核对", "排查", "修复", "更新", "替换", "追加", "提交",
+    # 单字动词（仅与命令 marker 共现时生效，如“把文件删了”“请改一下”）：
+    "删", "改", "写", "查", "搜", "传", "发", "存", "移", "建", "跑", "转", "读",
+)
+
 def _simple_chain_has_explicit_work_frame(user_text: str) -> bool:
     """bug-fix: 多次思考路径根治 - 区分“请求干活”与“提到某个动作词”。
 
-    有命令语境（帮我/请/把/将/给我/执行/直接/开始…）或明确动作动词
+    有命令语境（帮我/按照/执行/直接/开始…）或明确动作动词
     （创建/修改/删除/打包…）才算请求干活；“help me with X”与裸提“X”分开。
     """
     compact = re.sub(r"\s+", "", str(user_text or "")).lower()
     if not compact:
         return False
-    if any(marker in compact for marker in _MUTATION_COMMAND_MARKERS):
+    # bug-fix: 单字 marker 改“marker+动作动词”双信号，杜绝闲聊误判（2026-08-26，凌霜修 logic 类）
+    has_dongci = any(marker in compact for marker in _WORK_STRONG_MUTATION_MARKERS) or any(
+        verb in compact for verb in _DANZI_PEI_DONGCI
+    )
+    for marker in _MUTATION_COMMAND_MARKERS:
+        if marker not in compact:
+            continue
+        if marker in _DANZI_MINGLING_MARKERS:
+            if has_dongci:
+                return True
+            continue
         return True
     return any(marker in compact for marker in _WORK_STRONG_MUTATION_MARKERS)
 
@@ -1707,7 +1729,10 @@ def _simple_chain_zip_container_ok(path: Path, suffix: str) -> tuple[bool, str]:
     return True, ""
 
 def _has_delivery_intent(user_text: str, reply_text: str = "") -> bool:
-    combined = f"{user_text or ''}\n{reply_text or ''}"
+    # bug-fix: 交付契约判定只扫用户原话——把 reply_text 拼进来会让模型的客套话
+    # （“已发送/见附件/打包好了”）反向污染任务契约（2026-08-26，凌霜修 logic 类）。
+    # 参数保留以兼容调用点，但不再参与判定。
+    combined = f"{user_text or ''}"
     markers = (
         "发给我", "发我", "发送", "传给我", "传我", "给我发", "微信发", "发到微信",
         "附件", "查收", "交付", "打包发我", "打包发送", "打包发给", "打包发到",
@@ -3755,7 +3780,9 @@ _SUSPECTED_TOOL_CALL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 3
+# bug-fix: 完成门 correction 上限 3→1：连环 correction 让模型重新回答 3-5 遍，
+# 一次修正机会足够给出增量证据，再不行就走确定性模板（2026-08-26，凌霜修 logic 类）
+_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 1
 
 _SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
 
@@ -5479,6 +5506,8 @@ _INCOMPLETE_REASON_RENHUA = (
     ("path_not_found", "要处理的文件或目录没有找到"),
     ("dangerous_command", "有条命令被安全边界拦下了"),
     ("repeated_tool_call", "同一个动作重复了太多次，我主动停了下来"),
+    # bug-fix: Kimi#14 reconciliation_required 英文码进人话映射表，出门前不再裸露内部码（2026-08-26，凌霜）
+    ("reconciliation_required", "上一轮超时动作的结果还没有确认，需要先核对副作用，不能只凭“继续”就原样重试"),
     ("budget", "本轮执行已到达平台执行预算上限（轮次/时长/工具数）"),
     ("protected artifact", "已通过验证的产物不允许被删除或覆盖"),
     ("post-mutation verification", "修改后还没有跑出验证结果"),
@@ -5633,11 +5662,9 @@ def _simple_chain_completion_correction_stalled(
         for item in (correction.get("last_blockers") or [])
         if str(item).strip()
     ][:8]
-    return bool(
-        int(correction.get("attempts_used") or 0) >= 1
-        and current
-        and current == previous
-    )
+    # bug-fix: stalled 改首轮比较——attempt=0 就对比 blockers（含跨 run 恢复的残留状态），
+    # 无变化立即走模板，不再保底烧一次 correction 调用（2026-08-26，凌霜修 logic 类）
+    return bool(current and current == previous)
 
 def _simple_chain_completion_fallback_reply(
     user_message: str,
@@ -5684,6 +5711,12 @@ def _simple_chain_natural_closeout_payload(
             "Never claim success beyond these verified facts. Do not emit a tool call."
         )
 
+    # bug-fix: closeout 明确要求“不复述已说过的进展，只给增量结论”——
+    # 收尾轮复述进度句会让用户看到同一内容说两遍（2026-08-26，凌霜修 logic 类）
+    instruction += (
+        " Do not restate progress narration you already streamed to the user; "
+        "state only the incremental final conclusion."
+    )
     return {
         "schema": "tiangong.v3.simple_chain.natural_closeout.v1",
         "authoritative_status": str(status or "incomplete"),
