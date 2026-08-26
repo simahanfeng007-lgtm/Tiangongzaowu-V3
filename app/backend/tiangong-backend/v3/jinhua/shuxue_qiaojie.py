@@ -81,10 +81,12 @@ def jisuan_xingdong_pingfen(
         if base_key == "novelty" and text_signal["novel_keywords"]:
             score *= 1.0 + min(0.30, text_signal["novel_keywords"] * 0.10)
         if base_key == "satisfaction":
-            if text_signal["positive_words"] > 0:
-                score *= 1.0 + min(0.20, text_signal["positive_words"] * 0.05)
-            if text_signal["negative_words"] > 0:
-                score *= max(0.5, 1.0 - text_signal["negative_words"] * 0.10)
+            # bug-fix: Kimi#21 满意度改看任务完成事实，不再按文本情绪词加减分，
+            # 避免堆“成功/完美/高效”抬分、如实写“执行失败”反被情绪扣分（2026-08-26，凌霜）
+            if text_signal["error_count"] > 0:
+                score *= max(0.6, 1.0 - text_signal["error_count"] * 0.05)
+            elif text_signal["step_count"] > 0:
+                score *= 1.05
         weidu[key] = round(min(1.0, max(0.0, score)), 4)
 
     # ── 综合分 ──
@@ -118,9 +120,11 @@ def _fenxi_jieguo_wenben(text: str) -> dict:
 
     text_lower = text.lower()
 
+    # bug-fix: Kimi#21 英文关键词加 \b 词边界、删单字褒贬词（“好”/“差”/“慢”），
+    # 避免“你好/恰好”命中“好”、“差不多/误差”命中“差”；顺带去掉重复的“创新”（2026-08-26，凌霜）
     # 错误计数
-    error_patterns = [r"错误", r"error", r"失败", r"fail", r"异常", r"exception",
-                      r"cuowu", r"shibai"]
+    error_patterns = [r"错误", r"\berror\b", r"失败", r"\bfail(?:ed|ure)?\b", r"异常",
+                      r"\bexception\b", r"cuowu", r"shibai"]
     error_count = sum(len(re.findall(p, text_lower)) for p in error_patterns)
 
     # 步骤计数
@@ -128,17 +132,17 @@ def _fenxi_jieguo_wenben(text: str) -> dict:
     step_count = sum(len(re.findall(p, text_lower)) for p in step_patterns)
 
     # 新颖度关键词
-    novel_patterns = [r"创新", r"新颖", r"首次", r"突破", r"novel", r"创新",
+    novel_patterns = [r"创新", r"新颖", r"首次", r"突破", r"\bnovel\b",
                       r"首创", r"新方法", r"新思路"]
     novel_count = sum(len(re.findall(p, text_lower)) for p in novel_patterns)
 
-    # 正面词
-    positive_patterns = [r"成功", r"完成", r"优秀", r"好", r"success", r"good",
+    # 正面词（仅保留多字词，误报率低）
+    positive_patterns = [r"成功", r"完成", r"优秀", r"\bsuccess\b", r"\bgood\b",
                          r"完美", r"满意", r"高效"]
     positive_count = sum(len(re.findall(p, text_lower)) for p in positive_patterns)
 
-    # 负面词
-    negative_patterns = [r"失败", r"差", r"糟糕", r"慢", r"bad", r"poor",
+    # 负面词（仅保留多字词）
+    negative_patterns = [r"失败", r"糟糕", r"\bbad\b", r"\bpoor\b",
                          r"不满", r"低效", r"缺陷"]
     negative_count = sum(len(re.findall(p, text_lower)) for p in negative_patterns)
 

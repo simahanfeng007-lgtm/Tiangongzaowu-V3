@@ -1245,7 +1245,12 @@ class DuihuaQiaojie:
 
     def chuli_duihua(self, xiaoxi: str, yonghu_ming: str = "", conversation_context: dict | None = None) -> str:
         if self._zd is None:
-            return json.dumps({"cuowu": "v3未就绪"}, ensure_ascii=False)
+            # bug-fix: Kimi#13 "v3未就绪" 短码换成人话文案+可操作建议（2026-08-26，凌霜）
+            return json.dumps({
+                "cuowu": "对话服务还没有启动完成：请稍等几秒后重试；若持续出现，请重启后端。",
+                "error_code": "v3_not_ready",
+                "zhuangtai": "shibai",
+            }, ensure_ascii=False)
         request_id = ""
         if isinstance(conversation_context, dict):
             request_id = str(conversation_context.get("active_id") or conversation_context.get("request_id") or "").strip()
@@ -1496,6 +1501,8 @@ class DuihuaQiaojie:
                 "terminal_reason": terminal_reason,
             })
             return _cache_response(json.dumps(last_error_payload, ensure_ascii=False))
+        # bug-fix: Kimi#13 失败兜底走 json_guards 人话映射：cuowu 为"人话+可操作建议"，
+        # 原始异常文本只保留在 detail 字段（2026-08-26，凌霜）
         text_payload = chat_error_text_payload(last_error or "chat_failed", source="chat_runtime")
         return _cache_response(json.dumps({
             "cuowu": text_payload.get("cuowu") or "chat_failed",
@@ -2160,7 +2167,7 @@ class _ChuliQi(BaseHTTPRequestHandler):
                     conversation_context[target_key] = value
         except Exception as e:
             self._write_json(chat_error_payload(e, source="request_body"), 400); return
-            self._write_json({"cuowu": "JSON格式错误"}, 400); return
+            # bug-fix: cc#18 删除上一行 return 之后不可达的旧 write（2026-08-26，凌霜）
 
         qiaojie = getattr(self.server, "_qiaojie", None)
         if qiaojie is None:
@@ -2312,25 +2319,20 @@ class _ChuliQi(BaseHTTPRequestHandler):
 
 
 def _huifu_keyi_zhongshi(huifu: object) -> bool:
+    # bug-fix: 错误判定只看结构化信号（空回复/内部约定错误前缀/错误 JSON），不再对
+    # 自然语言正文做 timeout/connection/http 500 等子串匹配——技术问答正文必然包含
+    # 这些词，旧逻辑会把正常回答吞掉当错误重试（2026-08-26，凌霜修 logic 类）
     text = str(huifu or "")
     if not text:
         return True
-    lowered = text.lower()
-    non_retry = (
-        "未配置", "api密钥", "api key", "credential", "not_configured",
-        "权限", "permission", "http 400", "http 401", "http 403", "http 404",
-        "base url", "model or api endpoint", "model_not_found", "not found",
-        "unauthorized", "forbidden", "invalid_request",
-    )
-    if any(marker in lowered for marker in non_retry):
-        return False
-    retry_markers = (
-        "timeout", "timed out", "connection", "reset", "temporarily",
-        "rate limit", "ratelimit", "too many requests",
-        "http 408", "http 409", "http 425", "http 429", "http 500",
-        "http 502", "http 503", "http 504", "唤醒异常", "llm错误",
-    )
-    return any(marker in lowered for marker in retry_markers)
+    head = text.lstrip()[:40]
+    if head.startswith(("[backend_error]", "[唤醒异常]", "[terminal_model_error]", "[llm错误")):
+        return True
+    if text.lstrip().startswith("{"):
+        parsed = loads_json_object(text, source="chat_runtime", default_empty=None)
+        if isinstance(parsed, dict) and ("cuowu" in parsed or parsed.get("zhuangtai") == "shibai"):
+            return True
+    return False
 
 
 def _safe_bridge_json(raw: object, *, source: str = "chat") -> dict:
@@ -2878,6 +2880,14 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
     affective_state = _trusted_affective_state(life_envelope)
     if authoritative_soul:
         authoritative_soul["affective_state"] = affective_state
+    # bug-fix: cc#9 会话来源写入 envelope.channel，渲染层据此区分“微信时间线”/“最近对话”（2026-08-26，凌霜）
+    session_id = str(
+        ctx.get("session_id")
+        or ctx.get("conversation_id")
+        or ctx.get("duihua_id")
+        or ""
+    ).lower()
+    channel = "wechat" if "wechat" in session_id else "chat"
     return {
         "schema": "tiangong.v3.context_envelope.v1",
         "priority_order": [
@@ -2909,6 +2919,7 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
         "life_skill_overlay": ctx.get("life_skill_overlay")[:32] if isinstance(ctx.get("life_skill_overlay"), list) else [],
         "conflict_policy": "current_user_text_wins",
         "token_budget": _envelope_token_budget(),
+        "channel": channel,
     }
 
 
@@ -2992,7 +3003,11 @@ def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> s
         for item in timeline:
             role = "用户" if str(item.get("role") or "") == "user" else "助手"
             lines.append(f"{role}：{str(item.get('content') or '')}")
-        sections.append("【最近微信时间线，仅供参考；如冲突，以本轮用户最新消息为准】\n" + "\n".join(lines))
+        # bug-fix: cc#9 时间线标题按 envelope.channel 选择，仅微信桥接会话显示“微信时间线”（2026-08-26，凌霜）
+        timeline_biaoti = (
+            "最近微信时间线" if str(envelope.get("channel") or "") == "wechat" else "最近对话"
+        )
+        sections.append(f"【{timeline_biaoti}，仅供参考；如冲突，以本轮用户最新消息为准】\n" + "\n".join(lines))
     summary = str(envelope.get("summary") or "").strip()
     if summary:
         sections.append(
@@ -3161,130 +3176,7 @@ def _duihua_shangxiawen(conversation_context: dict | None, dangqian_xiaoxi: str 
     conversation_context["context_envelope"] = envelope
     context_limit = _minimax_m3_context_limit()
     return _render_context_envelope(envelope, context_limit=context_limit)
-    messages = _recent_messages_from_context(conversation_context)
-    m3_context = _minimax_m3_context_enabled()
-    context_limit = _minimax_m3_context_limit()
-    session_id = str(
-        conversation_context.get("session_id")
-        or conversation_context.get("conversation_id")
-        or conversation_context.get("duihua_id")
-        or ""
-    ).lower()
-    timeline_only = "wechat" in session_id
-
-    current = str(dangqian_xiaoxi or "").strip()
-    source_messages = messages[-(160 if m3_context else 80):]
-    normalized: list[dict] = []
-    for index, item in enumerate(source_messages):
-        if not isinstance(item, dict):
-            continue
-        role = str(item.get("role") or "").strip().lower()
-        if role not in {"user", "assistant"}:
-            continue
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        if role == "user" and current and content == current and index == len(source_messages) - 1:
-            continue
-        normalized.append({
-            "role": role,
-            "content": " ".join(content.split()),
-            "at": item.get("at"),
-            "index": index,
-        })
-
-    anchor_keywords = (
-        "记住", "不要忘", "以后", "必须", "目标", "计划", "步骤", "结论", "决定",
-        "文件", "路径", "报错", "错误", "失败", "恢复", "重试", "上下文",
-        "v2", "v3", "api", "skill", "工具", "后端", "前端", "模型", "配置",
-    )
-    recent = normalized[-(40 if m3_context else 24):]
-    recent_ids = {id(item) for item in recent}
-    anchors: list[dict] = []
-    for item in normalized:
-        content_lower = item["content"].lower()
-        has_keyword = any(keyword.lower() in content_lower for keyword in anchor_keywords)
-        if item["role"] == "user" and (len(anchors) < 4 or has_keyword):
-            anchors.append(item)
-        elif has_keyword:
-            anchors.append(item)
-
-    deduped_anchors: list[dict] = []
-    seen = set()
-    for item in anchors:
-        key = (item["role"], item["content"][:220])
-        if key in seen or id(item) in recent_ids:
-            continue
-        seen.add(key)
-        deduped_anchors.append(item)
-    deduped_anchors = deduped_anchors[-(24 if m3_context else 14):]
-
-    def fmt(item: dict, max_len: int) -> str:
-        label = "用户" if item["role"] == "user" else "起源"
-        try:
-            ts = time.strftime("%H:%M", time.localtime(float(item.get("at") or 0) / 1000))
-        except Exception:
-            ts = ""
-        content = item["content"]
-        if len(content) > max_len:
-            content = content[:max_len] + "..."
-        prefix = f"{ts} " if ts else ""
-        return f"- {prefix}{label}: {content}"
-
-    sections: list[str] = []
-    xujie = conversation_context.get("context_carryover") or {}
-    if isinstance(xujie, dict) and xujie.get("followup_resolved") and _is_short_followup(current):
-        sections.append("[上下文续接]\n系统未改写本轮用户消息；以下历史只作为模型自行判断指代与目标的参考。")
-    summary = str(conversation_context.get("summary") or conversation_context.get("thread_summary") or "").strip()
-    if summary:
-        sections.append(
-            "[会话摘要]\n"
-            + _source_partition_wrap(
-                SOURCE_TYPE_TOOL_DATA,
-                summary[:(8000 if m3_context else 2500)],
-                object_id="thread_summary",
-            )
-        )
-    if timeline_only:
-        sections.append(
-            "[微信上下文]\n"
-            "- 以下内容只按时间线提供历史消息、文件卡、结果卡和附件线索。\n"
-            "- 系统不再改写、分类、补全或短路本轮用户意图；由模型结合最新用户原话自行判断当前目标。"
-        )
-        deduped_anchors = []
-
-    if deduped_anchors:
-        sections.append("[关键锚点]\n" + "\n".join(fmt(item, 1800 if m3_context else 1100) for item in deduped_anchors))
-    if recent:
-        section_name = "微信时间线" if timeline_only else "最近对话"
-        sections.append(f"[{section_name}]\n" + "\n".join(fmt(item, 2200 if m3_context else 1200) for item in recent))
-    attachments = _compact_attachment_context(
-        conversation_context.get("attachments")
-        or conversation_context.get("chat_attachments")
-        or conversation_context.get("files")
-    )
-    if attachments:
-        sections.append(
-            "[本轮附件]\n"
-            + _source_partition_wrap(SOURCE_TYPE_EXTERNAL_DATA, attachments, object_id="current_attachments")
-        )
-    knowledge_refs = _compact_knowledge_context(
-        conversation_context.get("knowledge_references")
-        or conversation_context.get("knowledgeReferences")
-    )
-    if knowledge_refs:
-        sections.append(
-            "[知识库参考]\n"
-            + _source_partition_wrap(SOURCE_TYPE_EXTERNAL_DATA, knowledge_refs, object_id="knowledge_references")
-        )
-
-    joined = "\n\n".join(sections)
-    if len(joined) > context_limit:
-        head = "\n\n".join(sections[:-1])
-        tail = sections[-1] if sections else ""
-        budget = max(3000, context_limit - len(head) - 2)
-        joined = (head + "\n\n" + tail[-budget:]).strip() if head else tail[-context_limit:]
-    return joined
+    # bug-fix: cc#18 删除 return 之后不可达的旧版时间线渲染逻辑（约 124 行死代码）（2026-08-26，凌霜）
 
 
 def _openai_models() -> dict:

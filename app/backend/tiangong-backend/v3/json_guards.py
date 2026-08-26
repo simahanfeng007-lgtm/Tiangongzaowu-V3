@@ -90,6 +90,46 @@ def loads_json_object(
     return data
 
 
+# bug-fix: Kimi#13 失败兜底人话映射表：error 字段给"人话文案+可操作建议"，
+# 原始异常文本只进 detail，不再直接暴露给用户（2026-08-26，凌霜）
+_YUANSHI_CUOWU_RENHUA = (
+    (("max retries exceeded", "connection refused", "connection reset", "connectionerror",
+      "connecterror", "connect timeout", "getaddrinfo", "name or service not known",
+      "temporary failure in name resolution", "ssl", "certificate", "proxy"),
+     "network_unreachable", "网络连不上模型服务：请检查网络或代理是否可用，稍后重试。"),
+    (("readtimeout", "read timeout", "timeouterror", "timed out", "timeout"),
+     "llm_timeout", "模型服务响应超时：请稍后重试，或在设置里切换更快的模型。"),
+    (("429", "rate limit", "quota", "insufficient"),
+     "rate_limited", "请求太频繁或额度不足：请稍等再试，或到服务商控制台检查用量。"),
+    (("401", "403", "unauthorized", "forbidden", "api key", "apikey", "invalid_api_key"),
+     "auth_failed", "鉴权失败：请检查 API Key 是否正确，以及账号权限和余额。"),
+    (("404", "not found"),
+     "endpoint_not_found", "接口或模型不存在：请检查模型名与 Base URL 配置。"),
+    (("500", "502", "503", "504", "internal server error", "bad gateway", "service unavailable"),
+     "provider_error", "模型服务商暂时异常：请稍后重试，或切换其他模型。"),
+)
+
+# 内部短码 → 人话（chat_failed / backend_error 等不再裸露）
+_DUANMA_RENHUA = {
+    "chat_failed": "对话没有完成：调用模型失败，请稍后重试。",
+    "backend_error": "后端服务暂时不可用：请稍后重试；若持续出现，请检查模型配置。",
+    "chat_runtime": "对话运行出错：请稍后重试。",
+}
+
+
+def _renhua_cuowu(raw: Any, default_code: str = "backend_error") -> tuple[str, str]:
+    """把原始异常文本/内部短码翻成 (error_code, 人话文案)；原始文本由调用方放 detail。"""
+    text = str(raw or "")
+    lowered = text.lower()
+    for keys, code, human in _YUANSHI_CUOWU_RENHUA:
+        if any(key in lowered for key in keys):
+            return code, human
+    short = text.strip()
+    if short in _DUANMA_RENHUA:
+        return short, _DUANMA_RENHUA[short]
+    return default_code, "服务暂时不可用：请稍后重试；若持续出现，请检查网络与模型配置。"
+
+
 def normalize_exception(exc: Exception, *, source: str = "backend") -> dict:
     if isinstance(exc, TiangongJsonError):
         return {
@@ -108,9 +148,11 @@ def normalize_exception(exc: Exception, *, source: str = "backend") -> dict:
             "source": source,
             "raw_preview": normalized.preview,
         }
+    # bug-fix: Kimi#13 兜底分支：error 换人话，原始异常只进 detail（2026-08-26，凌霜）
+    code, human = _renhua_cuowu(exc, default_code=type(exc).__name__)
     return {
-        "error_code": type(exc).__name__,
-        "error": str(exc) or type(exc).__name__,
+        "error_code": code,
+        "error": human,
         "detail": str(exc) or type(exc).__name__,
         "source": source,
         "raw_preview": "",
@@ -142,12 +184,15 @@ def normalize_error_text(text: Any, *, source: str = "backend") -> dict:
             "source": source,
             "raw_preview": preview_text(raw),
         }
+    # bug-fix: Kimi#13 兜底分支：原始异常文本（如 HTTPSConnectionPool/Max retries exceeded）
+    # 不再作为 error 直出用户，换人话+可操作建议；原文进 detail（2026-08-26，凌霜）
+    code, human = _renhua_cuowu(raw, default_code="backend_error")
     return {
-        "error_code": "backend_error",
-        "error": raw or "backend_error",
-        "detail": raw or "backend_error",
+        "error_code": code,
+        "error": human,
+        "detail": preview_text(raw, 800),
         "source": source,
-        "raw_preview": "",
+        "raw_preview": preview_text(raw),
     }
 
 

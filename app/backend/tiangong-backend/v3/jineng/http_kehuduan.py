@@ -7,13 +7,7 @@ L4 optimization remains advisory and can never choose the endpoint/protocol.
 """
 # 2026-08-25 fix: 多次思考路径 — 流式期间过滤内联 <think>/<thinking>/<reasoning> 块，
 # 避免思考文本进入正文流；_qingli_sikao 支持三种标签成对删除与未闭合兜底。
-# 2026-08-25 fix: 多次思考路径根治 - cc 修复：
-#   1) 接通 Kimi 遗留的流式过滤器 dead code（llm_diaoyong 两个 execute_streaming_turn
-#      调用点原先传原始 on_text_chunk，过滤器从未生效）；
-#   2) 修复 _LiushiSikaoGuolvqi 两处 bug：部分标签前缀持留分支缺 break 导致死循环、
-#      前缀判定过宽（“a < b”等普通文本会被无限持留卡住流式输出）；
-#   3) _qingli_sikao 真正实现三种标签（think/thinking/reasoning）成对删除与
-#      未闭合兜底（删到文本末尾），与头注释声明一致。
+# bug-fix: cc#17 头部过时的修复流水注释精简为现状说明（历史细节见 git log）（2026-08-26，凌霜）
 from __future__ import annotations
 
 import base64
@@ -920,10 +914,7 @@ class HttpKehuduan:
             reasoning_trace = _apply_reasoning_profile(
                 pid, payload, base_url=base_url, model_name=model_name
             )
-            raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
-            reasoning_trace.update(raw_reasoning_trace)
-            raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
-            reasoning_trace.update(raw_reasoning_trace)
+            # bug-fix: cc#17 删除 _apply_endpoint_raw_reasoning 的三次重复调用，保留一次（2026-08-26，凌霜）
             raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
             reasoning_trace.update(raw_reasoning_trace)
             if isinstance(optimization_trace, dict):
@@ -994,11 +985,12 @@ class HttpKehuduan:
                 error_preview=exc.response_preview or exc.reason,
             )
             hint = (
-                "A single LLM call exceeded the platform wall-clock deadline; the run stopped instead of waiting forever."
+                # bug-fix: Kimi#14 墙钟超时/网络失败 hint 由英文改中文，用户不再看到英文提示（2026-08-26，凌霜）
+                "单次模型调用超过了平台墙钟时限；本轮已停止等待，而不是无限挂起，请稍后重试或切换模型。"
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
                 if exc.http_status is not None
-                else "Network/proxy/DNS failed, or Base URL points to a non-API host."
+                else "网络/代理/DNS 连接失败，或 Base URL 指向的不是 API 服务；请检查网络与 Base URL 配置。"
             )
             error = _error_turn(
                 _llm_error_text(
@@ -1562,6 +1554,17 @@ def _qingli_sikao(neirong: str) -> str:
     """
     # bug-fix: 多次思考路径根治 - 先删成对块，再兜底删未闭合块，最后清孤立闭标签
     wenben = _SIKAO_CHENGDUI_RE.sub("", str(neirong or ""))
+    # bug-fix: Kimi#18 未闭合思考块先检测再删除：可见文本为空或被截断时显式标注
+    # “回复不完整，可重试”，不再让用户看到答案写一半突然消失（2026-08-26，凌霜）
+    weibi = _SIKAO_WEIBI_RE.search(wenben)
     wenben = _SIKAO_WEIBI_RE.sub("", wenben)
     wenben = _SIKAO_BI_RE.sub("", wenben)
-    return wenben.strip()
+    wenben = wenben.strip()
+    if weibi:
+        if not wenben:
+            return "（本次回复不完整：模型的思考块未正常结束，没有产出正文。可以直接重试，或换个说法再问一次。）"
+        return (
+            wenben
+            + "\n\n（提示：本次回复可能不完整——模型思考块未正常结束，其后内容缺失；如需完整答复请重试。）"
+        )
+    return wenben
