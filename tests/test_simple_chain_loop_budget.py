@@ -262,7 +262,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 5400)
         self.assertEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 90)
         self.assertEqual(_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS, 90)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 3)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 1)
         self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 540)
 
     def test_work_status_question_is_not_mutation(self) -> None:
@@ -736,7 +736,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
         )
 
-        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 3)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 1)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 1)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, _SIMPLE_CHAIN_MAX_TOOL_ROUNDS)
         self.assertGreaterEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 1)

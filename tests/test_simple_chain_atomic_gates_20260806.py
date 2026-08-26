@@ -201,14 +201,15 @@ def test_completion_correction_is_evidence_only_and_bounded() -> None:
         }
     }
     correction = _simple_chain_completion_correction_state(state)
-    assert correction["attempts_used"] == 2
-    assert correction["attempts_max"] == 3
+    # bug-fix: correction 上限 3→1（2026-08-26，凌霜修 logic 类），超限计数钳到 1
+    assert correction["attempts_used"] == 1
+    assert correction["attempts_max"] == 1
     payload = _simple_chain_completion_correction_payload(
         "req_x",
         ["written content cjk_chars=983 < required 2500"],
         state,
     )
-    assert payload["attempts_remaining"] == 1
+    assert payload["attempts_remaining"] == 0
     serialized = json.dumps(payload, ensure_ascii=False).lower()
     for forbidden in (
         "file.append",

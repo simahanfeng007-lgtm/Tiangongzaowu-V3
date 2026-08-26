@@ -3056,6 +3056,12 @@ class Zongdiaodu:
             if requires_evidence_safe_closeout(clean_reasons) and not allow_evidence_model:
                 _simple_chain_closeout_record(run_state, status, clean_reasons, "template_evidence_safe")
                 return shenti, fallback
+            # bug-fix: 强停/未完成（force_stopped/incomplete/failed）一律确定性模板立即返回，
+            # 不再发一次完整 LLM 调用“润色遗言”——强停场景剩余墙钟本就极少，最久还要再等
+            # 180s 收尾调用；人格化收尾只保留正常完成（complete）路径（2026-08-26，凌霜修 logic 类）
+            if status != "complete":
+                _simple_chain_closeout_record(run_state, status, clean_reasons, "template")
+                return shenti, fallback
             pre_closeout_reply = str(huifu or "").strip()
             # 强制停止场景剩余墙钟可能极少：余量不足时不再调模型，
             # 直接回退模板，避免收尾调用拖过网关 watchdog。
@@ -3066,6 +3072,10 @@ class Zongdiaodu:
                     return shenti, fallback
             except Exception:
                 pass
+            if _interim_emitter is not None:
+                # bug-fix: 收尾前清空进度气泡的累积正文：进度句已展示过，收尾语单独成段，
+                # 不再追加进同一气泡连成“进度+复述”一大段（2026-08-26，凌霜修 logic 类）
+                _interim_emitter.reset()
             try:
                 next_body, reply = _llm_closeout_scoped(
                     _simple_chain_model_payload(payload),
@@ -3881,6 +3891,9 @@ class Zongdiaodu:
                 for tn, ta, raw, call_id, original_tool_index in parallel_results:
                     call_key = _gongju_diaoyong_key(tn, ta if isinstance(ta, dict) else {})
                     tool_call_counts[call_key] = tool_call_counts.get(call_key, 0) + 1
+                    # bug-fix: repeat 标记只在“上次成功且参数全同”时生效，失败重跑不计入
+                    # repeat count（与串行路径同一规则，2026-08-26，凌霜修 logic 类）
+                    shangci_jieguo = tool_call_results.get(call_key)
                     tool_call_results[call_key] = raw
                     gongju_cishu = turn_loop.record_batch_result()
                     if on_event:
@@ -3893,7 +3906,9 @@ class Zongdiaodu:
                             "ok": ok_flag,
                         })
                     qp = _simple_chain_quality_gate_payload(request_id, xiaoxi, tn, ta, raw,
-                        tool_call_counts[call_key], run_state)
+                        (tool_call_counts[call_key]
+                         if _simple_chain_should_replay_cached_call(shangci_jieguo)
+                         else 1), run_state)
                     preflight_issues = parallel_preflight.get(call_key) or []
                     if preflight_issues:
                         existing_gaps = qp.get("final_requirement_gaps")
@@ -3968,13 +3983,18 @@ class Zongdiaodu:
                 grounded_read_reply = _simple_chain_verbatim_read_reply(xiaoxi, quality_history)
                 answer_ok, _answer_code = _simple_chain_substantive_answer(quality_history, next_huifu)
                 if grounded_read_reply and not answer_ok:
-                    next_huifu = grounded_read_reply
+                    # bug-fix: Runtime 二审不通过不再用原文证据整段顶替已流式推出的答复——
+                    # 气泡里是模型刚说的话、落定文字却是另一段。改为在已流出正文后追加
+                    # 证据补充，流式内容保持不变（2026-08-26，凌霜修 logic 类）
+                    streamed_text = str(next_huifu or "").rstrip()
+                    supplement = str(grounded_read_reply).strip()
+                    next_huifu = f"{streamed_text}\n\n{supplement}" if streamed_text else supplement
                     if run_control:
                         run_control.step(
                             "parallel_read_evidence_closeout",
-                            "Grounded exact-read closeout",
+                            "Grounded exact-read supplement",
                             "done",
-                            "Model omitted exact read text; returned complete source evidence without another side effect.",
+                            "Model omitted exact read text; appended complete source evidence after the streamed reply without another side effect.",
                         )
                 if not str(next_huifu or "").strip() and any(not bool(item.get("quality", {}).get("ok")) for item in tool_results_block):
                     final_guard_exhausted = True
@@ -4063,13 +4083,13 @@ class Zongdiaodu:
                         break
                     final_reasons_now = proof_reasons_now
 
-                    # bug-fix: 多次思考路径根治 - 全程零工具调用且模型已给出通顺最终答复时，
-                    # 跳过 completion correction 强插续写：被误判为 work 的文本问答不再被
-                    # 强迫“再思考 N 轮”。宁放过不误杀——承诺行动却未行动（“我来帮你写”）、
-                    # 工具调用残迹、脏标记等情形仍走原 correction 路径。
+                    # bug-fix: 多次思考路径根治 - 模型已给出通顺最终答复时，跳过 completion
+                    # correction 强插续写：被误判为 work 的文本问答不再被强迫“再思考 N 轮”。
+                    # bug-fix: 条件放宽到“已有工具证据 + 模型本轮已给出收尾语”——只读查询
+                    # （读文件后直接回答）不再被完成门连环打回重答 3-5 遍；仍有交付物
+                    # （generated_attachments）或必读路径义务时不走此捷径（2026-08-26，凌霜修 logic 类）
                     if (
-                        not quality_history
-                        and not generated_attachments
+                        not generated_attachments
                         and not required_read_paths
                         and _simple_chain_fluent_text_reply(huifu)
                     ):
@@ -4677,6 +4697,10 @@ class Zongdiaodu:
                 final_guard_exhausted = True
                 final_chain_status = "confirm_pending"
                 break
+            # bug-fix: 记录本次执行前的旧结果——repeat 标记只在“上次成功且参数全同”时生效；
+            # 失败重跑（缓存层放行）与本轮合法重写不再被 quality gate 误标
+            # [REPEATED_TOOL_CALL]（2026-08-26，凌霜修 logic 类）
+            shangci_jieguo = tool_call_results.get(tool_call_key)
             tool_call_results[tool_call_key] = gongju_jieguo
             if on_event:
                 on_event({
@@ -4692,7 +4716,11 @@ class Zongdiaodu:
                 tool_name,
                 tool_args,
                 gongju_jieguo,
-                tool_call_counts[tool_call_key],
+                (
+                    tool_call_counts[tool_call_key]
+                    if _simple_chain_should_replay_cached_call(shangci_jieguo)
+                    else 1
+                ),
                 run_state,
             )
             if preflight_issues:
@@ -5169,13 +5197,14 @@ class Zongdiaodu:
             if dynamic_context:
                 yonghu_tishi = _user_prompt_with_context(yonghu_tishi, dynamic_context)
             if run_control:
-                run_control.step("build_context", "?????", "done", "???????")
-                run_control.check_stop("??????????")
-                run_control.step("llm_call", "????", "running", "???????????")
+                # bug-fix: cc#10 乱码步骤标题/摘要按用户路径（build_context/llm_call）写法重写为中文（2026-08-26，凌霜）
+                run_control.step("build_context", "构建上下文", "done", "上下文已构建完成。")
+                run_control.check_stop("模型调用前检查是否已被停止。")
+                run_control.step("llm_call", "模型调用", "running", "正在调用模型生成回复。")
             shenti, huifu = self.gutong.huanxing(system_tishi, yonghu_tishi, shenti)
             if run_control:
-                run_control.step("llm_call", "????", "done", _llm_reply_progress_summary(huifu))
-                run_control.check_stop("??????????")
+                run_control.step("llm_call", "模型调用", "done", _llm_reply_progress_summary(huifu))
+                run_control.check_stop("模型回复后检查是否已被停止。")
             huifu, self.zuihou_biaoxian = _tiqu_biaoxian(huifu, xiaoxi)
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "wancheng", "direct_non_user_chain")
             if QIYONG_JIYI:

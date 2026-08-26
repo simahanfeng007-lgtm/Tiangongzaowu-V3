@@ -998,7 +998,8 @@ class OmniToolInvocationCloseoutTests(unittest.TestCase):
         )
         self.assertEqual(payload["schema"], "tiangong.v3.simple_chain.completion_correction.v1")
         self.assertEqual(payload["attempts_used"], 1)
-        self.assertEqual(payload["attempts_remaining"], 2)
+        # bug-fix: correction 上限 3→1（2026-08-26，凌霜修 logic 类），剩余次数随之为 0
+        self.assertEqual(payload["attempts_remaining"], 0)
         serialized = json.dumps(payload, ensure_ascii=False).lower()
         for forbidden in ("file.write", "file.read", "file.hash", "omni_body", "exactly one", "stop read"):
             self.assertNotIn(forbidden, serialized)

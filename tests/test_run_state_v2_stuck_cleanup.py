@@ -246,11 +246,12 @@ class CompletionCorrectionPersistenceTests(unittest.TestCase):
             }
         }
         normalized = _simple_chain_completion_correction_state(state)
-        self.assertEqual(normalized["attempts_used"], 2)
+        # bug-fix: correction 上限 3→1（2026-08-26，凌霜修 logic 类），超限计数钳到新上限
+        self.assertEqual(normalized["attempts_used"], 1)
         state["completion_correction"]["last_blockers"] = ["different gap after progress"]
         normalized = _simple_chain_completion_correction_state(state)
-        self.assertEqual(normalized["attempts_used"], 2)
-        self.assertEqual(normalized["attempts_max"], 3)
+        self.assertEqual(normalized["attempts_used"], 1)
+        self.assertEqual(normalized["attempts_max"], 1)
 
 
 if __name__ == "__main__":

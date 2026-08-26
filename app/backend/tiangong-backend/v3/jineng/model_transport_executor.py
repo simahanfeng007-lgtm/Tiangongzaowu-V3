@@ -98,6 +98,10 @@ def execute_streaming_turn(
     call_started = time.perf_counter()
     last_reason = "empty_response"
     request = transport.build_request(endpoint, api_key, canonical_payload)
+    # bug-fix: 记录本流是否已向外发出过 chunk——已播内容后中途失败禁止自动重试，
+    # 否则重试会把整段回复从头再播一遍（StreamState 每次重建、无去重）
+    # （2026-08-26，凌霜修 logic 类）
+    emitted_any = False
 
     for attempt in range(1, max(1, int(retry_limit)) + 1):
         elapsed = time.perf_counter() - call_started
@@ -110,6 +114,7 @@ def execute_streaming_turn(
                 deadline_exceeded=True,
             )
         started = time.perf_counter()
+        state = StreamState()
         try:
             # Revalidate immediately before credential-bearing network release,
             # then pin this attempt's connection to the validated IP.  Every
@@ -117,7 +122,6 @@ def execute_streaming_turn(
             # travel to an address that passed the private/loopback checks.
             binding = validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=True)
             pinned_url, host_headers, sni_hostname = _pinned_request(request.url, binding)
-            state = StreamState()
             pinned_http_request = client.build_request(
                 "POST",
                 pinned_url,
@@ -147,20 +151,13 @@ def execute_streaming_turn(
                         continue
                     text, reasoning = transport.consume_stream_event(state, event)
                     if text and on_text_chunk:
+                        emitted_any = True
                         on_text_chunk(text)
                     if reasoning and on_reasoning_chunk:
+                        emitted_any = True
                         on_reasoning_chunk(reasoning)
             finally:
                 response.close()
-            turn = transport.finalize_turn(endpoint, state)
-            latency = round((time.perf_counter() - started) * 1000)
-            return TransportExecutionResult(
-                turn=turn,
-                url=request.url,
-                http_status=status,
-                retry_count=attempt - 1,
-                latency_ms=latency,
-            )
         except httpx.HTTPStatusError as exc:
             status = int(exc.response.status_code)
             last_reason = f"HTTP {status}"
@@ -180,7 +177,9 @@ def execute_streaming_turn(
             elapsed = time.perf_counter() - call_started
             last_reason = str(exc)
             deadline = max_wall_clock_seconds > 0 and elapsed > max_wall_clock_seconds
-            if not deadline and attempt < retry_limit:
+            # bug-fix: 已发出过 chunk 后中途失败不再自动重试（重播无去重）；
+            # 自动重试只留给连接类网络异常（2026-08-26，凌霜修 logic 类）
+            if not emitted_any and not deadline and attempt < retry_limit:
                 time.sleep(retry_sleep_seconds * attempt)
                 continue
             raise TransportExecutionError(
@@ -193,16 +192,34 @@ def execute_streaming_turn(
         except TransportExecutionError:
             raise
         except Exception as exc:
+            # bug-fix: 非网络类异常（解析/回调/协议等）不自动重试，直接包装上抛，
+            # 避免任意异常都烧满 retry_limit 次（2026-08-26，凌霜修 logic 类）
             last_reason = str(exc)
-            if attempt < retry_limit:
-                time.sleep(retry_sleep_seconds * attempt)
-                continue
             raise TransportExecutionError(
                 last_reason,
                 request.url,
                 retry_count=attempt - 1,
                 latency_ms=round((time.perf_counter() - started) * 1000),
             ) from exc
+        # bug-fix: finalize_turn 移出重试 try 块——收尾解析失败不再触发整段重播重试，
+        # 只包装上抛（2026-08-26，凌霜修 logic 类）
+        try:
+            turn = transport.finalize_turn(endpoint, state)
+        except Exception as exc:
+            raise TransportExecutionError(
+                str(exc),
+                request.url,
+                retry_count=attempt - 1,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+            ) from exc
+        latency = round((time.perf_counter() - started) * 1000)
+        return TransportExecutionResult(
+            turn=turn,
+            url=request.url,
+            http_status=status,
+            retry_count=attempt - 1,
+            latency_ms=latency,
+        )
 
     raise TransportExecutionError(
         last_reason,
