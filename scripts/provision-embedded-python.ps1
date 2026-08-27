@@ -117,6 +117,13 @@ if ($env:TIANGONG_SKIP_PLAYWRIGHT_BROWSERS -ne "1") {
     $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeRoot "ms-playwright"
     & $Python -m playwright install chromium
     if ($LASTEXITCODE -ne 0) { Write-Warning "playwright chromium install failed; browser actions will fall back to local Chrome/Edge" }
+    # bug-fix: playwright install 会在 ms-playwright\.links\ 写入 driver 包的发布机
+    # 绝对路径登记 —— 打进安装包必触发发布硬门 assertNoPublisherPathLeak；运行时
+    # 定位浏览器靠目录名（chromium-1228 等）不读 .links，删除安全（2026-08-27，Claude 修 UX）
+    $PlaywrightLinks = Join-Path $RuntimeRoot "ms-playwright\.links"
+    if (Test-Path -LiteralPath $PlaywrightLinks -PathType Container) {
+        Remove-Item -LiteralPath $PlaywrightLinks -Recurse -Force
+    }
 } else {
     Write-Warning "TIANGONG_SKIP_PLAYWRIGHT_BROWSERS=1：跳过随包 Chromium，browser.* 依赖本机 Chrome/Edge"
 }
@@ -186,7 +193,11 @@ function Copy-TkinterRuntime {
         }
         Copy-Item -LiteralPath $SourceDirectory -Destination (Join-Path $RuntimeRoot $Directory) -Recurse -Force
     }
-    foreach ($File in @("DLLs\_tkinter.pyd", "DLLs\tcl86t.dll", "DLLs\tk86t.dll")) {
+    # bug-fix: tcl86t.dll 动态依赖 zlib1.dll，官方 embeddable 包不带、安装版在
+    # DLLs\ 里 —— 不拷则 import 走安全搜索（不含 PATH）必失败；本机开发环境
+    # 恰好能从 Git 的 mingw64\bin 借到而侥幸可跑，装机产品无 Git 必挂
+    # （2026-08-27，Claude 修 UX）
+    foreach ($File in @("DLLs\_tkinter.pyd", "DLLs\tcl86t.dll", "DLLs\tk86t.dll", "DLLs\zlib1.dll")) {
         $SourceFile = Join-Path $Source $File
         if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
             $SourceFile = Join-Path $Source (Split-Path $File -Leaf)  # 旧布局把 dll 放在安装根目录

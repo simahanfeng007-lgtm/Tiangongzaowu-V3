@@ -24,3 +24,4 @@
 /.tiangong-release-hash-cache.json
 **/.tiangong-release-hash-cache.json
 **/.in/
+/build/lib/
