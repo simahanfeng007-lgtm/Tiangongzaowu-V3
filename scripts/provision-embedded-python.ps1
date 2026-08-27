@@ -186,7 +186,11 @@ function Copy-TkinterRuntime {
         }
         Copy-Item -LiteralPath $SourceDirectory -Destination (Join-Path $RuntimeRoot $Directory) -Recurse -Force
     }
-    foreach ($File in @("DLLs\_tkinter.pyd", "DLLs\tcl86t.dll", "DLLs\tk86t.dll")) {
+    # bug-fix: tcl86t.dll 动态依赖 zlib1.dll，官方 embeddable 包不带、安装版在
+    # DLLs\ 里 —— 不拷则 import 走安全搜索（不含 PATH）必失败；本机开发环境
+    # 恰好能从 Git 的 mingw64\bin 借到而侥幸可跑，装机产品无 Git 必挂
+    # （2026-08-27，Claude 修 UX）
+    foreach ($File in @("DLLs\_tkinter.pyd", "DLLs\tcl86t.dll", "DLLs\tk86t.dll", "DLLs\zlib1.dll")) {
         $SourceFile = Join-Path $Source $File
         if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
             $SourceFile = Join-Path $Source (Split-Path $File -Leaf)  # 旧布局把 dll 放在安装根目录
