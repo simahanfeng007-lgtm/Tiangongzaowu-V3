@@ -439,9 +439,50 @@ def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
                     lines.append(snippet[:1200])
 
         collect(text)
+
+        # 显式备忘直通道（原 v3 jiyi L4 触发唤醒的 P15 化）：用户明确说
+        # "记住"的长期备忘是常备规则而非情景记忆——不应依赖关键词碰巧
+        # 命中才浮现。只要未过期就始终随召回注入（有界、带标签），让
+        # 模型知道这是用户的常设指令；关键词召回继续负责情景记忆。
+        # 备忘量大时再引入触发词匹配做裁剪（当前个人体量直通更可靠）。
+        explicit_lines: list[str] = []
+        browse_status, browse_payload, _ = life_service.request(
+            "POST",
+            "/api/v1/v3/life/memory/search",
+            {"life_id": life_id, "query": "", "limit": 40},
+        )
+        if (
+            browse_status < 400
+            and isinstance(browse_payload, Mapping)
+            and browse_payload.get("ok") is True
+        ):
+            for row in (browse_payload.get("results") or [])[:40]:
+                if not isinstance(row, Mapping):
+                    continue
+                content = row.get("content")
+                if isinstance(content, str):
+                    snippet = content
+                elif isinstance(content, Mapping):
+                    snippet = str(content.get("text") or content.get("content") or "")
+                else:
+                    snippet = ""
+                snippet = str(snippet).strip()
+                if not snippet or snippet in seen:
+                    continue
+                try:
+                    detection = detect_explicit_intent(snippet)
+                except ValueError:
+                    continue
+                if not detection.triggered or not recallable(row, snippet):
+                    continue
+                explicit_lines.append(f"[长期备忘·用户明确要求记住] {snippet[:600]}")
+                seen.add(snippet)
+                if len(explicit_lines) >= 6:
+                    break
+
         if not lines and any(marker in text for marker in memory_markers):
             collect("")
-        return "\n".join(lines[:10])
+        return "\n".join((explicit_lines + lines)[:10])
     except Exception:
         return ""
 

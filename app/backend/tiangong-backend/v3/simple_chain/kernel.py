@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 from ..peizhi import (
     SHENTI_DANGQIAN, SHENTI_LUJING,
-    QIYONG_GUANCHA, QIYONG_PINGGU, QIYONG_JIYI, QIYONG_JINGYAN,
+    QIYONG_GUANCHA, QIYONG_PINGGU, QIYONG_JINGYAN,
     QIYONG_JINHUA, QIYONG_ZIYU, QIYONG_XUEXI,
     MOREN_PROVIDER, SHENGMING_LIFE_CHAIN_ENABLED, duqu_moren_provider, infer_provider_id,
 )

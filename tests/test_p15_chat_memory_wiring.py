@@ -118,6 +118,53 @@ class AttachExplicitL4Tests(unittest.TestCase):
         )
 
 
+class ExplicitMemoDirectChannelTests(unittest.TestCase):
+    """显式备忘直通道：用户明确"记住"的备忘不依赖关键词命中即随召回注入。"""
+
+    def test_memo_surfaces_without_keyword_overlap(self) -> None:
+        from life_service.embedded_runtime import EmbeddedLifeRuntime
+        from total_gateway.runtime import _gateway_p15_memory_recall
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            life = EmbeddedLifeRuntime(
+                data_root=root / "life-data",
+                runtime_root=root / "life-runtime",
+                mode="embedded",
+            )
+            try:
+                life_id = str(life._active()["life_id"])
+                for memory_id, text in (
+                    ("mem_memo_allergy", "请记住：我对花生过敏，帮我点餐时一定要注意。"),
+                    ("mem_scene_weather", "今天聊了mud游戏企划案的进展，下周继续。"),
+                ):
+                    status, payload, _ = life.request(
+                        "POST",
+                        "/api/v1/v3/life/memory/assert",
+                        {
+                            "life_id": life_id,
+                            "memory_id": memory_id,
+                            "content": {"text": text},
+                            "epistemic_status": "user_asserted",
+                            "actor": "user",
+                        },
+                    )
+                    assert status == 200, payload
+
+                class _RuntimeStub:
+                    life_service = life
+
+                recalled = _gateway_p15_memory_recall(
+                    _RuntimeStub(), "帮我写一份本周的工作周报"
+                )
+                self.assertIn("花生", recalled)
+                self.assertIn("[长期备忘", recalled)
+                # 情景记忆与查询零重叠：不应经直通道混入
+                self.assertNotIn("企划案", recalled)
+            finally:
+                life.close()
+
+
 class _FakeLifeService:
     def __init__(self, *, responses=None, active_life_id: str = LIFE):
         self._responses = responses or {}
