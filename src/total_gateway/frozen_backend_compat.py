@@ -968,7 +968,11 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 created_at_ms=finished_at_ms,
             )
             backend_classification = str(backend_terminal["classification"])
-            if status < 400 and reply and backend_classification == "SUCCEEDED":
+            # artifact-only replies are deliverable: a run whose verified
+            # outputs exist may succeed without natural-language text (the
+            # gateway synthesizes a deterministic delivery note from the
+            # artifact list instead of failing the whole request).
+            if status < 400 and backend_classification == "SUCCEEDED" and (reply or outputs):
                 result_status = "SUCCEEDED"
                 error_code = None
                 error_message = None

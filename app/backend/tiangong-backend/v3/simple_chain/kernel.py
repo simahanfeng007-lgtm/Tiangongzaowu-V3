@@ -4871,6 +4871,20 @@ def _simple_chain_model_payload(payload: Any, max_tokens: int | None = None) -> 
                 "This is a compacted tool observation. Use paths, status, errors, quality_gate, gaps, "
                 "codex_evidence, and source_text_map as completion evidence. Missing evidence remains unresolved; the model decides its next step.",
             )
+        # 预算可见：让模型自己看到剩余执行时间并规划收口，而不是在
+        # 强停时被模板收尾打个措手不及。仅在网关绑定了 deadline 时注入。
+        try:
+            _remaining_budget = _simple_chain_remaining_deadline_seconds()
+            if _remaining_budget != float("inf"):
+                compacted["execution_budget"] = {
+                    "remaining_seconds": max(0, int(_remaining_budget)),
+                    "note": (
+                        "剩余平台执行预算（秒）。请据此规划：预算紧张时优先收口交付，"
+                        "不要开启新的长步骤；已无法完成时如实说明剩余缺口。"
+                    ),
+                }
+        except Exception:
+            pass
     return compacted
 
 def _simple_chain_failure_text(payload: dict[str, Any] | None) -> list[str]:
