@@ -20,6 +20,17 @@ ACTIVE_TASK_STATES = {"pending", "running", "blocked", "awaiting_user"}
 ALLOWED_TASK_STATES = TERMINAL_TASK_STATES | ACTIVE_TASK_STATES
 
 CATALOG_SOURCE = "life_activity_catalog"
+# 认知任务（记忆系统自检发现的知识缺口）的来源标记：与目录活动同走
+# model_internal 执行回路，但来源可区分、统计不混淆。
+COGNITION_SOURCE = "life_cognition"
+COGNITION_TASK_KINDS = frozenset({
+    "establish_memory_baseline",
+    "verify_memory_hypothesis",
+    "complete_causal_link",
+    "identify_root_cause",
+    "reconcile_corrected_memory",
+    "resolve_memory_contradiction",
+})
 _COGNITION_PENDING_LIMIT_DEFAULT = 16
 _STALE_PENDING_MAX_AGE_HOURS_DEFAULT = 72
 
@@ -484,6 +495,14 @@ def derive_task_candidates(
                 }
             )
 
+    # 认知任务接入 model_internal 执行回路：与目录活动共用同一条通道，
+    # 但携带独立来源标记与全天时间窗（高优先级缺口应尽快处理）。
+    for item in candidates:
+        if str(item.get("task_kind") or "") in COGNITION_TASK_KINDS:
+            item["source"] = COGNITION_SOURCE
+            item["execution_mode"] = "model_internal"
+            item["time_window"] = "空闲时"
+
     # Stable order is part of replay determinism.
     unique: dict[str, dict[str, Any]] = {}
     for item in candidates:
@@ -508,11 +527,21 @@ def materialize_tasks(
     now_ms = _now_ms() if now_ms is None else int(now_ms)
     now_ms = max(int(state.get("last_tick_at_ms") or 0), now_ms)
     tasks = state["tasks"]
-    existing_fingerprints = {
-        str(task.get("fingerprint") or "")
-        for task in tasks.values()
-        if isinstance(task, Mapping)
-    }
+    existing_fingerprints: set[str] = set()
+    for task in tasks.values():
+        if not isinstance(task, Mapping):
+            continue
+        if str(task.get("status") or "") in TERMINAL_TASK_STATES:
+            result = task.get("result") if isinstance(task.get("result"), Mapping) else {}
+            if (
+                str(result.get("reason_code") or "") == "life.autonomy.stale_pending_reaped"
+                and int(task.get("attempt_count") or 0) == 0
+            ):
+                # 从未尝试、只因待办池老化而回收的僵尸任务不封锁其指纹：
+                # 底层缺口仍在时下一个 tick 允许重新提案（执行通道接通后
+                # 会被正常消化；通道不可用时重提周期即为 reap 阈值本身）。
+                continue
+        existing_fingerprints.add(str(task.get("fingerprint") or ""))
     active_fingerprints = {
         str(task.get("fingerprint") or "")
         for task in tasks.values()
@@ -666,6 +695,8 @@ __all__ = [
     "ALLOWED_TASK_STATES",
     "AUTONOMY_ENGINE_VERSION",
     "ACTIVITY_TYPE_IDS",
+    "COGNITION_SOURCE",
+    "COGNITION_TASK_KINDS",
     "DEFAULT_ACTIVITY_TYPES",
     "TERMINAL_TASK_STATES",
     "autonomy_activity_catalog",
