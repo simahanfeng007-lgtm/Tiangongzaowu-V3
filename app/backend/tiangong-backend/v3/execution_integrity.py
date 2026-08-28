@@ -1594,6 +1594,23 @@ def update_task_contract_evidence(
         signal = f"evidence_round:{int(round_number or 0)}"
         if signal not in signals:
             signals.append(signal)
+        # 权威写入证据内嵌独立校验（codex 的路径/后缀/内容匹配检查、
+        # sandbox broker 的增量对账）＝与写入动作相互独立的第二个事实
+        # 信号：写入被观测 + 写入被核验。避免"写完还必须再读一次"对
+        # 简单文件创建的一刀切（真机 2026-08-29：1/2 卡死三轮）。
+        try:
+            verified_contract = _contract(payload)
+            verified_evidence = verified_contract.get("write_evidence")
+            if (
+                verified_contract.get("observed_write_effect") is True
+                and isinstance(verified_evidence, dict)
+                and verified_evidence.get("authoritative") is True
+            ):
+                verified_signal = f"write_verified:{int(round_number or 0)}"
+                if verified_signal not in signals:
+                    signals.append(verified_signal)
+        except Exception:
+            pass
     required_stability = _required_stability(updated.get("effective_level"))
 
     updated["desired_facts"] = desired_facts

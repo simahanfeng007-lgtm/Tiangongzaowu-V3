@@ -1084,7 +1084,23 @@ class RegenerativeExecutionAuthority:
         effects = self._store.list_effects_for_request(
             identity.request_id, run_id=identity.run_id, generation=identity.generation
         )
-        if any(record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"} for record in effects):
+        # 完成提案发生在后端执行中途：本代的外层 execution effect 必然还
+        # 处于 CLAIMED/SIDE_EFFECT_STARTED——它是这次提案自己的信封，不是
+        # 未决债务。把它算作 pending 等于要求"提案在自己结束前证明自己已
+        # 结束"，结构性不可满足（P18 后所有带工具请求因此全部 incomplete，
+        # 真机 2026-08-29 复现）。只有其他 effect（交付等）挂起才是真阻断。
+        def _is_own_inflight_envelope(record) -> bool:
+            return (
+                record.claim.effect_kind == "execution"
+                and record.claim.generation == identity.generation
+                and record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
+            )
+
+        if any(
+            record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
+            and not _is_own_inflight_envelope(record)
+            for record in effects
+        ):
             reasons.append("effect_ledger_pending")
         if any(
             record.state == "AMBIGUOUS"

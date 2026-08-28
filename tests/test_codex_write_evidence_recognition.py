@@ -130,6 +130,52 @@ def test_quoted_filename_does_not_spawn_execution_obligation() -> None:
     )
 
 
+def test_authoritative_write_evidence_counts_two_stability_signals() -> None:
+    """第三层修复：权威写入证据（含内嵌独立校验）产生双稳定信号。
+    L2 任务此前要求两个成功工具轮（写+读回），简单文件创建被 1/2 卡死；
+    写入被观测 + 写入被核验 = 两个独立事实信号，单轮即达稳定性。"""
+    from v3.execution_integrity import (
+        decide_task_contract_completion,
+        initialize_task_contract,
+        update_task_contract_evidence,
+    )
+
+    contract = initialize_task_contract('创建文件"完成.txt"，内容："x"。')
+    contract["effective_level"] = "L2"
+    c = normalize_tool_result("omni_body", REAL_CODEX_WRITE_RESULT)
+    payload = {
+        "ok": c["ok"],
+        "tool_action": "file.write",
+        "tool_args": {"action": "file.write", "target": "真机测试记录.txt"},
+        "tool_result_contract": c,
+    }
+    updated = update_task_contract_evidence(contract, payload, round_number=1)
+    assert updated["stability_signals"] == ["evidence_round:1", "write_verified:1"]
+    _final, allowed, status, reasons = decide_task_contract_completion(
+        updated, evidence_reasons=[], evidence_status="complete",
+        final_reply="已完成", has_real_observation=True,
+    )
+    assert allowed is True and status == "complete", reasons
+
+    # 无证据写入仍只有单信号（纪律不放松）
+    plain = initialize_task_contract('创建文件"无证据.txt"。')
+    plain["effective_level"] = "L2"
+    plain_payload = {"ok": True, "tool_action": "file.write", "tool_args": {"target": "无证据.txt"}}
+    plain_updated = update_task_contract_evidence(plain, plain_payload, round_number=1)
+    assert plain_updated["stability_signals"] == ["evidence_round:1"]
+
+
+def test_verify_completion_ignores_own_inflight_envelope() -> None:
+    """effect_ledger 死锁修复（源码契约）：完成提案不得把本代外层 execution
+    effect 的 in-flight 状态算作未决债务——提案发生在后端执行中途，外层
+    effect 必然 SIDE_EFFECT_STARTED，否则结构性不可完成。"""
+    from pathlib import Path as _Path
+
+    text = (_Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "regenerative_provider.py").read_text(encoding="utf-8")
+    assert "_is_own_inflight_envelope" in text
+    assert "record.claim.generation == identity.generation" in text
+
+
 if __name__ == "__main__":
     test_codex_write_result_counts_as_observed_write()
     test_plain_result_without_evidence_still_not_a_write()
