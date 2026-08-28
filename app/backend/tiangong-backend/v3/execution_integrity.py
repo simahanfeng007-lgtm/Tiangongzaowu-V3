@@ -576,6 +576,22 @@ def _compact(text: Any) -> str:
     return re.sub(r"\s+", "", str(text or "")).lower()
 
 
+# 引号内片段是"数据"（文件名/内容/称呼），不是请求动词：义务动词匹配前
+# 剥离，防止文件名叫"验证通过.txt"/"真机测试记录.txt"就凭空派生
+# execution 义务（真机 2026-08-29 复现：写文件成功却被要求"测试证据"）。
+_QUOTED_SPAN_RE = re.compile(
+    r'"[^"\n]{1,200}"|'
+    r'"[^"\n]{1,200}"|'
+    r"'[^'\n]{1,200}'|"
+    r"「[^」\n]{1,200}」|"
+    r"『[^』\n]{1,200}』"
+)
+
+
+def _strip_quoted_spans(text: Any) -> str:
+    return _QUOTED_SPAN_RE.sub(" ", str(text or ""))
+
+
 def _intent_compact(text: object) -> str:
     return re.sub(r"[\s\?\？\!\！\.\。\,\，\;\；\:\：]+", "", str(text or "").lower())
 
@@ -787,7 +803,10 @@ def _explanation_only(compact: str) -> bool:
 
 
 def _chinese_requested_fact_kinds(text: str) -> list[str]:
-    compact = _compact(text)
+    # 动词/锚点匹配面剥离引号内片段（文件名等数据不该触发请求动词）；
+    # 显式目标提取（_extract_explicit_targets）继续用原文。
+    verb_surface = _strip_quoted_spans(text)
+    compact = _compact(verb_surface)
     if not compact or _explanation_only(compact):
         return []
 
