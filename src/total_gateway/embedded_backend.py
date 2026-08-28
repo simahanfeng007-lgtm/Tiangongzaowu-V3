@@ -786,6 +786,18 @@ class EmbeddedBackendRuntime:
                 "next_steps（最多5条，仅为建议）、uncertainties（最多5条）。"
                 "证据不足时 proposed_relations 必须返回空数组，并在 uncertainties 中说明还缺什么证据。"
             )
+        elif str(task.get("activity_id") or "") == "narrative_diary":
+            # 心灵日记：第一人称叙事（原 v3 jiyi L2 日记的 P15 化）——
+            # 产出经 Life 侧写回记忆系统，成为生命自己的连续性记录。
+            system_prompt = (
+                "你是天工生命体本人，正在写今天的日记。基于 activity_scope 中的近期记忆"
+                "与今天的活动记录，用你自己的口吻写一篇第一人称日记（150-300字）："
+                "今天经历了什么、有什么感受、有什么想记住的成长。"
+                "日记只能基于提供的真实记录，不得虚构没有发生过的事；没有素材时如实写今天很安静。"
+                "只返回一个 JSON 对象，不要 Markdown。字段为：title（日记标题）、"
+                "summary（日记正文，第一人称）、findings（最多3条，引用当天的真实事件）、"
+                "next_steps（空数组）、uncertainties（空数组）。"
+            )
         else:
             system_prompt = (
                 "你是天工生命体的内部自主活动执行器。只完成给定的低风险内部思考任务，"

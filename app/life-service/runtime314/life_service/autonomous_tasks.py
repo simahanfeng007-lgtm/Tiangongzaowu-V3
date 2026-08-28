@@ -148,6 +148,16 @@ _ACTIVITY_CATALOG: tuple[dict[str, Any], ...] = (
         "priority": 500,
         "risk_class": "A0",
     },
+    {
+        "activity_id": "narrative_diary",
+        "label": "心灵日记",
+        "description": "以第一人称回顾今天，为自己的生命连续性写一篇简短日记（叙事日记，区别于工作向的今日小结）。",
+        "objective": "用自己的口吻写一篇关于今天的日记：经历、感受与成长，只基于真实活动记录。",
+        "proposed_action": "撰写今日心灵日记",
+        "window": "晚间",
+        "priority": 470,
+        "risk_class": "A0",
+    },
 )
 DEFAULT_ACTIVITY_TYPES = tuple(str(item["activity_id"]) for item in _ACTIVITY_CATALOG)
 ACTIVITY_TYPE_IDS = frozenset(DEFAULT_ACTIVITY_TYPES)

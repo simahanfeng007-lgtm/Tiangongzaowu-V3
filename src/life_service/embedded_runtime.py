@@ -3385,6 +3385,25 @@ class EmbeddedLifeRuntime:
                         status="completed",
                         result=result,
                     )
+                    if str(task.get("activity_id") or "") == "narrative_diary":
+                        # 心灵日记落回记忆系统（原 v3 jiyi L2 叙事日记的 P15 化）：
+                        # 日记正文作为生命自己的观察记忆入库，成为连续性记录；
+                        # 写入失败不阻断任务完成（日记价值在叙事，不在审计链）。
+                        diary_text = str(result.get("summary") or "").strip()
+                        if diary_text:
+                            try:
+                                self._memory_assert({
+                                    "life_id": life_id,
+                                    "content": {
+                                        "text": f"[心灵日记] {diary_text[:2000]}",
+                                        "kind": "narrative_diary",
+                                        "date": utc_now()[:10],
+                                    },
+                                    "epistemic_status": "observed",
+                                    "actor": "life_self",
+                                })
+                            except Exception:
+                                pass
                     scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
                     scheduler_state["model_successes"] = int(
                         scheduler_state.get("model_successes") or 0

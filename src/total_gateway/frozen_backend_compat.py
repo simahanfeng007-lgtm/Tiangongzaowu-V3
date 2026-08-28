@@ -967,6 +967,43 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 backend_payload,
                 created_at_ms=finished_at_ms,
             )
+            # 工作指纹（机器提取，模型无权自报）：下一轮对话的终局/断点
+            # 胶囊经 context_projection 读取 process_summary/key_facts——
+            # 此前桥接层从不写这两个字段，投影插槽恒空，模型每轮失忆。
+            fingerprint_run = (
+                backend_payload.get("run")
+                if isinstance(backend_payload.get("run"), Mapping)
+                else {}
+            )
+            fingerprint_live = (
+                fingerprint_run.get("_live")
+                if isinstance(fingerprint_run.get("_live"), Mapping)
+                else {}
+            )
+            tool_rounds: int | None = None
+            for fingerprint_source in (fingerprint_run, fingerprint_live):
+                fingerprint_value = fingerprint_source.get("tool_rounds")
+                if isinstance(fingerprint_value, int) and not isinstance(fingerprint_value, bool) and fingerprint_value > 0:
+                    tool_rounds = fingerprint_value
+                    break
+            chain_status = str(backend_payload.get("simple_chain_status") or "").strip()
+            key_facts: list[str] = []
+            for fingerprint_item in outputs[:8]:
+                key_facts.append(
+                    "生成交付文件: {}（{}）".format(
+                        fingerprint_item.get("filename"),
+                        fingerprint_item.get("format_id"),
+                    )
+                )
+            if chain_status:
+                key_facts.append(f"执行链终态: {chain_status}")
+            if tool_rounds is not None:
+                key_facts.append(f"工具轮次: {tool_rounds}")
+            process_summary = (
+                f"工具轮次{tool_rounds if tool_rounds is not None else '未知'}，"
+                f"交付文件{len(outputs)}个，"
+                f"链状态{chain_status or '未上报'}"
+            )
             backend_classification = str(backend_terminal["classification"])
             # artifact-only replies are deliverable: a run whose verified
             # outputs exist may succeed without natural-language text (the
@@ -987,6 +1024,8 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
             result_payload = {
                 "reply_text": reply,
                 "artifacts": outputs,
+                "process_summary": process_summary,
+                "key_facts": key_facts[:12],
                 "backend_http_status": status,
                 "backend_response_sha256": backend_body_sha,
                 "backend_terminal": backend_terminal,
@@ -1047,6 +1086,8 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
             result_payload = {
                 "reply_text": "",
                 "artifacts": [],
+                "process_summary": f"执行失败: {exc.code}",
+                "key_facts": [],
                 "compatibility_boundary": "7184-ticket-gated-frozen-7174",
                 "error_code": exc.code,
             }

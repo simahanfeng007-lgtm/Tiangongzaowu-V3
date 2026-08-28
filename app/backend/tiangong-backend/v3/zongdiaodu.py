@@ -285,6 +285,7 @@ from .duihua_qiaojie import (
     QIAOJIE,
     SOURCE_TYPE_EXTERNAL_DATA,
     _exclusive_file_lock,
+    _jiyi_tongji_state,
     _process_is_alive,
     _run_state_dir,
     _source_partition_wrap,
@@ -506,6 +507,16 @@ def _gengxin_qinggan(shenti, xiaoxi: str, huifu: str, gongju_cishu: int):
     # 4. 稳态负荷
     intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)
     q.allostatic_load = max(0.1, min(1.0, intensity * 1.2))
+
+    # 5. 记忆统计镜像刷新（身体镜像归一的第一步）：进化系统
+    # （jinhua）直接读 shenti.jiyi_tongji.zongshu 做记忆增长信号，
+    # 而 jiyi 引擎退役后该字段只在状态同步时被动刷新。这里每轮
+    # 调用 _jiyi_tongji_state（三源合并：shenti残留+legacy快照+M4，
+    # 内部会回写 shenti.jiyi_tongji），让身体镜像持续反映真实记忆规模。
+    try:
+        _jiyi_tongji_state(shenti)
+    except Exception:
+        pass
 
 
 def _strip_plan_markers(text: str) -> str:
