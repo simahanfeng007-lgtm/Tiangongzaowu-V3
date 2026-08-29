@@ -102,15 +102,34 @@ def test_corpus_trace_ids_are_deterministic() -> None:
 
 
 def test_real_rows_have_existing_evidence_refs() -> None:
+    """real 条目的 evidence_refs 必须是「文件::[Class::]test」选择器且真实存在。
+
+    2026-08-29 审核收紧：只验证文件存在曾让「min_data_rows 表头剔除」
+    这种无专项测试的案例被误标 real。现在要求选择器末段测试名在
+    文件中有 def 定义、中段类名有 class 定义。
+    """
     for row in _load_corpus():
         provenance = row["provenance"]
         if provenance["kind"] == "real":
             refs = provenance.get("evidence_refs")
             assert refs, f"real 条目缺 evidence_refs: {row['trace_id']}"
             for ref in refs:
-                assert (REPO_ROOT / ref).is_file(), (
-                    f"evidence_ref 不存在: {ref} ({row['trace_id']})"
-                )
+                assert "::" in ref, f"evidence_ref 必须带选择器: {ref}"
+                path_text, *selectors = ref.split("::")
+                path = REPO_ROOT / path_text
+                assert path.is_file(), f"evidence_ref 文件不存在: {ref}"
+                source = path.read_text(encoding="utf-8")
+                for index, segment in enumerate(selectors):
+                    is_last = index == len(selectors) - 1
+                    if is_last:
+                        assert f"def {segment}(" in source, (
+                            f"测试函数不存在: {segment} ({ref})"
+                        )
+                    else:
+                        assert (f"class {segment}(" in source
+                                or f"class {segment}:" in source), (
+                            f"测试类不存在: {segment} ({ref})"
+                        )
         else:
             assert "evidence_refs" not in provenance
 

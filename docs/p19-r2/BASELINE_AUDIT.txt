@@ -1,9 +1,13 @@
 P19-R2 M0｜基线审计报告（BASELINE_AUDIT）
 ======================================================================
-分支：glm53/p19-r2-m0-baseline-audit
-基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1（与计划锁定值逐字符一致）
-日期：2026-08-29
-性质：只读审计，本分支不修改任何生产行为。
+版本：v1.1（2026-08-29 审核修正版，修正项见文末「八、审核修正记录」）
+生产源码审计基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1
+M0 文档首次提交：1d037f616b768b3969bbe15a8e1eb5645ccab69f
+M0 合并后 main：a5b91863c536890e3470bc849c547af919b1150b（PR #42）
+修正分支：glm53/p19-r2-m0-review-fixes（自 a5b9186 创建）
+注意：e29bb9b 仅代表「被审计的生产源码」基线；后续阶段分支必须
+从修正 PR 合并后的最新 main 创建，不得从 e29bb9b 创建。
+性质：只读审计，本系列分支不修改任何生产行为。
 
 ----------------------------------------------------------------------
 一、基线确认与测试结果
@@ -36,11 +40,17 @@ python scripts/sync-generated-sources.py --check-committed
 
 A. 当前唯一完成裁决者是谁？
     CompletionGate.evaluate —— src/total_gateway/completion_gate.py:156。
-    唯一能产出 can_transition_request_completed=True 的代码路径。
-    模型级反伪造不变量：CompletionDecision.validate_decision
-    （completion_gate.py:124）强制
-    can_transition_request_completed == (outcome == "COMPLETED")，
-    外部构造的 decision 不可能携带伪造的完成标志。
+    受控调用路径内唯一能产出 can_transition_request_completed=True
+    的位置。
+    不变量说明（2026-08-29 审核修正）：CompletionDecision.
+    validate_decision（completion_gate.py:124）保证的是内部一致性
+    （can_transition_request_completed == (outcome == "COMPLETED")）
+    与内容完整性（decision_sha256 为普通无密钥内容哈希）。它不构成
+    密码学反伪造——任何能调用该类的代码都可构造内部自洽、哈希
+    正确的 decision。当前可信性依赖受控调用路径与模块边界，而非
+    生产者签名。GatewayStateStore.record_completion_decision
+    （store.py:9110）校验 hash/绑定/identity 重复，但同样不校验
+    「由 CompletionGate 实例产生」。
     聚合状态机侧，contracts/state_machine.py:455 apply_transition
     规定 COMPLETED 仅可从 DELIVERING 进入（:209），且必须携带
     fact_id 或 evidence_sha256（:277-278），终态封闭（:482-483）。
@@ -170,36 +180,58 @@ J. 当前基线全部测试是否通过？
     全量回归结果见附录A。
 
 ----------------------------------------------------------------------
-三、与计划假设不符的两个关键发现（M1 设计必须吸收）
+三、与计划假设不符的两个关键发现（2026-08-29 审核后修订版）
 ----------------------------------------------------------------------
 
-发现1：CommitmentCompiler 是死代码（运行时未接线）。
-    src/total_gateway/commitment_compiler.py（类 :42，compile :117，
-    输出 CompletionRequirementsVNext）在 orchestration.py 中零调用；
-    全仓引用仅自身与测试。运行时真实路径：
-    - desktop：desktop_completion.py:35 直构轻量 CompletionRequirements
-      （pydantic），delivery_requirement="NONE"，text_required=True。
-    - outbox：delivery_outbox.py:505/:648 直构。
-    - 真正在跑的「义务派生」是 V3 侧 build_action_obligations
-      （execution_integrity.py:1049，普通 dict，非 ContractModel）。
-    对 M1 的影响：计划第四章把 VerificationPlanCompiler 的上游设定为
-    CompletionRequirementsVNext —— 实际该体系未接线。M1 的
-    VerificationPlanCompiler 必须同时定义「从 CompletionRequirements
-    （在跑）与 CompletionRequirementsVNext（未接线）哪个上游编译」，
-    推荐方案：M1 先从在跑的 V3 义务通道（task contract obligations
-    + office 内容需求正则）编译 predicate，把 VNext 接线作为独立
-    议题记录，不在 M1 强行接线（避免改变现有完成行为）。
+发现1：CommitmentCompiler 已实现，但未进入生产调用图。
+    （production-unwired implementation / 已实现但未进入生产调用图
+    的休眠实现——不称"死代码"，避免诱导删除或贸然激活）
+
+    src/total_gateway/commitment_compiler.py（类 :42，compile :117）
+    已具备 CompletionRequirementsVNext、coverage proof 和单调修订
+    等完整结构；当前只有实现文件和 M0 审计文档引用它，未发现
+    生产调用方，也未发现直接测试消费方（即"已实现、未接线、
+    缺少直接契约测试"，而非"已有完整测试只是暂未启用"）。
+
+    当前运行路径仍为：
+    1. desktop/outbox 直接构造轻量 CompletionRequirements
+       （desktop_completion.py:35；delivery_outbox.py:505/:648）；
+    2. V3 execution_integrity 使用普通 dict 形态的动作义务
+       （build_action_obligations，execution_integrity.py:1049）；
+    3. _office_content_gaps（kernel.py:5339）属于产物生成后的
+       本地预检器（读 host path、正则启发式、异常静默），
+       不是事前的用户承诺编译权威。
+
+    特别注意：CommitmentCompiler 当前默认 extractor（_default_
+    extractor）会把任意非空 raw_user_message 生成一条 mandatory
+    execution obligation——普通闲聊/解释/纯文本问答只要非空都可能
+    被编译成执行义务。它不具备未经语义重构与回归校准就直接升格
+    为生产权威上游的语义精度。
+
+    对 M1 的约束（2026-08-29 审核裁定）：
+    M1 不决定最终义务上游，不实现生产接线的 VerificationPlanCompiler，
+    不把 V3 正则或 Office 内容预检固化成正式协议。M1 仅完成：
+    - typed verification contracts；
+    - VerifierRegistry；
+    - GatewayStateStore v23 additive migration；
+    - RECORD ONLY 持久化基础。
+    义务权威统一与 VerificationPlanCompiler 接线作为后续独立阶段
+    处理。
 
 发现2：desktop 与渠道投递的 CompletionGate 时序不同。
-    desktop：门在交付推进之前（orchestration.py:2610 → :2651-2683）。
+    desktop：门在交付状态推进之前（orchestration.py:2610 →
+    :2651-2683；Life commit :2638 也在门之后）。
     wechat/feishu：process 先构造 OutboxIntent 并推进 DELIVERING
-    （:2820-2844），门由 outbox worker 事后评估
-    （delivery_outbox.py:517/:660）。
-    对 M4 的影响：M4-04 的目标顺序「VerificationRuntime →
-    CompletionGate → delivery」只符合 desktop 通道；渠道通道需要
-    把 VerificationDecision 放进 outbox _finalize 的门调用之前或
-    之内，M4 动工前必须先按本审计画的实际时序做最小调整方案，
-    不能照抄计划顺序强改。
+    （:2820-2844），门由 outbox worker 在投递终局评估
+    （delivery_outbox.py:517/:660）——渠道完成判断天然发生在
+    delivery finalization 阶段。
+    对 M4 的影响：不能把「Verification → CompletionGate → delivery」
+    当作所有通道的统一物理时序；渠道通道需按实测时序做最小调整。
+    对 M1 typed contract 的影响：契约不得写死单一执行点。验证记录
+    必须携带 evaluation_phase（证据在哪个生命周期节点产生），
+    建议枚举：POST_EXECUTION / PRE_DELIVERY / DELIVERY_FINALIZATION /
+    ASYNC_OBSERVATION——该字段只描述证据产生的生命周期节点，
+    不赋予任何阻断权。
 
 ----------------------------------------------------------------------
 四、M0-06 不重复建设清单（冻结）
@@ -209,9 +241,11 @@ J. 当前基线全部测试是否通过？
   1. codex write evidence 识别
      权威：tool_result_contract.py:328-392（_observed_write_evidence）
      测试：tests/test_codex_write_evidence_recognition.py
-  2. 引号内文件名剥离（"验证通过.txt" 不派生义务）
+  2. 引号内文件名剥离（"验证通过.txt"不派生额外 execution/test 义务；
+     用户明确要求的 file creation effect 义务必须保留）
      权威：execution_integrity.py（quoted span stripping）
      测试：tests/test_codex_write_evidence_recognition.py
+           ::test_quoted_filename_does_not_spawn_execution_obligation
   3. 前端契约横幅剥离（横幅不参与义务推导）
      权威：execution_integrity.py（banner stripping，PR#41 94816b7）
      测试：tests/test_codex_write_evidence_recognition.py
@@ -266,22 +300,60 @@ P0-10 执法口径不一 —— 确认：local chain（execution_integrity 阻�
 六、M0-05 起步语料
 ----------------------------------------------------------------------
 tests/fixtures/p19_verification/golden/p19_m0_corpus.v0.1.jsonl
-    59 条；15/15 失败类别全覆盖；real=19（每条绑定仓库内复现
-    测试路径）/ synthetic=40（明确标记）；happy(PASS)=17，占比 29%
+    59 条；15/15 失败类别全覆盖；real=18（每条绑定
+    tests/<file>.py::[Class::]test 选择器，选择器存在性经校验）/
+    synthetic=41（明确标记）；happy(PASS)=17，占比 29%
     （≤50% 上限）。trace_id 由 category+序号 sha256 确定性派生，
     生成器 generate_golden_corpus.py 可复算。合规性由
-    tests/test_p19_m0_baseline.py 锁定（8 项，含 real 条目证据
-    锚点存在性校验）。M5 建 PR 门语料时在此基础上扩充至 50-100
-    条独立 golden 集，本语料作为失败分类底册保留。
+    tests/test_p19_m0_baseline.py 锁定（8 项，含 real 条目测试
+    选择器 def/class 定义存在性校验）。M5 建 PR 门语料时在此基础
+    上扩充至 50-100 条独立 golden 集，本语料作为失败分类底册保留。
 
 ----------------------------------------------------------------------
 附录A：全量回归结果
 ----------------------------------------------------------------------
 执行环境：Windows 11，Python 3.12.10，本机（非 CI 引用，M0 现跑）
 
+e29bb9b 生产源码基线回归（审计时，不含 M0 新增测试文件）：
 python -m pytest -q
     = 3261 passed, 17 skipped, 824 subtests passed
       4 warnings（均为 world_understanding pydantic "schema" 字段
       遮蔽警告，既有非新增），0 failures，耗时 13:10。
 
+glm53/p19-r2-m0-review-fixes 修正分支树（含 M0 锁定测试 8 项）：
+python -m pytest -q
+    = 3269 passed, 17 skipped, 824 subtests passed
+      0 failures，耗时 26:03（3261 基线 + 8 项 M0 测试）。
+
+M0 合并（PR #42）后 CI 四项必需检查全绿（双平台 source-authority
+与 full-regression），作为 merge 后最终检查结论。
+
 基线结论：J = 全部通过。M0 验收条件「baseline 全绿」满足。
+
+----------------------------------------------------------------------
+八、审核修正记录（v1.0 → v1.1，2026-08-29 用户审核 HOLD 裁决）
+----------------------------------------------------------------------
+1. 发现1 重写：「死代码」→ production-unwired；「全仓引用仅自身
+   与测试」→「仅实现文件与 M0 文档引用，无生产调用方，也无直接
+   测试消费方」；删除「M1 从 V3 义务通道+Office 正则编译
+   predicate」的原推荐（默认 extractor 会把任意非空消息编成
+   mandatory execution obligation，office 预检是事后本地启发式，
+   二者都不能升格为承诺权威）。
+2. A 问「反伪造不变量」表述修正：validate_decision 是内部一致性
+   + 内容完整性（无密钥哈希），非密码学反伪造；可信性依赖受控
+   调用路径与模块边界。
+3. 基线 SHA 与当前 HEAD 分离描述（文件头）；M1 分支必须从修正
+   PR 合并后的最新 main 创建。
+4. 3261 passed 重新标注为 e29bb9 生产源码基线数字；修正分支
+   含新测试的全量结果单独回填（附录A）。
+5. 不重复建设清单第 2 项措辞修正（保留 effect 义务、只剥离
+   额外 execution/test 义务）。
+6. 语料六处修正（见 generate_golden_corpus.py 头注）：引号案例
+   描述、min_data_rows 降级 synthetic、幂等命中改 PASS、扫描
+   PDF 改 INCONCLUSIVE、渠道歧义归 delivery 域、相同行描述对齐
+   当前启发式实现；evidence_refs 升级为测试选择器格式并加
+   存在性校验（test_p19_m0_baseline.py）。
+7. COMPLETION_CALL_GRAPH 数据结构索引四处修正（类型定义位置与
+   使用位置分离）。
+8. AUTHORITY_MAP 两处收紧（CommitmentCompiler 标注、Repository
+   Oracle 复用边界）。

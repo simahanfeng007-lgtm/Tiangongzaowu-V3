@@ -11,9 +11,14 @@ M5 golden 分层的失败模式对照表。
 分类（15 类）
 ----------------------------------------------------------------------
 01 false_obligation 虚假义务
-    定义：从非用户义务文本（引号内文件名、前端横幅、引用内容）
-          派生出执行义务，导致误阻断或死等证据。
+    定义：从非用户义务文本（引号内文件名的字样、前端横幅、引用
+          内容）派生出用户未要求的额外义务（如文件名含"验证"即
+          派生 execution/test 义务），导致误阻断或死等证据；
+          用户明确要求的义务（如 file creation effect obligation）
+          必须保留，不得在剥离时一并丢失。
     锚点：real —— tests/test_codex_write_evidence_recognition.py
+          ::test_quoted_filename_does_not_spawn_execution_obligation
+          ::test_frontend_contract_banner_does_not_spawn_obligations
           （quoted span / banner 剥离，PR#41 fc834c2 + 94816b7）。
     对应阶段：M2（不从文件名/横幅派生 predicate）。
 
@@ -37,17 +42,25 @@ M5 golden 分层的失败模式对照表。
     对应阶段：M3（fail-closed / RECONCILE_REQUIRED）。
 
 05 artifact_shell 产物空壳
-    定义：文件存在且格式合法，但内容为空表/仅标题/零数据行。
+    定义：文件存在且格式合法，但内容为空表/仅标题/零有效数据。
     锚点：real —— tests/test_office_content_gate.py
-          （PR#41 71a2f9c 三连检测）。
+          ::OfficeContentGateTests::test_shell_files_are_rejected
+          ::OfficeContentGateTests::test_missing_columns_reported
+          （PR#41 71a2f9c）。注意：「数据行数不足」类为 synthetic——
+          当前实现用 max_row（含表头）比较且无专项测试；M2 实现
+          data_rows（表头后非空行）并补测试后升级 real。
     对应阶段：M2 ArtifactContentOracle（docx.min_body_items /
           xlsx.min_data_rows 等）。
 
 06 artifact_placeholder 占位符产物
-    定义：数据行存在但由 TODO/示例内容/重复占位构成。
-    锚点：real（同上，重复占位行检测）；误杀风险类为 synthetic
-          （合法重复数据，计划 P1-03）。
-    对应阶段：M2（placeholder ALERT 起步，I-23）。
+    定义：数据行存在且（疑似）由占位内容构成。
+    锚点：real —— tests/test_office_content_gate.py
+          ::OfficeContentGateTests::test_placeholder_rows_are_rejected。
+          当前启发式仅判「数据行≥2 且全部相同」，不校验值是否真为
+          TODO/示例内容等 placeholder token——该信号有合法重复
+          误报风险，只允许 ALERT，不得 BLOCK（I-23）。合法重复
+          反例为 synthetic（计划 P1-03）。
+    对应阶段：M2（placeholder ALERT 起步）。
 
 07 semantic_requirement_uncompiled 语义需求未编译
     定义：用户要求属语义层（"写得专业"/"内容正确"），当前无

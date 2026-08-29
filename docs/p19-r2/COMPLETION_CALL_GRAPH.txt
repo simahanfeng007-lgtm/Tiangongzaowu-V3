@@ -130,7 +130,10 @@ RegenerativeExecutionAuthority 回调注册        regenerative_provider.py:117
 ----------------------------------------------------------------------
 计划假设上游 = CommitmentCompiler（CompletionRequirementsVNext）。
 实测：CommitmentCompiler（commitment_compiler.py:42，compile :117）
-      在 orchestration.py 零调用，运行时未接线（死代码）。
+      已实现但未进入生产调用图（production-unwired）——orchestration
+      中零调用，仅有实现文件与本 M0 文档引用，无生产调用方，也无
+      直接测试消费方。其默认 extractor 会把任意非空消息编成
+      mandatory execution obligation，不具备直接升格条件。
 在跑的义务通道（V3 侧，普通 dict）：
   build_action_obligations(user_text)          execution_integrity.py:1049
   initialize_task_contract                     execution_integrity.py:420
@@ -141,14 +144,19 @@ RegenerativeExecutionAuthority 回调注册        regenerative_provider.py:117
                                               execution_integrity.py:1417/:1566
 
 ----------------------------------------------------------------------
-关键数据结构索引
+关键数据结构索引（v1.1：类型定义位置与使用/签发位置分离）
 ----------------------------------------------------------------------
 ActiveRequestActivation        src/total_gateway/active_requests.py
-ExecutionTicketPayload/Ticket  src/total_gateway/tickets.py（签发 orchestration.py:2097/:2152）
-EffectClaim/EffectResult       orchestration.py:1889/:2309
+ExecutionTicketPayload         src/contracts/execution.py:131（类型定义）
+ExecutionTicket                src/contracts/execution.py:251（类型定义）
+  · 签名/验签/密钥保护         src/total_gateway/tickets.py
+  · 持久化签发权威             src/total_gateway/runtime_authority.py
+  · 签发使用点                 orchestration.py:2097/:2152
+EffectClaim / EffectResult     src/total_gateway/effects.py:12/:87（定义）
+  · 使用点                     orchestration.py:1889/:2309
 CompletionObligation           src/contracts/models.py:804
 CoverageProofRow               src/contracts/models.py:825
-CompletionRequirementsVNext    src/contracts/models.py:837（未接线）
+CompletionRequirementsVNext    src/contracts/models.py:837（production-unwired）
 CompletionRequirements         src/total_gateway/completion_gate.py:27
 CompletionPartAssessment       src/total_gateway/completion_gate.py:57
 CompletionDecision             src/total_gateway/completion_gate.py:91
@@ -157,13 +165,15 @@ ArtifactIntegrityQcOutcome/Service  artifact_qc.py:34/:42
 DocxQcPolicy/Outcome/Service   docx_qc.py:48/:66/:269
 ObjectReference/ObjectPutResult/ContentAddressedObjectStore
                                 object_store.py:51/:130/:248
-ArtifactManifest               src/contracts/models.py（gate :390 构造）
+ArtifactManifest               src/contracts/delivery.py:46（类型定义；
+                                gate artifact_gate.py:390 构造使用）
+OutboundPlan                   src/contracts/delivery.py:134（类型定义）
+OutboxIntent                   src/total_gateway/outbox.py:23
+DeliveryOutboxPayload          src/total_gateway/delivery_outbox.py:36
 工具结果契约 dict（TOOL_RESULT_SCHEMA）
                                 tool_result_contract.py:678-738
 write_evidence dict（tiangong.v3.write_evidence.v1）
                                 tool_result_contract.py:328-392
 task contract / obligations dict  execution_integrity.py:420+/:1049+
-OutboundPlan/OutboxIntent/DeliveryOutboxPayload
-                                delivery_outbox.py:36/:66
 请求状态机 TRANSITIONS["request"]/TERMINAL_STATES
                                 src/contracts/state_machine.py:193-210/:186-191
