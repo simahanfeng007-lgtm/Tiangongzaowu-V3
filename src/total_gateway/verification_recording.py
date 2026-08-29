@@ -19,7 +19,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from contracts.verification import RegistrySnapshot, VerificationRecord
-from total_gateway.verification_registry import UnknownVerifierError
+from total_gateway.verification_registry import (
+    UnknownVerifierError,
+    VerifierRegistry,
+)
 
 
 class VerificationRecordRejected(ValueError):
@@ -37,8 +40,19 @@ class VerificationRecorder:
     """Binding between a pinned registry snapshot and the store."""
 
     def __init__(self, *, snapshot: RegistrySnapshot, store) -> None:
-        if not snapshot.has_valid_snapshot_sha256():
-            raise VerificationRecordRejected("registry snapshot hash mismatch")
+        # Trust boundary: model_copy(update=...) bypasses pydantic
+        # validation, so identity binding and nested descriptor integrity
+        # are re-verified here instead of trusting the constructor path.
+        if not snapshot.has_valid_identity():
+            raise VerificationRecordRejected("registry snapshot identity binding is invalid")
+        try:
+            # Reuse the registry's fail-closed rules (descriptor hashes,
+            # duplicates, predicate allowlist) instead of duplicating them.
+            VerifierRegistry(snapshot.verifiers)
+        except ValueError as exc:
+            raise VerificationRecordRejected(
+                "registry snapshot contains invalid verifier descriptors"
+            ) from exc
         object.__setattr__(self, "_snapshot", snapshot)
         object.__setattr__(self, "_store", store)
 
@@ -62,8 +76,14 @@ class VerificationRecorder:
             raise VerificationRecordRejected(
                 f"M1 records must be enforcement=RECORD, got {record.enforcement}"
             )
-        if not record.has_valid_result_sha256():
-            raise VerificationRecordRejected("record result hash mismatch")
+        # Trust boundary re-verification: a model_copy(update=...) payload
+        # with a valid-looking result hash but a mismatched derived id must
+        # fail closed here, not depend on the caller's constructor discipline.
+        if not record.has_valid_identity():
+            raise VerificationRecordRejected(
+                "record identity binding is invalid (derived id does not"
+                " match its result hash)"
+            )
         if record.registry_snapshot_sha256 != self._snapshot.snapshot_sha256:
             raise VerificationRecordRejected(
                 "record was produced against a different registry snapshot"
