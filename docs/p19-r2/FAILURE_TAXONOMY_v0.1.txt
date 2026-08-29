@@ -1,0 +1,119 @@
+P19-R2 M0｜失败分类法 v0.1（FAILURE_TAXONOMY）
+======================================================================
+基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1
+用途：M0-05 trace/fixture 语料的分类骨架；M1+ predicate 设计与
+M5 golden 分层的失败模式对照表。
+标注规则：provenance = real（有真机复现测试锁定）/ synthetic
+（构造起步，待影子期替换）。每类给出：定义、当前证据锚点、
+计划对应阶段。
+
+----------------------------------------------------------------------
+分类（15 类）
+----------------------------------------------------------------------
+01 false_obligation 虚假义务
+    定义：从非用户义务文本（引号内文件名、前端横幅、引用内容）
+          派生出执行义务，导致误阻断或死等证据。
+    锚点：real —— tests/test_codex_write_evidence_recognition.py
+          （quoted span / banner 剥离，PR#41 fc834c2 + 94816b7）。
+    对应阶段：M2（不从文件名/横幅派生 predicate）。
+
+02 evidence_missing 证据缺失
+    定义：工具 success=true 但无 changed_files/pre-post/verified
+          证据，模型自报完成。
+    锚点：real —— 同上文件（T-EXIST-02 语义）。
+    对应阶段：M3 EffectStateOracle（effect.required_change_observed）。
+
+03 evidence_provenance_unknown 证据来源不明
+    定义：payload 外形像 codex_evidence / write_evidence，但无法
+          证明来自真实工具结果通道（可能是模型文本字段伪造）。
+    锚点：synthetic —— 现有测试覆盖「识别」，未覆盖「伪造外形」
+          对抗（M3-06 对抗测试将补）。
+    对应阶段：M3 write_evidence.v2 身份绑定。
+
+04 effect_state_mismatch 效应状态不一致
+    定义：effect head 与 FactLedger/实际文件状态不一致。
+    锚点：real（部分）—— tests/test_completion_gate_head_consistency.py；
+          synthetic 补跨 run 重放场景。
+    对应阶段：M3（fail-closed / RECONCILE_REQUIRED）。
+
+05 artifact_shell 产物空壳
+    定义：文件存在且格式合法，但内容为空表/仅标题/零数据行。
+    锚点：real —— tests/test_office_content_gate.py
+          （PR#41 71a2f9c 三连检测）。
+    对应阶段：M2 ArtifactContentOracle（docx.min_body_items /
+          xlsx.min_data_rows 等）。
+
+06 artifact_placeholder 占位符产物
+    定义：数据行存在但由 TODO/示例内容/重复占位构成。
+    锚点：real（同上，重复占位行检测）；误杀风险类为 synthetic
+          （合法重复数据，计划 P1-03）。
+    对应阶段：M2（placeholder ALERT 起步，I-23）。
+
+07 semantic_requirement_uncompiled 语义需求未编译
+    定义：用户要求属语义层（"写得专业"/"内容正确"），当前无
+          确定性 predicate 可表达。
+    锚点：synthetic（概念类；当前直接不存在验证）。
+    对应阶段：M1 plan compiler 标记 predicate_uncompiled →
+          RECORD_ONLY；M7 才考虑语义层。
+
+08 false_block 误杀
+    定义：正确产物被验证器错误阻断（合法短通知、合法重复行、
+          image-only PDF）。
+    锚点：synthetic（当前无 BLOCK 阶段，预防性建类；
+          M2-07 切 BLOCK 前必须有此类金标）。
+    对应阶段：M2/M5（误杀率看板 + 回退审查）。
+
+09 repair_loop_stalled 修复循环停滞
+    定义：同一缺口反复修复不收敛。
+    锚点：synthetic（当前纠错循环无 failure_signature 概念，
+          P0-09 实证）。
+    对应阶段：M5 RepairDirective + 同签名 ≤2。
+
+10 ambiguous_side_effect 歧义副作用
+    定义：SIDE_EFFECT_STARTED/AMBIGUOUS 后结果不明。
+    锚点：real —— delivery_outbox 歧义分支（:517）与 store
+          recover 路径（store.py:6337 RECONCILE_REQUIRED）。
+    对应阶段：M3（不盲重试，I-18）。
+
+11 completion_self_deadlock 完成自锁
+    定义：本代外层 execution effect 把自己的完成提案结构性卡死。
+    锚点：real —— tests/test_codex_write_evidence_recognition.py
+          （PR#41 e173da4 自指 effect 死锁修复）。
+    对应阶段：保持回归（I 系列 T-EXIST-07）。
+
+12 frontend_banner_contamination 前端横幅污染
+    定义：【连续执行契约】横幅文本进入义务推导。
+    锚点：real —— 同 01（94816b7 专项）。
+    对应阶段：保持回归。
+
+13 quoted_data_contamination 引号数据污染
+    定义：引号内"验证通过.txt"等字面量被当作用户义务目标。
+    锚点：real —— 同 01（fc834c2 专项）。
+    对应阶段：保持回归。
+
+14 artifact_only_delivery 纯产物交付
+    定义：无正文但有产物，需合成确定性交付文案而非整单失败。
+    锚点：real —— tests/test_execution_chain_efficiency_fixes.py
+          （PR#41 b6b032a 修B）。
+    对应阶段：保持回归（DOD-16）。
+
+15 memory_cognition_task_closeout 记忆/认知任务收口
+    定义：认知任务完成必须写回因果记忆，否则表面完成实际悬案。
+    锚点：real —— tests/test_life_cognition_execution_wiring.py
+          （PR#41 5c4392f）。
+    对应阶段：保持回归；M3 effect 谓词可复用其写回证据。
+
+----------------------------------------------------------------------
+禁止进入首批 predicate 的语义维度（对照计划 4.3）
+----------------------------------------------------------------------
+factuality.correct / overall_quality.good / helpfulness.good /
+style.professional / reasoning.correct —— 全部归 07 类，
+M1 只标记不验证，M7 前不得 BLOCK。
+
+----------------------------------------------------------------------
+语料统计口径（M5 PR 门 50-100 条的分层约束）
+----------------------------------------------------------------------
+每条 fixture 必须带 tag：format / task_kind / failure_type（本表
+01-15）/ risk / expected_status / enforcement / platform_sensitivity /
+provenance(real|synthetic)。禁止 90% happy path：happy path 类
+（verifier 应 PASS 的正常案例）占比 ≤ 50%。

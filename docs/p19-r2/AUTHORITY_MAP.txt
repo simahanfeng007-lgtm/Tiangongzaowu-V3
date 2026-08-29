@@ -1,0 +1,138 @@
+P19-R2 M0｜组件权威地图（AUTHORITY_MAP）
+======================================================================
+基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1
+
+----------------------------------------------------------------------
+一、验证/完成相关组件权威表
+----------------------------------------------------------------------
+组件                         | 文件:行号                    | 权威范围
+-----------------------------|------------------------------|---------------------------
+CompletionGate               | completion_gate.py:142/:156   | 唯一完成裁决（can_transition_
+                             |                              | request_completed，:305；
+                             |                              | 反伪造不变量 :124）
+apply_transition             | contracts/state_machine.py:455| 聚合状态机转移合法性
+                             |                              | （COMPLETED 仅自 DELIVERING :209；
+                             |                              | 终态证据必需 :277-278）
+GatewayStateStore            | store.py:85（SCHEMA v22）     | effect head / 请求状态 /
+                             |                              | completion_decisions / capsules
+                             |                              | 唯一持久化权威
+apply_event_with_outbox      | store.py:3548                 | aggregate_state 唯一写口
+                             |                              | （唯一外部调用者
+                             |                              | orchestration._advance :1472）
+ArtifactGate                 | artifact_gate.py:315/:329     | 产物 L0 接纳门
+                             |                              | （sha256/mime/magic/结构/安全）
+ArtifactIntegrityQcService   | artifact_qc.py:42/:49         | 通用确定性 QC（读回/hash 一致）
+DocxQcService                | docx_qc.py:269/:278           | DOCX 专项 QC
+ContentAddressedObjectStore  | object_store.py:248/:359/:379 | immutable bytes 权威
+                             |                              | （content-addressed）
+FactLedger                   | facts.sqlite3（经注入）       | 证据投影（非状态权威；
+                             |                              | 与 head 不一致 fail-closed，
+                             |                              | completion_gate.py:150-154 注释）
+execution_integrity          | v3/execution_integrity.py    | 事实型动作义务派生+证据检查
+                             | :1049/:1394/:1676            | （明确不选工具/不执行/不评综合质量）
+tool_result_contract         | v3/tool_result_contract.py:678| 工具结果归一化权威
+                             |                              | write_evidence.v1 唯一生产者 :328
+_office_content_gaps         | v3/simple_chain/kernel.py:5339| Office 本地预检（Layer1，
+                             |                              | 调用点 :5469；无最终裁决权）
+regenerative_provider        | regenerative_provider.py:1049 | P18 RuntimeCloseoutProof
+                             |                              | （消费裸布尔 :1111-1117）
+repository_evidence_provider | world_understanding/          | WU 已提交图只读快照
+                             | production.py:212-267         | （不执行 git；服务 Life 侧）
+LocalGitRepositoryProvider   | v3/repository_perception.py:408| git 只读白名单感知
+                             |                              | （_run_git :116-154，
+                             |                              | 5s/2MiB 上限）
+CommitmentCompiler           | commitment_compiler.py:42     | 【死代码】CompletionRequirements-
+                             |                              | VNext 体系未接线（M0 关键发现）
+build_action_obligations     | v3/execution_integrity.py:1049| 在跑的义务派生（普通 dict）
+
+----------------------------------------------------------------------
+二、验证层级现状（对照计划 2.2 三层）
+----------------------------------------------------------------------
+Layer1 Runtime Local Preflight —— 已存在：
+    _office_content_gaps（kernel.py:5339）+ execution_integrity 阻断
+    （execution_integrity_blockers :1394）+ _simple_chain_evidence_check
+    （kernel.py:5437）。特征与计划一致：本地 path、自然语言 gap、
+    无 verifier 版本、异常静默。
+Layer2 Gateway Authoritative Verification —— 部分存在：
+    ArtifactGate/QC（immutable object、FactLedger 注册、QC state）、
+    effect head、delivery receipt。缺：统一 VerificationDecision、
+    内容级 Oracle、verifier registry。
+Layer3 CompletionGate —— 存在且唯一（见上表）。缺 verification_ready。
+
+----------------------------------------------------------------------
+三、source-ownership.json authority→mirror 映射（16 权威）
+----------------------------------------------------------------------
+authority（角色）                                    | generated/mirror targets
+-----------------------------------------------------|------------------------
+src/contracts（authoritative）                        | app/life-service/runtime314/contracts；app/runtime/python312/Lib/site-packages/contracts
+src/life_service（authoritative）                     | app/life-service/runtime314/life_service；app/runtime/python312/Lib/site-packages/life_service
+src/life_bootstrap/tiangong_life_bootstrap.py         | readable-python-source/life-bootstrap/tiangong_life_bootstrap.py；app/life-service/runtime314/tiangong_life_bootstrap.py
+src/life_bootstrap/tiangong_life_runtime_fixes.py     | readable-python-source/life-bootstrap/tiangong_life_runtime_fixes.py；app/life-service/runtime314/tiangong_life_runtime_fixes.py
+src/total_gateway（authoritative）                    | app/runtime/python312/Lib/site-packages/total_gateway
+src/world_understanding（authoritative）              | app/runtime/python312/Lib/site-packages/world_understanding
+src/communication_service（authoritative）            | app/runtime/python312/Lib/site-packages/communication_service
+src/omni_body_skill                                  | readable-python-source/omni_body_skill；app/backend/tiangong-backend/omni_body_skill；.../_internal/omni_body_skill；v3/bundled_skills/omni_body_skill；_internal/v3/bundled_skills/omni_body_skill
+src/bundled_skills/novel-creation                    | readable-python-source/bundled-skills/novel-creation；v3/bundled_skills/novel-creation；_internal/v3/bundled_skills/novel-creation
+_internal/frozen_modules/v3/execution_kernel/confirmation_bridge.py（frozen） | _internal/legacy_pyz_modules/v3/execution_kernel/confirmation_bridge.py
+_internal/frozen_modules/v3/execution_kernel/orchestrator.py（frozen）        | _internal/legacy_pyz_modules/v3/execution_kernel/orchestrator.py
+_internal/frozen_modules/v3/execution_kernel/tool_scheduler.py（frozen）      | _internal/legacy_pyz_modules/v3/execution_kernel/tool_scheduler.py
+_internal/frozen_modules/tiangong_life/permissions.py（frozen）               | _internal/legacy_pyz_modules/tiangong_life/permissions.py
+src/runtime_security/model_endpoint.py                | app/backend/tiangong-backend/v3/endpoint_security.py
+app/backend/tiangong-backend/v3（closed_world）       | 无外部 mirror（内部飞地 bundled_skills、endpoint_security.py 由 generated_exclusions 声明）
+app/backend/tiangong-backend/v3/context_compactor.py（alias，parent=v3-backend-main） | 无（targets 为空，仅搜索别名）
+app/backend/tiangong-backend/tiangong_kernel          | 无（单源事实）
+
+policy 根：
+    editable_roots   = src；app/backend/tiangong-backend/v3；.../tiangong_kernel
+    frozen_roots     = _internal/frozen_modules
+    compatibility    = readable-python-source（永不为权威）
+
+双检机制：
+    check-source-authority.py —— 结构/所有权不变量（唯一所有权、
+        alias 规则、closed-world 直接子项全覆盖、compatibility adapter
+        AST 级 reexport 契约 :85-119）
+    sync-generated-sources.py —— source→targets 逐文件 sha256、
+        marker .tiangong-generated-source.json（mapping_id/tree_sha256）、
+        --check-committed 模式
+P19-R2 红线：所有新代码只写入 src/ 或 app/backend/tiangong-backend/v3
+（tests 例外）；禁止直接编辑任何 generated target（I-28）。
+
+----------------------------------------------------------------------
+四、repository_evidence_provider 装配链（M3 复用基础）
+----------------------------------------------------------------------
+runtime.py:1524-1528
+  = backend_service.repository_evidence_snapshot（embedded_backend.py:508-518
+    门面，动态 import v3.world_understanding_production 包装 :513-517）
+  → ProductionWorldUnderstandingRuntime.repository_evidence_snapshot
+    （src/world_understanding/production.py:212-267）
+    读 WU live stream 已提交帧（无 git 执行）。
+git 感知独立组件：
+  v3/repository_perception.py LocalGitRepositoryProvider（:408）
+  白名单 {rev-parse,status,hash-object,diff,ls-files}（:42），
+  --no-ext-diff 强制（:101-102），hash-object 禁 -w（:119-120），
+  5s/2MiB 上限（:38-39/:132-151）。
+  publish_active_repository_observation（:653-764）→
+  observe_native_post_commit（v3/world_understanding_production.py:334-371）
+  → WU 图。
+changed_paths 链：git status overlay + diff（:458-473）→
+  RepositoryStructureIndex.update（v3/repository_structure.py:1257，
+  :1296 调 _changed_structure_paths :1061-1067）→
+  契约字段 src/contracts/world_understanding/repository_structure.py:361。
+网关侧唯一调用：orchestration.py:1507-1516（_commit_life_execution，
+  payload ≤64KiB，异常吞掉置 None）。
+M3 结论：RepositoryStateOracle 的 changed_paths/commit 证据可全部
+复用上述链路，不需要也不允许新建第二 git 执行器。
+
+----------------------------------------------------------------------
+五、P19-R2 新组件的落位规划（依据本地图）
+----------------------------------------------------------------------
+src/contracts/verification.py            —— contracts 权威（镜像自动同步）
+src/total_gateway/verification_registry.py
+src/total_gateway/verification_plan.py   —— total_gateway 权威
+src/total_gateway/outcome_oracles/*.py   —— total_gateway 权威
+store.py v23 migration                    —— additive（STORE_SCHEMA_VERSION
+                                             22→23，gateway.sqlite3 唯一库）
+v3/simple_chain/content_preflight.py     —— v3 closed_world 权威（M2 迁移
+                                             _office_content_gaps 落位）
+docs/p19-r2/*、tests/fixtures/p19_verification/* —— 本 M0 分支新增，
+                                             不属于任何 generated target。

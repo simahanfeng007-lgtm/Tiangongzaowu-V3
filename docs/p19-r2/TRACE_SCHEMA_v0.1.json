@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiangong.p19.trace.v0.1.json",
+  "title": "P19 Verification Trace Fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "trace_id",
+    "schema_version",
+    "category",
+    "format",
+    "task_kind",
+    "risk",
+    "expected_status",
+    "enforcement",
+    "platform_sensitivity",
+    "provenance",
+    "description"
+  ],
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "pattern": "^p19tr_[0-9a-f]{10}$",
+      "description": "由 category+序号 确定性派生的 opaque id"
+    },
+    "schema_version": {
+      "const": "tiangong.p19.trace.v0.1"
+    },
+    "category": {
+      "enum": [
+        "false_obligation",
+        "evidence_missing",
+        "evidence_provenance_unknown",
+        "effect_state_mismatch",
+        "artifact_shell",
+        "artifact_placeholder",
+        "semantic_requirement_uncompiled",
+        "false_block",
+        "repair_loop_stalled",
+        "ambiguous_side_effect",
+        "completion_self_deadlock",
+        "frontend_banner_contamination",
+        "quoted_data_contamination",
+        "artifact_only_delivery",
+        "memory_cognition_task_closeout"
+      ]
+    },
+    "format": {
+      "enum": ["docx", "xlsx", "pptx", "pdf", "csv", "txt", "md", "effect", "repository", "delivery", "text", "mixed"]
+    },
+    "task_kind": {
+      "enum": ["office_generation", "file_write", "code_change", "chat", "autonomous", "cognition", "delivery"]
+    },
+    "risk": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "expected_status": {
+      "enum": ["PASS", "FAIL", "INCONCLUSIVE", "ERROR"],
+      "description": "期望中理想 verifier 给出的单谓词状态；REGRESSION 类（保持现有行为）用当前系统实际结果"
+    },
+    "enforcement": {
+      "enum": ["RECORD", "ALERT", "BLOCK"],
+      "description": "该案例在当前阶段允许的最高执法档"
+    },
+    "platform_sensitivity": {
+      "enum": ["none", "windows_only", "linux_only"]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["real", "synthetic"] },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "real 类必填：仓库内复现测试/提交的相对路径"
+        },
+        "commit": {
+          "type": "string",
+          "description": "引入该行为的提交短哈希（可选）"
+        }
+      }
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 400,
+      "description": "脱敏场景描述；禁止包含用户敏感数据"
+    },
+    "predicate_hint": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "计划 4.3 allowlist 中的候选 predicate_type（可选）"
+    },
+    "notes": { "type": "string", "maxLength": 400 }
+  }
+}

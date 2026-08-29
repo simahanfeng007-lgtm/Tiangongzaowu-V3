@@ -1,0 +1,287 @@
+P19-R2 M0｜基线审计报告（BASELINE_AUDIT）
+======================================================================
+分支：glm53/p19-r2-m0-baseline-audit
+基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1（与计划锁定值逐字符一致）
+日期：2026-08-29
+性质：只读审计，本分支不修改任何生产行为。
+
+----------------------------------------------------------------------
+一、基线确认与测试结果
+----------------------------------------------------------------------
+git rev-parse HEAD
+    = e29bb9bafc213bd8b473ba7a9da014962a17e6d1  [PASS，无漂移]
+git status --short
+    = 空（工作树干净）
+
+python scripts/check-source-authority.py
+    = PASS：16 independent authorities, 1 aliases, 24 generated targets,
+      1 closed-world boundaries
+
+python scripts/sync-generated-sources.py --check-committed
+    = {"ok": true, "mode": "check-committed"}
+
+定向回归（PR #41 五文件）：
+    python -m pytest tests/test_codex_write_evidence_recognition.py \
+      tests/test_execution_chain_efficiency_fixes.py \
+      tests/test_life_cognition_execution_wiring.py \
+      tests/test_memory_unification_landings.py \
+      tests/test_office_content_gate.py -q
+    = 28 passed（Windows 本机）
+
+全量回归：见本文件末尾「附录A：全量回归结果」（跑完后回填）。
+
+----------------------------------------------------------------------
+二、M0 十问十答（A-J）
+----------------------------------------------------------------------
+
+A. 当前唯一完成裁决者是谁？
+    CompletionGate.evaluate —— src/total_gateway/completion_gate.py:156。
+    唯一能产出 can_transition_request_completed=True 的代码路径。
+    模型级反伪造不变量：CompletionDecision.validate_decision
+    （completion_gate.py:124）强制
+    can_transition_request_completed == (outcome == "COMPLETED")，
+    外部构造的 decision 不可能携带伪造的完成标志。
+    聚合状态机侧，contracts/state_machine.py:455 apply_transition
+    规定 COMPLETED 仅可从 DELIVERING 进入（:209），且必须携带
+    fact_id 或 evidence_sha256（:277-278），终态封闭（:482-483）。
+
+B. 所有写 completed 的函数在哪里？
+    请求聚合状态写 COMPLETED 的位置全仓库仅两处，均以门产出为前提：
+    1) orchestration.py:2678 —— desktop 分支，前置 2610 行
+       evaluate_desktop_completion（desktop_completion.py:23，
+       其 :54 强制 can_transition_request_completed 否则抛错）。
+    2) delivery_outbox.py:702-706 —— outbox 回执分支，
+       request_state 由 decision.outcome 映射，decision 来自
+       delivery_outbox.py:660 的 CompletionGate.evaluate。
+    其余 terminal 写点（不经门，但也不是 completed）：
+    - 失败收口 _finalize_unhandled（orchestration.py:1714，FAILED）
+    - 执行失败分支（orchestration.py:2349/2423，FAILED）
+    - 产物 QC 失败分支（orchestration.py:2585，FAILED）
+    - 交付失败分支（delivery_outbox.py:571，FAILED）
+    - 用户取消 desktop_api.py:944-958 → store.cancel_generation
+      （store.py:6623，CANCELLED）
+    - 恢复路径 store.recover_started_effects（store.py:4688，
+      effect 级 FAILED_FINAL）/ recover_started_attempts
+      （store.py:6337，effect 级 RECONCILE_REQUIRED）
+    - watchdog _reconcile_stale_effects（orchestration.py:1370，
+      effect 级 AMBIGUOUS）
+    台账类持久化（非状态机）：record_completion_decision
+    （store.py:9110）、put_request_capsule TERMINAL（store.py:9479，
+    唯一终态索引冲突检查 :9508-9517）、complete_session_request
+    （store.py:9011，仅关会话队列，不判完成语义）。
+
+C. P18 verify_completion 与 CompletionGate 的关系是什么？
+    P18 _verify_completion（src/total_gateway/regenerative_provider.py:1049，
+    经 :117 的 "verify_completion" 回调注册）是后端执行收口阶段的
+    运行时收口证明（RuntimeCloseoutProof），发生在 Gateway 最终
+    Artifact 接纳与最终 Outcome 验证之前。它消费裸布尔
+    life_gate_allowed（:1115）/ required_evidence_ready（:1117）与
+    裸字符串数组 runtime_blockers（:1111）——这正是计划 P0-05 的实证。
+    其上游 life_gate_allowed 生产者：zongdiaodu.py:4074/:4879
+    （_simple_chain_life_completion_gate 的 final_allowed）。
+    它不能直接决定请求 completed；最终裁决仍归 CompletionGate。
+    层级：Runtime 收口证明（P18）⊂ Gateway 最终 Outcome 证明
+    （CompletionGate + 未来 VerificationDecision）。
+
+D. _office_content_gaps 的真实调用位置是什么？
+    定义：app/backend/tiangong-backend/v3/simple_chain/kernel.py:5339。
+    唯一生产调用点：kernel.py:5469，位于 _simple_chain_evidence_check
+    （:5437）内部，结果并入阻断原因，经
+    decide_simple_chain_completion（runtime_tool_result_boundary.py:190）
+    → decide_task_contract_completion（execution_integrity.py:1676）
+    影响完成判定。测试调用：tests/test_office_content_gate.py:90-141。
+    输入 (user_message, generated_attachments)，输出中文自然语言
+    gap 列表（P0-08 实证：无结构化 FailureEvidence）。
+
+E. ArtifactGate/QC 在交付链中的确切顺序是什么？
+    产物字节入 object store 发生在后端桥接层：
+    frozen_backend_compat.py:809（_capture_outputs 内
+    ContentAddressedObjectStore.put_bytes，object_store.py:359/:379）。
+    之后 orchestration.py 逐产物循环（:2469）：
+    ArtifactGate.accept（artifact_gate.py:329，调用点 :2488）
+    → format_id=="docx" 时 DocxQcService.evaluate（docx_qc.py:278，
+    调用点 :2511），否则 ArtifactIntegrityQcService.evaluate
+    （artifact_qc.py:49，调用点 :2521）
+    → 状态机 CREATED/QC_PENDING（:2528-2540）→ QC_PASSED（:2543）
+    / QC_FAILED（:2553）；任一失败在 :2580-2604 整单 FAILED。
+    即：object store 接纳 → Gate → QC → CompletionGate。
+
+F. write_evidence 的所有 producer 与 consumer 是谁？
+    唯一生产者：_observed_write_evidence
+    （app/backend/tiangong-backend/v3/tool_result_contract.py:328，
+    在 normalize_tool_result :704 被调用）。schema 固定为
+    "tiangong.v3.write_evidence.v1"（:352/:385/:601/:618），
+    无 request/run/generation/effect 绑定字段（P0-06 实证）。
+    证据来源三类：sandbox_broker（:351）、codex_tool_evidence
+    （:384）、pre/post 快照（:402+）。
+    消费者：execution_integrity.py（义务证据判定）与
+    simple_chain/kernel.py（质量门载荷与稳定信号）。
+    frozen_backend_compat.py 不直接消费 write_evidence（grep 零命中），
+    它消费归一化后的 result_payload。
+
+G. repository_evidence_provider 如何装配和调用？
+    装配：src/total_gateway/runtime.py:1524-1528，取
+    runtime.backend_service.repository_evidence_snapshot
+    （embedded_backend.py:508-518 门面，动态 import
+    v3.world_understanding_production 包装层）注入
+    GatewayOrchestrationWorker（orchestration.py:456/:571/:361）。
+    第二路装配：runtime.py:1302-1307 绑定为
+    EmbeddedLifeGatewayBinding.PROACTIVE_WORLD_PROVIDER。
+    唯一网关调用点：orchestration.py:1507-1516（_commit_life_execution
+    内），payload ≤64KiB，异常吞掉置 None（evidence 不阻塞 Life 终局）。
+    实现：src/world_understanding/production.py:212-267 —— 本身不执行
+    任何 git 命令，只读已提交的 WU live stream 帧；git 感知在
+    app/backend/tiangong-backend/v3/repository_perception.py
+    （LocalGitRepositoryProvider :408，_run_git :116-154，
+    只读白名单 {rev-parse,status,hash-object,diff,ls-files}，
+    5s 超时 / 2MiB 输出上限）。changed_paths 来源：
+    git status overlay + git diff（:458-473）→
+    RepositoryStructureIndex.update（repository_structure.py:1257，
+    :1296 _changed_structure_paths :1061-1067）。
+    注意：provider 当前服务 Life 侧（execution commit / activity scope /
+    learning），不参与 Gateway 完成判定。
+
+H. 哪些文件是 authority，哪些是 mirror？
+    权威根（source-ownership.json，schema tiangong.source-ownership.v2）：
+    - editable：src、app/backend/tiangong-backend/v3（closed_world）、
+      app/backend/tiangong-backend/tiangong_kernel
+    - frozen：app/backend/tiangong-backend/_internal/frozen_modules
+    - compatibility mirror root：readable-python-source（永不为权威）
+    生成镜像：app/runtime/python312/Lib/site-packages/{contracts,
+    life_service,total_gateway,world_understanding,communication_service}、
+    app/life-service/runtime314/{contracts,life_service,...}、
+    _internal/legacy_pyz_modules/...、readable-python-source/...、
+    v3/bundled_skills 飞地。完整 authority→mirror 映射表见
+    AUTHORITY_MAP.txt 第三节。
+    check-source-authority.py 校验结构/所有权不变量（唯一所有权、
+    alias 规则、closed-world 分类、AST 级 reexport 契约）；
+    内容哈希一致性由 sync-generated-sources.py --check-committed
+    逐文件 sha256 比对（本基线双检均 PASS）。
+
+I. 是否存在绕过 CompletionGate 的路径？
+    不存在把请求聚合状态置为 COMPLETED 的绕过路径。
+    to_state="COMPLETED" 全仓库仅两处（见 B），均以门产出为前提。
+    值得注意的非门终态写点（FAILED/CANCELLED/effect 级）已列于 B，
+    属「证据驱动而非门驱动」设计，P19-R2 不得将其误判为漏洞去
+    「修复」，但 M4 设计必须保持它们的现有语义。
+
+J. 当前基线全部测试是否通过？
+    source-authority PASS / sync check PASS / 定向 28 passed。
+    全量回归结果见附录A。
+
+----------------------------------------------------------------------
+三、与计划假设不符的两个关键发现（M1 设计必须吸收）
+----------------------------------------------------------------------
+
+发现1：CommitmentCompiler 是死代码（运行时未接线）。
+    src/total_gateway/commitment_compiler.py（类 :42，compile :117，
+    输出 CompletionRequirementsVNext）在 orchestration.py 中零调用；
+    全仓引用仅自身与测试。运行时真实路径：
+    - desktop：desktop_completion.py:35 直构轻量 CompletionRequirements
+      （pydantic），delivery_requirement="NONE"，text_required=True。
+    - outbox：delivery_outbox.py:505/:648 直构。
+    - 真正在跑的「义务派生」是 V3 侧 build_action_obligations
+      （execution_integrity.py:1049，普通 dict，非 ContractModel）。
+    对 M1 的影响：计划第四章把 VerificationPlanCompiler 的上游设定为
+    CompletionRequirementsVNext —— 实际该体系未接线。M1 的
+    VerificationPlanCompiler 必须同时定义「从 CompletionRequirements
+    （在跑）与 CompletionRequirementsVNext（未接线）哪个上游编译」，
+    推荐方案：M1 先从在跑的 V3 义务通道（task contract obligations
+    + office 内容需求正则）编译 predicate，把 VNext 接线作为独立
+    议题记录，不在 M1 强行接线（避免改变现有完成行为）。
+
+发现2：desktop 与渠道投递的 CompletionGate 时序不同。
+    desktop：门在交付推进之前（orchestration.py:2610 → :2651-2683）。
+    wechat/feishu：process 先构造 OutboxIntent 并推进 DELIVERING
+    （:2820-2844），门由 outbox worker 事后评估
+    （delivery_outbox.py:517/:660）。
+    对 M4 的影响：M4-04 的目标顺序「VerificationRuntime →
+    CompletionGate → delivery」只符合 desktop 通道；渠道通道需要
+    把 VerificationDecision 放进 outbox _finalize 的门调用之前或
+    之内，M4 动工前必须先按本审计画的实际时序做最小调整方案，
+    不能照抄计划顺序强改。
+
+----------------------------------------------------------------------
+四、M0-06 不重复建设清单（冻结）
+----------------------------------------------------------------------
+以下能力已在基线存在且被测试锁定，P19-R2 各阶段禁止重写：
+
+  1. codex write evidence 识别
+     权威：tool_result_contract.py:328-392（_observed_write_evidence）
+     测试：tests/test_codex_write_evidence_recognition.py
+  2. 引号内文件名剥离（"验证通过.txt" 不派生义务）
+     权威：execution_integrity.py（quoted span stripping）
+     测试：tests/test_codex_write_evidence_recognition.py
+  3. 前端契约横幅剥离（横幅不参与义务推导）
+     权威：execution_integrity.py（banner stripping，PR#41 94816b7）
+     测试：tests/test_codex_write_evidence_recognition.py
+  4. ContextVar deadline 主通道
+     权威：orchestration.py（修A，PR#41 b6b032a）
+     测试：tests/test_execution_chain_efficiency_fixes.py
+  5. artifact-only 可交付
+     权威：frozen_backend_compat.py:971 一带（reply or outputs）
+     测试：tests/test_execution_chain_efficiency_fixes.py
+  6. 执行预算可见
+     权威：simple_chain/kernel.py（_simple_chain_model_payload）
+     测试：tests/test_execution_chain_efficiency_fixes.py
+  7. 自指 effect 不卡死完成提案（own in-flight envelope 例外）
+     权威：execution_integrity.py + regenerative_provider.py
+     测试：tests/test_codex_write_evidence_recognition.py
+  8. 权威写入双稳定信号（observed + verified）
+     权威：tool_result_contract.py + execution_integrity.py
+     测试：tests/test_codex_write_evidence_recognition.py
+  9. P15 life_service 长期记忆权威
+     权威：src/life_service/*（jiyi 已清理，PR#41 f66d8ea）
+     测试：tests/test_p15_chat_memory_wiring.py
+ 10. Office 本地预检（空壳/空表/缺列/占位行）
+     权威：simple_chain/kernel.py:5339（_office_content_gaps）
+     测试：tests/test_office_content_gate.py
+     P19-R2 处置：M2 收编迁移，不删除不膨胀（计划 1.2.C）。
+ 11. 认知任务执行回路 + 写回因果记忆 + reap 重提
+     权威：autonomous_tasks.py / embedded_runtime.py / embedded_backend.py
+     测试：tests/test_life_cognition_execution_wiring.py
+
+----------------------------------------------------------------------
+五、遗留缺口与计划 P0 的对应（M0 复核结论）
+----------------------------------------------------------------------
+P0-01 统一 typed contract —— 确认缺失：验证结论散布于 dict/自然语言。
+P0-02 CompletionGate 不识 verification_ready —— 确认：CompletionRequirements
+       无 verification 字段（completion_gate.py:27-54）。
+P0-03 Office 内容检查未绑 immutable Artifact —— 确认：_office_content_gaps
+       按本地 path 读取（kernel.py:5339），无 object_id/revision 绑定。
+P0-04 verifier 异常静默放行 —— 确认：kernel.py 的 office 检查
+       except Exception: continue 模式（计划 1.2.C 已点名）。
+P0-05 裸布尔收口 —— 确认：regenerative_provider.py:1111-1117。
+P0-06 write_evidence.v1 无身份绑定 —— 确认：schema v1 无
+       request/run/generation/effect/result digest 字段。
+P0-07 acceptance_ref 无 predicate 映射 —— 确认且加重：
+       承载 acceptance_ref 的 CompletionRequirementsVNext 本身未接线（发现1）。
+P0-08 失败回注是自然语言 —— 确认：_office_content_gaps 返回中文 gap 列表。
+P0-09 修复无同签名上限 —— 确认：simple_chain 纠错循环无
+       failure_signature 概念。
+P0-10 执法口径不一 —— 确认：local chain（execution_integrity 阻断）、
+       gateway（QC FAILED 整单）、autonomous（life gate）三套口径并存。
+
+----------------------------------------------------------------------
+六、M0-05 起步语料
+----------------------------------------------------------------------
+tests/fixtures/p19_verification/golden/p19_m0_corpus.v0.1.jsonl
+    59 条；15/15 失败类别全覆盖；real=19（每条绑定仓库内复现
+    测试路径）/ synthetic=40（明确标记）；happy(PASS)=17，占比 29%
+    （≤50% 上限）。trace_id 由 category+序号 sha256 确定性派生，
+    生成器 generate_golden_corpus.py 可复算。合规性由
+    tests/test_p19_m0_baseline.py 锁定（8 项，含 real 条目证据
+    锚点存在性校验）。M5 建 PR 门语料时在此基础上扩充至 50-100
+    条独立 golden 集，本语料作为失败分类底册保留。
+
+----------------------------------------------------------------------
+附录A：全量回归结果
+----------------------------------------------------------------------
+执行环境：Windows 11，Python 3.12.10，本机（非 CI 引用，M0 现跑）
+
+python -m pytest -q
+    = 3261 passed, 17 skipped, 824 subtests passed
+      4 warnings（均为 world_understanding pydantic "schema" 字段
+      遮蔽警告，既有非新增），0 failures，耗时 13:10。
+
+基线结论：J = 全部通过。M0 验收条件「baseline 全绿」满足。
