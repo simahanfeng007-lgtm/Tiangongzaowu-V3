@@ -19,6 +19,15 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 23:
+        # v23 additive: P19-R2 verification plane.  Drop indexes with
+        # their table order (indexes vanish with tables in SQLite, but
+        # keep the explicit order deterministic), then step back to v22.
+        connection.execute("DROP TABLE verification_record")
+        connection.execute("DROP TABLE verification_registry_snapshot")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 23")
+        connection.execute("PRAGMA user_version = 22")
+        version = 22
     if version == 22:
         # v22 additive: dispatch-permit release accounting for action fence
         # inflight.  Purely additive, drop the table and step back to v21.
