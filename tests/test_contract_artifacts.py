@@ -29,6 +29,7 @@ from contracts.compatibility import (
     P16_LIFE_P9_SKILL_AUTHORITY_SCHEMA_BASELINE_SHA256,
     P17_LIFE_P10_ATOMIC_CONTEXT_SCHEMA_BASELINE_SHA256,
     P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256,
+    P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256,
     REVIEWED_SCHEMA_BASELINE_SHA256,
     assert_schema_bundles_compatible,
     compare_schema_bundles,
@@ -64,7 +65,7 @@ class ContractArtifactTests(unittest.TestCase):
             written = write_contract_artifacts(output)
             verified = verify_contract_artifact_directory(output)
             self.assertEqual(written, verified)
-            self.assertEqual(written["root_contract_count"], 101)
+            self.assertEqual(written["root_contract_count"], 104)
             self.assertEqual(
                 written["schema_bundle_sha256"],
                 contract_schema_bundle_sha256(),
@@ -114,10 +115,10 @@ class ContractCompatibilityTests(unittest.TestCase):
             contract_schema_bundle_sha256(),
             REVIEWED_SCHEMA_BASELINE_SHA256,
         )
-        # G1 合同 vNext 后当前基线已推进到 P18；P17 及以下作为历史基线保留兼容性校验。
+        # P19-R2 M1 验证平面合同后当前基线推进到 P19；P18 及以下作为历史基线保留兼容性校验。
         self.assertEqual(
             REVIEWED_SCHEMA_BASELINE_SHA256,
-            P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256,
+            P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
         bundle = contract_schema_bundle()
         assert_schema_bundles_compatible(bundle, copy.deepcopy(bundle))
@@ -148,7 +149,23 @@ class ContractCompatibilityTests(unittest.TestCase):
                 for item in node:
                     _restore_version_shape(item)
 
-        p17_bundle = copy.deepcopy(bundle)
+        # P19 → P18 推导：剥离 M1 新增的三个验证平面根合同（对既有合同零改动）。
+        p18_bundle = {
+            name: copy.deepcopy(schema)
+            for name, schema in bundle.items()
+            if name
+            not in {"RegistrySnapshot", "VerificationRecord", "VerifierDescriptor"}
+        }
+        self.assertEqual(
+            hashlib.sha256(
+                json.dumps(
+                    p18_bundle, ensure_ascii=False, allow_nan=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+            P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256,
+        )
+        p17_bundle = copy.deepcopy(p18_bundle)
         _restore_version_shape(p17_bundle)
         for name in ("dynamic_risk", "intent_sha256", "target_snapshot_sha256"):
             p17_bundle["ActionImpact"]["properties"].pop(name, None)

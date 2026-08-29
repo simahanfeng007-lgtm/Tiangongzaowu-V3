@@ -2,6 +2,14 @@
 
 CONTRACT_SCHEMA_VERSION = "tiangong.gateway.contracts.v2"
 
+from .verification import (
+    RegistrySnapshot,
+    VerificationRecord,
+    VerifierDescriptor,
+    derive_registry_snapshot_id,
+    derive_verification_record_id,
+    derive_verifier_descriptor_id,
+)
 from .models import (
     ArtifactId,
     ArtifactRevisionId,

@@ -63,6 +63,7 @@ from contracts import (
     new_state_snapshot,
     renew_candidate_owner,
 )
+from contracts.verification import RegistrySnapshot, VerificationRecord
 from contracts.state_machine import ATTEMPT_RECONCILIATION_VERDICTS
 from .coordination import FencedResultDecision, GenerationLeaseView
 from .coordination_events import CoordinationEvent, CoordinationRecord, CoordinationResolution
@@ -82,7 +83,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 22
+STORE_SCHEMA_VERSION = 23
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1475,6 +1476,63 @@ _MIGRATION_V22_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V23_ID = "gateway-verification-plane-v23"
+_MIGRATION_V23_STATEMENTS = (
+    """
+    CREATE TABLE verification_record (
+        verification_record_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verifier_id TEXT NOT NULL,
+        verifier_version TEXT NOT NULL,
+        registry_snapshot_sha256 TEXT NOT NULL
+            CHECK (length(registry_snapshot_sha256) = 64
+                   AND registry_snapshot_sha256 NOT GLOB '*[^0-9a-f]*'),
+        predicate_id TEXT NOT NULL,
+        predicate_type TEXT NOT NULL,
+        subject_kind TEXT NOT NULL
+            CHECK (subject_kind IN ('artifact','effect','repository','delivery','text','handoff')),
+        subject_identity TEXT NOT NULL,
+        evaluation_phase TEXT NOT NULL
+            CHECK (evaluation_phase IN ('POST_EXECUTION','PRE_DELIVERY','DELIVERY_FINALIZATION','ASYNC_OBSERVATION')),
+        status TEXT NOT NULL
+            CHECK (status IN ('PASS','FAIL','INCONCLUSIVE','ERROR','NOT_APPLICABLE')),
+        enforcement TEXT NOT NULL
+            CHECK (enforcement IN ('RECORD','ALERT','BLOCK')),
+        reason_codes_json TEXT NOT NULL CHECK (json_valid(reason_codes_json)),
+        evidence_refs_json TEXT NOT NULL CHECK (json_valid(evidence_refs_json)),
+        evidence_sha256 TEXT NOT NULL
+            CHECK (length(evidence_sha256) = 64 AND evidence_sha256 NOT GLOB '*[^0-9a-f]*'),
+        producer_component_id TEXT NOT NULL,
+        model_generated INTEGER NOT NULL CHECK (model_generated IN (0, 1)),
+        evaluated_at_ms INTEGER NOT NULL CHECK (evaluated_at_ms >= 0),
+        result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+        result_sha256 TEXT NOT NULL
+            CHECK (length(result_sha256) = 64 AND result_sha256 NOT GLOB '*[^0-9a-f]*'),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE TABLE verification_registry_snapshot (
+        registry_snapshot_id TEXT NOT NULL PRIMARY KEY,
+        snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+        snapshot_sha256 TEXT NOT NULL
+            CHECK (length(snapshot_sha256) = 64 AND snapshot_sha256 NOT GLOB '*[^0-9a-f]*'),
+        captured_at_ms INTEGER NOT NULL CHECK (captured_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX verification_record_request_idx
+        ON verification_record (request_id, run_id, generation, evaluated_at_ms)
+    """,
+    """
+    CREATE INDEX verification_record_predicate_idx
+        ON verification_record (predicate_id)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1498,6 +1556,7 @@ _MIGRATIONS = (
     (20, _MIGRATION_V20_ID, _MIGRATION_V20_STATEMENTS),
     (21, _MIGRATION_V21_ID, _MIGRATION_V21_STATEMENTS),
     (22, _MIGRATION_V22_ID, _MIGRATION_V22_STATEMENTS),
+    (23, _MIGRATION_V23_ID, _MIGRATION_V23_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -1519,6 +1578,14 @@ class StoreCorruptionError(StoreError):
 
 class StoreConflictError(StoreError):
     pass
+
+
+@dataclass(frozen=True)
+class VerificationRecordPutResult:
+    record: VerificationRecord
+    recorded_at_ms: int
+    created_by_this_call: bool
+    duplicate: bool
 
 
 class StoreCasConflict(StoreConflictError):
@@ -9158,6 +9225,194 @@ class GatewayStateStore:
                 ),
             )
             return CompletionDecisionRecord(decision, recorded_at_ms, True, False)
+
+    def put_verification_record(
+        self,
+        record: VerificationRecord,
+        *,
+        recorded_at_ms: int,
+    ) -> VerificationRecordPutResult:
+        """Persist one RECORD-mode verification record (P19-R2 M1).
+
+        Idempotent for identical content; StoreConflictError for a reused
+        identity with different content. Request/run/generation binding is
+        asserted against the request continuity tables, so cross-run or
+        cross-generation reuse is rejected.
+        """
+        if not isinstance(record, VerificationRecord):
+            raise ValueError("verification record payload has the wrong type")
+        if not record.has_valid_result_sha256():
+            raise ValueError("verification record result hash mismatch")
+        if record.enforcement != "RECORD":
+            raise ValueError("M1 verification records must be enforcement=RECORD")
+        payload_json = json.dumps(
+            record.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=record.request_id,
+                run_id=record.run_id,
+                generation=record.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT * FROM verification_record WHERE verification_record_id = ?",
+                (record.verification_record_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["result_json"] != payload_json:
+                    raise StoreConflictError(
+                        "verification record identity was reused for different content"
+                    )
+                stored = VerificationRecord.model_validate_json(
+                    existing["result_json"], strict=True
+                )
+                return VerificationRecordPutResult(
+                    record=stored,
+                    recorded_at_ms=existing["recorded_at_ms"],
+                    created_by_this_call=False,
+                    duplicate=True,
+                )
+            self._connection.execute(
+                """
+                INSERT INTO verification_record (
+                    verification_record_id, request_id, run_id, generation,
+                    verifier_id, verifier_version, registry_snapshot_sha256,
+                    predicate_id, predicate_type, subject_kind, subject_identity,
+                    evaluation_phase, status, enforcement,
+                    reason_codes_json, evidence_refs_json, evidence_sha256,
+                    producer_component_id, model_generated, evaluated_at_ms,
+                    result_json, result_sha256, recorded_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.verification_record_id,
+                    record.request_id,
+                    record.run_id,
+                    record.generation,
+                    record.verifier_id,
+                    record.verifier_version,
+                    record.registry_snapshot_sha256,
+                    record.predicate_id,
+                    record.predicate_type,
+                    record.subject_kind,
+                    record.subject_identity,
+                    record.evaluation_phase,
+                    record.status,
+                    record.enforcement,
+                    json.dumps(list(record.reason_codes), separators=(",", ":")),
+                    json.dumps(list(record.evidence_refs), separators=(",", ":")),
+                    record.evidence_sha256,
+                    record.producer_component_id,
+                    1 if record.model_generated else 0,
+                    record.evaluated_at_ms,
+                    payload_json,
+                    record.result_sha256,
+                    recorded_at_ms,
+                ),
+            )
+            return VerificationRecordPutResult(
+                record=record,
+                recorded_at_ms=recorded_at_ms,
+                created_by_this_call=True,
+                duplicate=False,
+            )
+
+    def get_verification_record(
+        self, verification_record_id: str
+    ) -> VerificationRecord | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM verification_record WHERE verification_record_id = ?",
+                (verification_record_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationRecord.model_validate_json(
+                row["result_json"], strict=True
+            )
+
+    def list_verification_records(
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+    ) -> tuple[VerificationRecord, ...]:
+        """Records for exactly this request/run/generation — never cross-generation."""
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT result_json FROM verification_record
+                WHERE request_id = ? AND run_id = ? AND generation = ?
+                ORDER BY evaluated_at_ms, verification_record_id
+                """,
+                (request_id, run_id, generation),
+            ).fetchall()
+            return tuple(
+                VerificationRecord.model_validate_json(row["result_json"], strict=True)
+                for row in rows
+            )
+
+    def put_registry_snapshot(
+        self,
+        snapshot: RegistrySnapshot,
+        *,
+        recorded_at_ms: int,
+    ) -> bool:
+        """Persist a registry snapshot; returns True when newly created."""
+        if not isinstance(snapshot, RegistrySnapshot):
+            raise ValueError("registry snapshot payload has the wrong type")
+        if not snapshot.has_valid_snapshot_sha256():
+            raise ValueError("registry snapshot hash mismatch")
+        payload_json = json.dumps(
+            snapshot.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            existing = self._connection.execute(
+                "SELECT snapshot_json FROM verification_registry_snapshot"
+                " WHERE registry_snapshot_id = ?",
+                (snapshot.registry_snapshot_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["snapshot_json"] != payload_json:
+                    raise StoreConflictError(
+                        "registry snapshot identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                """
+                INSERT INTO verification_registry_snapshot (
+                    registry_snapshot_id, snapshot_json, snapshot_sha256,
+                    captured_at_ms, recorded_at_ms
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot.registry_snapshot_id,
+                    payload_json,
+                    snapshot.snapshot_sha256,
+                    snapshot.captured_at_ms,
+                    recorded_at_ms,
+                ),
+            )
+            return True
+
+    def get_registry_snapshot(
+        self, registry_snapshot_id: str
+    ) -> RegistrySnapshot | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT snapshot_json FROM verification_registry_snapshot"
+                " WHERE registry_snapshot_id = ?",
+                (registry_snapshot_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return RegistrySnapshot.model_validate_json(
+                row["snapshot_json"], strict=True
+            )
 
     def list_completion_decisions(
         self,

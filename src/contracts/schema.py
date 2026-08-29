@@ -51,6 +51,7 @@ from .agency import (
     ReflectionQuestionDecision,
 )
 from .execution import CapabilityManifest, ExecutionResult, ExecutionTicket, FactRecord
+from .verification import RegistrySnapshot, VerificationRecord, VerifierDescriptor
 from .policy import (
     ActionIntent,
     ActionPermission,
@@ -109,6 +110,9 @@ from .security import (
 
 
 CONTRACT_MODELS = (
+    RegistrySnapshot,
+    VerificationRecord,
+    VerifierDescriptor,
     ActionCandidate,
     ActionImpact,
     ActionIntent,
