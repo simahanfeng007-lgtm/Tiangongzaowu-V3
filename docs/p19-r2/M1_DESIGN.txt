@@ -1,0 +1,125 @@
+P19-R2 M1｜设计与文件清单（M1_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m1-verification-contracts-store-v23（自 PR#43 合并后
+main = 1ea3674 创建，符合审核第八节分支顺序）
+范围：2026-08-29 审核第七节批准边界；全部 enforcement = RECORD。
+
+----------------------------------------------------------------------
+一、文件清单
+----------------------------------------------------------------------
+新增（权威源，自动同步镜像）：
+    src/contracts/verification.py
+        VerifierDescriptor / RegistrySnapshot / VerificationRecord
+        + 枚举（Layer/Enforcement/Status/EvidenceAuthority/
+          EvaluationPhase/SubjectKind）+ 确定性 ID 派生
+    src/total_gateway/verification_predicate_types.py
+        计划 4.3 首批 predicate type allowlist（语义类五型禁止入列）
+    src/total_gateway/verification_registry.py
+        VerifierRegistry + 三个休眠 oracle 描述符
+        （verifier.artifact_content / effect_state / repository_state）
+    src/total_gateway/verification_recording.py
+        VerificationRecorder（RECORD-only 门卫 + 快照 pin 校验）
+    tests/test_p19_m1_contracts.py（契约不变量）
+    tests/test_p19_m1_registry.py（注册表 fail-closed + recorder）
+    tests/test_p19_m1_store.py（审核 14 项 store 清单逐条对应）
+
+修改：
+    src/total_gateway/store.py
+        STORE_SCHEMA_VERSION 22→23；_MIGRATION_V23_*（两张 STRICT 表
+        + 两索引，additive，无 IF NOT EXISTS/ALTER，照抄 v22 模式）；
+        put/get/list_verification_record(s)、put/get_registry_snapshot
+        （照抄 record_completion_decision 幂等/冲突模式 +
+        _assert_request_binding_locked 跨代拒绝）
+    tests/gateway_store_migration_support.py
+        v23→v22 降级块（DROP 两表 + 删历史行 + user_version=22）
+    src/contracts/__init__.py / schema.py
+        导出 + CONTRACT_MODELS 注册（bundle 104 根契约）
+    src/contracts/compatibility.py
+        P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256 基线推进
+        （P18 常量保留为历史；test_contract_artifacts 增加
+        P19→P18 推导断言：剥离三个新模型后逐字节等于 P18 digest）
+    tests/test_contract_artifacts.py / test_foundation_contracts.py
+        基线断言推进 + 根契约名单（104）
+    生成镜像（sync --write 产物）：app/life-service/runtime314/contracts/*、
+        app/runtime/python312/Lib/site-packages/{contracts,total_gateway}/*
+
+----------------------------------------------------------------------
+二、关键设计决定
+----------------------------------------------------------------------
+D1 哈希诚实性（吸收审核三.1）
+    所有 *_sha256 为无密钥内容哈希：证明内部一致性与可复算，
+    不证明生产者身份。docstring 与 M0 审计口径一致。
+
+D2 ID 不进自身预映像（冒烟测试抓出的死锁）
+    registry_snapshot_id / verification_record_id 由各自 sha256 派生，
+    computed_*_sha256() 排除派生 ID 字段。快照哈希同时排除
+    captured_at_ms：同一描述符集合在任何时刻 pin 出同一身份。
+
+D3 快照身份时间不变性
+    VerifierRegistry.snapshot() 对相同描述符集合产出恒定
+    snapshot_sha256/registry_snapshot_id，recorder 据此 pin。
+
+D4 NOT_APPLICABLE 显式化（吸收审核 M1 契约要求）
+    VerificationStatus = PASS/FAIL/INCONCLUSIVE/ERROR/NOT_APPLICABLE。
+    「不该调用」用 NOT_APPLICABLE，禁止伪装 INCONCLUSIVE。
+    约束：PASS 与 NOT_APPLICABLE 不得携带 reason_codes。
+
+D5 evaluation_phase 必填（吸收 M0 发现2）
+    POST_EXECUTION / PRE_DELIVERY / DELIVERY_FINALIZATION /
+    ASYNC_OBSERVATION。只描述证据产生节点，无阻断权。
+    M4 接线时 desktop 与渠道按各自实际相位标注。
+
+D6 enforcement 双层约束
+    契约层：RecordedEnforcement = Literal["RECORD"]（M1 类型级禁止
+    ALERT/BLOCK）；DB 层 CHECK 保留全三值（未来里程碑免迁移重建）；
+    recorder 层：再校验 enforcement == "RECORD"。审核清单第 14 项
+    （所有记录只能是 RECORD）由 test_p19_m1_store 断言 DB 实际行。
+
+D7 休眠 oracle 描述符
+    三个 verifier 以 descriptor 形态注册（layer=L0、deterministic、
+    block_capable=True 但 default_enforcement=RECORD、无 handler）。
+    M2/M3 实现真实 inspector 时版本推进、快照身份随之改变。
+
+D8 上游未决定（吸收审核对发现1 的裁定）
+    本阶段不实现 VerificationPlanCompiler、不接线 CommitmentCompiler、
+    不从 V3 正则或 Office 预检编译 predicate。predicate_type 仅以
+    allowlist 形态存在，供描述符声明与 recorder 校验。
+
+D9 请求绑定复用
+    put_verification_record 走 _assert_request_binding_locked
+    （store.py:3392 既有函数）：request 必须存在、run/generation 必须
+    与 request_generation 一致——跨 run/跨代写入直接 StoreConflictError。
+
+D10 基线链推进遵循仓库惯例
+    P19 常量新增、REVIEWED 指针前移、P18→P17 推导前先做
+    P19→P18 推导断言（剥离三个新模型 = P18 原包，逐字节验证）。
+
+----------------------------------------------------------------------
+三、没有做什么（M1 禁区自查）
+----------------------------------------------------------------------
+× 未触碰 CompletionGate / desktop_completion / delivery_outbox 完成判断
+× 未触碰 request 状态机 / P18 verify_completion
+× 未接线 CommitmentCompiler；未实现生产 VerificationPlanCompiler
+× 未从 _office_content_gaps 编译任何正式 predicate
+× 未把 V3 私有 dict 升格为 Gateway 权威 Contract
+× 未调用任何 LLM Judge；未启用 ALERT/BLOCK
+× 未创建第二 Runtime/Gateway/SQLite 库；未手改 generated mirror
+  （镜像全部经 sync-generated-sources.py --write 生成）
+
+----------------------------------------------------------------------
+四、验证记录
+----------------------------------------------------------------------
+targeted：
+    tests/test_p19_m1_contracts.py + test_p19_m1_registry.py
+    + test_p19_m1_store.py + test_contract_artifacts.py
+    + test_foundation_contracts.py = 71 passed
+source-authority：PASS（16/1/24/1）
+sync --check-committed：ok
+全量回归：见提交信息与 PR 描述（提交前本机现跑）。
+
+----------------------------------------------------------------------
+五、回滚方式
+----------------------------------------------------------------------
+纯 additive：revert 本 PR 即回到 v22 行为；新增两表保留无害，
+不做 destructive down migration。P19 基线常量随 revert 一并回退
+（基线链由测试锁定，不会出现孤儿 digest）。
