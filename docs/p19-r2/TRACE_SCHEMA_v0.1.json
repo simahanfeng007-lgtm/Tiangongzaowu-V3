@@ -72,7 +72,7 @@
         "evidence_refs": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "real 类必填：仓库内复现测试/提交的相对路径"
+          "description": "real 类必填：仓库内复现测试的选择器，格式 tests/<file>.py::test_name 或 tests/<file>.py::TestClass::test_name；选择器必须真实存在（M0 校验测试验证 def/class 定义）"
         },
         "commit": {
           "type": "string",

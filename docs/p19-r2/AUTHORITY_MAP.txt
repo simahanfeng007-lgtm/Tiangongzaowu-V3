@@ -41,8 +41,12 @@ repository_evidence_provider | world_understanding/          | WU 已提交图�
 LocalGitRepositoryProvider   | v3/repository_perception.py:408| git 只读白名单感知
                              |                              | （_run_git :116-154，
                              |                              | 5s/2MiB 上限）
-CommitmentCompiler           | commitment_compiler.py:42     | 【死代码】CompletionRequirements-
-                             |                              | VNext 体系未接线（M0 关键发现）
+CommitmentCompiler           | commitment_compiler.py:42     | 【production-unwired】已实现
+                             |                              | CompletionRequirementsVNext 编译结构，
+                             |                              | 尚未进入生产调用图；默认 extractor
+                             |                              | 会把任意非空消息编成 mandatory
+                             |                              | execution obligation，不具备直接
+                             |                              | 升格条件（详见 BASELINE_AUDIT 发现1）
 build_action_obligations     | v3/execution_integrity.py:1049| 在跑的义务派生（普通 dict）
 
 ----------------------------------------------------------------------
@@ -120,8 +124,14 @@ changed_paths 链：git status overlay + diff（:458-473）→
   契约字段 src/contracts/world_understanding/repository_structure.py:361。
 网关侧唯一调用：orchestration.py:1507-1516（_commit_life_execution，
   payload ≤64KiB，异常吞掉置 None）。
-M3 结论：RepositoryStateOracle 的 changed_paths/commit 证据可全部
-复用上述链路，不需要也不允许新建第二 git 执行器。
+M3 复用边界（2026-08-29 审核收紧）：RepositoryStateOracle 复用
+现有 LocalGitRepositoryProvider 的只读命令白名单、路径安全与结构
+感知能力（不新建第二 git 执行器），但不能把现有 Life/WU 快照直接
+视为最终完成证据——provider 主要服务 Life execution commit、读
+已提交帧、异常时允许返回 None、无 request/run/generation 的
+pre/post 绑定、不保证任务完成时刻的工作树状态。RepositoryState-
+Oracle 必须重新绑定 request/run/generation/effect、pre/post
+snapshot、采样时间与 evidence digest。
 
 ----------------------------------------------------------------------
 五、P19-R2 新组件的落位规划（依据本地图）
