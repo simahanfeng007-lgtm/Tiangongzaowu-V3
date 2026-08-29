@@ -1,0 +1,63 @@
+P19-R2 M1.1｜Identity Integrity 修正说明（M1_1_IDENTITY_INTEGRITY）
+======================================================================
+分支：glm53/p19-r2-m1.1-verification-identity-integrity（自 21e3cdf）
+性质：零功能、零 schema 变更、零迁移。STORE_SCHEMA_VERSION 保持 23，
+enforcement 保持 RECORD ONLY，未触碰任何完成行为。
+
+----------------------------------------------------------------------
+四个不变量与落点
+----------------------------------------------------------------------
+I-1 VerificationRecord 身份绑定
+    verification_record_id == derive_verification_record_id(
+        result_sha256=record.result_sha256)
+    落点（双层 fail-closed）：
+    - contracts.verification.VerificationRecord.has_valid_identity()
+      （纯方法，hash 有效 AND 派生 ID 匹配）
+    - VerificationRecorder._validate（model_copy 旁路后重验）
+    - GatewayStateStore.put_verification_record（显式比对派生 ID）
+
+I-2 RegistrySnapshot 身份绑定
+    registry_snapshot_id == derive_registry_snapshot_id(
+        snapshot_sha256=snapshot.snapshot_sha256)
+    落点：
+    - RegistrySnapshot.has_valid_identity()（纯方法）
+    - VerificationRecorder.__init__
+    - GatewayStateStore.put_registry_snapshot
+
+I-3 嵌套描述符完整性
+    Recorder 初始化时执行 VerifierRegistry(snapshot.verifiers)——
+    直接复用注册表全部 fail-closed 规则（descriptor_sha256 可复算、
+    verifier_id 去重、predicate allowlist、坏哈希拒绝），不复制逻辑。
+    失败包装为 VerificationRecordRejected（cause 链保留原 ValueError）。
+
+I-4 model_copy 旁路回归
+    所有 trust boundary 自行重验派生身份，不依赖构造器纪律。
+    测试矩阵 A-I 全部落测试锁定（见下）。
+
+----------------------------------------------------------------------
+测试矩阵对照（tests/test_p19_m1_1_identity_integrity.py + store 扩展）
+----------------------------------------------------------------------
+A  错误但格式合法 record_id → Recorder 拒绝        RecordIdentityTests
+B  同情况直呼 store.put → store 拒绝               IdentityIntegrityStoreTests
+C  placeholder vrs_000... + 合法 hash → 双层拒绝    A/C 两处
+D  合法 snapshot hash + 错误 snapshot_id → 双层拒绝  SnapshotIdentityTests + store
+E  描述符被改、内层哈希失效、外层重算合法 → Recorder 拒绝
+F  描述符声明 allowlist 外 predicate、全部外层哈希重算合法 → Recorder 拒绝
+G  Registry.snapshot → store → reopen → recorder 全链路通过
+H  相同内容 deterministic identity 稳定
+I  captured_at_ms 改变不改变 snapshot identity
+
+附带修正：
+- test_p19_m1_registry.py 的 __import__ hack 清理为正规导入；
+- test_same_identity_different_content_conflicts 语义更新：
+  M1.1 后「同 ID 不同内容」在边界即被 ValueError 拦截
+  （同 ID 结构上蕴含同 hash）；DB 冲突分支保留为纵深防御。
+
+----------------------------------------------------------------------
+验证
+----------------------------------------------------------------------
+- targeted：M1 全部 65 passed（contracts/registry/store/M1.1）
+- contract bundle digest 不变（纯方法不进 JSON Schema，
+  test_contract_artifacts 19 passed 锁定 P19 digest）
+- source-authority PASS / sync --check-committed ok / 全文 LF
+- 全量回归：见 PR 描述

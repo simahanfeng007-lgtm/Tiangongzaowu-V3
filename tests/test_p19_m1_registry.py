@@ -15,7 +15,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from contracts.verification import VerificationRecord, VerifierDescriptor
+from contracts.verification import (
+    RegistrySnapshot,
+    VerificationRecord,
+    VerifierDescriptor,
+    derive_registry_snapshot_id,
+    derive_verification_record_id,
+)
 from total_gateway.verification_recording import (
     RecordOutcome,
     VerificationRecordRejected,
@@ -161,10 +167,8 @@ class RecorderTests(unittest.TestCase):
         record = VerificationRecord(**payload).with_computed_sha256()
         return record.model_copy(
             update={
-                "verification_record_id": (
-                    "vrs_"
-                    + __import__("contracts.verification", fromlist=["x"])
-                    .derive_verification_record_id(result_sha256=record.result_sha256)
+                "verification_record_id": derive_verification_record_id(
+                    result_sha256=record.result_sha256
                 )
             }
         )

@@ -215,6 +215,17 @@ class RegistrySnapshot(ContractModel):
     def has_valid_snapshot_sha256(self) -> bool:
         return self.snapshot_sha256 == self.computed_snapshot_sha256()
 
+    def has_valid_identity(self) -> bool:
+        """Identity binding: derived id must match the (valid) hash.
+
+        Pure method only — real trust boundaries (Recorder/Store) must
+        re-verify, because ``model_copy(update=...)`` bypasses validation.
+        """
+        return self.has_valid_snapshot_sha256() and (
+            self.registry_snapshot_id
+            == derive_registry_snapshot_id(snapshot_sha256=self.snapshot_sha256)
+        )
+
     def with_computed_sha256(self) -> RegistrySnapshot:
         return self.model_copy(
             update={"snapshot_sha256": self.computed_snapshot_sha256()}
@@ -303,6 +314,17 @@ class VerificationRecord(ContractModel):
 
     def has_valid_result_sha256(self) -> bool:
         return self.result_sha256 == self.computed_result_sha256()
+
+    def has_valid_identity(self) -> bool:
+        """Identity binding: derived id must match the (valid) hash.
+
+        Pure method only — real trust boundaries (Recorder/Store) must
+        re-verify, because ``model_copy(update=...)`` bypasses validation.
+        """
+        return self.has_valid_result_sha256() and (
+            self.verification_record_id
+            == derive_verification_record_id(result_sha256=self.result_sha256)
+        )
 
     def with_computed_sha256(self) -> VerificationRecord:
         return self.model_copy(update={"result_sha256": self.computed_result_sha256()})

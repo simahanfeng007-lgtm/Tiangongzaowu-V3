@@ -229,17 +229,25 @@ class RecordLifecycleTests(P19M1StoreTestBase):
         self.assertEqual(second.recorded_at_ms, 2_000)
 
     def test_same_identity_different_content_conflicts(self) -> None:  # 10
+        # M1.1: forcing the same derived id onto different content is now
+        # rejected at the trust boundary (identity != result hash) before
+        # the store-level conflict path; the DB conflict branch remains as
+        # defense in depth (a shared id structurally implies a shared hash).
         record = self._record()
         self.recorder.record(record, recorded_at_ms=2_000)
         other = self._record(
             subject_identity="obj_" + "9" * 64
         )
-        # force the same identity with different content
-        other = other.model_copy(
+        self.assertNotEqual(
+            other.result_sha256, record.result_sha256
+        )  # different content -> different hash -> different derived id
+        forced = other.model_copy(
             update={"verification_record_id": record.verification_record_id}
         )
-        with self.assertRaises(StoreConflictError):
-            self.store.put_verification_record(other, recorded_at_ms=2_200)
+        with self.assertRaises(ValueError):
+            self.store.put_verification_record(forced, recorded_at_ms=2_200)
+        with self.assertRaises(VerificationRecordRejected):
+            self.recorder.record(forced, recorded_at_ms=2_200)
 
     def test_binding_mismatch_rejected(self) -> None:  # 7
         wrong_run = self._record(run_id="run_" + "f" * 64)
@@ -320,6 +328,61 @@ class RecordLifecycleTests(P19M1StoreTestBase):
         fetched = self.store.get_registry_snapshot(self.snapshot.registry_snapshot_id)
         assert fetched is not None
         self.assertEqual(fetched, self.snapshot)
+
+
+class IdentityIntegrityStoreTests(P19M1StoreTestBase):
+    """M1.1 review matrix B / C / D / G at the store trust boundary."""
+
+    def _wrong_id_record(self) -> VerificationRecord:
+        good = self._record()
+        return good.model_copy(
+            update={"verification_record_id": "vrs_" + "e" * 64}
+        )
+
+    def test_b_wrong_record_id_rejected_by_store(self) -> None:
+        bad = self._wrong_id_record()
+        self.assertTrue(bad.has_valid_result_sha256())  # hash fine, id wrong
+        with self.assertRaises(ValueError):
+            self.store.put_verification_record(bad, recorded_at_ms=2_000)
+
+    def test_c_placeholder_record_id_rejected_by_store(self) -> None:
+        good = self._record()
+        placeholder = good.model_copy(
+            update={"verification_record_id": "vrs_" + "0" * 64}
+        )
+        with self.assertRaises(ValueError):
+            self.store.put_verification_record(placeholder, recorded_at_ms=2_000)
+
+    def test_d_wrong_snapshot_id_rejected_by_store(self) -> None:
+        bad = self.snapshot.model_copy(
+            update={"registry_snapshot_id": "vrg_" + "e" * 64}
+        )
+        self.assertTrue(bad.has_valid_snapshot_sha256())
+        with self.assertRaises(ValueError):
+            self.store.put_registry_snapshot(bad, recorded_at_ms=2_000)
+
+    def test_g_full_chain_snapshot_store_reopen_recorder(self) -> None:
+        # Registry.snapshot -> store persist -> close -> reopen -> fetch
+        # -> recorder built from the fetched snapshot -> record succeeds.
+        fetched = self.store.get_registry_snapshot(
+            self.snapshot.registry_snapshot_id
+        )
+        assert fetched is not None
+        recorder = VerificationRecorder(snapshot=fetched, store=self.store)
+        record = self._record()
+        outcome = recorder.record(record, recorded_at_ms=2_000)
+        self.assertTrue(outcome.created_by_this_call)
+        self.store.close()
+        self.store = GatewayStateStore.open(self.path, now_ms=2_500)
+        listed = self.store.list_verification_records(
+            request_id=self.request_id, run_id=self.run_id, generation=1
+        )
+        self.assertEqual(listed, (record,))
+        refetched = self.store.get_registry_snapshot(
+            self.snapshot.registry_snapshot_id
+        )
+        assert refetched is not None
+        self.assertTrue(refetched.has_valid_identity())
 
 
 if __name__ == "__main__":

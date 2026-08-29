@@ -63,7 +63,12 @@ from contracts import (
     new_state_snapshot,
     renew_candidate_owner,
 )
-from contracts.verification import RegistrySnapshot, VerificationRecord
+from contracts.verification import (
+    RegistrySnapshot,
+    VerificationRecord,
+    derive_registry_snapshot_id,
+    derive_verification_record_id,
+)
 from contracts.state_machine import ATTEMPT_RECONCILIATION_VERDICTS
 from .coordination import FencedResultDecision, GenerationLeaseView
 from .coordination_events import CoordinationEvent, CoordinationRecord, CoordinationResolution
@@ -9241,8 +9246,18 @@ class GatewayStateStore:
         """
         if not isinstance(record, VerificationRecord):
             raise ValueError("verification record payload has the wrong type")
+        # Trust boundary: model_copy(update=...) bypasses pydantic validation,
+        # so the derived identity is re-verified here instead of trusting the
+        # caller's constructor discipline.
         if not record.has_valid_result_sha256():
             raise ValueError("verification record result hash mismatch")
+        if (
+            record.verification_record_id
+            != derive_verification_record_id(result_sha256=record.result_sha256)
+        ):
+            raise ValueError(
+                "verification record identity does not match its result hash"
+            )
         if record.enforcement != "RECORD":
             raise ValueError("M1 verification records must be enforcement=RECORD")
         payload_json = json.dumps(
@@ -9364,8 +9379,17 @@ class GatewayStateStore:
         """Persist a registry snapshot; returns True when newly created."""
         if not isinstance(snapshot, RegistrySnapshot):
             raise ValueError("registry snapshot payload has the wrong type")
+        # Trust boundary: derived identity must match the (valid) hash;
+        # model_copy(update=...) payloads cannot rely on constructor checks.
         if not snapshot.has_valid_snapshot_sha256():
             raise ValueError("registry snapshot hash mismatch")
+        if (
+            snapshot.registry_snapshot_id
+            != derive_registry_snapshot_id(snapshot_sha256=snapshot.snapshot_sha256)
+        ):
+            raise ValueError(
+                "registry snapshot identity does not match its snapshot hash"
+            )
         payload_json = json.dumps(
             snapshot.model_dump(mode="json"), ensure_ascii=False,
             allow_nan=False, sort_keys=True, separators=(",", ":"),
