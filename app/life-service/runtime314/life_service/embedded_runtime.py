@@ -492,6 +492,7 @@ class EmbeddedLifeRuntime:
             projection_changed = self._reconcile_authoritative_journal(active_life_id)
             classification_changed = self._ensure_memory_classification(active_life_id)
             memory_contract_changed = self._reconcile_memory_contract(active_life_id)
+            resume_narrative_emitted = self._emit_scheduler_resume_narrative(active_life_id)
             if (
                 projection_changed
                 or classification_changed
@@ -499,6 +500,7 @@ class EmbeddedLifeRuntime:
                 or heartbeat_recovered
                 or recovered_inflight
                 or reflection_recovered
+                or resume_narrative_emitted
             ):
                 self._persist(active_life_id)
             heartbeat_seconds = float(os.environ.get("TIANGONG_LIFE_HEARTBEAT_SECONDS") or 30.0)
@@ -628,6 +630,62 @@ class EmbeddedLifeRuntime:
             return False
         scheduler["heartbeat_count"] = recovered_count
         scheduler["last_reason"] = "life.scheduler.reconciled_from_journal"
+        return True
+
+    def _emit_scheduler_resume_narrative(self, life_id: str) -> bool:
+        """Journal one audit event when the scheduler resumes after a long gap.
+
+        停机空白在系统里必须可见：距最后一条心跳超过阈值（默认 1 小时）的
+        重启要留下显式恢复记录，而不是假装时间没有流过。事件为 audit-only，
+        不驱动任何投影；幂等键绑定"最后一次心跳序号"，同一停机缺口最多
+        记录一次（二次重启撞键且载荷不同时按已记录处理，不阻断启动）。
+        """
+        last_heartbeat_at = ""
+        last_heartbeat_count = 0
+        for event in reversed(self.system.journal.events(life_id)):
+            if str(event.get("event_type") or "") != "life.heartbeat":
+                continue
+            payload = event.get("payload")
+            if isinstance(payload, Mapping):
+                last_heartbeat_at = str(event.get("created_at") or "")
+                last_heartbeat_count = int(payload.get("heartbeat_count") or 0)
+            break
+        if not last_heartbeat_at:
+            return False
+        last_ms = self._iso_ms(last_heartbeat_at)
+        if last_ms <= 0:
+            return False
+        gap_ms = time.time_ns() // 1_000_000 - int(last_ms)
+        threshold_ms = max(
+            60_000,
+            int(float(os.environ.get("TIANGONG_LIFE_RESUME_GAP_SECONDS") or 3600) * 1000),
+        )
+        if gap_ms < threshold_ms:
+            return False
+        pending = sum(
+            1
+            for task in (self._scope_state(life_id).get("autonomy", {}).get("tasks") or {}).values()
+            if isinstance(task, Mapping) and str(task.get("status") or "") in {"pending", "blocked"}
+        )
+        payload = {
+            "gap_ms": int(gap_ms),
+            "last_heartbeat_at": last_heartbeat_at,
+            "last_heartbeat_count": last_heartbeat_count,
+            "pending_tasks": int(pending),
+        }
+        try:
+            self.system.journal.append(
+                life_id,
+                "life.scheduler.resumed",
+                payload,
+                actor="life_scheduler",
+                idempotency_key=f"life.scheduler.resumed:{life_id}:{last_heartbeat_count}",
+            )
+        except LifeCoreError as exc:
+            # 同一停机缺口的恢复叙事已记录过（撞键且载荷不同）：视为已完成。
+            if str(getattr(exc, "code", "")) == "journal_idempotency_conflict":
+                return False
+            raise
         return True
 
     def _replace_unreadable_registry(self, reason_code: str) -> None:
@@ -3059,12 +3117,82 @@ class EmbeddedLifeRuntime:
                 affinity[str(activity_id)] = bonus
         return affinity
 
-    def _schedule_autonomous_activity_decision(self, *, life_id: str) -> None:
-        """Execute one catalog activity through the gateway model bridge.
+    def _cognition_subject_memories_locked(
+        self, life_id: str, task: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Project the memory rows a cognition task refers to for model reasoning."""
+        scope = self._scope_state(life_id)
+        memories = scope.get("memories") if isinstance(scope.get("memories"), Mapping) else {}
+        rows: list[dict[str, Any]] = []
+        for ref in (task.get("subject_refs") or [])[:8]:
+            row = memories.get(str(ref))
+            if not isinstance(row, Mapping):
+                continue
+            classification = (
+                row.get("classification")
+                if isinstance(row.get("classification"), Mapping)
+                else {}
+            )
+            rows.append({
+                "memory_id": str(row.get("memory_id") or ref),
+                "content": str(row.get("content") or row.get("summary") or "")[:2000],
+                "status": str(row.get("status") or "active"),
+                "causal_role": str(classification.get("causal_role") or "context"),
+                "epistemic_status": str(row.get("epistemic_status") or ""),
+                "created_at": str(row.get("created_at") or ""),
+            })
+        return rows
 
-        Only catalog-defined, internal A0/A1 work is eligible here.  Tool use,
-        file mutation, messaging and all other external effects remain outside
-        this method and must use the normal Gateway authorization chain.
+    def _apply_cognition_relations_locked(
+        self, life_id: str, proposed: Any
+    ) -> list[str]:
+        """Write model-proposed memory relations through the normal relation API.
+
+        每条关系走 _memory_add_relation 的完整校验（记忆存在且 active、kind
+        合法、自环拒绝、目标存在且 active），relation_id 由内容确定性派生
+        → 跨重试幂等。模型引用了不存在的记忆或给出非法 kind 时单条跳过，
+        不拖垮整个任务的完成。
+        """
+        if not isinstance(proposed, list):
+            return []
+        applied: list[str] = []
+        for raw in proposed[:3]:
+            if not isinstance(raw, Mapping):
+                continue
+            source_memory_id = str(raw.get("source_memory_id") or "").strip()
+            target_memory_id = str(
+                raw.get("target_memory_id") or raw.get("target_ref") or ""
+            ).strip()
+            if not source_memory_id or not target_memory_id:
+                continue
+            try:
+                outcome = self._memory_add_relation({
+                    "life_id": life_id,
+                    "source_memory_id": source_memory_id,
+                    "kind": str(raw.get("kind") or "").strip(),
+                    "target_memory_id": target_memory_id,
+                    "evidence": str(raw.get("evidence") or "")[:500] or None,
+                    "actor": "life_cognition",
+                })
+            except Exception:
+                continue
+            relation = outcome.get("relation") if isinstance(outcome, Mapping) else None
+            relation_id = (
+                str(relation.get("relation_id") or "")
+                if isinstance(relation, Mapping)
+                else ""
+            )
+            if relation_id:
+                applied.append(relation_id)
+        return applied
+
+    def _schedule_autonomous_activity_decision(self, *, life_id: str) -> None:
+        """Execute one internal activity through the gateway model bridge.
+
+        目录活动（life_activity_catalog）与认知任务（life_cognition，记忆
+        系统自检发现的知识缺口）共用本回路；仅限内部 A0/A1 思考。工具调用、
+        文件改动、消息发送等一切外部效果仍在本方法之外，必须走 Gateway
+        授权链。
         """
         scope = self._scope_state(life_id)
         scheduler = scope.setdefault("scheduler", {})
@@ -3127,7 +3255,7 @@ class EmbeddedLifeRuntime:
             task for task in autonomy.get("tasks", {}).values()
             if isinstance(task, Mapping)
             and str(task.get("status") or "") in {"pending", "blocked"}
-            and str(task.get("source") or "") == "life_activity_catalog"
+            and str(task.get("source") or "") in {"life_activity_catalog", "life_cognition"}
             and str(task.get("risk_class") or "") in {"A0", "A1"}
             and risk_rank.get(str(task.get("risk_class") or ""), 99) <= configured_risk_rank
             and task.get("requires_user") is not True
@@ -3187,6 +3315,13 @@ class EmbeddedLifeRuntime:
                         reflection_rows=self._recent_reflection_rows(life_id),
                     )
                     task = deepcopy(self._autonomy_state(life_id)["tasks"][task_id])
+                    if str(task.get("source") or "") == "life_cognition":
+                        # 认知任务针对的是具体记忆（subject_refs），必须把
+                        # 这些记忆的内容随任务一起交给模型——仅靠
+                        # recent_memories 投影可能恰好不含缺口记忆本身。
+                        task["subject_memories"] = self._cognition_subject_memories_locked(
+                            life_id, task
+                        )
                     # F3 挂点1：事前预测先落账（OPEN episode），事后不可编造；
                     # 预测依据 = 该活动的真实完成历史。
                     activity_id = str(task.get("activity_id") or "")
@@ -3237,12 +3372,38 @@ class EmbeddedLifeRuntime:
                     current = self._autonomy_state(life_id)["tasks"].get(task_id)
                     if not isinstance(current, Mapping) or str(current.get("status") or "") != "running":
                         return
+                    if str(task.get("source") or "") == "life_cognition":
+                        # 认知任务的完成语义 = 结论落回记忆系统：模型给出的
+                        # 关系经完整校验写入 memory_relations，缺口才真正消解
+                        # （否则候选指纹仍在，任务却已终态，缺口永久悬案）。
+                        result["applied_relation_ids"] = self._apply_cognition_relations_locked(
+                            life_id, result.get("proposed_relations")
+                        )
                     completed = update_task_status(
                         self._autonomy_state(life_id),
                         task_id=task_id,
                         status="completed",
                         result=result,
                     )
+                    if str(task.get("activity_id") or "") == "narrative_diary":
+                        # 心灵日记落回记忆系统（原 v3 jiyi L2 叙事日记的 P15 化）：
+                        # 日记正文作为生命自己的观察记忆入库，成为连续性记录；
+                        # 写入失败不阻断任务完成（日记价值在叙事，不在审计链）。
+                        diary_text = str(result.get("summary") or "").strip()
+                        if diary_text:
+                            try:
+                                self._memory_assert({
+                                    "life_id": life_id,
+                                    "content": {
+                                        "text": f"[心灵日记] {diary_text[:2000]}",
+                                        "kind": "narrative_diary",
+                                        "date": utc_now()[:10],
+                                    },
+                                    "epistemic_status": "observed",
+                                    "actor": "life_self",
+                                })
+                            except Exception:
+                                pass
                     scheduler_state = self._scope_state(life_id).setdefault("scheduler", {})
                     scheduler_state["model_successes"] = int(
                         scheduler_state.get("model_successes") or 0
@@ -3557,9 +3718,21 @@ class EmbeddedLifeRuntime:
                 target = str(decision.get("target") or decision.get("artifact_kind") or "").strip().casefold()
                 with self._lock:
                     if target in {"", "none", "no_learning", "no-learning"}:
+                        # noop 也必须可解释：把模型给出的理由（若有）一并入账，
+                        # 否则"为什么不学习"在审计层永远无法回答。
                         self.system.journal.append(
-                            life_id, "learning.decision_noop", {"activity_scope_sha256": scope["scope_sha256"]},
-                            actor="life_learning", idempotency_key=f"learning.noop:{scope['scope_sha256']}",
+                            life_id,
+                            "learning.decision_noop",
+                            {
+                                "activity_scope_sha256": scope["scope_sha256"],
+                                "reason": str(decision.get("reason") or decision.get("summary") or "")[:160],
+                            },
+                            actor="life_learning",
+                            # 键补 epoch：载荷含可变 reason 后，同 scope 复现必须由
+                            # epoch 区分（冷却 300s == epoch 窗口，键必然不同）。
+                            idempotency_key=(
+                                f"learning.noop:{scope['scope_sha256']}:{now_ms // 300_000}"
+                            ),
                         )
                         return
                     drafted = self._learning_draft({"life_id": life_id, "decision": decision}, source="autonomous")
@@ -3656,8 +3829,14 @@ class EmbeddedLifeRuntime:
                 with self._lock:
                     if target in {"", "none", "no_upgrade", "no-upgrade"}:
                         self.system.journal.append(
-                            life_id, "self_iteration.decision_noop", {"activity_scope_sha256": scope["scope_sha256"]},
-                            actor="life_self_iteration", idempotency_key=f"self_iteration.noop:{scope['scope_sha256']}:{now_ms // 1_800_000}",
+                            life_id,
+                            "self_iteration.decision_noop",
+                            {
+                                "activity_scope_sha256": scope["scope_sha256"],
+                                "reason": str(decision.get("reason") or decision.get("summary") or "")[:160],
+                            },
+                            actor="life_self_iteration",
+                            idempotency_key=f"self_iteration.noop:{scope['scope_sha256']}:{now_ms // 1_800_000}",
                         )
                         return
                     self._upgrade_draft(life_id, decision, source="autonomous")

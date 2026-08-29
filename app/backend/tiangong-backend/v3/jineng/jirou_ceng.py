@@ -3408,24 +3408,6 @@ class JirouCeng:
             return _web_fetch_error_payload(requested_url, final_url, e)
 
     @staticmethod
-    def _jiyisousuo(query: str) -> dict:
-        """搜索自己的记忆 — 调用记忆引擎检索"""
-        try:
-            from ..jiyi.yinqing import JiyiYinqing
-            from ..shenti_zhuangtai import ShentiZhuangtai
-            jiyi = JiyiYinqing()
-            st = ShentiZhuangtai()
-            neirong = jiyi.jiansuo(st, query)
-            return {
-                "zhuangtai": "wancheng",
-                "chaxun": query,
-                "jieguo": neirong[:3000] if neirong else "（无匹配记忆）",
-                "tiaoshu": len(neirong.split("\n")) if neirong else 0,
-            }
-        except Exception as e:
-            return {"zhuangtai": "cuowu", "chaxun": query, "cuowu": str(e)[:200]}
-
-    @staticmethod
     def _xuexi_liucheng(
         trigger: str = "user_request",
         topic: str = "",

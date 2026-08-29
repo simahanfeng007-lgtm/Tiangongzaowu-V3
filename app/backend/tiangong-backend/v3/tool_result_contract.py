@@ -168,6 +168,11 @@ def _candidate_dicts(data: dict[str, Any]) -> list[dict[str, Any]]:
         "result",
         "source",
         "write_evidence",
+        # omni_body 工具层的 codex 证据包装：actual 内是工具侧已验证的
+        # 写入事实（write_effect/attachments/paths），不进入候选就等于
+        # 把已验证写入误判为"无证据"（真机 2026-08-29 复现）。
+        "codex_evidence",
+        "actual",
     )
     while pending and len(output) < 96:
         current, depth = pending.pop(0)
@@ -182,7 +187,7 @@ def _candidate_dicts(data: dict[str, Any]) -> list[dict[str, Any]]:
             nested = current.get(key)
             if isinstance(nested, dict):
                 pending.append((nested, depth + 1))
-        for key in ("operations", "snapshots"):
+        for key in ("operations", "snapshots", "attachments"):
             value = current.get(key)
             if isinstance(value, list):
                 pending.extend(
@@ -352,6 +357,39 @@ def _observed_write_evidence(
             "deleted_files": deleted_files,
             "post": [],
         }
+
+    # codex_evidence（omni_body 工具层的已验证写入事实）：actual.write_effect
+    # 由工具侧确定性计算（含 path/suffix/desktop 匹配检查），attachments/
+    # paths 携带真实落盘路径。这是工具层声明而非模型自报，可作为已观测
+    # 写入；缺失此识别时 file.write 成功落盘仍被判"无证据"，完成门连环
+    # 打回直至 honest-incomplete（真机 2026-08-29 复现）。
+    for candidate in candidates:
+        if candidate.get("write_effect") is not True:
+            continue
+        codex_paths: list[str] = []
+        attachments = candidate.get("attachments")
+        if isinstance(attachments, list):
+            for item in attachments:
+                if isinstance(item, dict):
+                    path_text = str(item.get("path") or "").strip()
+                    if path_text:
+                        codex_paths.append(path_text)
+        explicit_paths = candidate.get("paths")
+        if isinstance(explicit_paths, list):
+            for item in explicit_paths:
+                if isinstance(item, str) and item.strip():
+                    codex_paths.append(item.strip())
+        codex_paths = _unique(codex_paths)
+        if codex_paths:
+            return {
+                "schema": "tiangong.v3.write_evidence.v1",
+                "authoritative": True,
+                "source": "codex_tool_evidence",
+                "action": action or name,
+                "changed_files": codex_paths,
+                "deleted_files": [],
+                "post": [],
+            }
 
     if action in EXECUTION_ACTIONS:
         # Successful execution is only potential mutation. The sandbox broker

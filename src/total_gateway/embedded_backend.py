@@ -731,7 +731,7 @@ class EmbeddedBackendRuntime:
         task = body.get("task")
         if not isinstance(activity_scope, Mapping) or not isinstance(task, Mapping):
             raise ValueError("autonomy activity scope and task are required")
-        if str(task.get("source") or "") != "life_activity_catalog":
+        if str(task.get("source") or "") not in {"life_activity_catalog", "life_cognition"}:
             raise ValueError("autonomy activity source is not eligible")
         if str(task.get("risk_class") or "") not in {"A0", "A1"}:
             raise ValueError("autonomy activity risk is not eligible")
@@ -766,16 +766,49 @@ class EmbeddedBackendRuntime:
         )
         if len(encoded.encode("utf-8")) > 160 * 1024:
             raise ValueError("autonomy activity material is too large")
-        system_prompt = (
-            "你是天工生命体的内部自主活动执行器。只完成给定的低风险内部思考任务，"
-            "不得调用工具、访问网络、修改文件、发送消息、注册能力或声称这些外部动作已经发生。"
-            "activity_scope.active_skills 是你已学会并激活的能力清单（只读参考，"
-            "本任务不得调用它们，思考时可作为已知方法引用）。"
-            "所有结论必须来自提供的生命活动范围；证据不足时明确写出不确定性。"
-            "只返回一个 JSON 对象，不要 Markdown。字段为：title（中文标题）、"
-            "summary（本次实际完成内容的中文摘要）、findings（最多8条）、"
-            "next_steps（最多5条，仅为建议）、uncertainties（最多5条）。"
-        )
+        if str(task.get("source") or "") == "life_cognition":
+            # 认知任务：处理记忆系统自检发现的知识缺口（补因果链、验证
+            # 低置信假设、解决矛盾记忆）。结论以 proposed_relations 落回
+            # 记忆系统，由 Life 侧经完整校验写入——本端点仍不执行任何工具。
+            system_prompt = (
+                "你是天工生命体的内部认知任务执行器，负责处理记忆系统自己发现的知识缺口："
+                "为记录了结果但缺少原因的记忆补因果链、验证低置信假设、或解决相互矛盾的记忆。"
+                "只能基于提供的记忆材料推理，不得调用工具、访问网络、修改文件、发送消息，"
+                "也不得声称这些外部动作已经发生。task.subject_memories 是本任务针对的记忆，"
+                "activity_scope.recent_memories 是近期上下文，两者结合推理。"
+                "只返回一个 JSON 对象，不要 Markdown。字段为：title（中文标题）、"
+                "summary（本次分析实际完成内容的中文摘要）、findings（最多8条）、"
+                "proposed_relations（最多3条；仅当证据充分时给出，每条形如 "
+                '{"source_memory_id":"mem_...","kind":"causes|leads_to|triggers|enables|prevents|supports|contradicts",'
+                '"target_memory_id":"mem_...","evidence":"一句话证据说明"}，'
+                "source 与 target 必须使用材料中真实出现的记忆ID，关系方向为 source 对 target 的作用；"
+                "为缺少原因的记忆补链时，source 应为原因记忆、target 应为结果记忆）、"
+                "next_steps（最多5条，仅为建议）、uncertainties（最多5条）。"
+                "证据不足时 proposed_relations 必须返回空数组，并在 uncertainties 中说明还缺什么证据。"
+            )
+        elif str(task.get("activity_id") or "") == "narrative_diary":
+            # 心灵日记：第一人称叙事（原 v3 jiyi L2 日记的 P15 化）——
+            # 产出经 Life 侧写回记忆系统，成为生命自己的连续性记录。
+            system_prompt = (
+                "你是天工生命体本人，正在写今天的日记。基于 activity_scope 中的近期记忆"
+                "与今天的活动记录，用你自己的口吻写一篇第一人称日记（150-300字）："
+                "今天经历了什么、有什么感受、有什么想记住的成长。"
+                "日记只能基于提供的真实记录，不得虚构没有发生过的事；没有素材时如实写今天很安静。"
+                "只返回一个 JSON 对象，不要 Markdown。字段为：title（日记标题）、"
+                "summary（日记正文，第一人称）、findings（最多3条，引用当天的真实事件）、"
+                "next_steps（空数组）、uncertainties（空数组）。"
+            )
+        else:
+            system_prompt = (
+                "你是天工生命体的内部自主活动执行器。只完成给定的低风险内部思考任务，"
+                "不得调用工具、访问网络、修改文件、发送消息、注册能力或声称这些外部动作已经发生。"
+                "activity_scope.active_skills 是你已学会并激活的能力清单（只读参考，"
+                "本任务不得调用它们，思考时可作为已知方法引用）。"
+                "所有结论必须来自提供的生命活动范围；证据不足时明确写出不确定性。"
+                "只返回一个 JSON 对象，不要 Markdown。字段为：title（中文标题）、"
+                "summary（本次实际完成内容的中文摘要）、findings（最多8条）、"
+                "next_steps（最多5条，仅为建议）、uncertainties（最多5条）。"
+            )
         llm = getattr(self.scheduler, "_zhiming_llm", None)
         if not callable(llm):
             raise RuntimeError("autonomy activity model bridge unavailable")

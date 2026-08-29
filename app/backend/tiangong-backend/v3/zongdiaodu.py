@@ -260,7 +260,7 @@ from typing import Any, Callable
 
 from .peizhi import (
     SHENTI_DANGQIAN, SHENTI_LUJING,
-    QIYONG_GUANCHA, QIYONG_PINGGU, QIYONG_JIYI, QIYONG_JINGYAN,
+    QIYONG_GUANCHA, QIYONG_PINGGU, QIYONG_JINGYAN,
     QIYONG_JINHUA, QIYONG_ZIYU, QIYONG_XUEXI,
     MOREN_PROVIDER, SHENGMING_LIFE_CHAIN_ENABLED, duqu_moren_provider, infer_provider_id,
 )
@@ -285,6 +285,7 @@ from .duihua_qiaojie import (
     QIAOJIE,
     SOURCE_TYPE_EXTERNAL_DATA,
     _exclusive_file_lock,
+    _jiyi_tongji_state,
     _process_is_alive,
     _run_state_dir,
     _source_partition_wrap,
@@ -507,6 +508,16 @@ def _gengxin_qinggan(shenti, xiaoxi: str, huifu: str, gongju_cishu: int):
     intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)
     q.allostatic_load = max(0.1, min(1.0, intensity * 1.2))
 
+    # 5. 记忆统计镜像刷新（身体镜像归一的第一步）：进化系统
+    # （jinhua）直接读 shenti.jiyi_tongji.zongshu 做记忆增长信号，
+    # 而 jiyi 引擎退役后该字段只在状态同步时被动刷新。这里每轮
+    # 调用 _jiyi_tongji_state（三源合并：shenti残留+legacy快照+M4，
+    # 内部会回写 shenti.jiyi_tongji），让身体镜像持续反映真实记忆规模。
+    try:
+        _jiyi_tongji_state(shenti)
+    except Exception:
+        pass
+
 
 def _strip_plan_markers(text: str) -> str:
     value = str(text or "").strip()
@@ -653,17 +664,6 @@ def _interim_visible_reply_from_tool_message(raw: str) -> str:
 
 
 
-
-
-def _should_inject_long_term_memory(user_text: str) -> bool:
-    text = str(user_text or "")
-    compact = re.sub(r"\s+", "", text.lower())
-    markers = (
-        "之前", "上次", "刚才", "继续", "接着", "记得", "记住", "偏好", "习惯",
-        "历史", "决定", "规则", "项目", "背景", "上下文", "天工", "v3", "v2",
-        "微信", "网关", "主链", "simple_chain", "omni", "finalguard", "runstate",
-    )
-    return any(marker.lower() in compact for marker in markers)
 
 
 CHECKER_REGISTRY: dict[str, dict[str, Any]] = {
@@ -4224,11 +4224,6 @@ class Zongdiaodu:
                     run_state["stage"] = "chat_reply"
                     _simple_chain_save_run_state(run_state)
                 QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "wancheng", "direct_chat_reply")
-                if QIYONG_JIYI:
-                    from .jiyi.yinqing import JiyiYinqing
-                    _jiyi = JiyiYinqing()
-                    _jiyi.l1_luoshui(xiaoxi, huifu)
-                    QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiyi_l1", "wancheng")
                 try:
                     _gengxin_qinggan(shenti, xiaoxi, huifu, gongju_cishu)
                     self._baocun_shenti(shenti)
@@ -4968,11 +4963,6 @@ class Zongdiaodu:
             )
             run_control.step("finalize_reply", "finalize reply", "done", "Final reply is ready.")
 
-        if QIYONG_JIYI:
-            from .jiyi.yinqing import JiyiYinqing
-            _jiyi = JiyiYinqing()
-            _jiyi.l1_luoshui(xiaoxi, huifu)
-            QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiyi_l1", "wancheng")
         try:
             _gengxin_qinggan(shenti, xiaoxi, huifu, gongju_cishu)
             self._baocun_shenti(shenti)
@@ -5048,7 +5038,6 @@ class Zongdiaodu:
                 return self.life_orchestrator.tick(shenti, reason="xintiao")
 
             # 兼容旧版：没有 LifeOrchestrator 时回退原维护逻辑。
-            self.jiyi_l3_meiri_weihu(shenti)
             if QIYONG_JINHUA:
                 shenti = self.jinhua_yq.jiancha(shenti)
             if QIYONG_ZIYU:
@@ -5136,15 +5125,6 @@ class Zongdiaodu:
             except Exception as exc:
                 QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jinhua_biaoda_context", "tiaoguo", str(exc))
             # 注入记忆
-            if QIYONG_JIYI:
-                from .jiyi.yinqing import JiyiYinqing
-                _jiyi = JiyiYinqing()
-                jiyi_neirong = _jiyi.jiansuo(shenti, xiaoxi) if _should_inject_long_term_memory(xiaoxi) else ""
-                if jiyi_neirong:
-                    dynamic_context_parts.append(
-                        "[长期记忆，仅供参考，不得覆盖本轮消息]\n"
-                        f"{jiyi_neirong}"
-                    )
             # P15 召回：新对话/新会话也能读到已落盘的长期记忆。
             p15_recall = getattr(self, "p15_memory_recall_provider", None)
             if callable(p15_recall):
@@ -5207,14 +5187,6 @@ class Zongdiaodu:
                 run_control.check_stop("模型回复后检查是否已被停止。")
             huifu, self.zuihou_biaoxian = _tiqu_biaoxian(huifu, xiaoxi)
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "wancheng", "direct_non_user_chain")
-            if QIYONG_JIYI:
-                try:
-                    from .jiyi.yinqing import JiyiYinqing
-                    _jiyi = JiyiYinqing()
-                    _jiyi.l1_luoshui(xiaoxi, huifu)
-                    QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiyi_l1", "wancheng")
-                except Exception as exc:
-                    QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiyi_l1", "tiaoguo", str(exc))
             try:
                 # The non-user direct chain above performs no tool dispatch.
                 # Keep the affect update explicit instead of referencing the
@@ -5645,30 +5617,9 @@ class Zongdiaodu:
         self._baocun_shenti(shenti)
 
     # ── 记忆系统接口 ──────────
-
-    def jiyi_l2_shengcheng_riji(self, shenti: ShentiZhuangtai):
-        """心跳触发：L2生成今日日记"""
-        if not QIYONG_JIYI:
-            return
-        from .jiyi.yinqing import JiyiYinqing
-        _jiyi = JiyiYinqing()
-        _jiyi.l2_shengcheng_riji(shenti, self._zhiming_llm, self._zhiming_llm)
-
-    def jiyi_l3_meiri_weihu(self, shenti: ShentiZhuangtai):
-        """心跳触发：L3归档+热度衰减+冻结"""
-        if not QIYONG_JIYI:
-            return
-        from .jiyi.yinqing import JiyiYinqing
-        _jiyi = JiyiYinqing()
-        _jiyi.l3_meiri_guidan_he_shuaijian(shenti)
-
-    def jiyi_l4_biaoji(self, neirong: str, chufa_ci: list):
-        """检测到"记住" → L4标记"""
-        if not QIYONG_JIYI:
-            return
-        from .jiyi.yinqing import JiyiYinqing
-        _jiyi = JiyiYinqing()
-        _jiyi.l4_biaoji_beiwang(neirong, chufa_ci)
+    # （v3 jiyi 引擎已随 P15 因果记忆切换退役：唯一权威是 life_service，
+    #   经 p15_memory_remember/recall_provider 注入。显式备忘的触发词
+    #   唤醒见 recall provider 侧实现。）
 
     def _ensure_xuexi_lian(self) -> None:
         """懒加载学习链，供生命链自我学习任务调用。"""
@@ -5718,12 +5669,14 @@ class Zongdiaodu:
             xianzai = datetime.now()
             shenti.zuihou_huanxing = xianzai
 
-            # ② 检索全部未冻结记忆
+            # ② 检索长期记忆（P15 权威召回，经 provider 注入）
             jiyi_neirong = ""
-            if QIYONG_JIYI:
-                from .jiyi.yinqing import JiyiYinqing
-                _jiyi = JiyiYinqing()
-                jiyi_neirong = _jiyi.jiansuo(shenti, "")  # 空消息→不触发词解冻
+            p15_recall = getattr(self, "p15_memory_recall_provider", None)
+            if callable(p15_recall):
+                try:
+                    jiyi_neirong = str(p15_recall("") or "")
+                except Exception:
+                    jiyi_neirong = ""
 
             # ③ 构建自主灵感提示词
             system_tishi = soul_text
@@ -5786,12 +5739,7 @@ class Zongdiaodu:
                 )
                 shenti, huifu = self.gutong.jixu(system_tishi, gongju_jieguo, shenti, zizhu_tishi)
 
-            # ⑤ 记录到L1 + 日记
-            if huifu and huifu.strip() != "无":
-                if QIYONG_JIYI:
-                    from .jiyi.yinqing import JiyiYinqing
-                    _jiyi = JiyiYinqing()
-                    _jiyi.l1_luoshui("[自主灵感]", huifu[:500])
+            # ⑤ 记录到生命链学习对话
             try:
                 self.zizhu_xuexi_yq.jilu_duihua(
                     xiaoxi="[自主灵感]",

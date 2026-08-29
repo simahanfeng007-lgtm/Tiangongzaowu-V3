@@ -2272,14 +2272,14 @@ class GatewayOrchestrationWorker:
             )
 
             deadline_at_ms = int(time.time_ns() // 1_000_000) + watchdog_ms
-            # Publish the absolute deadline as a process env var as well as a
-            # ContextVar: the packaged backend may execute the chain on a
-            # different thread, and only the env var survives that boundary.
-            # Save the previous value so it can be restored after the effect:
-            # a stale env deadline would otherwise poison unrelated background
-            # calls (heartbeat/autonomous) with a 5-second LLM cap.
-            previous_deadline_env = os.environ.get("TIANGONG_EFFECT_DEADLINE_MS")
-            os.environ["TIANGONG_EFFECT_DEADLINE_MS"] = str(deadline_at_ms)
+            # Deadline travels ONLY through the ContextVar: every backend
+            # thread boundary now copies the context (LLM hard-timeout runners,
+            # the parallel tool executor, and this watchdog pool all run
+            # contextvars.copy_context()).  The former process-env channel
+            # poisoned concurrent background model calls (life heartbeat,
+            # autonomous activities, cognition tasks) with the chat effect's
+            # remaining time — in a single-process desktop build those chains
+            # share this process.
 
             def _execute_compat_with_deadline() -> Any:
                 token = set_execution_deadline_ms(deadline_at_ms)
@@ -2303,11 +2303,6 @@ class GatewayOrchestrationWorker:
                         or effect_record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
                     ),
                 ) from None
-            finally:
-                if previous_deadline_env is None:
-                    os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)
-                else:
-                    os.environ["TIANGONG_EFFECT_DEADLINE_MS"] = previous_deadline_env
         except BackendClientError as exc:
             effect_record = self._store.get_effect(effect.effect_id)
             status = "AMBIGUOUS" if exc.ambiguous or (effect_record and effect_record.state == "SIDE_EFFECT_STARTED") else "FAILED_FINAL"
@@ -2450,10 +2445,21 @@ class GatewayOrchestrationWorker:
 
         result_payload = response.result_payload if isinstance(response.result_payload, dict) else {}
         reply = str(result_payload.get("reply_text") or "").strip()
-        if not reply:
-            raise OrchestrationError("orchestration.reply.empty")
         artifacts = []
         raw_artifacts = result_payload.get("artifacts") if isinstance(result_payload.get("artifacts"), list) else []
+        if not reply and raw_artifacts:
+            # artifact-only delivery: the model produced verified outputs but
+            # no natural-language closeout.  Synthesize a deterministic note
+            # from the artifact descriptors instead of failing the request.
+            names = [
+                str(item.get("filename") or "").strip()
+                for item in raw_artifacts
+                if isinstance(item, dict) and str(item.get("filename") or "").strip()
+            ]
+            listed = "、".join(names[:5]) + ("等" if len(names) > 5 else "")
+            reply = f"已完成，生成{len(names)}个交付文件：{listed}。" if names else "已完成指定交付。"
+        if not reply:
+            raise OrchestrationError("orchestration.reply.empty")
         if raw_artifacts:
             self._advance("request", request_id, "VALIDATING_ARTIFACTS", now_ms=observed_at)
         gate = ArtifactGate(self._objects, self._facts)
@@ -2496,10 +2502,19 @@ class GatewayOrchestrationWorker:
                     )
                 )
                 if accepted.manifest.format_id == "docx":
+                    # 内容兜底：docx 质检的最小字数按请求推导。固定 1 词的
+                    # 下限曾放过"只有标题的空壳文档"（真机 2026-08-29 复现）。
+                    docx_minimum_words = 30
+                    docx_items_hint = re.search(r"各?(\d+)\s*[条点项]", envelope.text or "")
+                    if docx_items_hint:
+                        docx_minimum_words = max(30, int(docx_items_hint.group(1)) * 12)
                     outcome = docx_qc.evaluate(
                         accepted,
                         run_sequence=run_sequence,
-                        policy=DocxQcPolicy(minimum_word_count=1, maximum_word_count=10_000_000),
+                        policy=DocxQcPolicy(
+                            minimum_word_count=docx_minimum_words,
+                            maximum_word_count=10_000_000,
+                        ),
                         checked_at_ms=observed_at,
                     )
                 else:

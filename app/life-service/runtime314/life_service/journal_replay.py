@@ -115,6 +115,8 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "life.share.published": EventClass.REPLAYABLE_PROJECTION,
     # ---- 观测/权威在别处 ----
     "life.heartbeat": EventClass.AUDIT_ONLY,
+    # 停机后重启的恢复叙事：纯审计事实，投影权威在 scheduler 写侧。
+    "life.scheduler.resumed": EventClass.AUDIT_ONLY,
     "affect.appraised": EventClass.AUDIT_ONLY,
     "affect.decayed": EventClass.AUDIT_ONLY,
     "life.episode.opened": EventClass.AUDIT_ONLY,

@@ -576,6 +576,22 @@ def _compact(text: Any) -> str:
     return re.sub(r"\s+", "", str(text or "")).lower()
 
 
+# 引号内片段是"数据"（文件名/内容/称呼），不是请求动词：义务动词匹配前
+# 剥离，防止文件名叫"验证通过.txt"/"真机测试记录.txt"就凭空派生
+# execution 义务（真机 2026-08-29 复现：写文件成功却被要求"测试证据"）。
+_QUOTED_SPAN_RE = re.compile(
+    r'"[^"\n]{1,200}"|'
+    r'"[^"\n]{1,200}"|'
+    r"'[^'\n]{1,200}'|"
+    r"「[^」\n]{1,200}」|"
+    r"『[^』\n]{1,200}』"
+)
+
+
+def _strip_quoted_spans(text: Any) -> str:
+    return _QUOTED_SPAN_RE.sub(" ", str(text or ""))
+
+
 def _intent_compact(text: object) -> str:
     return re.sub(r"[\s\?\？\!\！\.\。\,\，\;\；\:\：]+", "", str(text or "").lower())
 
@@ -787,7 +803,10 @@ def _explanation_only(compact: str) -> bool:
 
 
 def _chinese_requested_fact_kinds(text: str) -> list[str]:
-    compact = _compact(text)
+    # 动词/锚点匹配面剥离引号内片段（文件名等数据不该触发请求动词）；
+    # 显式目标提取（_extract_explicit_targets）继续用原文。
+    verb_surface = _strip_quoted_spans(text)
+    compact = _compact(verb_surface)
     if not compact or _explanation_only(compact):
         return []
 
@@ -919,7 +938,7 @@ def runtime_execution_floor(user_text: object) -> str:
     ACT_REQUIRED means a real external/tool action is unambiguously required.
     UNKNOWN intentionally preserves the existing V3/LLM decision path.
     """
-    text = str(user_text or "").strip()
+    text = _user_request_surface(user_text)
     if not text:
         return ACT_UNKNOWN
     if _response_only(text) or is_execution_discussion_only(text):
@@ -1011,14 +1030,30 @@ def _requests_existence_resolution(user_text: object) -> bool:
     return bool(_NEGATIVE_EXISTENCE_RE.search(str(user_text or "")))
 
 
+# 前端在用户消息后附加的呈现层契约横幅：是给模型的执行纪律说明，
+# 不是用户意图。义务推导若把它算进意图，会从横幅的"执行/检查/复用"
+# 等词凭空派生假义务（真机 2026-08-29：wordcount 任务被横幅派生出
+# 两条"观察代码文件"义务，写码+跑测全过仍被判缺证据）。
+_FRONTEND_CONTRACT_BANNER = "【连续执行契约】"
+
+
+def _user_request_surface(user_text: Any) -> str:
+    """Return only the user's own request, free of injected banners."""
+    text = str(user_text or "")
+    idx = text.find(_FRONTEND_CONTRACT_BANNER)
+    if idx >= 0:
+        text = text[:idx]
+    return text.strip()
+
+
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     """Build factual obligations, never a concrete tool plan.
 
-    The Runtime floor is the anti-escape fallback. The LLM's actual tool call
+    The Runtime floor is the anti-escape fallback.  The LLM's actual tool call
     and ToolResult are its execution submission; a self-declared "work" mode is
     never accepted as proof that anything happened.
     """
-    text = str(user_text or "").strip()
+    text = _user_request_surface(user_text)
     if runtime_execution_floor(text) != ACT_REQUIRED:
         return []
     compact = _compact(text)
@@ -1575,6 +1610,23 @@ def update_task_contract_evidence(
         signal = f"evidence_round:{int(round_number or 0)}"
         if signal not in signals:
             signals.append(signal)
+        # 权威写入证据内嵌独立校验（codex 的路径/后缀/内容匹配检查、
+        # sandbox broker 的增量对账）＝与写入动作相互独立的第二个事实
+        # 信号：写入被观测 + 写入被核验。避免"写完还必须再读一次"对
+        # 简单文件创建的一刀切（真机 2026-08-29：1/2 卡死三轮）。
+        try:
+            verified_contract = _contract(payload)
+            verified_evidence = verified_contract.get("write_evidence")
+            if (
+                verified_contract.get("observed_write_effect") is True
+                and isinstance(verified_evidence, dict)
+                and verified_evidence.get("authoritative") is True
+            ):
+                verified_signal = f"write_verified:{int(round_number or 0)}"
+                if verified_signal not in signals:
+                    signals.append(verified_signal)
+        except Exception:
+            pass
     required_stability = _required_stability(updated.get("effective_level"))
 
     updated["desired_facts"] = desired_facts

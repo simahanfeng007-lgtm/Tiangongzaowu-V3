@@ -237,9 +237,11 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
 
         orchestration = _Path(__file__).resolve().parents[1] / "src" / "total_gateway" / "orchestration.py"
         text = orchestration.read_text(encoding="utf-8")
-        self.assertIn("TIANGONG_EFFECT_DEADLINE_MS", text)
-        self.assertIn("previous_deadline_env", text)
-        self.assertIn('os.environ.pop("TIANGONG_EFFECT_DEADLINE_MS", None)', text)
+        # Deadline 只经 ContextVar 传播：网关不再写进程级 env——那会毒害同进程的
+        # 后台模型调用（心跳/自主活动/认知任务）继承聊天 effect 的剩余时间。
+        self.assertIn("set_execution_deadline_ms", text)
+        self.assertNotIn("os.environ[\"TIANGONG_EFFECT_DEADLINE_MS\"]", text)
+        self.assertNotIn("previous_deadline_env", text)
         # 执行预算 3 倍放宽：网关默认效果截止 720s（12 分钟），单次动作上限 1800s。
         self.assertIn("watchdog_ms = 720_000", text)
         self.assertIn("3_600_000", text)

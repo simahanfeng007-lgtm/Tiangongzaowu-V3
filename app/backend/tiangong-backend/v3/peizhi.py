@@ -934,7 +934,8 @@ def l4_provider_display_name(provider_id: str | None) -> str:
     return PROVIDER_FALLBACK_DISPLAY_NAME.get(pid, pid or L4_OPENAI_FALLBACK_PROVIDER)
 
 # 各引擎开关（已全部上线）
-QIYONG_JIYI = False
+# （v3 jiyi 记忆引擎已随 P15 因果记忆切换退役，开关随之移除；
+#   长期记忆唯一权威为 life_service，经 p15 providers 注入。）
 QIYONG_JINHUA = True            # 进化系统已上线
 QIYONG_GUANCHA = True
 QIYONG_PINGGU = True
