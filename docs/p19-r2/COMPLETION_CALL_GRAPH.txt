@@ -1,0 +1,169 @@
+P19-R2 M0｜真实完成调用图（COMPLETION_CALL_GRAPH）
+======================================================================
+基线：e29bb9bafc213bd8b473ba7a9da014962a17e6d1
+方法：按数据流逐函数追踪（函数名 + 文件:行号 实测，非文件名推测）。
+
+----------------------------------------------------------------------
+总链（desktop 主路径）
+----------------------------------------------------------------------
+用户输入
+  │ DesktopApiRouter.dispatch                src/total_gateway/desktop_api.py:1308
+  │ └ _register_desktop_inbound              desktop_api.py:498（:825 分发）
+  │   └ store.register_request               desktop_api.py:604 → 入队
+  ▼
+GatewayOrchestrationWorker._run（worker 主循环） orchestration.py:1230
+  │  循环：_delivery_outbox.dispatch_next :1306
+  │        → _activator.claim_next :1309（active_requests.py:60）
+  │        → self.process(activation) :1343
+  ▼
+GatewayOrchestrationWorker.process            orchestration.py:1770
+  │  _acquire_life_snapshot :1806（定义 :1552）
+  │  derive_effect_identity   :1880
+  │  claim_effect             :1902
+  │  PolicyEngine.evaluate    :2072-2083
+  │  execution_signer.sign_execution :2152 → ExecutionTicketPayload/Ticket
+  ▼
+后端执行（冻结兼容桥）
+  │ FrozenBackendCompatibilityTransport 构造  orchestration.py:2216
+  │ _execute_compat → BackendClient.execute   orchestration.py:2235-2251
+  │                                            backend_client.py:213/:227
+  │ （watchdog 池 + ContextVar deadline        orchestration.py:2284-2296）
+  │ transport.execute(body)                   frozen_backend_compat.py:842
+  │   _prepare_life :862（定义 :410）
+  │   _skill_routing_context :863（定义 :361）
+  │   _materialize_inputs :864（定义 :659）
+  │   _backend.request POST /api/v1/gateway/internal/inbound
+  │                                           frozen_backend_compat.py:946-953
+  ▼
+V3 后端内部（zongdiaodu / simple_chain）
+  │ 路由命中                                  v3/duihua_qiaojie.py:2143
+  │ DuihuaQiaojie.chuli_duihua                duihua_qiaojie.py:1246（调用 :2181）
+  │ Zongdiaodu.huanxing                       zongdiaodu.py:4980（调用 :1329/:1339）
+  │ _huanxing_simple_chain                    zongdiaodu.py:2677
+  │  工具循环每次结果：
+  │   _tool_result_with_contract              zongdiaodu.py:1505
+  │                                           （调用 :3723/:4651/:5726）
+  │   attach_tool_result_contract             runtime_tool_result_boundary.py:64
+  │   canonical_tool_result                   runtime_tool_result_boundary.py:32
+  │   normalize_tool_result                   tool_result_contract.py:678
+  │     └ _observed_write_evidence            tool_result_contract.py:328
+  │       （write_evidence.v1 唯一生产者；schema :352）
+  │   _simple_chain_quality_gate_payload      zongdiaodu.py:3908
+  │                                           （定义 kernel.py:4669）
+  │   _simple_chain_record_observation        zongdiaodu.py:3937
+  │                                           （定义 kernel.py:1505；
+  │                                            :1550 update_run_state_obligations
+  │                                            :1552 update_task_contract_evidence）
+  │   _simple_chain_life_completion_gate      zongdiaodu.py:4061/:4852
+  │                                           （定义 kernel.py:5595）
+  │   decide_simple_chain_completion          runtime_tool_result_boundary.py:190
+  │     └ _simple_chain_evidence_check        kernel.py:5437
+  │        └ _office_content_gaps             kernel.py:5339（调用 :5469）
+  │     └ decide_task_contract_completion     execution_integrity.py:1676
+  ▼
+产物回网关（object store 接纳先于 Gate）
+  │ _capture_outputs                          frozen_backend_compat.py:770
+  │   └ objects.put_bytes(kind="artifact")    frozen_backend_compat.py:809
+  │     └ ContentAddressedObjectStore         object_store.py:359/:379
+  ▼
+ArtifactGate → ArtifactQC（逐产物循环）      orchestration.py:2469
+  │ ArtifactGate.accept                       artifact_gate.py:329（调用 :2488）
+  │ docx: DocxQcService.evaluate              docx_qc.py:278（调用 :2511）
+  │ else: ArtifactIntegrityQcService.evaluate artifact_qc.py:49（调用 :2521）
+  │ 状态机 CREATED/QC_PENDING :2528-2540 → QC_PASSED :2543 / QC_FAILED :2553
+  │ 任一失败整单 FAILED                       orchestration.py:2580-2604
+  ▼
+CompletionGate（desktop：交付前）
+  │ evaluate_desktop_completion               desktop_completion.py:23
+  │  构造 CompletionRequirements（:35-45）    （调用点 orchestration.py:2610）
+  │  CompletionGate.evaluate                  completion_gate.py:156
+  │  :54 强制 can_transition_request_completed
+  ▼
+交付与终态（desktop）
+  │ 推进 DELIVERING                           orchestration.py:2651-2662
+  │ _commit_life_execution（Life 库收口）     orchestration.py:1488（调用 :2638）
+  │ persist_terminal_completion               continuity.py:332（调用 :2663）
+  │ _advance("request",…,"COMPLETED")         orchestration.py:2675-2682
+  │ complete_session_request                  orchestration.py:2683
+  │ 渲染端从 7184 status 路由拉取             orchestration.py:2606-2609 注释
+
+----------------------------------------------------------------------
+渠道路径（wechat/feishu）——时序与 desktop 不同
+----------------------------------------------------------------------
+process 构造 OutboxIntent                    orchestration.py:2820-2836
+  推进 delivery PLANNED :2837-2843 → DELIVERING :2844
+  （此路径 process 内不调 CompletionGate）
+worker 循环驱动 outbox                       orchestration.py:1306
+  GatewayDeliveryOutboxWorker.dispatch_next   delivery_outbox.py:318
+  _finalize                                   delivery_outbox.py:457
+    歧义分支门评估                           delivery_outbox.py:517
+    回执分支门评估                           delivery_outbox.py:660
+      request_state = decision.outcome 映射   delivery_outbox.py:702-706
+      _advance → COMPLETED                    delivery_outbox.py:702-729
+结论：desktop = Gate 先于交付；渠道 = 入队先于 Gate，
+      Gate 在投递终局评估 CHANNEL_ACCEPTED/DELIVERED。
+
+----------------------------------------------------------------------
+后台路径（autonomous）
+----------------------------------------------------------------------
+evaluate_autonomous_completion               autonomous_completion.py:14
+  构造 Requirements :29-39；门评估 :40-44
+  终态 → persist_terminal_completion :46-56
+  非终态 → record_completion_decision :58 + checkpoint :59-76
+注：src 内无生产调用方（仅测试引用）——当前为预留通道。
+
+----------------------------------------------------------------------
+P18 再生执行证明（RuntimeCloseoutProof）
+----------------------------------------------------------------------
+RegenerativeExecutionAuthority 回调注册        regenerative_provider.py:117
+  _verify_completion(payload)                  regenerative_provider.py:1049
+    消费裸值：runtime_blockers :1111
+              life_gate_allowed  :1115
+              required_evidence_ready :1117
+  上游生产者：life_gate_allowed 来自
+    _simple_chain_life_completion_gate 输出    zongdiaodu.py:4074/:4879
+定位：后端执行收口证明，早于 Gateway Artifact 接纳与最终 Outcome
+      验证；不能取代最终 VerificationDecision（计划 1.2.H 证实）。
+
+----------------------------------------------------------------------
+义务派生的真实通道（与计划 1.2.F 的差异）
+----------------------------------------------------------------------
+计划假设上游 = CommitmentCompiler（CompletionRequirementsVNext）。
+实测：CommitmentCompiler（commitment_compiler.py:42，compile :117）
+      在 orchestration.py 零调用，运行时未接线（死代码）。
+在跑的义务通道（V3 侧，普通 dict）：
+  build_action_obligations(user_text)          execution_integrity.py:1049
+  initialize_task_contract                     execution_integrity.py:420
+  obligation_is_satisfied                      execution_integrity.py:1366
+  execution_integrity_blockers                 execution_integrity.py:1394
+    （主检查入口；被 kernel.py:3910 与 :5461 调用）
+  update_run_state_obligations / update_task_contract_evidence
+                                              execution_integrity.py:1417/:1566
+
+----------------------------------------------------------------------
+关键数据结构索引
+----------------------------------------------------------------------
+ActiveRequestActivation        src/total_gateway/active_requests.py
+ExecutionTicketPayload/Ticket  src/total_gateway/tickets.py（签发 orchestration.py:2097/:2152）
+EffectClaim/EffectResult       orchestration.py:1889/:2309
+CompletionObligation           src/contracts/models.py:804
+CoverageProofRow               src/contracts/models.py:825
+CompletionRequirementsVNext    src/contracts/models.py:837（未接线）
+CompletionRequirements         src/total_gateway/completion_gate.py:27
+CompletionPartAssessment       src/total_gateway/completion_gate.py:57
+CompletionDecision             src/total_gateway/completion_gate.py:91
+ArtifactCandidate/BaseEvidence/ArtifactGateResult  artifact_gate.py:28/:44/:82
+ArtifactIntegrityQcOutcome/Service  artifact_qc.py:34/:42
+DocxQcPolicy/Outcome/Service   docx_qc.py:48/:66/:269
+ObjectReference/ObjectPutResult/ContentAddressedObjectStore
+                                object_store.py:51/:130/:248
+ArtifactManifest               src/contracts/models.py（gate :390 构造）
+工具结果契约 dict（TOOL_RESULT_SCHEMA）
+                                tool_result_contract.py:678-738
+write_evidence dict（tiangong.v3.write_evidence.v1）
+                                tool_result_contract.py:328-392
+task contract / obligations dict  execution_integrity.py:420+/:1049+
+OutboundPlan/OutboxIntent/DeliveryOutboxPayload
+                                delivery_outbox.py:36/:66
+请求状态机 TRANSITIONS["request"]/TERMINAL_STATES
+                                src/contracts/state_machine.py:193-210/:186-191
