@@ -176,6 +176,28 @@ def test_verify_completion_ignores_own_inflight_envelope() -> None:
     assert "record.claim.generation == identity.generation" in text
 
 
+def test_frontend_contract_banner_does_not_spawn_obligations() -> None:
+    """第五层真机根因：前端给每条用户消息附加【连续执行契约】横幅（呈现层
+    纪律说明），义务推导器把横幅里的'执行/检查/复用'当用户意图，凭空派生
+    假义务——wordcount 任务被派生两条'观察代码文件'义务，写码+跑测全过
+    仍被判缺证据。修复：推导只看用户真实请求（切掉横幅）。"""
+    from v3.execution_integrity import build_action_obligations
+
+    user_part = "来个长程代码任务：写一个Python脚本wordcount.py，统计给定文本中出现频率最高的前5个字符；再写test_wordcount.py测试它；然后实际运行测试并告诉我结果。"
+    banner = "\n\n【连续执行契约】\nA1-A4 工作在平台执行预算内连续执行（轮次、时长、工具数有硬上限）。复用已有 source_text_map 和成功工具证据，不重复副作用。"
+
+    bare = build_action_obligations(user_part)
+    with_banner = build_action_obligations(user_part + banner)
+    assert [o["kind"] for o in with_banner] == [o["kind"] for o in bare], (
+        "横幅不得改变义务推导结果"
+    )
+    # 文件创建类请求：横幅同样不得添加 observation 义务
+    create_msg = '帮我创建一个txt文件，文件名叫"完成.txt"，内容写："x。"'
+    assert [o["kind"] for o in build_action_obligations(create_msg + banner)] == [
+        o["kind"] for o in build_action_obligations(create_msg)
+    ]
+
+
 if __name__ == "__main__":
     test_codex_write_result_counts_as_observed_write()
     test_plain_result_without_evidence_still_not_a_write()

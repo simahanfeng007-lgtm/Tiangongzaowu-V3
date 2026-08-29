@@ -938,7 +938,7 @@ def runtime_execution_floor(user_text: object) -> str:
     ACT_REQUIRED means a real external/tool action is unambiguously required.
     UNKNOWN intentionally preserves the existing V3/LLM decision path.
     """
-    text = str(user_text or "").strip()
+    text = _user_request_surface(user_text)
     if not text:
         return ACT_UNKNOWN
     if _response_only(text) or is_execution_discussion_only(text):
@@ -1030,14 +1030,30 @@ def _requests_existence_resolution(user_text: object) -> bool:
     return bool(_NEGATIVE_EXISTENCE_RE.search(str(user_text or "")))
 
 
+# 前端在用户消息后附加的呈现层契约横幅：是给模型的执行纪律说明，
+# 不是用户意图。义务推导若把它算进意图，会从横幅的"执行/检查/复用"
+# 等词凭空派生假义务（真机 2026-08-29：wordcount 任务被横幅派生出
+# 两条"观察代码文件"义务，写码+跑测全过仍被判缺证据）。
+_FRONTEND_CONTRACT_BANNER = "【连续执行契约】"
+
+
+def _user_request_surface(user_text: Any) -> str:
+    """Return only the user's own request, free of injected banners."""
+    text = str(user_text or "")
+    idx = text.find(_FRONTEND_CONTRACT_BANNER)
+    if idx >= 0:
+        text = text[:idx]
+    return text.strip()
+
+
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     """Build factual obligations, never a concrete tool plan.
 
-    The Runtime floor is the anti-escape fallback. The LLM's actual tool call
+    The Runtime floor is the anti-escape fallback.  The LLM's actual tool call
     and ToolResult are its execution submission; a self-declared "work" mode is
     never accepted as proof that anything happened.
     """
-    text = str(user_text or "").strip()
+    text = _user_request_surface(user_text)
     if runtime_execution_floor(text) != ACT_REQUIRED:
         return []
     compact = _compact(text)
