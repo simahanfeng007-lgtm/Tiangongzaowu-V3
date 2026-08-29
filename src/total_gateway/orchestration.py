@@ -2502,10 +2502,19 @@ class GatewayOrchestrationWorker:
                     )
                 )
                 if accepted.manifest.format_id == "docx":
+                    # 内容兜底：docx 质检的最小字数按请求推导。固定 1 词的
+                    # 下限曾放过"只有标题的空壳文档"（真机 2026-08-29 复现）。
+                    docx_minimum_words = 30
+                    docx_items_hint = re.search(r"各?(\d+)\s*[条点项]", envelope.text or "")
+                    if docx_items_hint:
+                        docx_minimum_words = max(30, int(docx_items_hint.group(1)) * 12)
                     outcome = docx_qc.evaluate(
                         accepted,
                         run_sequence=run_sequence,
-                        policy=DocxQcPolicy(minimum_word_count=1, maximum_word_count=10_000_000),
+                        policy=DocxQcPolicy(
+                            minimum_word_count=docx_minimum_words,
+                            maximum_word_count=10_000_000,
+                        ),
                         checked_at_ms=observed_at,
                     )
                 else:
