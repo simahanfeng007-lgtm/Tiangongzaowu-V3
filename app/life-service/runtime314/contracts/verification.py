@@ -1033,4 +1033,30 @@ __all__ = [
     "derive_verifier_descriptor_id",
     "normalize_predicate_params",
     "normalize_predicate_text",
+    "read_plan_any_version",
 ]
+
+
+# ---------------------------------------------------------------------------
+# M4.1 HOTFIX §5: historical v1 plan compatibility (read-only)
+# ---------------------------------------------------------------------------
+
+def read_plan_any_version(payload: dict):
+    """Decode a plan JSON payload regardless of schema_version.
+
+    v1 plans (M4-era VerificationPlanEntry with id/sha/type refs) are
+    returned as a plain dict tagged ``is_v1=True`` — they can be read
+    and audited but NOT activated. v2 plans (current) are returned as
+    a full VerificationPlan model.
+    """
+    schema_version = payload.get("schema_version", "")
+    if schema_version == _VERIFICATION_PLAN_V2_SCHEMA_VERSION:
+        return VerificationPlan.model_validate(payload)
+    if schema_version == _VERIFICATION_PLAN_SCHEMA_VERSION:  # v1
+        # v1 is a legacy shape with field-level entry references that
+        # cannot be validated as V2 (no nested predicate). Return as
+        # tagged dict for audit — activation is rejected by the store.
+        return {"is_v1": True, "payload": payload}
+    raise ValueError(
+        f"unknown verification plan schema_version: {schema_version!r}"
+    )
