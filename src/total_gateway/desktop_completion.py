@@ -60,6 +60,7 @@ def evaluate_desktop_completion(
             candidate_text=candidate_text,
             artifacts=artifacts,
             verification_readiness=verification_readiness,
+            active_plan=active_plan,
         )
     except CompletionGateError as exc:
         raise DesktopCompletionError(exc.code) from exc

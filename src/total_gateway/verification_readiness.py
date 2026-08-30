@@ -225,7 +225,7 @@ def build_readiness(
         run_id=plan.run_id,
         generation=plan.generation,
         registry_snapshot_sha256=plan.registry_snapshot_sha256,
-        required_entry_count=required_entry_count,
+        required_entry_count=required_count,
         satisfied_entry_count=satisfied_count,
         entry_assessments=tuple(
             sorted(assessments, key=lambda a: a.plan_entry_id)

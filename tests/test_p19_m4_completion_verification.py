@@ -135,7 +135,8 @@ class TestPlanBound(unittest.TestCase):
     def test_ready_completes(self):
         d = self.gate.evaluate(
             self._pb(), candidate_text="x",
-            verification_readiness=_ready(self.plan))
+            verification_readiness=_ready(self.plan),
+            active_plan=self.plan)
         self.assertEqual(d.outcome, "COMPLETED")
         self.assertTrue(d.verification_ready)
         self.assertTrue(d.can_transition_request_completed)
@@ -144,33 +145,44 @@ class TestPlanBound(unittest.TestCase):
     def test_not_ready_blocks(self):
         d = self.gate.evaluate(
             self._pb(), candidate_text="x",
-            verification_readiness=_ready(self.plan, ready=False))
+            verification_readiness=_ready(self.plan, ready=False),
+            active_plan=self.plan)
         self.assertNotEqual(d.outcome, "COMPLETED")
         self.assertFalse(d.verification_ready)
         self.assertFalse(d.can_transition_request_completed)
 
     def test_missing_readiness_raises(self):
         with self.assertRaises(CompletionGateError):
-            self.gate.evaluate(self._pb(), candidate_text="x")
+            self.gate.evaluate(self._pb(), candidate_text="x",
+                               active_plan=self.plan)
+
+    def test_missing_active_plan_raises(self):
+        r = _ready(self.plan)
+        with self.assertRaises(CompletionGateError):
+            self.gate.evaluate(self._pb(), candidate_text="x",
+                               verification_readiness=r)
 
     def test_invalid_readiness_raises(self):
         r = _ready(self.plan)
         bad = r.model_copy(update={"satisfied_entry_count": 999})
         with self.assertRaises(CompletionGateError):
             self.gate.evaluate(self._pb(), candidate_text="x",
-                               verification_readiness=bad)
+                               verification_readiness=bad,
+                               active_plan=self.plan)
 
     def test_lineage_mismatch_raises(self):
         other = derive_request_identity("5" * 64)
         other_plan = _plan(other.request_id, self.rnid)
         with self.assertRaises(CompletionGateError):
             self.gate.evaluate(self._pb(), candidate_text="x",
-                               verification_readiness=_ready(other_plan))
+                               verification_readiness=_ready(other_plan),
+                               active_plan=self.plan)
 
     def test_not_ready_and_not_text_blocks(self):
         d = self.gate.evaluate(
             self._pb(), candidate_text=None,
-            verification_readiness=_ready(self.plan, ready=False))
+            verification_readiness=_ready(self.plan, ready=False),
+            active_plan=self.plan)
         self.assertNotEqual(d.outcome, "COMPLETED")
 
 

@@ -153,7 +153,7 @@ class VerificationPlanExecutor:
             )
         # M4.1 §2: unified path — normal records also go through the
         # Recorder (never direct store puts).
-        self._recorder.record(record)
+        self._recorder.record(record, recorded_at_ms=evaluated_at_ms)
 
     def _record_error(
         self, entry: VerificationPlanEntryV2, *, evaluated_at_ms: int,
@@ -198,7 +198,7 @@ class VerificationPlanExecutor:
                 )
             }
         )
-        self._recorder.record(record)
+        self._recorder.record(record, recorded_at_ms=evaluated_at_ms)
 
 
 __all__ = [

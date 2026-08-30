@@ -275,10 +275,8 @@ class CompletionGate:
                     delivery_ready = all(item.requirement_satisfied for item in parts)
                     delivered = all(item.platform_delivered for item in parts)
 
-        # M4: PLAN_BOUND verification gate — the CompletionGate reads a
-        # VerificationReadiness produced by the verification plane and
-        # refuses to complete without it. Verification can only TIGHTEN
-        # the gate (AND with legacy core), never bypass any legacy gate.
+        # M4.1 HOTFIX §4: PLAN_BOUND REQUIRES the active plan — bare
+        # readiness is never accepted. Every binding must match exactly.
         legacy_core_ready = text_ready and execution_ready and artifacts_ready
         if requirements.verification_mode == "PLAN_BOUND":
             if verification_readiness is None:
@@ -297,23 +295,44 @@ class CompletionGate:
                 raise CompletionGateError(
                     "completion.verification.readiness_lineage_mismatch"
                 )
-            # M4.1 §8: if an active_plan is provided, verify the
-            # readiness matches the ACTIVE plan exactly
-            if active_plan is not None:
-                if (
-                    verification_readiness.verification_plan_id
-                    != active_plan.verification_plan_id
-                ):
-                    raise CompletionGateError(
-                        "completion.verification.readiness_plan_mismatch"
-                    )
-                if (
-                    verification_readiness.verification_plan_sha256
-                    != active_plan.plan_sha256
-                ):
-                    raise CompletionGateError(
-                        "completion.verification.readiness_plan_hash_mismatch"
-                    )
+            # HOTFIX §4: active_plan is MANDATORY (not optional)
+            if active_plan is None:
+                raise CompletionGateError(
+                    "completion.verification.plan_bound_missing_active_plan"
+                )
+            if not active_plan.has_valid_identity():
+                raise CompletionGateError(
+                    "completion.verification.active_plan_identity_invalid"
+                )
+            if (
+                active_plan.request_id != requirements.request_id
+                or active_plan.run_id != requirements.run_id
+                or active_plan.generation != requirements.generation
+            ):
+                raise CompletionGateError(
+                    "completion.verification.active_plan_lineage_mismatch"
+                )
+            if (
+                verification_readiness.verification_plan_id
+                != active_plan.verification_plan_id
+            ):
+                raise CompletionGateError(
+                    "completion.verification.readiness_plan_mismatch"
+                )
+            if (
+                verification_readiness.verification_plan_sha256
+                != active_plan.plan_sha256
+            ):
+                raise CompletionGateError(
+                    "completion.verification.readiness_plan_hash_mismatch"
+                )
+            if (
+                verification_readiness.registry_snapshot_sha256
+                != active_plan.registry_snapshot_sha256
+            ):
+                raise CompletionGateError(
+                    "completion.verification.readiness_registry_mismatch"
+                )
             verification_ready = verification_readiness.verification_ready
             # M4.1 §11: failure-class → outcome mapping
             verification_failure_class = verification_readiness.failure_class
