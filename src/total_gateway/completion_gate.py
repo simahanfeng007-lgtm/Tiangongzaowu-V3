@@ -168,6 +168,7 @@ class CompletionGate:
         delivery_receipt: DeliveryReceipt | None = None,
         delivery_failure: Literal["FAILED_FINAL", "AMBIGUOUS"] | None = None,
         verification_readiness=None,
+        active_plan=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
@@ -296,16 +297,44 @@ class CompletionGate:
                 raise CompletionGateError(
                     "completion.verification.readiness_lineage_mismatch"
                 )
+            # M4.1 §8: if an active_plan is provided, verify the
+            # readiness matches the ACTIVE plan exactly
+            if active_plan is not None:
+                if (
+                    verification_readiness.verification_plan_id
+                    != active_plan.verification_plan_id
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.readiness_plan_mismatch"
+                    )
+                if (
+                    verification_readiness.verification_plan_sha256
+                    != active_plan.plan_sha256
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.readiness_plan_hash_mismatch"
+                    )
             verification_ready = verification_readiness.verification_ready
+            # M4.1 §11: failure-class → outcome mapping
+            verification_failure_class = verification_readiness.failure_class
         else:
             if verification_readiness is not None:
                 raise CompletionGateError(
                     "completion.verification.none_mode_with_readiness"
                 )
             verification_ready = True
+            verification_failure_class = "NONE"
         core_ready = legacy_core_ready and verification_ready
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
+        # M4.1 §11: verification failure classes map to outcomes
+        if verification_failure_class == "AUTHORITY_ERROR":
+            ambiguous = True  # → RECONCILE_REQUIRED
+        elif verification_failure_class == "PLAN_CONFIG_ERROR":
+            ambiguous = True  # → RECONCILE_REQUIRED
+        elif verification_failure_class == "VERIFICATION_FAILED" and not failed:
+            failed = True     # → FAILED
+        # MISSING_EVIDENCE / INCONCLUSIVE → stays IN_PROGRESS (no flag)
         if ambiguous:
             outcome = "RECONCILE_REQUIRED"
             reason = "completion.reconciliation_required"

@@ -32,6 +32,7 @@ def evaluate_desktop_completion(
     artifacts: tuple[ArtifactManifest, ...],
     head_state_reader=None,
     verification_readiness=None,
+    active_plan=None,
 ) -> CompletionDecision:
     requirements = CompletionRequirements(
         request_id=request_id,
@@ -43,11 +44,13 @@ def evaluate_desktop_completion(
             sorted(item.artifact_revision_id for item in artifacts)
         ),
         delivery_requirement="NONE",
-        # M4: PLAN_BOUND only when an explicit verification plan exists
-        # for this lineage; without one the legacy NONE mode is preserved.
+        # M4.1 §1: PLAN_BOUND is decided by the ACTIVE PLAN, not by
+        # whether a readiness object happens to exist. Plan exists →
+        # PLAN_BOUND, readiness missing → CompletionGateError (the
+        # executor should have run before this point).
         verification_mode=(
             "PLAN_BOUND"
-            if verification_readiness is not None
+            if active_plan is not None
             else "NONE"
         ),
     )

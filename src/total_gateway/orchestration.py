@@ -2622,6 +2622,11 @@ class GatewayOrchestrationWorker:
                     run_id=run_id,
                     generation=generation.generation,
                 ),
+                active_plan=self._store.get_active_verification_plan(
+                    request_id=request_id,
+                    run_id=run_id,
+                    generation=generation.generation,
+                ),
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(
