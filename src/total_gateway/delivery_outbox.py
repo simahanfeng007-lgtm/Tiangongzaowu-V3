@@ -513,6 +513,15 @@ class GatewayDeliveryOutboxWorker:
                     sorted(item.artifact_revision_id for item in artifacts)
                 ),
                 delivery_requirement="CHANNEL_ACCEPTED",
+                verification_mode=(
+                    "PLAN_BOUND"
+                    if self._store.get_latest_verification_readiness(
+                        request_id=plan.request_id,
+                        run_id=plan.run_id,
+                        generation=plan.generation,
+                    ) is not None
+                    else "NONE"
+                ),
             )
             decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
                 requirements,
@@ -520,6 +529,11 @@ class GatewayDeliveryOutboxWorker:
                 artifacts=artifacts,
                 outbound_plan=plan,
                 delivery_failure="AMBIGUOUS" if ambiguous else "FAILED_FINAL",
+                verification_readiness=self._store.get_latest_verification_readiness(
+                    request_id=plan.request_id,
+                    run_id=plan.run_id,
+                    generation=plan.generation,
+                ),
             )
             if ambiguous:
                 self._store.record_completion_decision(
@@ -656,6 +670,15 @@ class GatewayDeliveryOutboxWorker:
                 sorted(item.artifact_revision_id for item in artifacts)
             ),
             delivery_requirement="CHANNEL_ACCEPTED",
+            verification_mode=(
+                "PLAN_BOUND"
+                if self._store.get_latest_verification_readiness(
+                    request_id=plan.request_id,
+                    run_id=plan.run_id,
+                    generation=plan.generation,
+                ) is not None
+                else "NONE"
+            ),
         )
         decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
             requirements,
@@ -663,6 +686,11 @@ class GatewayDeliveryOutboxWorker:
             artifacts=artifacts,
             outbound_plan=plan,
             delivery_receipt=receipt,
+            verification_readiness=self._store.get_latest_verification_readiness(
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+            ),
         )
         if decision.outcome in {"IN_PROGRESS", "RECONCILE_REQUIRED"}:
             self._store.record_completion_decision(

@@ -154,6 +154,14 @@ class EffectOracleTestBase(unittest.TestCase):
             observed_at_ms=20_600,
         )
         self.store.put_write_evidence_v2(payload, recorded_at_ms=20_700)
+        self.store.put_write_evidence_effect_binding(
+            evidence_sha256=payload["evidence_sha256"],
+            effect_id=claim.effect_id,
+            request_id=claim.request_id,
+            run_id=claim.run_id,
+            generation=claim.generation,
+            bound_at_ms=20_800,
+        )
         return payload
 
     def _evaluate(self, effect_id, predicate):

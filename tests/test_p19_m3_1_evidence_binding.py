@@ -150,6 +150,16 @@ class ReadbackLineageTests(EffectOracleTestBase):
             observed_at_ms=20_600,
         )
         self.store.put_write_evidence_v2(evidence, recorded_at_ms=20_700)
+        # M4-0: bind the evidence to its effect BEFORE tampering, so the
+        # oracle actually consumes it (unbound evidence is ignored).
+        self.store.put_write_evidence_effect_binding(
+            evidence_sha256=evidence["evidence_sha256"],
+            effect_id=claim.effect_id,
+            request_id=claim.request_id,
+            run_id=claim.run_id,
+            generation=claim.generation,
+            bound_at_ms=20_800,
+        )
         # raw tamper: re-point the stored row at another effect's list entry
         import json as _json
 

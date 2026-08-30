@@ -2617,6 +2617,11 @@ class GatewayOrchestrationWorker:
                 candidate_text=reply,
                 artifacts=tuple(artifacts),
                 head_state_reader=self._store.get_effect_head_state,
+                verification_readiness=self._store.get_latest_verification_readiness(
+                    request_id=request_id,
+                    run_id=run_id,
+                    generation=generation.generation,
+                ),
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(

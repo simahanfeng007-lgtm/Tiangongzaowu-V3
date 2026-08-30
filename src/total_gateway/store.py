@@ -10114,11 +10114,14 @@ class GatewayStateStore:
                 raise StoreConflictError(
                     "binding lineage does not match the effect claim"
                 )
-            # store the claim hash for the record
-            claim_sha = self._connection.execute(
-                "SELECT claim_sha256 FROM effect_ledger WHERE effect_id = ?",
-                (effect_id,),
-            ).fetchone()
+            # store the claim hash for the record — read from the parsed
+            # ledger record (same value the oracle later re-validates)
+            claim_record = self.get_effect(effect_id)
+            if claim_record is None:
+                raise StoreNotFoundError(
+                    f"binding effect does not exist: {effect_id}"
+                )
+            claim_sha_value = claim_record.claim.claim_sha256
             self._assert_request_binding_locked(
                 request_id=request_id,
                 run_id=run_id,
@@ -10144,7 +10147,7 @@ class GatewayStateStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     binding_id, evidence_sha256, effect_id,
-                    claim_sha["claim_sha256"], request_id, run_id,
+                    claim_sha_value, request_id, run_id,
                     generation, bound_at_ms, binding_sha256,
                 ),
             )

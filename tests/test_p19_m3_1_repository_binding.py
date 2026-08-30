@@ -362,6 +362,7 @@ class WindowTests(RepositoryOracleTestBase):
         record = self._evaluate(
             pre_binding, post_binding,
             "repository.required_paths_changed", paths=["src/main.py"],
+            subject=subject,
         )
         self.assertEqual(record.status, "ERROR")
         self.assertIn("authority:post_subject_mismatch", record.reason_codes)
@@ -419,7 +420,7 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         post = self._bind(post_obs, role="POST", subject_effect_id=effect)
         record = self._evaluate(
             pre, post, "repository.no_generated_mirror_direct_edit",
-            subject="eff_m",
+            subject=effect,
         )
         self.assertEqual(record.status, "FAIL")
         self.assertIn("repository.generated_mirror_direct_edit", record.reason_codes)
@@ -442,7 +443,7 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         post = self._bind(post_obs, role="POST", subject_effect_id=effect)
         record = self._evaluate(
             pre, post, "repository.no_generated_mirror_direct_edit",
-            subject="eff_m",
+            subject=effect,
         )
         self.assertEqual(record.status, "PASS", record.reason_codes)
 

@@ -144,14 +144,39 @@ class EffectStateOracle:
             "result_sha256": record.result.result_sha256 if record.result else "",
             "verifier_version": self._descriptor.verifier_version,  # type: ignore[attr-defined]
         }
-        # 2. Bound write_evidence.v2 for this effect (authoritative store).
+        # 2. M4-0 §3.2: the oracle consumes ONLY write_evidence.v2 rows
+        # that carry a formal WriteEvidenceEffectBinding. Evidence exists
+        # but unbound → no target-level PASS is possible.
         try:
+            bound_rows = self._store.list_write_evidence_effect_bindings(  # type: ignore[attr-defined]
+                effect_id
+            )
             evidence_rows = self._store.list_write_evidence_for_effect(  # type: ignore[attr-defined]
                 effect_id
             )
         except Exception:
             return "ERROR", ("authority:evidence_store_failure",), observation, lineage, None
-        evidence = evidence_rows[-1] if evidence_rows else None
+        bound_digests = {
+            row["evidence_sha256"]: row for row in bound_rows
+        }
+        unbound_evidence = [
+            row for row in evidence_rows
+            if row["evidence_sha256"] not in bound_digests
+        ]
+        if unbound_evidence:
+            observation["write_evidence_unbound_count"] = len(unbound_evidence)
+        evidence = None
+        binding = None
+        # pick the latest BOUND evidence (by bound_at_ms order in bindings)
+        bound_by_digest = {
+            row["evidence_sha256"]: row["evidence_json"] if isinstance(row, dict) and "evidence_json" in row else row
+            for row in []
+        }
+        for row in evidence_rows:
+            digest = row["evidence_sha256"]
+            if digest in bound_digests and bound_digests[digest]:
+                binding = bound_digests[digest]
+                evidence = row
         if evidence is not None:
             # M3.1 §2 fail-closed readback re-validation: the evidence's
             # lineage must equal the ledger claim — mismatch is ERROR,
@@ -169,10 +194,36 @@ class EffectStateOracle:
                     lineage,
                     None,
                 )
+            # M4-0 §3.2: re-validate the binding itself — claim hash and
+            # full lineage must match the ledger row (raw SQL tamper on
+            # the binding table is caught here).
+            ledger_claim_sha = record.claim.claim_sha256
+            if binding.get("effect_claim_sha256") != ledger_claim_sha:
+                return (
+                    "ERROR",
+                    ("authority:binding_claim_sha_mismatch",),
+                    observation,
+                    lineage,
+                    None,
+                )
+            if (
+                binding.get("effect_id") != effect_id
+                or binding.get("request_id") != claim.request_id
+                or binding.get("run_id") != claim.run_id
+                or int(binding.get("generation", -1)) != claim.generation
+            ):
+                return (
+                    "ERROR",
+                    ("authority:binding_lineage_mismatch",),
+                    observation,
+                    lineage,
+                    None,
+                )
             observation["write_evidence_sha256"] = evidence["evidence_sha256"]
             observation["write_evidence_strength"] = evidence["provenance"][
                 "strength"
             ]
+            observation["write_evidence_binding_id"] = binding.get("binding_id")
 
         kind = predicate.predicate_type
         if kind == "effect.terminal_succeeded":
