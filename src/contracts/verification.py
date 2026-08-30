@@ -367,6 +367,16 @@ PREDICATE_PARAM_RULES: Mapping[str, frozenset[str]] = MappingProxyType(
         "xlsx.min_data_rows": frozenset({"min_rows"}),
         "text.required_markers": frozenset({"markers"}),
         "pptx.min_nonempty_slides": frozenset({"min_slides"}),
+        # M3 effect predicates (first batch with authoritative evidence)
+        "effect.terminal_succeeded": frozenset(),
+        "effect.target_exists": frozenset({"target_path"}),
+        "effect.target_sha256_matches": frozenset({"target_path", "sha256"}),
+        "effect.required_change_observed": frozenset({"target_paths"}),
+        # M3 repository predicates (first batch with authoritative evidence)
+        "repository.required_paths_changed": frozenset({"paths"}),
+        "repository.forbidden_paths_unchanged": frozenset({"paths"}),
+        "repository.source_authority_valid": frozenset(),
+        "repository.no_generated_mirror_direct_edit": frozenset(),
     }
 )
 
@@ -395,6 +405,36 @@ PREDICATE_MAX_ITEM_CHARS = 128
 def normalize_predicate_text(value: str) -> str:
     """Canonical text form: NFKC + strip + casefold (exact-match basis)."""
     return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+#: Path-shaped params keep case and unicode form (paths are case
+#: sensitive); only strip/length bounds apply. Content-shaped lists
+#: (columns/markers) use full normalize_predicate_text.
+_PATH_PARAM_MAX_CHARS = 512
+_SHA256_PATTERN = "0123456789abcdef"
+
+
+def _normalize_path_param(value: Any, predicate_type: str, key: str) -> str:
+    if not isinstance(value, str):
+        raise AcceptancePredicateSpecError(
+            f"{predicate_type}: param {key!r} must be a string path"
+        )
+    text = value.strip()
+    if not text or len(text) > _PATH_PARAM_MAX_CHARS:
+        raise AcceptancePredicateSpecError(
+            f"{predicate_type}: param {key!r} must be 1..512 chars after strip"
+        )
+    return text
+
+
+def _normalize_sha256_param(value: Any, predicate_type: str, key: str) -> str:
+    if not isinstance(value, str) or len(value) != 64 or any(
+        char not in _SHA256_PATTERN for char in value
+    ):
+        raise AcceptancePredicateSpecError(
+            f"{predicate_type}: param {key!r} must be a lowercase 64-hex sha256"
+        )
+    return value
 
 
 def normalize_predicate_params(
@@ -463,6 +503,35 @@ def normalize_predicate_params(
                 )
             # Deduplicate, then sort: input order must never drift identity.
             normalized.append((key, tuple(sorted(set(items)))))
+        elif key in ("target_paths", "paths"):
+            # Path lists: case-sensitive, no NFKC/casefold — identity must
+            # preserve the exact path form.
+            if not isinstance(value, (list, tuple)) or not value:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} must be a non-empty list"
+                )
+            path_items = [
+                _normalize_path_param(item, predicate_type, key) for item in value
+            ]
+            path_items = [item for item in path_items if item]
+            if not path_items:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} has no usable items"
+                )
+            if len(path_items) > PREDICATE_MAX_LIST_ITEMS:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} exceeds"
+                    f" {PREDICATE_MAX_LIST_ITEMS} items"
+                )
+            normalized.append((key, tuple(sorted(set(path_items)))))
+        elif key == "target_path":
+            normalized.append(
+                (key, _normalize_path_param(value, predicate_type, key))
+            )
+        elif key == "sha256":
+            normalized.append(
+                (key, _normalize_sha256_param(value, predicate_type, key))
+            )
         else:  # pragma: no cover - rules are exhaustive per allowed sets
             raise AcceptancePredicateSpecError(
                 f"{predicate_type}: param {key!r} has no normalization rule"

@@ -38,7 +38,7 @@ def _good_record(snapshot_sha: str) -> VerificationRecord:
         run_id="run_" + "b" * 64,
         generation=1,
         verifier_id="verifier.effect_state",
-        verifier_version="1",
+        verifier_version="2",
         registry_snapshot_sha256=snapshot_sha,
         predicate_id="vpd_m11",
         predicate_type="effect.terminal_succeeded",
