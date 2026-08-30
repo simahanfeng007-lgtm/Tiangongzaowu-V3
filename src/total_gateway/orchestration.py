@@ -161,21 +161,14 @@ from world_understanding.inquiry.self_will_integration import ExistingSelfWillAd
 
 def _verification_snapshot(store, snapshot_sha256: str):
     """Load the authoritative RegistrySnapshot by hash from the store."""
-    import json as _json
-    from contracts.verification import RegistrySnapshot
-
-    row = store._connection.execute(
-        "SELECT snapshot_json FROM verification_registry_snapshot"
-        " WHERE snapshot_sha256 = ?",
-        (snapshot_sha256,),
-    ).fetchone()
-    if row is None:
+    snapshot = store.get_verification_registry_snapshot_by_sha256(
+        snapshot_sha256
+    )
+    if snapshot is None:
         raise OrchestrationError(
             "verification registry snapshot missing from store"
         )
-    return RegistrySnapshot.model_validate_json(
-        row["snapshot_json"], strict=True
-    )
+    return snapshot
 
 
 _WECHAT_POLICY_SHA256 = "d486cbb41e0e95a7b8ac9ea5aed6ef1efe9c74ff13e67cb2d17cd8af93116df7"

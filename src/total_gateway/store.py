@@ -9971,7 +9971,7 @@ class GatewayStateStore:
         with self._lock, self._write_transaction():
             # the plan must already exist in the store
             plan_row = self._connection.execute(
-                "SELECT plan_sha256 FROM verification_plan"
+                "SELECT plan_sha256, plan_json FROM verification_plan"
                 " WHERE verification_plan_id = ?",
                 (verification_plan_id,),
             ).fetchone()
@@ -9982,6 +9982,19 @@ class GatewayStateStore:
             if plan_row["plan_sha256"] != verification_plan_sha256:
                 raise StoreConflictError(
                     "activation plan hash does not match the stored plan"
+                )
+            # M4.1 HOTFIX §5: v1 plans are read-only — reject activation
+            plan_schema = ""
+            try:
+                plan_schema = (json.loads(plan_row["plan_json"]) or {}).get(
+                    "schema_version", ""
+                )
+            except Exception:
+                pass
+            if plan_schema == "tiangong.verification_plan.v1":
+                raise StoreConflictError(
+                    "historical v1 verification plans cannot be activated;"
+                    " create a v2 plan for the current PLAN_BOUND mode"
                 )
             self._assert_request_binding_locked(
                 request_id=request_id,
@@ -10523,6 +10536,32 @@ class GatewayStateStore:
             return RegistrySnapshot.model_validate_json(
                 row["snapshot_json"], strict=True
             )
+
+    def get_verification_registry_snapshot_by_sha256(
+        self, snapshot_sha256: str,
+    ) -> RegistrySnapshot | None:
+        """Load a RegistrySnapshot by content hash (M4.1 HOTFIX §6).
+
+        Production orchestration/executor use this instead of touching
+        ``_connection`` directly. Validates that the claimed sha equals
+        the snapshot's own identity.
+        """
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT snapshot_json FROM verification_registry_snapshot"
+                " WHERE snapshot_sha256 = ?",
+                (snapshot_sha256,),
+            ).fetchone()
+            if row is None:
+                return None
+            snapshot = RegistrySnapshot.model_validate_json(
+                row["snapshot_json"], strict=True
+            )
+            if snapshot.snapshot_sha256 != snapshot_sha256:
+                raise ValueError(
+                    "registry snapshot claimed sha does not match its identity"
+                )
+            return snapshot
 
     def list_completion_decisions(
         self,
