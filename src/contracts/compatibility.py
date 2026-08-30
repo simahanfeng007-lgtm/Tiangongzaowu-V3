@@ -56,11 +56,16 @@ P17_LIFE_P10_ATOMIC_CONTEXT_SCHEMA_BASELINE_SHA256 = (
 P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256 = (
     "09e24fbd4d36333dd63b62f10af1fef7316a4263513b9b539ce598b69fbd875c"
 )
-# P19-R2 M1 验证平面合同（VerifierDescriptor/RegistrySnapshot/VerificationRecord）后的当前包 digest。
+# P19-R2 M1 验证平面合同（VerifierDescriptor/RegistrySnapshot/VerificationRecord）阶段的包 digest。
 P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256 = (
+    "502be945ad687f75a3eb085cdd569fb50aaef3d3876e11993fff79cde73b0965"
+)
+# P19-R2 M2.1 起 AcceptancePredicate 加入合同包后的当前阶段 digest。
+# JSON Schema 形状在 M2.2 未变（M2.2 只改验证器语义与边界行为）。
+P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256 = (
     "d46cd149db4cc37883270f4e91e5592dc2dc2b34765283b5759f680f8ad1609a"
 )
-REVIEWED_SCHEMA_BASELINE_SHA256 = P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256
+REVIEWED_SCHEMA_BASELINE_SHA256 = P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256
 CompatibilityDirection = Literal["backward", "forward"]
 
 

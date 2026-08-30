@@ -64,10 +64,11 @@ def _dormant_descriptor(
 
 
 def default_descriptors() -> tuple[VerifierDescriptor, ...]:
-    """Artifact oracle is ACTIVE at v2 (M2.1); effect/repository stay dormant.
+    """Artifact oracle descriptor: implementation-present /
+    descriptor-registered / production-unwired (M2.2 wording).
 
-    The artifact v2 descriptor declares EXACTLY the dispatch set implemented
-    by ``outcome_oracles/artifact_content.py`` — both read
+    The artifact descriptor carries the EXACT dispatch set implemented by
+    ``outcome_oracles/artifact_content.py`` — both read
     ``verification_oracle_config`` so they cannot drift. Its config digest
     covers the implemented predicate set, params normalization version,
     inspector semantic version, max input bytes and format applicability.

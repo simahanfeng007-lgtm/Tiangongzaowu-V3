@@ -358,15 +358,33 @@ class AcceptancePredicateSpecError(ValueError):
 
 #: Exact parameter rules for every predicate type that may be instantiated
 #: today. Types outside this mapping have no rules yet and therefore cannot
-#: be instantiated (fail-closed instead of guessed).
-PREDICATE_PARAM_RULES: Mapping[str, frozenset[str]] = {
-    "artifact.nonempty": frozenset(),
-    "artifact.min_visible_text_chars": frozenset({"min_chars"}),
-    "xlsx.required_columns": frozenset({"columns"}),
-    "xlsx.min_data_rows": frozenset({"min_rows"}),
-    "text.required_markers": frozenset({"markers"}),
-    "pptx.min_nonempty_slides": frozenset({"min_slides"}),
-}
+#: be instantiated (fail-closed instead of guessed). Immutable mapping.
+PREDICATE_PARAM_RULES: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "artifact.nonempty": frozenset(),
+        "artifact.min_visible_text_chars": frozenset({"min_chars"}),
+        "xlsx.required_columns": frozenset({"columns"}),
+        "xlsx.min_data_rows": frozenset({"min_rows"}),
+        "text.required_markers": frozenset({"markers"}),
+        "pptx.min_nonempty_slides": frozenset({"min_slides"}),
+    }
+)
+
+#: predicate-type prefix -> the ONLY subject kind it may ever target.
+#: A predicate whose subject_kind violates its domain is semantically
+#: invalid no matter how correct its hashes are.
+PREDICATE_SUBJECT_KINDS: Mapping[str, str] = MappingProxyType(
+    {
+        "artifact": "artifact",
+        "docx": "artifact",
+        "xlsx": "artifact",
+        "pptx": "artifact",
+        "csv": "artifact",
+        "text": "artifact",
+        "effect": "effect",
+        "repository": "repository",
+    }
+)
 
 #: Bounds applied to list-shaped params before hashing. They also bound the
 #: number of per-item reason codes a single predicate can produce.
@@ -497,6 +515,17 @@ class AcceptancePredicate(ContractModel):
                         "predicate list params must be sorted, deduplicated"
                         " string tuples"
                     )
+        # Trust-boundary seal: the stored params must be EXACTLY what
+        # normalize_predicate_params produces for this type. This rejects
+        # non-normalized payloads regardless of how they were built
+        # (direct construction, model_validate_json, model_copy).
+        expected = normalize_predicate_params(
+            self.predicate_type, dict(self.params)
+        )
+        if self.params != expected:
+            raise ValueError(
+                "predicate params are not in canonical normalized form"
+            )
         return self
 
     @classmethod
@@ -551,6 +580,25 @@ class AcceptancePredicate(ContractModel):
         return self.predicate_sha256 == self.computed_predicate_sha256()
 
     def has_valid_identity(self) -> bool:
+        """Full semantic + cryptographic identity check (M2.2 seal).
+
+        Verifies predicate_sha256 recomputation, derived predicate_id,
+        canonical params form, AND the predicate_type/subject_kind domain
+        correspondence. Trust boundaries call this — never a bare hash
+        check — because model_copy(update=...) bypasses the validator.
+        """
+        expected_kind = PREDICATE_SUBJECT_KINDS.get(
+            self.predicate_type.split(".", 1)[0]
+        )
+        if expected_kind is None or self.subject_kind != expected_kind:
+            return False
+        try:
+            if self.params != normalize_predicate_params(
+                self.predicate_type, dict(self.params)
+            ):
+                return False
+        except AcceptancePredicateSpecError:
+            return False
         if not self.has_valid_predicate_sha256():
             return False
         return self.predicate_id == "vpd_" + canonical_sha256(

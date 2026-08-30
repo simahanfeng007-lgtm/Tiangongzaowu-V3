@@ -348,7 +348,7 @@ class DescriptorV2Tests(unittest.TestCase):
         snapshot = VerifierRegistry.with_defaults().snapshot(captured_at_ms=1)
         descriptor = snapshot.find("verifier.artifact_content")
         assert descriptor is not None
-        self.assertEqual(descriptor.verifier_version, "2")
+        self.assertEqual(descriptor.verifier_version, "3")
         self.assertNotEqual(descriptor.config_sha256, "0" * 64)
         self.assertEqual(
             set(descriptor.supported_predicate_types),
@@ -451,7 +451,7 @@ class OracleVerdictTests(M21OracleTestBase):
             ),
         )
         self.assertEqual(record.status, "FAIL")
-        self.assertIn("xlsx.column_missing:姓名", record.reason_codes)
+        self.assertIn("xlsx.required_columns_missing", record.reason_codes)
 
         rows = self._evaluate(
             manifest,
@@ -606,23 +606,42 @@ class OracleDisciplineTests(M21OracleTestBase):
         )
         self.assertEqual(record.status, "ERROR")
 
-    def test_o_size_precheck_reads_nothing(self) -> None:
+    def test_o1_tampered_oversized_manifest_is_error_and_reads_nothing(self) -> None:
+        # O1: an oversized manifest whose size was forged fails AUTHORITY
+        # first (QC facts were registered against the original manifest)
+        # -> ERROR, and the blob is never read.
         manifest = self._text_manifest()
-        oversized = manifest.model_copy(
+        tampered_oversized = manifest.model_copy(
             update={"size_bytes": 10 * 1024 * 1024 * 1024}
         ).with_computed_manifest_sha256()
         with mock.patch.object(
             self.object_store, "read_bytes", wraps=self.object_store.read_bytes
         ) as read_spy:
             record = self._evaluate(
-                oversized,
+                tampered_oversized,
                 AcceptancePredicate.create(
                     predicate_type="artifact.nonempty", subject_kind="artifact"
                 ),
             )
-        self.assertEqual(record.status, "INCONCLUSIVE")
-        self.assertIn("input_too_large", record.reason_codes)
-        read_spy.assert_not_called()
+        self.assertEqual(record.status, "ERROR")
+        # The authority chain legitimately reads payload objects (QC
+        # evidence). What must hold: the oracle adds ZERO reads beyond
+        # the authority baseline — no inspection-phase read happens.
+        from total_gateway.artifact_content import VerifiedArtifactContentSource
+
+        baseline_source = VerifiedArtifactContentSource(
+            self.object_store, self.fact_ledger, (manifest,)
+        )
+        with mock.patch.object(
+            self.object_store, "read_bytes", wraps=self.object_store.read_bytes
+        ) as baseline_spy:
+            try:
+                baseline_source.verify_artifact_revision(
+                    tampered_oversized.artifact_revision_id
+                )
+            except Exception:
+                pass  # expected to fail on the tampered manifest
+        self.assertEqual(read_spy.call_count, baseline_spy.call_count)
 
     def test_m_dependency_missing_is_error_and_unparseable_is_inconclusive(self) -> None:
         manifest = self._text_manifest()

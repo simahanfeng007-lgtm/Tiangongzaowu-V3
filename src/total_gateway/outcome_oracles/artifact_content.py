@@ -1,4 +1,4 @@
-"""P19-R2 M2.1 Gateway ArtifactContentOracle — RECORD ONLY.
+"""P19-R2 M2.2 Gateway ArtifactContentOracle — RECORD ONLY.
 
 Evaluates one explicit ``AcceptancePredicate`` against one bound
 ``ArtifactManifest`` by reading immutable object-store bytes through the
@@ -7,41 +7,40 @@ never opens host paths and never derives predicates from the raw user
 message — that heuristic layer stays in the V3 local preflight
 (``v3/simple_chain/content_preflight.py``) with no final authority.
 
-M2.1 review hardening:
-* constructed from a full validated ``RegistrySnapshot`` — the verifier
-  version, producer id, input limit and supported predicate set are read
-  from the pinned v2 descriptor (single source:
-  ``verification_oracle_config``), never hardcoded here;
-* record lineage is taken from the manifest itself
-  (request_id/run_id/generation) — there is nothing to rebind;
-* applicability is decided BEFORE implementation, so an unimplemented
-  xlsx predicate on a docx subject is NOT_APPLICABLE, not INCONCLUSIVE;
-* deterministic metrics exist per format (xlsx counts formula text via a
-  data_only=False pass; pptx counts meaningful slides: text, pictures,
-  tables, charts — not mere slide presence);
-* evidence refs are a small typed set including qc-evidence-set,
-  predicate and observation digests (never 64 raw QC fact ids);
-* resource discipline: manifest.size_bytes is checked against the
-  descriptor limit BEFORE any blob read; ImportError/dependency failures
-  are ERROR, known-unparseable containers are INCONCLUSIVE;
-* reason codes are stable machine codes — no raw exception text.
+Status: implementation-present / descriptor-registered /
+production-unwired. Nothing consumes its records to gate completion.
 
-Status discipline (strict):
-    PASS / FAIL        deterministic evidence either way
-    INCONCLUSIVE       cannot reliably judge (unsupported format,
-                       unparseable container, size beyond limit, missing
-                       per-format metric, capability not implemented)
-    ERROR              authority/readback/dependency/runtime failure
-    NOT_APPLICABLE     predicate does not apply to this subject at all
+M2.2 hardening (review 2026-08-30):
+* predicate trust boundary runs the FULL semantic identity check
+  (hashes + canonical params + type/subject domain), never a bare hash;
+* AUTHORITY BEFORE ANY STATUS: manifest/QC-facts/object-reference
+  verification happens before applicability/capability/format/size
+  decisions — even NOT_APPLICABLE and INCONCLUSIVE subjects carry an
+  authority-verified manifest;
+* resource discipline: the verified manifest's size_bytes is checked
+  against the descriptor limit BEFORE any blob read;
+* determinism: xlsx formula text counts as content everywhere (single
+  data_only=False pass); pptx meaningful content uses the official shape
+  enum (picture/media/group/table/chart) plus table-cell text; text
+  marker matching normalizes BOTH sides (NFKC + casefold);
+* parser taxonomy: known zip/XML container corruption -> INCONCLUSIVE,
+  ImportError/dependency -> ERROR, unknown runtime bugs -> ERROR;
+* reason codes are fixed machine codes (no user strings); missing-item
+  details live only in the observation digest (missing_count +
+  missing_items_sha256);
+* the pinned descriptor is validated EXACTLY against the oracle config —
+  same id/version with a different config or capability is rejected.
 
-RECORD ONLY: this module produces ``VerificationRecord``s; persisting
-them changes no CompletionDecision, no request state, no delivery.
+RECORD ONLY: produced records change no CompletionDecision, no request
+state, no delivery.
 """
 
 from __future__ import annotations
 
 import csv as _csv
 import io
+import zipfile
+import xml.etree.ElementTree as _etree
 from typing import Any
 
 from contracts import ArtifactManifest, canonical_sha256
@@ -60,9 +59,14 @@ from total_gateway.fact_ledger import FactLedger
 from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.verification_oracle_config import (
     ARTIFACT_APPLICABLE_FORMATS,
+    ARTIFACT_DESCRIPTOR_EXPECTATIONS,
+    ARTIFACT_IMPLEMENTED_PREDICATE_TYPES,
     ARTIFACT_INSPECTABLE_FORMATS,
     ARTIFACT_INSPECTOR_SEMANTIC_VERSION,
+    ARTIFACT_MAX_INPUT_BYTES,
+    IMPLEMENTATION_REF,
     VERIFIER_ID,
+    artifact_oracle_config_sha256,
 )
 from total_gateway.verification_registry import (
     UnknownVerifierError,
@@ -75,11 +79,68 @@ class OracleSnapshotInvalid(ValueError):
 
 
 class ContentUnparseable(Exception):
-    """Deterministically detected "cannot reliably inspect" signal."""
+    """Known container/zip/XML corruption — cannot reliably inspect."""
 
 
 class _InspectorDependencyMissing(Exception):
     """ImportError from an inspector dependency (ERROR, not INCONCLUSIVE)."""
+
+
+#: Exception types that mean "known corrupted container" -> INCONCLUSIVE.
+_KNOWN_CORRUPTION_TYPES: tuple[type[BaseException], ...] = (
+    zipfile.BadZipFile,
+    _etree.ParseError,
+)
+
+
+# ---------------------------------------------------------------------------
+# Descriptor binding (§2)
+# ---------------------------------------------------------------------------
+
+def _validate_artifact_descriptor(descriptor) -> None:
+    """Exact-match the pinned descriptor against the oracle config.
+
+    A same-id/same-version descriptor whose config hash, capability set,
+    limits or authority claims differ from what THIS implementation reads
+    is rejected — no silent drift.
+    """
+    expectations = ARTIFACT_DESCRIPTOR_EXPECTATIONS
+    problems: list[str] = []
+    if descriptor.verifier_id != VERIFIER_ID:
+        problems.append("verifier_id")
+    if descriptor.verifier_version != ARTIFACT_INSPECTOR_SEMANTIC_VERSION:
+        problems.append("verifier_version")
+    if descriptor.config_sha256 != artifact_oracle_config_sha256():
+        problems.append("config_sha256")
+    if list(descriptor.supported_predicate_types) != sorted(
+        ARTIFACT_IMPLEMENTED_PREDICATE_TYPES
+    ):
+        problems.append("supported_predicate_types")
+    if tuple(descriptor.supported_subject_kinds) != expectations[
+        "supported_subject_kinds"
+    ]:
+        problems.append("supported_subject_kinds")
+    if set(descriptor.accepted_authorities) != set(
+        expectations["accepted_authorities"]
+    ):
+        problems.append("accepted_authorities")
+    if descriptor.max_input_bytes != ARTIFACT_MAX_INPUT_BYTES:
+        problems.append("max_input_bytes")
+    if descriptor.implementation_ref != IMPLEMENTATION_REF:
+        problems.append("implementation_ref")
+    if descriptor.producer_component_id != expectations["producer_component_id"]:
+        problems.append("producer_component_id")
+    if descriptor.layer != expectations["layer"]:
+        problems.append("layer")
+    if descriptor.deterministic is not expectations["deterministic"]:
+        problems.append("deterministic")
+    if descriptor.default_enforcement != expectations["default_enforcement"]:
+        problems.append("default_enforcement")
+    if problems:
+        raise OracleSnapshotInvalid(
+            "artifact descriptor does not match the oracle config:"
+            f" {', '.join(problems)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -111,52 +172,52 @@ def _inspect_docx(data: bytes) -> dict[str, Any]:
         }
     except _InspectorDependencyMissing:
         raise
-    except Exception as exc:
-        raise ContentUnparseable(f"docx container unparseable: {type(exc).__name__}") from exc
+    except BaseException as exc:
+        if isinstance(exc, _KNOWN_CORRUPTION_TYPES):
+            raise ContentUnparseable("docx container corrupted") from exc
+        raise  # unknown runtime bug -> ERROR by the dispatcher
 
 
 def _inspect_xlsx(data: bytes) -> dict[str, Any]:
+    """Single data_only=False pass: formula text is content everywhere.
+
+    Formula cells carry no cached value in this mode, so their formula
+    string is what we see — it counts toward visible chars, non-empty
+    cells AND data rows (M2.2 review rule).
+    """
     try:
         import openpyxl
     except ImportError as exc:
         raise _InspectorDependencyMissing("openpyxl") from exc
-    values_book = None
-    formulas_book = None
+    workbook = None
     try:
-        # Pass 1 (data_only=True): cached values for header/data-row shape.
-        values_book = openpyxl.load_workbook(
-            io.BytesIO(data), read_only=True, data_only=True
+        workbook = openpyxl.load_workbook(
+            io.BytesIO(data), read_only=True, data_only=False
         )
-        sheet = values_book.active
+        sheet = workbook.active
         if sheet is None:
             raise ContentUnparseable("xlsx workbook has no active sheet")
         header: list[str] = []
         data_row_count = 0
         nonempty_cell_count = 0
-        for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
-            cells = ["" if cell is None else str(cell).strip() for cell in row]
-            nonempty = [cell for cell in cells if cell]
-            nonempty_cell_count += len(nonempty)
-            if row_index == 0:
-                header = cells
-                continue  # header is not a data row (oracle semantics)
-            if nonempty:
-                data_row_count += 1
-        sheet_names = list(values_book.sheetnames)
-        # Pass 2 (data_only=False): formula text is content too — a cell
-        # holding "=SUM(A1:A9)" is not empty just because its cached
-        # value is missing.
-        formulas_book = openpyxl.load_workbook(
-            io.BytesIO(data), read_only=True, data_only=False
-        )
-        formula_sheet = formulas_book.active
         visible_text_chars = 0
-        if formula_sheet is not None:
-            for row in formula_sheet.iter_rows(values_only=True):
-                for cell in row:
-                    if cell is None:
-                        continue
-                    visible_text_chars += len(str(cell).strip())
+        for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
+            row_nonempty = 0
+            for cell in row:
+                if cell is None:
+                    continue
+                text = str(cell).strip()
+                if not text:
+                    continue
+                nonempty_cell_count += 1
+                row_nonempty += 1
+                visible_text_chars += len(text)
+            if row_index == 0:
+                header = ["" if cell is None else str(cell).strip() for cell in row]
+                continue  # header is not a data row (oracle semantics)
+            if row_nonempty:
+                data_row_count += 1
+        sheet_names = list(workbook.sheetnames)
         return {
             "measured_format": "xlsx",
             "header": header,
@@ -169,31 +230,45 @@ def _inspect_xlsx(data: bytes) -> dict[str, Any]:
         raise
     except ContentUnparseable:
         raise
-    except Exception as exc:
-        raise ContentUnparseable(f"xlsx container unparseable: {type(exc).__name__}") from exc
+    except BaseException as exc:
+        if isinstance(exc, _KNOWN_CORRUPTION_TYPES):
+            raise ContentUnparseable("xlsx container corrupted") from exc
+        raise  # unknown runtime bug -> ERROR by the dispatcher
     finally:
-        if values_book is not None:
-            values_book.close()
-        if formulas_book is not None:
-            formulas_book.close()
+        if workbook is not None:
+            workbook.close()
 
 
 def _inspect_pptx(data: bytes) -> dict[str, Any]:
     try:
         from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
     except ImportError as exc:
         raise _InspectorDependencyMissing("pptx") from exc
+    # Shape types that are meaningful content even without text.
+    meaningful_shape_types = {
+        member
+        for member in (
+            getattr(MSO_SHAPE_TYPE, "PICTURE", None),
+            getattr(MSO_SHAPE_TYPE, "LINKED_PICTURE", None),
+            getattr(MSO_SHAPE_TYPE, "MEDIA", None),
+            getattr(MSO_SHAPE_TYPE, "GROUP", None),
+        )
+        if member is not None
+    }
     try:
         presentation = Presentation(io.BytesIO(data))
         slide_count = 0
         meaningful_slide_count = 0
         text_bearing_slide_count = 0
         slide_text_chars = 0
+        total_shape_count = 0
         for slide in presentation.slides:
             slide_count += 1
             has_text = False
             has_other_content = False
             for shape in slide.shapes:
+                total_shape_count += 1
                 if getattr(shape, "has_text_frame", False):
                     text = shape.text_frame.text.strip()
                     if text:
@@ -201,11 +276,14 @@ def _inspect_pptx(data: bytes) -> dict[str, Any]:
                         slide_text_chars += len(text)
                 if getattr(shape, "has_table", False):
                     has_other_content = True
+                    for row in shape.table.rows:
+                        for cell in row.cells:
+                            cell_text = cell.text.strip()
+                            if cell_text:
+                                slide_text_chars += len(cell_text)
                 if getattr(shape, "has_chart", False):
                     has_other_content = True
-                if shape.shape_type is not None and str(shape.shape_type).startswith(
-                    "PICTURE"
-                ):
+                if shape.shape_type in meaningful_shape_types:
                     has_other_content = True
             if has_text:
                 text_bearing_slide_count += 1
@@ -217,11 +295,14 @@ def _inspect_pptx(data: bytes) -> dict[str, Any]:
             "text_bearing_slide_count": text_bearing_slide_count,
             "meaningful_slide_count": meaningful_slide_count,
             "slide_text_chars": slide_text_chars,
+            "total_shape_count": total_shape_count,
         }
     except _InspectorDependencyMissing:
         raise
-    except Exception as exc:
-        raise ContentUnparseable(f"pptx container unparseable: {type(exc).__name__}") from exc
+    except BaseException as exc:
+        if isinstance(exc, _KNOWN_CORRUPTION_TYPES):
+            raise ContentUnparseable("pptx container corrupted") from exc
+        raise  # unknown runtime bug -> ERROR by the dispatcher
 
 
 def _inspect_text(data: bytes, *, filename: str) -> dict[str, Any]:
@@ -230,8 +311,10 @@ def _inspect_text(data: bytes, *, filename: str) -> dict[str, Any]:
     except UnicodeDecodeError as exc:
         raise ContentUnparseable("text not decodable as utf-8") from exc
     metrics: dict[str, Any] = {
-        "_text": text,
         "measured_format": "text",
+        # Marker matching normalizes BOTH sides: haystack here, needles in
+        # the predicate params (both NFKC + casefold).
+        "_text_norm": normalize_predicate_text(text),
         "char_count": len(text),
         "non_whitespace_chars": sum(1 for ch in text if not ch.isspace()),
         "line_count": sum(1 for line in text.splitlines() if line.strip()),
@@ -262,12 +345,12 @@ def _inspect(format_id: str, data: bytes, *, filename: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Deterministic checks (stable machine reason codes only)
+# Deterministic checks — fixed machine reason codes only (§4)
 # ---------------------------------------------------------------------------
 
 #: Per-format metric key used by artifact.min_visible_text_chars. A format
-#: without a reliable metric key in the observation raises
-#: ContentUnparseable (INCONCLUSIVE) — never a fake 0.
+#: without a reliable metric key raises ContentUnparseable (INCONCLUSIVE)
+#: — never a fake 0.
 _VISIBLE_TEXT_METRIC_KEYS: dict[str, str] = {
     "docx": "visible_text_chars",
     "xlsx": "visible_text_chars",
@@ -288,28 +371,47 @@ def _visible_text_metric(format_id: str, metrics: dict[str, Any]) -> int:
     return value
 
 
+def _pptx_emptiness_is_unreliable(metrics: dict[str, Any]) -> bool:
+    """Slides carry shapes we cannot classify: not provably empty."""
+    return (
+        metrics["slide_count"] > 0
+        and metrics["meaningful_slide_count"] == 0
+        and metrics["total_shape_count"] > 0
+    )
+
+
 def _check_predicate(
     predicate: AcceptancePredicate,
     format_id: str,
     metrics: dict[str, Any],
-) -> tuple[bool, tuple[str, ...]]:
-    """Return (holds, reason_codes). Only called with implemented types."""
+) -> tuple[bool, tuple[str, ...], dict[str, Any]]:
+    """Return (holds, reason_codes, observation_extra).
+
+    Reason codes are FIXED machine codes — user strings (column/marker
+    names) never appear; their detail goes into observation_extra which
+    feeds only the observation digest (missing_count + items digest).
+    """
     kind = predicate.predicate_type
     params = predicate.param_mapping()
     if kind == "artifact.nonempty":
         if format_id == "xlsx":
             holds = metrics["nonempty_cell_count"] > 0
         elif format_id == "pptx":
+            if _pptx_emptiness_is_unreliable(metrics):
+                raise ContentUnparseable(
+                    "pptx slides carry unclassifiable content; emptiness"
+                    " cannot be judged reliably"
+                )
             holds = metrics["meaningful_slide_count"] > 0
         else:
             holds = _visible_text_metric(format_id, metrics) > 0
-        return holds, () if holds else ("artifact.content_empty",)
+        return holds, () if holds else ("artifact.content_empty",), {}
     if kind == "artifact.min_visible_text_chars":
         minimum = params["min_chars"]
         assert isinstance(minimum, int)
         visible = _visible_text_metric(format_id, metrics)
         holds = visible >= minimum
-        return holds, () if holds else ("artifact.visible_text_below_minimum",)
+        return holds, () if holds else ("artifact.visible_text_below_minimum",), {}
     if kind == "xlsx.required_columns":
         requested = params["columns"]
         assert isinstance(requested, tuple)
@@ -319,24 +421,50 @@ def _check_predicate(
             if isinstance(cell, str) and cell.strip()
         }
         missing = [column for column in requested if column not in header]
-        return not missing, tuple(f"xlsx.column_missing:{c}" for c in missing)
+        return (
+            not missing,
+            () if not missing else ("xlsx.required_columns_missing",),
+            {}
+            if not missing
+            else {
+                "missing_count": len(missing),
+                "missing_items_sha256": canonical_sha256(list(missing)),
+            },
+        )
     if kind == "xlsx.min_data_rows":
         minimum = params["min_rows"]
         assert isinstance(minimum, int)
         holds = metrics["data_row_count"] >= minimum
-        return holds, () if holds else ("xlsx.data_rows_below_minimum",)
+        return holds, () if holds else ("xlsx.data_rows_below_minimum",), {}
     if kind == "text.required_markers":
         markers = params["markers"]
         assert isinstance(markers, tuple)
-        missing = tuple(
-            f"text.marker_missing:{m}" for m in markers if m not in metrics["_text"]
+        haystack = metrics.get("_text_norm", "")
+        missing = [marker for marker in markers if marker not in haystack]
+        return (
+            not missing,
+            () if not missing else ("text.required_markers_missing",),
+            {}
+            if not missing
+            else {
+                "missing_count": len(missing),
+                "missing_items_sha256": canonical_sha256(list(missing)),
+            },
         )
-        return not missing, missing
     if kind == "pptx.min_nonempty_slides":
         minimum = params["min_slides"]
         assert isinstance(minimum, int)
+        if _pptx_emptiness_is_unreliable(metrics):
+            raise ContentUnparseable(
+                "pptx slides carry unclassifiable content; meaningful"
+                " slide count cannot be judged reliably"
+            )
         holds = metrics["meaningful_slide_count"] >= minimum
-        return holds, () if holds else ("pptx.meaningful_slides_below_minimum",)
+        return (
+            holds,
+            () if holds else ("pptx.meaningful_slides_below_minimum",),
+            {},
+        )
     raise AssertionError(
         f"predicate type declared implemented but has no check: {kind}"
     )
@@ -349,9 +477,8 @@ def _check_predicate(
 class ArtifactContentOracle:
     """Deterministic content oracle over immutable, QC-passed artifacts.
 
-    Bound to one validated ``RegistrySnapshot``; the v2 descriptor inside
-    that snapshot supplies the verifier version, producer component,
-    input limit and supported predicate set (no hardcoded drift).
+    Bound to one validated ``RegistrySnapshot`` whose artifact descriptor
+    is EXACTLY the one this implementation reads its config from.
     """
 
     def __init__(
@@ -364,13 +491,13 @@ class ArtifactContentOracle:
         if not snapshot.has_valid_identity():
             raise OracleSnapshotInvalid("registry snapshot identity binding is invalid")
         try:
-            VerifierRegistry(snapshot.verifiers)
+            registry = VerifierRegistry(snapshot.verifiers)
         except ValueError as exc:
             raise OracleSnapshotInvalid(
                 "registry snapshot contains invalid verifier descriptors"
             ) from exc
         try:
-            descriptor = VerifierRegistry(snapshot.verifiers).find(
+            descriptor = registry.find(
                 VERIFIER_ID, ARTIFACT_INSPECTOR_SEMANTIC_VERSION
             )
         except UnknownVerifierError as exc:
@@ -378,6 +505,7 @@ class ArtifactContentOracle:
                 f"snapshot does not carry {VERIFIER_ID}@"
                 f"{ARTIFACT_INSPECTOR_SEMANTIC_VERSION}"
             ) from exc
+        _validate_artifact_descriptor(descriptor)
         object.__setattr__(self, "_snapshot", snapshot)
         object.__setattr__(self, "_descriptor", descriptor)
         object.__setattr__(self, "_object_store", object_store)
@@ -395,13 +523,9 @@ class ArtifactContentOracle:
         evaluated_at_ms: int,
         evaluation_phase: str = "POST_EXECUTION",
     ) -> VerificationRecord:
-        if predicate.subject_kind != "artifact":
-            raise ValueError(
-                "artifact oracle only evaluates artifact-subject predicates:"
-                f" {predicate.subject_kind}"
-            )
-        if not predicate.has_valid_identity():
-            raise ValueError("predicate identity binding is invalid")
+        # 1. Predicate semantic identity — FULL check, never a bare hash.
+        if predicate.subject_kind != "artifact" or not predicate.has_valid_identity():
+            raise ValueError("predicate failed full semantic identity validation")
         status, reason_codes, observation = self._evaluate_to_status(
             manifest, predicate
         )
@@ -422,8 +546,24 @@ class ArtifactContentOracle:
     ) -> tuple[str, tuple[str, ...], dict[str, Any]]:
         format_id = manifest.format_id
 
-        # 1. Applicability FIRST: a predicate that can never apply to this
-        # subject/format is NOT_APPLICABLE regardless of implementation.
+        # 2-3. AUTHORITY BEFORE ANY STATUS: manifest PASSED + hash, QC
+        # facts, object reference binding. Every downstream verdict —
+        # including NOT_APPLICABLE and INCONCLUSIVE — is bound to a
+        # subject that passed this verification. ArtifactContentError
+        # messages ARE stable machine codes (artifact.content.*).
+        try:
+            source = VerifiedArtifactContentSource(
+                self._object_store, self._fact_ledger, (manifest,)  # type: ignore[attr-defined]
+            )
+            source.verify_artifact_revision(manifest.artifact_revision_id)
+        except ArtifactContentError as exc:
+            return "ERROR", (f"authority:{exc}",), {"authority_error": str(exc)}
+        except Exception as exc:  # object-store corruption, IO, runtime
+            return "ERROR", ("authority_failure",), {
+                "authority_error": type(exc).__name__
+            }
+
+        # 4. Applicability (subject already authority-verified above).
         prefix = predicate.predicate_type.split(".", 1)[0]
         applicable = ARTIFACT_APPLICABLE_FORMATS.get(prefix)
         if applicable is not None and format_id not in applicable:
@@ -432,19 +572,20 @@ class ArtifactContentOracle:
                 "format_id": format_id,
             }
 
-        # 2. Implementation: declared capability comes from the pinned
-        # descriptor (single source), not from a parallel list here.
+        # 5. Descriptor capability — from the pinned descriptor.
         if predicate.predicate_type not in self._descriptor.supported_predicate_types:  # type: ignore[attr-defined]
             return "INCONCLUSIVE", ("predicate_not_implemented",), {
                 "predicate_type": predicate.predicate_type
             }
+
+        # 6. Format inspectability.
         if format_id not in ARTIFACT_INSPECTABLE_FORMATS:
             return "INCONCLUSIVE", ("format_not_inspectable",), {
                 "format_id": format_id
             }
 
-        # 3. Resource pre-check against the descriptor limit BEFORE any
-        # blob read: oversize manifests never touch object-store bytes.
+        # 7-8. Size pre-check on the VERIFIED manifest — oversize never
+        # touches object-store bytes.
         max_input_bytes = self._descriptor.max_input_bytes  # type: ignore[attr-defined]
         if manifest.size_bytes > max_input_bytes:
             return "INCONCLUSIVE", ("input_too_large",), {
@@ -452,44 +593,41 @@ class ArtifactContentOracle:
                 "max_input_bytes": max_input_bytes,
             }
 
-        # 4. Authority chain: manifest PASSED + QC facts + object binding +
-        # immutable readback with hash recomputation. Any failure here is
-        # ERROR; nothing may escape or pass silently. ArtifactContentError
-        # messages ARE stable machine codes (artifact.content.*).
+        # 9. Immutable readback (re-verifies on the way in).
         try:
-            source = VerifiedArtifactContentSource(
-                self._object_store, self._fact_ledger, (manifest,)  # type: ignore[attr-defined]
-            )
             data = source.read_verified_artifact(manifest.artifact_revision_id)
         except ArtifactContentError as exc:
             return "ERROR", (f"authority:{exc}",), {"authority_error": str(exc)}
-        except Exception as exc:  # object-store corruption, IO, runtime
+        except Exception as exc:
             return "ERROR", ("authority_failure",), {
                 "authority_error": type(exc).__name__
             }
 
-        # 5. Inspection: dependency failures are ERROR; known-unparseable
-        # containers are INCONCLUSIVE.
+        # 10. Inspection + deterministic check.
         try:
             metrics = _inspect(format_id, data, filename=manifest.filename)
         except _InspectorDependencyMissing:
             return "ERROR", ("inspector_dependency_missing",), {}
         except ContentUnparseable:
             return "INCONCLUSIVE", ("content_unparseable",), {}
-        except Exception:  # unexpected runtime bug — never silent
+        except Exception:  # unknown runtime bug — never silent
             return "ERROR", ("inspector_failure",), {}
 
-        # 6. Deterministic check (stable machine codes only).
         try:
-            holds, reason_codes = _check_predicate(predicate, format_id, metrics)
+            holds, reason_codes, extra = _check_predicate(
+                predicate, format_id, metrics
+            )
         except ContentUnparseable:
             return "INCONCLUSIVE", ("content_unparseable",), {}
-        except Exception:  # unexpected runtime bug — never silent
+        except Exception:  # unknown runtime bug — never silent
             return "ERROR", ("check_failure",), {}
 
         observation = {
-            key: value for key, value in metrics.items() if key != "_text"
+            key: value
+            for key, value in metrics.items()
+            if key not in ("_text_norm", "_text")
         }
+        observation.update(extra)
         observation["inspector_version"] = self._descriptor.verifier_version  # type: ignore[attr-defined]
         return ("PASS" if holds else "FAIL"), reason_codes, observation
 
@@ -534,8 +672,7 @@ class ArtifactContentOracle:
         )
         payload = dict(
             verification_record_id="vrs_" + "0" * 64,
-            # Lineage is taken from the manifest itself — there is no
-            # caller-supplied request/run/generation to rebind.
+            # Lineage is taken from the manifest itself.
             request_id=manifest.request_id,
             run_id=manifest.run_id,
             generation=manifest.generation,
