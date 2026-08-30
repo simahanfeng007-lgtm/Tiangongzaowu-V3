@@ -1,36 +1,34 @@
-"""P19-R2 M3 Gateway RepositoryStateOracle — RECORD ONLY.
+"""P19-R2 M3.1 Gateway RepositoryStateOracle — RECORD ONLY.
 
 Status: implementation-present / descriptor-registered /
 production-unwired.
 
-Evaluates explicit ``AcceptancePredicate``s against lineage-bound
-repository observations persisted in ``GatewayStateStore``. The
-observations themselves are captured by the EXISTING read-only git
-provider (``v3/repository_perception.LocalGitRepositoryProvider`` —
-whitelisted read-only git, timeout/output caps); this oracle never runs
-git itself, never shells out, and never opens a second git path.
-
-Discipline:
-* only store-bound pre/post observations count as authority — a WU
-  committed-frame snapshot has no path into this oracle and an unknown
-  observation hash is ERROR, never PASS;
-* pre/post must share repository identity and lineage, and post must be
-  sampled at or after pre;
-* the pre→post delta is recomputed deterministically from the stored
-  file inventories (added/removed/modified), so untracked additions and
-  renames count as changes;
-* ``no_generated_mirror_direct_edit`` combines the recomputed delta with
-  source-ownership generated targets (structural authority, not filename
-  guessing);
-* ``source_authority_valid`` reuses scripts/check-source-authority.py's
-  ``validate_source_authority`` via import (no duplicated logic);
-* tests_passed / compile_passed / no_test_tampering stay dormant: their
-  authority (real command receipts) does not exist yet.
+M3.1 trust-boundary closure:
+* observations are CONTENT (identity = the provider's content hash);
+  verification LINEAGE lives in the separate binding table — the same
+  observation may legally bind as PRE/POST across many requests and
+  effects;
+* the oracle consumes bound pre/post pairs tied to ONE subject effect
+  (the verification window): pre/post from different subject effects is
+  ERROR, so changes made by "some other step of the run" can never
+  satisfy this effect's required_paths_changed;
+* source-authority validation runs through the trusted
+  ``source_authority.validator`` module (moved out of the checked repo's
+  scripts/ in M3.1) — the repository under inspection is pure data, no
+  Python inside it is ever executed;
+* live-state binding (option A): for authority/ownership predicates the
+  oracle re-samples the working tree through the read-only provider and
+  requires reality to STILL equal the pinned post observation — drift
+  after the post capture is ERROR, never PASS;
+* mirror targets are matched on canonical repo-path boundaries
+  (exact or directory-rooted prefix), not substring luck;
+* without a trusted lineage (unknown binding/observation) the oracle
+  raises ``OracleInvocationError`` — it never fabricates a
+  VerificationRecord with invented ids.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 from typing import Any, Callable
@@ -54,33 +52,57 @@ _REPOSITORY_IMPLEMENTATION_REF = (
     "src/total_gateway/outcome_oracles/repository_state.py"
 )
 
-#: Placeholder lineage for authority failures where no bound observation
-#: exists (unknown hash / store failure). All-zero ids satisfy the record
-#: contract while carrying no lineage claims.
-_UNBOUND_LINEAGE = {
-    "request_id": "req_" + "0" * 64,
-    "run_id": "run_" + "0" * 64,
-    "generation": 0,
-}
+
+class OracleInvocationError(RuntimeError):
+    """No trusted lineage — refusing to fabricate a VerificationRecord."""
+
+
+def _trusted_authority_validator(repo_root: str) -> list[str]:
+    """Reuse the authoritative in-repo validator module (M3.1 §7)."""
+    from source_authority.validator import load_config, validate_source_authority
+
+    root = Path(repo_root)
+    config = load_config(root / "source-ownership.json")
+    return validate_source_authority(
+        config, repo_root=root, require_sources=False
+    )
 
 
 def _default_authority_validator(repo_root: str) -> list[str]:
-    """Run the REAL check-source-authority.py validator (reused, not
-    duplicated). Returns the error list (empty == valid)."""
-    script = Path(repo_root) / "scripts" / "check-source-authority.py"
-    if not script.is_file():
-        raise FileNotFoundError("check-source-authority.py not found in repo")
-    spec = importlib.util.spec_from_file_location(
-        "tiangong_check_source_authority", script
+    return _trusted_authority_validator(repo_root)
+
+
+def _resample_observation_sha256(worktree_root: str) -> str:
+    """Re-observe the working tree via the trusted read-only provider."""
+    import sys
+
+    repo_src = str(Path(__file__).resolve().parents[3] / "src")
+    backend_src = str(
+        Path(__file__).resolve().parents[4] / "app/backend/tiangong-backend"
     )
-    if spec is None or spec.loader is None:
-        raise ImportError("cannot load check-source-authority.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    config = module.load_config(Path(repo_root) / "source-ownership.json")
-    return module.validate_source_authority(
-        config, repo_root=Path(repo_root), require_sources=False
-    )
+    for candidate in (repo_src, backend_src):
+        if candidate not in sys.path:
+            sys.path.insert(0, candidate)
+    from v3.repository_perception import LocalGitRepositoryProvider
+
+    provider = LocalGitRepositoryProvider()
+    identity = provider.discover(worktree_root)
+    if identity is None:
+        raise ValueError("worktree is not a discoverable git repository")
+    observation = provider.observe(identity)
+    return observation.observation_sha256
+
+
+def _path_hits_target(path: str, target: str) -> bool:
+    """Canonical repo-path boundary match (M3.1 §6).
+
+    A target names a file or a directory root: hit means exact equality
+    or a true directory-prefix ('foo/bar' does NOT hit 'foo/barista').
+    """
+    if path == target:
+        return True
+    root = target.rstrip("/")
+    return path.startswith(root + "/")
 
 
 class RepositoryStateOracle:
@@ -92,6 +114,7 @@ class RepositoryStateOracle:
         snapshot: RegistrySnapshot,
         store,
         authority_validator: Callable[[str], list[str]] | None = None,
+        resampler: Callable[[str], str] | None = None,
     ) -> None:
         snapshot, descriptor = bind_snapshot_and_descriptor(
             snapshot,
@@ -111,6 +134,9 @@ class RepositoryStateOracle:
             "_authority_validator",
             authority_validator or _default_authority_validator,
         )
+        object.__setattr__(
+            self, "_resampler", resampler or _resample_observation_sha256
+        )
 
     @property
     def descriptor(self):
@@ -119,8 +145,9 @@ class RepositoryStateOracle:
     def evaluate(
         self,
         *,
-        pre_observation_sha256: str,
-        post_observation_sha256: str,
+        subject_effect_id: str,
+        pre_binding_id: str,
+        post_binding_id: str,
         predicate: AcceptancePredicate,
         evaluated_at_ms: int,
         evaluation_phase: str = "POST_EXECUTION",
@@ -128,9 +155,9 @@ class RepositoryStateOracle:
         if predicate.subject_kind != "repository" or not predicate.has_valid_identity():
             raise ValueError("predicate failed full semantic identity validation")
         status, reason_codes, observation, lineage, repo_id = self._evaluate_to_status(
-            pre_observation_sha256, post_observation_sha256, predicate
+            subject_effect_id, pre_binding_id, post_binding_id, predicate
         )
-        subject_identity = f"{repo_id}:{post_observation_sha256}"
+        subject_identity = f"{repo_id}:{post_binding_id}"
         return assemble_record(
             descriptor=self._descriptor,  # type: ignore[attr-defined]
             snapshot=self._snapshot,  # type: ignore[attr-defined]
@@ -143,8 +170,8 @@ class RepositoryStateOracle:
             status=status,
             reason_codes=reason_codes,
             evidence_refs=(
-                f"repo_observation_pre:{pre_observation_sha256}",
-                f"repo_observation_post:{post_observation_sha256}",
+                f"repo_observation_binding_pre:{pre_binding_id}",
+                f"repo_observation_binding_post:{post_binding_id}",
             ),
             observation=observation,
             evaluated_at_ms=evaluated_at_ms,
@@ -153,26 +180,36 @@ class RepositoryStateOracle:
 
     # -- internals ---------------------------------------------------------
 
-    def _load_observation(self, sha: str):
+    def _load_binding(self, binding_id: str) -> dict:
         try:
-            row = self._store.get_repository_observation(sha)  # type: ignore[attr-defined]
-        except Exception:
-            return None, "authority:observation_store_failure"
+            row = self._store.get_repository_observation_binding(  # type: ignore[attr-defined]
+                binding_id
+            )
+        except Exception as exc:
+            raise OracleInvocationError(
+                "repository observation binding store failure"
+            ) from exc
         if row is None:
-            return None, "authority:observation_not_found"
-        return row, None
+            raise OracleInvocationError(
+                "repository observation binding not found; refusing to"
+                " fabricate a record"
+            )
+        return row
+
+    def _load_content(self, observation_sha256: str) -> dict:
+        row = self._store.get_repository_observation(  # type: ignore[attr-defined]
+            observation_sha256
+        )
+        if row is None:
+            raise OracleInvocationError(
+                "repository observation content not found; refusing to"
+                " fabricate a record"
+            )
+        return row
 
     @staticmethod
-    def _delta_paths(pre_payload: dict, post_payload: dict) -> set[str]:
-        """Authoritative pre→post delta from the provider's git diff.
-
-        The post observation's ``changes`` (captured via
-        ``observe_delta`` with the pre revision) is the whitelisted-git
-        diff between the two revisions plus the working-tree overlay.
-        Added, removed, modified, renamed and untracked paths all land in
-        the delta set. The pre payload is kept for identity binding even
-        though the diff authority lives in the post capture.
-        """
+    def _delta_paths(post_payload: dict) -> set[str]:
+        """Authoritative pre→post delta from the provider's git diff."""
         delta: set[str] = set()
         for change in post_payload.get("changes") or []:
             if not isinstance(change, dict):
@@ -188,71 +225,77 @@ class RepositoryStateOracle:
                 delta.add(old_path)
         return delta
 
-    def _evaluate_to_status(self, pre_sha, post_sha, predicate):
-        pre_row, pre_error = self._load_observation(pre_sha)
-        if pre_error:
-            return (
-                "ERROR",
-                (pre_error,),
-                {},
-                dict(_UNBOUND_LINEAGE),
-                "",
+    def _live_state_matches_post(self, post_content: dict) -> tuple[bool, str]:
+        """M3.1 §8 option A: re-sample and require reality == pinned post."""
+        worktree = str(
+            (post_content["observation"].get("identity") or {}).get(
+                "worktree_root_ref"
             )
-        post_row, post_error = self._load_observation(post_sha)
-        if post_error:
-            return (
-                "ERROR",
-                (post_error,),
-                {},
-                dict(_UNBOUND_LINEAGE),
-                "",
-            )
-        # Authority checks: shared lineage, shared repository identity,
-        # monotonic sampling time.
-        lineage = {
-            "request_id": post_row["request_id"],
-            "run_id": post_row["run_id"],
-            "generation": post_row["generation"],
-        }
+            or ""
+        )
+        if not worktree:
+            return False, "authority:worktree_root_missing"
+        try:
+            resampled_sha = self._resampler(worktree)  # type: ignore[attr-defined]
+        except Exception:
+            return False, "authority:resample_failed"
+        if resampled_sha != post_content["observation_sha256"]:
+            return False, "authority:post_state_drifted"
+        return True, ""
+
+    def _evaluate_to_status(self, subject_effect_id, pre_binding_id, post_binding_id, predicate):
+        pre_binding = self._load_binding(pre_binding_id)
+        post_binding = self._load_binding(post_binding_id)
+        if pre_binding["observation_role"] != "PRE":
+            return self._binding_error(pre_binding, "authority:pre_role_invalid", post_binding)
+        if post_binding["observation_role"] != "POST":
+            return self._binding_error(pre_binding, "authority:post_role_invalid", post_binding)
+        # §5 verification window: both ends must belong to THIS subject effect
+        if pre_binding["subject_effect_id"] != subject_effect_id:
+            return self._binding_error(pre_binding, "authority:pre_subject_mismatch", post_binding)
+        if post_binding["subject_effect_id"] != subject_effect_id:
+            return self._binding_error(pre_binding, "authority:post_subject_mismatch", post_binding)
         if (
-            pre_row["request_id"] != post_row["request_id"]
-            or pre_row["run_id"] != post_row["run_id"]
-            or pre_row["generation"] != post_row["generation"]
+            pre_binding["request_id"] != post_binding["request_id"]
+            or pre_binding["run_id"] != post_binding["run_id"]
+            or pre_binding["generation"] != post_binding["generation"]
         ):
-            return (
-                "ERROR",
-                ("authority:observation_lineage_mismatch",),
-                {},
-                lineage,
-                post_row["repository_id"],
-            )
-        if pre_row["repository_id"] != post_row["repository_id"]:
+            return self._binding_error(pre_binding, "authority:binding_lineage_mismatch", post_binding)
+        lineage = {
+            "request_id": post_binding["request_id"],
+            "run_id": post_binding["run_id"],
+            "generation": post_binding["generation"],
+        }
+        pre_content = self._load_content(pre_binding["observation_sha256"])
+        post_content = self._load_content(post_binding["observation_sha256"])
+        if pre_content["repository_id"] != post_content["repository_id"]:
             return (
                 "ERROR",
                 ("authority:observation_repository_mismatch",),
                 {},
                 lineage,
-                post_row["repository_id"],
+                post_content["repository_id"],
             )
-        if post_row["observed_at_ms"] < pre_row["observed_at_ms"]:
+        if post_content["observed_at_ms"] < pre_content["observed_at_ms"]:
             return (
                 "ERROR",
                 ("authority:observation_time_inverted",),
                 {},
                 lineage,
-                post_row["repository_id"],
+                post_content["repository_id"],
             )
-        repo_id = post_row["repository_id"]
+        repo_id = post_content["repository_id"]
         repo_root = str(
-            (post_row["observation"].get("identity") or {}).get(
+            (post_content["observation"].get("identity") or {}).get(
                 "worktree_root_ref"
             )
             or ""
         )
-        delta = self._delta_paths(pre_row["observation"], post_row["observation"])
+        delta = self._delta_paths(post_content["observation"])
         observation: dict[str, Any] = {
             "repository_id": repo_id,
-            "head_commit": post_row["head_commit"],
+            "head_commit": post_content["head_commit"],
+            "subject_effect_id": subject_effect_id,
             "delta_count": len(delta),
             "delta_paths_digest": canonical_sha256(sorted(delta)),
             "verifier_version": self._descriptor.verifier_version,  # type: ignore[attr-defined]
@@ -286,6 +329,21 @@ class RepositoryStateOracle:
                 lineage,
                 repo_id,
             )
+        if kind in (
+            "repository.no_generated_mirror_direct_edit",
+            "repository.source_authority_valid",
+        ):
+            # §8: live state must still equal the pinned post observation
+            matches, drift_code = self._live_state_matches_post(post_content)
+            if not matches:
+                return (
+                    "ERROR",
+                    (drift_code,),
+                    observation,
+                    lineage,
+                    repo_id,
+                )
+            observation["resample_sha256"] = post_content["observation_sha256"]
         if kind == "repository.no_generated_mirror_direct_edit":
             try:
                 ownership = json.loads(
@@ -294,7 +352,7 @@ class RepositoryStateOracle:
                     )
                 )
                 targets = {
-                    target
+                    str(target)
                     for mapping in ownership.get("mappings", [])
                     for target in mapping.get("targets", [])
                 }
@@ -306,7 +364,12 @@ class RepositoryStateOracle:
                     lineage,
                     repo_id,
                 )
-            mirror_edits = sorted(p for p in delta if p in targets)
+            observation["ownership_digest"] = canonical_sha256(sorted(targets))
+            mirror_edits = sorted(
+                path
+                for path in delta
+                if any(_path_hits_target(path, target) for target in targets)
+            )
             observation["mirror_edit_count"] = len(mirror_edits)
             observation["mirror_edit_items_sha256"] = canonical_sha256(mirror_edits)
             if not mirror_edits:
@@ -330,9 +393,7 @@ class RepositoryStateOracle:
                     repo_id,
                 )
             observation["authority_error_count"] = len(errors)
-            observation["authority_errors_sha256"] = canonical_sha256(
-                list(errors)
-            )
+            observation["authority_errors_sha256"] = canonical_sha256(list(errors))
             if not errors:
                 return "PASS", (), observation, lineage, repo_id
             return (
@@ -350,5 +411,18 @@ class RepositoryStateOracle:
             repo_id,
         )
 
+    @staticmethod
+    def _binding_error(pre_binding, code, post_binding):
+        lineage = {
+            "request_id": pre_binding["request_id"],
+            "run_id": pre_binding["run_id"],
+            "generation": pre_binding["generation"],
+        }
+        return "ERROR", (code,), {}, lineage, ""
 
-__all__ = ["RepositoryStateOracle", "OracleSnapshotInvalid"]
+
+__all__ = [
+    "OracleInvocationError",
+    "RepositoryStateOracle",
+    "OracleSnapshotInvalid",
+]

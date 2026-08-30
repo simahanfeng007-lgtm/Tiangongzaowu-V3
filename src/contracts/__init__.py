@@ -2,6 +2,10 @@
 
 CONTRACT_SCHEMA_VERSION = "tiangong.gateway.contracts.v2"
 
+from .write_evidence import (
+    WriteEvidenceV2,
+    WriteEvidenceV2Error,
+)
 from .verification import (
     AcceptancePredicate,
     AcceptancePredicateSpecError,

@@ -38,14 +38,16 @@ from total_gateway.verification_oracle_config import (
 
 _EFFECT_IMPLEMENTATION_REF = "src/total_gateway/outcome_oracles/effect_state.py"
 
-#: Placeholder lineage for authority failures where the ledger cannot
-#: supply a binding (unknown/corrupt effect). All-zero ids satisfy the
-#: record contract while carrying no lineage claims.
-_UNBOUND_LINEAGE = {
-    "request_id": "req_" + "0" * 64,
-    "run_id": "run_" + "0" * 64,
-    "generation": 0,
-}
+
+class OracleInvocationError(RuntimeError):
+    """No trusted lineage — the oracle refuses to fabricate a record.
+
+    M3.1 §9: without a credible request/run/generation there is NO
+    VerificationRecord; authority failures surface as this exception
+    (telemetry/oracle-invocation-error path), never as a fake ERROR
+    record with invented ids.
+    """
+
 
 #: head states that PROVE the effect did not terminal-succeed.
 _PROVEN_NOT_SUCCEEDED = frozenset({"FAILED_FINAL"})
@@ -118,23 +120,18 @@ class EffectStateOracle:
 
     def _evaluate_to_status(self, effect_id, predicate):
         # 1. Authority: the ledger row is the only lineage/state source.
+        #    Without it there is NO trusted lineage — M3.1 §9 forbids
+        #    fabricating a record, so these raise instead of returning.
         try:
             record = self._store.get_effect(effect_id)  # type: ignore[attr-defined]
-        except Exception:
-            return (
-                "ERROR",
-                ("authority:ledger_corrupt",),
-                {},
-                dict(_UNBOUND_LINEAGE),
-                None,
-            )
+        except Exception as exc:
+            raise OracleInvocationError(
+                "effect ledger row is corrupt; refusing to fabricate a record"
+            ) from exc
         if record is None:
-            return (
-                "ERROR",
-                ("authority:effect_not_found",),
-                {},
-                dict(_UNBOUND_LINEAGE),
-                None,
+            raise OracleInvocationError(
+                "effect not found in the authoritative ledger;"
+                " refusing to fabricate a record"
             )
         claim = record.claim
         lineage = {
@@ -156,6 +153,22 @@ class EffectStateOracle:
             return "ERROR", ("authority:evidence_store_failure",), observation, lineage, None
         evidence = evidence_rows[-1] if evidence_rows else None
         if evidence is not None:
+            # M3.1 §2 fail-closed readback re-validation: the evidence's
+            # lineage must equal the ledger claim — mismatch is ERROR,
+            # never PASS.
+            if (
+                evidence.get("request_id") != claim.request_id
+                or evidence.get("run_id") != claim.run_id
+                or evidence.get("generation") != claim.generation
+                or evidence.get("effect_id") != claim.effect_id
+            ):
+                return (
+                    "ERROR",
+                    ("authority:evidence_lineage_mismatch",),
+                    observation,
+                    lineage,
+                    None,
+                )
             observation["write_evidence_sha256"] = evidence["evidence_sha256"]
             observation["write_evidence_strength"] = evidence["provenance"][
                 "strength"

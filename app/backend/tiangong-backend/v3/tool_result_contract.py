@@ -636,6 +636,7 @@ def _observed_write_evidence(
 
 
 from contracts.canonical import canonical_sha256
+from contracts.write_evidence import WriteEvidenceV2, WriteEvidenceV2Error  # noqa: F401
 
 
 class WriteEvidenceV2Error(ValueError):
@@ -767,7 +768,9 @@ def bind_write_evidence_v2(
         "observed_at_ms": observed_at_ms,
     }
     payload["evidence_sha256"] = canonical_sha256(write_evidence_v2_preimage(payload))
-    return payload
+    # M3.1: the wire dict is validated through the SHARED authoritative
+    # contract — v3 builder and Gateway store enforce identical rules.
+    return WriteEvidenceV2.from_wire(payload).model_dump(mode="json")
 
 
 def write_evidence_v2_is_valid(payload: dict[str, Any] | None) -> bool:

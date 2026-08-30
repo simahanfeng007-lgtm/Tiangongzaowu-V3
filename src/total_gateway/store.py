@@ -88,7 +88,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 24
+STORE_SCHEMA_VERSION = 25
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1581,6 +1581,31 @@ _MIGRATION_V24_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V25_ID = "gateway-repository-observation-binding-v25"
+_MIGRATION_V25_STATEMENTS = (
+    """
+    CREATE TABLE repository_observation_binding (
+        binding_id TEXT NOT NULL PRIMARY KEY
+            CHECK (binding_id GLOB 'rob_[0-9a-f]*'),
+        observation_sha256 TEXT NOT NULL
+            CHECK (length(observation_sha256) = 64 AND observation_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        subject_effect_id TEXT NOT NULL,
+        observation_role TEXT NOT NULL CHECK (observation_role IN ('PRE', 'POST')),
+        observed_at_ms INTEGER NOT NULL CHECK (observed_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0),
+        binding_sha256 TEXT NOT NULL
+            CHECK (length(binding_sha256) = 64 AND binding_sha256 NOT GLOB '*[^0-9a-f]*')
+    ) STRICT
+    """,
+    """
+    CREATE INDEX repository_observation_binding_subject_idx
+        ON repository_observation_binding (request_id, subject_effect_id, observation_role)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1606,6 +1631,7 @@ _MIGRATIONS = (
     (22, _MIGRATION_V22_ID, _MIGRATION_V22_STATEMENTS),
     (23, _MIGRATION_V23_ID, _MIGRATION_V23_STATEMENTS),
     (24, _MIGRATION_V24_ID, _MIGRATION_V24_STATEMENTS),
+    (25, _MIGRATION_V25_ID, _MIGRATION_V25_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -9404,49 +9430,33 @@ class GatewayStateStore:
     ) -> bool:
         """Persist one bound write_evidence.v2 fact; True when newly created.
 
-        Trust boundary (M2.2 rules): the claimed ``evidence_sha256`` must
-        recompute from the canonical payload (digest preimage = payload
-        minus the digest itself — defined in
-        ``v3/tool_result_contract.py::write_evidence_v2_preimage``; drift
-        is locked by cross-tests), lineage binding is asserted against
-        request continuity, and content addressing makes same-id
-        different-content structurally impossible (any payload change
-        changes the digest).
+        Trust boundary (M3.1 rules):
+        * the payload validates through the SHARED authoritative contract
+          (``contracts.write_evidence.WriteEvidenceV2``) — schema, lineage
+          id formats, provenance whitelist, source↔strength consistency,
+          canonical sorted/unique path sets, all nested digests and the
+          total evidence_sha256 recompute (a model_copy forgery with a
+          recomputed total hash but inconsistent inner digests fails);
+        * the evidence is bound to a REAL EffectClaim: the effect must
+          exist in the ledger and claim.request_id/run_id/generation/
+          effect_id must all match — re-binding Effect A's evidence onto
+          Effect B is rejected;
+        * evidence.observed_at_ms may not predate the claim's durable
+          authority time (claim or side-effect start, whichever later).
         """
         if not isinstance(payload, dict):
             raise ValueError("write_evidence.v2 payload must be a dict")
-        if payload.get("schema") != "tiangong.v3.write_evidence.v2":
-            raise ValueError("write_evidence.v2 payload has wrong schema")
-        claimed = payload.get("evidence_sha256")
-        if not isinstance(claimed, str) or len(claimed) != 64 or any(
-            char not in "0123456789abcdef" for char in claimed
-        ):
-            raise ValueError("write_evidence.v2 digest is invalid")
-        preimage = {key: value for key, value in payload.items() if key != "evidence_sha256"}
-        if canonical_sha256(preimage) != claimed:
-            raise ValueError("write_evidence.v2 digest does not recompute")
-        provenance = payload.get("provenance") or {}
-        strength = provenance.get("strength")
-        if strength not in ("observed_mutation_only", "verified_final_state"):
-            raise ValueError("write_evidence.v2 provenance strength invalid")
+        from contracts.write_evidence import WriteEvidenceV2
+
+        evidence = WriteEvidenceV2.from_wire(payload)
         payload_json = json.dumps(
-            payload, ensure_ascii=False, allow_nan=False,
-            sort_keys=True, separators=(",", ":"),
+            evidence.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
         )
-        request_id = payload.get("request_id")
-        run_id = payload.get("run_id")
-        generation = payload.get("generation")
-        if not isinstance(request_id, str) or not isinstance(run_id, str):
-            raise ValueError("write_evidence.v2 lineage binding invalid")
-        if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
-            raise ValueError("write_evidence.v2 lineage binding invalid")
-        effect_id = payload.get("effect_id")
-        observed_at_ms = payload.get("observed_at_ms")
-        if not isinstance(effect_id, str) or not effect_id:
-            raise ValueError("write_evidence.v2 effect binding invalid")
-        if not isinstance(observed_at_ms, int) or isinstance(observed_at_ms, bool) or observed_at_ms < 0:
-            raise ValueError("write_evidence.v2 observed_at_ms invalid")
-        tool_name = str(payload.get("tool_name") or "unknown")
+        request_id = evidence.request_id
+        run_id = evidence.run_id
+        generation = evidence.generation
+        effect_id = evidence.effect_id
         with self._lock, self._write_transaction():
             self._assert_request_binding_locked(
                 request_id=request_id,
@@ -9454,9 +9464,57 @@ class GatewayStateStore:
                 generation=generation,
                 recorded_at_ms=recorded_at_ms,
             )
+            ledger = self._connection.execute(
+                "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if ledger is None:
+                raise StoreNotFoundError(
+                    "write_evidence.v2 effect binding does not exist"
+                )
+            if (
+                ledger["request_id"] != request_id
+                or ledger["run_id"] != run_id
+                or ledger["generation"] != generation
+            ):
+                raise StoreConflictError(
+                    "write_evidence.v2 lineage does not match its effect claim"
+                )
+            authority_time = max(
+                int(ledger["claimed_at_ms"] or 0),
+                int(ledger["side_effect_started_at_ms"] or 0),
+            )
+            if evidence.observed_at_ms < authority_time:
+                raise ValueError(
+                    "write_evidence.v2 observation predates its effect claim"
+                )
+            # M3.1 §11-1: the same observation tuple (everything except the
+            # effect binding) must not be re-attached to a different effect
+            # of the same request — that is evidence rebinding.
+            sibling_rows = self._connection.execute(
+                "SELECT evidence_json FROM write_evidence_v2"
+                " WHERE request_id = ? AND effect_id != ? AND observed_at_ms = ?",
+                (request_id, effect_id, evidence.observed_at_ms),
+            ).fetchall()
+            forged_payload = evidence.model_dump(mode="json")
+            for sibling in sibling_rows:
+                sibling_payload = json.loads(sibling["evidence_json"])
+                if (
+                    sibling_payload.get("tool_name") == forged_payload.get("tool_name")
+                    and sibling_payload.get("action") == forged_payload.get("action")
+                    and sibling_payload.get("run_id") == forged_payload.get("run_id")
+                    and sibling_payload.get("observed_mutation")
+                    == forged_payload.get("observed_mutation")
+                    and sibling_payload.get("verified_final_state")
+                    == forged_payload.get("verified_final_state")
+                ):
+                    raise StoreConflictError(
+                        "write_evidence.v2 observation was already bound to"
+                        " another effect; rebinding is rejected"
+                    )
             existing = self._connection.execute(
                 "SELECT evidence_json FROM write_evidence_v2 WHERE evidence_sha256 = ?",
-                (claimed,),
+                (evidence.evidence_sha256,),
             ).fetchone()
             if existing is not None:
                 if existing["evidence_json"] != payload_json:
@@ -9473,9 +9531,10 @@ class GatewayStateStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    claimed, request_id, run_id, generation, effect_id,
-                    tool_name, strength, payload_json,
-                    observed_at_ms, recorded_at_ms,
+                    evidence.evidence_sha256, request_id, run_id, generation,
+                    effect_id, evidence.tool_name,
+                    evidence.provenance.strength, payload_json,
+                    evidence.observed_at_ms, recorded_at_ms,
                 ),
             )
             return True
@@ -9501,6 +9560,10 @@ class GatewayStateStore:
             ).fetchall()
             return tuple(json.loads(row["evidence_json"]) for row in rows)
 
+    # ------------------------------------------------------------------
+    # P19-R2 M3.1 §4: repository observation content trust boundary
+    # ------------------------------------------------------------------
+
     def put_repository_observation(
         self,
         *,
@@ -9515,31 +9578,57 @@ class GatewayStateStore:
         observed_at_ms: int,
         recorded_at_ms: int,
     ) -> bool:
-        """Persist one lineage-bound repository observation; True if new.
+        """Persist one repository observation CONTENT row; True if new.
 
-        Content addressing keys on the provider observation hash; the
-        same observation bound to a DIFFERENT lineage is a conflict
-        (same id, different content), and any payload change changes the
-        provider hash, so tampering cannot reuse an identity.
+        M3.1 §4 trust boundary: the payload must validate through the
+        authoritative ``RepositoryObservation`` contract (its model
+        validator recomputes the observation hash), the claimed digest
+        must equal the contract's own, and the caller-supplied metadata
+        (repository_id / head_commit / observed_at_ms) must match the
+        payload — external metadata cannot be attached to another
+        observation. The legacy lineage columns remain stored for
+        compatibility but are no longer the final authority; the M3.1
+        binding table carries verification lineage.
         """
+        from contracts.world_understanding.repository import RepositoryObservation
+
         if not isinstance(observation_sha256, str) or len(observation_sha256) != 64 or any(
             char not in "0123456789abcdef" for char in observation_sha256
         ):
             raise ValueError("repository observation digest is invalid")
-        if not isinstance(observation_payload, dict) or (
-            observation_payload.get("schema") != "tiangong.repository-observation.v1"
-        ):
-            raise ValueError("repository observation payload has wrong schema")
-        for field in (request_id, run_id, effect_id, repository_id, head_commit):
+        if not isinstance(observation_payload, dict):
+            raise ValueError("repository observation payload must be a dict")
+        try:
+            observation = RepositoryObservation.model_validate_json(
+                json.dumps(
+                    observation_payload, ensure_ascii=False, allow_nan=False,
+                    sort_keys=True, separators=(",", ":"),
+                ),
+                strict=True,
+            )
+        except Exception as exc:
+            raise ValueError(
+                "repository observation payload failed its contract"
+                f" validation: {type(exc).__name__}"
+            ) from exc
+        if observation.observation_sha256 != observation_sha256:
+            raise ValueError(
+                "claimed observation digest differs from the payload's own"
+            )
+        if observation.identity.repository_id != repository_id:
+            raise ValueError("repository_id does not match the observation identity")
+        if observation.revision.head_commit != head_commit:
+            raise ValueError("head_commit does not match the observation revision")
+        if observation.observed_at_ms != observed_at_ms:
+            raise ValueError("observed_at_ms does not match the observation")
+        for field in (request_id, run_id, effect_id):
             if not isinstance(field, str) or not field.strip():
                 raise ValueError("repository observation binding fields invalid")
         if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
             raise ValueError("repository observation generation invalid")
-        if not isinstance(observed_at_ms, int) or isinstance(observed_at_ms, bool) or observed_at_ms < 0:
-            raise ValueError("repository observation observed_at_ms invalid")
         payload_json = json.dumps(
-            observation_payload, ensure_ascii=False, allow_nan=False,
-            sort_keys=True, separators=(",", ":"),
+            observation.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
         )
         with self._lock, self._write_transaction():
             self._assert_request_binding_locked(
@@ -9554,16 +9643,10 @@ class GatewayStateStore:
                 (observation_sha256,),
             ).fetchone()
             if existing is not None:
-                if (
-                    existing["request_id"] != request_id
-                    or existing["run_id"] != run_id
-                    or existing["generation"] != generation
-                    or existing["effect_id"] != effect_id
-                    or existing["observation_json"] != payload_json
-                ):
+                if existing["observation_json"] != payload_json:
                     raise StoreConflictError(
-                        "repository observation identity was reused for a"
-                        " different binding or content"
+                        "repository observation identity was reused for"
+                        " different content"
                     )
                 return False
             self._connection.execute(
@@ -9581,6 +9664,124 @@ class GatewayStateStore:
                 ),
             )
             return True
+
+    # ------------------------------------------------------------------
+    # P19-R2 M3.1 §3/§5: observation <-> lineage binding separation
+    # ------------------------------------------------------------------
+
+    def put_repository_observation_binding(
+        self,
+        *,
+        observation_sha256: str,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        subject_effect_id: str,
+        observation_role: str,
+        observed_at_ms: int,
+        recorded_at_ms: int,
+    ) -> str:
+        """Bind an observation to a verification subject; returns binding_id.
+
+        The SAME observation content may legally bind to many requests/
+        effects (Request A PRE, Request B PRE, Effect X POST, Effect Y
+        POST) — content identity and lineage binding are separated. The
+        observation content row must already exist and the binding's
+        observed_at_ms must equal the content's own timestamp.
+        Idempotent per binding identity; same binding_id with different
+        content is a conflict.
+        """
+        if observation_role not in ("PRE", "POST"):
+            raise ValueError("observation_role must be PRE or POST")
+        for field in (request_id, run_id, subject_effect_id):
+            if not isinstance(field, str) or not field.strip():
+                raise ValueError("repository observation binding fields invalid")
+        if not isinstance(observation_sha256, str) or len(observation_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in observation_sha256
+        ):
+            raise ValueError("repository observation digest is invalid")
+        binding_payload = {
+            "domain": "tiangong.repository-observation-binding.v1",
+            "observation_sha256": observation_sha256,
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "subject_effect_id": subject_effect_id,
+            "observation_role": observation_role,
+            "observed_at_ms": observed_at_ms,
+        }
+        binding_sha256 = canonical_sha256(binding_payload)
+        binding_id = "rob_" + canonical_sha256(
+            {"domain": "tiangong.repository-observation-binding.v1.id",
+             "binding_sha256": binding_sha256}
+        )
+        with self._lock, self._write_transaction():
+            content = self._connection.execute(
+                "SELECT observed_at_ms FROM repository_observation"
+                " WHERE observation_sha256 = ?",
+                (observation_sha256,),
+            ).fetchone()
+            if content is None:
+                raise StoreNotFoundError(
+                    "repository observation content does not exist;"
+                    " bind after capturing the observation"
+                )
+            if int(content["observed_at_ms"]) != observed_at_ms:
+                raise ValueError(
+                    "binding observed_at_ms differs from the observation content"
+                )
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT * FROM repository_observation_binding"
+                " WHERE binding_id = ?",
+                (binding_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["binding_sha256"] != binding_sha256
+                    or existing["observation_sha256"] != observation_sha256
+                    or existing["request_id"] != request_id
+                    or existing["run_id"] != run_id
+                    or existing["generation"] != generation
+                    or existing["subject_effect_id"] != subject_effect_id
+                    or existing["observation_role"] != observation_role
+                    or int(existing["observed_at_ms"]) != observed_at_ms
+                ):
+                    raise StoreConflictError(
+                        "repository observation binding identity was reused"
+                        " for different content"
+                    )
+                return binding_id
+            self._connection.execute(
+                """
+                INSERT INTO repository_observation_binding (
+                    binding_id, observation_sha256, request_id, run_id,
+                    generation, subject_effect_id, observation_role,
+                    observed_at_ms, recorded_at_ms, binding_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    binding_id, observation_sha256, request_id, run_id,
+                    generation, subject_effect_id, observation_role,
+                    observed_at_ms, recorded_at_ms, binding_sha256,
+                ),
+            )
+            return binding_id
+
+    def get_repository_observation_binding(self, binding_id: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM repository_observation_binding WHERE binding_id = ?",
+                (binding_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return dict(row)
 
     def get_repository_observation(self, observation_sha256: str) -> dict | None:
         """Return the bound observation row as a dict (None if absent)."""

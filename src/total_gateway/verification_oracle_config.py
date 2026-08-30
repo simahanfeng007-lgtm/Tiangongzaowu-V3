@@ -77,6 +77,8 @@ ARTIFACT_DESCRIPTOR_EXPECTATIONS = MappingProxyType(
         "layer": "L0_DETERMINISTIC",
         "deterministic": True,
         "default_enforcement": "RECORD",
+        "block_capable": True,
+        "repair_feedback_capable": True,
     }
 )
 
@@ -114,6 +116,8 @@ EFFECT_DESCRIPTOR_EXPECTATIONS = MappingProxyType(
         "deterministic": True,
         "default_enforcement": "RECORD",
         "timeout_ms": 30_000,
+        "block_capable": True,
+        "repair_feedback_capable": True,
     }
 )
 
@@ -167,6 +171,8 @@ REPOSITORY_DESCRIPTOR_EXPECTATIONS = MappingProxyType(
         "deterministic": True,
         "default_enforcement": "RECORD",
         "timeout_ms": 30_000,
+        "block_capable": True,
+        "repair_feedback_capable": True,
     }
 )
 
