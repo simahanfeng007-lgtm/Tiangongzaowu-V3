@@ -1,0 +1,120 @@
+P19-R2 M2｜设计与文件清单（M2_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m2-artifact-content-oracle（自 308f891 创建）
+范围：Office 预检机械迁移 + Gateway ArtifactContentOracle。
+RECORD ONLY：不改 CompletionDecision/request state/delivery，无修复，
+无 ALERT/BLOCK，无第二 Gateway/Runtime/Store，无 VerificationPlanCompiler。
+
+----------------------------------------------------------------------
+一、文件清单
+----------------------------------------------------------------------
+新增：
+    app/backend/tiangong-backend/v3/simple_chain/content_preflight.py
+        _office_content_gaps 机械迁移（逐字保留，零行为变化）
+    src/total_gateway/outcome_oracles/__init__.py
+    src/total_gateway/outcome_oracles/artifact_content.py
+        ArtifactContentOracle + ArtifactPredicate（显式谓词+显式参数）
+    tests/test_p19_m2_office_preflight_parity.py（3 项）
+    tests/test_p19_m2_artifact_content_oracle.py（13 项）
+    docs/p19-r2/M2_DESIGN.txt（本文件）
+
+修改：
+    app/backend/tiangong-backend/v3/simple_chain/kernel.py
+        函数体替换为 from .content_preflight import _office_content_gaps
+        （re-export，既有 import 路径不变）
+    src/total_gateway/artifact_content.py
+        VerifiedArtifactContentSource 新增 read_verified_artifact()
+        （免 grant 的完整权威链：QC facts→object 绑定→immutable 读回
+        +size/sha256 复算）；open_artifact 重构为调用它；
+        verify_artifact_revision 公共方法原样保留（artifact_open.py
+        仍在用——先查调用方后重构）
+    生成镜像：sync --write 产物（contracts/total_gateway/v3 镜像树）
+
+----------------------------------------------------------------------
+二、关键设计决定
+----------------------------------------------------------------------
+D1 机械迁移纪律
+    函数体逐字复制（含 except Exception: continue 的既有静默行为
+    与 max_row 含表头的既有语义），未顺手改正则/阈值/文案。原测试
+    test_office_content_gate.py 5 项不改一字通过；re-export 与迁移
+    函数为同一对象（identity 断言）。
+
+D2 双层彻底分权
+    旧预检：user_message 正则 → host path 读取 → 中文 gap 列表，
+    仅 simple_chain 同轮纠错，不得生成权威 predicate（模块级
+    导入边界断言锁定：不 import contracts.verification /
+    total_gateway）。
+    新 Oracle：只接受显式 ArtifactPredicate（predicate_id/type/
+    params）+ 已绑定的 ArtifactManifest；从 user_message 推导需求
+    的路径在本层不存在。
+
+D3 权威链复用（不重造）
+    Oracle 经 VerifiedArtifactContentSource（manifest PASSED+QC
+    evidence+manifest hash → FactLedger QC facts 复核 → object
+    reference 六元组绑定 → immutable bytes 读回复算 sha256/size）
+    取得字节，绝不打开本地 path。权威链任何失败 = ERROR（含
+    ObjectStoreCorruption 等 store 自身异常——广捕获是有意的：
+    权威阶段任何异常都不得逃逸或静默放行）。
+
+D4 状态语义严格化
+    PASS/FAIL 只来自确定性证据；解析不可靠（ContentUnparseable、
+    不支持格式、超输入上限、无文本可量的 pptx）→ INCONCLUSIVE；
+    权威/读回/运行时异常 → ERROR；谓词与 subject 天生不匹配 →
+    NOT_APPLICABLE（M1 契约规定不带 reason codes）。
+    「解析失败当空内容判 FAIL」被结构性禁止。
+
+D5 能力诚实面（吸收审核附加要求）
+    已实现并测试：artifact.nonempty / artifact.min_visible_text_chars
+    / xlsx.required_columns / xlsx.min_data_rows（表头不计入——与
+    旧预检的 max_row 语义在此层修正）/ text.required_markers /
+    pptx.min_nonempty_slides（纯图片 deck 无文本可量 → INCONCLUSIVE
+    而非 FAIL）。
+    明确未实现（INCONCLUSIVE + predicate_not_implemented）：
+    csv.required_columns——gate 无 csv 格式策略（.csv 不在 text
+    扩展白名单），权威链上根本到不了 csv manifest；其余 M1 描述符
+    声明的谓词同此处理。宁可能力少，不假装验证。
+
+D6 xlsx 数据行语义修正仅限 Oracle 层
+    Oracle 的 data_row_count = 表头后的非空行；旧预检保持 max_row
+    含表头（D1 纪律）。两层结论允许不同——分权后各司其职，
+    M2-07 的 BLOCK 切换条件满足前无阻断影响。
+
+D7 记录身份与持久化
+    产出的 VerificationRecord 满足 M1.1 身份绑定（has_valid_identity
+    断言）；经 Recorder/Store 留证时 enforcement 恒 RECORD，且零
+    CompletionDecision/aggregate_state/outbox 变化（测试逐表断言）。
+
+----------------------------------------------------------------------
+三、测试矩阵对照（审核完成门）
+----------------------------------------------------------------------
+预检等价           test_p19_m2_office_preflight_parity（3 项：
+                   re-export 同一性/六场景行为等价/导入边界分权）
+合法链正常判定      docx PASS+FAIL、xlsx 列+行、txt markers、pptx
+                   slides PASS+FAIL（13 项内）
+错绑不判内容        manifest hash 篡改→ERROR；object 绑定交换
+                   （重算 manifest hash）→ERROR（QC facts 拒绝）
+bytes 被篡改        磁盘对象文件覆写→ERROR（store 自身
+                   ObjectStoreCorruption 亦被归一为 ERROR）
+解析/不支持         破坏容器→INCONCLUSIVE；pdf→INCONCLUSIVE
+                   format_not_inspectable；pptx 纯图片→INCONCLUSIVE
+不适用             xlsx 谓词于 docx、csv 谓词于非 csv→NOT_APPLICABLE/
+                   INCONCLUSIVE（未实现路径）
+异常不静默          inspector RuntimeError→ERROR inspector_failure
+M1.1 身份          每条记录 has_valid_identity 断言
+RECORD only        持久化后 DB enforcement DISTINCT = {'RECORD'}
+零完成影响          completion_decisions=0、aggregate_state=0
+未实现谓词          xlsx.required_sheet_names→INCONCLUSIVE
+
+----------------------------------------------------------------------
+四、验证
+----------------------------------------------------------------------
+targeted：parity 3 + oracle 13 + office gate 5 + word e2e 5 +
+docx qc + M1 store/identity 回归 = 57 passed
+source-authority PASS / sync ok / 全文 LF
+全量回归：见提交信息与 PR 描述
+
+----------------------------------------------------------------------
+五、回滚
+---------
+revert 本 PR：kernel re-export 恢复内联函数（由 revert 自动完成），
+Oracle 无任何调用方（RECORD ONLY 无接线），行为面零变化。

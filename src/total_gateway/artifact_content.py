@@ -66,15 +66,24 @@ class VerifiedArtifactContentSource:
             raise ArtifactContentError("artifact.content.revision_not_authorized")
         if not self._grant_matches_manifest(grant, manifest):
             raise ArtifactContentError("artifact.content.grant_manifest_mismatch")
+        return io.BytesIO(self.read_verified_artifact(manifest.artifact_revision_id))
 
-        self.verify_artifact_revision(manifest.artifact_revision_id)
+    def read_verified_artifact(self, artifact_revision_id: str) -> bytes:
+        """Full authority chain without a delivery grant (P19-R2 M2).
+
+        Same verification order as ``open_artifact``: manifest authority,
+        QC facts, object-store reference binding, then immutable readback
+        with size + SHA256 recomputation. Outcome oracles reuse this so
+        content verdicts are only ever made on trusted bytes.
+        """
+        manifest = self.verify_artifact_revision(artifact_revision_id)
         data = self._object_store.read_bytes(manifest.content_object_id)
         if (
             len(data) != manifest.size_bytes
             or hashlib.sha256(data).hexdigest() != manifest.sha256
         ):
             raise ArtifactContentError("artifact.content.object_readback_invalid")
-        return io.BytesIO(data)
+        return data
 
     def verify_artifact_revision(self, artifact_revision_id: str) -> ArtifactManifest:
         manifest = self._manifest_by_revision.get(artifact_revision_id)
