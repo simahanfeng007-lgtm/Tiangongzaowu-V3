@@ -85,6 +85,118 @@ VERIFIER_ID = "verifier.artifact_content"
 IMPLEMENTATION_REF = "src/total_gateway/outcome_oracles/artifact_content.py"
 
 
+# ===========================================================================
+# Effect oracle config (M3) — implementation-present / production-unwired
+# ===========================================================================
+
+EFFECT_INSPECTOR_SEMANTIC_VERSION = "2"
+
+#: Effect predicates with authoritative evidence in M3. The remaining two
+#: planned predicates (no_forbidden_side_effect, idempotent_target_verified)
+#: stay dormant: current authority (head state + v2 evidence) is not
+#: sufficient to decide them without guessing.
+EFFECT_IMPLEMENTED_PREDICATE_TYPES: frozenset[str] = frozenset(
+    {
+        "effect.terminal_succeeded",
+        "effect.target_exists",
+        "effect.target_sha256_matches",
+        "effect.required_change_observed",
+    }
+)
+
+EFFECT_DESCRIPTOR_EXPECTATIONS = MappingProxyType(
+    {
+        "verifier_id": "verifier.effect_state",
+        "accepted_authorities": ("EFFECT_LEDGER", "FACT_LEDGER", "TOOL_RESULT_CONTRACT"),
+        "supported_subject_kinds": ("effect",),
+        "producer_component_id": "tiangong-gateway",
+        "layer": "L0_DETERMINISTIC",
+        "deterministic": True,
+        "default_enforcement": "RECORD",
+        "timeout_ms": 30_000,
+    }
+)
+
+EFFECT_VERIFIER_ID = "verifier.effect_state"
+EFFECT_IMPLEMENTATION_REF = "src/total_gateway/outcome_oracles/effect_state.py"
+
+
+def effect_oracle_config_payload() -> dict:
+    return {
+        "inspector_semantic_version": EFFECT_INSPECTOR_SEMANTIC_VERSION,
+        "implemented_predicate_types": sorted(EFFECT_IMPLEMENTED_PREDICATE_TYPES),
+        "head_state_source": "gateway_store.effect_ledger",
+        "write_evidence_schema": "tiangong.v3.write_evidence.v2",
+        "dormant_predicate_types": [
+            "effect.idempotent_target_verified",
+            "effect.no_forbidden_side_effect",
+        ],
+    }
+
+
+def effect_oracle_config_sha256() -> str:
+    return canonical_sha256(effect_oracle_config_payload())
+
+
+# ===========================================================================
+# Repository oracle config (M3) — implementation-present / production-unwired
+# ===========================================================================
+
+REPOSITORY_INSPECTOR_SEMANTIC_VERSION = "2"
+
+#: Repository predicates with authoritative evidence in M3. tests_passed /
+#: compile_passed stay dormant until bound to real command receipts;
+#: no_test_tampering stays dormant because pre/post paths alone cannot
+#: distinguish tampering from legitimate test edits without receipts.
+REPOSITORY_IMPLEMENTED_PREDICATE_TYPES: frozenset[str] = frozenset(
+    {
+        "repository.required_paths_changed",
+        "repository.forbidden_paths_unchanged",
+        "repository.source_authority_valid",
+        "repository.no_generated_mirror_direct_edit",
+    }
+)
+
+REPOSITORY_DESCRIPTOR_EXPECTATIONS = MappingProxyType(
+    {
+        "verifier_id": "verifier.repository_state",
+        "accepted_authorities": ("REPOSITORY_PROVIDER", "FACT_LEDGER"),
+        "supported_subject_kinds": ("repository",),
+        "producer_component_id": "tiangong-gateway",
+        "layer": "L0_DETERMINISTIC",
+        "deterministic": True,
+        "default_enforcement": "RECORD",
+        "timeout_ms": 30_000,
+    }
+)
+
+REPOSITORY_VERIFIER_ID = "verifier.repository_state"
+REPOSITORY_IMPLEMENTATION_REF = (
+    "src/total_gateway/outcome_oracles/repository_state.py"
+)
+
+
+def repository_oracle_config_payload() -> dict:
+    return {
+        "inspector_semantic_version": REPOSITORY_INSPECTOR_SEMANTIC_VERSION,
+        "implemented_predicate_types": sorted(
+            REPOSITORY_IMPLEMENTED_PREDICATE_TYPES
+        ),
+        "git_access": "v3.repository_perception.LocalGitRepositoryProvider(read-only whitelist)",
+        "authority_check": "scripts/check-source-authority.py::validate_source_authority",
+        "observation_schema": "tiangong.repository-observation.v1",
+        "dormant_predicate_types": [
+            "repository.compile_passed",
+            "repository.no_test_tampering",
+            "repository.tests_passed",
+        ],
+    }
+
+
+def repository_oracle_config_sha256() -> str:
+    return canonical_sha256(repository_oracle_config_payload())
+
+
 def artifact_oracle_config_payload() -> dict:
     """Canonical config payload hashed into the descriptor's config_sha256."""
     return {

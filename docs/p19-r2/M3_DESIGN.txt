@@ -1,0 +1,137 @@
+P19-R2 M3｜Evidence v2 + Effect/Repository Oracle（M3_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m3-effect-repository-evidence-v2（自 cfb3766 第一步创建）
+性质：implementation-present / descriptor-registered / production-unwired /
+RECORD ONLY。不接 CompletionGate/delivery/状态机，无第二 Runtime/
+Gateway/Store，无 Compiler。
+
+----------------------------------------------------------------------
+文件清单
+----------------------------------------------------------------------
+新增：
+    src/total_gateway/outcome_oracles/_common.py
+        共享描述符精确绑定 + 记录组装基建（不复制 M2.2 Artifact 三份，
+        也不做巨型 Manager；Artifact v3 原样保留不动）
+    src/total_gateway/outcome_oracles/effect_state.py（EffectStateOracle）
+    src/total_gateway/outcome_oracles/repository_state.py
+        （RepositoryStateOracle + 真实 check-source-authority 复用）
+    tests/test_p19_m3_write_evidence_v2.py（10）
+    tests/test_p19_m3_effect_state_oracle.py（14）
+    tests/test_p19_m3_repository_state_oracle.py（12）
+    tests/test_p19_m3_artifact_goldens.py（4，图片/图表 golden，不升版本）
+    docs/p19-r2/M3_DESIGN.txt（本文件）
+
+修改：
+    v3/tool_result_contract.py
+        WRITE_EVIDENCE_SCHEMA_V2 常量 + bind_write_evidence_v2（v1→v2
+        绑定升级器）+ write_evidence_v2_is_valid（信任边界复算）+
+        write_evidence_v2_preimage。v1 四个构造点与全部消费方原样保留
+    src/contracts/verification.py
+        PREDICATE_PARAM_RULES 增 8 谓词（effect 4 + repository 4）；
+        路径参数不 casefold/NFKC（大小写敏感），sha256 参数验 64hex，
+        路径列表 strip+去重+排序。JSON Schema 形状不变（bundle digest
+        保持 d46cd149）
+    src/total_gateway/verification_oracle_config.py
+        effect/repository 配置单源段（语义版本 2、实现集、期望表、
+        config payload/hash、dormant 清单入 hash）
+    src/total_gateway/verification_registry.py
+        effect/repository 描述符 @1 dormant→@2 真实（config hash 非零、
+        supported=实现集）；legacy v1 构造器保留；顶部旧 dormant 文案
+        清理（审核顺手项）
+    src/total_gateway/store.py
+        v23→v24 additive：write_evidence_v2 / repository_observation 两
+        STRICT 表+索引；put/get/list API（幂等/同id异绑定冲突/摘要
+        复算信任边界/请求绑定断言）
+    tests/gateway_store_migration_support.py v24→v23 降级块
+    若干 M1/M1.1 测试夹具版本推进（effect_state@1→@2、schema 23→24）
+
+----------------------------------------------------------------------
+审核八节落实对照
+----------------------------------------------------------------------
+§1 write_evidence.v2
+    - 从 v1 演进非另起炉灶：bind_write_evidence_v2 只接受权威 v1
+      （authoritative=True 且 source∈四白名单）——模型文本永不能造 v2
+    - 绑定：request/run/generation/effect + tool/action identity +
+      observed_at_ms + evidence_sha256（canonical 可复算）
+    - 三段分离：planned（声明意图）/ observed_mutation（changed/
+      deleted/verified_unchanged + 三 digest）/ verified_final_state
+      （post rows + post_state_sha256）
+    - provenance.strength 区分 verified_final_state /
+      observed_mutation_only（broker 源无 post rows 不伪造）
+    - 工具自报 success ≠ effect PASS（Effect oracle 语义层强制）
+
+§2 统一 AcceptancePredicate
+    - 复用 M2.2 同一契约，无 EffectPredicate/RepositoryPredicate
+    - 只给有权威证据的 8 谓词加规则；no_forbidden_side_effect /
+      idempotent_target_verified / tests_passed / compile_passed /
+      no_test_tampering 保持无规则=不可实例化（诚实 dormant，且
+      dormant 清单进 config hash）
+
+§3 EffectStateOracle
+    - 权威源：store.get_effect（EffectLedgerRecord：claim 自带
+      request/run/generation lineage——调用方无 lineage 可传）+
+      list_write_evidence_for_effect（v2 表）
+    - terminal_succeeded：SUCCEEDED→PASS / FAILED_FINAL→FAIL /
+      AMBIGUOUS 与非终态→INCONCLUSIVE（不证不猜）
+    - target_exists / target_sha256_matches：必须 v2 post rows
+      （broker-only → INCONCLUSIVE）；row exists=False 或 sha 不符→FAIL
+    - required_change_observed：observed_mutation changed ⊇ required→
+      PASS；全部 provably absent（deleted）→FAIL；其余 INCONCLUSIVE
+    - 未知 effect / 台账行篡改（摘要重放校验炸）→ ERROR
+
+§4 RepositoryStateOracle
+    - 复用 LocalGitRepositoryProvider 只读白名单（discover/observe/
+      observe_delta），零新 git 路径、零 shell
+    - pre/post 观测经 v24 表绑定 request/run/generation/effect/
+      repository identity/head_commit/sampled_at；库内复取——
+      WU 已提交帧无入口，未知 observation hash → ERROR 永不 PASS
+    - delta = post.changes（observe_delta 的权威 git diff）：
+      add/delete/modify/rename/untracked 全计入
+    - source_authority_valid：importlib 复用 scripts/check-source-
+      authority.py::validate_source_authority（对本仓库真实跑通）
+    - no_generated_mirror_direct_edit：delta ∩ source-ownership
+      generated targets（结构权威，非文件名猜测）
+    - lineage/repository 不一致、时间倒序、ownership 不可读 → ERROR
+
+§5 Evidence 可复核
+    - v24 两表内容寻址：evidence_sha256/observation_sha256 为主键，
+      同 id 异内容结构性不可能（复算拒绝）；observation 同 id 异
+      lineage 绑定 → StoreConflictError
+    - VerificationRecord.evidence_refs 含 write_evidence:<sha> /
+      repo_observation_pre/post:<sha>——测试证明可按引用从权威库
+      取回原证据（不止知道摘要存在）
+
+§6 描述符纪律
+    - effect/repository @2 真实 config hash（覆盖实现集/dormant 集/
+      语义版本/权威源声明）；构造时 _common.bind_snapshot_and_
+      descriptor 精确校验（共享基建，未复制三份）
+
+§7 状态语义：PASS/FAIL 仅权威证明；INCONCLUSIVE=权威在但证据不足；
+    ERROR=权威/读回/provider 故障（含台账篡改、ownership 不可读、
+    authority 脚本缺失）；NOT_APPLICABLE=谓词对 subject 不适用。
+    exception→PASS / missing→PASS / tool-success→PASS / WU-clean→
+    repository-PASS 全部结构性禁止并有测试。
+
+§8 完成门覆盖（见四个测试文件 40 项）+ 顺手项（注册表文案、
+    artifact 图片/图表 golden 不升版本）。
+
+----------------------------------------------------------------------
+关键发现（如实记录）
+----------------------------------------------------------------------
+F1 provider 的 observe() 只输出工作树覆盖（干净树 files 为空），
+  committed 变更必须 observe_delta(identity, prev_revision)——
+  Oracle 的 delta 取 post.changes（权威 git diff），测试全走 delta 捕获。
+F2 v2 内容寻址使「同 id 异内容」在存储层结构性不可能——审核的
+  conflict 语义落在「同 observation id 异 lineage 绑定」上。
+F3 authority 失败路径的 Record lineage 用全零占位 id（req_/run_ 0*64）
+  满足契约模式且不携带任何 lineage 声明。
+F4 临时测试仓库无 scripts/check-source-authority.py——默认验证器
+  在缺脚本仓库上 ERROR（权威检查失败），注入验证器驱动 PASS/FAIL，
+  真验证器对本仓库真实通过（integration truth）。
+
+----------------------------------------------------------------------
+验证与回滚
+----------------------------------------------------------------------
+targeted：M3 四文件 40 项 + M0–M2.2 全回归（见 PR）。
+bundle digest 不变（d46cd149）；STORE_SCHEMA_VERSION 23→24 additive。
+回滚：revert 本 PR；v24 表保留无害，无 destructive down migration。

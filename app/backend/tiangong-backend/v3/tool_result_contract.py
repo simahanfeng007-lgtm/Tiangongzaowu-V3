@@ -10,6 +10,15 @@ from typing import Any
 
 TOOL_RESULT_SCHEMA = "tiangong.v3.tool_result.v1"
 
+# P19-R2 M3: write_evidence.v2 —— v1 的可验证演进（v1 原样保留，消费方兼容）。
+# v2 的目的不是多几个字段，而是把写入结果变成可绑定、可复算的事实：
+# 绑定 request/run/generation/effect 身份；区分 planned target /
+# observed mutation / verified final state；并给出 canonical evidence_sha256。
+# 工具自报的 success/done 永远不是 v2 的充分条件——v2 只能从权威 v1
+# （sandbox_broker / codex_tool_evidence / tool_pre_post / tool_post_readback
+# 且 authoritative=True）由网关边界升级而来；模型文本无法创建 v2。
+WRITE_EVIDENCE_SCHEMA_V2 = "tiangong.v3.write_evidence.v2"
+
 SUCCESS_STATES = {
     "completed",
     "done",
@@ -624,6 +633,158 @@ def _observed_write_evidence(
         "verified_unchanged_files": verified_unchanged_files,
         "post": unique_post,
     }
+
+
+from contracts.canonical import canonical_sha256
+
+
+class WriteEvidenceV2Error(ValueError):
+    """Raised when a v1 evidence payload cannot be upgraded to v2."""
+
+
+def write_evidence_v2_preimage(payload: dict[str, Any]) -> dict[str, Any]:
+    """Canonical preimage for evidence_sha256 (excludes the digest itself)."""
+    return {key: value for key, value in payload.items() if key != "evidence_sha256"}
+
+
+def bind_write_evidence_v2(
+    v1_evidence: dict[str, Any] | None,
+    *,
+    request_id: str,
+    run_id: str,
+    generation: int,
+    effect_id: str,
+    tool_name: str,
+    action: str,
+    observed_at_ms: int,
+    planned_target_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Upgrade an authoritative v1 write_evidence into a bound v2 fact.
+
+    The caller is the gateway/tool boundary supplying the execution
+    identity; a model-generated text field can never satisfy the
+    ``authoritative v1`` precondition, so it can never create v2.
+
+    Structure (three strictly separated sections):
+      planned                — what the task intended to touch
+      observed_mutation      — what the broker/tool boundary observed changing
+      verified_final_state   — post rows with per-path hash/size, when the
+                               tool boundary actually read the target back
+                               (broker/codex sources carry no post rows;
+                               that absence is recorded, never faked).
+    """
+    if not isinstance(v1_evidence, dict):
+        raise WriteEvidenceV2Error("v1 write_evidence payload missing")
+    if v1_evidence.get("schema") != "tiangong.v3.write_evidence.v1":
+        raise WriteEvidenceV2Error("only v1 write_evidence may be upgraded")
+    if v1_evidence.get("authoritative") is not True:
+        raise WriteEvidenceV2Error(
+            "model-generated or non-authoritative evidence cannot become v2"
+        )
+    source = str(v1_evidence.get("source") or "")
+    if source not in {
+        "sandbox_broker",
+        "codex_tool_evidence",
+        "tool_pre_post",
+        "tool_post_readback",
+    }:
+        raise WriteEvidenceV2Error(f"unknown v1 evidence source: {source!r}")
+    for field_value, field_name in (
+        (request_id, "request_id"),
+        (run_id, "run_id"),
+        (effect_id, "effect_id"),
+        (tool_name, "tool_name"),
+        (action, "action"),
+    ):
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise WriteEvidenceV2Error(
+                f"binding field {field_name} must be a non-empty string"
+            )
+    if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
+        raise WriteEvidenceV2Error("binding field generation must be a non-negative int")
+    if not isinstance(observed_at_ms, int) or isinstance(observed_at_ms, bool) or observed_at_ms < 0:
+        raise WriteEvidenceV2Error("observed_at_ms must be a non-negative int")
+    changed = sorted(set(str(p) for p in v1_evidence.get("changed_files") or [] if str(p).strip()))
+    deleted = sorted(set(str(p) for p in v1_evidence.get("deleted_files") or [] if str(p).strip()))
+    verified_unchanged = sorted(
+        set(
+            str(p)
+            for p in v1_evidence.get("verified_unchanged_files") or []
+            if str(p).strip()
+        )
+    )
+    post_rows = [
+        row
+        for row in (v1_evidence.get("post") or [])
+        if isinstance(row, dict) and str(row.get("path") or "").strip()
+    ]
+    post_rows_sorted = sorted(post_rows, key=lambda row: str(row.get("path")))
+    has_verified_final_state = bool(post_rows) and source in {
+        "tool_pre_post",
+        "tool_post_readback",
+    }
+    payload: dict[str, Any] = {
+        "schema": WRITE_EVIDENCE_SCHEMA_V2,
+        # lineage binding — the identity this fact is bound to
+        "request_id": request_id,
+        "run_id": run_id,
+        "generation": generation,
+        "effect_id": effect_id,
+        # tool / action identity
+        "tool_name": tool_name,
+        "action": action,
+        "provenance": {
+            "upgraded_from": "tiangong.v3.write_evidence.v1",
+            "source": source,
+            "strength": "verified_final_state" if has_verified_final_state else "observed_mutation_only",
+        },
+        # planned target (declared intent — NOT evidence of anything)
+        "planned": {"target_paths": sorted(set(planned_target_paths or []))},
+        # observed mutation (broker/tool boundary deltas)
+        "observed_mutation": {
+            "changed_paths": changed,
+            "deleted_paths": deleted,
+            "verified_unchanged_paths": verified_unchanged,
+            "changed_paths_digest": canonical_sha256(changed),
+            "deleted_paths_digest": canonical_sha256(deleted),
+            "verified_unchanged_digest": canonical_sha256(verified_unchanged),
+        },
+        # verified final state (per-path readback rows; [] = not verified)
+        "verified_final_state": {
+            "post_rows": post_rows_sorted,
+            "post_state_sha256": canonical_sha256(
+                [
+                    [
+                        str(row.get("path")),
+                        bool(row.get("exists")),
+                        str(row.get("sha256") or ""),
+                        int(row.get("size_bytes") or 0),
+                    ]
+                    for row in post_rows_sorted
+                ]
+            ),
+        },
+        "observed_at_ms": observed_at_ms,
+    }
+    payload["evidence_sha256"] = canonical_sha256(write_evidence_v2_preimage(payload))
+    return payload
+
+
+def write_evidence_v2_is_valid(payload: dict[str, Any] | None) -> bool:
+    """Trust-boundary recheck: recomputable digest + required binding."""
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("schema") != WRITE_EVIDENCE_SCHEMA_V2:
+        return False
+    for field in ("request_id", "run_id", "generation", "effect_id",
+                  "observed_at_ms", "evidence_sha256"):
+        if field not in payload:
+            return False
+    try:
+        expected = canonical_sha256(write_evidence_v2_preimage(payload))
+    except Exception:
+        return False
+    return payload.get("evidence_sha256") == expected
 
 
 def _may_mutate(tool_name: str, data: dict[str, Any]) -> bool:

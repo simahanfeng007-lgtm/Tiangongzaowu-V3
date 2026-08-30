@@ -32,7 +32,15 @@ class UnknownVerifierError(KeyError):
 
 
 # ---------------------------------------------------------------------------
-# Dormant default descriptors (M1: handlers do not exist yet)
+# Default descriptors
+#
+# Status wording (M2.2 review): implementation-present /
+# descriptor-registered / production-unwired. Every default descriptor
+# declares EXACTLY the dispatch set its oracle implements — both sides
+# read verification_oracle_config, so declared capability and implemented
+# capability cannot drift. Historical dormant versions remain
+# constructible via the legacy_* helpers for replay/audit of old
+# snapshots; the current oracles refuse to bind to them.
 # ---------------------------------------------------------------------------
 
 def _dormant_descriptor(
@@ -77,9 +85,15 @@ def default_descriptors() -> tuple[VerifierDescriptor, ...]:
         ARTIFACT_IMPLEMENTED_PREDICATE_TYPES,
         ARTIFACT_INSPECTOR_SEMANTIC_VERSION,
         ARTIFACT_MAX_INPUT_BYTES,
+        EFFECT_IMPLEMENTED_PREDICATE_TYPES,
+        EFFECT_INSPECTOR_SEMANTIC_VERSION,
         IMPLEMENTATION_REF,
+        REPOSITORY_IMPLEMENTED_PREDICATE_TYPES,
+        REPOSITORY_INSPECTOR_SEMANTIC_VERSION,
         VERIFIER_ID,
         artifact_oracle_config_sha256,
+        effect_oracle_config_sha256,
+        repository_oracle_config_sha256,
     )
 
     artifact = VerifierDescriptor(
@@ -102,36 +116,57 @@ def default_descriptors() -> tuple[VerifierDescriptor, ...]:
         implementation_ref=IMPLEMENTATION_REF,
         descriptor_sha256="0" * 64,
     ).with_computed_sha256()
-    effect = _dormant_descriptor(
+    effect = _descriptor_from_config(
         verifier_id="verifier.effect_state",
-        predicate_types=(
-            "effect.idempotent_target_verified",
-            "effect.no_forbidden_side_effect",
-            "effect.required_change_observed",
-            "effect.target_exists",
-            "effect.target_sha256_matches",
-            "effect.terminal_succeeded",
-        ),
-        subject_kinds=("effect",),
+        version=EFFECT_INSPECTOR_SEMANTIC_VERSION,
+        predicate_types=EFFECT_IMPLEMENTED_PREDICATE_TYPES,
         accepted_authorities=("EFFECT_LEDGER", "FACT_LEDGER", "TOOL_RESULT_CONTRACT"),
+        subject_kinds=("effect",),
+        config_sha256=effect_oracle_config_sha256(),
         implementation_ref="src/total_gateway/outcome_oracles/effect_state.py",
     )
-    repository = _dormant_descriptor(
+    repository = _descriptor_from_config(
         verifier_id="verifier.repository_state",
-        predicate_types=(
-            "repository.compile_passed",
-            "repository.forbidden_paths_unchanged",
-            "repository.no_generated_mirror_direct_edit",
-            "repository.no_test_tampering",
-            "repository.required_paths_changed",
-            "repository.source_authority_valid",
-            "repository.tests_passed",
-        ),
-        subject_kinds=("repository",),
+        version=REPOSITORY_INSPECTOR_SEMANTIC_VERSION,
+        predicate_types=REPOSITORY_IMPLEMENTED_PREDICATE_TYPES,
         accepted_authorities=("REPOSITORY_PROVIDER", "FACT_LEDGER"),
+        subject_kinds=("repository",),
+        config_sha256=repository_oracle_config_sha256(),
         implementation_ref="src/total_gateway/outcome_oracles/repository_state.py",
     )
     return (artifact, effect, repository)
+
+
+def _descriptor_from_config(
+    *,
+    verifier_id: str,
+    version: str,
+    predicate_types: frozenset[str],
+    accepted_authorities: tuple[str, ...],
+    subject_kinds: tuple[str, ...],
+    config_sha256: str,
+    implementation_ref: str,
+) -> VerifierDescriptor:
+    from .verification_oracle_config import ARTIFACT_MAX_INPUT_BYTES
+
+    return VerifierDescriptor(
+        verifier_id=verifier_id,
+        verifier_version=version,
+        layer="L0_DETERMINISTIC",
+        deterministic=True,
+        supported_predicate_types=tuple(sorted(predicate_types)),
+        accepted_authorities=accepted_authorities,
+        supported_subject_kinds=subject_kinds,
+        max_input_bytes=ARTIFACT_MAX_INPUT_BYTES,
+        timeout_ms=30_000,
+        default_enforcement="RECORD",
+        block_capable=True,
+        repair_feedback_capable=True,
+        producer_component_id="tiangong-gateway",
+        config_sha256=config_sha256,
+        implementation_ref=implementation_ref,
+        descriptor_sha256="0" * 64,
+    ).with_computed_sha256()
 
 
 def legacy_artifact_v1_descriptor() -> VerifierDescriptor:
@@ -161,6 +196,43 @@ def legacy_artifact_v1_descriptor() -> VerifierDescriptor:
         subject_kinds=("artifact",),
         accepted_authorities=("OBJECT_STORE", "ARTIFACT_MANIFEST", "ARTIFACT_QC"),
         implementation_ref="src/total_gateway/outcome_oracles/artifact_content.py",
+    )
+
+
+def legacy_effect_v1_descriptor() -> VerifierDescriptor:
+    """M1 dormant wide-set effect descriptor (superseded by M3 v2)."""
+    return _dormant_descriptor(
+        verifier_id="verifier.effect_state",
+        predicate_types=(
+            "effect.idempotent_target_verified",
+            "effect.no_forbidden_side_effect",
+            "effect.required_change_observed",
+            "effect.target_exists",
+            "effect.target_sha256_matches",
+            "effect.terminal_succeeded",
+        ),
+        subject_kinds=("effect",),
+        accepted_authorities=("EFFECT_LEDGER", "FACT_LEDGER", "TOOL_RESULT_CONTRACT"),
+        implementation_ref="src/total_gateway/outcome_oracles/effect_state.py",
+    )
+
+
+def legacy_repository_v1_descriptor() -> VerifierDescriptor:
+    """M1 dormant wide-set repository descriptor (superseded by M3 v2)."""
+    return _dormant_descriptor(
+        verifier_id="verifier.repository_state",
+        predicate_types=(
+            "repository.compile_passed",
+            "repository.forbidden_paths_unchanged",
+            "repository.no_generated_mirror_direct_edit",
+            "repository.no_test_tampering",
+            "repository.required_paths_changed",
+            "repository.source_authority_valid",
+            "repository.tests_passed",
+        ),
+        subject_kinds=("repository",),
+        accepted_authorities=("REPOSITORY_PROVIDER", "FACT_LEDGER"),
+        implementation_ref="src/total_gateway/outcome_oracles/repository_state.py",
     )
 
 

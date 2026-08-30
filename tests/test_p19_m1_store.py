@@ -143,15 +143,17 @@ class MigrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _strip_v23_layer(self) -> None:
-        """Emulate an exact v22 on-disk state from a freshly opened v23 DB.
+    def _strip_to_v22(self) -> None:
+        """Emulate an exact v22 on-disk state from a freshly opened v24 DB.
 
-        Note: downgrade helpers in this suite leave trailing uncommitted
-        changes on purpose — callers commit. Direct v23-layer removal is
-        all we need here, committed before close.
+        Strips the additive v24 (evidence) and v23 (verification plane)
+        layers, committed before close.
         """
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
+        connection.execute("DROP TABLE write_evidence_v2")
+        connection.execute("DROP TABLE repository_observation")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 24")
         connection.execute("DROP TABLE verification_record")
         connection.execute("DROP TABLE verification_registry_snapshot")
         connection.execute("DELETE FROM schema_migrations WHERE version = 23")
@@ -162,18 +164,18 @@ class MigrationTests(unittest.TestCase):
     def test_fresh_db_opens_at_v23(self) -> None:  # checklist 2
         store = GatewayStateStore.open(self.path, now_ms=900)
         try:
-            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 23)
+            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 24)
         finally:
             store.close()
 
     def test_v22_upgrade_lossless_and_reopen_idempotent(self) -> None:  # 1/3/5
-        self._strip_v23_layer()
+        self._strip_to_v22()
         # Upgrade path: opening with the current binary migrates 22 -> 23.
         upgraded = GatewayStateStore.open(self.path, now_ms=950)
         try:
             health = upgraded.health_check(full=True, now_ms=960)
             self.assertTrue(health.healthy)
-            self.assertEqual(health.schema_version, 23)
+            self.assertEqual(health.schema_version, 24)
         finally:
             upgraded.close()
         reopened = GatewayStateStore.open(self.path, now_ms=1_000)

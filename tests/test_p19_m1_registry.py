@@ -107,7 +107,7 @@ class RegistryTests(unittest.TestCase):
     def test_wrong_version_fail_closed(self) -> None:
         registry = VerifierRegistry.with_defaults()
         with pytest.raises(UnknownVerifierError):
-            registry.find("verifier.effect_state", "2")
+            registry.find("verifier.effect_state", "3")
 
     def test_duplicate_registration_rejected(self) -> None:
         with pytest.raises(ValueError):
@@ -146,7 +146,7 @@ class RecorderTests(unittest.TestCase):
             run_id="run_" + "b" * 64,
             generation=1,
             verifier_id="verifier.effect_state",
-            verifier_version="1",
+            verifier_version="2",
             registry_snapshot_sha256=self.snapshot.snapshot_sha256,
             predicate_id="vpd_test_1",
             predicate_type="effect.terminal_succeeded",
