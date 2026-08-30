@@ -1,0 +1,95 @@
+P19-R2 M3.1｜Evidence & Repository Binding Closure（M3_1_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m3.1-evidence-repository-binding-closure（自 e085698）
+性质：trust-boundary closure，零新 verifier 功能。RECORD ONLY 不变、
+不接 CompletionGate/Compiler、谓词集不变（dormant 依旧 dormant）、
+v25 additive。
+
+----------------------------------------------------------------------
+十二节落实对照
+----------------------------------------------------------------------
+§1 WriteEvidenceV2 权威契约（src/contracts/write_evidence.py）
+    - v3 builder 与 Gateway Store 共用同一模型/校验（from_wire 走
+      canonical JSON 严格解析）；v1 构造点与消费方原样保留
+    - 九项验证全落地：schema 固定 / 四 lineage id 格式 / source 白名单 /
+      source↔strength 一致（broker 永不 verified；verified 必有权威
+      post rows）/ mutation 三集合排序唯一+互斥（changed∩deleted=∅、
+      unchanged∩(changed∪deleted)=∅）+ 三 digest 复算 / post row 唯一 +
+      exists/sha256/shape 合法 + post_state_sha256 复算 /
+      observed_mutation_only 不得携带 post rows / evidence_sha256 覆盖
+      全量 canonical 语义 payload
+    - model_copy+重算总 hash 但内 digest/strength 不一致 → 构造即拒
+      （§11-3/4/5 测试锁定）
+
+§2 Store 绑定真实 EffectClaim
+    - put 前查 effect_ledger：effect 必须存在；claim.request/run/
+      generation/effect 四字段全等；observed_at_ms ≥ max(claim 时间,
+      side-effect start)
+    - 「同观测元组跨 effect 重绑」守卫：同 request 下相同
+      tool/action/run/mutation/final_state 的证据已属另一 effect →
+      StoreConflictError（§11-1；同请求内两 effect 四字段天然相同，
+      此守卫是唯一的重绑判别）
+    - EffectStateOracle readback 后再次 fail-closed：evidence 四字段
+      == ledger claim，不符 → ERROR 绝不 PASS（§11-6 raw SQL 篡改测试）
+
+§3 内容与 lineage 分离（v25 additive：repository_observation_binding）
+    - binding_id（rob_ 派生）/observation_sha256/request/run/generation/
+      subject_effect_id/role(PRE|POST)/observed_at_ms/binding_sha256
+    - 同一 observation_sha256 可合法绑定多 request/effect/role
+      （§11-9）；同 binding_id 异内容（全列比对）→ 冲突
+    - 旧 repository_observation 的 lineage 列保留兼容，不再是最终权威
+
+§4 Observation 本体严格验证
+    - put 经 RepositoryObservation.model_validate_json（契约自带
+      observation_sha256 复算校验）；claimed digest == 对象自身 digest；
+      repository_id/head_commit/observed_at_ms 必须与 payload 一致——
+      外部 metadata 无法贴到别的 observation 上（§11-7/8）
+
+§5 Verification window 绑定 subject effect
+    - Oracle API：evaluate(subject_effect_id, pre_binding_id,
+      post_binding_id, …)；pre/post 两个 binding 的 subject_effect_id
+      必须 == 给定 subject 且 role 分别为 PRE/POST、lineage 一致——
+      「同 run 其他步骤的仓库变化」结构性无法满足本 effect 的
+      required_paths_changed（§11-10）
+
+§6 镜像路径边界匹配
+    - _path_hits_target：p == target 或 p.startswith(target.rstrip('/')+'/')
+    - 生产形态测试：target 目录下文件改动 → FAIL（§11-11）；
+      foo/bar vs foo/barista → 不误命中（§11-12）
+
+§7 不执行待检仓 Python
+    - check-source-authority 逻辑整体迁至 src/source_authority/
+      validator.py（逐字移动）；scripts/ 变 CLI wrapper；
+      RepositoryStateOracle import 本仓权威模块，被检仓库只是数据
+      （§11-13：恶意脚本 + marker 文件证明从未执行）
+
+§8 live-state 与 post snapshot 时间绑定（方案 A）
+    - source_authority_valid / no_generated_mirror_direct_edit 在判定前
+      经只读 provider 重采样，要求现实 == pinned post observation；
+      漂移 → ERROR authority:post_state_drifted（选定并锁定）；
+      重采样 sha 与 ownership digest 进 observation/evidence
+
+§9 authority failure 持久化语义
+    - 删除全零占位 lineage：未知 effect / 台账损坏 / binding 或
+      observation 缺失 → OracleInvocationError，不伪造任何
+      VerificationRecord（§11-15）；有可信 claim/binding lineage 的
+      authority 失败仍产出 ERROR Record（lineage 真实）
+
+§10 共享 helper
+    - _common 删除从未比较的 max_input_bytes 参数；
+      block_capable/repair_feedback_capable 进三张期望表并真正比较
+      （M5 BLOCK 前锁定）
+
+§11 回归：15 项全落地（evidence_binding 7 + repository_binding 13 中
+    对应项 + 契约伪造 3 项）。
+
+§12 边界：无新谓词；dormant 保持；RECORD ONLY；v25 additive only。
+
+----------------------------------------------------------------------
+验证与回滚
+----------------------------------------------------------------------
+bundle 106 根契约，基线链 M3 阶段 5d5bde6e…（三级推导：
+当前−WriteEvidenceV2→M2 d46cd149→−Predicate→M1 502be945→−三契约→P18）。
+STORE_SCHEMA_VERSION 25。
+targeted：M3.1 新 20 + M3 回归 + 基线链（见 PR）。
+回滚：revert 本 PR；v24/v25 表保留无害。

@@ -36,7 +36,6 @@ def bind_snapshot_and_descriptor(
     supported_predicate_types: frozenset[str],
     expectations: Mapping[str, Any],
     implementation_ref: str,
-    max_input_bytes: int | None = None,
     timeout_ms: int | None = None,
 ):
     """Validate snapshot identity, registry integrity and the EXACT
@@ -80,6 +79,12 @@ def bind_snapshot_and_descriptor(
         problems.append("deterministic")
     if descriptor.default_enforcement != expectations["default_enforcement"]:
         problems.append("default_enforcement")
+    if descriptor.block_capable is not expectations["block_capable"]:
+        problems.append("block_capable")
+    if descriptor.repair_feedback_capable is not expectations[
+        "repair_feedback_capable"
+    ]:
+        problems.append("repair_feedback_capable")
     if timeout_ms is not None and descriptor.timeout_ms != timeout_ms:
         problems.append("timeout_ms")
     if problems:

@@ -185,6 +185,50 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
             issued_at_ms=1_200,
             lease_duration_ms=60_000,
         )
+        self.effect_id = self._seed_effect()
+
+    def _seed_effect(self) -> str:
+        from contracts import derive_effect_identity
+        from total_gateway.effects import EffectClaim, EffectResult
+
+        identity = derive_effect_identity(
+            request_id=self.request_id,
+            run_id=self.run_id,
+            run_sequence=1,
+            generation=2,
+            effect_kind="execution",
+            ordinal=0,
+            intent_sha256="6" * 64,
+        )
+        claim = EffectClaim(
+            effect_id=identity.effect_id,
+            request_id=self.request_id,
+            run_id=self.run_id,
+            run_sequence=1,
+            generation=2,
+            effect_kind="execution",
+            ordinal=0,
+            intent_sha256="6" * 64,
+            owner_component_id="tiangong-backend",
+            claimed_at_ms=1_300,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.claim_effect(claim)
+        self.store.mark_effect_started(identity.effect_id, started_at_ms=1_400)
+        result = EffectResult(
+            result_id="result_m3_store",
+            effect_id=identity.effect_id,
+            status="SUCCEEDED",
+            fact_id="fact_m3_store",
+            result_object_id=None,
+            result_object_sha256=None,
+            evidence_sha256="e" * 64,
+            error_code=None,
+            observed_at_ms=1_500,
+            result_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.complete_effect(result)
+        return identity.effect_id
 
     def tearDown(self) -> None:
         self.store.close()
@@ -195,10 +239,10 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
             request_id=self.request_id,
             run_id=self.run_id,
             generation=2,
-            effect_id="eff_" + "3" * 64,
+            effect_id=self.effect_id,
             tool_name="write_file",
             action="write",
-            observed_at_ms=1_000,
+            observed_at_ms=2_000,  # after claim(1_300)/start(1_400)
         )
         params.update(overrides)
         return bind_write_evidence_v2(authoritative_v1(), **params)
@@ -209,7 +253,7 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
         self.assertFalse(self.store.put_write_evidence_v2(v2, recorded_at_ms=2_500))
         fetched = self.store.get_write_evidence_v2(v2["evidence_sha256"])
         self.assertEqual(fetched, v2)
-        listed = self.store.list_write_evidence_for_effect("eff_" + "3" * 64)
+        listed = self.store.list_write_evidence_for_effect(self.effect_id)
         self.assertEqual(listed, (v2,))
 
     def test_digest_tamper_rejected_at_trust_boundary(self) -> None:
@@ -245,11 +289,21 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
         unknown_request = self._v2(request_id="req_" + "e" * 64)
         with self.assertRaises(StoreNotFoundError):
             self.store.put_write_evidence_v2(unknown_request, recorded_at_ms=2_000)
+        # M3.1 §2: evidence for an effect that does not exist in the ledger
+        from contracts.write_evidence import WriteEvidenceV2Error  # noqa: F401
+
+        ghost = self._v2(effect_id="eff_" + "9" * 64)
+        with self.assertRaises(StoreNotFoundError):
+            self.store.put_write_evidence_v2(ghost, recorded_at_ms=2_000)
+        # observation predating the claim's authority time
+        early = self._v2(observed_at_ms=1_000)  # claim at 1_300/start 1_400
+        with self.assertRaises(ValueError):
+            self.store.put_write_evidence_v2(early, recorded_at_ms=2_000)
 
     def test_schema_v24_and_zero_state_impact(self) -> None:
         v2 = self._v2()
         self.store.put_write_evidence_v2(v2, recorded_at_ms=2_000)
-        self.assertEqual(self.store.health_check(now_ms=2_100).schema_version, 24)
+        self.assertEqual(self.store.health_check(now_ms=2_100).schema_version, 25)
         connection = sqlite3.connect(self.store.path)
         try:
             decisions = connection.execute(

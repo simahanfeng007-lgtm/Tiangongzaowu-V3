@@ -51,6 +51,7 @@ from .agency import (
     ReflectionQuestionDecision,
 )
 from .execution import CapabilityManifest, ExecutionResult, ExecutionTicket, FactRecord
+from .write_evidence import WriteEvidenceV2
 from .verification import (
     AcceptancePredicate,
     RegistrySnapshot,
@@ -116,6 +117,7 @@ from .security import (
 
 CONTRACT_MODELS = (
     AcceptancePredicate,
+    WriteEvidenceV2,
     RegistrySnapshot,
     VerificationRecord,
     VerifierDescriptor,

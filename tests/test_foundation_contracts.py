@@ -339,6 +339,7 @@ class SchemaBundleTests(unittest.TestCase):
                 "VerifierDescriptor",
                 "ViabilityObservation",
                 "ViabilityState",
+                "WriteEvidenceV2",
             ],
         )
         for name, schema in bundle.items():

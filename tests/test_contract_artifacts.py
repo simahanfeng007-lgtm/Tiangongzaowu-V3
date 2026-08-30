@@ -31,6 +31,7 @@ from contracts.compatibility import (
     P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256,
     P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256,
     P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256,
+    P19_R2_M3_VERIFICATION_SCHEMA_BASELINE_SHA256,
     REVIEWED_SCHEMA_BASELINE_SHA256,
     assert_schema_bundles_compatible,
     compare_schema_bundles,
@@ -66,7 +67,7 @@ class ContractArtifactTests(unittest.TestCase):
             written = write_contract_artifacts(output)
             verified = verify_contract_artifact_directory(output)
             self.assertEqual(written, verified)
-            self.assertEqual(written["root_contract_count"], 105)
+            self.assertEqual(written["root_contract_count"], 106)
             self.assertEqual(
                 written["schema_bundle_sha256"],
                 contract_schema_bundle_sha256(),
@@ -119,7 +120,7 @@ class ContractCompatibilityTests(unittest.TestCase):
         # 当前阶段：AcceptancePredicate 在包中（M2 起）；历史基线逐级保留。
         self.assertEqual(
             REVIEWED_SCHEMA_BASELINE_SHA256,
-            P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256,
+            P19_R2_M3_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
         bundle = contract_schema_bundle()
         assert_schema_bundles_compatible(bundle, copy.deepcopy(bundle))
@@ -150,11 +151,26 @@ class ContractCompatibilityTests(unittest.TestCase):
                 for item in node:
                     _restore_version_shape(item)
 
-        # 两级历史链（不得跨级）：
-        # 第一步：当前包剥离 AcceptancePredicate -> M1 阶段包 digest。
-        m1_bundle = {
+        # 三级历史链（不得跨级）：
+        # 第一步：当前包剥离 WriteEvidenceV2 -> M2 阶段包 digest。
+        m2_bundle = {
             name: copy.deepcopy(schema)
             for name, schema in bundle.items()
+            if name != "WriteEvidenceV2"
+        }
+        self.assertEqual(
+            hashlib.sha256(
+                json.dumps(
+                    m2_bundle, ensure_ascii=False, allow_nan=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+            P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256,
+        )
+        # 第二步：M2 包剥离 AcceptancePredicate -> M1 阶段包 digest。
+        m1_bundle = {
+            name: copy.deepcopy(schema)
+            for name, schema in m2_bundle.items()
             if name != "AcceptancePredicate"
         }
         self.assertEqual(

@@ -169,12 +169,13 @@ class EffectOracleTestBase(unittest.TestCase):
 
 
 class EffectAuthorityTests(EffectOracleTestBase):
-    def test_unknown_effect_is_error(self) -> None:
-        record = self._evaluate(
-            "eff_" + "9" * 64, self._predicate("effect.terminal_succeeded")
-        )
-        self.assertEqual(record.status, "ERROR")
-        self.assertIn("authority:effect_not_found", record.reason_codes)
+    def test_unknown_effect_raises_without_fake_record(self) -> None:
+        from total_gateway.outcome_oracles.effect_state import OracleInvocationError
+
+        with self.assertRaises(OracleInvocationError):
+            self._evaluate(
+                "eff_" + "9" * 64, self._predicate("effect.terminal_succeeded")
+            )
 
     def test_corrupt_ledger_row_is_error(self) -> None:
         claim = self._new_effect()
@@ -195,11 +196,12 @@ class EffectAuthorityTests(EffectOracleTestBase):
             connection.commit()
         finally:
             connection.close()
-        record = self._evaluate(
-            claim.effect_id, self._predicate("effect.terminal_succeeded")
-        )
-        self.assertEqual(record.status, "ERROR")
-        self.assertTrue(any("authority" in code for code in record.reason_codes))
+        from total_gateway.outcome_oracles.effect_state import OracleInvocationError
+
+        with self.assertRaises(OracleInvocationError):
+            self._evaluate(
+                claim.effect_id, self._predicate("effect.terminal_succeeded")
+            )
 
 
 class TerminalStateTests(EffectOracleTestBase):
