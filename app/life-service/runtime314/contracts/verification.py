@@ -688,6 +688,7 @@ class AcceptancePredicate(ContractModel):
 
 _VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION = "tiangong.verification_plan_entry.v1"
 _VERIFICATION_PLAN_SCHEMA_VERSION = "tiangong.verification_plan.v1"
+_VERIFICATION_PLAN_V2_SCHEMA_VERSION = "tiangong.verification_plan.v2"
 _VERIFICATION_READINESS_SCHEMA_VERSION = "tiangong.verification_readiness.v1"
 
 #: Entry assessment status: the six record statuses plus MISSING and
@@ -782,7 +783,12 @@ class VerificationPlanEntryV2(ContractModel):
 
 
 class VerificationPlan(ContractModel):
-    """A frozen verification plan: what MUST be verified for one request."""
+    """A frozen verification plan (M4.1 v2): complete predicate bindings.
+
+    Historical v1 plans (with id/sha/type entry references instead of
+    nested predicates) remain readable through ``read_plan_any_version``
+    but CANNOT be activated in current PLAN_BOUND mode.
+    """
     model_config = ConfigDict(
         extra="forbid", frozen=True, strict=True,
         json_schema_extra={
@@ -791,9 +797,9 @@ class VerificationPlan(ContractModel):
         },
     )
     schema_id: Literal["VerificationPlan"] = "VerificationPlan"
-    schema_version: Literal[_VERIFICATION_PLAN_SCHEMA_VERSION] = (
-        _VERIFICATION_PLAN_SCHEMA_VERSION
-    )
+    schema_version: Literal[
+        _VERIFICATION_PLAN_V2_SCHEMA_VERSION, _VERIFICATION_PLAN_SCHEMA_VERSION,
+    ] = _VERIFICATION_PLAN_V2_SCHEMA_VERSION
     verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
     request_id: RequestId
     run_id: RunId

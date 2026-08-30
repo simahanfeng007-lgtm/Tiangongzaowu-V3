@@ -159,6 +159,24 @@ from .store import ActiveRequestActivation, GatewayStateStore, StoreConflictErro
 from contracts.world_understanding.inquiry import WorldInquiry
 from world_understanding.inquiry.self_will_integration import ExistingSelfWillAdapter
 
+def _verification_snapshot(store, snapshot_sha256: str):
+    """Load the authoritative RegistrySnapshot by hash from the store."""
+    import json as _json
+    from contracts.verification import RegistrySnapshot
+
+    row = store._connection.execute(
+        "SELECT snapshot_json FROM verification_registry_snapshot"
+        " WHERE snapshot_sha256 = ?",
+        (snapshot_sha256,),
+    ).fetchone()
+    if row is None:
+        raise OrchestrationError(
+            "verification registry snapshot missing from store"
+        )
+    return RegistrySnapshot.model_validate_json(
+        row["snapshot_json"], strict=True
+    )
+
 
 _WECHAT_POLICY_SHA256 = "d486cbb41e0e95a7b8ac9ea5aed6ef1efe9c74ff13e67cb2d17cd8af93116df7"
 _FEISHU_POLICY_SHA256 = "180585fe5d5e5967a472628ff72ea7d92bc96cb8a6a8949f872f9423f73fa05f"
@@ -2607,6 +2625,31 @@ class GatewayOrchestrationWorker:
             # The desktop renderer pulls this already-persisted result back
             # through the authenticated 7184 status route.  It must never be
             # handed to 7176 or interpreted as a WeChat/Feishu delivery.
+            # M4.1 Final §10: production verification wiring — if an
+            # active plan exists, the Executor MUST run (records +
+            # readiness are persisted before the gate reads them).
+            active_plan = self._store.get_active_verification_plan(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation.generation,
+            )
+            if active_plan is not None:
+                from total_gateway.verification_plan_executor import (
+                    VerificationPlanExecutor,
+                )
+                executor = VerificationPlanExecutor(
+                    snapshot=_verification_snapshot(
+                        self._store, active_plan.registry_snapshot_sha256
+                    ),
+                    store=self._store,
+                    object_store=self._objects,
+                    fact_ledger=self._facts,
+                    plan=active_plan,
+                )
+                executor.execute(
+                    evaluated_at_ms=time.time_ns() // 1_000_000,
+                    artifact_manifests=tuple(artifacts),
+                )
             decision = evaluate_desktop_completion(
                 objects=self._objects,
                 facts=self._facts,
@@ -2622,11 +2665,7 @@ class GatewayOrchestrationWorker:
                     run_id=run_id,
                     generation=generation.generation,
                 ),
-                active_plan=self._store.get_active_verification_plan(
-                    request_id=request_id,
-                    run_id=run_id,
-                    generation=generation.generation,
-                ),
+                active_plan=active_plan,
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(
