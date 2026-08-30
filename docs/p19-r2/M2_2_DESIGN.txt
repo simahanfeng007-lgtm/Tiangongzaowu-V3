@@ -1,0 +1,99 @@
+P19-R2 M2.2｜Trust-Boundary Closure（M2_2_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m2.2-artifact-trust-boundary-closure（自 78477b3 第一步创建）
+性质：对 2026-08-30 M2.1 审核裁决的逐节落实。零迁移（v23）、
+RECORD ONLY、不接 CompletionGate/Compiler/delivery。
+
+状态口径（§7 审核规定）：implementation-present /
+descriptor-registered / production-unwired。
+
+----------------------------------------------------------------------
+八节落实对照
+----------------------------------------------------------------------
+§1 create() 旁路封死
+    - 模型验证器重跑 normalize_predicate_params 并要求逐字节相等
+      → 直接构造 / model_validate_json / 未规范化 params 全部拒绝
+    - has_valid_identity() 全语义：predicate_sha256 复算 + 派生 ID +
+      规范化 params 相等 + PREDICATE_SUBJECT_KINDS 领域对应
+      （xlsx 谓词 + effect subject → False；model_copy+重算哈希的
+      非法谓词在 trust boundary 被拒）
+    - PREDICATE_PARAM_RULES / PREDICATE_SUBJECT_KINDS 改 MappingProxyType
+    - filler 参数（strict）、字符串/bool min_rows 全部拒绝（测试 A2）
+
+§2 描述符 v3 + 精确绑定
+    - ARTIFACT_INSPECTOR_SEMANTIC_VERSION 2→3（权威先行顺序 +
+      解析器分类学 + 固定机器码 + 公式/规范化语义 = 行为变更）
+    - _validate_artifact_descriptor：verifier_id/version/config_sha256/
+      supported_predicate_types/supported_subject_kinds/
+      accepted_authorities/max_input_bytes/implementation_ref/
+      producer_component_id/deterministic/layer/default_enforcement
+      十二项精确比对；同 id/version 异 config/能力 → OracleSnapshotInvalid
+      （测试 D1/D2）
+    - v1/v2 快照可解析不可实例化 v3 Oracle（find@3 失败）
+    - 配置映射全部 MappingProxyType
+
+§3 权威先于任何状态
+    固定顺序：①谓词全语义验证 → ②VerifiedArtifactContentSource 构造
+    → ③verify_artifact_revision（manifest hash/QC facts/object 绑定）
+    → ④applicability → ⑤descriptor capability → ⑥format inspectable
+    → ⑦已验证 manifest.size_bytes 上限 → ⑧超限 INCONCLUSIVE 不读
+    → ⑨read_verified_artifact → ⑩inspect/evaluate。
+    NOT_APPLICABLE/INCONCLUSIVE 的 subject 全部经过权威验证。
+
+§4 确定性语义修正
+    - text marker 双侧 NFKC+casefold（haystack 存 _text_norm；
+      测试 T1：ABC/abc/ＡＢＣ 互配）
+    - XLSX 单趟 data_only=False：公式文本计入 visible chars、
+      nonempty cells、data rows（测试 X1/X2）
+    - PPTX：MSO_SHAPE_TYPE 枚举（PICTURE/LINKED_PICTURE/MEDIA/GROUP）
+      + has_table/has_chart；表格单元格文本计入 visible text；
+      无法分类内容（有 shape 但零 meaningful）→ INCONCLUSIVE 不假 FAIL
+    - 解析器分类学：zipfile.BadZipFile/ElementTree.ParseError →
+      INCONCLUSIVE；ImportError → ERROR；RuntimeError/未知 → ERROR
+      （测试 P1）
+    - reason_codes 固定机器码：xlsx.required_columns_missing /
+      text.required_markers_missing（不拼列名/marker，测试 E1）；
+      缺失明细只进 observation digest（missing_count +
+      missing_items_sha256）
+
+§5 基线链修复
+    - P19_R2_M1 常量恢复 502be945…
+    - 新增 P19_R2_M2 阶段常量 = d46cd149…（JSON Schema 形状未变），
+      REVIEWED 指向当前阶段
+    - 推导测试改两级：当前−AcceptancePredicate→M1 digest；
+      M1−三契约→P18 digest（不得跨级）
+
+§6 测试矩阵（test_p19_m2_2_trust_boundary.py 13 项 + 既有矩阵更新）
+    A1 同产物同时刻不同 params → predicate_id 与 record_id 均不同
+    A2 非法谓词五类构造全拒（含 model_copy+重算哈希）
+    D1 错误 config_sha256 → OracleSnapshotInvalid
+    D2 缺谓词/改上限 → OracleSnapshotInvalid
+    O1 篡改超大 manifest → ERROR + 权威基线零额外读取
+    O2 权威有效超大 → INCONCLUSIVE/input_too_large + 零额外读取
+       （Gate 对象上限<64MiB，生产限值下权威有效超限不可达——
+        等价构造：同源补丁配置至 8 字节上限，语义逐阈值等价）
+    N1 64 条 QC evidence → refs≤8、全集 digest、改任一条 digest 变
+    T1/X1/X2/P1/E1 见 §4
+    既有 M2.1 矩阵更新：版本断言 v3、新 reason 码、O 拆 O1/O2
+
+§7 边界保持：v23 / RECORD ONLY / 无 CompletionGate / 无 delivery /
+    无状态机 / 无 ALERT/BLOCK / 无 Compiler / 无 Effect/Repo Oracle /
+    无第二 Runtime/Gateway/Store。文档与 docstring 全部改为
+    implementation-present 口径（含 verification_registry）。
+
+§8 完成条件：targeted 13 + P19 全回归 127 passed；基线链 19 passed
+    两级锁定；authority/sync/LF 见提交；双平台全量见 PR。
+
+----------------------------------------------------------------------
+关键发现（如实记录）
+----------------------------------------------------------------------
+F1 QC 事实核验会读取产物 blob（integrity QC 的证据载荷即产物字节）
+   ——「超限零读取」只能承诺检查阶段零额外读取（权威基线对比），
+   O1/O2 断言据此实现。
+F2 Gate 自身对象上限低于 64MiB → 生产限值下「权威有效且超限」的
+   manifest 在真实链上不可达；O2 用同源配置补丁做等价构造。
+F3 单源常量被 registry 与 oracle 模块分别 from-import 各自绑定，
+   测试补丁需覆盖两处（生产代码无此问题——两处读同一模块源）。
+
+----------------------------------------------------------------------
+回滚：revert 本 PR 即回到 M2.1 状态。
