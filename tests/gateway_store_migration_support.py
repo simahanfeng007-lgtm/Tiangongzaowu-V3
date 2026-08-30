@@ -19,6 +19,12 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 27:
+        # v27 additive: P19-R2 M4.1 plan activation.
+        connection.execute("DROP TABLE verification_plan_activation")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 27")
+        connection.execute("PRAGMA user_version = 26")
+        version = 26
     if version == 26:
         # v26 additive: P19-R2 M4 plan-bound verification.
         connection.execute("DROP TABLE write_evidence_effect_binding")

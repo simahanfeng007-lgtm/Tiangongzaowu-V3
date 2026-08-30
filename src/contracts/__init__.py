@@ -11,7 +11,7 @@ from .verification import (
     EntryAssessment,
     RuntimeCloseoutEvidence,
     VerificationPlan,
-    VerificationPlanEntry,
+    VerificationPlanEntryV2,
     VerificationReadiness,
     AcceptancePredicateSpecError,
     RegistrySnapshot,

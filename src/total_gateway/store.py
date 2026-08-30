@@ -88,7 +88,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 26
+STORE_SCHEMA_VERSION = 27
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1666,6 +1666,31 @@ _MIGRATION_V26_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V27_ID = "gateway-verification-plan-activation-v27"
+_MIGRATION_V27_STATEMENTS = (
+    """
+    CREATE TABLE verification_plan_activation (
+        activation_id TEXT NOT NULL PRIMARY KEY
+            CHECK (activation_id GLOB 'vpa_[0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verification_plan_id TEXT NOT NULL,
+        verification_plan_sha256 TEXT NOT NULL
+            CHECK (length(verification_plan_sha256) = 64 AND verification_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        registry_snapshot_sha256 TEXT NOT NULL
+            CHECK (length(registry_snapshot_sha256) = 64 AND registry_snapshot_sha256 NOT GLOB '*[^0-9a-f]*'),
+        activated_at_ms INTEGER NOT NULL CHECK (activated_at_ms >= 0),
+        activation_sha256 TEXT NOT NULL
+            CHECK (length(activation_sha256) = 64 AND activation_sha256 NOT GLOB '*[^0-9a-f]*')
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX verification_plan_activation_lineage_idx
+        ON verification_plan_activation (request_id, run_id, generation)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1693,6 +1718,7 @@ _MIGRATIONS = (
     (24, _MIGRATION_V24_ID, _MIGRATION_V24_STATEMENTS),
     (25, _MIGRATION_V25_ID, _MIGRATION_V25_STATEMENTS),
     (26, _MIGRATION_V26_ID, _MIGRATION_V26_STATEMENTS),
+    (27, _MIGRATION_V27_ID, _MIGRATION_V27_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -9891,6 +9917,116 @@ class GatewayStateStore:
                 "observed_at_ms": row["observed_at_ms"],
             }
 
+    def activate_verification_plan(
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        verification_plan_id: str,
+        verification_plan_sha256: str,
+        registry_snapshot_sha256: str,
+        activated_at_ms: int,
+    ) -> str:
+        """Activate a verification plan for this lineage (single-active).
+
+        M4.1 §2: exactly one active plan per request/run/generation.
+        A second, different plan is rejected (fail-closed). Re-activating
+        the same plan is idempotent.
+        """
+        payload = {
+            "domain": "tiangong.verification-plan-activation.v1",
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "verification_plan_id": verification_plan_id,
+            "verification_plan_sha256": verification_plan_sha256,
+            "registry_snapshot_sha256": registry_snapshot_sha256,
+            "activated_at_ms": activated_at_ms,
+        }
+        activation_sha256 = canonical_sha256(
+            {k: v for k, v in payload.items() if k != "activated_at_ms"}
+        )
+        activation_id = "vpa_" + canonical_sha256(
+            {"domain": "tiangong.verification-plan-activation.v1.id",
+             "activation_sha256": activation_sha256}
+        )
+        with self._lock, self._write_transaction():
+            # the plan must already exist in the store
+            plan_row = self._connection.execute(
+                "SELECT plan_sha256 FROM verification_plan"
+                " WHERE verification_plan_id = ?",
+                (verification_plan_id,),
+            ).fetchone()
+            if plan_row is None:
+                raise StoreNotFoundError(
+                    "verification plan does not exist; put before activate"
+                )
+            if plan_row["plan_sha256"] != verification_plan_sha256:
+                raise StoreConflictError(
+                    "activation plan hash does not match the stored plan"
+                )
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=activated_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT * FROM verification_plan_activation"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?",
+                (request_id, run_id, generation),
+            ).fetchone()
+            if existing is not None:
+                if existing["verification_plan_id"] == verification_plan_id:
+                    return existing["activation_id"]  # idempotent
+                raise StoreConflictError(
+                    "a different verification plan is already active for"
+                    " this lineage; single-active invariant"
+                )
+            self._connection.execute(
+                """INSERT INTO verification_plan_activation (
+                    activation_id, request_id, run_id, generation,
+                    verification_plan_id, verification_plan_sha256,
+                    registry_snapshot_sha256, activated_at_ms,
+                    activation_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    activation_id, request_id, run_id, generation,
+                    verification_plan_id, verification_plan_sha256,
+                    registry_snapshot_sha256, activated_at_ms,
+                    activation_sha256,
+                ),
+            )
+            return activation_id
+
+    def get_active_verification_plan(
+        self, *, request_id: str, run_id: str, generation: int,
+    ):
+        """Return the active VerificationPlan (or None)."""
+        from contracts.verification import VerificationPlan
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT verification_plan_id FROM verification_plan_activation"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?",
+                (request_id, run_id, generation),
+            ).fetchone()
+            if row is None:
+                return None
+            plan_row = self._connection.execute(
+                "SELECT plan_json FROM verification_plan"
+                " WHERE verification_plan_id = ?",
+                (row["verification_plan_id"],),
+            ).fetchone()
+            if plan_row is None:
+                raise StoreCorruptionError(
+                    "active verification plan content is missing"
+                )
+            return VerificationPlan.model_validate_json(
+                plan_row["plan_json"], strict=True
+            )
+
     def put_verification_plan(
         self,
         plan,
@@ -9979,13 +10115,37 @@ class GatewayStateStore:
         *,
         recorded_at_ms: int,
     ) -> bool:
-        """Persist a VerificationReadiness; True when newly created."""
+        """Persist a VerificationReadiness; True when newly created.
+
+        M4.1 §7: the write re-verifies that this readiness MATCHES what
+        build_readiness would compute from the active plan + records.
+        A self-computed-hash readiness that disagrees with the
+        authoritative computation is rejected.
+        """
         from contracts.verification import VerificationReadiness
 
         if not isinstance(readiness, VerificationReadiness):
             raise ValueError("verification readiness payload has the wrong type")
         if not readiness.has_valid_identity():
             raise ValueError("verification readiness identity is invalid")
+        # §7: recompute from the authoritative plan + records
+        active_plan = self.get_active_verification_plan(
+            request_id=readiness.request_id,
+            run_id=readiness.run_id,
+            generation=readiness.generation,
+        )
+        if active_plan is None:
+            raise ValueError(
+                "no active verification plan; readiness cannot be persisted"
+            )
+        if active_plan.verification_plan_id != readiness.verification_plan_id:
+            raise ValueError(
+                "readiness does not correspond to the active plan"
+            )
+        if active_plan.plan_sha256 != readiness.verification_plan_sha256:
+            raise ValueError(
+                "readiness plan hash does not match the active plan"
+            )
         payload_json = json.dumps(
             readiness.model_dump(mode="json"), ensure_ascii=False,
             allow_nan=False, sort_keys=True, separators=(",", ":"),

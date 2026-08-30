@@ -672,7 +672,7 @@ class GatewayDeliveryOutboxWorker:
             delivery_requirement="CHANNEL_ACCEPTED",
             verification_mode=(
                 "PLAN_BOUND"
-                if self._store.get_latest_verification_readiness(
+                if self._store.get_active_verification_plan(
                     request_id=plan.request_id,
                     run_id=plan.run_id,
                     generation=plan.generation,

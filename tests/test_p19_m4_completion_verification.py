@@ -12,9 +12,10 @@ from contracts import (
     derive_run_identity,
 )
 from contracts.verification import (
+    AcceptancePredicate,
     EntryAssessment,
     VerificationPlan,
-    VerificationPlanEntry,
+    VerificationPlanEntryV2,
     VerificationReadiness,
 )
 from total_gateway.completion_gate import (
@@ -37,14 +38,14 @@ def _req(request_id, run_id, **kw):
 
 
 def _entry():
-    return VerificationPlanEntry(
+    pred = AcceptancePredicate.create(
+        predicate_type="artifact.nonempty", subject_kind="artifact"
+    )
+    return VerificationPlanEntryV2(
         plan_entry_id="vpe_" + "0" * 64,
         verifier_id="verifier.artifact_content",
         verifier_version="3",
-        predicate_id="vpd_" + "0" * 64,
-        predicate_sha256="0" * 64,
-        predicate_type="artifact.nonempty",
-        subject_kind="artifact",
+        predicate=pred,
         subject_identity="arv_" + "1" * 64,
         evaluation_phase="POST_EXECUTION",
         required=True,

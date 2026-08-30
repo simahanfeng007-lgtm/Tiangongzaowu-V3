@@ -337,7 +337,7 @@ class SchemaBundleTests(unittest.TestCase):
                 "TrustBundle",
                 "UserConfirmationGrant",
                 "VerificationPlan",
-                "VerificationPlanEntry",
+                "VerificationPlanEntryV2",
                 "VerificationReadiness",
                 "VerificationRecord",
                 "VerifierDescriptor",

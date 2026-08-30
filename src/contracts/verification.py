@@ -699,40 +699,59 @@ EntryAssessmentStatus = Literal[
 ]
 
 
-class VerificationPlanEntry(ContractModel):
-    """One plan entry: a FULLY bound acceptance predicate requirement.
+_VERIFICATION_PLAN_ENTRY_V2_SCHEMA_VERSION = "tiangong.verification_plan_entry.v2"
 
-    The entry must carry the COMPLETE AcceptancePredicate identity
-    (predicate_id/sha256/type + params via the predicate binding),
-    plus the verifier and subject it must be evaluated against.
+
+class VerificationPlanEntryV2(ContractModel):
+    """M4.1 §3: plan entry with the COMPLETE AcceptancePredicate embedded.
+
+    The predicate is a full nested model (not just id/sha/type refs), so
+    a fabricated entry that combines predicate_id A + sha B + type C is
+    impossible — the validator proves all identity fields derive from
+    the same AcceptancePredicate.
     """
     model_config = ConfigDict(
         extra="forbid", frozen=True, strict=True,
         json_schema_extra={
-            "$id": f"{SCHEMA_BASE}:VerificationPlanEntry",
+            "$id": f"{SCHEMA_BASE}:VerificationPlanEntryV2",
             "$schema": "https://json-schema.org/draft/2020-12/schema",
         },
     )
-    schema_id: Literal["VerificationPlanEntry"] = "VerificationPlanEntry"
-    schema_version: Literal[_VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION] = (
-        _VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION
+    schema_id: Literal["VerificationPlanEntryV2"] = "VerificationPlanEntryV2"
+    schema_version: Literal[_VERIFICATION_PLAN_ENTRY_V2_SCHEMA_VERSION] = (
+        _VERIFICATION_PLAN_ENTRY_V2_SCHEMA_VERSION
     )
     plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
     verifier_id: OpaqueId
     verifier_version: str = Field(min_length=1, max_length=64)
-    predicate_id: str = Field(pattern=r"^vpd_[0-9a-f]{64}$")
-    predicate_sha256: Sha256
-    predicate_type: PredicateType
-    subject_kind: SubjectKind
+    predicate: AcceptancePredicate
     subject_identity: str = Field(min_length=1, max_length=400)
     evaluation_phase: EvaluationPhase
     required: bool = True
     entry_sha256: Sha256
 
+    @property
+    def predicate_id(self) -> str:
+        return self.predicate.predicate_id
+
+    @property
+    def predicate_sha256(self) -> str:
+        return self.predicate.predicate_sha256
+
+    @property
+    def predicate_type(self) -> str:
+        return self.predicate.predicate_type
+
+    @property
+    def subject_kind(self) -> str:
+        return self.predicate.subject_kind
+
     @model_validator(mode="after")
-    def _validate_entry(self) -> VerificationPlanEntry:
-        if not self.predicate_sha256:
-            raise ValueError("entry predicate_sha256 required")
+    def _validate_entry(self) -> VerificationPlanEntryV2:
+        if not self.predicate.has_valid_identity():
+            raise ValueError("entry predicate failed full identity validation")
+        if self.predicate.subject_kind not in ("artifact", "effect", "repository"):
+            raise ValueError("entry subject_kind must be a verifier domain")
         return self
 
     def computed_entry_sha256(self) -> str:
@@ -746,11 +765,13 @@ class VerificationPlanEntry(ContractModel):
     def has_valid_identity(self) -> bool:
         if not self.has_valid_entry_sha256():
             return False
+        if not self.predicate.has_valid_identity():
+            return False
         return self.plan_entry_id == "vpe_" + canonical_sha256(
             {"domain": self.schema_version, "entry_sha256": self.entry_sha256}
         )
 
-    def with_computed_sha256(self) -> VerificationPlanEntry:
+    def with_computed_sha256(self) -> VerificationPlanEntryV2:
         entry_sha256 = self.computed_entry_sha256()
         partial = self.model_copy(update={"entry_sha256": entry_sha256})
         return partial.model_copy(
@@ -778,7 +799,7 @@ class VerificationPlan(ContractModel):
     run_id: RunId
     generation: int = Field(ge=0)
     registry_snapshot_sha256: Sha256
-    entries: tuple[VerificationPlanEntry, ...] = Field(min_length=1, max_length=64)
+    entries: tuple[VerificationPlanEntryV2, ...] = Field(min_length=1, max_length=64)
     plan_sha256: Sha256
 
     @model_validator(mode="after")
@@ -996,6 +1017,7 @@ __all__ = [
     "VerificationLayer",
     "VerificationPlan",
     "VerificationPlanEntry",
+    "VerificationPlanEntryV2",
     "VerificationReadiness",
     "VerificationRecord",
     "VerificationStatus",

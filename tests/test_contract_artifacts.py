@@ -157,7 +157,7 @@ class ContractCompatibilityTests(unittest.TestCase):
         # M4 → M3 推导：剥离 M4 新增五个契约。
         m4_new = {
             "EntryAssessment", "RuntimeCloseoutEvidence",
-            "VerificationPlan", "VerificationPlanEntry", "VerificationReadiness",
+            "VerificationPlan", "VerificationPlanEntryV2", "VerificationReadiness",
         }
         m3_bundle = {
             name: copy.deepcopy(schema)
