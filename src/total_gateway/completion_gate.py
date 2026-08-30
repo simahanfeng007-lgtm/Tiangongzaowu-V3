@@ -34,6 +34,7 @@ class CompletionRequirements(BaseModel):
     required_execution_effect_ids: tuple[str, ...] = Field(default=(), max_length=256)
     required_artifact_revision_ids: tuple[str, ...] = Field(default=(), max_length=256)
     delivery_requirement: Literal["NONE", "CHANNEL_ACCEPTED", "DELIVERED"] = "NONE"
+    verification_mode: Literal["NONE", "PLAN_BOUND"] = "NONE"
 
     @model_validator(mode="after")
     def validate_requirements(self) -> Self:
@@ -110,6 +111,10 @@ class CompletionDecision(BaseModel):
     outbound_plan_sha256: str | None = None
     delivery_receipt_sha256: str | None = None
     candidate_text_sha256: str | None = None
+    verification_mode: Literal["NONE", "PLAN_BOUND"] = "NONE"
+    verification_ready: bool = True
+    verification_plan_sha256: str | None = None
+    verification_readiness_sha256: str | None = None
     model_generated: Literal[False] = False
     decision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -162,6 +167,7 @@ class CompletionGate:
         outbound_plan: OutboundPlan | None = None,
         delivery_receipt: DeliveryReceipt | None = None,
         delivery_failure: Literal["FAILED_FINAL", "AMBIGUOUS"] | None = None,
+        verification_readiness=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
@@ -268,7 +274,36 @@ class CompletionGate:
                     delivery_ready = all(item.requirement_satisfied for item in parts)
                     delivered = all(item.platform_delivered for item in parts)
 
-        core_ready = text_ready and execution_ready and artifacts_ready
+        # M4: PLAN_BOUND verification gate — the CompletionGate reads a
+        # VerificationReadiness produced by the verification plane and
+        # refuses to complete without it. Verification can only TIGHTEN
+        # the gate (AND with legacy core), never bypass any legacy gate.
+        legacy_core_ready = text_ready and execution_ready and artifacts_ready
+        if requirements.verification_mode == "PLAN_BOUND":
+            if verification_readiness is None:
+                raise CompletionGateError(
+                    "completion.verification.plan_bound_missing_readiness"
+                )
+            if not verification_readiness.has_valid_identity():
+                raise CompletionGateError(
+                    "completion.verification.readiness_identity_invalid"
+                )
+            if (
+                verification_readiness.request_id != requirements.request_id
+                or verification_readiness.run_id != requirements.run_id
+                or verification_readiness.generation != requirements.generation
+            ):
+                raise CompletionGateError(
+                    "completion.verification.readiness_lineage_mismatch"
+                )
+            verification_ready = verification_readiness.verification_ready
+        else:
+            if verification_readiness is not None:
+                raise CompletionGateError(
+                    "completion.verification.none_mode_with_readiness"
+                )
+            verification_ready = True
+        core_ready = legacy_core_ready and verification_ready
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
         if ambiguous:
@@ -317,6 +352,18 @@ class CompletionGate:
             delivery_receipt_sha256=receipt_sha256,
             candidate_text_sha256=(
                 None if candidate_text is None else hashlib.sha256(candidate_text.encode("utf-8")).hexdigest()
+            ),
+            verification_mode=requirements.verification_mode,
+            verification_ready=verification_ready,
+            verification_plan_sha256=(
+                verification_readiness.verification_plan_sha256
+                if verification_readiness is not None
+                else None
+            ),
+            verification_readiness_sha256=(
+                verification_readiness.readiness_sha256
+                if verification_readiness is not None
+                else None
             ),
             decision_sha256="0" * 64,
         ).with_computed_sha256()

@@ -130,6 +130,24 @@ class RepositoryOracleTestBase(unittest.TestCase):
             lease_duration_ms=60_000,
         )
 
+    def _create_effect(self, ordinal: int = 0) -> str:
+        from contracts import derive_effect_identity
+        from total_gateway.effects import EffectClaim
+        identity = derive_effect_identity(
+            request_id=self.request_id, run_id=self.run_id,
+            run_sequence=1, generation=2, effect_kind="execution",
+            ordinal=ordinal, intent_sha256="6" * 64,
+        )
+        claim = EffectClaim(
+            effect_id=identity.effect_id, request_id=self.request_id,
+            run_id=self.run_id, run_sequence=1, generation=2,
+            effect_kind="execution", ordinal=ordinal,
+            intent_sha256="6" * 64, owner_component_id="tiangong-backend",
+            claimed_at_ms=20_000, claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.claim_effect(claim)
+        return identity.effect_id
+
     def _capture_observation(self, *, delta_from=None):
         identity = self.provider.discover(str(self._repo))
         assert identity is not None
@@ -151,7 +169,7 @@ class RepositoryOracleTestBase(unittest.TestCase):
             request_id=self.request_id,
             run_id=self.run_id,
             generation=2,
-            effect_id="eff_content_anchor",
+            effect_id=self._create_effect(0),
             repository_id=observation.identity.repository_id,
             head_commit=observation.revision.head_commit,
             observed_at_ms=observation.observed_at_ms,
@@ -183,8 +201,11 @@ class RepositoryOracleTestBase(unittest.TestCase):
             recorded_at_ms=observation.observed_at_ms + 2,
         )
 
-    def _window(self, *, subject: str = "eff_subject_1", delta: bool = True):
+    def _window(self, *, subject: str | None = None, delta: bool = True):
         """Capture PRE + POST (with a committed change) and bind both."""
+        if subject is None:
+            subject = self._create_effect(100)
+            self._window_subject = subject
         pre_obs = self._capture_observation()
         self._store_content(pre_obs)
         pre_binding = self._bind(pre_obs, role="PRE", subject_effect_id=subject)
@@ -201,7 +222,9 @@ class RepositoryOracleTestBase(unittest.TestCase):
         post_binding = self._bind(post_obs, role="POST", subject_effect_id=subject)
         return pre_binding, post_binding
 
-    def _evaluate(self, pre_binding, post_binding, kind, *, subject: str = "eff_subject_1", **params):
+    def _evaluate(self, pre_binding, post_binding, kind, *, subject: str | None = None, **params):
+        if subject is None:
+            subject = self._window_subject
         predicate = AcceptancePredicate.create(
             predicate_type=kind, subject_kind="repository", params=params or None
         )
@@ -281,15 +304,15 @@ class ContentTrustTests(RepositoryOracleTestBase):
     def test_item9_same_observation_multiple_bindings_allowed(self) -> None:
         observation = self._capture_observation()
         self._store_content(observation)
-        first = self._bind(observation, role="PRE", subject_effect_id="eff_x")
-        second = self._bind(observation, role="PRE", subject_effect_id="eff_y")
-        post = self._bind(observation, role="POST", subject_effect_id="eff_x")
+        first = self._bind(observation, role="PRE", subject_effect_id=self._create_effect(10))
+        second = self._bind(observation, role="PRE", subject_effect_id=self._create_effect(11))
+        post = self._bind(observation, role="POST", subject_effect_id=self._create_effect(10))
         self.assertNotEqual(first, second)
         self.assertNotEqual(first, post)
         # idempotent rebind of the identical binding
         self.assertEqual(
             first,
-            self._bind(observation, role="PRE", subject_effect_id="eff_x"),
+            self._bind(observation, role="PRE", subject_effect_id=self._create_effect(10)),
         )
         # same binding_id with different content is impossible (derived),
         # but a conflicting stored row is rejected:
@@ -298,13 +321,13 @@ class ContentTrustTests(RepositoryOracleTestBase):
             connection.execute(
                 "UPDATE repository_observation_binding SET subject_effect_id = ?"
                 " WHERE binding_id = ?",
-                ("eff_tampered", first),
+                (self._create_effect(60), first),
             )
             connection.commit()
         finally:
             connection.close()
         with self.assertRaises(StoreConflictError):
-            self._bind(observation, role="PRE", subject_effect_id="eff_x")
+            self._bind(observation, role="PRE", subject_effect_id=self._create_effect(10))
 
 
 class WindowTests(RepositoryOracleTestBase):
@@ -322,7 +345,7 @@ class WindowTests(RepositoryOracleTestBase):
         self.assertEqual(missing.status, "FAIL")
 
     def test_item10_pre_post_different_subject_effects_is_error(self) -> None:
-        subject = "eff_subject_1"
+        subject = self._create_effect(100)
         pre_obs = self._capture_observation()
         self._store_content(pre_obs)
         pre_binding = self._bind(pre_obs, role="PRE", subject_effect_id=subject)
@@ -335,10 +358,11 @@ class WindowTests(RepositoryOracleTestBase):
         self._pinned_post_sha = post_obs.observation_sha256
         # POST bound to ANOTHER effect: another step's changes must not
         # satisfy this effect's predicate
-        post_binding = self._bind(post_obs, role="POST", subject_effect_id="eff_OTHER")
+        post_binding = self._bind(post_obs, role="POST", subject_effect_id=self._create_effect(50))
         record = self._evaluate(
             pre_binding, post_binding,
             "repository.required_paths_changed", paths=["src/main.py"],
+            subject=subject,
         )
         self.assertEqual(record.status, "ERROR")
         self.assertIn("authority:post_subject_mismatch", record.reason_codes)
@@ -347,7 +371,7 @@ class WindowTests(RepositoryOracleTestBase):
         pre, post = self._window()
         with self.assertRaises(OracleInvocationError):
             self.oracle.evaluate(
-                subject_effect_id="eff_subject_1",
+                subject_effect_id=self._create_effect(100),
                 pre_binding_id="rob_" + "9" * 60,
                 post_binding_id=post,
                 predicate=AcceptancePredicate.create(
@@ -382,7 +406,9 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         self._ownership(["app/life-service/runtime314/contracts"])
         pre_obs = self._capture_observation()
         self._store_content(pre_obs)
-        pre = self._bind(pre_obs, role="PRE", subject_effect_id="eff_m")
+        effect = self._create_effect(20)
+        self._window_subject = effect
+        pre = self._bind(pre_obs, role="PRE", subject_effect_id=effect)
         mirror = self._repo / "app/life-service/runtime314/contracts"
         mirror.mkdir(parents=True, exist_ok=True)
         (mirror / "verification.py").write_text("# direct edit\n", encoding="utf-8")
@@ -391,10 +417,10 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         post_obs = self._capture_observation(delta_from=pre_obs)
         self._store_content(post_obs)
         self._pinned_post_sha = post_obs.observation_sha256
-        post = self._bind(post_obs, role="POST", subject_effect_id="eff_m")
+        post = self._bind(post_obs, role="POST", subject_effect_id=effect)
         record = self._evaluate(
             pre, post, "repository.no_generated_mirror_direct_edit",
-            subject="eff_m",
+            subject=effect,
         )
         self.assertEqual(record.status, "FAIL")
         self.assertIn("repository.generated_mirror_direct_edit", record.reason_codes)
@@ -403,7 +429,9 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         self._ownership(["foo/bar"])
         pre_obs = self._capture_observation()
         self._store_content(pre_obs)
-        pre = self._bind(pre_obs, role="PRE", subject_effect_id="eff_m")
+        effect = self._create_effect(20)
+        self._window_subject = effect
+        pre = self._bind(pre_obs, role="PRE", subject_effect_id=effect)
         decoy = self._repo / "foo/barista"
         decoy.mkdir(parents=True, exist_ok=True)
         (decoy / "x.py").write_text("x = 1\n", encoding="utf-8")
@@ -412,10 +440,10 @@ class MirrorBoundaryTests(RepositoryOracleTestBase):
         post_obs = self._capture_observation(delta_from=pre_obs)
         self._store_content(post_obs)
         self._pinned_post_sha = post_obs.observation_sha256
-        post = self._bind(post_obs, role="POST", subject_effect_id="eff_m")
+        post = self._bind(post_obs, role="POST", subject_effect_id=effect)
         record = self._evaluate(
             pre, post, "repository.no_generated_mirror_direct_edit",
-            subject="eff_m",
+            subject=effect,
         )
         self.assertEqual(record.status, "PASS", record.reason_codes)
 
@@ -467,7 +495,7 @@ class AuthorityExecutionTests(RepositoryOracleTestBase):
             resampler=lambda root: self._pinned_post_sha,
         )
         record = oracle.evaluate(
-            subject_effect_id="eff_subject_1",
+            subject_effect_id=self._create_effect(100),
             pre_binding_id=pre,
             post_binding_id=post,
             predicate=AcceptancePredicate.create(
@@ -492,7 +520,7 @@ class AuthorityExecutionTests(RepositoryOracleTestBase):
             resampler=None,  # REAL provider resample
         )
         record = oracle.evaluate(
-            subject_effect_id="eff_subject_1",
+            subject_effect_id=self._create_effect(100),
             pre_binding_id=pre,
             post_binding_id=post,
             predicate=AcceptancePredicate.create(

@@ -31,6 +31,7 @@ def evaluate_desktop_completion(
     candidate_text: str,
     artifacts: tuple[ArtifactManifest, ...],
     head_state_reader=None,
+    verification_readiness=None,
 ) -> CompletionDecision:
     requirements = CompletionRequirements(
         request_id=request_id,
@@ -42,12 +43,20 @@ def evaluate_desktop_completion(
             sorted(item.artifact_revision_id for item in artifacts)
         ),
         delivery_requirement="NONE",
+        # M4: PLAN_BOUND only when an explicit verification plan exists
+        # for this lineage; without one the legacy NONE mode is preserved.
+        verification_mode=(
+            "PLAN_BOUND"
+            if verification_readiness is not None
+            else "NONE"
+        ),
     )
     try:
         decision = CompletionGate(objects, facts, head_state_reader=head_state_reader).evaluate(
             requirements,
             candidate_text=candidate_text,
             artifacts=artifacts,
+            verification_readiness=verification_readiness,
         )
     except CompletionGateError as exc:
         raise DesktopCompletionError(exc.code) from exc
