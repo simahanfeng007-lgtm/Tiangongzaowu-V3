@@ -106,7 +106,8 @@ class P19M1StoreTestBase(unittest.TestCase):
             run_id=self.run_id,
             generation=1,
             verifier_id="verifier.artifact_content",
-            verifier_version="1",
+            # M2.1: 默认快照携带 v2 描述符（历史 @1 由 legacy 构造器保留）
+            verifier_version="2",
             registry_snapshot_sha256=self.snapshot.snapshot_sha256,
             predicate_id="vpd_p19_m1",
             predicate_type="artifact.nonempty",

@@ -65,7 +65,7 @@ class ContractArtifactTests(unittest.TestCase):
             written = write_contract_artifacts(output)
             verified = verify_contract_artifact_directory(output)
             self.assertEqual(written, verified)
-            self.assertEqual(written["root_contract_count"], 104)
+            self.assertEqual(written["root_contract_count"], 105)
             self.assertEqual(
                 written["schema_bundle_sha256"],
                 contract_schema_bundle_sha256(),
@@ -154,7 +154,12 @@ class ContractCompatibilityTests(unittest.TestCase):
             name: copy.deepcopy(schema)
             for name, schema in bundle.items()
             if name
-            not in {"RegistrySnapshot", "VerificationRecord", "VerifierDescriptor"}
+            not in {
+                "AcceptancePredicate",
+                "RegistrySnapshot",
+                "VerificationRecord",
+                "VerifierDescriptor",
+            }
         }
         self.assertEqual(
             hashlib.sha256(

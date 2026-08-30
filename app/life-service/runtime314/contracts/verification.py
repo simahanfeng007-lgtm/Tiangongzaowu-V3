@@ -1,18 +1,20 @@
-"""P19-R2 M1 verification contracts.
+"""P19-R2 verification contracts.
 
-Typed, versioned, hashed contracts for the minimal verification plane.
-M1 scope (2026-08-29 review approval):
+M1 (2026-08-29): ``VerifierDescriptor`` / ``RegistrySnapshot`` /
+``VerificationRecord`` — strict/frozen/extra-forbid models with
+canonical SHA-256 and deterministic IDs; enforcement is persistence-level
+RECORD only.
 
-* ``VerifierDescriptor`` / ``RegistrySnapshot`` / ``VerificationRecord``;
-* strict/frozen/extra-forbid models with canonical SHA-256 and
-  deterministic IDs;
-* enforcement is persistence-level RECORD only. ALERT/BLOCK carry no
-  meaning in this milestone and are rejected by the recorder.
+M2.1 (2026-08-30): ``AcceptancePredicate`` — one minimal, universal,
+upstream-agnostic predicate identity shared by every verifier domain.
+It says *what the predicate is*; it does not decide who compiles
+predicates from user requests, who authorizes them, whether they may
+BLOCK, or anything about CompletionDecision.
 
 Deliberately NOT here (later milestones): VerificationPlan,
-AcceptancePredicate, FailureEvidence, RepairDirective, plan compilers,
-and any completion-gate binding. The obligation upstream is undecided
-(see docs/p19-r2/BASELINE_AUDIT.txt finding 1) and M1 must not pick one.
+FailureEvidence, RepairDirective, plan compilers, and any
+completion-gate binding. The obligation upstream is undecided
+(see docs/p19-r2/BASELINE_AUDIT.txt finding 1).
 
 Hash honesty: every ``*_sha256`` below is a plain unkeyed content hash.
 It proves internal consistency and byte-identical recomputation, not
@@ -22,7 +24,9 @@ boundaries, exactly like CompletionDecision today.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+import unicodedata
+from types import MappingProxyType
+from typing import Annotated, Any, Literal, Mapping, Union
 
 from pydantic import ConfigDict, Field, StringConstraints, model_validator
 
@@ -336,10 +340,242 @@ def derive_verification_record_id(*, result_sha256: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# AcceptancePredicate (M2.1) — universal, upstream-agnostic predicate identity
+# ---------------------------------------------------------------------------
+
+_ACCEPTANCE_PREDICATE_SCHEMA_VERSION = "tiangong.acceptance_predicate.v1"
+
+#: Frozen param value: scalar or an ordered tuple of strings (lists are
+#: normalized: deduplicated + sorted, so input order never drifts identity).
+PredicateParamScalar = Union[str, int, bool]
+PredicateParamValue = Union[str, int, bool, tuple[str, ...]]
+
+
+class AcceptancePredicateSpecError(ValueError):
+    """Raised when predicate params violate the per-type parameter rules."""
+
+
+#: Exact parameter rules for every predicate type that may be instantiated
+#: today. Types outside this mapping have no rules yet and therefore cannot
+#: be instantiated (fail-closed instead of guessed).
+PREDICATE_PARAM_RULES: Mapping[str, frozenset[str]] = {
+    "artifact.nonempty": frozenset(),
+    "artifact.min_visible_text_chars": frozenset({"min_chars"}),
+    "xlsx.required_columns": frozenset({"columns"}),
+    "xlsx.min_data_rows": frozenset({"min_rows"}),
+    "text.required_markers": frozenset({"markers"}),
+    "pptx.min_nonempty_slides": frozenset({"min_slides"}),
+}
+
+#: Bounds applied to list-shaped params before hashing. They also bound the
+#: number of per-item reason codes a single predicate can produce.
+PREDICATE_MAX_LIST_ITEMS = 32
+PREDICATE_MAX_ITEM_CHARS = 128
+
+
+def normalize_predicate_text(value: str) -> str:
+    """Canonical text form: NFKC + strip + casefold (exact-match basis)."""
+    return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+def normalize_predicate_params(
+    predicate_type: str,
+    params: Mapping[str, Any],
+) -> tuple[tuple[str, PredicateParamValue], ...]:
+    """Validate + normalize params into a deep-frozen, key-sorted tuple.
+
+    Rules: exact key set per type (unknown keys rejected, missing keys
+    rejected); list params are normalized per item (NFKC/strip/casefold),
+    emptied of blanks, deduplicated and sorted — so both dict key order
+    and list input order are identity-irrelevant.
+    """
+    allowed = PREDICATE_PARAM_RULES.get(predicate_type)
+    if allowed is None:
+        raise AcceptancePredicateSpecError(
+            f"no parameter rules defined for predicate type: {predicate_type}"
+        )
+    unknown = set(params) - allowed
+    if unknown:
+        raise AcceptancePredicateSpecError(
+            f"{predicate_type}: unknown params {sorted(unknown)};"
+            f" allowed: {sorted(allowed)}"
+        )
+    missing = allowed - set(params)
+    if missing:
+        raise AcceptancePredicateSpecError(
+            f"{predicate_type}: missing params {sorted(missing)}"
+        )
+    normalized: list[tuple[str, PredicateParamValue]] = []
+    for key in sorted(params):
+        value = params[key]
+        if key in ("min_chars", "min_rows", "min_slides"):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} must be a non-negative int"
+                )
+            normalized.append((key, value))
+        elif key in ("columns", "markers"):
+            if not isinstance(value, (list, tuple)) or not value:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} must be a non-empty list"
+                )
+            items: list[str] = []
+            for item in value:
+                if not isinstance(item, str):
+                    raise AcceptancePredicateSpecError(
+                        f"{predicate_type}: param {key!r} items must be strings"
+                    )
+                text = normalize_predicate_text(item)
+                if len(text) > PREDICATE_MAX_ITEM_CHARS:
+                    raise AcceptancePredicateSpecError(
+                        f"{predicate_type}: param {key!r} item exceeds"
+                        f" {PREDICATE_MAX_ITEM_CHARS} chars after normalization"
+                    )
+                if text:
+                    items.append(text)
+            if not items:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} has no usable items"
+                )
+            if len(items) > PREDICATE_MAX_LIST_ITEMS:
+                raise AcceptancePredicateSpecError(
+                    f"{predicate_type}: param {key!r} exceeds"
+                    f" {PREDICATE_MAX_LIST_ITEMS} items"
+                )
+            # Deduplicate, then sort: input order must never drift identity.
+            normalized.append((key, tuple(sorted(set(items)))))
+        else:  # pragma: no cover - rules are exhaustive per allowed sets
+            raise AcceptancePredicateSpecError(
+                f"{predicate_type}: param {key!r} has no normalization rule"
+            )
+    return tuple(normalized)
+
+
+class AcceptancePredicate(ContractModel):
+    """Universal predicate identity — what the predicate IS, nothing more.
+
+    ``predicate_id`` is deterministically derived from (schema version,
+    predicate_type, subject_kind, normalized params); callers cannot name
+    predicates freely. Params are stored as a key-sorted tuple of frozen
+    values — no mutable dict survives inside the frozen model.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:AcceptancePredicate",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+
+    schema_id: Literal["AcceptancePredicate"] = "AcceptancePredicate"
+    schema_version: Literal[_ACCEPTANCE_PREDICATE_SCHEMA_VERSION] = (
+        _ACCEPTANCE_PREDICATE_SCHEMA_VERSION
+    )
+    predicate_id: str = Field(pattern=r"^vpd_[0-9a-f]{64}$")
+    predicate_type: PredicateType
+    subject_kind: SubjectKind
+    params: tuple[tuple[str, PredicateParamValue], ...] = Field(default=())
+    predicate_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_predicate(self) -> AcceptancePredicate:
+        keys = [key for key, _ in self.params]
+        if keys != sorted(keys) or len(set(keys)) != len(keys):
+            raise ValueError("predicate params must be a sorted, unique key tuple")
+        for key, value in self.params:
+            if isinstance(value, tuple):
+                if (
+                    not value
+                    or list(value) != sorted(set(value))
+                    or any(not isinstance(item, str) for item in value)
+                ):
+                    raise ValueError(
+                        "predicate list params must be sorted, deduplicated"
+                        " string tuples"
+                    )
+        return self
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        predicate_type: str,
+        subject_kind: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> AcceptancePredicate:
+        normalized = normalize_predicate_params(
+            predicate_type, dict(params or {})
+        )
+        payload = {
+            "schema_version": _ACCEPTANCE_PREDICATE_SCHEMA_VERSION,
+            "predicate_type": predicate_type,
+            "subject_kind": subject_kind,
+            "params": [
+                [key, list(value) if isinstance(value, tuple) else value]
+                for key, value in normalized
+            ],
+        }
+        predicate_sha256 = canonical_sha256(payload)
+        predicate_id = "vpd_" + canonical_sha256(
+            {
+                "domain": _ACCEPTANCE_PREDICATE_SCHEMA_VERSION,
+                "predicate_sha256": predicate_sha256,
+            }
+        )
+        return cls(
+            predicate_id=predicate_id,
+            predicate_type=predicate_type,
+            subject_kind=subject_kind,
+            params=normalized,
+            predicate_sha256=predicate_sha256,
+        )
+
+    def computed_predicate_sha256(self) -> str:
+        return canonical_sha256(
+            {
+                "schema_version": self.schema_version,
+                "predicate_type": self.predicate_type,
+                "subject_kind": self.subject_kind,
+                "params": [
+                    [key, list(value) if isinstance(value, tuple) else value]
+                    for key, value in self.params
+                ],
+            }
+        )
+
+    def has_valid_predicate_sha256(self) -> bool:
+        return self.predicate_sha256 == self.computed_predicate_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_predicate_sha256():
+            return False
+        return self.predicate_id == "vpd_" + canonical_sha256(
+            {
+                "domain": self.schema_version,
+                "predicate_sha256": self.predicate_sha256,
+            }
+        )
+
+    def param_mapping(self) -> Mapping[str, PredicateParamValue]:
+        """Read-only view over the frozen params."""
+        return MappingProxyType(dict(self.params))
+
+
 __all__ = [
+    "AcceptancePredicate",
+    "AcceptancePredicateSpecError",
     "EnforcementMode",
     "EvaluationPhase",
     "EvidenceAuthority",
+    "PREDICATE_MAX_ITEM_CHARS",
+    "PREDICATE_MAX_LIST_ITEMS",
+    "PREDICATE_PARAM_RULES",
+    "PredicateParamScalar",
+    "PredicateParamValue",
     "PredicateType",
     "RecordedEnforcement",
     "RegistrySnapshot",
@@ -351,4 +587,6 @@ __all__ = [
     "derive_registry_snapshot_id",
     "derive_verification_record_id",
     "derive_verifier_descriptor_id",
+    "normalize_predicate_params",
+    "normalize_predicate_text",
 ]

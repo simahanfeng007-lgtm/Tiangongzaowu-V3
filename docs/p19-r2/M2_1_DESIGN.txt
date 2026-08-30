@@ -1,0 +1,142 @@
+P19-R2 M2.1｜Identity Integrity & Honest Capability（M2_1_DESIGN）
+======================================================================
+分支：glm53/p19-r2-m2-artifact-content-oracle（同分支前向修正，PR 独立）
+基线：a6f43f3（M2 合并后）
+性质：对 2026-08-30 M2 HOLD 裁决的逐节落实。零迁移（v23 保持）、
+RECORD ONLY 不变、不接 CompletionGate/Compiler。
+
+----------------------------------------------------------------------
+一、文件清单
+----------------------------------------------------------------------
+新增：
+    src/total_gateway/verification_oracle_config.py
+        artifact oracle 配置单一事实源（描述符与 dispatcher 共读，
+        构造性杜绝漂移）；config digest 覆盖实现谓词集/参数规范化
+        版本/inspector 语义版本/输入上限/格式适用规则
+    tests/test_p19_m2_1_artifact_oracle.py（25 项：A-P 矩阵）
+
+修改：
+    src/contracts/verification.py
+        + AcceptancePredicate 契约（见下）；bundle 104→105 根契约，
+        基线链推进（P19 常量 → d46cd149…；P19→P18 推导剔除集合
+        扩为 4 模型）
+    src/contracts/__init__.py / schema.py 导出注册
+    src/total_gateway/verification_registry.py
+        artifact 描述符 @1(休眠宽集)→@2(激活精确集)；config_sha256
+        由 64 个 0 改为真实配置摘要；legacy_artifact_v1_descriptor()
+        保留历史构造（v1 快照可读不可用）
+    src/total_gateway/outcome_oracles/artifact_content.py
+        全面重写（见下）
+    tests/test_p19_m1_store.py 夹具版本 @1→@2（默认快照已推进）
+
+删除：
+    旧 tests/test_p19_m2_artifact_content_oracle.py（被 M2.1 文件取代）
+
+----------------------------------------------------------------------
+二、审核八节落实对照
+----------------------------------------------------------------------
+§1 AcceptancePredicate 契约（contracts.verification）
+    - strict/frozen/extra-forbid + $id 注入（进 schema bundle）
+    - predicate_id = vpd_sha256(schema_version, predicate_type,
+      subject_kind, normalized params)——调用方不可命名
+    - params 深冻结：tuple[tuple[str, str|int|bool|tuple[str,...]]]
+      （键排序、列表项 NFKC+strip+casefold+去重+排序）——frozen
+      dataclass 内无 mutable dict
+    - predicate_sha256 / has_valid_predicate_sha256 / has_valid_identity
+    - 同一规范化语义 ⇒ 同一 ID；参数变化 ⇒ 不同 ID；键序/集合输入
+      序不漂移（测试 A/B 锁定）
+    - 每类型精确参数规则（PREDICATE_PARAM_RULES）：六类型各自
+      允许键集合，未知键拒绝；artifact.nonempty 无参数（拒绝
+      {"strict":true} 填充）；无规则类型不可实例化（fail-closed）
+    - columns/markers ≤32 项、单项 ≤128 字符（同时约束 reason 上限）
+
+§2 描述符 v2
+    - config_sha256 = 真实摘要（覆盖五要素，见 verification_oracle_config）
+    - supported_predicate_types == ARTIFACT_IMPLEMENTED_PREDICATE_TYPES
+      （六项，含 xlsx.min_data_rows；docx.min_body_items 等未实现项
+      不再声明）
+    - 默认 registry snapshot 因 v2 产生新身份；legacy v1 快照可构造
+      可读，但 Oracle 构造时 find(@2) 失败 → OracleSnapshotInvalid
+    - Oracle 构造改为接受完整 RegistrySnapshot：验证身份 → 复用
+      VerifierRegistry 校验嵌套描述符 → find(v2) → 从描述符取
+      verifier_version/producer_component_id/max_input_bytes/
+      supported 集合——零硬编码漂移
+    - invariant 测试 D：descriptor 集合 == dispatcher 集合
+
+§3 Lineage 封死
+    - evaluate() 不再接受 request_id/run_id/generation；
+      Record 三字段直取 manifest.request_id/run_id/generation
+    - 测试 G：lineage 相等断言 + model_copy 重绑破坏 has_valid_identity
+      （M1.1 层拒绝）
+    - 测试 E/H：先注册真实 Request（同 idempotency → 同 request_id，
+      lease generation=2 与 manifest 一致），Oracle record 原样进
+      Recorder/Store，无任何 model_copy 重绑
+
+§4 确定性判断
+    - min_visible_text_chars 四格式真实指标：docx 段落+表格；
+      xlsx 含公式文本（data_only=False 二次遍历——公式即内容，
+      不依赖缓存值）；pptx 全部 shape 文本；text 非空白。指标缺失
+      → ContentUnparseable → INCONCLUSIVE，禁止 metrics.get(...,0)
+      假 FAIL（测试 I）
+    - pptx nonempty = meaningful content（文字/图片/表格/图表），
+      空白 placeholder 页不算（测试 J：blank deck → FAIL）
+    - min_nonempty_slides 用 meaningful_slide_count（图片页计入；
+      测试 K：2 文字页+1 图片页 → min 3 PASS）
+    - xlsx.required_columns 规范化精确匹配（NFKC+strip+casefold，
+      无 substring）：「姓名备注」不满足「姓名」（测试 L）
+    - applicability 先于 implementation：xlsx 谓词于 docx →
+      NOT_APPLICABLE（即使未实现）；artifact.* 前缀无格式限制，
+      pdf → format_not_inspectable INCONCLUSIVE
+
+§5 Evidence 绑定
+    - 七条固定类型化 refs：artifact_revision/manifest_sha256/
+      content_object/content_sha256/qc_evidence_set_sha256/
+      predicate_sha256/observation_sha256
+    - QC evidence 全集（≤64 条）折叠为单一 canonical digest，
+      refs 恒 ≤8（测试 N）
+    - observation_sha256 覆盖本次实测指标 + measured_format +
+      inspector_version（M3 再持久化完整脱敏 payload）
+    - attempt 参数已删除（未绑定即删除）
+
+§6 资源与异常纪律
+    - manifest.size_bytes 对 descriptor.max_input_bytes 预检查，
+      超限不读 blob（测试 O：read_bytes spy 未被调用）
+    - ImportError/依赖缺失 → ERROR（inspector_dependency_missing）；
+      已知容器损坏 → INCONCLUSIVE（测试 M）
+    - reason_codes 稳定机器码：authority:<stable artifact.content.* 码>、
+      authority_failure/inspector_failure/check_failure 等纯码，
+      异常类型名仅进 observation 摘要，不拼裸文本
+    - 列表参数 ≤32 同时约束了 column_missing/marker_missing 数量
+
+§7 测试矩阵 A-P
+    A/B/C/D/E/F/G/H/I/J/K/L/M/N/O/P 全部落于
+    tests/test_p19_m2_1_artifact_oracle.py（25 项测试方法）
+
+§8 完成条件
+    targeted 93 passed（M2.1+M1/M1.1/M2 parity+基线链）；
+    bundle 基线推进（105 根契约）；STORE_SCHEMA_VERSION=23 不变；
+    source-authority / sync / LF / 双平台全量见 PR。
+
+----------------------------------------------------------------------
+三、关键设计决定
+----------------------------------------------------------------------
+D1 单一事实源（构造性不变量）
+    verification_oracle_config 被 registry（建描述符/算 config hash）
+    与测试（不变量断言）共读；Oracle 运行期全部读 pinned descriptor。
+    「声明能力 == 实现能力」不再靠纪律，靠同源。
+
+D2 artifact.* 前缀无格式限制
+    适用表只约束领域前缀（docx/xlsx/pptx/text/csv）；artifact.*
+    对任何 artifact subject 适用 → pdf 等无 inspector 格式落到
+    INCONCLUSIVE（format_not_inspectable），而非误判 NOT_APPLICABLE。
+
+D3 config 变更 ⇒ 身份变更
+    适用规则进 config digest；任何 inspector 行为/规范化/上限变更
+    必须推进 ARTIFACT_INSPECTOR_SEMANTIC_VERSION（M1_DESIGN D7 纪律）。
+
+----------------------------------------------------------------------
+四、验证与回滚
+----------------------------------------------------------------------
+验证：M2.1 targeted 25 + M1/M1.1/M2 parity 回归 = 93 passed；
+基线链 19 passed 锁定 d46cd149…；全量回归见 PR。
+回滚：revert 本 PR 即回到 M2 状态（旧测试文件随之恢复）。

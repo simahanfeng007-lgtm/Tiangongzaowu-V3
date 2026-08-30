@@ -64,29 +64,43 @@ def _dormant_descriptor(
 
 
 def default_descriptors() -> tuple[VerifierDescriptor, ...]:
-    """The three dormant outcome oracles planned for M2/M3."""
+    """Artifact oracle is ACTIVE at v2 (M2.1); effect/repository stay dormant.
 
-    artifact = _dormant_descriptor(
-        verifier_id="verifier.artifact_content",
-        predicate_types=(
-            "artifact.format_matches",
-            "artifact.min_visible_text_chars",
-            "artifact.nonempty",
-            "artifact.required_file_count",
-            "artifact.required_sections",
-            "csv.required_columns",
-            "docx.min_body_items",
-            "docx.required_headings",
-            "pptx.min_nonempty_slides",
-            "pptx.required_slide_titles",
-            "text.required_markers",
-            "xlsx.required_columns",
-            "xlsx.required_sheet_names",
-        ),
-        subject_kinds=("artifact",),
-        accepted_authorities=("OBJECT_STORE", "ARTIFACT_MANIFEST", "ARTIFACT_QC"),
-        implementation_ref="src/total_gateway/outcome_oracles/artifact_content.py",
+    The artifact v2 descriptor declares EXACTLY the dispatch set implemented
+    by ``outcome_oracles/artifact_content.py`` — both read
+    ``verification_oracle_config`` so they cannot drift. Its config digest
+    covers the implemented predicate set, params normalization version,
+    inspector semantic version, max input bytes and format applicability.
+    """
+    from .verification_oracle_config import (
+        ARTIFACT_IMPLEMENTED_PREDICATE_TYPES,
+        ARTIFACT_INSPECTOR_SEMANTIC_VERSION,
+        ARTIFACT_MAX_INPUT_BYTES,
+        IMPLEMENTATION_REF,
+        VERIFIER_ID,
+        artifact_oracle_config_sha256,
     )
+
+    artifact = VerifierDescriptor(
+        verifier_id=VERIFIER_ID,
+        verifier_version=ARTIFACT_INSPECTOR_SEMANTIC_VERSION,
+        layer="L0_DETERMINISTIC",
+        deterministic=True,
+        supported_predicate_types=tuple(
+            sorted(ARTIFACT_IMPLEMENTED_PREDICATE_TYPES)
+        ),
+        accepted_authorities=("OBJECT_STORE", "ARTIFACT_MANIFEST", "ARTIFACT_QC"),
+        supported_subject_kinds=("artifact",),
+        max_input_bytes=ARTIFACT_MAX_INPUT_BYTES,
+        timeout_ms=120_000,
+        default_enforcement="RECORD",
+        block_capable=True,
+        repair_feedback_capable=True,
+        producer_component_id="tiangong-gateway",
+        config_sha256=artifact_oracle_config_sha256(),
+        implementation_ref=IMPLEMENTATION_REF,
+        descriptor_sha256="0" * 64,
+    ).with_computed_sha256()
     effect = _dormant_descriptor(
         verifier_id="verifier.effect_state",
         predicate_types=(
@@ -117,6 +131,36 @@ def default_descriptors() -> tuple[VerifierDescriptor, ...]:
         implementation_ref="src/total_gateway/outcome_oracles/repository_state.py",
     )
     return (artifact, effect, repository)
+
+
+def legacy_artifact_v1_descriptor() -> VerifierDescriptor:
+    """The M1 dormant wide-set descriptor (historical, superseded by v2).
+
+    Kept so historical v1 snapshots stay constructible/readable in tests;
+    the v2 oracle refuses to instantiate against snapshots that only
+    carry this descriptor.
+    """
+    return _dormant_descriptor(
+        verifier_id="verifier.artifact_content",
+        predicate_types=(
+            "artifact.format_matches",
+            "artifact.min_visible_text_chars",
+            "artifact.nonempty",
+            "artifact.required_file_count",
+            "artifact.required_sections",
+            "csv.required_columns",
+            "docx.min_body_items",
+            "docx.required_headings",
+            "pptx.min_nonempty_slides",
+            "pptx.required_slide_titles",
+            "text.required_markers",
+            "xlsx.required_columns",
+            "xlsx.required_sheet_names",
+        ),
+        subject_kinds=("artifact",),
+        accepted_authorities=("OBJECT_STORE", "ARTIFACT_MANIFEST", "ARTIFACT_QC"),
+        implementation_ref="src/total_gateway/outcome_oracles/artifact_content.py",
+    )
 
 
 # ---------------------------------------------------------------------------

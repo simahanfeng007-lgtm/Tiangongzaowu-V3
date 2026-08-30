@@ -234,6 +234,7 @@ class SchemaBundleTests(unittest.TestCase):
         self.assertEqual(
             list(bundle),
             [
+                "AcceptancePredicate",
                 "ActionCandidate",
                 "ActionImpact",
                 "ActionIntent",
