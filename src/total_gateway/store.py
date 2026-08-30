@@ -88,7 +88,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 25
+STORE_SCHEMA_VERSION = 26
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1606,6 +1606,66 @@ _MIGRATION_V25_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V26_ID = "gateway-plan-bound-verification-v26"
+_MIGRATION_V26_STATEMENTS = (
+    """
+    CREATE TABLE write_evidence_effect_binding (
+        binding_id TEXT NOT NULL PRIMARY KEY
+            CHECK (binding_id GLOB 'web_[0-9a-f]*'),
+        evidence_sha256 TEXT NOT NULL
+            CHECK (length(evidence_sha256) = 64 AND evidence_sha256 NOT GLOB '*[^0-9a-f]*'),
+        effect_id TEXT NOT NULL,
+        effect_claim_sha256 TEXT NOT NULL
+            CHECK (length(effect_claim_sha256) = 64 AND effect_claim_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        bound_at_ms INTEGER NOT NULL CHECK (bound_at_ms >= 0),
+        binding_sha256 TEXT NOT NULL
+            CHECK (length(binding_sha256) = 64 AND binding_sha256 NOT GLOB '*[^0-9a-f]*')
+    ) STRICT
+    """,
+    """
+    CREATE INDEX write_evidence_effect_binding_effect_idx
+        ON write_evidence_effect_binding (effect_id, evidence_sha256)
+    """,
+    """
+    CREATE TABLE verification_plan (
+        verification_plan_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        registry_snapshot_sha256 TEXT NOT NULL
+            CHECK (length(registry_snapshot_sha256) = 64 AND registry_snapshot_sha256 NOT GLOB '*[^0-9a-f]*'),
+        plan_json TEXT NOT NULL CHECK (json_valid(plan_json)),
+        plan_sha256 TEXT NOT NULL
+            CHECK (length(plan_sha256) = 64 AND plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE TABLE verification_readiness (
+        verification_readiness_id TEXT NOT NULL PRIMARY KEY,
+        verification_plan_id TEXT NOT NULL,
+        verification_plan_sha256 TEXT NOT NULL
+            CHECK (length(verification_plan_sha256) = 64 AND verification_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        readiness_json TEXT NOT NULL CHECK (json_valid(readiness_json)),
+        readiness_sha256 TEXT NOT NULL
+            CHECK (length(readiness_sha256) = 64 AND readiness_sha256 NOT GLOB '*[^0-9a-f]*'),
+        evaluated_at_ms INTEGER NOT NULL CHECK (evaluated_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX verification_readiness_request_idx
+        ON verification_readiness (request_id, run_id, generation, evaluated_at_ms)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1632,6 +1692,7 @@ _MIGRATIONS = (
     (23, _MIGRATION_V23_ID, _MIGRATION_V23_STATEMENTS),
     (24, _MIGRATION_V24_ID, _MIGRATION_V24_STATEMENTS),
     (25, _MIGRATION_V25_ID, _MIGRATION_V25_STATEMENTS),
+    (26, _MIGRATION_V26_ID, _MIGRATION_V26_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -9693,7 +9754,13 @@ class GatewayStateStore:
         """
         if observation_role not in ("PRE", "POST"):
             raise ValueError("observation_role must be PRE or POST")
-        for field in (request_id, run_id, subject_effect_id):
+        if not isinstance(subject_effect_id, str) or (
+            not subject_effect_id.startswith("eff_")
+            or len(subject_effect_id) != 68
+            or any(char not in "0123456789abcdef" for char in subject_effect_id[4:])
+        ):
+            raise ValueError("subject_effect_id must be eff_<64hex>")
+        for field in (request_id, run_id):
             if not isinstance(field, str) or not field.strip():
                 raise ValueError("repository observation binding fields invalid")
         if not isinstance(observation_sha256, str) or len(observation_sha256) != 64 or any(
@@ -9716,6 +9783,26 @@ class GatewayStateStore:
              "binding_sha256": binding_sha256}
         )
         with self._lock, self._write_transaction():
+            # M4-0: the subject effect must be a REAL ledger row.
+            effect_row = self._connection.execute(
+                "SELECT request_id, run_id, generation FROM effect_ledger"
+                " WHERE effect_id = ?",
+                (subject_effect_id,),
+            ).fetchone()
+            if effect_row is None:
+                raise StoreNotFoundError(
+                    "repository binding subject effect does not exist:"
+                    f" {subject_effect_id}"
+                )
+            if (
+                effect_row["request_id"] != request_id
+                or effect_row["run_id"] != run_id
+                or int(effect_row["generation"]) != generation
+            ):
+                raise StoreConflictError(
+                    "repository binding lineage does not match its"
+                    " subject effect claim"
+                )
             content = self._connection.execute(
                 "SELECT observed_at_ms FROM repository_observation"
                 " WHERE observation_sha256 = ?",
@@ -9803,6 +9890,273 @@ class GatewayStateStore:
                 "observation": json.loads(row["observation_json"]),
                 "observed_at_ms": row["observed_at_ms"],
             }
+
+    def put_verification_plan(
+        self,
+        plan,
+        *,
+        recorded_at_ms: int,
+    ) -> bool:
+        """Persist a VerificationPlan; True when newly created."""
+        from contracts.verification import VerificationPlan
+
+        if not isinstance(plan, VerificationPlan):
+            raise ValueError("verification plan payload has the wrong type")
+        if not plan.has_valid_identity():
+            raise ValueError("verification plan identity is invalid")
+        payload_json = json.dumps(
+            plan.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT plan_json FROM verification_plan"
+                " WHERE verification_plan_id = ?",
+                (plan.verification_plan_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["plan_json"] != payload_json:
+                    raise StoreConflictError(
+                        "verification plan identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                """INSERT INTO verification_plan (
+                    verification_plan_id, request_id, run_id, generation,
+                    registry_snapshot_sha256, plan_json, plan_sha256,
+                    created_at_ms, recorded_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    plan.verification_plan_id, plan.request_id, plan.run_id,
+                    plan.generation, plan.registry_snapshot_sha256,
+                    payload_json, plan.plan_sha256,
+                    plan.entries[0].entry_sha256 and recorded_at_ms,
+                    recorded_at_ms,
+                ),
+            )
+            return True
+
+    def get_verification_plan(self, verification_plan_id: str):
+        from contracts.verification import VerificationPlan
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT plan_json FROM verification_plan"
+                " WHERE verification_plan_id = ?",
+                (verification_plan_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationPlan.model_validate_json(
+                row["plan_json"], strict=True
+            )
+
+    def get_latest_verification_plan(self, *, request_id: str, run_id: str, generation: int):
+        from contracts.verification import VerificationPlan
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT plan_json FROM verification_plan"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " ORDER BY recorded_at_ms DESC LIMIT 1",
+                (request_id, run_id, generation),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationPlan.model_validate_json(
+                row["plan_json"], strict=True
+            )
+
+    def put_verification_readiness(
+        self,
+        readiness,
+        *,
+        recorded_at_ms: int,
+    ) -> bool:
+        """Persist a VerificationReadiness; True when newly created."""
+        from contracts.verification import VerificationReadiness
+
+        if not isinstance(readiness, VerificationReadiness):
+            raise ValueError("verification readiness payload has the wrong type")
+        if not readiness.has_valid_identity():
+            raise ValueError("verification readiness identity is invalid")
+        payload_json = json.dumps(
+            readiness.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=readiness.request_id,
+                run_id=readiness.run_id,
+                generation=readiness.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT readiness_json FROM verification_readiness"
+                " WHERE verification_readiness_id = ?",
+                (readiness.verification_readiness_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["readiness_json"] != payload_json:
+                    raise StoreConflictError(
+                        "verification readiness identity was reused"
+                        " for different content"
+                    )
+                return False
+            self._connection.execute(
+                """INSERT INTO verification_readiness (
+                    verification_readiness_id, verification_plan_id,
+                    verification_plan_sha256, request_id, run_id, generation,
+                    readiness_json, readiness_sha256,
+                    evaluated_at_ms, recorded_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    readiness.verification_readiness_id,
+                    readiness.verification_plan_id,
+                    readiness.verification_plan_sha256,
+                    readiness.request_id, readiness.run_id,
+                    readiness.generation, payload_json,
+                    readiness.readiness_sha256,
+                    readiness.evaluated_at_ms, recorded_at_ms,
+                ),
+            )
+            return True
+
+    def get_latest_verification_readiness(
+        self, *, request_id: str, run_id: str, generation: int,
+    ):
+        from contracts.verification import VerificationReadiness
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT readiness_json FROM verification_readiness"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " ORDER BY evaluated_at_ms DESC LIMIT 1",
+                (request_id, run_id, generation),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationReadiness.model_validate_json(
+                row["readiness_json"], strict=True
+            )
+
+    def put_write_evidence_effect_binding(
+        self,
+        *,
+        evidence_sha256: str,
+        effect_id: str,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        bound_at_ms: int,
+    ) -> str:
+        """Bind a write_evidence.v2 to its real effect claim; returns binding_id.
+
+        M4-0 §3.2: the formal authority link between evidence and effect.
+        Both the evidence content and the effect must already exist.
+        """
+        if not isinstance(evidence_sha256, str) or len(evidence_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in evidence_sha256
+        ):
+            raise ValueError("evidence digest is invalid")
+        binding_payload = {
+            "domain": "tiangong.write-evidence-effect-binding.v1",
+            "evidence_sha256": evidence_sha256,
+            "effect_id": effect_id,
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "bound_at_ms": bound_at_ms,
+        }
+        binding_sha256 = canonical_sha256(binding_payload)
+        binding_id = "web_" + canonical_sha256(
+            {"domain": "tiangong.write-evidence-effect-binding.v1.id",
+             "binding_sha256": binding_sha256}
+        )
+        with self._lock, self._write_transaction():
+            evidence_row = self._connection.execute(
+                "SELECT request_id, run_id, generation FROM write_evidence_v2"
+                " WHERE evidence_sha256 = ?",
+                (evidence_sha256,),
+            ).fetchone()
+            if evidence_row is None:
+                raise StoreNotFoundError(
+                    "write_evidence.v2 content does not exist"
+                )
+            if (
+                evidence_row["request_id"] != request_id
+                or evidence_row["run_id"] != run_id
+                or int(evidence_row["generation"]) != generation
+            ):
+                raise StoreConflictError(
+                    "binding lineage does not match the evidence content"
+                )
+            effect_row = self._connection.execute(
+                "SELECT request_id, run_id, generation FROM effect_ledger"
+                " WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if effect_row is None:
+                raise StoreNotFoundError(
+                    f"binding effect does not exist: {effect_id}"
+                )
+            if (
+                effect_row["request_id"] != request_id
+                or effect_row["run_id"] != run_id
+                or int(effect_row["generation"]) != generation
+            ):
+                raise StoreConflictError(
+                    "binding lineage does not match the effect claim"
+                )
+            # store the claim hash for the record
+            claim_sha = self._connection.execute(
+                "SELECT claim_sha256 FROM effect_ledger WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=bound_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT binding_sha256 FROM write_evidence_effect_binding"
+                " WHERE binding_id = ?",
+                (binding_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["binding_sha256"] != binding_sha256:
+                    raise StoreConflictError(
+                        "binding identity was reused for different content"
+                    )
+                return binding_id
+            self._connection.execute(
+                """INSERT INTO write_evidence_effect_binding (
+                    binding_id, evidence_sha256, effect_id,
+                    effect_claim_sha256, request_id, run_id, generation,
+                    bound_at_ms, binding_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    binding_id, evidence_sha256, effect_id,
+                    claim_sha["claim_sha256"], request_id, run_id,
+                    generation, bound_at_ms, binding_sha256,
+                ),
+            )
+            return binding_id
+
+    def list_write_evidence_effect_bindings(self, effect_id: str) -> tuple[dict, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM write_evidence_effect_binding WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchall()
+            return tuple(dict(row) for row in rows)
 
     def list_verification_records(
         self,

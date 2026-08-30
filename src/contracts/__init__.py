@@ -8,6 +8,11 @@ from .write_evidence import (
 )
 from .verification import (
     AcceptancePredicate,
+    EntryAssessment,
+    RuntimeCloseoutEvidence,
+    VerificationPlan,
+    VerificationPlanEntry,
+    VerificationReadiness,
     AcceptancePredicateSpecError,
     RegistrySnapshot,
     VerificationRecord,

@@ -682,10 +682,305 @@ class AcceptancePredicate(ContractModel):
         return MappingProxyType(dict(self.params))
 
 
+# ---------------------------------------------------------------------------
+# VerificationPlanEntry / VerificationPlan / VerificationReadiness (M4)
+# ---------------------------------------------------------------------------
+
+_VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION = "tiangong.verification_plan_entry.v1"
+_VERIFICATION_PLAN_SCHEMA_VERSION = "tiangong.verification_plan.v1"
+_VERIFICATION_READINESS_SCHEMA_VERSION = "tiangong.verification_readiness.v1"
+
+#: Entry assessment status: the six record statuses plus MISSING and
+#: RECORD_MISMATCH (no authoritative record found / record did not match
+#: the plan entry's exact binding requirements).
+EntryAssessmentStatus = Literal[
+    "PASS", "FAIL", "INCONCLUSIVE", "ERROR", "NOT_APPLICABLE",
+    "MISSING", "RECORD_MISMATCH",
+]
+
+
+class VerificationPlanEntry(ContractModel):
+    """One plan entry: a FULLY bound acceptance predicate requirement.
+
+    The entry must carry the COMPLETE AcceptancePredicate identity
+    (predicate_id/sha256/type + params via the predicate binding),
+    plus the verifier and subject it must be evaluated against.
+    """
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:VerificationPlanEntry",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["VerificationPlanEntry"] = "VerificationPlanEntry"
+    schema_version: Literal[_VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION] = (
+        _VERIFICATION_PLAN_ENTRY_SCHEMA_VERSION
+    )
+    plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
+    verifier_id: OpaqueId
+    verifier_version: str = Field(min_length=1, max_length=64)
+    predicate_id: str = Field(pattern=r"^vpd_[0-9a-f]{64}$")
+    predicate_sha256: Sha256
+    predicate_type: PredicateType
+    subject_kind: SubjectKind
+    subject_identity: str = Field(min_length=1, max_length=400)
+    evaluation_phase: EvaluationPhase
+    required: bool = True
+    entry_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_entry(self) -> VerificationPlanEntry:
+        if not self.predicate_sha256:
+            raise ValueError("entry predicate_sha256 required")
+        return self
+
+    def computed_entry_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"entry_sha256", "plan_entry_id"})
+        )
+
+    def has_valid_entry_sha256(self) -> bool:
+        return self.entry_sha256 == self.computed_entry_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_entry_sha256():
+            return False
+        return self.plan_entry_id == "vpe_" + canonical_sha256(
+            {"domain": self.schema_version, "entry_sha256": self.entry_sha256}
+        )
+
+    def with_computed_sha256(self) -> VerificationPlanEntry:
+        entry_sha256 = self.computed_entry_sha256()
+        partial = self.model_copy(update={"entry_sha256": entry_sha256})
+        return partial.model_copy(
+            update={"plan_entry_id": "vpe_" + canonical_sha256(
+                {"domain": self.schema_version, "entry_sha256": entry_sha256}
+            )}
+        )
+
+
+class VerificationPlan(ContractModel):
+    """A frozen verification plan: what MUST be verified for one request."""
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:VerificationPlan",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["VerificationPlan"] = "VerificationPlan"
+    schema_version: Literal[_VERIFICATION_PLAN_SCHEMA_VERSION] = (
+        _VERIFICATION_PLAN_SCHEMA_VERSION
+    )
+    verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    registry_snapshot_sha256: Sha256
+    entries: tuple[VerificationPlanEntry, ...] = Field(min_length=1, max_length=64)
+    plan_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_plan(self) -> VerificationPlan:
+        entry_ids = [entry.plan_entry_id for entry in self.entries]
+        if entry_ids != sorted(set(entry_ids)):
+            raise ValueError("plan entries must have unique sorted ids")
+        if not any(entry.required for entry in self.entries):
+            raise ValueError("plan must have at least one required entry")
+        return self
+
+    def computed_plan_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(
+                mode="json", exclude={"plan_sha256", "verification_plan_id"}
+            )
+        )
+
+    def has_valid_plan_sha256(self) -> bool:
+        return self.plan_sha256 == self.computed_plan_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_plan_sha256():
+            return False
+        if not all(entry.has_valid_identity() for entry in self.entries):
+            return False
+        return self.verification_plan_id == "vpl_" + canonical_sha256(
+            {"domain": self.schema_version, "plan_sha256": self.plan_sha256}
+        )
+
+    def with_computed_sha256(self) -> VerificationPlan:
+        plan_sha256 = self.computed_plan_sha256()
+        partial = self.model_copy(update={"plan_sha256": plan_sha256})
+        return partial.model_copy(
+            update={"verification_plan_id": "vpl_" + canonical_sha256(
+                {"domain": self.schema_version, "plan_sha256": plan_sha256}
+            )}
+        )
+
+
+class EntryAssessment(ContractModel):
+    """Per-entry assessment result for a VerificationReadiness."""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
+    status: EntryAssessmentStatus
+    verification_record_id: str | None = None
+    reason_code: str | None = Field(default=None, max_length=200)
+
+
+class VerificationReadiness(ContractModel):
+    """Machine assessment: does the plan have all its required PASS records?
+
+    This is NOT a CompletionDecision. It cannot transition requests.
+    It only reports whether the plan's verification requirements are met.
+    """
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:VerificationReadiness",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["VerificationReadiness"] = "VerificationReadiness"
+    schema_version: Literal[_VERIFICATION_READINESS_SCHEMA_VERSION] = (
+        _VERIFICATION_READINESS_SCHEMA_VERSION
+    )
+    verification_readiness_id: str = Field(pattern=r"^vrd_[0-9a-f]{64}$")
+    verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
+    verification_plan_sha256: Sha256
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    registry_snapshot_sha256: Sha256
+    required_entry_count: int = Field(ge=0)
+    satisfied_entry_count: int = Field(ge=0)
+    entry_assessments: tuple[EntryAssessment, ...] = Field(default=(), max_length=64)
+    supporting_verification_record_ids: tuple[str, ...] = Field(
+        default=(), max_length=64
+    )
+    verification_ready: bool
+    failure_class: Literal[
+        "NONE", "MISSING_EVIDENCE", "VERIFICATION_FAILED",
+        "INCONCLUSIVE", "AUTHORITY_ERROR", "PLAN_CONFIG_ERROR",
+    ] = "NONE"
+    reason_codes: tuple[str, ...] = Field(default=(), max_length=32)
+    evaluated_at_ms: int = Field(ge=0)
+    readiness_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_readiness(self) -> VerificationReadiness:
+        if self.verification_ready and self.failure_class != "NONE":
+            raise ValueError("ready readiness cannot carry a failure class")
+        if not self.verification_ready and self.failure_class == "NONE":
+            raise ValueError("not-ready readiness must declare a failure class")
+        entry_ids = [a.plan_entry_id for a in self.entry_assessments]
+        if entry_ids != sorted(set(entry_ids)):
+            raise ValueError("entry assessments must be unique sorted by entry id")
+        return self
+
+    def computed_readiness_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(
+                mode="json",
+                exclude={"readiness_sha256", "verification_readiness_id"},
+            )
+        )
+
+    def has_valid_readiness_sha256(self) -> bool:
+        return self.readiness_sha256 == self.computed_readiness_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_readiness_sha256():
+            return False
+        return self.verification_readiness_id == "vrd_" + canonical_sha256(
+            {"domain": self.schema_version, "readiness_sha256": self.readiness_sha256}
+        )
+
+    def with_computed_sha256(self) -> VerificationReadiness:
+        readiness_sha256 = self.computed_readiness_sha256()
+        partial = self.model_copy(update={"readiness_sha256": readiness_sha256})
+        return partial.model_copy(
+            update={"verification_readiness_id": "vrd_" + canonical_sha256(
+                {"domain": self.schema_version, "readiness_sha256": readiness_sha256}
+            )}
+        )
+
+
+# ---------------------------------------------------------------------------
+# RuntimeCloseoutEvidence (M4 §10)
+# ---------------------------------------------------------------------------
+
+_RUNTIME_CLOSEOUT_SCHEMA_VERSION = "tiangong.runtime_closeout_evidence.v1"
+
+
+class RuntimeCloseoutEvidence(ContractModel):
+    """P18 Runtime local closeout — NOT a final outcome proof.
+
+    Replaces the bare booleans (life_gate_allowed,
+    required_evidence_ready, runtime_blockers) consumed by
+    regenerative_provider._verify_completion. Binds the runtime's local
+    facts with identity + hash so the gateway can verify them.
+    Architecture boundary: this only proves the V3 runtime's internal
+    closeout state; it can never make VerificationReadiness PASS, never
+    make CompletionGate COMPLETED, and never replace Artifact/Effect/
+    Repository/Delivery gates.
+    """
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:RuntimeCloseoutEvidence",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["RuntimeCloseoutEvidence"] = "RuntimeCloseoutEvidence"
+    schema_version: Literal[_RUNTIME_CLOSEOUT_SCHEMA_VERSION] = (
+        _RUNTIME_CLOSEOUT_SCHEMA_VERSION
+    )
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    life_id: str = Field(min_length=1, max_length=160)
+    execution_ticket_id: str | None = Field(default=None, max_length=160)
+    root_goal_hash: Sha256
+    task_contract_hash: Sha256
+    runtime_blockers: tuple[str, ...] = Field(default=(), max_length=64)
+    runtime_blockers_sha256: Sha256
+    life_gate_allowed: bool
+    required_evidence_ready: bool
+    produced_at_ms: int = Field(ge=0)
+    evidence_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_closeout(self) -> RuntimeCloseoutEvidence:
+        if self.runtime_blockers_sha256 != canonical_sha256(
+            list(self.runtime_blockers)
+        ):
+            raise ValueError("runtime_blockers_sha256 does not recompute")
+        return self
+
+    def computed_evidence_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"evidence_sha256"})
+        )
+
+    def has_valid_evidence_sha256(self) -> bool:
+        return self.evidence_sha256 == self.computed_evidence_sha256()
+
+    def has_valid_identity(self) -> bool:
+        return self.has_valid_evidence_sha256()
+
+    def with_computed_sha256(self) -> RuntimeCloseoutEvidence:
+        return self.model_copy(
+            update={"evidence_sha256": self.computed_evidence_sha256()}
+        )
+
+
 __all__ = [
     "AcceptancePredicate",
     "AcceptancePredicateSpecError",
     "EnforcementMode",
+    "EntryAssessment",
+    "EntryAssessmentStatus",
     "EvaluationPhase",
     "EvidenceAuthority",
     "PREDICATE_MAX_ITEM_CHARS",
@@ -696,8 +991,12 @@ __all__ = [
     "PredicateType",
     "RecordedEnforcement",
     "RegistrySnapshot",
+    "RuntimeCloseoutEvidence",
     "SubjectKind",
     "VerificationLayer",
+    "VerificationPlan",
+    "VerificationPlanEntry",
+    "VerificationReadiness",
     "VerificationRecord",
     "VerificationStatus",
     "VerifierDescriptor",

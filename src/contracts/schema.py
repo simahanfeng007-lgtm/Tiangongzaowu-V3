@@ -53,6 +53,11 @@ from .agency import (
 from .execution import CapabilityManifest, ExecutionResult, ExecutionTicket, FactRecord
 from .write_evidence import WriteEvidenceV2
 from .verification import (
+    EntryAssessment,
+    RuntimeCloseoutEvidence,
+    VerificationPlan,
+    VerificationPlanEntry,
+    VerificationReadiness,
     AcceptancePredicate,
     RegistrySnapshot,
     VerificationRecord,
@@ -117,6 +122,10 @@ from .security import (
 
 CONTRACT_MODELS = (
     AcceptancePredicate,
+    RuntimeCloseoutEvidence,
+    VerificationPlan,
+    VerificationPlanEntry,
+    VerificationReadiness,
     WriteEvidenceV2,
     RegistrySnapshot,
     VerificationRecord,

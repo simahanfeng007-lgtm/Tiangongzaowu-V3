@@ -151,6 +151,10 @@ class MigrationTests(unittest.TestCase):
         """
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
+        connection.execute("DROP TABLE write_evidence_effect_binding")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 26")
+        connection.execute("DROP TABLE verification_plan")
+        connection.execute("DROP TABLE verification_readiness")
         connection.execute("DROP TABLE repository_observation_binding")
         connection.execute("DELETE FROM schema_migrations WHERE version = 25")
         connection.execute("DROP TABLE write_evidence_v2")
@@ -166,7 +170,7 @@ class MigrationTests(unittest.TestCase):
     def test_fresh_db_opens_at_v23(self) -> None:  # checklist 2
         store = GatewayStateStore.open(self.path, now_ms=900)
         try:
-            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 25)
+            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 26)
         finally:
             store.close()
 
@@ -177,7 +181,7 @@ class MigrationTests(unittest.TestCase):
         try:
             health = upgraded.health_check(full=True, now_ms=960)
             self.assertTrue(health.healthy)
-            self.assertEqual(health.schema_version, 25)
+            self.assertEqual(health.schema_version, 26)
         finally:
             upgraded.close()
         reopened = GatewayStateStore.open(self.path, now_ms=1_000)

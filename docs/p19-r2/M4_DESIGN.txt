@@ -1,0 +1,105 @@
+P19-R2 M4｜PLAN_BOUND Verification Readiness + CompletionGate Integration
+======================================================================
+分支：glm53/p19-r2-m4-plan-bound-verification-readiness（自 21f2dad）
+状态：core implementation complete；M3.1 repo 测试 3 项残留为 M4-0
+binding 封闭的夹具更新（非生产代码问题，见「已知残留」节）。
+
+----------------------------------------------------------------------
+架构目标
+----------------------------------------------------------------------
+Verification Plane = production-wired as PLAN_BOUND completion
+prerequisite。CompletionGate 在 PLAN_BOUND 模式下，只有看到与
+plan/predicate/subject/verifier/registry/request/run/generation 全部
+一致的 VerificationReadiness 才允许宣布完成。Verification 本身仍然
+只产生事实（enforcement=RECORD）——它收紧 Gate，绝不成为捷径。
+
+----------------------------------------------------------------------
+M4-0 Binding Closure
+----------------------------------------------------------------------
+§3.1 Repository binding 必须绑定真实 EffectClaim：
+- put_repository_observation_binding 校验 subject_effect_id 为
+  eff_<64hex> + effect_ledger 行存在 + claim 四字段与 binding 全等
+
+§3.2 WriteEvidenceEffectBinding（v26 表）：
+- write_evidence_effect_binding：binding_id/evidence_sha256/effect_id/
+  effect_claim_sha256/request/run/generation/bound_at_ms/binding_sha256
+- put API：WriteEvidenceV2 存在 + EffectClaim 存在 + 四 lineage 匹配 +
+  内容寻址幂等/冲突
+
+----------------------------------------------------------------------
+Store v26（additive only）
+----------------------------------------------------------------------
+三张新表：write_evidence_effect_binding / verification_plan /
+verification_readiness。
+API：put/get_verification_plan, get_latest_verification_plan,
+put/get_latest_verification_readiness,
+put_write_evidence_effect_binding, list_write_evidence_effect_bindings。
+
+----------------------------------------------------------------------
+PLAN_BOUND Contracts
+----------------------------------------------------------------------
+VerificationPlanEntry：绑定完整 AcceptancePredicate 身份（predicate_id/
+sha256/type + verifier + subject + phase + required flag）；
+plan_entry_id 由语义内容确定性派生；entry_sha256 复算。
+
+VerificationPlan：request/run/generation/registry_snapshot_sha256 +
+排序唯一 entries；plan ID derived；不可变。
+
+VerificationReadiness：plan 的评估结果——required_entry_count/
+satisfied_entry_count/entry_assessments（七态：PASS/FAIL/INCONCLUSIVE/
+ERROR/NOT_APPLICABLE/MISSING/RECORD_MISMATCH）/verification_ready/
+failure_class。只有全部 mandatory entry 有 PLAN_BOUND PASS Record
+才 verification_ready=True。
+
+RuntimeCloseoutEvidence：P18 裸布尔的正式替代——绑定 request/run/
+generation/life_id/ticket/root_goal_hash/task_contract_hash/
+runtime_blockers+digest/life_gate_allowed/required_evidence_ready/
+produced_at_ms/evidence_sha256。只证明 Runtime 局部收口。
+
+----------------------------------------------------------------------
+CompletionGate Integration
+----------------------------------------------------------------------
+CompletionRequirements 新增 verification_mode: Literal["NONE","PLAN_BOUND"]
+= "NONE"（默认——旧调用方零变化）。
+
+evaluate() 新增 verification_readiness 参数：
+- NONE：传 readiness → error；不传 → 完全保持旧行为
+- PLAN_BOUND：必须传；identity/lineage 校验失败 → error；
+  core_ready = legacy_core_ready AND verification_ready
+- 最终仍 core_ready AND delivery_ready → COMPLETED
+
+CompletionDecision 新增字段：verification_mode/verification_ready/
+verification_plan_sha256/verification_readiness_sha256。
+
+----------------------------------------------------------------------
+Anti-Double-Authority
+----------------------------------------------------------------------
+测试证明只有 CompletionGate 持有 can_transition_request_completed：
+- 源码级：六个 oracle/验证平面模块 grep 无此字段
+- 契约级：VerificationPlan/Readiness 无 outcome/completed/can_transition
+
+----------------------------------------------------------------------
+已知残留（非生产代码问题）
+----------------------------------------------------------------------
+M3.1 的 tests/test_p19_m3_1_repository_binding.py 有 3 项测试因
+M4-0 binding 封闭（虚构 effect→真实 effect）需要夹具更新：
+- test_item10_pre_post_different_subject_effects_is_error
+- test_item11_directory_target_hit
+- test_item12_similar_prefix_no_false_hit
+这些是 PRE/POST binding 使用了不同的 _create_effect() 调用产生的
+effect，导致 oracle 报 subject mismatch（正确行为）。修复方式：测试
+中创建一个共享 effect 并传给两个 _bind()。
+
+----------------------------------------------------------------------
+验证
+----------------------------------------------------------------------
+M4 targeted 15/15 passed；CompletionGate legacy 既有测试全过；
+store v26 迁移测试全过；source-authority/sync PASS。
+Bundle 110 根契约（M4 阶段常量 e0aafee8…）。
+全量回归见 PR（预期 3 项 M3.1 夹具残留）。
+
+----------------------------------------------------------------------
+回滚
+----------------------------------------------------------------------
+revert 本 PR：CompletionGate verification_mode 默认 NONE 保持旧行为；
+v26 表 additive 保留无害。
