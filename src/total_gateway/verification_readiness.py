@@ -84,6 +84,11 @@ def build_readiness(
 
     M4.1 §6: the readiness is COMPUTED, never self-signed. Every field
     derives from the plan and the store's actual records.
+
+    M4.1 Final §8 supersession: the LATEST authoritative record (by
+    evaluated_at_ms) for an entry is the current verdict. If multiple
+    records share the same max evaluated_at_ms with conflicting verdicts,
+    the entry becomes RECORD_MISMATCH (never an arbitrary pick).
     """
     if not plan.has_valid_identity():
         raise ReadinessBuilderError("plan identity is invalid")
@@ -93,7 +98,6 @@ def build_readiness(
         raise ReadinessBuilderError(
             "plan registry snapshot does not match the authoritative snapshot"
         )
-    # §4: verify the snapshot carries the plan's declared verifiers
     try:
         registry = VerifierRegistry(snapshot.verifiers)
     except ValueError as exc:
@@ -113,7 +117,6 @@ def build_readiness(
                 f"plan entry predicate not supported: {entry.predicate.predicate_type}"
             )
 
-    # §5: exact per-entry record matching
     all_records = store.list_verification_records(
         request_id=plan.request_id,
         run_id=plan.run_id,
@@ -125,72 +128,83 @@ def build_readiness(
     satisfied_count = 0
 
     for entry in sorted(plan.entries, key=lambda e: e.plan_entry_id):
-        matched_record = None
-        matched_status = "MISSING"
-        for record in all_records:
+        matching = [
+            r for r in all_records
             if _record_matches_entry(
-                record, entry,
+                r, entry,
                 plan_registry_sha256=plan.registry_snapshot_sha256,
                 request_id=plan.request_id,
                 run_id=plan.run_id,
                 generation=plan.generation,
-            ):
-                matched_record = record
-                matched_status = record.status
-                break
+            )
+        ]
+        if not matching:
+            if entry.required:
+                required_count += 1
+            assessments.append(
+                EntryAssessment(
+                    plan_entry_id=entry.plan_entry_id,
+                    status="MISSING",
+                )
+            )
+            continue
 
+        # M4.1 Final §8 supersession: latest evaluated_at_ms wins; ties
+        # with conflicting verdicts are RECORD_MISMATCH.
+        matching = sorted(
+            matching, key=lambda r: (r.evaluated_at_ms, r.verification_record_id),
+        )
+        latest_ts = matching[-1].evaluated_at_ms
+        latest = [r for r in matching if r.evaluated_at_ms == latest_ts]
+        verdicts = {r.status for r in latest}
+        if len(verdicts) > 1:
+            if entry.required:
+                required_count += 1
+            assessments.append(
+                EntryAssessment(
+                    plan_entry_id=entry.plan_entry_id,
+                    status="RECORD_MISMATCH",
+                )
+            )
+            continue
+        current = latest[-1]
+        assessments.append(
+            EntryAssessment(
+                plan_entry_id=entry.plan_entry_id,
+                status=current.status,
+                verification_record_id=current.verification_record_id,
+            )
+        )
+        supporting_record_ids.append(current.verification_record_id)
         if entry.required:
             required_count += 1
-
-        if matched_record is not None:
-            assessments.append(
-                EntryAssessment(
-                    plan_entry_id=entry.plan_entry_id,
-                    status=matched_status,
-                    verification_record_id=matched_record.verification_record_id,
-                )
-            )
-            supporting_record_ids.append(matched_record.verification_record_id)
-            if entry.required and matched_status == "PASS":
+            if current.status == "PASS":
                 satisfied_count += 1
-        else:
-            # check if there's a record for this predicate but it didn't match
-            partial = any(
-                r.predicate_id == entry.predicate.predicate_id
-                for r in all_records
-            )
-            assessments.append(
-                EntryAssessment(
-                    plan_entry_id=entry.plan_entry_id,
-                    status="RECORD_MISMATCH" if partial else "MISSING",
-                )
-            )
 
-    # §6: verification_ready iff ALL required entries PASS
-    all_required_pass = all(
-        a.status == "PASS"
-        for a, e in zip(
-            sorted(assessments, key=lambda a: a.plan_entry_id),
-            sorted(plan.entries, key=lambda e: e.plan_entry_id),
-        )
-        if e.required
+    all_required_pass = (
+        required_count > 0 and satisfied_count == required_count
     )
-    # mandatory NOT_APPLICABLE = plan config error (§11)
+    required_assessments = [
+        a for a in assessments
+        if any(
+            e.plan_entry_id == a.plan_entry_id and e.required
+            for e in plan.entries
+        )
+    ]
     has_mandatory_na = any(
-        a.status == "NOT_APPLICABLE"
-        for a, e in zip(
-            sorted(assessments, key=lambda a: a.plan_entry_id),
-            sorted(plan.entries, key=lambda e: e.plan_entry_id),
-        )
-        if e.required
+        a.status == "NOT_APPLICABLE" for a in required_assessments
     )
-    has_error = any(a.status == "ERROR" for a in assessments)
-    has_fail = any(a.status == "FAIL" for a in assessments)
+    has_mismatch = any(a.status == "RECORD_MISMATCH" for a in required_assessments)
+    has_error = any(a.status == "ERROR" for a in required_assessments)
+    has_fail = any(a.status == "FAIL" for a in required_assessments)
+    has_missing_or_inconclusive = any(
+        a.status in ("MISSING", "INCONCLUSIVE") for a in required_assessments
+    )
 
     if all_required_pass and not has_mandatory_na:
         verification_ready = True
         failure_class = "NONE"
-    elif has_mandatory_na:
+    elif has_mandatory_na or has_mismatch:
         verification_ready = False
         failure_class = "PLAN_CONFIG_ERROR"
     elif has_error:
@@ -203,18 +217,6 @@ def build_readiness(
         verification_ready = False
         failure_class = "MISSING_EVIDENCE"
 
-    # count only required entries for the plan counts
-    required_entries = [e for e in plan.entries if e.required]
-    required_entry_count = len(required_entries)
-    required_pass_count = sum(
-        1 for a in assessments
-        if a.status == "PASS"
-        and any(
-            e.plan_entry_id == a.plan_entry_id and e.required
-            for e in plan.entries
-        )
-    )
-
     return VerificationReadiness(
         verification_readiness_id="vrd_" + "0" * 64,
         verification_plan_id=plan.verification_plan_id,
@@ -224,7 +226,7 @@ def build_readiness(
         generation=plan.generation,
         registry_snapshot_sha256=plan.registry_snapshot_sha256,
         required_entry_count=required_entry_count,
-        satisfied_entry_count=required_pass_count,
+        satisfied_entry_count=satisfied_count,
         entry_assessments=tuple(
             sorted(assessments, key=lambda a: a.plan_entry_id)
         ),

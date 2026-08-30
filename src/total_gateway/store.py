@@ -9896,6 +9896,23 @@ class GatewayStateStore:
                 return None
             return dict(row)
 
+    def list_repository_bindings_for_subject(
+        self, subject_effect_id: str
+    ) -> tuple[dict, ...]:
+        """PRE/POST bindings for a subject effect, deterministically ordered.
+
+        M4.1 Final §3: the executor's authoritative read API — no
+        hasattr fallback, no uncontrolled queries.
+        """
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM repository_observation_binding"
+                " WHERE subject_effect_id = ?"
+                " ORDER BY observation_role, observed_at_ms, binding_id",
+                (subject_effect_id,),
+            ).fetchall()
+            return tuple(dict(row) for row in rows)
+
     def get_repository_observation(self, observation_sha256: str) -> dict | None:
         """Return the bound observation row as a dict (None if absent)."""
         with self._lock:
@@ -10033,13 +10050,61 @@ class GatewayStateStore:
         *,
         recorded_at_ms: int,
     ) -> bool:
-        """Persist a VerificationPlan; True when newly created."""
-        from contracts.verification import VerificationPlan
+        """Persist a VerificationPlan; True when newly created.
+
+        M4.1 Final §4: validates the plan against the authoritative
+        RegistrySnapshot stored in THIS store — fake registry hashes are
+        rejected.
+        """
+        from contracts.verification import VerificationPlan, VerificationPlanEntryV2
+        from total_gateway.verification_registry import VerifierRegistry
 
         if not isinstance(plan, VerificationPlan):
             raise ValueError("verification plan payload has the wrong type")
         if not plan.has_valid_identity():
             raise ValueError("verification plan identity is invalid")
+        # §4: the registry snapshot must be a real stored snapshot with
+        # a valid identity, and every entry must be supported by its
+        # declared verifier descriptor.
+        snapshot_row = self._connection.execute(
+            "SELECT snapshot_json FROM verification_registry_snapshot"
+            " WHERE snapshot_sha256 = ?",
+            (plan.registry_snapshot_sha256,),
+        ).fetchone()
+        if snapshot_row is None:
+            raise ValueError(
+                "verification plan registry snapshot does not exist in the store"
+            )
+        snapshot = __import__(
+            "contracts.verification", fromlist=["RegistrySnapshot"]
+        ).RegistrySnapshot.model_validate_json(snapshot_row["snapshot_json"], strict=True)
+        if snapshot.snapshot_sha256 != plan.registry_snapshot_sha256:
+            raise ValueError("registry snapshot identity mismatch")
+        registry = VerifierRegistry(snapshot.verifiers)
+        for entry in plan.entries:
+            try:
+                descriptor = registry.find(
+                    entry.verifier_id, entry.verifier_version
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"plan entry verifier not in registry:"
+                    f" {entry.verifier_id}@{entry.verifier_version}"
+                ) from exc
+            if entry.predicate.predicate_type not in descriptor.supported_predicate_types:
+                raise ValueError(
+                    f"plan entry predicate not supported by verifier:"
+                    f" {entry.predicate.predicate_type}"
+                )
+            if entry.predicate.subject_kind not in descriptor.supported_subject_kinds:
+                raise ValueError(
+                    f"plan entry subject_kind not supported:"
+                    f" {entry.predicate.subject_kind}"
+                )
+            if not isinstance(entry, VerificationPlanEntryV2):
+                raise ValueError(
+                    "plan entries must be VerificationPlanEntryV2 (M4.1 v2)"
+                )
         payload_json = json.dumps(
             plan.model_dump(mode="json"), ensure_ascii=False,
             allow_nan=False, sort_keys=True, separators=(",", ":"),
@@ -10117,18 +10182,19 @@ class GatewayStateStore:
     ) -> bool:
         """Persist a VerificationReadiness; True when newly created.
 
-        M4.1 §7: the write re-verifies that this readiness MATCHES what
-        build_readiness would compute from the active plan + records.
-        A self-computed-hash readiness that disagrees with the
-        authoritative computation is rejected.
+        M4.1 Final §5/§7 (option B): the write re-derives the expected
+        readiness from the ACTIVE plan + THIS store's records using the
+        SAME authoritative derivation, then compares it FIELD BY FIELD
+        against the submitted object. A hand-computed-hash readiness
+        with fake record ids or wrong verification_ready is rejected.
         """
         from contracts.verification import VerificationReadiness
+        from total_gateway.verification_readiness import build_readiness
 
         if not isinstance(readiness, VerificationReadiness):
             raise ValueError("verification readiness payload has the wrong type")
         if not readiness.has_valid_identity():
             raise ValueError("verification readiness identity is invalid")
-        # §7: recompute from the authoritative plan + records
         active_plan = self.get_active_verification_plan(
             request_id=readiness.request_id,
             run_id=readiness.run_id,
@@ -10145,6 +10211,53 @@ class GatewayStateStore:
         if active_plan.plan_sha256 != readiness.verification_plan_sha256:
             raise ValueError(
                 "readiness plan hash does not match the active plan"
+            )
+        # §7 option B: re-derive expected readiness and compare fields
+        snapshot_row = self._connection.execute(
+            "SELECT snapshot_json FROM verification_registry_snapshot"
+            " WHERE snapshot_sha256 = ?",
+            (active_plan.registry_snapshot_sha256,),
+        ).fetchone()
+        if snapshot_row is None:
+            raise ValueError(
+                "active plan registry snapshot does not exist in the store"
+            )
+        from contracts.verification import RegistrySnapshot
+
+        snapshot = RegistrySnapshot.model_validate_json(
+            snapshot_row["snapshot_json"], strict=True
+        )
+        expected = build_readiness(
+            plan=active_plan,
+            snapshot=snapshot,
+            store=self,
+            evaluated_at_ms=readiness.evaluated_at_ms,
+        )
+        # field-by-field comparison (ids differ only by derivation time)
+        for field in (
+            "verification_plan_id", "verification_plan_sha256",
+            "request_id", "run_id", "generation",
+            "registry_snapshot_sha256", "required_entry_count",
+            "satisfied_entry_count", "verification_ready", "failure_class",
+            "supporting_verification_record_ids",
+        ):
+            if getattr(expected, field) != getattr(readiness, field):
+                raise ValueError(
+                    f"readiness field {field!r} does not match the"
+                    f" authoritative derivation"
+                )
+        expected_assessments = {
+            a.plan_entry_id: (a.status, a.verification_record_id)
+            for a in expected.entry_assessments
+        }
+        actual_assessments = {
+            a.plan_entry_id: (a.status, a.verification_record_id)
+            for a in readiness.entry_assessments
+        }
+        if expected_assessments != actual_assessments:
+            raise ValueError(
+                "readiness entry assessments do not match the"
+                " authoritative derivation"
             )
         payload_json = json.dumps(
             readiness.model_dump(mode="json"), ensure_ascii=False,

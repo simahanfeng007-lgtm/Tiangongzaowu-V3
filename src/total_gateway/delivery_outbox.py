@@ -515,7 +515,7 @@ class GatewayDeliveryOutboxWorker:
                 delivery_requirement="CHANNEL_ACCEPTED",
                 verification_mode=(
                     "PLAN_BOUND"
-                    if self._store.get_latest_verification_readiness(
+                    if self._store.get_active_verification_plan(
                         request_id=plan.request_id,
                         run_id=plan.run_id,
                         generation=plan.generation,
@@ -523,12 +523,40 @@ class GatewayDeliveryOutboxWorker:
                     else "NONE"
                 ),
             )
+            # M4.1 Final §10: production verification wiring — execute the
+            # active plan BEFORE the gate reads readiness.
+            active_plan = self._store.get_active_verification_plan(
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+            )
+            if active_plan is not None:
+                from total_gateway.verification_plan_executor import (
+                    VerificationPlanExecutor,
+                )
+                from total_gateway.orchestration import _verification_snapshot
+
+                executor = VerificationPlanExecutor(
+                    snapshot=_verification_snapshot(
+                        self._store,
+                        active_plan.registry_snapshot_sha256,
+                    ),
+                    store=self._store,
+                    object_store=self._objects,
+                    fact_ledger=self._facts,
+                    plan=active_plan,
+                )
+                executor.execute(
+                    evaluated_at_ms=completed_at_ms,
+                    artifact_manifests=tuple(artifacts),
+                )
             decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
                 requirements,
                 candidate_text=text_parts[0] if text_parts else None,
                 artifacts=artifacts,
                 outbound_plan=plan,
                 delivery_failure="AMBIGUOUS" if ambiguous else "FAILED_FINAL",
+                active_plan=active_plan,
                 verification_readiness=self._store.get_latest_verification_readiness(
                     request_id=plan.request_id,
                     run_id=plan.run_id,
@@ -680,12 +708,38 @@ class GatewayDeliveryOutboxWorker:
                 else "NONE"
             ),
         )
+        # M4.1 Final §10: production verification wiring (receipt branch).
+        active_plan = self._store.get_active_verification_plan(
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            generation=plan.generation,
+        )
+        if active_plan is not None:
+            from total_gateway.verification_plan_executor import (
+                VerificationPlanExecutor,
+            )
+            from total_gateway.orchestration import _verification_snapshot
+
+            executor = VerificationPlanExecutor(
+                snapshot=_verification_snapshot(
+                    self._store, active_plan.registry_snapshot_sha256,
+                ),
+                store=self._store,
+                object_store=self._objects,
+                fact_ledger=self._facts,
+                plan=active_plan,
+            )
+            executor.execute(
+                evaluated_at_ms=completed_at_ms,
+                artifact_manifests=tuple(artifacts),
+            )
         decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
             requirements,
             candidate_text=text_parts[0] if text_parts else None,
             artifacts=artifacts,
             outbound_plan=plan,
             delivery_receipt=receipt,
+            active_plan=active_plan,
             verification_readiness=self._store.get_latest_verification_readiness(
                 request_id=plan.request_id,
                 run_id=plan.run_id,

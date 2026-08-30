@@ -15,18 +15,17 @@ from typing import Any, Mapping
 from contracts.verification import RuntimeCloseoutEvidence
 
 
-def _closeout_digest(value: object) -> str:
-    """Coerce a payload hash field into a 64-hex digest (zero if absent).
+def _closeout_digest_strict_or_none(value: object) -> str | None:
+    """Return 64-hex digest if valid, None if missing/malformed.
 
-    The runtime payload's root_goal_hash / task_contract_hash may be
-    missing or malformed; the closeout evidence requires a valid Sha256
-    so unknown values degrade to an explicit zero digest rather than
-    fabricating a hash that was never observed.
+    M4.1 Final §12: authority hashes must be real — malformed values
+    prevent typed evidence construction (legacy degradation instead of
+    fabricating "0"*64 as fake authority).
     """
     text = str(value or "").strip().lower()
     if len(text) == 64 and all(char in "0123456789abcdef" for char in text):
         return text
-    return "0" * 64
+    return None
 from contracts import canonical_sha256, derive_effect_identity
 
 from .diagnostics import diagnostic_log
@@ -1167,36 +1166,45 @@ class RegenerativeExecutionAuthority:
                 causal_parent_event_id=event.event_id,
             )
             terminal_seq = terminal.ledger_seq
-        # M4 §10: the closeout facts are also emitted as a typed,
-        # hash-bound RuntimeCloseoutEvidence. Architecture boundary: this
-        # evidence ONLY documents the V3 runtime's local closeout state —
-        # it can never make VerificationReadiness PASS, never make
-        # CompletionGate COMPLETED, and never replaces the artifact /
-        # effect / repository / delivery gates.
-        closeout_evidence = RuntimeCloseoutEvidence(
-            request_id=identity.request_id,
-            run_id=identity.run_id,
-            generation=identity.generation,
-            life_id=str(payload.get("life_id") or "unspecified")[:160],
-            execution_ticket_id=(
-                str(payload["execution_ticket_id"])[:160]
-                if payload.get("execution_ticket_id") else None
-            ),
-            root_goal_hash=_closeout_digest(payload.get("root_goal_hash")),
-            task_contract_hash=_closeout_digest(payload.get("task_contract_hash")),
-            runtime_blockers=tuple(sorted(reasons)),
-            runtime_blockers_sha256=canonical_sha256(sorted(reasons)),
-            life_gate_allowed=payload.get("life_gate_allowed") is True,
-            required_evidence_ready=payload.get("required_evidence_ready") is True,
-            produced_at_ms=now_ms,
-            evidence_sha256="0" * 64,
-        ).with_computed_sha256()
+        # M4.1 Final §12: RuntimeCloseoutEvidence is constructed ONLY
+        # when the payload carries valid authority hashes. Missing or
+        # malformed hashes → legacy_degraded=True (bare booleans remain
+        # the only runtime-local facts; typed evidence is NOT fabricated).
+        closeout_evidence = None
+        legacy_degraded = True
+        goal_hash = _closeout_digest_strict_or_none(payload.get("root_goal_hash"))
+        contract_hash = _closeout_digest_strict_or_none(payload.get("task_contract_hash"))
+        if goal_hash is not None and contract_hash is not None:
+            legacy_degraded = False
+            closeout_evidence = RuntimeCloseoutEvidence(
+                request_id=identity.request_id,
+                run_id=identity.run_id,
+                generation=identity.generation,
+                life_id=str(payload.get("life_id") or "unspecified")[:160],
+                execution_ticket_id=(
+                    str(payload["execution_ticket_id"])[:160]
+                    if payload.get("execution_ticket_id") else None
+                ),
+                root_goal_hash=goal_hash,
+                task_contract_hash=contract_hash,
+                runtime_blockers=tuple(sorted(reasons)),
+                runtime_blockers_sha256=canonical_sha256(sorted(reasons)),
+                life_gate_allowed=payload.get("life_gate_allowed") is True,
+                required_evidence_ready=payload.get("required_evidence_ready") is True,
+                produced_at_ms=now_ms,
+                evidence_sha256="0" * 64,
+            ).with_computed_sha256()
         return {
             "verified_complete": verified,
             "reasons": reasons,
             "proof_hash": proof_hash,
             "ledger_seq": terminal_seq,
-            "runtime_closeout_evidence": closeout_evidence.model_dump(mode="json"),
+            "legacy_degraded": legacy_degraded,
+            "runtime_closeout_evidence": (
+                closeout_evidence.model_dump(mode="json")
+                if closeout_evidence is not None
+                else None
+            ),
         }
 
 
