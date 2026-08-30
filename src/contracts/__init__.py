@@ -3,6 +3,8 @@
 CONTRACT_SCHEMA_VERSION = "tiangong.gateway.contracts.v2"
 
 from .verification import (
+    AcceptancePredicate,
+    AcceptancePredicateSpecError,
     RegistrySnapshot,
     VerificationRecord,
     VerifierDescriptor,

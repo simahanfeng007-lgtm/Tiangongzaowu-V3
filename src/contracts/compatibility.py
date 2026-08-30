@@ -58,7 +58,7 @@ P18_G1_VNEXT_CONTRACT_SCHEMA_BASELINE_SHA256 = (
 )
 # P19-R2 M1 验证平面合同（VerifierDescriptor/RegistrySnapshot/VerificationRecord）后的当前包 digest。
 P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256 = (
-    "502be945ad687f75a3eb085cdd569fb50aaef3d3876e11993fff79cde73b0965"
+    "d46cd149db4cc37883270f4e91e5592dc2dc2b34765283b5759f680f8ad1609a"
 )
 REVIEWED_SCHEMA_BASELINE_SHA256 = P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256
 CompatibilityDirection = Literal["backward", "forward"]
