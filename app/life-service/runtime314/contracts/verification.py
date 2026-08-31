@@ -1038,25 +1038,273 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# M4.1 HOTFIX §5: historical v1 plan compatibility (read-only)
+# M5 §7-9: FailureEvidence / VerificationDisposition / RepairDirective
 # ---------------------------------------------------------------------------
 
-def read_plan_any_version(payload: dict):
-    """Decode a plan JSON payload regardless of schema_version.
+_FAILURE_EVIDENCE_SCHEMA = "tiangong.verification_failure_evidence.v1"
+_DISPOSITION_SCHEMA = "tiangong.verification_disposition.v1"
+_REPAIR_DIRECTIVE_SCHEMA = "tiangong.repair_directive.v1"
 
-    v1 plans (M4-era VerificationPlanEntry with id/sha/type refs) are
-    returned as a plain dict tagged ``is_v1=True`` — they can be read
-    and audited but NOT activated. v2 plans (current) are returned as
-    a full VerificationPlan model.
+FailureKind = Literal[
+    "VERIFICATION_FAILED", "INCONCLUSIVE", "MISSING_EVIDENCE",
+    "AUTHORITY_ERROR", "PLAN_CONFIG_ERROR", "RECORD_MISMATCH",
+]
+
+DispositionAction = Literal[
+    "REPAIR", "WAIT", "RECONCILE", "REVIEW", "BLOCK",
+]
+
+
+def derive_failure_signature(
+    *,
+    plan_entry_id: str,
+    effective_subject_identity: str,
+    predicate_sha256: str,
+    verification_status: str,
+    reason_codes: tuple[str, ...],
+    verification_evidence_sha256: str,
+) -> str:
+    """M5 §9: deterministic failure signature for anti-loop detection."""
+    return canonical_sha256({
+        "plan_entry_id": plan_entry_id,
+        "effective_subject_identity": effective_subject_identity,
+        "predicate_sha256": predicate_sha256,
+        "verification_status": verification_status,
+        "reason_codes": list(reason_codes),
+        "verification_evidence_sha256": verification_evidence_sha256,
+    })
+
+
+class FailureEvidence(ContractModel):
+    """M5 §7: what exactly failed, against which obligation and evidence.
+
+    DERIVED fact — callers cannot supply "why it failed"; the builder
+    re-derives from plan + readiness + authoritative records.
     """
-    schema_version = payload.get("schema_version", "")
-    if schema_version == _VERIFICATION_PLAN_V2_SCHEMA_VERSION:
-        return VerificationPlan.model_validate(payload)
-    if schema_version == _VERIFICATION_PLAN_SCHEMA_VERSION:  # v1
-        # v1 is a legacy shape with field-level entry references that
-        # cannot be validated as V2 (no nested predicate). Return as
-        # tagged dict for audit — activation is rejected by the store.
-        return {"is_v1": True, "payload": payload}
-    raise ValueError(
-        f"unknown verification plan schema_version: {schema_version!r}"
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:FailureEvidence",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
     )
+    schema_id: Literal["FailureEvidence"] = "FailureEvidence"
+    schema_version: Literal[_FAILURE_EVIDENCE_SCHEMA] = _FAILURE_EVIDENCE_SCHEMA
+    failure_evidence_id: str = Field(pattern=r"^vfe_[0-9a-f]{64}$")
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
+    verification_plan_sha256: Sha256
+    registry_snapshot_sha256: Sha256
+    plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
+    plan_entry_sha256: Sha256
+    verifier_id: OpaqueId
+    verifier_version: str = Field(min_length=1, max_length=64)
+    predicate_id: str = Field(pattern=r"^vpd_[0-9a-f]{64}$")
+    predicate_sha256: Sha256
+    predicate_type: PredicateType
+    subject_kind: SubjectKind
+    original_subject_identity: str = Field(min_length=1, max_length=400)
+    effective_subject_identity: str = Field(min_length=1, max_length=400)
+    verification_record_id: str | None = None
+    verification_result_sha256: Sha256 | None = None
+    verification_status: EntryAssessmentStatus
+    readiness_id: str = Field(pattern=r"^vrd_[0-9a-f]{64}$")
+    readiness_sha256: Sha256
+    failure_kind: FailureKind
+    reason_codes: tuple[str, ...] = Field(default=(), max_length=32)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=64)
+    verification_evidence_sha256: Sha256
+    failure_signature_sha256: Sha256
+    observed_at_ms: int = Field(ge=0)
+    failure_evidence_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate(self) -> FailureEvidence:
+        if self.verification_status == "PASS":
+            raise ValueError("FailureEvidence cannot be derived from PASS")
+        expected_sig = derive_failure_signature(
+            plan_entry_id=self.plan_entry_id,
+            effective_subject_identity=self.effective_subject_identity,
+            predicate_sha256=self.predicate_sha256,
+            verification_status=self.verification_status,
+            reason_codes=self.reason_codes,
+            verification_evidence_sha256=self.verification_evidence_sha256,
+        )
+        if self.failure_signature_sha256 != expected_sig:
+            raise ValueError("failure_signature_sha256 does not recompute")
+        return self
+
+    def computed_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"failure_evidence_sha256", "failure_evidence_id"})
+        )
+
+    def has_valid_sha256(self) -> bool:
+        return self.failure_evidence_sha256 == self.computed_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_sha256():
+            return False
+        return self.failure_evidence_id == "vfe_" + canonical_sha256(
+            {"domain": self.schema_version, "sha": self.failure_evidence_sha256}
+        )
+
+    def with_computed_sha256(self) -> FailureEvidence:
+        sha = self.computed_sha256()
+        partial = self.model_copy(update={"failure_evidence_sha256": sha})
+        return partial.model_copy(update={
+            "failure_evidence_id": "vfe_" + canonical_sha256(
+                {"domain": self.schema_version, "sha": sha}
+            )
+        })
+
+
+class VerificationDisposition(ContractModel):
+    """M5 §10: Gateway policy decision — what should the system do next.
+
+    NOT a Verifier verdict. NOT a CompletionDecision. Deterministic
+    policy v1 (no LLM involvement in the decision).
+    """
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:VerificationDisposition",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["VerificationDisposition"] = "VerificationDisposition"
+    schema_version: Literal[_DISPOSITION_SCHEMA] = _DISPOSITION_SCHEMA
+    verification_disposition_id: str = Field(pattern=r"^vds_[0-9a-f]{64}$")
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
+    plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
+    failure_evidence_id: str = Field(pattern=r"^vfe_[0-9a-f]{64}$")
+    failure_evidence_sha256: Sha256
+    action: DispositionAction
+    policy_version: str = Field(min_length=1, max_length=64)
+    policy_config_sha256: Sha256
+    attempt_no: int = Field(ge=0)
+    max_attempts: int = Field(ge=1)
+    reason_codes: tuple[str, ...] = Field(default=(), max_length=32)
+    decided_at_ms: int = Field(ge=0)
+    model_generated: Literal[False] = False
+    disposition_sha256: Sha256
+
+    def computed_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"disposition_sha256", "verification_disposition_id"})
+        )
+
+    def has_valid_sha256(self) -> bool:
+        return self.disposition_sha256 == self.computed_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_sha256():
+            return False
+        return self.verification_disposition_id == "vds_" + canonical_sha256(
+            {"domain": self.schema_version, "sha": self.disposition_sha256}
+        )
+
+    def with_computed_sha256(self) -> VerificationDisposition:
+        sha = self.computed_sha256()
+        partial = self.model_copy(update={"disposition_sha256": sha})
+        return partial.model_copy(update={
+            "verification_disposition_id": "vds_" + canonical_sha256(
+                {"domain": self.schema_version, "sha": sha}
+            )
+        })
+
+
+class RepairDirective(ContractModel):
+    """M5 §14: bounded repair instruction — no completion authority.
+
+    Only created when VerificationDisposition.action == REPAIR.
+    Cannot change the acceptance predicate or plan.
+    """
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:RepairDirective",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+    schema_id: Literal["RepairDirective"] = "RepairDirective"
+    schema_version: Literal[_REPAIR_DIRECTIVE_SCHEMA] = _REPAIR_DIRECTIVE_SCHEMA
+    repair_directive_id: str = Field(pattern=r"^vrd_[0-9a-f]{64}$")
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    verification_plan_id: str = Field(pattern=r"^vpl_[0-9a-f]{64}$")
+    verification_plan_sha256: Sha256
+    plan_entry_id: str = Field(pattern=r"^vpe_[0-9a-f]{64}$")
+    plan_entry_sha256: Sha256
+    failure_evidence_id: str = Field(pattern=r"^vfe_[0-9a-f]{64}$")
+    failure_evidence_sha256: Sha256
+    disposition_id: str = Field(pattern=r"^vds_[0-9a-f]{64}$")
+    disposition_sha256: Sha256
+    predicate_id: str = Field(pattern=r"^vpd_[0-9a-f]{64}$")
+    predicate_sha256: Sha256
+    subject_kind: SubjectKind
+    original_subject_identity: str = Field(min_length=1, max_length=400)
+    effective_subject_identity: str = Field(min_length=1, max_length=400)
+    repair_attempt_no: int = Field(ge=1)
+    max_attempts: int = Field(ge=1)
+    allowed_target_refs: tuple[str, ...] = Field(default=(), max_length=64)
+    forbidden_target_refs: tuple[str, ...] = Field(default=(), max_length=64)
+    repair_goal_kind: str = Field(min_length=1, max_length=160)
+    repair_constraints: tuple[str, ...] = Field(default=(), max_length=32)
+    execution_budget_ms: int = Field(gt=0)
+    requires_reverification: Literal[True] = True
+    issued_at_ms: int = Field(ge=0)
+    expires_at_ms: int = Field(ge=0)
+    directive_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _validate_directive(self) -> RepairDirective:
+        if self.expires_at_ms <= self.issued_at_ms:
+            raise ValueError("directive expires_at must be after issued_at")
+        if self.repair_attempt_no > self.max_attempts:
+            raise ValueError("repair_attempt_no exceeds max_attempts")
+        # M5 §15: predicate immutability is enforced at the store boundary
+        # (the directive must carry the SAME predicate as the plan entry);
+        # here we validate self-consistency of identity fields.
+        return self
+
+    def computed_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"directive_sha256", "repair_directive_id"})
+        )
+
+    def has_valid_sha256(self) -> bool:
+        return self.directive_sha256 == self.computed_sha256()
+
+    def has_valid_identity(self) -> bool:
+        if not self.has_valid_sha256():
+            return False
+        return self.repair_directive_id == "vrd_" + canonical_sha256(
+            {"domain": self.schema_version, "sha": self.directive_sha256}
+        )
+
+    def with_computed_sha256(self) -> RepairDirective:
+        sha = self.computed_sha256()
+        partial = self.model_copy(update={"directive_sha256": sha})
+        return partial.model_copy(update={
+            "repair_directive_id": "vrd_" + canonical_sha256(
+                {"domain": self.schema_version, "sha": sha}
+            )
+        })
+
+
+# Export new M5 contracts
+__all__.extend([
+    "DispositionAction",
+    "FailureEvidence",
+    "FailureKind",
+    "RepairDirective",
+    "VerificationDisposition",
+    "derive_failure_signature",
+])

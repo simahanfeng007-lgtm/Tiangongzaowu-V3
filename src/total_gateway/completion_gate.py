@@ -169,6 +169,7 @@ class CompletionGate:
         delivery_failure: Literal["FAILED_FINAL", "AMBIGUOUS"] | None = None,
         verification_readiness=None,
         active_plan=None,
+        verification_disposition=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
@@ -347,6 +348,9 @@ class CompletionGate:
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
         # M4.1 §11: verification failure classes map to outcomes
+        # M5 §35: disposition actions also map (REPAIR/WAIT→IN_PROGRESS,
+        # RECONCILE→RECONCILE_REQUIRED, REVIEW→IN_PROGRESS+reason,
+        # BLOCK→FAILED)
         if verification_failure_class == "AUTHORITY_ERROR":
             ambiguous = True  # → RECONCILE_REQUIRED
         elif verification_failure_class == "PLAN_CONFIG_ERROR":
@@ -354,6 +358,16 @@ class CompletionGate:
         elif verification_failure_class == "VERIFICATION_FAILED" and not failed:
             failed = True     # → FAILED
         # MISSING_EVIDENCE / INCONCLUSIVE → stays IN_PROGRESS (no flag)
+        # M5 §35: if a disposition is provided, its action takes effect
+        if verification_disposition is not None:
+            _da = verification_disposition.action
+            if _da == "RECONCILE":
+                ambiguous = True
+            elif _da == "BLOCK":
+                failed = True
+            elif _da == "REVIEW":
+                pass  # stays IN_PROGRESS; reason captured below
+            # REPAIR / WAIT → stays IN_PROGRESS (repair pending)
         if ambiguous:
             outcome = "RECONCILE_REQUIRED"
             reason = "completion.reconciliation_required"
