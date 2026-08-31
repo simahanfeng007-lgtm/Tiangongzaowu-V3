@@ -530,6 +530,7 @@ class GatewayDeliveryOutboxWorker:
                 run_id=plan.run_id,
                 generation=plan.generation,
             )
+            verification_disposition = None
             if active_plan is not None:
                 from total_gateway.verification_plan_executor import (
                     VerificationPlanExecutor,
@@ -546,10 +547,29 @@ class GatewayDeliveryOutboxWorker:
                     fact_ledger=self._facts,
                     plan=active_plan,
                 )
-                executor.execute(
+                readiness = executor.execute(
                     evaluated_at_ms=completed_at_ms,
                     artifact_manifests=tuple(artifacts),
                 )
+                # M5 Final Correction #3: Channel Coordinator wiring
+                if not readiness.verification_ready:
+                    from total_gateway.verification_repair_coordinator import (
+                        VerificationRepairCoordinator,
+                    )
+                    coordinator = VerificationRepairCoordinator(
+                        store=self._store,
+                    )
+                    coordinator.process_readiness(
+                        plan=active_plan,
+                        readiness=readiness,
+                    )
+                    verification_disposition = self._store.get_current_verification_disposition(
+                        request_id=plan.request_id,
+                        run_id=plan.run_id,
+                        generation=plan.generation,
+                        verification_plan_id=active_plan.verification_plan_id,
+                        readiness_sha256=readiness.readiness_sha256,
+                    )
             decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
                 requirements,
                 candidate_text=text_parts[0] if text_parts else None,
@@ -557,6 +577,7 @@ class GatewayDeliveryOutboxWorker:
                 outbound_plan=plan,
                 delivery_failure="AMBIGUOUS" if ambiguous else "FAILED_FINAL",
                 active_plan=active_plan,
+                verification_disposition=verification_disposition,
                 verification_readiness=self._store.get_latest_verification_readiness(
                     request_id=plan.request_id,
                     run_id=plan.run_id,
@@ -714,6 +735,7 @@ class GatewayDeliveryOutboxWorker:
             run_id=plan.run_id,
             generation=plan.generation,
         )
+        verification_disposition = None
         if active_plan is not None:
             from total_gateway.verification_plan_executor import (
                 VerificationPlanExecutor,
@@ -729,10 +751,29 @@ class GatewayDeliveryOutboxWorker:
                 fact_ledger=self._facts,
                 plan=active_plan,
             )
-            executor.execute(
+            readiness = executor.execute(
                 evaluated_at_ms=completed_at_ms,
                 artifact_manifests=tuple(artifacts),
             )
+            # M5 Final Correction #3: Channel Coordinator wiring (receipt branch)
+            if not readiness.verification_ready:
+                from total_gateway.verification_repair_coordinator import (
+                    VerificationRepairCoordinator,
+                )
+                coordinator = VerificationRepairCoordinator(
+                    store=self._store,
+                )
+                coordinator.process_readiness(
+                    plan=active_plan,
+                    readiness=readiness,
+                )
+                verification_disposition = self._store.get_current_verification_disposition(
+                    request_id=plan.request_id,
+                    run_id=plan.run_id,
+                    generation=plan.generation,
+                    verification_plan_id=active_plan.verification_plan_id,
+                    readiness_sha256=readiness.readiness_sha256,
+                )
         decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
             requirements,
             candidate_text=text_parts[0] if text_parts else None,
@@ -740,6 +781,7 @@ class GatewayDeliveryOutboxWorker:
             outbound_plan=plan,
             delivery_receipt=receipt,
             active_plan=active_plan,
+            verification_disposition=verification_disposition,
             verification_readiness=self._store.get_latest_verification_readiness(
                 request_id=plan.request_id,
                 run_id=plan.run_id,

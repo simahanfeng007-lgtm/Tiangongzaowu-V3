@@ -77,12 +77,25 @@ class VerificationRepairCoordinator:
         )
 
         dispositions: list[VerificationDisposition] = []
+        # M5 Final Correction #5: generation total budget (across ALL entries)
+        generation_repair_count = sum(
+            1 for d in self._store.list_all_verification_dispositions(
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+            )
+            if d.action == "REPAIR"
+        ) if hasattr(self._store, "list_all_verification_dispositions") else 0
+
         for fe in failure_evidences:
-            # Count previous dispositions for this entry (attempt tracking)
+            # Count previous REPAIR dispositions for this entry
             prev_dispositions = self._store.list_verification_dispositions(
                 plan_entry_id=fe.plan_entry_id,
             )
-            attempt_no = len(prev_dispositions)
+            # M5 Final #5: only count REPAIR actions as attempts
+            attempt_no = sum(
+                1 for d in prev_dispositions if d.action == "REPAIR"
+            )
 
             # Count same failure signature occurrences
             prev_failures = self._store.list_verification_failure_evidence(
@@ -93,8 +106,35 @@ class VerificationRepairCoordinator:
                 if f.failure_signature_sha256 == fe.failure_signature_sha256
             )
 
-            # Effect ambiguity check
+            # M5 Final #5: successor depth budget
+            successor_depth = 0
+            if hasattr(self._store, "resolve_verification_subject"):
+                resolution = self._store.resolve_verification_subject(
+                    fe.plan_entry_id
+                )
+                successor_depth = resolution.get("successor_depth", 0)
+
+            # M5 Final #5: side-effecting repair count (effect/repo subjects)
+            side_effect_repair_count = sum(
+                1 for d in prev_dispositions
+                if d.action == "REPAIR"
+                and fe.subject_kind in ("effect", "repository")
+            )
+
+            # Effect ambiguity check (M5 Final #22: fail-closed)
             effect_ambiguous = self._check_effect_ambiguity(fe)
+
+            # Build extra reason codes for budget violations
+            extra_reasons: list[str] = []
+            if generation_repair_count >= self._policy.max_total_auto_repairs_per_generation:
+                extra_reasons.append("repair_policy.generation_budget_exhausted")
+            if successor_depth >= self._policy.max_subject_successor_depth:
+                extra_reasons.append("repair_policy.successor_depth_exhausted")
+            if (
+                fe.subject_kind in ("effect", "repository")
+                and side_effect_repair_count >= self._policy.max_side_effecting_repairs_per_entry
+            ):
+                extra_reasons.append("repair_policy.side_effect_budget_exhausted")
 
             action, reasons = evaluate_disposition(
                 predicate_type=fe.predicate_type,
@@ -106,6 +146,11 @@ class VerificationRepairCoordinator:
                 effect_is_ambiguous=effect_ambiguous,
                 policy=self._policy,
             )
+            # M5 Final #5: budget overrides — any exhausted budget forces
+            # REVIEW regardless of what the base policy decided
+            if extra_reasons and action == "REPAIR":
+                action = "REVIEW"
+                reasons = tuple(extra_reasons)
 
             disposition = VerificationDisposition(
                 verification_disposition_id="vds_" + "0" * 64,
@@ -235,16 +280,19 @@ class VerificationRepairCoordinator:
         return attempt
 
     def _check_effect_ambiguity(self, fe: FailureEvidence) -> bool:
-        """§29: check if the subject effect is in AMBIGUOUS state."""
+        """§22: fail-closed — if Effect authority query fails, treat as
+        ambiguous (RECONCILE), never as 'not ambiguous'."""
         if fe.subject_kind != "effect":
             return False
         try:
             record = self._store.get_effect(fe.effective_subject_identity)
             if record is None:
-                return False
+                return False  # effect doesn't exist → not ambiguous, just missing
             return record.state in ("AMBIGUOUS", "SIDE_EFFECT_STARTED")
         except Exception:
-            return False  # can't determine → let policy handle by failure_kind
+            # M5 Final #22: authority query failure → fail-closed → treat
+            # as ambiguous → disposition becomes RECONCILE
+            return True
 
 
 __all__ = [

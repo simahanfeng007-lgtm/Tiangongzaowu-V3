@@ -2652,12 +2652,19 @@ class GatewayOrchestrationWorker:
                     coordinator = VerificationRepairCoordinator(
                         store=self._store,
                     )
-                    dispositions = coordinator.process_readiness(
+                    coordinator.process_readiness(
                         plan=active_plan,
                         readiness=readiness,
                     )
-                    if dispositions:
-                        verification_disposition = dispositions[0]
+                    # M5 Final #7: read CURRENT disposition from Store
+                    # (authoritative source, not caller-side dispositions[0])
+                    verification_disposition = self._store.get_current_verification_disposition(
+                        request_id=request_id,
+                        run_id=run_id,
+                        generation=generation.generation,
+                        verification_plan_id=active_plan.verification_plan_id,
+                        readiness_sha256=readiness.readiness_sha256,
+                    )
             decision = evaluate_desktop_completion(
                 objects=self._objects,
                 facts=self._facts,

@@ -172,30 +172,42 @@ def build_readiness(
     satisfied_count = 0
 
     for entry in sorted(plan.entries, key=lambda e: e.plan_entry_id):
-        # M5 Final §9: resolve the effective subject from the Store's
-        # successor chain — no caller callback. Without a successor, the
-        # effective subject is the plan entry's original subject.
+        # M5 Final Closure Correction #6: resolve effective subject from
+        # Store. When a successor EXISTS, ONLY the effective subject's
+        # records are valid candidates — old original-subject records
+        # must NOT re-enter supersession (they represent the pre-repair
+        # reality that was already judged FAIL).
         effective_subject = entry.subject_identity
+        has_successor = False
         if hasattr(store, "resolve_verification_subject"):
             resolution = store.resolve_verification_subject(entry.plan_entry_id)
             if resolution.get("effective_subject_identity"):
                 effective_subject = resolution["effective_subject_identity"]
-        matching = [
-            r for r in all_records
-            if _record_matches_entry(
-                r, entry,
-                plan_registry_sha256=plan.registry_snapshot_sha256,
-                request_id=plan.request_id,
-                run_id=plan.run_id,
-                generation=plan.generation,
-            ) or _record_matches_effective_subject(
-                r, entry, effective_subject,
-                plan_registry_sha256=plan.registry_snapshot_sha256,
-                request_id=plan.request_id,
-                run_id=plan.run_id,
-                generation=plan.generation,
-            )
-        ]
+                has_successor = True
+        if has_successor:
+            # successor exists: ONLY match effective subject records
+            matching = [
+                r for r in all_records
+                if _record_matches_effective_subject(
+                    r, entry, effective_subject,
+                    plan_registry_sha256=plan.registry_snapshot_sha256,
+                    request_id=plan.request_id,
+                    run_id=plan.run_id,
+                    generation=plan.generation,
+                )
+            ]
+        else:
+            # no successor: match original subject records
+            matching = [
+                r for r in all_records
+                if _record_matches_entry(
+                    r, entry,
+                    plan_registry_sha256=plan.registry_snapshot_sha256,
+                    request_id=plan.request_id,
+                    run_id=plan.run_id,
+                    generation=plan.generation,
+                )
+            ]
         if not matching:
             if entry.required:
                 required_count += 1

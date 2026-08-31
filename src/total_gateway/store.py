@@ -10660,6 +10660,24 @@ class GatewayStateStore:
             )
             return True
 
+    def list_all_verification_dispositions(
+        self, *, request_id: str, run_id: str, generation: int,
+    ):
+        from contracts.verification import VerificationDisposition
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " ORDER BY decided_at_ms",
+                (request_id, run_id, generation),
+            ).fetchall()
+            return tuple(
+                VerificationDisposition.model_validate_json(
+                    r["disposition_json"], strict=True
+                )
+                for r in rows
+            )
+
     def get_current_verification_disposition(
         self,
         *,

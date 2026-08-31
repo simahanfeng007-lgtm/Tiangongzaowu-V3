@@ -348,10 +348,32 @@ class CompletionGate:
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
         # M5 Final §17: disposition takes PRIORITY over failure class.
-        # When a current disposition exists, its action decides the
-        # verification outcome — VERIFICATION_FAILED + REPAIR means the
-        # repair is pending, so the request stays IN_PROGRESS (not FAILED).
+        # M5 Final Correction #7: the Gate VALIDATES the disposition's
+        # identity and lineage before consuming it — a caller-forged
+        # disposition with correct-looking action is rejected.
         if verification_disposition is not None:
+            if not hasattr(verification_disposition, "has_valid_identity"):
+                raise CompletionGateError(
+                    "completion.verification.disposition_invalid_type"
+                )
+            if not verification_disposition.has_valid_identity():
+                raise CompletionGateError(
+                    "completion.verification.disposition_identity_invalid"
+                )
+            if (
+                verification_disposition.request_id != requirements.request_id
+                or verification_disposition.run_id != requirements.run_id
+                or verification_disposition.generation != requirements.generation
+            ):
+                raise CompletionGateError(
+                    "completion.verification.disposition_lineage_mismatch"
+                )
+            if verification_readiness is not None:
+                # stale check: disposition must reference the CURRENT readiness
+                # (via its FailureEvidence, which we check indirectly through
+                # the disposition's failure_evidence binding)
+                pass  # full staleness check requires Store re-read; enforced
+                      # at the caller level via get_current_verification_disposition
             _da = verification_disposition.action
             if _da == "RECONCILE":
                 ambiguous = True  # → RECONCILE_REQUIRED
