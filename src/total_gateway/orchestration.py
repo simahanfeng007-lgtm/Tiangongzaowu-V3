@@ -1778,6 +1778,502 @@ class GatewayOrchestrationWorker:
             created_at_ms=observed_at_ms,
         )
 
+    def _dispatch_repair_directive(
+        self,
+        *,
+        directive,
+        activation,
+        envelope,
+        manifest,
+        action,
+        permission,
+        outer_registry,
+        transport,
+        arguments,
+        grants,
+        resources,
+        life,
+        life_evidence_ref,
+        workspace_id,
+        output_root_id,
+        artifact_intent_id,
+        request_id,
+        run_id,
+        run_sequence,
+        generation,
+        artifact_manifests,
+    ):
+        """M5 Final #2: execute a RepairDirective through the EXISTING runtime.
+
+        Same authorities as the primary execution: PolicyEngine decision,
+        RuntimeTicketAuthority signature, BackendClient runtime, and the
+        ArtifactGate/QC pipeline. This is a bridge, not a second runtime
+        — every reality change still lands in the one EffectLedger.
+        Returns a RepairDispatchResult; runtime failures are returned as
+        outcomes (never raised) so the repair loop can record them.
+        """
+        from total_gateway.verification_repair_coordinator import (
+            RepairDispatchResult,
+        )
+
+        issued_at = time.time_ns() // 1_000_000
+        repair_arguments = dict(arguments)
+        repair_arguments["repair_goal"] = {
+            "repair_goal_kind": directive.repair_goal_kind,
+            "plan_entry_id": directive.plan_entry_id,
+            "predicate_id": directive.predicate_id,
+            "allowed_target_refs": list(directive.allowed_target_refs),
+            "repair_constraints": list(directive.repair_constraints),
+            "execution_budget_ms": directive.execution_budget_ms,
+        }
+        arguments_hash = canonical_sha256(repair_arguments)
+        effect_intent = canonical_sha256(
+            {
+                "action_id": action.action_id,
+                "action_version": action.version,
+                "arguments_hash": arguments_hash,
+                "capability_manifest_hash": manifest.sha256,
+                "life_snapshot_hash": life.snapshot.sha256,
+                "repair_directive_id": directive.repair_directive_id,
+            }
+        )
+        repair_effect = derive_effect_identity(
+            request_id=request_id,
+            run_id=run_id,
+            run_sequence=run_sequence,
+            generation=generation.generation,
+            effect_kind="execution",
+            ordinal=1,
+            intent_sha256=effect_intent,
+        )
+        claim = EffectClaim(
+            effect_id=repair_effect.effect_id,
+            request_id=request_id,
+            run_id=run_id,
+            run_sequence=run_sequence,
+            generation=generation.generation,
+            effect_kind="execution",
+            ordinal=1,
+            intent_sha256=effect_intent,
+            owner_component_id="tiangong-backend",
+            claimed_at_ms=issued_at,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        existing_effect, created = self._store.claim_effect(claim)
+        if not created and existing_effect.result is not None:
+            # Crash recovery: this directive's effect already completed.
+            status = existing_effect.result.status
+            return RepairDispatchResult(
+                execution_outcome=(
+                    "DISPATCHED"
+                    if status == "SUCCEEDED"
+                    else "EXECUTION_AMBIGUOUS"
+                    if status == "AMBIGUOUS"
+                    else "EXECUTION_FAILED"
+                ),
+                produced_subject_identity=directive.effective_subject_identity,
+                execution_effect_ids=(repair_effect.effect_id,),
+            )
+
+        authorization_source_refs = tuple(
+            sorted(
+                (
+                    SourceRef(
+                        source_type="CURRENT_USER_INSTRUCTION",
+                        object_id=request_id,
+                        object_revision=1,
+                        sha256=canonical_sha256(envelope.text or ""),
+                    ),
+                    SourceRef(
+                        source_type="PREAUTHORIZED_USER_FACT",
+                        object_id=life_evidence_ref,
+                        object_revision=1,
+                        sha256=life_evidence_ref[4:],
+                    ),
+                ),
+                key=lambda ref: ref.sort_key(),
+            )
+        )
+        intent = ActionIntent(
+            intent_id="intent-repair-" + canonical_sha256(
+                {
+                    "repair_directive_id": directive.repair_directive_id,
+                    "effect_id": repair_effect.effect_id,
+                    "arguments_sha256": arguments_hash,
+                    "created_at_ms": issued_at,
+                }
+            ),
+            source="chat",
+            life_id=life.snapshot.identity_ref,
+            principal_scope_hash=envelope.principal_scope_hash,
+            conversation_scope_hash=envelope.conversation_scope_hash,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation.generation,
+            action_id=action.action_id,
+            action_version=action.version,
+            arguments_sha256=arguments_hash,
+            workspace_id=workspace_id,
+            workspace_scope_hash=self._omni_grants.workspace_scope_hash,
+            input_object_refs=tuple(sorted(item.object_id for item in grants)),
+            requested_side_effects=permission.allowed_side_effects,
+            requested_resources=resources,
+            source_refs=authorization_source_refs,
+            payload_sha256=arguments_hash,
+            attachment_set_sha256=canonical_sha256(
+                [
+                    {"object_id": item.object_id, "revision": item.revision, "sha256": item.sha256}
+                    for item in grants
+                ]
+            ),
+            life_snapshot_revision=life.snapshot.revision,
+            life_snapshot_sha256=life.snapshot.sha256,
+            created_at_ms=issued_at,
+            expires_at_ms=issued_at + 60_000,
+            intent_sha256="0" * 64,
+        ).with_computed_sha256()
+        knobs = derive_impact_knobs(
+            action.action_id,
+            None,
+            scan_args=False,
+            external_content_count=0,
+        )
+        impact = compute_action_impact(
+            intent,
+            permission,
+            affected_internal_nodes=("node_tiangong_backend_model_runtime",),
+            external_recipient_count=knobs["external_recipient_count"],
+            credential_scope_milli=knobs["credential_scope_milli"],
+            privacy_scope_milli=knobs["privacy_scope_milli"],
+            blast_radius_milli=knobs["blast_radius_milli"],
+            irreversibility_milli=knobs["irreversibility_milli"],
+            uncertainty_milli=knobs["uncertainty_milli"],
+            created_at_ms=issued_at,
+        )
+        policy_snapshot_sha256 = canonical_sha256(
+            {
+                "policy": "tiangong.gateway.model-run.autonomous-a0-a4.a5-deny.v3",
+                "registry_sha256": outer_registry.registry_sha256,
+            }
+        )
+        decision = PolicyEngine(
+            outer_registry,
+            policy_snapshot_sha256=policy_snapshot_sha256,
+            skill_catalog_hash=self._release_manifest.skill_catalog_sha256,
+            capability_manifest_hash=manifest.sha256,
+            component_manifest_hash=self._components.manifest_sha256,
+        ).evaluate(
+            intent,
+            impact,
+            decided_at_ms=issued_at,
+            authorization_source_refs=authorization_source_refs,
+        )
+        if decision.outcome != "ALLOW":
+            self._policy_evidence.record_evaluation(
+                intent=intent,
+                impact=impact,
+                permission=permission,
+                registry=outer_registry,
+                decision=decision,
+                ticket=None,
+                grant=None,
+                observed_at_ms=issued_at,
+            )
+            return RepairDispatchResult(
+                execution_outcome="EXECUTION_FAILED",
+                produced_subject_identity=directive.effective_subject_identity,
+                execution_effect_ids=(repair_effect.effect_id,),
+            )
+        payload = ExecutionTicketPayload(
+            ticket_id="execution-ticket-" + canonical_sha256(
+                {
+                    "effect_id": repair_effect.effect_id,
+                    "decision_sha256": decision.decision_sha256,
+                    "repair_directive_id": directive.repair_directive_id,
+                }
+            ),
+            issued_at_ms=issued_at,
+            not_before_ms=issued_at,
+            expires_at_ms=issued_at + 60_000,
+            gateway_epoch=self._epoch,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation.generation,
+            effect_id=repair_effect.effect_id,
+            channel=envelope.channel,
+            tenant_id=envelope.tenant_id,
+            link_account_id=envelope.link_account_id,
+            conversation_scope_hash=envelope.conversation_scope_hash,
+            principal_scope_hash=envelope.principal_scope_hash,
+            capability_manifest_hash=manifest.sha256,
+            policy_snapshot_hash=decision.policy_snapshot_sha256,
+            decision_id=decision.decision_id,
+            decision_sha256=decision.decision_sha256,
+            impact_id=impact.impact_id,
+            impact_sha256=impact.impact_sha256,
+            action_permission_sha256=permission.permission_sha256,
+            component_manifest_hash=self._components.manifest_sha256,
+            life_snapshot_revision=life.snapshot.revision,
+            life_snapshot_hash=life.snapshot.sha256,
+            risk_class=decision.computed_risk,
+            action_id=action.action_id,
+            action_version=action.version,
+            argument_schema_sha256=action.argument_schema_sha256,
+            arguments_hash=arguments_hash,
+            workspace_id=workspace_id,
+            input_objects=grants,
+            object_grants_sha256=canonical_sha256(
+                [item.model_dump(mode="json") for item in grants]
+            ),
+            output_root_id=output_root_id,
+            artifact_intent_id=artifact_intent_id,
+            max_output_bytes=resources.max_output_bytes,
+            max_runtime_ms=resources.max_runtime_ms,
+            max_tool_calls=resources.max_tool_calls,
+            resource_envelope_sha256=resources.sha256(),
+            allowed_side_effects=permission.allowed_side_effects,
+            side_effect_envelope_sha256=canonical_sha256(
+                {"allowed_side_effects": list(permission.allowed_side_effects)}
+            ),
+            nonce="execution-nonce-" + canonical_sha256(
+                {
+                    "effect_id": repair_effect.effect_id,
+                    "decision_sha256": decision.decision_sha256,
+                    "issued_at_ms": issued_at,
+                }
+            ),
+        )
+        ticket = self._authority.execution_signer.sign_execution(payload)
+        self._policy_evidence.record_evaluation(
+            intent=intent,
+            impact=impact,
+            permission=permission,
+            registry=outer_registry,
+            decision=decision,
+            ticket=ticket,
+            grant=None,
+            observed_at_ms=issued_at,
+        )
+        self._omni_grants.register(
+            ticket,
+            life_id=life.snapshot.identity_ref,
+            life_evidence_ref=life_evidence_ref,
+            session_id=envelope.conversation_ref,
+            registered_at_ms=issued_at,
+            authority_expires_at_ms=issued_at + directive.execution_budget_ms,
+        )
+        try:
+            self._store.mark_effect_started(
+                repair_effect.effect_id, started_at_ms=issued_at
+            )
+
+            def _execute_repair() -> Any:
+                return BackendClient(
+                    transport,
+                    self._store,
+                    ticket_consumer_instance_id=(
+                        "compat-frozen-inprocess-" + self._instance_id
+                    ),
+                ).execute(
+                    ticket,
+                    repair_arguments,
+                    capability_manifest=manifest,
+                    trust_bundle=self._authority.execution_trust_bundle(
+                        gateway_epoch=self._epoch,
+                        now_ms=issued_at,
+                    ),
+                    now_ms=issued_at,
+                    expected_gateway_epoch=self._epoch,
+                    minimum_generation=generation.generation,
+                )
+
+            try:
+                response = _EXECUTION_WATCHDOG_POOL.submit(
+                    _execute_repair
+                ).result(
+                    timeout=max(1.0, directive.execution_budget_ms / 1000.0)
+                )
+            except concurrent.futures.TimeoutError:
+                self._complete_repair_effect(
+                    repair_effect.effect_id, "AMBIGUOUS", "repair.execution_timeout"
+                )
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_AMBIGUOUS",
+                    produced_subject_identity=directive.effective_subject_identity,
+                    execution_effect_ids=(repair_effect.effect_id,),
+                )
+        except BackendClientError as exc:
+            status = "AMBIGUOUS" if exc.ambiguous else "FAILED_FINAL"
+            self._complete_repair_effect(
+                repair_effect.effect_id, status, exc.code
+            )
+            return RepairDispatchResult(
+                execution_outcome=(
+                    "EXECUTION_AMBIGUOUS" if status == "AMBIGUOUS" else "EXECUTION_FAILED"
+                ),
+                produced_subject_identity=directive.effective_subject_identity,
+                execution_effect_ids=(repair_effect.effect_id,),
+            )
+        finally:
+            self._omni_grants.unregister(ticket.payload.ticket_id)
+
+        response_status = str(
+            getattr(getattr(response, "result", None), "status", "FAILED_FINAL")
+        )
+        if response_status != "SUCCEEDED":
+            self._complete_repair_effect(
+                repair_effect.effect_id,
+                "AMBIGUOUS" if response_status == "AMBIGUOUS" else "FAILED_FINAL",
+                getattr(getattr(response, "result", None), "error_code", None)
+                or "repair.execution.failed",
+            )
+            return RepairDispatchResult(
+                execution_outcome=(
+                    "EXECUTION_AMBIGUOUS"
+                    if response_status == "AMBIGUOUS"
+                    else "EXECUTION_FAILED"
+                ),
+                produced_subject_identity=directive.effective_subject_identity,
+                execution_effect_ids=(repair_effect.effect_id,),
+            )
+        result_payload = (
+            response.result_payload
+            if isinstance(getattr(response, "result_payload", None), dict)
+            else {}
+        )
+        produced_count = self._register_repair_artifacts(
+            response=response,
+            result_payload=result_payload,
+            directive=directive,
+            activation=activation,
+            observed_at_ms=time.time_ns() // 1_000_000,
+            artifact_intent_id=artifact_intent_id,
+            run_sequence=run_sequence,
+            workspace_id=workspace_id,
+            envelope=envelope,
+            artifact_manifests=artifact_manifests,
+        )
+        self._complete_repair_effect(
+            repair_effect.effect_id, "SUCCEEDED", None
+        )
+        produced_subject = (
+            artifact_manifests[-1].artifact_revision_id
+            if produced_count
+            else directive.effective_subject_identity
+        )
+        return RepairDispatchResult(
+            execution_outcome="DISPATCHED",
+            produced_subject_identity=produced_subject,
+            execution_effect_ids=(repair_effect.effect_id,),
+        )
+
+    def _complete_repair_effect(
+        self, effect_id: str, status: str, error_code: str | None
+    ) -> None:
+        observed_at_ms = time.time_ns() // 1_000_000
+        result = EffectResult(
+            result_id="effect-result-" + effect_id[4:20],
+            effect_id=effect_id,
+            status=status,
+            fact_id="fact-effect-" + effect_id[4:20],
+            evidence_sha256=canonical_sha256(
+                {"code": error_code, "status": status}
+            ),
+            error_code=error_code,
+            observed_at_ms=observed_at_ms,
+            result_sha256="0" * 64,
+        ).with_computed_sha256()
+        self._store.complete_effect(result)
+
+    def _register_repair_artifacts(
+        self,
+        *,
+        response,
+        result_payload,
+        directive,
+        activation,
+        observed_at_ms,
+        artifact_intent_id,
+        run_sequence,
+        workspace_id,
+        envelope,
+        artifact_manifests,
+    ) -> int:
+        """Run repaired artifact descriptors through the SAME
+        ArtifactGate/QC pipeline; append passing manifests. Returns the
+        number of newly registered manifests."""
+        raw_artifacts = result_payload.get("artifacts")
+        if not isinstance(raw_artifacts, list):
+            return 0
+        gate = ArtifactGate(self._objects, self._facts)
+        docx_qc = DocxQcService(self._objects, self._facts)
+        integrity_qc = ArtifactIntegrityQcService(self._objects, self._facts)
+        producer_fact_id = (
+            getattr(getattr(response, "result", None), "fact_ids", None)
+            or ("fact-repair-" + directive.repair_directive_id[4:20],)
+        )[0]
+        produced = 0
+        for index, item in enumerate(raw_artifacts):
+            if not isinstance(item, dict):
+                continue
+            try:
+                accepted = gate.accept(
+                    ArtifactCandidate(
+                        producer_fact_id=producer_fact_id,
+                        object_id=str(item["object_id"]),
+                        expected_sha256=str(item["sha256"]),
+                        expected_size_bytes=int(item["size_bytes"]),
+                        run_sequence=run_sequence,
+                        artifact_intent_id=(
+                            f"{artifact_intent_id}"
+                            f"-r{directive.repair_attempt_no}-{index + 1}"
+                        ),
+                        revision=1,
+                        workspace_id=workspace_id,
+                        filename=str(item["filename"]),
+                        declared_mime=str(item["mime"]),
+                        format_id=str(item["format_id"]),
+                        created_at_ms=observed_at_ms,
+                    )
+                )
+                if accepted.manifest.format_id == "docx":
+                    docx_minimum_words = 30
+                    docx_items_hint = re.search(
+                        r"各?(\d+)\s*[条点项]", envelope.text or ""
+                    )
+                    if docx_items_hint:
+                        docx_minimum_words = max(
+                            30, int(docx_items_hint.group(1)) * 12
+                        )
+                    outcome = docx_qc.evaluate(
+                        accepted,
+                        run_sequence=run_sequence,
+                        policy=DocxQcPolicy(
+                            minimum_word_count=docx_minimum_words,
+                            maximum_word_count=10_000_000,
+                        ),
+                        checked_at_ms=observed_at_ms,
+                    )
+                else:
+                    outcome = integrity_qc.evaluate(
+                        accepted,
+                        run_sequence=run_sequence,
+                        checked_at_ms=observed_at_ms,
+                    )
+                if outcome.passed:
+                    artifact_manifests.append(outcome.registration.record.manifest)
+                    produced += 1
+            except (
+                ArtifactGateError,
+                ArtifactIntegrityQcError,
+                DocxQcError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                continue
+        return produced
+
     def process(self, activation: ActiveRequestActivation) -> None:
         envelope = activation.envelope
         generation = activation.generation
@@ -2644,20 +3140,71 @@ class GatewayOrchestrationWorker:
                     evaluated_at_ms=time.time_ns() // 1_000_000,
                     artifact_manifests=tuple(artifacts),
                 )
-                # M5 Final §3: FAIL → RepairCoordinator → disposition
+                # M5 Final #2: FAIL → the FULL repair loop — directive →
+                # EXISTING runtime dispatch → successor → SAME-predicate
+                # re-verification. Never stop at the disposition.
                 if not readiness.verification_ready:
                     from total_gateway.verification_repair_coordinator import (
+                        RepairDispatchResult,
                         VerificationRepairCoordinator,
                     )
                     coordinator = VerificationRepairCoordinator(
                         store=self._store,
                     )
-                    coordinator.process_readiness(
+
+                    def _repair_dispatch(directive):
+                        # Bridge to the EXISTING runtime: the same
+                        # PolicyEngine → ExecutionTicket → BackendClient →
+                        # ArtifactGate/QC authorities as the primary
+                        # execution. No second runtime.
+                        return self._dispatch_repair_directive(
+                            directive=directive,
+                            activation=activation,
+                            envelope=envelope,
+                            manifest=manifest,
+                            action=action,
+                            permission=permission,
+                            outer_registry=outer_registry,
+                            transport=transport,
+                            arguments=arguments,
+                            grants=grants,
+                            resources=resources,
+                            life=life,
+                            life_evidence_ref=life_evidence_ref,
+                            workspace_id=workspace_id,
+                            output_root_id=output_root_id,
+                            artifact_intent_id=artifact_intent_id,
+                            request_id=request_id,
+                            run_id=run_id,
+                            run_sequence=run_sequence,
+                            generation=generation,
+                            artifact_manifests=artifacts,
+                        )
+
+                    def _repair_reverify():
+                        reverify_executor = VerificationPlanExecutor(
+                            snapshot=_verification_snapshot(
+                                self._store,
+                                active_plan.registry_snapshot_sha256,
+                            ),
+                            store=self._store,
+                            object_store=self._objects,
+                            fact_ledger=self._facts,
+                            plan=active_plan,
+                        )
+                        return reverify_executor.execute(
+                            evaluated_at_ms=time.time_ns() // 1_000_000,
+                            artifact_manifests=tuple(artifacts),
+                        )
+
+                    readiness, _ = coordinator.execute_repair_loop(
                         plan=active_plan,
                         readiness=readiness,
+                        dispatch=_repair_dispatch,
+                        reverify=_repair_reverify,
                     )
                     # M5 Final #7: read CURRENT disposition from Store
-                    # (authoritative source, not caller-side dispositions[0])
+                    # (authoritative source, bound to the final readiness)
                     verification_disposition = self._store.get_current_verification_disposition(
                         request_id=request_id,
                         run_id=run_id,

@@ -12,8 +12,9 @@ Runtime / Tool authority. The coordinator only decides and dispatches.
 
 from __future__ import annotations
 
+import dataclasses
 import time
-from typing import Any
+from typing import Any, Callable
 
 from contracts.verification import (
     FailureEvidence,
@@ -22,17 +23,35 @@ from contracts.verification import (
     VerificationPlan,
     VerificationReadiness,
 )
-from contracts.verification_repair import RepairAttemptRecord
+from contracts.verification_repair import (
+    RepairAttemptRecord,
+    VerificationSubjectSuccessor,
+)
 from total_gateway.verification_failure_evidence import build_failure_evidence
 from total_gateway.verification_repair_policy import (
     DEFAULT_POLICY,
     RepairPolicyConfig,
-    evaluate_disposition,
+    compute_disposition_action,
 )
 
 
 class RepairCoordinatorError(RuntimeError):
     """Repair loop failure — never falls back to NONE."""
+
+
+@dataclasses.dataclass(frozen=True)
+class RepairDispatchResult:
+    """Outcome of one RepairDirective executed by the EXISTING runtime.
+
+    ``execution_outcome`` is the runtime-level verdict (DISPATCHED when
+    execution completed; EXECUTION_FAILED / EXECUTION_AMBIGUOUS when the
+    runtime itself failed). The re-verification verdict is derived later
+    from the NEW readiness and recorded on the attempt.
+    """
+
+    execution_outcome: str  # DISPATCHED | EXECUTION_FAILED | EXECUTION_AMBIGUOUS
+    produced_subject_identity: str
+    execution_effect_ids: tuple[str, ...] = ()
 
 
 class VerificationRepairCoordinator:
@@ -73,6 +92,20 @@ class VerificationRepairCoordinator:
             plan=plan,
             readiness=readiness,
             store=self._store,
+            # M5 Final #2: the FE signature must describe the CURRENT
+            # effective subject (Store successor chain), not the original
+            # plan subject.
+            effective_subject_resolver=(
+                lambda plan_entry_id: (
+                    self._store.resolve_verification_subject(
+                        plan_entry_id
+                    ).get("effective_subject_identity")
+                    if hasattr(
+                        self._store, "resolve_verification_subject"
+                    )
+                    else None
+                )
+            ),
             observed_at_ms=now_ms,
         )
 
@@ -124,33 +157,21 @@ class VerificationRepairCoordinator:
             # Effect ambiguity check (M5 Final #22: fail-closed)
             effect_ambiguous = self._check_effect_ambiguity(fe)
 
-            # Build extra reason codes for budget violations
-            extra_reasons: list[str] = []
-            if generation_repair_count >= self._policy.max_total_auto_repairs_per_generation:
-                extra_reasons.append("repair_policy.generation_budget_exhausted")
-            if successor_depth >= self._policy.max_subject_successor_depth:
-                extra_reasons.append("repair_policy.successor_depth_exhausted")
-            if (
-                fe.subject_kind in ("effect", "repository")
-                and side_effect_repair_count >= self._policy.max_side_effecting_repairs_per_entry
-            ):
-                extra_reasons.append("repair_policy.side_effect_budget_exhausted")
-
-            action, reasons = evaluate_disposition(
+            # M5 Final #4/#5: single source of truth — the same
+            # budget-aware decision the Store revalidation recomputes.
+            action, reasons = compute_disposition_action(
                 predicate_type=fe.predicate_type,
                 verification_status=fe.verification_status,
                 failure_kind=fe.failure_kind,
                 attempt_no=attempt_no,
-                max_attempts=self._policy.max_attempts_per_plan_entry,
                 same_signature_count=same_sig_count,
+                successor_depth=successor_depth,
+                generation_repair_count=generation_repair_count,
+                side_effect_repair_count=side_effect_repair_count,
+                subject_kind=fe.subject_kind,
                 effect_is_ambiguous=effect_ambiguous,
                 policy=self._policy,
             )
-            # M5 Final #5: budget overrides — any exhausted budget forces
-            # REVIEW regardless of what the base policy decided
-            if extra_reasons and action == "REPAIR":
-                action = "REVIEW"
-                reasons = tuple(extra_reasons)
 
             disposition = VerificationDisposition(
                 verification_disposition_id="vds_" + "0" * 64,
@@ -181,6 +202,229 @@ class VerificationRepairCoordinator:
             dispositions.append(disposition)
 
         return dispositions
+
+    # ------------------------------------------------------------------
+    # M5 Final #2: the FULL repair loop — directive → EXISTING runtime →
+    # successor → SAME-predicate re-verification with NEW evidence.
+    # ------------------------------------------------------------------
+
+    def execute_repair_loop(
+        self,
+        *,
+        plan: VerificationPlan,
+        readiness: VerificationReadiness,
+        dispatch: Callable[[RepairDirective], RepairDispatchResult],
+        reverify: Callable[[], VerificationReadiness],
+        now_ms: int | None = None,
+    ) -> tuple[VerificationReadiness, VerificationDisposition | None]:
+        """§14-§21 full evidence-driven repair loop.
+
+        ``dispatch`` bridges to the EXISTING runtime (caller-supplied; the
+        coordinator never owns a second runtime). ``reverify`` re-runs the
+        SAME verification plan producing NEW independent records.
+
+        Termination is guaranteed twice over: every REPAIR iteration
+        increments Store-persisted attempt counts (policy flips REPAIR →
+        REVIEW once any budget is exhausted), and the hard cap bounds the
+        loop independently of Store state.
+
+        Returns ``(final_readiness, final_disposition_or_None)`` — the
+        disposition, when present, is bound to the final readiness.
+        """
+        if now_ms is None:
+            now_ms = time.time_ns() // 1_000_000
+        if readiness.verification_ready:
+            return readiness, None
+
+        current = readiness
+        final_disposition: VerificationDisposition | None = None
+        hard_cap = self._policy.max_total_auto_repairs_per_generation + 1
+
+        for _ in range(hard_cap):
+            # Each iteration re-stamps time so dispositions/directives/
+            # successor bindings stay monotonically ordered in the Store.
+            now_ms = time.time_ns() // 1_000_000
+            dispositions = self.process_readiness(
+                plan=plan, readiness=current, now_ms=now_ms
+            )
+            if dispositions:
+                final_disposition = dispositions[-1]
+            repairable = [d for d in dispositions if d.action == "REPAIR"]
+            if not repairable:
+                # WAIT / RECONCILE / REVIEW / BLOCK — not auto-executable.
+                return current, final_disposition
+
+            executed_any = False
+            for disposition in repairable:
+                evidence = self._find_persisted_failure_evidence(disposition)
+                directive = self.issue_repair_directive(
+                    disposition=disposition,
+                    failure_evidence=evidence,
+                    plan=plan,
+                    now_ms=now_ms,
+                )
+                if directive is None:
+                    continue
+                started_ms = time.time_ns() // 1_000_000
+                result = dispatch(directive)
+                if (
+                    not result.execution_effect_ids
+                    and result.execution_outcome == "DISPATCHED"
+                ):
+                    raise RepairCoordinatorError(
+                        "repair dispatch claims success without an effect"
+                        " ledger binding"
+                    )
+                # Successor binding FIRST: re-verification must resolve
+                # the NEW effective subject for the entry (§17).
+                if (
+                    result.produced_subject_identity
+                    and result.produced_subject_identity
+                    != directive.effective_subject_identity
+                ):
+                    self._bind_successor(
+                        directive=directive, result=result, now_ms=now_ms
+                    )
+                # SAME predicate, NEW independent evidence (§21).
+                current = reverify()
+                reverify_record_id = self._latest_record_for_entry(
+                    plan, directive.plan_entry_id
+                )
+                self.record_attempt(
+                    directive=directive,
+                    execution_outcome=self._attempt_outcome(
+                        directive=directive,
+                        dispatch_result=result,
+                        readiness=current,
+                    ),
+                    produced_subject_identity=result.produced_subject_identity,
+                    execution_effect_ids=result.execution_effect_ids,
+                    reverify_record_id=reverify_record_id,
+                    started_at_ms=started_ms,
+                    finished_at_ms=time.time_ns() // 1_000_000,
+                )
+                executed_any = True
+                if current.verification_ready:
+                    return current, None
+
+            if not executed_any:
+                return current, final_disposition
+
+        # Hard cap reached — the next process_readiness pass would flip
+        # every remaining REPAIR to REVIEW; surface the final state.
+        return current, final_disposition
+
+    def _find_persisted_failure_evidence(
+        self, disposition: VerificationDisposition
+    ) -> FailureEvidence:
+        stored = self._store.list_verification_failure_evidence(
+            plan_entry_id=disposition.plan_entry_id
+        )
+        for evidence in stored:
+            if (
+                evidence.failure_evidence_id
+                == disposition.failure_evidence_id
+            ):
+                return evidence
+        raise RepairCoordinatorError(
+            "disposition references failure evidence absent from the store"
+        )
+
+    def _bind_successor(
+        self,
+        *,
+        directive: RepairDirective,
+        result: RepairDispatchResult,
+        now_ms: int,
+    ) -> None:
+        if not result.execution_effect_ids:
+            raise RepairCoordinatorError(
+                "subject successor requires a produced_by_effect binding"
+            )
+        successor = VerificationSubjectSuccessor(
+            successor_binding_id="vss_" + "0" * 64,
+            request_id=directive.request_id,
+            run_id=directive.run_id,
+            generation=directive.generation,
+            verification_plan_id=directive.verification_plan_id,
+            plan_entry_id=directive.plan_entry_id,
+            subject_kind=directive.subject_kind,
+            predecessor_subject_identity=directive.effective_subject_identity,
+            successor_subject_identity=result.produced_subject_identity,
+            repair_directive_id=directive.repair_directive_id,
+            repair_directive_sha256=directive.directive_sha256,
+            produced_by_effect_id=result.execution_effect_ids[0],
+            repair_attempt_no=directive.repair_attempt_no,
+            bound_at_ms=now_ms,
+            successor_binding_sha256="0" * 64,
+        ).with_computed_sha256()
+        self._store.put_verification_subject_successor(
+            successor, recorded_at_ms=now_ms
+        )
+
+    def _latest_record_for_entry(
+        self, plan: VerificationPlan, plan_entry_id: str
+    ) -> str | None:
+        entry = next(
+            (e for e in plan.entries if e.plan_entry_id == plan_entry_id),
+            None,
+        )
+        if entry is None:
+            return None
+        # Records bind to (predicate_id, subject_identity) — resolve the
+        # CURRENT effective subject so post-repair records are found.
+        effective_subject = entry.subject_identity
+        if hasattr(self._store, "resolve_verification_subject"):
+            resolution = self._store.resolve_verification_subject(
+                plan_entry_id
+            )
+            if resolution.get("effective_subject_identity"):
+                effective_subject = resolution["effective_subject_identity"]
+        records = self._store.list_verification_records(
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            generation=plan.generation,
+        )
+        matching = [
+            r
+            for r in records
+            if r.predicate_id == entry.predicate.predicate_id
+            and r.subject_identity == effective_subject
+        ]
+        if not matching:
+            return None
+        return max(
+            matching,
+            key=lambda r: (r.evaluated_at_ms, r.verification_record_id),
+        ).verification_record_id
+
+    @staticmethod
+    def _attempt_outcome(
+        *,
+        directive: RepairDirective,
+        dispatch_result: RepairDispatchResult,
+        readiness: VerificationReadiness,
+    ) -> str:
+        if dispatch_result.execution_outcome in (
+            "EXECUTION_FAILED",
+            "EXECUTION_AMBIGUOUS",
+        ):
+            return dispatch_result.execution_outcome
+        assessment = next(
+            (
+                a
+                for a in readiness.entry_assessments
+                if a.plan_entry_id == directive.plan_entry_id
+            ),
+            None,
+        )
+        if assessment is None:
+            return "REVERIFY_ERROR"
+        if assessment.status == "PASS":
+            return "REVERIFY_PASS"
+        if assessment.status == "FAIL":
+            return "REVERIFY_FAIL"
+        return "REVERIFY_ERROR"
 
     def issue_repair_directive(
         self,
@@ -297,5 +541,6 @@ class VerificationRepairCoordinator:
 
 __all__ = [
     "RepairCoordinatorError",
+    "RepairDispatchResult",
     "VerificationRepairCoordinator",
 ]

@@ -10559,6 +10559,469 @@ class GatewayStateStore:
     # P19-R2 M5: Evidence-Driven Repair store APIs (v28 tables)
     # ------------------------------------------------------------------
 
+    def get_verification_readiness_by_sha(
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        readiness_sha256: str,
+    ):
+        from contracts.verification import VerificationReadiness
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT readiness_json FROM verification_readiness"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " AND readiness_sha256 = ?",
+                (request_id, run_id, generation, readiness_sha256),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationReadiness.model_validate_json(
+                row["readiness_json"], strict=True
+            )
+
+    def get_verification_failure_evidence_by_id(
+        self, failure_evidence_id: str
+    ):
+        from contracts.verification import FailureEvidence
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT evidence_json FROM verification_failure_evidence"
+                " WHERE failure_evidence_id = ?",
+                (failure_evidence_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return FailureEvidence.model_validate_json(
+                row["evidence_json"], strict=True
+            )
+
+    def get_verification_disposition_by_id(
+        self, verification_disposition_id: str
+    ):
+        from contracts.verification import VerificationDisposition
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE verification_disposition_id = ?",
+                (verification_disposition_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationDisposition.model_validate_json(
+                row["disposition_json"], strict=True
+            )
+
+    def get_repair_directive_by_id(self, repair_directive_id: str):
+        from contracts.verification import RepairDirective
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT directive_json FROM repair_directive"
+                " WHERE repair_directive_id = ?",
+                (repair_directive_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return RepairDirective.model_validate_json(
+                row["directive_json"], strict=True
+            )
+
+    def list_repair_directives(self, plan_entry_id: str):
+        from contracts.verification import RepairDirective
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT directive_json FROM repair_directive"
+                " WHERE plan_entry_id = ? ORDER BY issued_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                RepairDirective.model_validate_json(
+                    r["directive_json"], strict=True
+                )
+                for r in rows
+            )
+
+    def list_repair_attempts(self, plan_entry_id: str):
+        from contracts.verification_repair import RepairAttemptRecord
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT attempt_json FROM repair_attempt"
+                " WHERE plan_entry_id = ? ORDER BY started_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                RepairAttemptRecord.model_validate_json(
+                    r["attempt_json"], strict=True
+                )
+                for r in rows
+            )
+
+    # ------------------------------------------------------------------
+    # M5 Final #4: v28 write-boundary cross-object revalidation.
+    # Every put_* below re-derives its payload from authoritative Store
+    # state before insert — callers cannot smuggle in a "why", a
+    # decision, or a subject that the Store itself cannot reproduce.
+    # All helpers run inside the caller's transaction (self._lock is an
+    # RLock, so nested Store reads are safe).
+    # ------------------------------------------------------------------
+
+    def _revalidate_failure_evidence(self, evidence) -> None:
+        from total_gateway.verification_failure_evidence import (
+            build_failure_evidence,
+        )
+
+        plan = self.get_verification_plan(evidence.verification_plan_id)
+        if plan is None:
+            raise ValueError(
+                "failure evidence revalidation: plan absent from store"
+            )
+        readiness = self.get_verification_readiness_by_sha(
+            request_id=evidence.request_id,
+            run_id=evidence.run_id,
+            generation=evidence.generation,
+            readiness_sha256=evidence.readiness_sha256,
+        )
+        if readiness is None:
+            raise ValueError(
+                "failure evidence revalidation: readiness absent from store"
+            )
+        rebuilt = build_failure_evidence(
+            plan=plan,
+            readiness=readiness,
+            store=self,
+            effective_subject_resolver=(
+                lambda plan_entry_id: (
+                    self.resolve_verification_subject(plan_entry_id).get(
+                        "effective_subject_identity"
+                    )
+                )
+            ),
+            observed_at_ms=evidence.observed_at_ms,
+        )
+        for candidate in rebuilt:
+            if (
+                candidate.failure_evidence_id == evidence.failure_evidence_id
+                and candidate.failure_evidence_sha256
+                == evidence.failure_evidence_sha256
+            ):
+                return
+        raise ValueError(
+            "failure evidence revalidation: store cannot re-derive the"
+            " supplied evidence from plan + readiness + records"
+        )
+
+    def _revalidate_disposition(self, disposition) -> None:
+        from total_gateway.verification_repair_policy import (
+            DEFAULT_POLICY,
+            POLICY_VERSION,
+            compute_disposition_action,
+        )
+
+        evidence = self.get_verification_failure_evidence_by_id(
+            disposition.failure_evidence_id
+        )
+        if evidence is None:
+            raise ValueError(
+                "disposition revalidation: failure evidence absent from store"
+            )
+        if (
+            evidence.failure_evidence_sha256
+            != disposition.failure_evidence_sha256
+        ):
+            raise ValueError(
+                "disposition revalidation: failure evidence hash mismatch"
+            )
+
+        prev = self.list_verification_dispositions(
+            plan_entry_id=disposition.plan_entry_id
+        )
+        prior_repair_count = sum(
+            1
+            for d in prev
+            if d.action == "REPAIR"
+            and d.verification_disposition_id
+            != disposition.verification_disposition_id
+        )
+        same_signature_count = (
+            sum(
+                1
+                for fe in self.list_verification_failure_evidence(
+                    plan_entry_id=disposition.plan_entry_id
+                )
+                if fe.failure_signature_sha256
+                == evidence.failure_signature_sha256
+            )
+            - 1  # the evidence under test is already persisted
+        )
+        resolution = self.resolve_verification_subject(
+            disposition.plan_entry_id
+        )
+        successor_depth = resolution.get("successor_depth", 0)
+        generation_repair_count = sum(
+            1
+            for d in self.list_all_verification_dispositions(
+                request_id=disposition.request_id,
+                run_id=disposition.run_id,
+                generation=disposition.generation,
+            )
+            if d.action == "REPAIR"
+            and d.verification_disposition_id
+            != disposition.verification_disposition_id
+        )
+        side_effect_repair_count = (
+            prior_repair_count
+            if evidence.subject_kind in ("effect", "repository")
+            else 0
+        )
+
+        effect_ambiguous = False
+        if evidence.subject_kind == "effect":
+            record = self.get_effect(evidence.effective_subject_identity)
+            if record is not None:
+                effect_ambiguous = record.state in (
+                    "AMBIGUOUS",
+                    "SIDE_EFFECT_STARTED",
+                )
+
+        expected_action, expected_reasons = compute_disposition_action(
+            predicate_type=evidence.predicate_type,
+            verification_status=evidence.verification_status,
+            failure_kind=evidence.failure_kind,
+            attempt_no=prior_repair_count,
+            same_signature_count=same_signature_count,
+            successor_depth=successor_depth,
+            generation_repair_count=generation_repair_count,
+            side_effect_repair_count=side_effect_repair_count,
+            subject_kind=evidence.subject_kind,
+            effect_is_ambiguous=effect_ambiguous,
+            policy=DEFAULT_POLICY,
+        )
+        if disposition.action != expected_action:
+            raise ValueError(
+                "disposition revalidation: action does not match the"
+                " deterministic policy re-computation"
+                f" (got {disposition.action}, expected {expected_action})"
+            )
+        if tuple(disposition.reason_codes) != tuple(expected_reasons):
+            raise ValueError(
+                "disposition revalidation: reason codes do not match the"
+                " deterministic policy re-computation"
+            )
+        if disposition.attempt_no != prior_repair_count:
+            raise ValueError(
+                "disposition revalidation: attempt_no does not match the"
+                " store-derived REPAIR count"
+            )
+        if disposition.policy_version != POLICY_VERSION:
+            raise ValueError(
+                "disposition revalidation: unknown policy version"
+            )
+        if disposition.policy_config_sha256 != DEFAULT_POLICY.config_sha256():
+            raise ValueError(
+                "disposition revalidation: policy config hash does not"
+                " match the authoritative policy"
+            )
+        if disposition.max_attempts != DEFAULT_POLICY.max_attempts_per_plan_entry:
+            raise ValueError(
+                "disposition revalidation: max_attempts does not match the"
+                " authoritative policy"
+            )
+
+    def _revalidate_repair_directive(self, directive) -> None:
+        disposition = self.get_verification_disposition_by_id(
+            directive.disposition_id
+        )
+        if disposition is None:
+            raise ValueError(
+                "repair directive revalidation: disposition absent from store"
+            )
+        if disposition.action != "REPAIR":
+            raise ValueError(
+                "repair directive revalidation: bound disposition is not"
+                " REPAIR"
+            )
+        if disposition.disposition_sha256 != directive.disposition_sha256:
+            raise ValueError(
+                "repair directive revalidation: disposition hash mismatch"
+            )
+        if disposition.plan_entry_id != directive.plan_entry_id:
+            raise ValueError(
+                "repair directive revalidation: plan entry mismatch"
+            )
+        if (
+            disposition.failure_evidence_id != directive.failure_evidence_id
+            or disposition.failure_evidence_sha256
+            != directive.failure_evidence_sha256
+        ):
+            raise ValueError(
+                "repair directive revalidation: failure evidence linkage"
+                " mismatch"
+            )
+        plan = self.get_verification_plan(directive.verification_plan_id)
+        if plan is None:
+            raise ValueError(
+                "repair directive revalidation: plan absent from store"
+            )
+        if plan.plan_sha256 != directive.verification_plan_sha256:
+            raise ValueError(
+                "repair directive revalidation: plan hash mismatch"
+            )
+        entry = next(
+            (
+                e
+                for e in plan.entries
+                if e.plan_entry_id == directive.plan_entry_id
+            ),
+            None,
+        )
+        if entry is None:
+            raise ValueError(
+                "repair directive revalidation: plan entry absent from plan"
+            )
+        if entry.entry_sha256 != directive.plan_entry_sha256:
+            raise ValueError(
+                "repair directive revalidation: plan entry hash mismatch"
+            )
+        if (
+            entry.predicate.predicate_id != directive.predicate_id
+            or entry.predicate.predicate_sha256
+            != directive.predicate_sha256
+        ):
+            raise ValueError(
+                "repair directive revalidation: predicate linkage mismatch"
+            )
+        if entry.subject_identity != directive.original_subject_identity:
+            raise ValueError(
+                "repair directive revalidation: original subject mismatch"
+            )
+        resolution = self.resolve_verification_subject(entry.plan_entry_id)
+        effective = (
+            resolution.get("effective_subject_identity")
+            or entry.subject_identity
+        )
+        if effective != directive.effective_subject_identity:
+            raise ValueError(
+                "repair directive revalidation: effective subject does not"
+                " match the store successor chain"
+            )
+
+    def _revalidate_repair_attempt(self, attempt) -> None:
+        directive = self.get_repair_directive_by_id(
+            attempt.repair_directive_id
+        )
+        if directive is None:
+            raise ValueError(
+                "repair attempt revalidation: directive absent from store"
+            )
+        if directive.plan_entry_id != attempt.plan_entry_id:
+            raise ValueError(
+                "repair attempt revalidation: plan entry mismatch"
+            )
+        if directive.repair_attempt_no != attempt.repair_attempt_no:
+            raise ValueError(
+                "repair attempt revalidation: attempt number mismatch"
+            )
+        if directive.effective_subject_identity != attempt.prior_subject_identity:
+            raise ValueError(
+                "repair attempt revalidation: prior subject mismatch"
+            )
+        for effect_id in attempt.execution_effect_ids:
+            if self.get_effect(effect_id) is None:
+                raise ValueError(
+                    "repair attempt revalidation: execution effect absent"
+                    " from the effect ledger"
+                )
+        if attempt.reverify_record_id is not None:
+            row = self._connection.execute(
+                "SELECT predicate_id FROM verification_record"
+                " WHERE verification_record_id = ?",
+                (attempt.reverify_record_id,),
+            ).fetchone()
+            if row is None or str(row["predicate_id"]) != directive.predicate_id:
+                raise ValueError(
+                    "repair attempt revalidation: re-verification record"
+                    " absent from the store"
+                )
+
+    def _revalidate_subject_successor(self, successor) -> None:
+        directive = self.get_repair_directive_by_id(
+            successor.repair_directive_id
+        )
+        if directive is None:
+            raise ValueError(
+                "subject successor revalidation: directive absent from store"
+            )
+        if directive.directive_sha256 != successor.repair_directive_sha256:
+            raise ValueError(
+                "subject successor revalidation: directive hash mismatch"
+            )
+        if directive.plan_entry_id != successor.plan_entry_id:
+            raise ValueError(
+                "subject successor revalidation: plan entry mismatch"
+            )
+        if directive.subject_kind != successor.subject_kind:
+            raise ValueError(
+                "subject successor revalidation: subject kind mismatch"
+            )
+        if directive.repair_attempt_no != successor.repair_attempt_no:
+            raise ValueError(
+                "subject successor revalidation: attempt number mismatch"
+            )
+        # The predecessor must be the CURRENT effective subject — a
+        # successor of an already-superseded subject would fork the chain.
+        resolution = self.resolve_verification_subject(successor.plan_entry_id)
+        current_effective = resolution.get("effective_subject_identity")
+        if current_effective is None:
+            plan = self.get_verification_plan(successor.verification_plan_id)
+            entry = next(
+                (
+                    e
+                    for e in (plan.entries if plan else ())
+                    if e.plan_entry_id == successor.plan_entry_id
+                ),
+                None,
+            )
+            current_effective = (
+                entry.subject_identity if entry is not None else None
+            )
+        if successor.predecessor_subject_identity != current_effective:
+            raise ValueError(
+                "subject successor revalidation: predecessor is not the"
+                " current effective subject"
+            )
+        if self.get_effect(successor.produced_by_effect_id) is None:
+            raise ValueError(
+                "subject successor revalidation: producing effect absent"
+                " from the effect ledger"
+            )
+        # Successor must exist in authoritative reality. Artifact
+        # manifests live in the object store (outside SQLite authority);
+        # for artifacts the producing-effect binding plus the mandatory
+        # re-verification (the executor requires a manifest keyed by the
+        # successor id) enforce reality. Effect/repository subjects are
+        # checked directly here.
+        if successor.subject_kind == "effect":
+            if self.get_effect(successor.successor_subject_identity) is None:
+                raise ValueError(
+                    "subject successor revalidation: successor effect"
+                    " absent from the effect ledger"
+                )
+        elif successor.subject_kind == "repository":
+            if not self.list_repository_bindings_for_subject(
+                successor.successor_subject_identity
+            ):
+                raise ValueError(
+                    "subject successor revalidation: successor has no"
+                    " repository observation bindings"
+                )
+
     def put_verification_failure_evidence(self, evidence, *, recorded_at_ms: int) -> bool:
         from contracts.verification import FailureEvidence
         if not isinstance(evidence, FailureEvidence):
@@ -10587,6 +11050,8 @@ class GatewayStateStore:
                         "failure evidence identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: re-derive from plan + readiness + records.
+            self._revalidate_failure_evidence(evidence)
             self._connection.execute(
                 "INSERT INTO verification_failure_evidence ("
                 "failure_evidence_id, request_id, run_id, generation,"
@@ -10644,6 +11109,9 @@ class GatewayStateStore:
                         "disposition identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: the Store must be able to reproduce the
+            # decision from its own state before accepting it.
+            self._revalidate_disposition(disposition)
             self._connection.execute(
                 "INSERT INTO verification_disposition ("
                 "verification_disposition_id, request_id, run_id, generation,"
@@ -10766,6 +11234,10 @@ class GatewayStateStore:
                         "repair directive identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: directive must bind a stored REPAIR
+            # disposition, the plan entry, and the current effective
+            # subject.
+            self._revalidate_repair_directive(directive)
             self._connection.execute(
                 "INSERT INTO repair_directive ("
                 "repair_directive_id, request_id, run_id, generation,"
@@ -10809,6 +11281,9 @@ class GatewayStateStore:
                         "repair attempt identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: every bound execution effect must exist in
+            # the authoritative EffectLedger.
+            self._revalidate_repair_attempt(attempt)
             self._connection.execute(
                 "INSERT INTO repair_attempt ("
                 "repair_attempt_id, repair_directive_id, repair_attempt_no,"
@@ -10855,6 +11330,10 @@ class GatewayStateStore:
                         "subject successor identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: predecessor must be the current effective
+            # subject and the successor must exist in authoritative
+            # reality.
+            self._revalidate_subject_successor(successor)
             self._connection.execute(
                 "INSERT INTO verification_subject_successor ("
                 "successor_binding_id, request_id, run_id, generation,"
@@ -10886,7 +11365,8 @@ class GatewayStateStore:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT binding_json FROM verification_subject_successor"
-                " WHERE plan_entry_id = ? ORDER BY bound_at_ms, successor_binding_id",
+                " WHERE plan_entry_id = ?"
+                " ORDER BY bound_at_ms, rowid",
                 (plan_entry_id,),
             ).fetchall()
         bindings = [
