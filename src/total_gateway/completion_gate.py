@@ -347,27 +347,27 @@ class CompletionGate:
         core_ready = legacy_core_ready and verification_ready
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
-        # M4.1 §11: verification failure classes map to outcomes
-        # M5 §35: disposition actions also map (REPAIR/WAIT→IN_PROGRESS,
-        # RECONCILE→RECONCILE_REQUIRED, REVIEW→IN_PROGRESS+reason,
-        # BLOCK→FAILED)
-        if verification_failure_class == "AUTHORITY_ERROR":
+        # M5 Final §17: disposition takes PRIORITY over failure class.
+        # When a current disposition exists, its action decides the
+        # verification outcome — VERIFICATION_FAILED + REPAIR means the
+        # repair is pending, so the request stays IN_PROGRESS (not FAILED).
+        if verification_disposition is not None:
+            _da = verification_disposition.action
+            if _da == "RECONCILE":
+                ambiguous = True  # → RECONCILE_REQUIRED
+            elif _da == "BLOCK":
+                failed = True     # → FAILED
+            # REPAIR / WAIT / REVIEW → stays IN_PROGRESS (repair pending /
+            # evidence pending / review pending; not terminal FAILED)
+            # Note: legacy execution/artifact/delivery failures (already in
+            # `failed`) are NOT overridden by the disposition.
+        elif verification_failure_class == "AUTHORITY_ERROR":
             ambiguous = True  # → RECONCILE_REQUIRED
         elif verification_failure_class == "PLAN_CONFIG_ERROR":
             ambiguous = True  # → RECONCILE_REQUIRED
         elif verification_failure_class == "VERIFICATION_FAILED" and not failed:
-            failed = True     # → FAILED
+            failed = True     # → FAILED (no disposition → M4 fail-closed)
         # MISSING_EVIDENCE / INCONCLUSIVE → stays IN_PROGRESS (no flag)
-        # M5 §35: if a disposition is provided, its action takes effect
-        if verification_disposition is not None:
-            _da = verification_disposition.action
-            if _da == "RECONCILE":
-                ambiguous = True
-            elif _da == "BLOCK":
-                failed = True
-            elif _da == "REVIEW":
-                pass  # stays IN_PROGRESS; reason captured below
-            # REPAIR / WAIT → stays IN_PROGRESS (repair pending)
         if ambiguous:
             outcome = "RECONCILE_REQUIRED"
             reason = "completion.reconciliation_required"

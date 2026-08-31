@@ -10660,6 +10660,51 @@ class GatewayStateStore:
             )
             return True
 
+    def get_current_verification_disposition(
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        verification_plan_id: str,
+        readiness_sha256: str,
+    ):
+        """M5 Final §21: current disposition for the CURRENT readiness.
+
+        Returns the disposition whose FailureEvidence was derived from the
+        given readiness — old dispositions (from previous readiness) are
+        automatically stale and NOT returned.
+        """
+        from contracts.verification import VerificationDisposition
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " AND verification_plan_id = ?"
+                " ORDER BY decided_at_ms DESC",
+                (request_id, run_id, generation, verification_plan_id),
+            ).fetchall()
+        for row in rows:
+            disposition = VerificationDisposition.model_validate_json(
+                row["disposition_json"], strict=True
+            )
+            # Check the linked FailureEvidence's readiness_sha256
+            fe_row = self._connection.execute(
+                "SELECT evidence_json FROM verification_failure_evidence"
+                " WHERE failure_evidence_id = ?",
+                (disposition.failure_evidence_id,),
+            ).fetchone()
+            if fe_row is None:
+                continue
+            from contracts.verification import FailureEvidence
+            fe = FailureEvidence.model_validate_json(
+                fe_row["evidence_json"], strict=True
+            )
+            if fe.readiness_sha256 == readiness_sha256:
+                return disposition
+        return None
+
     def list_verification_dispositions(self, plan_entry_id: str):
         from contracts.verification import VerificationDisposition
         with self._lock:
@@ -10810,6 +10855,49 @@ class GatewayStateStore:
                  successor.bound_at_ms),
             )
             return True
+
+    def resolve_verification_subject(self, plan_entry_id: str) -> dict:
+        """M5 Final §8: authoritative subject successor chain resolver.
+
+        Returns the ORIGINAL and CURRENT EFFECTIVE subject for a plan entry
+        by walking the append-only successor chain from the Store.
+        No caller callbacks — this is the single source of truth.
+        """
+        from contracts.verification_repair import VerificationSubjectSuccessor
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT binding_json FROM verification_subject_successor"
+                " WHERE plan_entry_id = ? ORDER BY bound_at_ms, successor_binding_id",
+                (plan_entry_id,),
+            ).fetchall()
+        bindings = [
+            VerificationSubjectSuccessor.model_validate_json(
+                r["binding_json"], strict=True
+            )
+            for r in rows
+        ]
+        if not bindings:
+            return {
+                "effective_subject_identity": None,
+                "successor_depth": 0,
+                "chain_binding_ids": (),
+            }
+        # Walk the chain: each successor's predecessor must match the
+        # previous successor (or the original subject for the first link)
+        current = bindings[0].successor_subject_identity
+        depth = 1
+        chain_ids = [bindings[0].successor_binding_id]
+        for binding in bindings[1:]:
+            if binding.predecessor_subject_identity == current:
+                current = binding.successor_subject_identity
+                depth += 1
+                chain_ids.append(binding.successor_binding_id)
+        return {
+            "effective_subject_identity": current,
+            "successor_depth": depth,
+            "chain_binding_ids": tuple(chain_ids),
+        }
 
     def list_verification_subject_successors(self, plan_entry_id: str):
         from contracts.verification_repair import VerificationSubjectSuccessor
