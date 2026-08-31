@@ -155,7 +155,12 @@ from .skill_selection import (
     load_model_capability_manifest,
 )
 from .skill_authority import SkillAuthority
-from .store import ActiveRequestActivation, GatewayStateStore, StoreConflictError
+from .store import (
+    ActiveRequestActivation,
+    GatewayStateStore,
+    StoreConflictError,
+    StoreError,
+)
 from contracts.world_understanding.inquiry import WorldInquiry
 from world_understanding.inquiry.self_will_integration import ExistingSelfWillAdapter
 
@@ -2156,16 +2161,82 @@ class GatewayOrchestrationWorker:
         self._complete_repair_effect(
             repair_effect.effect_id, "SUCCEEDED", None
         )
-        produced_subject = (
-            artifact_manifests[-1].artifact_revision_id
-            if produced_count
-            else directive.effective_subject_identity
-        )
+        # P0-2: the successor is the NEW authoritative reality object
+        # per subject kind — artifact → new revision, effect → the
+        # re-execution effect itself, repository → the mutation effect
+        # with its PRE/POST observation window.
+        produced_subject = directive.effective_subject_identity
+        if directive.subject_kind == "artifact":
+            if produced_count:
+                produced_subject = (
+                    artifact_manifests[-1].artifact_revision_id
+                )
+        elif directive.subject_kind == "effect":
+            produced_subject = repair_effect.effect_id
+        elif directive.subject_kind == "repository":
+            if self._bind_repository_repair_observations(
+                result_payload=result_payload,
+                subject_effect_id=repair_effect.effect_id,
+                directive=directive,
+                observed_at_ms=time.time_ns() // 1_000_000,
+            ):
+                produced_subject = repair_effect.effect_id
         return RepairDispatchResult(
             execution_outcome="DISPATCHED",
             produced_subject_identity=produced_subject,
             execution_effect_ids=(repair_effect.effect_id,),
         )
+
+    def _bind_repository_repair_observations(
+        self,
+        *,
+        result_payload,
+        subject_effect_id: str,
+        directive,
+        observed_at_ms: int,
+    ) -> bool:
+        """P0-2: bind the repair mutation's PRE/POST repository
+        observation window to the NEW subject effect. The observation
+        payloads come from the runtime response and must validate
+        through the authoritative RepositoryObservation contract at the
+        Store boundary. Returns False (no successor) when the window is
+        absent or invalid — the mutation stays unproven."""
+        observations = result_payload.get("repository_observations")
+        if not isinstance(observations, dict):
+            return False
+        try:
+            for role, key in (("PRE", "pre"), ("POST", "post")):
+                payload = observations.get(key)
+                if not isinstance(payload, dict):
+                    return False
+                identity = payload.get("identity") or {}
+                revision = payload.get("revision") or {}
+                observed_at = int(payload.get("observed_at_ms"))
+                self._store.put_repository_observation(
+                    observation_sha256=str(payload["observation_sha256"]),
+                    observation_payload=payload,
+                    request_id=directive.request_id,
+                    run_id=directive.run_id,
+                    generation=directive.generation,
+                    effect_id=subject_effect_id,
+                    repository_id=str(identity.get("repository_id")),
+                    head_commit=str(revision.get("head_commit")),
+                    observed_at_ms=observed_at,
+                    recorded_at_ms=observed_at_ms + 1,
+                )
+                self._store.put_repository_observation_binding(
+                    observation_sha256=str(payload["observation_sha256"]),
+                    request_id=directive.request_id,
+                    run_id=directive.run_id,
+                    generation=directive.generation,
+                    subject_effect_id=subject_effect_id,
+                    observation_role=role,
+                    observed_at_ms=observed_at,
+                    recorded_at_ms=observed_at + 2,
+                )
+            return True
+        except (KeyError, TypeError, ValueError, StoreError):
+            return False
 
     def _complete_repair_effect(
         self, effect_id: str, status: str, error_code: str | None
@@ -2261,7 +2332,19 @@ class GatewayOrchestrationWorker:
                         checked_at_ms=observed_at_ms,
                     )
                 if outcome.passed:
-                    artifact_manifests.append(outcome.registration.record.manifest)
+                    manifest = outcome.registration.record.manifest
+                    artifact_manifests.append(manifest)
+                    # P1-6: QC-passed repair artifacts enter the Store's
+                    # artifact authority projection.
+                    self._store.register_artifact_subject(
+                        artifact_revision_id=manifest.artifact_revision_id,
+                        object_id=manifest.content_object_id,
+                        artifact_sha256=manifest.sha256,
+                        request_id=directive.request_id,
+                        run_id=directive.run_id,
+                        generation=directive.generation,
+                        registered_at_ms=observed_at_ms,
+                    )
                     produced += 1
             except (
                 ArtifactGateError,
@@ -3056,6 +3139,19 @@ class GatewayOrchestrationWorker:
                         evidence_sha256=qc_record.result.qc_result_sha256,
                     )
                     artifacts.append(qc_record.manifest)
+                    # P1-6: register the QC-passed manifest in the Store's
+                    # artifact authority projection (successor boundary).
+                    self._store.register_artifact_subject(
+                        artifact_revision_id=(
+                            qc_record.manifest.artifact_revision_id
+                        ),
+                        object_id=qc_record.manifest.content_object_id,
+                        artifact_sha256=qc_record.manifest.sha256,
+                        request_id=request_id,
+                        run_id=run_id,
+                        generation=generation.generation,
+                        registered_at_ms=observed_at,
+                    )
                 else:
                     self._advance(
                         "artifact",
@@ -3123,6 +3219,7 @@ class GatewayOrchestrationWorker:
                 generation=generation.generation,
             )
             verification_disposition = None
+            verification_failure_evidence = None
             if active_plan is not None:
                 from total_gateway.verification_plan_executor import (
                     VerificationPlanExecutor,
@@ -3203,8 +3300,9 @@ class GatewayOrchestrationWorker:
                         dispatch=_repair_dispatch,
                         reverify=_repair_reverify,
                     )
-                    # M5 Final #7: read CURRENT disposition from Store
-                    # (authoritative source, bound to the final readiness)
+                    # M5 Final #7 + P1-9: read CURRENT disposition and its
+                    # FailureEvidence from Store (authoritative source);
+                    # the Gate validates the full binding.
                     verification_disposition = self._store.get_current_verification_disposition(
                         request_id=request_id,
                         run_id=run_id,
@@ -3212,6 +3310,10 @@ class GatewayOrchestrationWorker:
                         verification_plan_id=active_plan.verification_plan_id,
                         readiness_sha256=readiness.readiness_sha256,
                     )
+                    if verification_disposition is not None:
+                        verification_failure_evidence = self._store.get_verification_failure_evidence_by_id(
+                            verification_disposition.failure_evidence_id
+                        )
             decision = evaluate_desktop_completion(
                 objects=self._objects,
                 facts=self._facts,
@@ -3229,6 +3331,7 @@ class GatewayOrchestrationWorker:
                 ),
                 active_plan=active_plan,
                 verification_disposition=verification_disposition,
+                verification_failure_evidence=verification_failure_evidence,
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(

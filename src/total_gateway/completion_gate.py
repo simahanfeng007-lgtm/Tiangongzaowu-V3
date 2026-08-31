@@ -170,6 +170,7 @@ class CompletionGate:
         verification_readiness=None,
         active_plan=None,
         verification_disposition=None,
+        verification_failure_evidence=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
@@ -368,12 +369,82 @@ class CompletionGate:
                 raise CompletionGateError(
                     "completion.verification.disposition_lineage_mismatch"
                 )
-            if verification_readiness is not None:
-                # stale check: disposition must reference the CURRENT readiness
-                # (via its FailureEvidence, which we check indirectly through
-                # the disposition's failure_evidence binding)
-                pass  # full staleness check requires Store re-read; enforced
-                      # at the caller level via get_current_verification_disposition
+            # P1-9: the Gate is the FINAL completion authority — it must
+            # not rely on caller self-discipline. With active_plan +
+            # readiness present, the disposition must fully bind to the
+            # CURRENT plan and the CURRENT readiness through its
+            # FailureEvidence.
+            if active_plan is not None:
+                if (
+                    verification_disposition.verification_plan_id
+                    != active_plan.verification_plan_id
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_plan_mismatch"
+                    )
+                if verification_disposition.plan_entry_id not in {
+                    e.plan_entry_id for e in active_plan.entries
+                }:
+                    raise CompletionGateError(
+                        "completion.verification.disposition_entry_not_in_plan"
+                    )
+            # P1-9: the disposition must carry the authoritative policy
+            # configuration — a decision from an unknown policy cannot
+            # drive completion.
+            from total_gateway.verification_repair_policy import (
+                DEFAULT_POLICY,
+                POLICY_VERSION,
+            )
+
+            if (
+                verification_disposition.policy_version != POLICY_VERSION
+                or verification_disposition.policy_config_sha256
+                != DEFAULT_POLICY.config_sha256()
+            ):
+                raise CompletionGateError(
+                    "completion.verification.disposition_policy_mismatch"
+                )
+            if verification_failure_evidence is not None:
+                if not hasattr(
+                    verification_failure_evidence, "has_valid_identity"
+                ) or not verification_failure_evidence.has_valid_identity():
+                    raise CompletionGateError(
+                        "completion.verification.evidence_identity_invalid"
+                    )
+                if (
+                    verification_failure_evidence.failure_evidence_id
+                    != verification_disposition.failure_evidence_id
+                    or verification_failure_evidence.failure_evidence_sha256
+                    != verification_disposition.failure_evidence_sha256
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_evidence_mismatch"
+                    )
+                if (
+                    verification_failure_evidence.request_id
+                    != verification_disposition.request_id
+                    or verification_failure_evidence.run_id
+                    != verification_disposition.run_id
+                    or verification_failure_evidence.generation
+                    != verification_disposition.generation
+                    or verification_failure_evidence.plan_entry_id
+                    != verification_disposition.plan_entry_id
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.evidence_lineage_mismatch"
+                    )
+                if (
+                    verification_readiness is not None
+                    and verification_failure_evidence.readiness_sha256
+                    != verification_readiness.readiness_sha256
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_stale_readiness"
+                    )
+            elif verification_readiness is not None:
+                raise CompletionGateError(
+                    "completion.verification.disposition_without_evidence"
+                )
             _da = verification_disposition.action
             if _da == "RECONCILE":
                 ambiguous = True  # → RECONCILE_REQUIRED

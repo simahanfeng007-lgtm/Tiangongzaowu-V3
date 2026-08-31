@@ -24,6 +24,13 @@ MAX_SAME_FAILURE_SIGNATURE_REPEATS = 2
 MAX_SUBJECT_SUCCESSOR_DEPTH = 4
 MAX_SIDE_EFFECTING_REPAIRS_PER_ENTRY = 1
 
+#: Store write-boundary limits for RepairDirective fields. These are
+#: code-enforced at put time — a hash-valid directive cannot widen its
+#: execution budget beyond what the authoritative policy allows.
+MIN_REPAIR_EXECUTION_BUDGET_MS = 60_000
+MAX_REPAIR_EXECUTION_BUDGET_MS = 600_000
+MAX_REPAIR_EXPIRY_DELTA_MS = 3_600_000
+
 #: §13 Repairability Matrix: predicate types eligible for auto REPAIR.
 AUTO_REPAIRABLE_CONTENT_PREDICATES = frozenset({
     "artifact.nonempty",
@@ -251,5 +258,8 @@ __all__ = [
     "RepairPolicyConfig",
     "compute_disposition_action",
     "evaluate_disposition",
+    "MAX_REPAIR_EXECUTION_BUDGET_MS",
+    "MAX_REPAIR_EXPIRY_DELTA_MS",
+    "MIN_REPAIR_EXECUTION_BUDGET_MS",
     "POLICY_VERSION",
 ]

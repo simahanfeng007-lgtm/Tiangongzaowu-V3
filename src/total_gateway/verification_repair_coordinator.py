@@ -121,23 +121,33 @@ class VerificationRepairCoordinator:
         ) if hasattr(self._store, "list_all_verification_dispositions") else 0
 
         for fe in failure_evidences:
-            # Count previous REPAIR dispositions for this entry
+            # P1-7: attempt_no counts REAL executed attempts (Store
+            # attempt table), not issued REPAIR dispositions — repeated
+            # crashes before dispatch must not burn the budget.
+            executed_attempts = self._store.list_repair_attempts(
+                fe.plan_entry_id
+            )
+            attempt_no = len(executed_attempts)
             prev_dispositions = self._store.list_verification_dispositions(
                 plan_entry_id=fe.plan_entry_id,
             )
-            # M5 Final #5: only count REPAIR actions as attempts
-            attempt_no = sum(
-                1 for d in prev_dispositions if d.action == "REPAIR"
-            )
 
-            # Count same failure signature occurrences
+            # Count same failure signature occurrences — de-duplicated
+            # by readiness: re-deriving the SAME failure after a crash
+            # (same readiness) is not a NEW failure observation. The
+            # count INCLUDES the evidence under construction (minus 1),
+            # matching the Store revalidation's post-insert view exactly.
             prev_failures = self._store.list_verification_failure_evidence(
                 plan_entry_id=fe.plan_entry_id,
             )
-            same_sig_count = sum(
-                1 for f in prev_failures
-                if f.failure_signature_sha256 == fe.failure_signature_sha256
-            )
+            same_sig_count = len(
+                {
+                    f.readiness_sha256
+                    for f in prev_failures
+                    if f.failure_signature_sha256 == fe.failure_signature_sha256
+                }
+                | {fe.readiness_sha256}
+            ) - 1
 
             # M5 Final #5: successor depth budget
             successor_depth = 0
@@ -147,15 +157,24 @@ class VerificationRepairCoordinator:
                 )
                 successor_depth = resolution.get("successor_depth", 0)
 
-            # M5 Final #5: side-effecting repair count (effect/repo subjects)
-            side_effect_repair_count = sum(
-                1 for d in prev_dispositions
-                if d.action == "REPAIR"
-                and fe.subject_kind in ("effect", "repository")
+            # M5 Final #5: side-effecting repair count (effect/repo
+            # subjects) — also counts only REAL executed attempts.
+            side_effect_repair_count = (
+                attempt_no
+                if fe.subject_kind in ("effect", "repository")
+                else 0
             )
 
-            # Effect ambiguity check (M5 Final #22: fail-closed)
-            effect_ambiguous = self._check_effect_ambiguity(fe)
+            # Effect ambiguity check (M5 Final #22: fail-closed).
+            # P0-1: an earlier repair attempt whose runtime outcome was
+            # AMBIGUOUS counts as ambiguity for THIS entry regardless of
+            # the FE subject kind — an artifact repair whose runtime
+            # dispatch landed in an ambiguous state must never be
+            # blindly replayed either.
+            effect_ambiguous = (
+                self._check_effect_ambiguity(fe)
+                or self._entry_has_ambiguous_attempt(fe.plan_entry_id)
+            )
 
             # M5 Final #4/#5: single source of truth — the same
             # budget-aware decision the Store revalidation recomputes.
@@ -200,6 +219,13 @@ class VerificationRepairCoordinator:
                 disposition, recorded_at_ms=now_ms
             )
             dispositions.append(disposition)
+            # P1-8: increment the in-round generation budget so a single
+            # readiness with N repairable entries cannot see the same
+            # pre-round count N times (the Store recomputes it too, but
+            # the policy stop must be a normal REVIEW, not a write
+            # rejection).
+            if action == "REPAIR":
+                generation_repair_count += 1
 
         return dispositions
 
@@ -215,6 +241,11 @@ class VerificationRepairCoordinator:
         readiness: VerificationReadiness,
         dispatch: Callable[[RepairDirective], RepairDispatchResult],
         reverify: Callable[[], VerificationReadiness],
+        dispatchable_subject_kinds: tuple[str, ...] = (
+            "artifact",
+            "effect",
+            "repository",
+        ),
         now_ms: int | None = None,
     ) -> tuple[VerificationReadiness, VerificationDisposition | None]:
         """§14-§21 full evidence-driven repair loop.
@@ -222,6 +253,22 @@ class VerificationRepairCoordinator:
         ``dispatch`` bridges to the EXISTING runtime (caller-supplied; the
         coordinator never owns a second runtime). ``reverify`` re-runs the
         SAME verification plan producing NEW independent records.
+
+        ``dispatchable_subject_kinds`` gates WHICH subject kinds may be
+        auto-repaired in this channel context. Channel finalization runs
+        after the delivery boundary, so callers there restrict execution
+        (or pass an empty tuple) — a REPAIR disposition that is not
+        dispatchable here is returned untouched (the Gate keeps the
+        request IN_PROGRESS) and is NEVER blindly replayed.
+
+        P0-1 safety: a dispatch whose runtime outcome is AMBIGUOUS stops
+        the loop immediately — the attempt is persisted, the disposition
+        flips to RECONCILE (the ambiguous attempt is now visible to the
+        deterministic policy), and ZERO further repair attempts run.
+
+        Crash recovery: a persisted-but-never-attempted directive for the
+        same attempt number is REUSED, not re-issued, so repeated crashes
+        before dispatch cannot burn the repair budget.
 
         Termination is guaranteed twice over: every REPAIR iteration
         increments Store-persisted attempt counts (policy flips REPAIR →
@@ -249,15 +296,36 @@ class VerificationRepairCoordinator:
             )
             if dispositions:
                 final_disposition = dispositions[-1]
-            repairable = [d for d in dispositions if d.action == "REPAIR"]
+            kind_by_entry = {
+                e.plan_entry_id: e.predicate.subject_kind
+                for e in plan.entries
+            }
+            repairable = [
+                d
+                for d in dispositions
+                if d.action == "REPAIR"
+                and kind_by_entry.get(d.plan_entry_id)
+                in dispatchable_subject_kinds
+            ]
+            not_dispatchable = [
+                d
+                for d in dispositions
+                if d.action == "REPAIR"
+                and kind_by_entry.get(d.plan_entry_id)
+                not in dispatchable_subject_kinds
+            ]
             if not repairable:
-                # WAIT / RECONCILE / REVIEW / BLOCK — not auto-executable.
+                # WAIT / RECONCILE / REVIEW / BLOCK — or REPAIR that this
+                # context must not auto-execute (e.g. channel-side after
+                # an irreversible external side effect). Not replayed.
+                if not_dispatchable:
+                    final_disposition = not_dispatchable[0]
                 return current, final_disposition
 
             executed_any = False
             for disposition in repairable:
                 evidence = self._find_persisted_failure_evidence(disposition)
-                directive = self.issue_repair_directive(
+                directive = self._directive_for_disposition(
                     disposition=disposition,
                     failure_evidence=evidence,
                     plan=plan,
@@ -267,6 +335,26 @@ class VerificationRepairCoordinator:
                     continue
                 started_ms = time.time_ns() // 1_000_000
                 result = dispatch(directive)
+                if result.execution_outcome == "EXECUTION_AMBIGUOUS":
+                    # P0-1: unknown whether the side effect happened.
+                    # Persist the attempt (the Store revalidation and the
+                    # policy both read it), re-derive the disposition —
+                    # it is now RECONCILE — and stop. Zero replay.
+                    self.record_attempt(
+                        directive=directive,
+                        execution_outcome="EXECUTION_AMBIGUOUS",
+                        produced_subject_identity=(
+                            result.produced_subject_identity
+                        ),
+                        execution_effect_ids=result.execution_effect_ids,
+                        reverify_record_id=None,
+                        started_at_ms=started_ms,
+                        finished_at_ms=time.time_ns() // 1_000_000,
+                    )
+                    reconcile = self.process_readiness(
+                        plan=plan, readiness=current, now_ms=now_ms
+                    )
+                    return current, (reconcile[-1] if reconcile else None)
                 if (
                     not result.execution_effect_ids
                     and result.execution_outcome == "DISPATCHED"
@@ -313,6 +401,63 @@ class VerificationRepairCoordinator:
         # Hard cap reached — the next process_readiness pass would flip
         # every remaining REPAIR to REVIEW; surface the final state.
         return current, final_disposition
+
+    def _directive_for_disposition(
+        self,
+        *,
+        disposition: VerificationDisposition,
+        failure_evidence: FailureEvidence,
+        plan: VerificationPlan,
+        now_ms: int,
+    ):
+        """Issue a directive, or REUSE a pending one (crash recovery).
+
+        A persisted directive for the same attempt number with no
+        recorded attempt and un-expired is executed as-is — repeated
+        crashes before dispatch must not consume the repair budget.
+        """
+        pending = self._find_pending_directive(disposition, now_ms=now_ms)
+        if pending is not None:
+            return pending
+        return self.issue_repair_directive(
+            disposition=disposition,
+            failure_evidence=failure_evidence,
+            plan=plan,
+            now_ms=now_ms,
+        )
+
+    def _find_pending_directive(
+        self, disposition: VerificationDisposition, *, now_ms: int
+    ):
+        directives = self._store.list_repair_directives(
+            disposition.plan_entry_id
+        )
+        attempted = {
+            attempt.repair_directive_id
+            for attempt in self._store.list_repair_attempts(
+                disposition.plan_entry_id
+            )
+        }
+        expected_no = disposition.attempt_no + 1
+        for directive in reversed(directives):
+            if (
+                directive.repair_attempt_no == expected_no
+                and directive.repair_directive_id not in attempted
+                and directive.expires_at_ms > now_ms
+            ):
+                # The disposition may be a re-derived copy (new
+                # decided_at) — what must match is the attempt number,
+                # the absence of any recorded attempt, and validity.
+                return directive
+        return None
+
+    def _entry_has_ambiguous_attempt(self, plan_entry_id: str) -> bool:
+        """P0-1: once a repair dispatch ended AMBIGUOUS for this entry,
+        the deterministic policy must see ambiguity forever after."""
+        for attempt in self._store.list_repair_attempts(plan_entry_id):
+            if attempt.execution_outcome == "EXECUTION_AMBIGUOUS":
+                return True
+        return False
 
     def _find_persisted_failure_evidence(
         self, disposition: VerificationDisposition
