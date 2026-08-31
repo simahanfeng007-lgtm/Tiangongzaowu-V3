@@ -303,7 +303,7 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
     def test_schema_v24_and_zero_state_impact(self) -> None:
         v2 = self._v2()
         self.store.put_write_evidence_v2(v2, recorded_at_ms=2_000)
-        self.assertEqual(self.store.health_check(now_ms=2_100).schema_version, 27)
+        self.assertEqual(self.store.health_check(now_ms=2_100).schema_version, 28)
         connection = sqlite3.connect(self.store.path)
         try:
             decisions = connection.execute(
