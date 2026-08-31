@@ -1851,6 +1851,31 @@ class GatewayOrchestrationWorker:
             ordinal=1,
             intent_sha256=effect_intent,
         )
+        # Final P0-1: the Store dispatch boundary is claimed BEFORE the
+        # effect ledger — atomically deciding whether THIS worker may
+        # cross into the runtime for this (plan entry, attempt).
+        reserved = self._store.reserve_repair_execution(
+            repair_directive_id=directive.repair_directive_id,
+            repair_directive_sha256=directive.directive_sha256,
+            plan_entry_id=directive.plan_entry_id,
+            repair_attempt_no=directive.repair_attempt_no,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation.generation,
+            effect_id=repair_effect.effect_id,
+            effect_intent_sha256=effect_intent,
+            reserved_at_ms=issued_at,
+        )
+        if reserved["outcome"] != "EXECUTE":
+            # Another coordinator owns this attempt — this worker must
+            # not execute the runtime at all.
+            return RepairDispatchResult(
+                execution_outcome="ALREADY_CLAIMED",
+                produced_subject_identity=(
+                    directive.effective_subject_identity
+                ),
+                execution_effect_ids=(),
+            )
         claim = EffectClaim(
             effect_id=repair_effect.effect_id,
             request_id=request_id,
@@ -1866,17 +1891,27 @@ class GatewayOrchestrationWorker:
         ).with_computed_sha256()
         existing_effect, created = self._store.claim_effect(claim)
         if not created and existing_effect.result is not None:
-            # Crash recovery: this directive's effect already completed.
-            status = existing_effect.result.status
+            # The effect ledger is already terminal; the binding (not
+            # this branch) owns crash recovery — surface the binding
+            # state so the caller never re-executes the runtime.
+            state = str(reserved["binding"]["state"])
+            if state == "SUCCEEDED":
+                return RepairDispatchResult(
+                    execution_outcome="DISPATCHED",
+                    produced_subject_identity=str(
+                        reserved["binding"]["produced_subject_identity"]
+                    ),
+                    execution_effect_ids=(repair_effect.effect_id,),
+                )
             return RepairDispatchResult(
                 execution_outcome=(
-                    "DISPATCHED"
-                    if status == "SUCCEEDED"
-                    else "EXECUTION_AMBIGUOUS"
-                    if status == "AMBIGUOUS"
+                    "EXECUTION_AMBIGUOUS"
+                    if state in ("SIDE_EFFECT_STARTED", "AMBIGUOUS")
                     else "EXECUTION_FAILED"
                 ),
-                produced_subject_identity=directive.effective_subject_identity,
+                produced_subject_identity=(
+                    directive.effective_subject_identity
+                ),
                 execution_effect_ids=(repair_effect.effect_id,),
             )
 
@@ -1984,6 +2019,16 @@ class GatewayOrchestrationWorker:
                 grant=None,
                 observed_at_ms=issued_at,
             )
+            # Definite non-execution: terminalize as FAILED_FINAL (the
+            # runtime was never entered).
+            self._store.complete_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                state="FAILED_FINAL",
+                produced_subject_identity="",
+                produced_subject_kind=directive.subject_kind,
+                runtime_result_ref="policy-rejected",
+                completed_at_ms=issued_at,
+            )
             return RepairDispatchResult(
                 execution_outcome="EXECUTION_FAILED",
                 produced_subject_identity=directive.effective_subject_identity,
@@ -2071,6 +2116,13 @@ class GatewayOrchestrationWorker:
             self._store.mark_effect_started(
                 repair_effect.effect_id, started_at_ms=issued_at
             )
+            # Final P0: cross the binding's no-return boundary BEFORE
+            # the runtime — after this point recovery is RECONCILE, not
+            # replay.
+            self._store.mark_repair_execution_started(
+                repair_directive_id=directive.repair_directive_id,
+                started_at_ms=issued_at,
+            )
 
             def _execute_repair() -> Any:
                 return BackendClient(
@@ -2102,6 +2154,14 @@ class GatewayOrchestrationWorker:
                 self._complete_repair_effect(
                     repair_effect.effect_id, "AMBIGUOUS", "repair.execution_timeout"
                 )
+                self._store.complete_repair_execution(
+                    repair_directive_id=directive.repair_directive_id,
+                    state="AMBIGUOUS",
+                    produced_subject_identity="",
+                    produced_subject_kind=directive.subject_kind,
+                    runtime_result_ref="timeout",
+                    completed_at_ms=time.time_ns() // 1_000_000,
+                )
                 return RepairDispatchResult(
                     execution_outcome="EXECUTION_AMBIGUOUS",
                     produced_subject_identity=directive.effective_subject_identity,
@@ -2111,6 +2171,14 @@ class GatewayOrchestrationWorker:
             status = "AMBIGUOUS" if exc.ambiguous else "FAILED_FINAL"
             self._complete_repair_effect(
                 repair_effect.effect_id, status, exc.code
+            )
+            self._store.complete_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                state=("AMBIGUOUS" if status == "AMBIGUOUS" else "FAILED_FINAL"),
+                produced_subject_identity="",
+                produced_subject_kind=directive.subject_kind,
+                runtime_result_ref=exc.code or "",
+                completed_at_ms=time.time_ns() // 1_000_000,
             )
             return RepairDispatchResult(
                 execution_outcome=(
@@ -2126,11 +2194,25 @@ class GatewayOrchestrationWorker:
             getattr(getattr(response, "result", None), "status", "FAILED_FINAL")
         )
         if response_status != "SUCCEEDED":
+            terminal = (
+                "AMBIGUOUS" if response_status == "AMBIGUOUS" else "FAILED_FINAL"
+            )
             self._complete_repair_effect(
                 repair_effect.effect_id,
-                "AMBIGUOUS" if response_status == "AMBIGUOUS" else "FAILED_FINAL",
+                terminal,
                 getattr(getattr(response, "result", None), "error_code", None)
                 or "repair.execution.failed",
+            )
+            self._store.complete_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                state=terminal,
+                produced_subject_identity="",
+                produced_subject_kind=directive.subject_kind,
+                runtime_result_ref=(
+                    getattr(getattr(response, "result", None), "error_code", "")
+                    or ""
+                ),
+                completed_at_ms=time.time_ns() // 1_000_000,
             )
             return RepairDispatchResult(
                 execution_outcome=(
@@ -2158,14 +2240,16 @@ class GatewayOrchestrationWorker:
             envelope=envelope,
             artifact_manifests=artifact_manifests,
         )
-        self._complete_repair_effect(
-            repair_effect.effect_id, "SUCCEEDED", None
-        )
         # P0-2: the successor is the NEW authoritative reality object
         # per subject kind — artifact → new revision, effect → the
         # re-execution effect itself, repository → the mutation effect
-        # with its PRE/POST observation window.
+        # with its PRE/POST observation window. The window is bound
+        # BEFORE the binding is marked SUCCEEDED, so a crash in between
+        # leaves an AMBIGUOUS (reconcilable) binding, never a fake
+        # success; a successful binding carries the produced subject
+        # and the runtime result reference for recovery.
         produced_subject = directive.effective_subject_identity
+        repository_window_ok = True
         if directive.subject_kind == "artifact":
             if produced_count:
                 produced_subject = (
@@ -2174,13 +2258,52 @@ class GatewayOrchestrationWorker:
         elif directive.subject_kind == "effect":
             produced_subject = repair_effect.effect_id
         elif directive.subject_kind == "repository":
-            if self._bind_repository_repair_observations(
+            repository_window_ok = self._bind_repository_repair_observations(
                 result_payload=result_payload,
                 subject_effect_id=repair_effect.effect_id,
                 directive=directive,
                 observed_at_ms=time.time_ns() // 1_000_000,
-            ):
+            )
+            if repository_window_ok:
                 produced_subject = repair_effect.effect_id
+        if not repository_window_ok:
+            # The mutation may have happened but its window is unproven
+            # — that is AMBIGUOUS, never a silent failure.
+            self._complete_repair_effect(
+                repair_effect.effect_id, "AMBIGUOUS", "repair.repo_window_invalid"
+            )
+            self._store.complete_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                state="AMBIGUOUS",
+                produced_subject_identity="",
+                produced_subject_kind=directive.subject_kind,
+                runtime_result_ref="repo-window-invalid",
+                completed_at_ms=time.time_ns() // 1_000_000,
+            )
+            return RepairDispatchResult(
+                execution_outcome="EXECUTION_AMBIGUOUS",
+                produced_subject_identity=directive.effective_subject_identity,
+                execution_effect_ids=(repair_effect.effect_id,),
+            )
+        # Persist the produced reality FIRST, then terminalize the
+        # binding — recovery reads the binding without re-running the
+        # runtime.
+        self._store.complete_repair_execution(
+            repair_directive_id=directive.repair_directive_id,
+            state="SUCCEEDED",
+            produced_subject_identity=produced_subject,
+            produced_subject_kind=directive.subject_kind,
+            runtime_result_ref=(
+                getattr(response, "response_sha256", None) or "runtime-result"
+            ),
+            runtime_result_sha256=(
+                getattr(response, "response_sha256", "") or ""
+            ),
+            completed_at_ms=time.time_ns() // 1_000_000,
+        )
+        self._complete_repair_effect(
+            repair_effect.effect_id, "SUCCEEDED", None
+        )
         return RepairDispatchResult(
             execution_outcome="DISPATCHED",
             produced_subject_identity=produced_subject,

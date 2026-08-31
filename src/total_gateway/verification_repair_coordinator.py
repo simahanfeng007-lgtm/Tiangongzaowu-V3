@@ -43,13 +43,16 @@ class RepairCoordinatorError(RuntimeError):
 class RepairDispatchResult:
     """Outcome of one RepairDirective executed by the EXISTING runtime.
 
-    ``execution_outcome`` is the runtime-level verdict (DISPATCHED when
+    ``execution_outcome`` is the runtime-level verdict: DISPATCHED when
     execution completed; EXECUTION_FAILED / EXECUTION_AMBIGUOUS when the
-    runtime itself failed). The re-verification verdict is derived later
-    from the NEW readiness and recorded on the attempt.
+    runtime itself failed; ALREADY_CLAIMED when the Store dispatch
+    boundary denied this worker (another coordinator owns the attempt —
+    the caller must not have executed the runtime). The re-verification
+    verdict is derived later from the NEW readiness and recorded on the
+    attempt.
     """
 
-    execution_outcome: str  # DISPATCHED | EXECUTION_FAILED | EXECUTION_AMBIGUOUS
+    execution_outcome: str  # DISPATCHED | EXECUTION_FAILED | EXECUTION_AMBIGUOUS | ALREADY_CLAIMED
     produced_subject_identity: str
     execution_effect_ids: tuple[str, ...] = ()
 
@@ -333,8 +336,18 @@ class VerificationRepairCoordinator:
                 )
                 if directive is None:
                     continue
+                # Final P0-1: the Store-side dispatch boundary decides
+                # whether THIS worker may cross into the runtime. The
+                # binding survives crashes, so recovery never re-executes
+                # a completed runtime and never replays a started one.
                 started_ms = time.time_ns() // 1_000_000
-                result = dispatch(directive)
+                result = self._resolve_dispatch_result(
+                    directive=directive, dispatch=dispatch
+                )
+                if result is None:
+                    # Another worker owns this attempt — hand over
+                    # control without recording anything.
+                    return current, None
                 if result.execution_outcome == "EXECUTION_AMBIGUOUS":
                     # P0-1: unknown whether the side effect happened.
                     # Persist the attempt (the Store revalidation and the
@@ -458,6 +471,72 @@ class VerificationRepairCoordinator:
             if attempt.execution_outcome == "EXECUTION_AMBIGUOUS":
                 return True
         return False
+
+    def _resolve_dispatch_result(
+        self,
+        *,
+        directive: RepairDirective,
+        dispatch: Callable[[RepairDirective], RepairDispatchResult],
+    ) -> RepairDispatchResult | None:
+        """Apply the Repair Execution Binding state machine.
+
+        Returns None when another worker owns this attempt (hand over),
+        otherwise the dispatch result. Recovery semantics (locked):
+        - no binding / RESERVED (same directive) → run the runtime
+          bridge (the bridge itself reserves atomically; a loser gets
+          ALREADY_CLAIMED and we hand over);
+        - SIDE_EFFECT_STARTED / AMBIGUOUS → EXECUTION_AMBIGUOUS result
+          WITHOUT calling the runtime (never replay a crossed boundary);
+        - SUCCEEDED → rebuild the result from the binding's persisted
+          produced subject — no runtime call;
+        - FAILED_FINAL → EXECUTION_FAILED result, no runtime call (a
+          NEW attempt number may be authorized by the policy later).
+        """
+        binding = None
+        if hasattr(
+            self._store, "get_repair_execution_binding_by_attempt"
+        ):
+            binding = self._store.get_repair_execution_binding_by_attempt(
+                directive.plan_entry_id, directive.repair_attempt_no
+            )
+        if binding is not None:
+            state = str(binding["state"])
+            effect_id = str(binding["effect_id"])
+            if binding["repair_directive_id"] != (
+                directive.repair_directive_id
+            ):
+                # A different directive owns this attempt slot.
+                return None
+            if state == "RESERVED":
+                pass  # continue below — same directive, pre-boundary
+            elif state in ("SIDE_EFFECT_STARTED", "AMBIGUOUS"):
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_AMBIGUOUS",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(effect_id,),
+                )
+            elif state == "SUCCEEDED":
+                return RepairDispatchResult(
+                    execution_outcome="DISPATCHED",
+                    produced_subject_identity=str(
+                        binding["produced_subject_identity"]
+                    ),
+                    execution_effect_ids=(effect_id,),
+                )
+            elif state == "FAILED_FINAL":
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_FAILED",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(effect_id,),
+                )
+        result = dispatch(directive)
+        if result.execution_outcome == "ALREADY_CLAIMED":
+            return None
+        return result
 
     def _find_persisted_failure_evidence(
         self, disposition: VerificationDisposition

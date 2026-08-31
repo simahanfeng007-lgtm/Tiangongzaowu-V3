@@ -1824,6 +1824,41 @@ _MIGRATION_V29_STATEMENTS = (
     CREATE UNIQUE INDEX repair_attempt_number_idx
         ON repair_attempt (plan_entry_id, repair_attempt_no)
     """,
+    """
+    CREATE TABLE repair_execution_binding (
+        repair_directive_id TEXT NOT NULL PRIMARY KEY,
+        repair_directive_sha256 TEXT NOT NULL
+            CHECK (length(repair_directive_sha256) = 64
+                   AND repair_directive_sha256 NOT GLOB '*[^0-9a-f]*'),
+        plan_entry_id TEXT NOT NULL,
+        repair_attempt_no INTEGER NOT NULL CHECK (repair_attempt_no >= 1),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        state TEXT NOT NULL CHECK (
+            state IN ('RESERVED','SIDE_EFFECT_STARTED','SUCCEEDED',
+                      'FAILED_FINAL','AMBIGUOUS')
+        ),
+        effect_id TEXT NOT NULL UNIQUE,
+        effect_intent_sha256 TEXT NOT NULL
+            CHECK (length(effect_intent_sha256) = 64
+                   AND effect_intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+        produced_subject_identity TEXT NOT NULL DEFAULT '',
+        produced_subject_kind TEXT NOT NULL DEFAULT '',
+        runtime_result_ref TEXT NOT NULL DEFAULT '',
+        runtime_result_sha256 TEXT NOT NULL DEFAULT ''
+            CHECK (runtime_result_sha256 = ''
+                   OR (length(runtime_result_sha256) = 64
+                       AND runtime_result_sha256 NOT GLOB '*[^0-9a-f]*')),
+        reserved_at_ms INTEGER NOT NULL CHECK (reserved_at_ms >= 0),
+        started_at_ms INTEGER CHECK (started_at_ms IS NULL OR started_at_ms >= 0),
+        completed_at_ms INTEGER CHECK (completed_at_ms IS NULL OR completed_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX repair_execution_binding_attempt_idx
+        ON repair_execution_binding (plan_entry_id, repair_attempt_no)
+    """,
 )
 
 _MIGRATIONS = (
@@ -10692,6 +10727,213 @@ class GatewayStateStore:
                 for r in rows
             )
 
+    # ------------------------------------------------------------------
+    # Repair Execution Binding — the Gateway's persistent dispatch
+    # boundary for repairs (final P0). NOT a second runtime: it is the
+    # Store-side authority that decides, atomically, WHICH worker may
+    # cross into the existing Runtime for a given (plan entry, attempt)
+    # — and it survives crashes so the produced reality can be
+    # recovered without re-executing the runtime.
+    # ------------------------------------------------------------------
+
+    def reserve_repair_execution(
+        self,
+        *,
+        repair_directive_id: str,
+        repair_directive_sha256: str,
+        plan_entry_id: str,
+        repair_attempt_no: int,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        effect_id: str,
+        effect_intent_sha256: str,
+        reserved_at_ms: int,
+    ) -> dict:
+        """Atomically claim the repair dispatch authority.
+
+        Returns ``{"outcome": "EXECUTE"|"FOLLOW", "binding": dict}``.
+        - EXECUTE: this caller owns the (plan entry, attempt) slot and
+          may cross into the Runtime (binding is RESERVED).
+        - FOLLOW: another directive already owns the slot — the caller
+          must NOT execute the runtime, not even once.
+        Re-reserving the SAME directive idempotently returns EXECUTE
+        while it is still RESERVED (crash recovery before the
+        side-effect boundary) and FOLLOW once terminal or started.
+        """
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=reserved_at_ms,
+            )
+            existing = self._binding_row_locked(repair_directive_id)
+            if existing is not None:
+                if (
+                    str(existing["plan_entry_id"]) != plan_entry_id
+                    or int(existing["repair_attempt_no"]) != repair_attempt_no
+                    or str(existing["request_id"]) != request_id
+                    or str(existing["run_id"]) != run_id
+                    or int(existing["generation"]) != generation
+                    or str(existing["effect_id"]) != effect_id
+                ):
+                    raise StoreConflictError(
+                        "repair execution binding identity was reused"
+                        " for different content"
+                    )
+                return {
+                    "outcome": (
+                        "EXECUTE"
+                        if str(existing["state"]) == "RESERVED"
+                        else "FOLLOW"
+                    ),
+                    "binding": dict(existing),
+                }
+            competing = self._connection.execute(
+                "SELECT * FROM repair_execution_binding"
+                " WHERE plan_entry_id = ? AND repair_attempt_no = ?",
+                (plan_entry_id, repair_attempt_no),
+            ).fetchone()
+            if competing is not None:
+                return {"outcome": "FOLLOW", "binding": dict(competing)}
+            self._connection.execute(
+                "INSERT INTO repair_execution_binding ("
+                "repair_directive_id, repair_directive_sha256,"
+                " plan_entry_id, repair_attempt_no, request_id, run_id,"
+                " generation, state, effect_id, effect_intent_sha256,"
+                " reserved_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    repair_directive_id, repair_directive_sha256,
+                    plan_entry_id, repair_attempt_no, request_id, run_id,
+                    generation, "RESERVED", effect_id, effect_intent_sha256,
+                    reserved_at_ms,
+                ),
+            )
+            row = self._binding_row_locked(repair_directive_id)
+            assert row is not None
+            return {"outcome": "EXECUTE", "binding": dict(row)}
+
+    def mark_repair_execution_started(
+        self, *, repair_directive_id: str, started_at_ms: int
+    ) -> dict:
+        """RESERVED → SIDE_EFFECT_STARTED (the no-return boundary).
+
+        Idempotent for the owner that already crossed (same directive,
+        still non-terminal); refuses any other transition.
+        """
+        with self._lock, self._write_transaction():
+            row = self._binding_row_locked(repair_directive_id)
+            if row is None:
+                raise ValueError("repair execution binding is absent")
+            state = str(row["state"])
+            if state == "RESERVED":
+                self._connection.execute(
+                    "UPDATE repair_execution_binding SET state ="
+                    " 'SIDE_EFFECT_STARTED', started_at_ms = ?"
+                    " WHERE repair_directive_id = ? AND state = 'RESERVED'",
+                    (started_at_ms, repair_directive_id),
+                )
+                updated = self._binding_row_locked(repair_directive_id)
+                assert updated is not None
+                return dict(updated)
+            if state == "SIDE_EFFECT_STARTED":
+                return dict(row)
+            raise ValueError(
+                "repair execution binding is not in a startable state:"
+                f" {state}"
+            )
+
+    def complete_repair_execution(
+        self,
+        *,
+        repair_directive_id: str,
+        state: str,
+        produced_subject_identity: str,
+        produced_subject_kind: str,
+        runtime_result_ref: str = "",
+        runtime_result_sha256: str = "",
+        completed_at_ms: int,
+    ) -> dict:
+        """Terminalize a repair execution.
+
+        SUCCEEDED / AMBIGUOUS require the side-effect boundary to have
+        been crossed first; SUCCEEDED requires a non-empty produced
+        subject. Idempotent for identical terminal content; conflicting
+        re-completion is a StoreConflictError.
+        """
+        if state not in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
+            raise ValueError("invalid terminal repair execution state")
+        with self._lock, self._write_transaction():
+            row = self._binding_row_locked(repair_directive_id)
+            if row is None:
+                raise ValueError("repair execution binding is absent")
+            current = str(row["state"])
+            if current in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
+                same = (
+                    current == state
+                    and str(row["produced_subject_identity"])
+                    == produced_subject_identity
+                    and str(row["runtime_result_sha256"])
+                    == runtime_result_sha256
+                )
+                if same:
+                    return dict(row)
+                raise StoreConflictError(
+                    "repair execution binding was already completed with"
+                    " different content"
+                )
+            if state in ("SUCCEEDED", "AMBIGUOUS") and current != (
+                "SIDE_EFFECT_STARTED"
+            ):
+                raise ValueError(
+                    "repair execution cannot reach a side-effect terminal"
+                    f" state from {current}"
+                )
+            if state == "SUCCEEDED" and not produced_subject_identity:
+                raise ValueError(
+                    "successful repair execution must record its produced"
+                    " subject"
+                )
+            self._connection.execute(
+                "UPDATE repair_execution_binding SET state = ?,"
+                " produced_subject_identity = ?, produced_subject_kind = ?,"
+                " runtime_result_ref = ?, runtime_result_sha256 = ?,"
+                " completed_at_ms = ? WHERE repair_directive_id = ?",
+                (
+                    state, produced_subject_identity, produced_subject_kind,
+                    runtime_result_ref, runtime_result_sha256,
+                    completed_at_ms, repair_directive_id,
+                ),
+            )
+            updated = self._binding_row_locked(repair_directive_id)
+            assert updated is not None
+            return dict(updated)
+
+    def get_repair_execution_binding(self, repair_directive_id: str):
+        with self._lock:
+            row = self._binding_row_locked(repair_directive_id)
+            return None if row is None else dict(row)
+
+    def get_repair_execution_binding_by_attempt(
+        self, plan_entry_id: str, repair_attempt_no: int
+    ):
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM repair_execution_binding"
+                " WHERE plan_entry_id = ? AND repair_attempt_no = ?",
+                (plan_entry_id, repair_attempt_no),
+            ).fetchone()
+            return None if row is None else dict(row)
+
+    def _binding_row_locked(self, repair_directive_id: str):
+        return self._connection.execute(
+            "SELECT * FROM repair_execution_binding"
+            " WHERE repair_directive_id = ?",
+            (repair_directive_id,),
+        ).fetchone()
+
     def register_artifact_subject(
         self,
         *,
@@ -11129,8 +11371,43 @@ class GatewayStateStore:
                 "repair attempt revalidation: an attempt with this number"
                 " already exists for the plan entry"
             )
-        # P1-5: every bound effect must share the attempt's lineage and
-        # a state consistent with the recorded outcome.
+        # Final P0: the attempt must execute EXACTLY the effect the
+        # repair execution binding authorized for this attempt — an
+        # unrelated same-lineage effect cannot impersonate a repair.
+        binding = self.get_repair_execution_binding_by_attempt(
+            attempt.plan_entry_id, attempt.repair_attempt_no
+        )
+        if binding is None:
+            raise ValueError(
+                "repair attempt revalidation: no repair execution"
+                " binding owns this attempt"
+            )
+        if str(binding["repair_directive_id"]) != attempt.repair_directive_id:
+            raise ValueError(
+                "repair attempt revalidation: binding belongs to a"
+                " different directive"
+            )
+        binding_state = str(binding["state"])
+        # The binding verdict is about the RUNTIME execution; the
+        # re-verification outcome (REVERIFY_*) is derived later and so
+        # maps onto a completed (SUCCEEDED) runtime execution.
+        binding_expected = {
+            "DISPATCHED": ("SUCCEEDED",),
+            "REVERIFY_PASS": ("SUCCEEDED",),
+            "REVERIFY_FAIL": ("SUCCEEDED",),
+            "REVERIFY_ERROR": ("SUCCEEDED",),
+            "EXECUTION_FAILED": ("FAILED_FINAL",),
+            "EXECUTION_AMBIGUOUS": ("AMBIGUOUS", "SIDE_EFFECT_STARTED"),
+        }.get(attempt.execution_outcome, ())
+        if (
+            tuple(attempt.execution_effect_ids)
+            != (str(binding["effect_id"]),)
+            or binding_state not in binding_expected
+        ):
+            raise ValueError(
+                "repair attempt revalidation: execution effects do not"
+                " match the repair execution binding"
+            )
         allowed_states = {
             "DISPATCHED": ("SUCCEEDED",),
             "EXECUTION_FAILED": ("FAILED_FINAL",),
@@ -11280,6 +11557,41 @@ class GatewayStateStore:
             raise ValueError(
                 "subject successor revalidation: a binding for this"
                 " attempt number already exists for the plan entry"
+            )
+        # Final P0: the successor must be exactly the reality the repair
+        # execution binding recorded for THIS attempt — an unrelated
+        # same-lineage effect cannot impersonate the producing effect,
+        # and the successor identity must equal the binding's persisted
+        # produced subject.
+        binding = self.get_repair_execution_binding_by_attempt(
+            successor.plan_entry_id, successor.repair_attempt_no
+        )
+        if binding is None:
+            raise ValueError(
+                "subject successor revalidation: no repair execution"
+                " binding owns this attempt"
+            )
+        if str(binding["repair_directive_id"]) != successor.repair_directive_id:
+            raise ValueError(
+                "subject successor revalidation: binding belongs to a"
+                " different directive"
+            )
+        if str(binding["state"]) != "SUCCEEDED":
+            raise ValueError(
+                "subject successor revalidation: binding did not reach"
+                " SUCCEEDED"
+            )
+        if successor.produced_by_effect_id != str(binding["effect_id"]):
+            raise ValueError(
+                "subject successor revalidation: producing effect is not"
+                " the repair execution binding's effect"
+            )
+        if successor.successor_subject_identity != str(
+            binding["produced_subject_identity"]
+        ):
+            raise ValueError(
+                "subject successor revalidation: successor does not"
+                " match the binding's persisted produced subject"
             )
         # P1-6: cycle fail-closed — the successor may not be the
         # predecessor itself nor any identity already on the chain
