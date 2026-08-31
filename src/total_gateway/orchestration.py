@@ -2626,6 +2626,7 @@ class GatewayOrchestrationWorker:
                 run_id=run_id,
                 generation=generation.generation,
             )
+            verification_disposition = None
             if active_plan is not None:
                 from total_gateway.verification_plan_executor import (
                     VerificationPlanExecutor,
@@ -2639,10 +2640,24 @@ class GatewayOrchestrationWorker:
                     fact_ledger=self._facts,
                     plan=active_plan,
                 )
-                executor.execute(
+                readiness = executor.execute(
                     evaluated_at_ms=time.time_ns() // 1_000_000,
                     artifact_manifests=tuple(artifacts),
                 )
+                # M5 Final §3: FAIL → RepairCoordinator → disposition
+                if not readiness.verification_ready:
+                    from total_gateway.verification_repair_coordinator import (
+                        VerificationRepairCoordinator,
+                    )
+                    coordinator = VerificationRepairCoordinator(
+                        store=self._store,
+                    )
+                    dispositions = coordinator.process_readiness(
+                        plan=active_plan,
+                        readiness=readiness,
+                    )
+                    if dispositions:
+                        verification_disposition = dispositions[0]
             decision = evaluate_desktop_completion(
                 objects=self._objects,
                 facts=self._facts,
@@ -2659,6 +2674,7 @@ class GatewayOrchestrationWorker:
                     generation=generation.generation,
                 ),
                 active_plan=active_plan,
+                verification_disposition=verification_disposition,
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(

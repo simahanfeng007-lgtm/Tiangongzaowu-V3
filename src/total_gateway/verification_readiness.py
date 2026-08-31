@@ -73,13 +73,57 @@ def _record_matches_entry(
     return True
 
 
+def _record_matches_effective_subject(
+    record,
+    entry,
+    effective_subject_identity: str,
+    *,
+    plan_registry_sha256: str,
+    request_id: str,
+    run_id: str,
+    generation: int,
+) -> bool:
+    """M5 Final §9: match a record against the EFFECTIVE subject (after
+    successor resolution), not the original plan entry subject."""
+    if record.request_id != request_id:
+        return False
+    if record.run_id != run_id:
+        return False
+    if record.generation != generation:
+        return False
+    if record.registry_snapshot_sha256 != plan_registry_sha256:
+        return False
+    if record.verifier_id != entry.verifier_id:
+        return False
+    if record.verifier_version != entry.verifier_version:
+        return False
+    if record.predicate_id != entry.predicate.predicate_id:
+        return False
+    if record.predicate_type != entry.predicate.predicate_type:
+        return False
+    if record.subject_kind != entry.predicate.subject_kind:
+        return False
+    # KEY DIFFERENCE: match against effective subject, not entry.subject_identity
+    if record.subject_identity != effective_subject_identity:
+        return False
+    if record.evaluation_phase != entry.evaluation_phase:
+        return False
+    if record.enforcement != "RECORD":
+        return False
+    if not record.has_valid_identity():
+        return False
+    expected_ref = f"predicate_sha256:{entry.predicate.predicate_sha256}"
+    if expected_ref not in record.evidence_refs:
+        return False
+    return True
+
+
 def build_readiness(
     *,
     plan: VerificationPlan,
     snapshot: RegistrySnapshot,
     store,
-    evaluated_at_ms: int,
-) -> VerificationReadiness:
+    evaluated_at_ms: int,) -> VerificationReadiness:
     """Materialize a VerificationReadiness from plan + authoritative records.
 
     M4.1 §6: the readiness is COMPUTED, never self-signed. Every field
@@ -128,10 +172,24 @@ def build_readiness(
     satisfied_count = 0
 
     for entry in sorted(plan.entries, key=lambda e: e.plan_entry_id):
+        # M5 Final §9: resolve the effective subject from the Store's
+        # successor chain — no caller callback. Without a successor, the
+        # effective subject is the plan entry's original subject.
+        effective_subject = entry.subject_identity
+        if hasattr(store, "resolve_verification_subject"):
+            resolution = store.resolve_verification_subject(entry.plan_entry_id)
+            if resolution.get("effective_subject_identity"):
+                effective_subject = resolution["effective_subject_identity"]
         matching = [
             r for r in all_records
             if _record_matches_entry(
                 r, entry,
+                plan_registry_sha256=plan.registry_snapshot_sha256,
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+            ) or _record_matches_effective_subject(
+                r, entry, effective_subject,
                 plan_registry_sha256=plan.registry_snapshot_sha256,
                 request_id=plan.request_id,
                 run_id=plan.run_id,
