@@ -98,10 +98,17 @@ class NarrativeDiaryTests(unittest.TestCase):
                     "POST", "/api/v1/v3/life/autonomy/tick", {"reason": "diary-test"}
                 )
                 assert called.wait(2)
-                deadline = time.monotonic() + 4
+                # M5 §6 flake fix: poll for the FINAL expected state (diary
+                # landed in memories) instead of polling task-completion then
+                # immediately reading memories — the memory write runs in a
+                # background thread after the status flip, creating a race
+                # window that caused 3 CI failures on ubuntu-latest.
+                deadline = time.monotonic() + 8
+                diary_rows: list = []
                 completed = None
                 while time.monotonic() < deadline:
-                    tasks = life._scope_state()["autonomy"]["tasks"]
+                    scope_state = life._scope_state()
+                    tasks = scope_state["autonomy"]["tasks"]
                     done = [
                         t for t in tasks.values()
                         if isinstance(t, dict)
@@ -110,15 +117,17 @@ class NarrativeDiaryTests(unittest.TestCase):
                     ]
                     if done:
                         completed = done[0]
+                    memories = scope_state["memories"]
+                    diary_rows = [
+                        row for row in memories.values()
+                        if isinstance(row, dict)
+                        and "心灵日记" in str(row.get("content") or "")
+                    ]
+                    if completed and diary_rows:
                         break
                     time.sleep(0.02)
                 assert completed is not None, "日记任务应完成"
 
-                memories = life._scope_state()["memories"]
-                diary_rows = [
-                    row for row in memories.values()
-                    if isinstance(row, dict) and "心灵日记" in str(row.get("content") or "")
-                ]
                 self.assertTrue(diary_rows, "日记应写回记忆系统")
             finally:
                 life.close()
