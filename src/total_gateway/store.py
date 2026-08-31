@@ -88,7 +88,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 27
+STORE_SCHEMA_VERSION = 28
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1691,6 +1691,113 @@ _MIGRATION_V27_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V28_ID = "gateway-evidence-driven-repair-v28"
+_MIGRATION_V28_STATEMENTS = (
+    """
+    CREATE TABLE verification_failure_evidence (
+        failure_evidence_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verification_plan_id TEXT NOT NULL,
+        plan_entry_id TEXT NOT NULL,
+        failure_kind TEXT NOT NULL,
+        failure_signature_sha256 TEXT NOT NULL
+            CHECK (length(failure_signature_sha256) = 64 AND failure_signature_sha256 NOT GLOB '*[^0-9a-f]*'),
+        evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+        evidence_sha256 TEXT NOT NULL
+            CHECK (length(evidence_sha256) = 64 AND evidence_sha256 NOT GLOB '*[^0-9a-f]*'),
+        observed_at_ms INTEGER NOT NULL CHECK (observed_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX verification_failure_evidence_entry_idx
+        ON verification_failure_evidence (plan_entry_id, observed_at_ms)
+    """,
+    """
+    CREATE TABLE verification_disposition (
+        verification_disposition_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verification_plan_id TEXT NOT NULL,
+        plan_entry_id TEXT NOT NULL,
+        action TEXT NOT NULL
+            CHECK (action IN ('REPAIR','WAIT','RECONCILE','REVIEW','BLOCK')),
+        attempt_no INTEGER NOT NULL CHECK (attempt_no >= 0),
+        disposition_json TEXT NOT NULL CHECK (json_valid(disposition_json)),
+        disposition_sha256 TEXT NOT NULL
+            CHECK (length(disposition_sha256) = 64 AND disposition_sha256 NOT GLOB '*[^0-9a-f]*'),
+        decided_at_ms INTEGER NOT NULL CHECK (decided_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX verification_disposition_entry_idx
+        ON verification_disposition (plan_entry_id, decided_at_ms)
+    """,
+    """
+    CREATE TABLE repair_directive (
+        repair_directive_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verification_plan_id TEXT NOT NULL,
+        plan_entry_id TEXT NOT NULL,
+        repair_attempt_no INTEGER NOT NULL CHECK (repair_attempt_no >= 1),
+        directive_json TEXT NOT NULL CHECK (json_valid(directive_json)),
+        directive_sha256 TEXT NOT NULL
+            CHECK (length(directive_sha256) = 64 AND directive_sha256 NOT GLOB '*[^0-9a-f]*'),
+        issued_at_ms INTEGER NOT NULL CHECK (issued_at_ms >= 0),
+        recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE TABLE verification_subject_successor (
+        successor_binding_id TEXT NOT NULL PRIMARY KEY,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        verification_plan_id TEXT NOT NULL,
+        plan_entry_id TEXT NOT NULL,
+        predecessor_subject_identity TEXT NOT NULL,
+        successor_subject_identity TEXT NOT NULL,
+        repair_directive_id TEXT NOT NULL,
+        repair_attempt_no INTEGER NOT NULL CHECK (repair_attempt_no >= 1),
+        binding_json TEXT NOT NULL CHECK (json_valid(binding_json)),
+        binding_sha256 TEXT NOT NULL
+            CHECK (length(binding_sha256) = 64 AND binding_sha256 NOT GLOB '*[^0-9a-f]*'),
+        bound_at_ms INTEGER NOT NULL CHECK (bound_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX verification_subject_successor_entry_idx
+        ON verification_subject_successor (plan_entry_id, bound_at_ms)
+    """,
+    """
+    CREATE TABLE repair_attempt (
+        repair_attempt_id TEXT NOT NULL PRIMARY KEY,
+        repair_directive_id TEXT NOT NULL,
+        repair_attempt_no INTEGER NOT NULL CHECK (repair_attempt_no >= 1),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        plan_entry_id TEXT NOT NULL,
+        execution_outcome TEXT NOT NULL
+            CHECK (execution_outcome IN (
+                'DISPATCHED','EXECUTION_FAILED','EXECUTION_AMBIGUOUS',
+                'REVERIFY_PASS','REVERIFY_FAIL','REVERIFY_ERROR'
+            )),
+        attempt_json TEXT NOT NULL CHECK (json_valid(attempt_json)),
+        attempt_sha256 TEXT NOT NULL
+            CHECK (length(attempt_sha256) = 64 AND attempt_sha256 NOT GLOB '*[^0-9a-f]*'),
+        started_at_ms INTEGER NOT NULL CHECK (started_at_ms >= 0),
+        finished_at_ms INTEGER NOT NULL CHECK (finished_at_ms >= 0)
+    ) STRICT
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1719,6 +1826,7 @@ _MIGRATIONS = (
     (25, _MIGRATION_V25_ID, _MIGRATION_V25_STATEMENTS),
     (26, _MIGRATION_V26_ID, _MIGRATION_V26_STATEMENTS),
     (27, _MIGRATION_V27_ID, _MIGRATION_V27_STATEMENTS),
+    (28, _MIGRATION_V28_ID, _MIGRATION_V28_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -10446,6 +10554,277 @@ class GatewayStateStore:
                 (effect_id,),
             ).fetchall()
             return tuple(dict(row) for row in rows)
+
+    # ------------------------------------------------------------------
+    # P19-R2 M5: Evidence-Driven Repair store APIs (v28 tables)
+    # ------------------------------------------------------------------
+
+    def put_verification_failure_evidence(self, evidence, *, recorded_at_ms: int) -> bool:
+        from contracts.verification import FailureEvidence
+        if not isinstance(evidence, FailureEvidence):
+            raise ValueError("failure evidence payload has the wrong type")
+        if not evidence.has_valid_identity():
+            raise ValueError("failure evidence identity is invalid")
+        payload_json = json.dumps(
+            evidence.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=evidence.request_id,
+                run_id=evidence.run_id,
+                generation=evidence.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT evidence_json FROM verification_failure_evidence"
+                " WHERE failure_evidence_id = ?",
+                (evidence.failure_evidence_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["evidence_json"] != payload_json:
+                    raise StoreConflictError(
+                        "failure evidence identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO verification_failure_evidence ("
+                "failure_evidence_id, request_id, run_id, generation,"
+                "verification_plan_id, plan_entry_id, failure_kind,"
+                "failure_signature_sha256, evidence_json, evidence_sha256,"
+                "observed_at_ms, recorded_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (evidence.failure_evidence_id, evidence.request_id,
+                 evidence.run_id, evidence.generation,
+                 evidence.verification_plan_id, evidence.plan_entry_id,
+                 evidence.failure_kind, evidence.failure_signature_sha256,
+                 payload_json, evidence.failure_evidence_sha256,
+                 evidence.observed_at_ms, recorded_at_ms),
+            )
+            return True
+
+    def list_verification_failure_evidence(self, plan_entry_id: str):
+        from contracts.verification import FailureEvidence
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT evidence_json FROM verification_failure_evidence"
+                " WHERE plan_entry_id = ? ORDER BY observed_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                FailureEvidence.model_validate_json(r["evidence_json"], strict=True)
+                for r in rows
+            )
+
+    def put_verification_disposition(self, disposition, *, recorded_at_ms: int) -> bool:
+        from contracts.verification import VerificationDisposition
+        if not isinstance(disposition, VerificationDisposition):
+            raise ValueError("disposition payload has the wrong type")
+        if not disposition.has_valid_identity():
+            raise ValueError("disposition identity is invalid")
+        payload_json = json.dumps(
+            disposition.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=disposition.request_id,
+                run_id=disposition.run_id,
+                generation=disposition.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE verification_disposition_id = ?",
+                (disposition.verification_disposition_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["disposition_json"] != payload_json:
+                    raise StoreConflictError(
+                        "disposition identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO verification_disposition ("
+                "verification_disposition_id, request_id, run_id, generation,"
+                "verification_plan_id, plan_entry_id, action, attempt_no,"
+                "disposition_json, disposition_sha256, decided_at_ms, recorded_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (disposition.verification_disposition_id,
+                 disposition.request_id, disposition.run_id,
+                 disposition.generation, disposition.verification_plan_id,
+                 disposition.plan_entry_id, disposition.action,
+                 disposition.attempt_no, payload_json,
+                 disposition.disposition_sha256, disposition.decided_at_ms,
+                 recorded_at_ms),
+            )
+            return True
+
+    def list_verification_dispositions(self, plan_entry_id: str):
+        from contracts.verification import VerificationDisposition
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE plan_entry_id = ? ORDER BY decided_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                VerificationDisposition.model_validate_json(
+                    r["disposition_json"], strict=True
+                )
+                for r in rows
+            )
+
+    def put_repair_directive(self, directive, *, recorded_at_ms: int) -> bool:
+        from contracts.verification import RepairDirective
+        if not isinstance(directive, RepairDirective):
+            raise ValueError("repair directive payload has the wrong type")
+        if not directive.has_valid_identity():
+            raise ValueError("repair directive identity is invalid")
+        payload_json = json.dumps(
+            directive.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=directive.request_id,
+                run_id=directive.run_id,
+                generation=directive.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT directive_json FROM repair_directive"
+                " WHERE repair_directive_id = ?",
+                (directive.repair_directive_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["directive_json"] != payload_json:
+                    raise StoreConflictError(
+                        "repair directive identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO repair_directive ("
+                "repair_directive_id, request_id, run_id, generation,"
+                "verification_plan_id, plan_entry_id, repair_attempt_no,"
+                "directive_json, directive_sha256, issued_at_ms, recorded_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (directive.repair_directive_id, directive.request_id,
+                 directive.run_id, directive.generation,
+                 directive.verification_plan_id, directive.plan_entry_id,
+                 directive.repair_attempt_no, payload_json,
+                 directive.directive_sha256, directive.issued_at_ms,
+                 recorded_at_ms),
+            )
+            return True
+
+    def put_repair_attempt(self, attempt, *, recorded_at_ms: int) -> bool:
+        from contracts.verification_repair import RepairAttemptRecord
+        if not isinstance(attempt, RepairAttemptRecord):
+            raise ValueError("repair attempt payload has the wrong type")
+        if not attempt.has_valid_identity():
+            raise ValueError("repair attempt identity is invalid")
+        payload_json = json.dumps(
+            attempt.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=attempt.request_id,
+                run_id=attempt.run_id,
+                generation=attempt.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT attempt_json FROM repair_attempt"
+                " WHERE repair_attempt_id = ?",
+                (attempt.repair_attempt_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["attempt_json"] != payload_json:
+                    raise StoreConflictError(
+                        "repair attempt identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO repair_attempt ("
+                "repair_attempt_id, repair_directive_id, repair_attempt_no,"
+                "request_id, run_id, generation, plan_entry_id,"
+                "execution_outcome, attempt_json, attempt_sha256,"
+                "started_at_ms, finished_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (attempt.repair_attempt_id, attempt.repair_directive_id,
+                 attempt.repair_attempt_no, attempt.request_id,
+                 attempt.run_id, attempt.generation, attempt.plan_entry_id,
+                 attempt.execution_outcome, payload_json,
+                 attempt.attempt_sha256, attempt.started_at_ms,
+                 attempt.finished_at_ms),
+            )
+            return True
+
+    def put_verification_subject_successor(
+        self, successor, *, recorded_at_ms: int
+    ) -> bool:
+        from contracts.verification_repair import VerificationSubjectSuccessor
+        if not isinstance(successor, VerificationSubjectSuccessor):
+            raise ValueError("subject successor payload has the wrong type")
+        if not successor.has_valid_identity():
+            raise ValueError("subject successor identity is invalid")
+        payload_json = json.dumps(
+            successor.model_dump(mode="json"), ensure_ascii=False,
+            allow_nan=False, sort_keys=True, separators=(",", ":"),
+        )
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=successor.request_id,
+                run_id=successor.run_id,
+                generation=successor.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT binding_json FROM verification_subject_successor"
+                " WHERE successor_binding_id = ?",
+                (successor.successor_binding_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["binding_json"] != payload_json:
+                    raise StoreConflictError(
+                        "subject successor identity was reused for different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO verification_subject_successor ("
+                "successor_binding_id, request_id, run_id, generation,"
+                "verification_plan_id, plan_entry_id,"
+                "predecessor_subject_identity, successor_subject_identity,"
+                "repair_directive_id, repair_attempt_no,"
+                "binding_json, binding_sha256, bound_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (successor.successor_binding_id, successor.request_id,
+                 successor.run_id, successor.generation,
+                 successor.verification_plan_id, successor.plan_entry_id,
+                 successor.predecessor_subject_identity,
+                 successor.successor_subject_identity,
+                 successor.repair_directive_id, successor.repair_attempt_no,
+                 payload_json, successor.successor_binding_sha256,
+                 successor.bound_at_ms),
+            )
+            return True
+
+    def list_verification_subject_successors(self, plan_entry_id: str):
+        from contracts.verification_repair import VerificationSubjectSuccessor
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT binding_json FROM verification_subject_successor"
+                " WHERE plan_entry_id = ? ORDER BY bound_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                VerificationSubjectSuccessor.model_validate_json(
+                    r["binding_json"], strict=True
+                )
+                for r in rows
+            )
 
     def list_verification_records(
         self,
