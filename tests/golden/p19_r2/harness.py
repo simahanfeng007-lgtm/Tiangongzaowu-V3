@@ -337,8 +337,7 @@ def compare_or_update(trace: dict) -> None:
     if _stable_text(expected) != _stable_text(normalized):
         import difflib
 
-        diff = "
-".join(
+        diff = chr(10).join(
             line
             for line in difflib.unified_diff(
                 _stable_text(expected).splitlines(),
@@ -349,9 +348,9 @@ def compare_or_update(trace: dict) -> None:
         )[:2000]
         raise AssertionError(
             f"golden trace mismatch for {case_id} (compare-only;"
-            " update baselines explicitly with UPDATE_GOLDEN=1)
-"
-            f"{diff}"
+            " update baselines explicitly with UPDATE_GOLDEN=1)"
+            + chr(10)
+            + f"{diff}"
         )
 
 
