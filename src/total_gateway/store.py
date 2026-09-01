@@ -1843,6 +1843,9 @@ _MIGRATION_V29_STATEMENTS = (
         effect_intent_sha256 TEXT NOT NULL
             CHECK (length(effect_intent_sha256) = 64
                    AND effect_intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+        dispatch_claim_id TEXT NOT NULL DEFAULT '',
+        claim_revision INTEGER NOT NULL DEFAULT 1,
+        claim_expires_at_ms INTEGER NOT NULL DEFAULT 0,
         produced_subject_identity TEXT NOT NULL DEFAULT '',
         produced_subject_kind TEXT NOT NULL DEFAULT '',
         runtime_result_ref TEXT NOT NULL DEFAULT '',
@@ -10749,18 +10752,30 @@ class GatewayStateStore:
         effect_id: str,
         effect_intent_sha256: str,
         reserved_at_ms: int,
+        dispatch_claim_id: str,
+        claim_expires_at_ms: int,
     ) -> dict:
         """Atomically claim the repair dispatch authority.
 
         Returns ``{"outcome": "EXECUTE"|"FOLLOW", "binding": dict}``.
-        - EXECUTE: this caller owns the (plan entry, attempt) slot and
-          may cross into the Runtime (binding is RESERVED).
-        - FOLLOW: another directive already owns the slot — the caller
-          must NOT execute the runtime, not even once.
-        Re-reserving the SAME directive idempotently returns EXECUTE
-        while it is still RESERVED (crash recovery before the
-        side-effect boundary) and FOLLOW once terminal or started.
+        The caller supplies an invocation-scoped ``dispatch_claim_id``
+        (NOT a gateway instance id — two threads in one process must
+        still single-flight) plus its lease expiry.
+
+        State machine (Final P0-1):
+        - no binding: INSERT with this claim → EXECUTE
+        - same directive, RESERVED, same live claim → idempotent EXECUTE
+        - same directive, RESERVED, different LIVE claim → FOLLOW
+        - same directive, RESERVED, claim lease EXPIRED (and the side
+          effect never started) → this claim CAS-takes over → EXECUTE
+        - SIDE_EFFECT_STARTED / terminal → FOLLOW (never takeover,
+          never replay)
+        Every supplied field is first verified against the persisted
+        authoritative RepairDirective — a fabricated or drifted
+        directive payload cannot reserve anything.
         """
+        if not dispatch_claim_id or claim_expires_at_ms < reserved_at_ms:
+            raise ValueError("dispatch claim identity/lease is invalid")
         with self._lock, self._write_transaction():
             self._assert_request_binding_locked(
                 request_id=request_id,
@@ -10768,6 +10783,25 @@ class GatewayStateStore:
                 generation=generation,
                 recorded_at_ms=reserved_at_ms,
             )
+            directive_row = self.get_repair_directive_by_id(
+                repair_directive_id
+            )
+            if directive_row is None:
+                raise ValueError(
+                    "repair dispatch reserve: directive absent from store"
+                )
+            if (
+                directive_row.directive_sha256 != repair_directive_sha256
+                or directive_row.plan_entry_id != plan_entry_id
+                or directive_row.repair_attempt_no != repair_attempt_no
+                or directive_row.request_id != request_id
+                or directive_row.run_id != run_id
+                or directive_row.generation != generation
+            ):
+                raise ValueError(
+                    "repair dispatch reserve: directive fields do not"
+                    " match the authoritative store content"
+                )
             existing = self._binding_row_locked(repair_directive_id)
             if existing is not None:
                 if (
@@ -10782,14 +10816,33 @@ class GatewayStateStore:
                         "repair execution binding identity was reused"
                         " for different content"
                     )
-                return {
-                    "outcome": (
-                        "EXECUTE"
-                        if str(existing["state"]) == "RESERVED"
-                        else "FOLLOW"
-                    ),
-                    "binding": dict(existing),
-                }
+                state = str(existing["state"])
+                if state == "RESERVED":
+                    same_claim = (
+                        str(existing["dispatch_claim_id"]) == dispatch_claim_id
+                    )
+                    live = (
+                        int(existing["claim_expires_at_ms"]) > reserved_at_ms
+                    )
+                    if same_claim or not live:
+                        # idempotent re-entry, or an expired pre-start
+                        # lease CAS-taken over by this claim
+                        self._connection.execute(
+                            "UPDATE repair_execution_binding SET"
+                            " dispatch_claim_id = ?, claim_revision ="
+                            " claim_revision + 1, claim_expires_at_ms = ?"
+                            " WHERE repair_directive_id = ?"
+                            " AND state = 'RESERVED'",
+                            (
+                                dispatch_claim_id, claim_expires_at_ms,
+                                repair_directive_id,
+                            ),
+                        )
+                        row = self._binding_row_locked(repair_directive_id)
+                        assert row is not None
+                        return {"outcome": "EXECUTE", "binding": dict(row)}
+                    return {"outcome": "FOLLOW", "binding": dict(existing)}
+                return {"outcome": "FOLLOW", "binding": dict(existing)}
             competing = self._connection.execute(
                 "SELECT * FROM repair_execution_binding"
                 " WHERE plan_entry_id = ? AND repair_attempt_no = ?",
@@ -10802,12 +10855,14 @@ class GatewayStateStore:
                 "repair_directive_id, repair_directive_sha256,"
                 " plan_entry_id, repair_attempt_no, request_id, run_id,"
                 " generation, state, effect_id, effect_intent_sha256,"
+                " dispatch_claim_id, claim_revision, claim_expires_at_ms,"
                 " reserved_at_ms"
-                ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     repair_directive_id, repair_directive_sha256,
                     plan_entry_id, repair_attempt_no, request_id, run_id,
                     generation, "RESERVED", effect_id, effect_intent_sha256,
+                    dispatch_claim_id, 1, claim_expires_at_ms,
                     reserved_at_ms,
                 ),
             )
@@ -10815,35 +10870,61 @@ class GatewayStateStore:
             assert row is not None
             return {"outcome": "EXECUTE", "binding": dict(row)}
 
-    def mark_repair_execution_started(
-        self, *, repair_directive_id: str, started_at_ms: int
+    def start_repair_execution(
+        self, *, repair_directive_id: str, effect_id: str, started_at_ms: int
     ) -> dict:
-        """RESERVED → SIDE_EFFECT_STARTED (the no-return boundary).
+        """ONE atomic authority transition (Final P0-2):
 
-        Idempotent for the owner that already crossed (same directive,
-        still non-terminal); refuses any other transition.
+            EffectLedger  CLAIMED → SIDE_EFFECT_STARTED
+            RepairBinding RESERVED → SIDE_EFFECT_STARTED
+
+        The binding must own exactly ``effect_id``. After this
+        transaction no committed state can ever show an effect past the
+        boundary while its binding is still RESERVED. Takeover is over:
+        SIDE_EFFECT_STARTED means RECONCILE-only on recovery.
         """
         with self._lock, self._write_transaction():
             row = self._binding_row_locked(repair_directive_id)
             if row is None:
                 raise ValueError("repair execution binding is absent")
+            if str(row["effect_id"]) != effect_id:
+                raise ValueError(
+                    "repair execution binding owns a different effect"
+                )
             state = str(row["state"])
             if state == "RESERVED":
-                self._connection.execute(
+                if started_at_ms < int(row["reserved_at_ms"]):
+                    raise ValueError(
+                        "repair execution start predates its reservation"
+                    )
+            elif state == "SIDE_EFFECT_STARTED":
+                if int(row["started_at_ms"] or 0) > started_at_ms:
+                    raise ValueError(
+                        "repair execution start predates its boundary"
+                    )
+            else:
+                raise ValueError(
+                    "repair execution binding is not in a startable state:"
+                    f" {state}"
+                )
+            # Same transaction: cross the EffectLedger boundary first.
+            self.mark_effect_started(
+                effect_id, started_at_ms=started_at_ms
+            )
+            if state == "RESERVED":
+                updated = self._connection.execute(
                     "UPDATE repair_execution_binding SET state ="
                     " 'SIDE_EFFECT_STARTED', started_at_ms = ?"
                     " WHERE repair_directive_id = ? AND state = 'RESERVED'",
                     (started_at_ms, repair_directive_id),
                 )
-                updated = self._binding_row_locked(repair_directive_id)
-                assert updated is not None
-                return dict(updated)
-            if state == "SIDE_EFFECT_STARTED":
-                return dict(row)
-            raise ValueError(
-                "repair execution binding is not in a startable state:"
-                f" {state}"
-            )
+                if updated.rowcount != 1:
+                    raise StoreCasConflict(
+                        "repair execution binding changed before start"
+                    )
+            updated_row = self._binding_row_locked(repair_directive_id)
+            assert updated_row is not None
+            return dict(updated_row)
 
     def complete_repair_execution(
         self,
@@ -10855,13 +10936,20 @@ class GatewayStateStore:
         runtime_result_ref: str = "",
         runtime_result_sha256: str = "",
         completed_at_ms: int,
+        error_code: str | None = None,
     ) -> dict:
-        """Terminalize a repair execution.
+        """ONE atomic terminal transition (Final P0-2):
 
-        SUCCEEDED / AMBIGUOUS require the side-effect boundary to have
-        been crossed first; SUCCEEDED requires a non-empty produced
-        subject. Idempotent for identical terminal content; conflicting
-        re-completion is a StoreConflictError.
+            EffectLedger  → SUCCEEDED / FAILED_FINAL / AMBIGUOUS
+            RepairBinding → the SAME terminal state, plus the produced
+                            subject and the runtime result reference.
+
+        No committed state may ever expose binding SUCCEEDED with a
+        non-SUCCEEDED effect (or the reverse). SUCCEEDED / AMBIGUOUS
+        require the side-effect boundary to have been crossed;
+        SUCCEEDED requires the produced subject. FAILED_FINAL is legal
+        straight from RESERVED (policy deny: the runtime was never
+        entered).
         """
         if state not in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
             raise ValueError("invalid terminal repair execution state")
@@ -10870,6 +10958,20 @@ class GatewayStateStore:
             if row is None:
                 raise ValueError("repair execution binding is absent")
             current = str(row["state"])
+            effect_id = str(row["effect_id"])
+            directive = self.get_repair_directive_by_id(repair_directive_id)
+            if directive is not None and produced_subject_kind != (
+                directive.subject_kind
+            ):
+                raise ValueError(
+                    "repair execution produced subject kind does not"
+                    " match the directive"
+                )
+            boundary_ms = int(row["started_at_ms"] or row["reserved_at_ms"])
+            if completed_at_ms < boundary_ms:
+                raise ValueError(
+                    "repair execution completion predates its boundary"
+                )
             if current in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
                 same = (
                     current == state
@@ -10896,7 +10998,28 @@ class GatewayStateStore:
                     "successful repair execution must record its produced"
                     " subject"
                 )
-            self._connection.execute(
+            # Same transaction: terminalize the EffectLedger first —
+            # its own CHECK constraints validate the transition.
+            from .effects import EffectResult
+
+            terminal_result = EffectResult(
+                result_id="effect-result-" + effect_id[4:20],
+                effect_id=effect_id,
+                status=state,
+                fact_id="fact-effect-" + effect_id[4:20],
+                evidence_sha256=canonical_sha256(
+                    {
+                        "code": error_code,
+                        "runtime_result_sha256": runtime_result_sha256,
+                        "state": state,
+                    }
+                ),
+                error_code=error_code if state != "SUCCEEDED" else None,
+                observed_at_ms=completed_at_ms,
+                result_sha256="0" * 64,
+            ).with_computed_sha256()
+            self.complete_effect(terminal_result)
+            updated = self._connection.execute(
                 "UPDATE repair_execution_binding SET state = ?,"
                 " produced_subject_identity = ?, produced_subject_kind = ?,"
                 " runtime_result_ref = ?, runtime_result_sha256 = ?,"
@@ -10907,9 +11030,13 @@ class GatewayStateStore:
                     completed_at_ms, repair_directive_id,
                 ),
             )
-            updated = self._binding_row_locked(repair_directive_id)
-            assert updated is not None
-            return dict(updated)
+            if updated.rowcount != 1:
+                raise StoreCasConflict(
+                    "repair execution binding changed before completion"
+                )
+            final_row = self._binding_row_locked(repair_directive_id)
+            assert final_row is not None
+            return dict(final_row)
 
     def get_repair_execution_binding(self, repair_directive_id: str):
         with self._lock:
@@ -11388,25 +11515,38 @@ class GatewayStateStore:
                 " different directive"
             )
         binding_state = str(binding["state"])
-        # The binding verdict is about the RUNTIME execution; the
-        # re-verification outcome (REVERIFY_*) is derived later and so
-        # maps onto a completed (SUCCEEDED) runtime execution.
-        binding_expected = {
-            "DISPATCHED": ("SUCCEEDED",),
-            "REVERIFY_PASS": ("SUCCEEDED",),
-            "REVERIFY_FAIL": ("SUCCEEDED",),
-            "REVERIFY_ERROR": ("SUCCEEDED",),
-            "EXECUTION_FAILED": ("FAILED_FINAL",),
-            "EXECUTION_AMBIGUOUS": ("AMBIGUOUS", "SIDE_EFFECT_STARTED"),
+        # Final P0-2 #5: the outcome must match the EXACT (binding,
+        # effect) terminal pair — the EffectLedger state is read
+        # explicitly (never implied from the binding dict).
+        effect_row = self._connection.execute(
+            "SELECT state FROM effect_ledger WHERE effect_id = ?",
+            (str(binding["effect_id"]),),
+        ).fetchone()
+        if effect_row is None:
+            raise ValueError(
+                "repair attempt revalidation: binding effect absent from"
+                " the effect ledger"
+            )
+        effect_state = str(effect_row["state"])
+        expected_pairs = {
+            "DISPATCHED": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_PASS": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_FAIL": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_ERROR": (("SUCCEEDED", "SUCCEEDED"),),
+            "EXECUTION_FAILED": (("FAILED_FINAL", "FAILED_FINAL"),),
+            "EXECUTION_AMBIGUOUS": (
+                ("AMBIGUOUS", "AMBIGUOUS"),
+                ("SIDE_EFFECT_STARTED", "SIDE_EFFECT_STARTED"),
+            ),
         }.get(attempt.execution_outcome, ())
         if (
             tuple(attempt.execution_effect_ids)
             != (str(binding["effect_id"]),)
-            or binding_state not in binding_expected
+            or (binding_state, effect_state) not in expected_pairs
         ):
             raise ValueError(
                 "repair attempt revalidation: execution effects do not"
-                " match the repair execution binding"
+                " match the repair execution binding authorities"
             )
         allowed_states = {
             "DISPATCHED": ("SUCCEEDED",),
@@ -11592,6 +11732,20 @@ class GatewayStateStore:
             raise ValueError(
                 "subject successor revalidation: successor does not"
                 " match the binding's persisted produced subject"
+            )
+        # Final P0-2 #5: the EffectLedger authority is read explicitly —
+        # a SUCCEEDED binding can never certify a successor whose
+        # effect is not SUCCEEDED in the ledger.
+        successor_effect_row = self._connection.execute(
+            "SELECT state FROM effect_ledger WHERE effect_id = ?",
+            (str(binding["effect_id"]),),
+        ).fetchone()
+        if successor_effect_row is None or str(
+            successor_effect_row["state"]
+        ) != "SUCCEEDED":
+            raise ValueError(
+                "subject successor revalidation: binding effect is not"
+                " SUCCEEDED in the effect ledger"
             )
         # P1-6: cycle fail-closed — the successor may not be the
         # predecessor itself nor any identity already on the chain

@@ -73,7 +73,9 @@ class _RepairBindingMixin:
 
     def _reserve_or_claimed(self, directive, effect_id, intent=None):
         import time as _time
+        import uuid as _uuid
 
+        now = _time.time_ns() // 1_000_000
         return self._binding_store().reserve_repair_execution(
             repair_directive_id=directive.repair_directive_id,
             repair_directive_sha256=directive.directive_sha256,
@@ -84,18 +86,29 @@ class _RepairBindingMixin:
             generation=directive.generation,
             effect_id=effect_id,
             effect_intent_sha256=intent or "9" * 64,
-            reserved_at_ms=_time.time_ns() // 1_000_000,
+            reserved_at_ms=now,
+            # invocation-scoped claim: two threads in one process still
+            # single-flight
+            dispatch_claim_id=_uuid.uuid4().hex,
+            claim_expires_at_ms=now + 120_000,
         )
 
-    def _binding_mark_started(self, directive):
+    def _binding_mark_started(self, directive, effect_id):
+        """ONE atomic transition: EffectLedger CLAIMED->STARTED and
+        Binding RESERVED->STARTED in the same transaction."""
         import time as _time
 
-        self._binding_store().mark_repair_execution_started(
+        self._binding_store().start_repair_execution(
             repair_directive_id=directive.repair_directive_id,
+            effect_id=effect_id,
             started_at_ms=_time.time_ns() // 1_000_000,
         )
 
-    def _binding_complete(self, directive, state, produced, ref="test"):
+    def _binding_complete(
+        self, directive, state, produced, ref="test", error_code=None
+    ):
+        """ONE atomic terminal transition: BOTH authorities move to the
+        same terminal state with the produced subject persisted."""
         import time as _time
 
         self._binding_store().complete_repair_execution(
@@ -105,6 +118,7 @@ class _RepairBindingMixin:
             produced_subject_kind=directive.subject_kind,
             runtime_result_ref=ref,
             completed_at_ms=_time.time_ns() // 1_000_000,
+            error_code=error_code,
         )
 
     @staticmethod
@@ -272,7 +286,7 @@ class RepairLoopE2EBase(_RepairBindingMixin, M21OracleTestBase):
         reserved = self._reserve_or_claimed(directive, effect.effect_id)
         if reserved["outcome"] != "EXECUTE":
             return self._already_claimed(directive)
-        self._binding_mark_started(directive)
+        self._binding_mark_started(directive, effect.effect_id)
         good = self._passed_manifest(
             docx_bytes("字" * 300),
             filename="report.docx",
@@ -414,7 +428,7 @@ class TestBudgetTermination(RepairLoopE2EBase):
             reserved = self._reserve_or_claimed(directive, effect.effect_id)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            self._binding_mark_started(directive, effect.effect_id)
             still_bad = self._passed_manifest(
                 docx_bytes("字" * 10),
                 filename="report.docx",
@@ -862,7 +876,12 @@ class TestDesktopProductionWiring(unittest.TestCase):
             "sign_execution",
             "BackendClient(",
             "claim_effect",
-            "complete_effect",
+            # Final P0-2: the bridge crosses and terminalizes BOTH
+            # authorities through the one-transaction composite APIs.
+            "start_repair_execution(",
+            "complete_repair_execution(",
+            "reserve_repair_execution(",
+            "dispatch_claim_id",
             "_register_repair_artifacts(",
             "ArtifactGate(",
         ):
@@ -882,12 +901,12 @@ class TestAmbiguousRepairSafety(RepairLoopE2EBase):
             )
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self.gateway_store.mark_effect_started(
-                started_effect.effect_id,
-                started_at_ms=_time.time_ns() // 1_000_000,
+            self._binding_mark_started(
+                directive, started_effect.effect_id
             )
-            self._binding_mark_started(directive)
-            self._binding_complete(directive, "AMBIGUOUS", "")
+            self._binding_complete(
+                directive, "AMBIGUOUS", "", error_code="repair.ambiguous"
+            )
             return RepairDispatchResult(
                 execution_outcome="EXECUTION_AMBIGUOUS",
                 produced_subject_identity=(
@@ -1077,17 +1096,21 @@ class TestEffectRepairE2E(_RepairBindingMixin, M21OracleTestBase):
 
     def test_effect_repair_new_effect_successor_same_predicate(self) -> None:
         def dispatch(directive: RepairDirective):
-            new_effect = self._claim()
-            reserved = self._reserve_or_claimed(directive, new_effect)
+            # carrier: the binding-owned dispatch effect; subject: the
+            # NEW effect the predicate re-verifies (separated so the
+            # carrier can be SUCCEEDED while the subject FAILS).
+            carrier = self._claim()
+            reserved = self._reserve_or_claimed(directive, carrier)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            new_effect = self._claim()
+            self._binding_mark_started(directive, carrier)
             self._complete(new_effect, "SUCCEEDED")
             self._binding_complete(directive, "SUCCEEDED", new_effect)
             return RepairDispatchResult(
                 execution_outcome="DISPATCHED",
                 produced_subject_identity=new_effect,
-                execution_effect_ids=(new_effect,),
+                execution_effect_ids=(carrier,),
             )
 
         readiness = self._reverify()
@@ -1135,18 +1158,20 @@ class TestEffectRepairE2E(_RepairBindingMixin, M21OracleTestBase):
         (1) BEFORE the per-entry budget (2)."""
 
         def dispatch_fails_again(directive: RepairDirective):
-            new_effect = self._claim()
-            reserved = self._reserve_or_claimed(directive, new_effect)
+            carrier = self._claim()
+            reserved = self._reserve_or_claimed(directive, carrier)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
-            # The runtime completed; the NEW effect itself failed.
+            new_effect = self._claim()
+            self._binding_mark_started(directive, carrier)
+            # The runtime completed; the NEW SUBJECT effect itself
+            # failed (the carrier still terminates SUCCEEDED).
             self._complete(new_effect, "FAILED_FINAL")
             self._binding_complete(directive, "SUCCEEDED", new_effect)
             return RepairDispatchResult(
                 execution_outcome="DISPATCHED",
                 produced_subject_identity=new_effect,
-                execution_effect_ids=(new_effect,),
+                execution_effect_ids=(carrier,),
             )
 
         readiness = self._reverify()
@@ -1215,7 +1240,7 @@ class TestGenerationBudgetMultiEntry(RepairLoopE2EBase):
             reserved = self._reserve_or_claimed(directive, effect.effect_id)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            self._binding_mark_started(directive, effect.effect_id)
             good = self._passed_manifest(
                 docx_bytes("字" * 300),
                 filename="report.docx",
@@ -1286,15 +1311,33 @@ class TestCoordinatorRace(RepairLoopE2EBase):
         import threading
 
         readiness = self._reverify()
+        # Pre-issue ONE directive D; both workers race to reserve THE
+        # SAME D with different invocation-scoped claims.
+        dispositions = self.coordinator.process_readiness(
+            plan=self.plan, readiness=readiness
+        )
+        evidence = (
+            self.gateway_store.get_verification_failure_evidence_by_id(
+                dispositions[0].failure_evidence_id
+            )
+        )
+        shared_directive = self.coordinator.issue_repair_directive(
+            disposition=dispositions[0],
+            failure_evidence=evidence,
+            plan=self.plan,
+        )
         produce_calls = []
+        reserve_outcomes = []
         calls_lock = threading.Lock()
 
         def dispatch(directive: RepairDirective):
             effect = self._claim_repair_effect()
             reserved = self._reserve_or_claimed(directive, effect.effect_id)
+            with calls_lock:
+                reserve_outcomes.append(reserved["outcome"])
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            self._binding_mark_started(directive, effect.effect_id)
             with calls_lock:
                 produce_calls.append(directive.repair_directive_id)
                 good = self._passed_manifest(
@@ -1326,12 +1369,18 @@ class TestCoordinatorRace(RepairLoopE2EBase):
                 # state is what must stay consistent
                 pass
 
+        assert shared_directive is not None
+
         threads = [threading.Thread(target=run, daemon=True) for _ in range(2)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join(timeout=60)
 
+        # Exactly one EXECUTE and (when both raced) exactly one FOLLOW —
+        # never two EXECUTEs for the SAME directive.
+        self.assertEqual(reserve_outcomes.count("EXECUTE"), 1)
+        self.assertLessEqual(reserve_outcomes.count("FOLLOW"), 1)
         # EXACTLY ONE runtime execution crossed the boundary.
         self.assertEqual(len(produce_calls), 1)
         attempts = self.gateway_store.list_repair_attempts(
@@ -1360,7 +1409,7 @@ class TestCrashAfterExecutionSuccess(RepairLoopE2EBase):
         effect = self._claim_repair_effect()
         reserved = self._reserve_or_claimed(directive, effect.effect_id)
         assert reserved["outcome"] == "EXECUTE"
-        self._binding_mark_started(directive)
+        self._binding_mark_started(directive, effect.effect_id)
         good = self._passed_manifest(
             docx_bytes("字" * 300),
             filename="report.docx",
@@ -1396,8 +1445,15 @@ class TestCrashAfterExecutionSuccess(RepairLoopE2EBase):
         )
         # Runtime already executed; produced subject PERSISTED in the
         # binding; then CRASH (no successor, no re-verification, no
-        # attempt record).
+        # attempt record). Both authorities committed SUCCEEDED
+        # atomically before the crash.
         effect, good = self._crashed_binding(directive)
+        binding_after = self.gateway_store.get_repair_execution_binding(
+            directive.repair_directive_id
+        )
+        self.assertEqual(binding_after["state"], "SUCCEEDED")
+        effect_after = self.gateway_store.get_effect(effect.effect_id)
+        self.assertEqual(effect_after.state, "SUCCEEDED")
 
         # New process/coordinator: reads only the Store.
         final, _ = self.coordinator.execute_repair_loop(
@@ -1459,8 +1515,17 @@ class TestCrashAfterExecutionSuccess(RepairLoopE2EBase):
         effect = self._claim_repair_effect()
         reserved = self._reserve_or_claimed(directive, effect.effect_id)
         assert reserved["outcome"] == "EXECUTE"
-        # CRASH exactly after crossing the side-effect boundary:
-        self._binding_mark_started(directive)
+        # CRASH exactly after the ONE atomic boundary transition — both
+        # authorities are SIDE_EFFECT_STARTED or neither is.
+        self._binding_mark_started(directive, effect.effect_id)
+        started_binding = self.gateway_store.get_repair_execution_binding(
+            directive.repair_directive_id
+        )
+        self.assertEqual(started_binding["state"], "SIDE_EFFECT_STARTED")
+        self.assertEqual(
+            self.gateway_store.get_effect(effect.effect_id).state,
+            "SIDE_EFFECT_STARTED",
+        )
 
         final, disposition = self.coordinator.execute_repair_loop(
             plan=self.plan,
@@ -1689,7 +1754,7 @@ class TestGateAuthorityChecks(RepairLoopE2EBase):
             reserved = self._reserve_or_claimed(directive, effect.effect_id)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            self._binding_mark_started(directive, effect.effect_id)
             still_bad = self._passed_manifest(
                 docx_bytes("字" * 10),
                 filename="report.docx",
@@ -1957,7 +2022,7 @@ class TestRepositoryRepairE2E(_RepairBindingMixin, _M31RepositoryBase):
             reserved = self._reserve_or_claimed(directive, new_subject)
             if reserved["outcome"] != "EXECUTE":
                 return self._already_claimed(directive)
-            self._binding_mark_started(directive)
+            self._binding_mark_started(directive, new_subject)
             # The observation window is bound BEFORE the binding is
             # terminalized (production semantics).
             self._window(subject=new_subject, delta=True)
@@ -2007,6 +2072,274 @@ class TestRepositoryRepairE2E(_RepairBindingMixin, _M31RepositoryBase):
         self.assertTrue(
             self.store.list_repository_bindings_for_subject(new_subject)
         )
+
+
+class TestDispatchClaimLease(RepairLoopE2EBase):
+    """Final P0-1 B: the invocation-scoped dispatch claim lease."""
+
+    def _issued_directive(self):
+        readiness = self._reverify()
+        dispositions = self.coordinator.process_readiness(
+            plan=self.plan, readiness=readiness
+        )
+        evidence = (
+            self.gateway_store.get_verification_failure_evidence_by_id(
+                dispositions[0].failure_evidence_id
+            )
+        )
+        directive = self.coordinator.issue_repair_directive(
+            disposition=dispositions[0],
+            failure_evidence=evidence,
+            plan=self.plan,
+        )
+        return directive
+
+    def _reserve(self, directive, effect_id, claim_id, *, now, expiry):
+        return self.gateway_store.reserve_repair_execution(
+            repair_directive_id=directive.repair_directive_id,
+            repair_directive_sha256=directive.directive_sha256,
+            plan_entry_id=directive.plan_entry_id,
+            repair_attempt_no=directive.repair_attempt_no,
+            request_id=directive.request_id,
+            run_id=directive.run_id,
+            generation=directive.generation,
+            effect_id=effect_id,
+            effect_intent_sha256="9" * 64,
+            reserved_at_ms=now,
+            dispatch_claim_id=claim_id,
+            claim_expires_at_ms=expiry,
+        )
+
+    def test_live_claim_cannot_be_stolen(self) -> None:
+        import time as _time
+
+        directive = self._issued_directive()
+        effect = self._claim_repair_effect()
+        now = _time.time_ns() // 1_000_000
+        first = self._reserve(
+            directive, effect.effect_id, "claim-a",
+            now=now, expiry=now + 120_000,
+        )
+        self.assertEqual(first["outcome"], "EXECUTE")
+        second = self._reserve(
+            directive, effect.effect_id, "claim-b",
+            now=now + 1, expiry=now + 120_000,
+        )
+        self.assertEqual(second["outcome"], "FOLLOW")
+        # idempotent re-entry by the SAME live claim
+        again = self._reserve(
+            directive, effect.effect_id, "claim-a",
+            now=now + 2, expiry=now + 120_000,
+        )
+        self.assertEqual(again["outcome"], "EXECUTE")
+
+    def test_expired_pre_start_claim_may_be_taken_over(self) -> None:
+        import sqlite3
+        import time as _time
+
+        directive = self._issued_directive()
+        effect = self._claim_repair_effect()
+        now = _time.time_ns() // 1_000_000
+        first = self._reserve(
+            directive, effect.effect_id, "claim-a",
+            now=now, expiry=now + 120_000,
+        )
+        self.assertEqual(first["outcome"], "EXECUTE")
+        # the lease expires (wall clock moves past it)
+        connection = sqlite3.connect(self.temporary.name + "/gateway.sqlite3")
+        connection.execute(
+            "UPDATE repair_execution_binding SET claim_expires_at_ms = 1"
+            " WHERE repair_directive_id = ?",
+            (directive.repair_directive_id,),
+        )
+        connection.commit()
+        connection.close()
+        takeover = self._reserve(
+            directive, effect.effect_id, "claim-b",
+            now=now + 1, expiry=now + 120_000,
+        )
+        self.assertEqual(takeover["outcome"], "EXECUTE")
+        self.assertEqual(
+            takeover["binding"]["dispatch_claim_id"], "claim-b"
+        )
+        self.assertGreater(
+            int(takeover["binding"]["claim_revision"]),
+            int(first["binding"]["claim_revision"]),
+        )
+
+    def test_started_claim_can_never_be_taken_over(self) -> None:
+        import time as _time
+
+        directive = self._issued_directive()
+        effect = self._claim_repair_effect()
+        now = _time.time_ns() // 1_000_000
+        first = self._reserve(
+            directive, effect.effect_id, "claim-a",
+            now=now, expiry=now + 120_000,
+        )
+        self.assertEqual(first["outcome"], "EXECUTE")
+        self.gateway_store.start_repair_execution(
+            repair_directive_id=directive.repair_directive_id,
+            effect_id=effect.effect_id,
+            started_at_ms=now + 1,
+        )
+        # even with the lease expired, a STARTED binding is FOLLOW-only
+        takeover = self._reserve(
+            directive, effect.effect_id, "claim-b",
+            now=now + 2, expiry=now + 120_000,
+        )
+        self.assertEqual(takeover["outcome"], "FOLLOW")
+        self.assertEqual(
+            takeover["binding"]["state"], "SIDE_EFFECT_STARTED"
+        )
+
+    def test_reserve_rejects_drifted_directive_payload(self) -> None:
+        import time as _time
+
+        directive = self._issued_directive()
+        effect = self._claim_repair_effect()
+        now = _time.time_ns() // 1_000_000
+        with self.assertRaises(ValueError):
+            self.gateway_store.reserve_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                repair_directive_sha256="1" * 64,  # drifted digest
+                plan_entry_id=directive.plan_entry_id,
+                repair_attempt_no=directive.repair_attempt_no,
+                request_id=directive.request_id,
+                run_id=directive.run_id,
+                generation=directive.generation,
+                effect_id=effect.effect_id,
+                effect_intent_sha256="9" * 64,
+                reserved_at_ms=now,
+                dispatch_claim_id="claim-a",
+                claim_expires_at_ms=now + 120_000,
+            )
+
+
+class TestAtomicStartCrash(RepairLoopE2EBase):
+    """Final P0-2 C: after the atomic start and a reopen there is NO
+    observable (Effect STARTED, Binding RESERVED) state."""
+
+    def test_no_split_state_after_reopen(self) -> None:
+        import time as _time
+        from total_gateway.store import GatewayStateStore
+
+        readiness = self._reverify()
+        dispositions = self.coordinator.process_readiness(
+            plan=self.plan, readiness=readiness
+        )
+        evidence = (
+            self.gateway_store.get_verification_failure_evidence_by_id(
+                dispositions[0].failure_evidence_id
+            )
+        )
+        directive = self.coordinator.issue_repair_directive(
+            disposition=dispositions[0],
+            failure_evidence=evidence,
+            plan=self.plan,
+        )
+        effect = self._claim_repair_effect()
+        reserved = self._reserve_or_claimed(directive, effect.effect_id)
+        self.assertEqual(reserved["outcome"], "EXECUTE")
+
+        self.gateway_store.start_repair_execution(
+            repair_directive_id=directive.repair_directive_id,
+            effect_id=effect.effect_id,
+            started_at_ms=_time.time_ns() // 1_000_000,
+        )
+        # CRASH: close and reopen a fresh Store instance over the same
+        # database file.
+        self.gateway_store.close()
+        from pathlib import Path as _Path
+
+        reopened = GatewayStateStore.open(
+            _Path(self.temporary.name) / "gateway.sqlite3",
+            now_ms=_time.time_ns() // 1_000_000,
+        )
+        self.gateway_store = reopened
+        binding = reopened.get_repair_execution_binding(
+            directive.repair_directive_id
+        )
+        effect_record = reopened.get_effect(effect.effect_id)
+        self.assertEqual(binding["state"], "SIDE_EFFECT_STARTED")
+        self.assertEqual(effect_record.state, "SIDE_EFFECT_STARTED")
+        # the invariant under test: never effect-started + binding-RESERVED
+        self.assertNotEqual(
+            (effect_record.state, binding["state"]),
+            ("SIDE_EFFECT_STARTED", "RESERVED"),
+        )
+
+
+class TestPolicyDenyPath(RepairLoopE2EBase):
+    """Final P0-2 E: policy deny terminalizes BOTH authorities
+    atomically; the RepairAttempt(EXECUTION_FAILED) persists and the
+    runtime callback count stays zero."""
+
+    def test_policy_deny_atomic_failed_final(self) -> None:
+        produce_calls: list[str] = []
+
+        def dispatch(directive: RepairDirective):
+            effect = self._claim_repair_effect()
+            reserved = self._reserve_or_claimed(directive, effect.effect_id)
+            if reserved["outcome"] != "EXECUTE":
+                return self._already_claimed(directive)
+            # policy DENY: the runtime is NEVER entered; both
+            # authorities move atomically to FAILED_FINAL.
+            self._binding_complete(
+                directive,
+                "FAILED_FINAL",
+                "",
+                ref="policy-rejected",
+                error_code="repair.policy_denied",
+            )
+            return RepairDispatchResult(
+                execution_outcome="EXECUTION_FAILED",
+                produced_subject_identity=(
+                    directive.effective_subject_identity
+                ),
+                execution_effect_ids=(effect.effect_id,),
+            )
+
+        readiness = self._reverify()
+        final, disposition = self.coordinator.execute_repair_loop(
+            plan=self.plan,
+            readiness=readiness,
+            dispatch=dispatch,
+            reverify=self._reverify,
+        )
+        # runtime was never entered
+        self.assertEqual(produce_calls, [])
+        self.assertFalse(final.verification_ready)
+        self.assertIsNotNone(disposition)
+        self.assertEqual(disposition.action, "REVIEW")
+        # attempts persisted as EXECUTION_FAILED (the per-entry budget
+        # lets the policy deny retry once, then REVIEW)
+        attempts = self.gateway_store.list_repair_attempts(
+            self.entry.plan_entry_id
+        )
+        self.assertGreaterEqual(len(attempts), 1)
+        self.assertTrue(
+            all(a.execution_outcome == "EXECUTION_FAILED" for a in attempts)
+        )
+        # EVERY binding is atomically FAILED_FINAL with its effect
+        for attempt in attempts:
+            binding = self.gateway_store.get_repair_execution_binding(
+                attempt.repair_directive_id
+            )
+            self.assertEqual(binding["state"], "FAILED_FINAL")
+            effect_record = self.gateway_store.get_effect(
+                binding["effect_id"]
+            )
+            self.assertEqual(effect_record.state, "FAILED_FINAL")
+        # no successor for a never-executed repair
+        self.assertEqual(
+            self.gateway_store.list_verification_subject_successors(
+                self.entry.plan_entry_id
+            ),
+            (),
+        )
+
+
 
 
 if __name__ == "__main__":

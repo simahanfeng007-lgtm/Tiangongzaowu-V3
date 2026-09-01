@@ -13,6 +13,7 @@ import os
 import queue
 import threading
 import time
+import uuid
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
@@ -1865,6 +1866,10 @@ class GatewayOrchestrationWorker:
             effect_id=repair_effect.effect_id,
             effect_intent_sha256=effect_intent,
             reserved_at_ms=issued_at,
+            # invocation-scoped, never the gateway instance id — two
+            # threads in one process still single-flight
+            dispatch_claim_id=uuid.uuid4().hex,
+            claim_expires_at_ms=issued_at + 120_000,
         )
         if reserved["outcome"] != "EXECUTE":
             # Another coordinator owns this attempt — this worker must
@@ -2019,8 +2024,10 @@ class GatewayOrchestrationWorker:
                 grant=None,
                 observed_at_ms=issued_at,
             )
-            # Definite non-execution: terminalize as FAILED_FINAL (the
-            # runtime was never entered).
+            # Definite non-execution: ONE atomic transition puts BOTH
+            # authorities (binding + EffectLedger) into FAILED_FINAL, so
+            # the RepairAttempt(EXECUTION_FAILED) can persist and the
+            # runtime callback count stays zero.
             self._store.complete_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
                 state="FAILED_FINAL",
@@ -2028,6 +2035,7 @@ class GatewayOrchestrationWorker:
                 produced_subject_kind=directive.subject_kind,
                 runtime_result_ref="policy-rejected",
                 completed_at_ms=issued_at,
+                error_code="repair.policy_denied",
             )
             return RepairDispatchResult(
                 execution_outcome="EXECUTION_FAILED",
@@ -2113,14 +2121,13 @@ class GatewayOrchestrationWorker:
             authority_expires_at_ms=issued_at + directive.execution_budget_ms,
         )
         try:
-            self._store.mark_effect_started(
-                repair_effect.effect_id, started_at_ms=issued_at
-            )
-            # Final P0: cross the binding's no-return boundary BEFORE
-            # the runtime — after this point recovery is RECONCILE, not
-            # replay.
-            self._store.mark_repair_execution_started(
+            # Final P0-2: ONE atomic transition crosses BOTH authorities
+            # (EffectLedger CLAIMED→STARTED + binding RESERVED→STARTED)
+            # BEFORE the runtime — no committed state can ever show an
+            # effect past the boundary while its binding is RESERVED.
+            self._store.start_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
+                effect_id=repair_effect.effect_id,
                 started_at_ms=issued_at,
             )
 
@@ -2151,9 +2158,6 @@ class GatewayOrchestrationWorker:
                     timeout=max(1.0, directive.execution_budget_ms / 1000.0)
                 )
             except concurrent.futures.TimeoutError:
-                self._complete_repair_effect(
-                    repair_effect.effect_id, "AMBIGUOUS", "repair.execution_timeout"
-                )
                 self._store.complete_repair_execution(
                     repair_directive_id=directive.repair_directive_id,
                     state="AMBIGUOUS",
@@ -2161,6 +2165,7 @@ class GatewayOrchestrationWorker:
                     produced_subject_kind=directive.subject_kind,
                     runtime_result_ref="timeout",
                     completed_at_ms=time.time_ns() // 1_000_000,
+                    error_code="repair.execution_timeout",
                 )
                 return RepairDispatchResult(
                     execution_outcome="EXECUTION_AMBIGUOUS",
@@ -2168,21 +2173,18 @@ class GatewayOrchestrationWorker:
                     execution_effect_ids=(repair_effect.effect_id,),
                 )
         except BackendClientError as exc:
-            status = "AMBIGUOUS" if exc.ambiguous else "FAILED_FINAL"
-            self._complete_repair_effect(
-                repair_effect.effect_id, status, exc.code
-            )
             self._store.complete_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
-                state=("AMBIGUOUS" if status == "AMBIGUOUS" else "FAILED_FINAL"),
+                state=("AMBIGUOUS" if exc.ambiguous else "FAILED_FINAL"),
                 produced_subject_identity="",
                 produced_subject_kind=directive.subject_kind,
                 runtime_result_ref=exc.code or "",
                 completed_at_ms=time.time_ns() // 1_000_000,
+                error_code=exc.code,
             )
             return RepairDispatchResult(
                 execution_outcome=(
-                    "EXECUTION_AMBIGUOUS" if status == "AMBIGUOUS" else "EXECUTION_FAILED"
+                    "EXECUTION_AMBIGUOUS" if exc.ambiguous else "EXECUTION_FAILED"
                 ),
                 produced_subject_identity=directive.effective_subject_identity,
                 execution_effect_ids=(repair_effect.effect_id,),
@@ -2197,12 +2199,6 @@ class GatewayOrchestrationWorker:
             terminal = (
                 "AMBIGUOUS" if response_status == "AMBIGUOUS" else "FAILED_FINAL"
             )
-            self._complete_repair_effect(
-                repair_effect.effect_id,
-                terminal,
-                getattr(getattr(response, "result", None), "error_code", None)
-                or "repair.execution.failed",
-            )
             self._store.complete_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
                 state=terminal,
@@ -2213,6 +2209,10 @@ class GatewayOrchestrationWorker:
                     or ""
                 ),
                 completed_at_ms=time.time_ns() // 1_000_000,
+                error_code=(
+                    getattr(getattr(response, "result", None), "error_code", None)
+                    or "repair.execution.failed"
+                ),
             )
             return RepairDispatchResult(
                 execution_outcome=(
@@ -2268,10 +2268,8 @@ class GatewayOrchestrationWorker:
                 produced_subject = repair_effect.effect_id
         if not repository_window_ok:
             # The mutation may have happened but its window is unproven
-            # — that is AMBIGUOUS, never a silent failure.
-            self._complete_repair_effect(
-                repair_effect.effect_id, "AMBIGUOUS", "repair.repo_window_invalid"
-            )
+            # — that is AMBIGUOUS, never a silent failure. Both
+            # authorities move atomically.
             self._store.complete_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
                 state="AMBIGUOUS",
@@ -2279,6 +2277,7 @@ class GatewayOrchestrationWorker:
                 produced_subject_kind=directive.subject_kind,
                 runtime_result_ref="repo-window-invalid",
                 completed_at_ms=time.time_ns() // 1_000_000,
+                error_code="repair.repo_window_invalid",
             )
             return RepairDispatchResult(
                 execution_outcome="EXECUTION_AMBIGUOUS",
@@ -2288,6 +2287,8 @@ class GatewayOrchestrationWorker:
         # Persist the produced reality FIRST, then terminalize the
         # binding — recovery reads the binding without re-running the
         # runtime.
+        # ONE atomic transition: binding + EffectLedger both SUCCEEDED,
+        # with the produced subject and runtime result persisted.
         self._store.complete_repair_execution(
             repair_directive_id=directive.repair_directive_id,
             state="SUCCEEDED",
@@ -2300,9 +2301,6 @@ class GatewayOrchestrationWorker:
                 getattr(response, "response_sha256", "") or ""
             ),
             completed_at_ms=time.time_ns() // 1_000_000,
-        )
-        self._complete_repair_effect(
-            repair_effect.effect_id, "SUCCEEDED", None
         )
         return RepairDispatchResult(
             execution_outcome="DISPATCHED",
@@ -2360,24 +2358,6 @@ class GatewayOrchestrationWorker:
             return True
         except (KeyError, TypeError, ValueError, StoreError):
             return False
-
-    def _complete_repair_effect(
-        self, effect_id: str, status: str, error_code: str | None
-    ) -> None:
-        observed_at_ms = time.time_ns() // 1_000_000
-        result = EffectResult(
-            result_id="effect-result-" + effect_id[4:20],
-            effect_id=effect_id,
-            status=status,
-            fact_id="fact-effect-" + effect_id[4:20],
-            evidence_sha256=canonical_sha256(
-                {"code": error_code, "status": status}
-            ),
-            error_code=error_code,
-            observed_at_ms=observed_at_ms,
-            result_sha256="0" * 64,
-        ).with_computed_sha256()
-        self._store.complete_effect(result)
 
     def _register_repair_artifacts(
         self,
