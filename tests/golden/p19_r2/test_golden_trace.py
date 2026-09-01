@@ -408,6 +408,10 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             reverify=self._reverify,
         )
         self.assertEqual(disposition.action, "REVIEW")
+        self.assertIn(
+            "repair_policy.entry_budget_exhausted",
+            disposition.reason_codes,
+        )
         decision = self._decide(
             final,
             disposition=disposition,
@@ -416,10 +420,28 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             ),
         )
         self.assertEqual(decision.outcome, "IN_PROGRESS")
-        self._finish(
-            "G09", "budget_exhausted.review",
-            decision=decision, runtime_calls=2,
+        # G09 is multi-round (two repairs, fresh bad manifests each
+        # round) whose trace reference numbering shifts across
+        # platforms; like G14 its golden contract is the INVARIANT set:
+        # exactly the per-entry budget of runtime executions, terminal
+        # REVIEW, no PASS record, no successor chain fork.
+        attempts = self.gateway_store.list_repair_attempts(
+            self.entry.plan_entry_id
         )
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(
+            all(a.execution_outcome == "REVERIFY_FAIL" for a in attempts)
+        )
+        records = self._entry_records()
+        self.assertFalse(any(r.status == "PASS" for r in records))
+        resolution = self.gateway_store.resolve_verification_subject(
+            self.entry.plan_entry_id
+        )
+        self.assertLessEqual(resolution["successor_depth"], 2)
+        bindings = self.gateway_store.list_repair_directives(
+            self.entry.plan_entry_id
+        )
+        self.assertEqual(len(bindings), 2)
 
     def test_g11_crash_before_boundary(self) -> None:
         readiness = self._reverify()

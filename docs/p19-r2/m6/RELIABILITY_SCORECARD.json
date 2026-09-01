@@ -18,6 +18,7 @@
  "notes": [
   "G14 (two-worker race) is invariant-based (runtime==1) by design; timing nondeterminism",
   "repository unchanged-window expressed via non-empty delta excluding the required path (observation identity contract)",
-  "channel post-delivery artifact repair bridge: injection point present, assembly intentionally deferred (zero auto-execution, zero replay)"
+  "channel post-delivery artifact repair bridge: injection point present, assembly intentionally deferred (zero auto-execution, zero replay)",
+  "G09 (multi-round budget exhaustion) is invariant-based like G14: cross-platform reference numbering shifts in full-trace form"
  ]
 }

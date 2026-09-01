@@ -10,7 +10,7 @@
  "completion_gate_sha256": "da8e3ede85036ca2386decba28211acf01fb43fce8cfd4322cb53ebbd01ca9a9",
  "store_schema_version": 29,
  "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
- "golden_corpus_files": 14,
- "golden_corpus_sha256": "c4126396ea8b2b9f614e24721f7ee3fe2a9df5fb1383dbf655ac5deb5a590ddc",
+ "golden_corpus_files": 13,
+ "golden_corpus_sha256": "7e474e29f612d61fb8b7f737055deb66adc52b71f3a2ea084979a92efcc5a813",
  "golden_trace_version": "1"
 }
