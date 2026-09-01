@@ -159,6 +159,7 @@ from .skill_authority import SkillAuthority
 from .store import (
     ActiveRequestActivation,
     GatewayStateStore,
+    StoreCasConflict,
     StoreConflictError,
     StoreError,
 )
@@ -2150,23 +2151,42 @@ class GatewayOrchestrationWorker:
                     ),
                     execution_effect_ids=(repair_effect.effect_id,),
                 )
+        # Real-time lease fencing: the boundary-crossing time is taken
+        # HERE — after policy, ticketing and repository PRE sensing,
+        # immediately before the CAS — never the stale issued_at. A
+        # lease that expired in the wall-clock world cannot cross on an
+        # old timestamp.
+        start_at_ms = time.time_ns() // 1_000_000
         try:
             # Final P0-1/P0-2: ONE atomic, CLAIM-FENCED transition crosses
             # BOTH authorities (EffectLedger CLAIMED→STARTED + binding
             # RESERVED→STARTED) BEFORE the runtime. The CAS holds on the
-            # caller's claim id + fencing revision + live lease — a
-            # claim that lost a takeover can never reach the runtime.
-            start_outcome = self._store.start_repair_execution(
-                repair_directive_id=directive.repair_directive_id,
-                effect_id=repair_effect.effect_id,
-                started_at_ms=issued_at,
-                dispatch_claim_id=str(
-                    reserved["binding"]["dispatch_claim_id"]
-                ),
-                expected_claim_revision=int(
-                    reserved["binding"]["claim_revision"]
-                ),
-            )
+            # caller's claim id + fencing revision + lease live AT THE
+            # REAL CROSSING TIME — a claim that lost a takeover OR let
+            # its lease expire can never reach the runtime.
+            try:
+                start_outcome = self._store.start_repair_execution(
+                    repair_directive_id=directive.repair_directive_id,
+                    effect_id=repair_effect.effect_id,
+                    started_at_ms=start_at_ms,
+                    dispatch_claim_id=str(
+                        reserved["binding"]["dispatch_claim_id"]
+                    ),
+                    expected_claim_revision=int(
+                        reserved["binding"]["claim_revision"]
+                    ),
+                )
+            except StoreCasConflict:
+                # This worker's lease expired before the real crossing
+                # time (no takeover yet): hand the attempt over without
+                # executing anything — a future claim may take over.
+                return RepairDispatchResult(
+                    execution_outcome="ALREADY_CLAIMED",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(),
+                )
             if start_outcome["outcome"] != "STARTED":
                 # The boundary was already crossed (by this worker
                 # before a crash, or by a takeover winner): the runtime

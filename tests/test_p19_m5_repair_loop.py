@@ -894,10 +894,15 @@ class TestDesktopProductionWiring(unittest.TestCase):
             "dispatch_claim_id",
             "expected_claim_revision",
             'start_outcome["outcome"] != "STARTED"',
+            "start_at_ms = time.time_ns() // 1_000_000",
+            "started_at_ms=start_at_ms",
+            "except StoreCasConflict:",
             "_register_repair_artifacts(",
             "ArtifactGate(",
         ):
             self.assertIn(needle, method)
+        # the boundary timestamp is NEVER the stale reservation time
+        self.assertNotIn("started_at_ms=issued_at", method)
 
     def test_repository_evidence_comes_from_independent_sensor(self) -> None:
         source = (
@@ -2238,6 +2243,42 @@ class TestDispatchClaimLease(RepairLoopE2EBase):
             ),
         )
         self.assertEqual(again["outcome"], "ALREADY_STARTED")
+
+    def test_expired_lease_cannot_start_at_real_time(self) -> None:
+        """Final P0 (real-time fencing): a lease that expired in the
+        wall-clock world is rejected even WITHOUT a takeover — the CAS
+        compares claim_expires_at_ms against the REAL crossing time."""
+        import time as _time
+
+        from total_gateway.store import StoreCasConflict
+
+        directive = self._issued_directive()
+        effect = self._claim_repair_effect()
+        now = _time.time_ns() // 1_000_000
+        first = self._reserve(
+            directive, effect.effect_id, "claim-a",
+            now=now, expiry=now + 100,
+        )
+        self.assertEqual(first["outcome"], "EXECUTE")
+        # no takeover — the lease simply expires in real time
+        with self.assertRaises(StoreCasConflict):
+            self.gateway_store.start_repair_execution(
+                repair_directive_id=directive.repair_directive_id,
+                effect_id=effect.effect_id,
+                started_at_ms=now + 101,
+                dispatch_claim_id="claim-a",
+                expected_claim_revision=int(
+                    first["binding"]["claim_revision"]
+                ),
+            )
+        binding = self.gateway_store.get_repair_execution_binding(
+            directive.repair_directive_id
+        )
+        self.assertEqual(binding["state"], "RESERVED")
+        self.assertEqual(
+            self.gateway_store.get_effect(effect.effect_id).state,
+            "CLAIMED",
+        )
 
     def test_stale_claim_cannot_start_after_takeover(self) -> None:
         """Final P0-1: A's lease expires, B takes over — A's stale
