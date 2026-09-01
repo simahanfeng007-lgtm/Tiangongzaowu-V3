@@ -10824,9 +10824,14 @@ class GatewayStateStore:
                     live = (
                         int(existing["claim_expires_at_ms"]) > reserved_at_ms
                     )
-                    if same_claim or not live:
-                        # idempotent re-entry, or an expired pre-start
-                        # lease CAS-taken over by this claim
+                    if same_claim and live:
+                        # idempotent re-entry by the CURRENT live claim —
+                        # the fencing token (claim_revision) must NOT be
+                        # bumped, or takeover semantics get dirty.
+                        return {"outcome": "EXECUTE", "binding": dict(existing)}
+                    if not live:
+                        # expired pre-start lease: this claim CAS-takes
+                        # over; only NOW does the revision advance
                         self._connection.execute(
                             "UPDATE repair_execution_binding SET"
                             " dispatch_claim_id = ?, claim_revision ="
@@ -10871,17 +10876,27 @@ class GatewayStateStore:
             return {"outcome": "EXECUTE", "binding": dict(row)}
 
     def start_repair_execution(
-        self, *, repair_directive_id: str, effect_id: str, started_at_ms: int
+        self,
+        *,
+        repair_directive_id: str,
+        effect_id: str,
+        started_at_ms: int,
+        dispatch_claim_id: str,
+        expected_claim_revision: int,
     ) -> dict:
-        """ONE atomic authority transition (Final P0-2):
+        """ONE atomic, CLAIM-FENCED authority transition:
 
             EffectLedger  CLAIMED → SIDE_EFFECT_STARTED
             RepairBinding RESERVED → SIDE_EFFECT_STARTED
 
-        The binding must own exactly ``effect_id``. After this
-        transaction no committed state can ever show an effect past the
-        boundary while its binding is still RESERVED. Takeover is over:
-        SIDE_EFFECT_STARTED means RECONCILE-only on recovery.
+        The CAS must hold on ALL of: state RESERVED, dispatch_claim_id
+        exactly the caller's, claim_revision exactly the caller's
+        fencing token, the lease STILL LIVE at start time, and the
+        binding owning exactly ``effect_id``. Only the winner gets
+        ``{"outcome": "STARTED"}`` — the only result that authorizes
+        entering the runtime. An already-crossed boundary returns
+        ``ALREADY_STARTED`` (the caller must NOT execute the runtime);
+        a stale or expired claim is rejected outright.
         """
         with self._lock, self._write_transaction():
             row = self._binding_row_locked(repair_directive_id)
@@ -10892,39 +10907,47 @@ class GatewayStateStore:
                     "repair execution binding owns a different effect"
                 )
             state = str(row["state"])
-            if state == "RESERVED":
-                if started_at_ms < int(row["reserved_at_ms"]):
-                    raise ValueError(
-                        "repair execution start predates its reservation"
-                    )
-            elif state == "SIDE_EFFECT_STARTED":
-                if int(row["started_at_ms"] or 0) > started_at_ms:
-                    raise ValueError(
-                        "repair execution start predates its boundary"
-                    )
-            else:
+            if state == "SIDE_EFFECT_STARTED":
+                return {
+                    "outcome": "ALREADY_STARTED",
+                    "binding": dict(row),
+                }
+            if state != "RESERVED":
                 raise ValueError(
-                    "repair execution binding is not in a startable state:"
-                    f" {state}"
+                    "repair execution binding is not in a startable"
+                    f" state: {state}"
                 )
-            # Same transaction: cross the EffectLedger boundary first.
+            if started_at_ms < int(row["reserved_at_ms"]):
+                raise ValueError(
+                    "repair execution start predates its reservation"
+                )
+            # Claim fencing: the caller must be the CURRENT live claim
+            # owner with the CURRENT revision. A claim that lost a
+            # takeover can never cross the runtime boundary.
+            updated = self._connection.execute(
+                "UPDATE repair_execution_binding SET state ="
+                " 'SIDE_EFFECT_STARTED', started_at_ms = ?"
+                " WHERE repair_directive_id = ? AND state = 'RESERVED'"
+                " AND dispatch_claim_id = ? AND claim_revision = ?"
+                " AND claim_expires_at_ms > ?",
+                (
+                    started_at_ms, repair_directive_id,
+                    dispatch_claim_id, expected_claim_revision,
+                    started_at_ms,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise StoreCasConflict(
+                    "stale dispatch claim: this caller no longer owns the"
+                    " repair execution (claim/revision/lease mismatch)"
+                )
+            # Same transaction: cross the EffectLedger boundary.
             self.mark_effect_started(
                 effect_id, started_at_ms=started_at_ms
             )
-            if state == "RESERVED":
-                updated = self._connection.execute(
-                    "UPDATE repair_execution_binding SET state ="
-                    " 'SIDE_EFFECT_STARTED', started_at_ms = ?"
-                    " WHERE repair_directive_id = ? AND state = 'RESERVED'",
-                    (started_at_ms, repair_directive_id),
-                )
-                if updated.rowcount != 1:
-                    raise StoreCasConflict(
-                        "repair execution binding changed before start"
-                    )
             updated_row = self._binding_row_locked(repair_directive_id)
             assert updated_row is not None
-            return dict(updated_row)
+            return {"outcome": "STARTED", "binding": dict(updated_row)}
 
     def complete_repair_execution(
         self,

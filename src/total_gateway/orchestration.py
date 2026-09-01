@@ -2120,16 +2120,64 @@ class GatewayOrchestrationWorker:
             registered_at_ms=issued_at,
             authority_expires_at_ms=issued_at + directive.execution_budget_ms,
         )
+        # Final P0-1: repository repairs capture the PRE reality from
+        # the independent read-only sensor BEFORE any mutation (never
+        # from runtime payloads).
+        repo_sensor_pre = None
+        if directive.subject_kind == "repository":
+            repo_sensor_pre = self._capture_repository_sensor_pre(
+                effect_id=repair_effect.effect_id,
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation.generation,
+            )
+            if repo_sensor_pre is None:
+                # Pre-boundary sensor failure: the runtime was never
+                # entered — ONE atomic FAILED_FINAL, no successor.
+                self._store.complete_repair_execution(
+                    repair_directive_id=directive.repair_directive_id,
+                    state="FAILED_FINAL",
+                    produced_subject_identity="",
+                    produced_subject_kind=directive.subject_kind,
+                    runtime_result_ref="repo-pre-sensor-failed",
+                    completed_at_ms=time.time_ns() // 1_000_000,
+                    error_code="repair.repo_sensor_pre_failed",
+                )
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_FAILED",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(repair_effect.effect_id,),
+                )
         try:
-            # Final P0-2: ONE atomic transition crosses BOTH authorities
-            # (EffectLedger CLAIMED→STARTED + binding RESERVED→STARTED)
-            # BEFORE the runtime — no committed state can ever show an
-            # effect past the boundary while its binding is RESERVED.
-            self._store.start_repair_execution(
+            # Final P0-1/P0-2: ONE atomic, CLAIM-FENCED transition crosses
+            # BOTH authorities (EffectLedger CLAIMED→STARTED + binding
+            # RESERVED→STARTED) BEFORE the runtime. The CAS holds on the
+            # caller's claim id + fencing revision + live lease — a
+            # claim that lost a takeover can never reach the runtime.
+            start_outcome = self._store.start_repair_execution(
                 repair_directive_id=directive.repair_directive_id,
                 effect_id=repair_effect.effect_id,
                 started_at_ms=issued_at,
+                dispatch_claim_id=str(
+                    reserved["binding"]["dispatch_claim_id"]
+                ),
+                expected_claim_revision=int(
+                    reserved["binding"]["claim_revision"]
+                ),
             )
+            if start_outcome["outcome"] != "STARTED":
+                # The boundary was already crossed (by this worker
+                # before a crash, or by a takeover winner): the runtime
+                # must NEVER run again — this is RECONCILE territory.
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_AMBIGUOUS",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(repair_effect.effect_id,),
+                )
 
             def _execute_repair() -> Any:
                 return BackendClient(
@@ -2258,11 +2306,10 @@ class GatewayOrchestrationWorker:
         elif directive.subject_kind == "effect":
             produced_subject = repair_effect.effect_id
         elif directive.subject_kind == "repository":
-            repository_window_ok = self._bind_repository_repair_observations(
-                result_payload=result_payload,
+            repository_window_ok = self._bind_repository_sensor_post(
+                sensor_pre=repo_sensor_pre,
                 subject_effect_id=repair_effect.effect_id,
                 directive=directive,
-                observed_at_ms=time.time_ns() // 1_000_000,
             )
             if repository_window_ok:
                 produced_subject = repair_effect.effect_id
@@ -2308,55 +2355,76 @@ class GatewayOrchestrationWorker:
             execution_effect_ids=(repair_effect.effect_id,),
         )
 
-    def _bind_repository_repair_observations(
-        self,
-        *,
-        result_payload,
-        subject_effect_id: str,
-        directive,
-        observed_at_ms: int,
-    ) -> bool:
-        """P0-2: bind the repair mutation's PRE/POST repository
-        observation window to the NEW subject effect. The observation
-        payloads come from the runtime response and must validate
-        through the authoritative RepositoryObservation contract at the
-        Store boundary. Returns False (no successor) when the window is
-        absent or invalid — the mutation stays unproven."""
-        observations = result_payload.get("repository_observations")
-        if not isinstance(observations, dict):
-            return False
+    def _capture_repository_sensor_pre(
+        self, *, effect_id: str, request_id: str, run_id: str,
+        generation: int,
+    ):
+        """Final P0-2: the repository PRE reality comes from the
+        INDEPENDENT read-only sensor over the workspace Git authority —
+        never from a runtime payload. Returns (identity, observation)
+        or None when sensing fails (the repair then fails closed)."""
         try:
-            for role, key in (("PRE", "pre"), ("POST", "post")):
-                payload = observations.get(key)
-                if not isinstance(payload, dict):
-                    return False
-                identity = payload.get("identity") or {}
-                revision = payload.get("revision") or {}
-                observed_at = int(payload.get("observed_at_ms"))
-                self._store.put_repository_observation(
-                    observation_sha256=str(payload["observation_sha256"]),
-                    observation_payload=payload,
-                    request_id=directive.request_id,
-                    run_id=directive.run_id,
-                    generation=directive.generation,
-                    effect_id=subject_effect_id,
-                    repository_id=str(identity.get("repository_id")),
-                    head_commit=str(revision.get("head_commit")),
-                    observed_at_ms=observed_at,
-                    recorded_at_ms=observed_at_ms + 1,
-                )
+            from v3.repository_perception import LocalGitRepositoryProvider
+
+            provider = LocalGitRepositoryProvider()
+            identity = provider.discover(str(self._workspace_root))
+            if identity is None:
+                return None
+            pre = provider.observe(identity)
+            self._store.put_repository_observation(
+                observation_sha256=pre.observation_sha256,
+                observation_payload=pre.model_dump(mode="json"),
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                effect_id=effect_id,
+                repository_id=pre.identity.repository_id,
+                head_commit=pre.revision.head_commit,
+                observed_at_ms=pre.observed_at_ms,
+                recorded_at_ms=time.time_ns() // 1_000_000,
+            )
+            return (identity, pre)
+        except Exception:
+            return None
+
+    def _bind_repository_sensor_post(
+        self, *, sensor_pre, subject_effect_id: str, directive,
+    ) -> bool:
+        """Final P0-2: the POST window is likewise captured by the
+        independent sensor (delta from the PRE revision) after the
+        runtime mutation, then both observations are bound to the NEW
+        subject effect. A sensing failure is NEVER a success."""
+        try:
+            from v3.repository_perception import LocalGitRepositoryProvider
+
+            identity, pre = sensor_pre
+            provider = LocalGitRepositoryProvider()
+            post = provider.observe_delta(identity, pre.revision)
+            self._store.put_repository_observation(
+                observation_sha256=post.observation_sha256,
+                observation_payload=post.model_dump(mode="json"),
+                request_id=directive.request_id,
+                run_id=directive.run_id,
+                generation=directive.generation,
+                effect_id=subject_effect_id,
+                repository_id=post.identity.repository_id,
+                head_commit=post.revision.head_commit,
+                observed_at_ms=post.observed_at_ms,
+                recorded_at_ms=time.time_ns() // 1_000_000,
+            )
+            for role, observation in (("PRE", pre), ("POST", post)):
                 self._store.put_repository_observation_binding(
-                    observation_sha256=str(payload["observation_sha256"]),
+                    observation_sha256=observation.observation_sha256,
                     request_id=directive.request_id,
                     run_id=directive.run_id,
                     generation=directive.generation,
                     subject_effect_id=subject_effect_id,
                     observation_role=role,
-                    observed_at_ms=observed_at,
-                    recorded_at_ms=observed_at + 2,
+                    observed_at_ms=observation.observed_at_ms,
+                    recorded_at_ms=observation.observed_at_ms + 2,
                 )
             return True
-        except (KeyError, TypeError, ValueError, StoreError):
+        except Exception:
             return False
 
     def _register_repair_artifacts(
