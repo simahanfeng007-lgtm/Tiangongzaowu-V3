@@ -290,13 +290,26 @@ class RepairLoopE2EBase(_RepairBindingMixin, M21OracleTestBase):
             artifact_manifests=tuple(self.manifests),
         )
 
+    def _binding_effect_id(self, directive):
+        """The binding's OWN effect if one exists (crash recovery
+        mirrors the production bridge's directive-derived effect id);
+        otherwise claim a fresh carrier effect."""
+        store = self._binding_store()
+        if hasattr(store, "get_repair_execution_binding_by_attempt"):
+            binding = store.get_repair_execution_binding_by_attempt(
+                directive.plan_entry_id, directive.repair_attempt_no
+            )
+            if binding is not None:
+                return str(binding["effect_id"])
+        return self._claim_repair_effect().effect_id
+
     def _dispatch_success(self, directive: RepairDirective):
         """Scripted runtime through the REAL Store dispatch boundary."""
-        effect = self._claim_repair_effect()
-        reserved = self._reserve_or_claimed(directive, effect.effect_id)
+        effect_id = self._binding_effect_id(directive)
+        reserved = self._reserve_or_claimed(directive, effect_id)
         if reserved["outcome"] != "EXECUTE":
             return self._already_claimed(directive)
-        self._binding_mark_started(directive, effect.effect_id, reserved)
+        self._binding_mark_started(directive, effect_id, reserved)
         good = self._passed_manifest(
             docx_bytes("字" * 300),
             filename="report.docx",
@@ -310,7 +323,7 @@ class RepairLoopE2EBase(_RepairBindingMixin, M21OracleTestBase):
         return RepairDispatchResult(
             execution_outcome="DISPATCHED",
             produced_subject_identity=good.artifact_revision_id,
-            execution_effect_ids=(effect.effect_id,),
+            execution_effect_ids=(effect_id,),
         )
 
     def _entry_records(self):
@@ -1104,7 +1117,12 @@ class TestEffectRepairE2E(_RepairBindingMixin, M21OracleTestBase):
                 status=status,
                 fact_id="fact-effect-" + effect_id[4:20],
                 evidence_sha256=_sha({"status": status}),
-                error_code=None if status == "SUCCEEDED" else "exec.failed",
+                error_code=(
+                None
+                if status in
+                ("SUCCEEDED", "RECONCILED")
+                else "exec.failed"
+            ),
                 observed_at_ms=_time.time_ns() // 1_000_000,
                 result_sha256="0" * 64,
             ).with_computed_sha256()

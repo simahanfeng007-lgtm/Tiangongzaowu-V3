@@ -1,0 +1,368 @@
+{
+ "authority_events": [
+  {
+   "enforcement": "RECORD",
+   "kind": "verification_record",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "status": "FAIL",
+   "subject_kind": "artifact"
+  },
+  {
+   "enforcement": "RECORD",
+   "kind": "verification_record",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "status": "PASS",
+   "subject_kind": "artifact"
+  },
+  {
+   "action": "REPAIR",
+   "attempt_no": 0,
+   "kind": "disposition",
+   "reason_codes": [
+    "repair_policy.deterministic_content_repairable"
+   ]
+  },
+  {
+   "claim_revision": 1,
+   "kind": "repair_binding",
+   "state": "SUCCEEDED"
+  },
+  {
+   "execution_outcome": "REVERIFY_PASS",
+   "kind": "repair_attempt",
+   "repair_attempt_no": 1
+  },
+  {
+   "kind": "subject_successor",
+   "repair_attempt_no": 1
+  },
+  {
+   "kind": "successor_resolution",
+   "successor_depth": 1
+  },
+  {
+   "kind": "completion_decision",
+   "outcome": "COMPLETED",
+   "verification_mode": "PLAN_BOUND",
+   "verification_ready": true
+  }
+ ],
+ "completion_decision": {
+  "artifact_revision_states": [
+   "[\n \"?\",\n \"QC_PASSED\"\n]",
+   "[\n \"?\",\n \"QC_PASSED\"\n]"
+  ],
+  "artifacts_ready": true,
+  "can_claim_platform_delivered": false,
+  "can_transition_request_completed": true,
+  "candidate_text_sha256": null,
+  "decision_sha256": "ref2",
+  "delivery_parts": [],
+  "delivery_ready": true,
+  "delivery_receipt_sha256": null,
+  "execution_effect_states": [],
+  "execution_ready": true,
+  "generation": 2,
+  "model_generated": false,
+  "needs_reconciliation": false,
+  "outbound_plan_sha256": null,
+  "outcome": "COMPLETED",
+  "reason_code": "completion.requirements_satisfied",
+  "request_id": "ref3",
+  "run_id": "ref4",
+  "supporting_fact_ids": [
+   "ref5",
+   "ref6"
+  ],
+  "text_ready": true,
+  "verification_mode": "PLAN_BOUND",
+  "verification_plan_sha256": "ref7",
+  "verification_readiness_sha256": "ref8",
+  "verification_ready": true
+ },
+ "dispositions": [
+  {
+   "action": "REPAIR",
+   "attempt_no": 0,
+   "decided_at_ms": "<ts>",
+   "disposition_sha256": "ref9",
+   "failure_evidence_id": "ref10",
+   "failure_evidence_sha256": "ref11",
+   "generation": 2,
+   "max_attempts": 2,
+   "model_generated": false,
+   "plan_entry_id": "ref12",
+   "policy_config_sha256": "ref13",
+   "policy_version": "v1",
+   "reason_codes": [
+    "repair_policy.deterministic_content_repairable"
+   ],
+   "request_id": "ref3",
+   "run_id": "ref4",
+   "schema_id": "VerificationDisposition",
+   "schema_version": "tiangong.verification_disposition.v1",
+   "verification_disposition_id": "ref14",
+   "verification_plan_id": "ref15"
+  }
+ ],
+ "failure_evidence": [
+  {
+   "effective_subject_identity": "ref0",
+   "evidence_refs": [
+    "artifact_revision:ref0",
+    "manifest_sha256:ref16",
+    "content_object:ref17",
+    "content_sha256:ref18",
+    "qc_evidence_set_sha256:ref19",
+    "predicate_sha256:ref20",
+    "observation_sha256:ref21"
+   ],
+   "failure_evidence_id": "ref10",
+   "failure_evidence_sha256": "ref11",
+   "failure_kind": "VERIFICATION_FAILED",
+   "failure_signature_sha256": "ref22",
+   "generation": 2,
+   "observed_at_ms": "<ts>",
+   "original_subject_identity": "ref0",
+   "plan_entry_id": "ref12",
+   "plan_entry_sha256": "ref23",
+   "predicate_id": "ref24",
+   "predicate_sha256": "ref20",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "readiness_id": "ref25",
+   "readiness_sha256": "ref26",
+   "reason_codes": [
+    "artifact.visible_text_below_minimum"
+   ],
+   "registry_snapshot_sha256": "ref27",
+   "request_id": "ref3",
+   "run_id": "ref4",
+   "schema_id": "FailureEvidence",
+   "schema_version": "tiangong.verification_failure_evidence.v1",
+   "subject_kind": "artifact",
+   "verification_evidence_sha256": "ref20",
+   "verification_plan_id": "ref15",
+   "verification_plan_sha256": "ref7",
+   "verification_record_id": "ref28",
+   "verification_result_sha256": "ref29",
+   "verification_status": "FAIL",
+   "verifier_id": "verifier.artifact_content",
+   "verifier_version": "3"
+  }
+ ],
+ "golden_case_id": "G15",
+ "input_class": "stale_authority.rejected",
+ "readiness": {
+  "entry_assessments": [
+   {
+    "plan_entry_id": "ref12",
+    "reason_code": null,
+    "status": "PASS",
+    "verification_record_id": "ref30"
+   }
+  ],
+  "evaluated_at_ms": "<ts>",
+  "failure_class": "NONE",
+  "generation": 2,
+  "readiness_sha256": "ref8",
+  "reason_codes": [],
+  "registry_snapshot_sha256": "ref27",
+  "request_id": "ref3",
+  "required_entry_count": 1,
+  "run_id": "ref4",
+  "satisfied_entry_count": 1,
+  "schema_id": "VerificationReadiness",
+  "schema_version": "tiangong.verification_readiness.v1",
+  "supporting_verification_record_ids": [
+   "ref30"
+  ],
+  "verification_plan_id": "ref15",
+  "verification_plan_sha256": "ref7",
+  "verification_readiness_id": "ref31",
+  "verification_ready": true
+ },
+ "repair_attempts": [
+  {
+   "attempt_sha256": "ref32",
+   "execution_effect_ids": [
+    "ref33"
+   ],
+   "execution_outcome": "REVERIFY_PASS",
+   "finished_at_ms": "<ts>",
+   "generation": 2,
+   "plan_entry_id": "ref12",
+   "prior_subject_identity": "ref0",
+   "produced_subject_identity": "ref1",
+   "repair_attempt_id": "ref34",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref35",
+   "request_id": "ref3",
+   "reverify_record_id": "ref30",
+   "run_id": "ref4",
+   "schema_id": "RepairAttemptRecord",
+   "schema_version": "tiangong.repair_attempt.v1",
+   "started_at_ms": "<ts>"
+  }
+ ],
+ "repair_bindings": [
+  {
+   "claim_expires_at_ms": "<ts>",
+   "claim_revision": 1,
+   "completed_at_ms": "<ts>",
+   "dispatch_claim_id": "ref36",
+   "effect_id": "ref33",
+   "effect_intent_sha256": "ref37",
+   "generation": 2,
+   "plan_entry_id": "ref12",
+   "produced_subject_identity": "ref1",
+   "produced_subject_kind": "artifact",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref35",
+   "repair_directive_sha256": "ref38",
+   "request_id": "ref3",
+   "reserved_at_ms": "<ts>",
+   "run_id": "ref4",
+   "runtime_result_ref": "test",
+   "runtime_result_sha256": "",
+   "started_at_ms": "<ts>",
+   "state": "SUCCEEDED"
+  }
+ ],
+ "repair_directives": [
+  {
+   "allowed_target_refs": [
+    "ref0"
+   ],
+   "directive_sha256": "ref38",
+   "disposition_id": "ref14",
+   "disposition_sha256": "ref9",
+   "effective_subject_identity": "ref0",
+   "execution_budget_ms": 120000,
+   "expires_at_ms": "<ts>",
+   "failure_evidence_id": "ref10",
+   "failure_evidence_sha256": "ref11",
+   "forbidden_target_refs": [],
+   "generation": 2,
+   "issued_at_ms": "<ts>",
+   "max_attempts": 2,
+   "original_subject_identity": "ref0",
+   "plan_entry_id": "ref12",
+   "plan_entry_sha256": "ref23",
+   "predicate_id": "ref24",
+   "predicate_sha256": "ref20",
+   "repair_attempt_no": 1,
+   "repair_constraints": [],
+   "repair_directive_id": "ref35",
+   "repair_goal_kind": "repair:artifact.min_visible_text_chars",
+   "request_id": "ref3",
+   "requires_reverification": true,
+   "run_id": "ref4",
+   "schema_id": "RepairDirective",
+   "schema_version": "tiangong.repair_directive.v1",
+   "subject_kind": "artifact",
+   "verification_plan_id": "ref15",
+   "verification_plan_sha256": "ref7"
+  }
+ ],
+ "runtime_execution_count": 1,
+ "subject_successors": [
+  {
+   "__resolution__": {
+    "chain_binding_ids": [
+     "ref39"
+    ],
+    "effective_subject_identity": "ref1",
+    "successor_depth": 1
+   }
+  },
+  {
+   "bound_at_ms": "<ts>",
+   "generation": 2,
+   "plan_entry_id": "ref12",
+   "predecessor_subject_identity": "ref0",
+   "produced_by_effect_id": "ref33",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref35",
+   "repair_directive_sha256": "ref38",
+   "request_id": "ref3",
+   "run_id": "ref4",
+   "schema_id": "VerificationSubjectSuccessor",
+   "schema_version": "tiangong.verification_subject_successor.v1",
+   "subject_kind": "artifact",
+   "successor_binding_id": "ref39",
+   "successor_binding_sha256": "ref40",
+   "successor_subject_identity": "ref1",
+   "verification_plan_id": "ref15"
+  }
+ ],
+ "verification_records": [
+  {
+   "enforcement": "RECORD",
+   "evaluated_at_ms": "<ts>",
+   "evaluation_phase": "POST_EXECUTION",
+   "evidence_refs": [
+    "artifact_revision:ref0",
+    "manifest_sha256:ref16",
+    "content_object:ref17",
+    "content_sha256:ref18",
+    "qc_evidence_set_sha256:ref19",
+    "predicate_sha256:ref20",
+    "observation_sha256:ref21"
+   ],
+   "evidence_sha256": "ref41",
+   "generation": 2,
+   "model_generated": false,
+   "predicate_id": "ref24",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "producer_component_id": "tiangong-gateway",
+   "reason_codes": [
+    "artifact.visible_text_below_minimum"
+   ],
+   "registry_snapshot_sha256": "ref27",
+   "request_id": "ref3",
+   "result_sha256": "ref29",
+   "run_id": "ref4",
+   "schema_id": "VerificationRecord",
+   "schema_version": "tiangong.verification_record.v1",
+   "status": "FAIL",
+   "subject_identity": "ref0",
+   "subject_kind": "artifact",
+   "verification_record_id": "ref28",
+   "verifier_id": "verifier.artifact_content",
+   "verifier_version": "3"
+  },
+  {
+   "enforcement": "RECORD",
+   "evaluated_at_ms": "<ts>",
+   "evaluation_phase": "POST_EXECUTION",
+   "evidence_refs": [
+    "artifact_revision:ref1",
+    "manifest_sha256:ref42",
+    "content_object:ref43",
+    "content_sha256:ref44",
+    "qc_evidence_set_sha256:ref45",
+    "predicate_sha256:ref20",
+    "observation_sha256:ref46"
+   ],
+   "evidence_sha256": "ref47",
+   "generation": 2,
+   "model_generated": false,
+   "predicate_id": "ref24",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "producer_component_id": "tiangong-gateway",
+   "reason_codes": [],
+   "registry_snapshot_sha256": "ref27",
+   "request_id": "ref3",
+   "result_sha256": "ref48",
+   "run_id": "ref4",
+   "schema_id": "VerificationRecord",
+   "schema_version": "tiangong.verification_record.v1",
+   "status": "PASS",
+   "subject_identity": "ref1",
+   "subject_kind": "artifact",
+   "verification_record_id": "ref30",
+   "verifier_id": "verifier.artifact_content",
+   "verifier_version": "3"
+  }
+ ]
+}

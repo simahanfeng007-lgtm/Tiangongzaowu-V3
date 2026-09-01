@@ -561,6 +561,15 @@ class VerificationRepairCoordinator:
         result: RepairDispatchResult,
         now_ms: int,
     ) -> None:
+        # Idempotent short-circuit: a crash-recovery replay of the SAME
+        # successor transition (same attempt number already bound) must
+        # not re-bind or fork the chain.
+        if hasattr(self._store, "list_verification_subject_successors"):
+            for existing in self._store.list_verification_subject_successors(
+                directive.plan_entry_id
+            ):
+                if existing.repair_attempt_no == directive.repair_attempt_no:
+                    return
         if not result.execution_effect_ids:
             raise RepairCoordinatorError(
                 "subject successor requires a produced_by_effect binding"

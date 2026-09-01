@@ -11705,9 +11705,11 @@ class GatewayStateStore:
                 "subject successor revalidation: predecessor is not the"
                 " current effective subject"
             )
-        # P1-6: one successor per (plan entry, attempt number).
+        # P1-6: one successor per (plan entry, attempt number) — with
+        # content-identical re-binding idempotent (crash recovery may
+        # replay the same successor transition).
         duplicate = self._connection.execute(
-            "SELECT successor_binding_id FROM verification_subject_successor"
+            "SELECT binding_json FROM verification_subject_successor"
             " WHERE plan_entry_id = ? AND repair_attempt_no = ?"
             " AND successor_binding_id != ?",
             (
@@ -11717,6 +11719,8 @@ class GatewayStateStore:
             ),
         ).fetchone()
         if duplicate is not None:
+            if duplicate["binding_json"] == payload_json:
+                return False  # identical re-binding (recovery) — idempotent
             raise ValueError(
                 "subject successor revalidation: a binding for this"
                 " attempt number already exists for the plan entry"

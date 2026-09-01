@@ -1,0 +1,34 @@
+name: P19-R2 Verification Plane Golden Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  golden-gate:
+    name: p19-r2-golden-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      # Compare-only in CI: golden baselines are NEVER auto-rewritten.
+      UPDATE_GOLDEN: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install openpyxl python-docx python-pptx
+      - name: Verification Plane Golden Gate
+        run: |
+          python -m pytest tests/golden/p19_r2/ -q
+      - name: M0-M5 verification regression
+        run: |
+          python -m pytest tests/ -k "p19 or verification or repair" -q

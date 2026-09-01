@@ -1,0 +1,73 @@
+{
+ "artifact": {
+  "total": 10,
+  "true_pass": 5,
+  "true_fail": 5,
+  "expected_inconclusive": 0,
+  "false_pass": 0,
+  "false_fail": 0,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "text.empty_fail",
+    "expected": "FAIL",
+    "actual": "GATE_REJECTED",
+    "ok": true
+   },
+   {
+    "case": "text.nonempty_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "docx.too_few_chars_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "docx.enough_chars_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "xlsx.missing_column_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "xlsx.columns_present_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "xlsx.too_few_rows_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "xlsx.enough_rows_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "text.marker_missing_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "text.markers_present_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   }
+  ]
+ }
+}

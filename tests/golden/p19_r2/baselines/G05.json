@@ -1,0 +1,156 @@
+{
+ "authority_events": [
+  {
+   "action": "WAIT",
+   "attempt_no": 0,
+   "kind": "disposition",
+   "reason_codes": [
+    "repair_policy.missing_evidence_wait"
+   ]
+  },
+  {
+   "kind": "successor_resolution",
+   "successor_depth": 0
+  },
+  {
+   "kind": "completion_decision",
+   "outcome": "IN_PROGRESS",
+   "verification_mode": "PLAN_BOUND",
+   "verification_ready": false
+  }
+ ],
+ "completion_decision": {
+  "artifact_revision_states": [
+   "[\n \"?\",\n \"QC_PASSED\"\n]"
+  ],
+  "artifacts_ready": true,
+  "can_claim_platform_delivered": false,
+  "can_transition_request_completed": false,
+  "candidate_text_sha256": null,
+  "decision_sha256": "ref1",
+  "delivery_parts": [],
+  "delivery_ready": true,
+  "delivery_receipt_sha256": null,
+  "execution_effect_states": [],
+  "execution_ready": true,
+  "generation": 2,
+  "model_generated": false,
+  "needs_reconciliation": false,
+  "outbound_plan_sha256": null,
+  "outcome": "IN_PROGRESS",
+  "reason_code": "completion.required_evidence_pending",
+  "request_id": "ref2",
+  "run_id": "ref3",
+  "supporting_fact_ids": [
+   "ref4"
+  ],
+  "text_ready": true,
+  "verification_mode": "PLAN_BOUND",
+  "verification_plan_sha256": "ref5",
+  "verification_readiness_sha256": "ref6",
+  "verification_ready": false
+ },
+ "dispositions": [
+  {
+   "action": "WAIT",
+   "attempt_no": 0,
+   "decided_at_ms": "<ts>",
+   "disposition_sha256": "ref7",
+   "failure_evidence_id": "ref8",
+   "failure_evidence_sha256": "ref9",
+   "generation": 2,
+   "max_attempts": 2,
+   "model_generated": false,
+   "plan_entry_id": "ref10",
+   "policy_config_sha256": "ref11",
+   "policy_version": "v1",
+   "reason_codes": [
+    "repair_policy.missing_evidence_wait"
+   ],
+   "request_id": "ref2",
+   "run_id": "ref3",
+   "schema_id": "VerificationDisposition",
+   "schema_version": "tiangong.verification_disposition.v1",
+   "verification_disposition_id": "ref12",
+   "verification_plan_id": "ref13"
+  }
+ ],
+ "failure_evidence": [
+  {
+   "effective_subject_identity": "ref0",
+   "evidence_refs": [],
+   "failure_evidence_id": "ref8",
+   "failure_evidence_sha256": "ref9",
+   "failure_kind": "MISSING_EVIDENCE",
+   "failure_signature_sha256": "ref14",
+   "generation": 2,
+   "observed_at_ms": "<ts>",
+   "original_subject_identity": "ref0",
+   "plan_entry_id": "ref10",
+   "plan_entry_sha256": "ref15",
+   "predicate_id": "ref16",
+   "predicate_sha256": "ref17",
+   "predicate_type": "artifact.min_visible_text_chars",
+   "readiness_id": "ref18",
+   "readiness_sha256": "ref6",
+   "reason_codes": [],
+   "registry_snapshot_sha256": "ref19",
+   "request_id": "ref2",
+   "run_id": "ref3",
+   "schema_id": "FailureEvidence",
+   "schema_version": "tiangong.verification_failure_evidence.v1",
+   "subject_kind": "artifact",
+   "verification_evidence_sha256": "ref20",
+   "verification_plan_id": "ref13",
+   "verification_plan_sha256": "ref5",
+   "verification_record_id": null,
+   "verification_result_sha256": null,
+   "verification_status": "MISSING",
+   "verifier_id": "verifier.artifact_content",
+   "verifier_version": "3"
+  }
+ ],
+ "golden_case_id": "G05",
+ "input_class": "missing.wait",
+ "readiness": {
+  "entry_assessments": [
+   {
+    "plan_entry_id": "ref10",
+    "reason_code": null,
+    "status": "MISSING",
+    "verification_record_id": null
+   }
+  ],
+  "evaluated_at_ms": "<ts>",
+  "failure_class": "MISSING_EVIDENCE",
+  "generation": 2,
+  "readiness_sha256": "ref6",
+  "reason_codes": [],
+  "registry_snapshot_sha256": "ref19",
+  "request_id": "ref2",
+  "required_entry_count": 1,
+  "run_id": "ref3",
+  "satisfied_entry_count": 0,
+  "schema_id": "VerificationReadiness",
+  "schema_version": "tiangong.verification_readiness.v1",
+  "supporting_verification_record_ids": [],
+  "verification_plan_id": "ref13",
+  "verification_plan_sha256": "ref5",
+  "verification_readiness_id": "ref18",
+  "verification_ready": false
+ },
+ "repair_attempts": [],
+ "repair_bindings": [],
+ "repair_directives": [],
+ "runtime_execution_count": 0,
+ "subject_successors": [
+  {
+   "__resolution__": {
+    "chain_binding_ids": [],
+    "effective_subject_identity": null,
+    "successor_depth": 0
+   }
+  }
+ ],
+ "verification_records": []
+}

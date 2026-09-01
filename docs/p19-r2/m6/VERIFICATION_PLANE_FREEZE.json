@@ -1,0 +1,15 @@
+{
+ "verification_plane_version": "1.0",
+ "baseline_sha": "a94035f221d8769dcf4d5bcd1e7fa2827aa9623a",
+ "store_schema_version": 29,
+ "contract_schema_versions": {
+  "verification": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
+  "verification_repair": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb"
+ },
+ "registry_fingerprint": "6216982d89b5e18aac4026b063fb264ad787b1a2334e05a63a77411a28b45ec9",
+ "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
+ "completion_authority_sha256": "da8e3ede85036ca2386decba28211acf01fb43fce8cfd4322cb53ebbd01ca9a9",
+ "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
+ "golden_corpus_sha256": "c4126396ea8b2b9f614e24721f7ee3fe2a9df5fb1383dbf655ac5deb5a590ddc",
+ "golden_trace_version": "1"
+}

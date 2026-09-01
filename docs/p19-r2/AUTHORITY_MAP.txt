@@ -146,3 +146,44 @@ v3/simple_chain/content_preflight.py     —— v3 closed_world 权威（M2 迁�
                                              _office_content_gaps 落位）
 docs/p19-r2/*、tests/fixtures/p19_verification/* —— 本 M0 分支新增，
                                              不属于任何 generated target。
+
+
+======================================================================
+P19-R2 M6｜Verification Plane 1.0 Architecture Freeze（终版权威链）
+基线：a94035f221d8769dcf4d5bcd1e7fa2827aa9623a
+======================================================================
+
+Ingress
+  |
+  v
+Total Gateway
+  |
+  v
+Runtime  （唯一 Runtime：既有 BackendClient 执行权威）
+  |
+  v
+Reality  （Artifact 权威 / EffectLedger / Repository observations）
+  |
+  v
+Verification Plane
+  |  VerificationPlan + Registry + VerificationRecord + Readiness
+  |  Oracle 只产事实（RECORD-only）—— 绝无终局权威
+  v
+Repair Policy  （Gateway 确定性策略；LLM 零参与决策）
+  |
+  v
+existing Runtime  （单飞、claim-fenced、崩溃安全的修复执行）
+  |
+  v
+CompletionGate  （唯一完成权威）
+
+冻结的六项唯一权威（M6 §22）：
+  Runtime Authority        : 仅既有 Runtime
+  Verification Authority   : VerificationPlan + Registry
+                             + VerificationRecord + Readiness
+  Repair Decision Authority: Gateway 确定性 RepairPolicy
+  Reality Authority        : Artifact / EffectLedger
+                             / Repository observations（独立 sensor，
+                             绝非 runtime 自报）
+  Completion Authority     : 仅 CompletionGate
+  Persistence Authority    : 仅 Gateway Store
