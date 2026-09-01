@@ -102,13 +102,24 @@ class VerificationPlanExecutor:
         evaluated_at_ms: int,
         manifests_by_revision: dict,
     ) -> None:
+        # M5 Final #2: resolve the CURRENT effective subject from the
+        # Store successor chain (§8). After a repair the SAME predicate
+        # must be re-verified against the NEW subject — never silently
+        # re-read the original plan subject.
+        effective_subject = entry.subject_identity
+        if hasattr(self._store, "resolve_verification_subject"):
+            resolution = self._store.resolve_verification_subject(
+                entry.plan_entry_id
+            )
+            if resolution.get("effective_subject_identity"):
+                effective_subject = resolution["effective_subject_identity"]
         kind = entry.predicate.subject_kind
         if kind == "artifact":
-            manifest = manifests_by_revision.get(entry.subject_identity)
+            manifest = manifests_by_revision.get(effective_subject)
             if manifest is None:
                 raise VerificationPlanExecutorError(
                     f"artifact manifest not in execution context:"
-                    f" {entry.subject_identity}"
+                    f" {effective_subject}"
                 )
             record = self._artifact_oracle.evaluate(
                 manifest, entry.predicate,
@@ -117,13 +128,13 @@ class VerificationPlanExecutor:
             )
         elif kind == "effect":
             record = self._effect_oracle.evaluate(
-                entry.subject_identity, entry.predicate,
+                effective_subject, entry.predicate,
                 evaluated_at_ms=evaluated_at_ms,
                 evaluation_phase=entry.evaluation_phase,
             )
         elif kind == "repository":
             bindings = self._store.list_repository_bindings_for_subject(
-                entry.subject_identity
+                effective_subject
             )
             sorted_bindings = sorted(
                 bindings,
@@ -140,7 +151,7 @@ class VerificationPlanExecutor:
                     "repository PRE/POST bindings incomplete"
                 )
             record = self._repository_oracle.evaluate(
-                subject_effect_id=entry.subject_identity,
+                subject_effect_id=effective_subject,
                 pre_binding_id=pre["binding_id"],
                 post_binding_id=post["binding_id"],
                 predicate=entry.predicate,
@@ -163,6 +174,18 @@ class VerificationPlanExecutor:
         from contracts.verification import VerificationRecord
         from contracts.verification import derive_verification_record_id
 
+        # M5 Final #2: ERROR records bind to the CURRENT effective
+        # subject — bound to the original subject they would be filtered
+        # out by successor supersession and silently mask an evaluation
+        # failure with stale PASS records.
+        effective_subject = entry.subject_identity
+        if hasattr(self._store, "resolve_verification_subject"):
+            resolution = self._store.resolve_verification_subject(
+                entry.plan_entry_id
+            )
+            if resolution.get("effective_subject_identity"):
+                effective_subject = resolution["effective_subject_identity"]
+
         payload = dict(
             verification_record_id="vrs_" + "0" * 64,
             request_id=self._plan.request_id,
@@ -174,7 +197,7 @@ class VerificationPlanExecutor:
             predicate_id=entry.predicate.predicate_id,
             predicate_type=entry.predicate.predicate_type,
             subject_kind=entry.predicate.subject_kind,
-            subject_identity=entry.subject_identity,
+            subject_identity=effective_subject,
             evaluation_phase=entry.evaluation_phase,
             status="ERROR",
             enforcement="RECORD",

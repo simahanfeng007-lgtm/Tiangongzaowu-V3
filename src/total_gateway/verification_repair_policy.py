@@ -24,6 +24,13 @@ MAX_SAME_FAILURE_SIGNATURE_REPEATS = 2
 MAX_SUBJECT_SUCCESSOR_DEPTH = 4
 MAX_SIDE_EFFECTING_REPAIRS_PER_ENTRY = 1
 
+#: Store write-boundary limits for RepairDirective fields. These are
+#: code-enforced at put time — a hash-valid directive cannot widen its
+#: execution budget beyond what the authoritative policy allows.
+MIN_REPAIR_EXECUTION_BUDGET_MS = 60_000
+MAX_REPAIR_EXECUTION_BUDGET_MS = 600_000
+MAX_REPAIR_EXPIRY_DELTA_MS = 3_600_000
+
 #: §13 Repairability Matrix: predicate types eligible for auto REPAIR.
 AUTO_REPAIRABLE_CONTENT_PREDICATES = frozenset({
     "artifact.nonempty",
@@ -190,9 +197,69 @@ def evaluate_disposition(
     return "REVIEW", ("repair_policy.unhandled_failure_kind",)
 
 
+def compute_disposition_action(
+    *,
+    predicate_type: str,
+    verification_status: str,
+    failure_kind: str,
+    attempt_no: int,
+    same_signature_count: int,
+    successor_depth: int,
+    generation_repair_count: int,
+    side_effect_repair_count: int,
+    subject_kind: str,
+    effect_is_ambiguous: bool,
+    policy: RepairPolicyConfig | None = None,
+) -> tuple[str, tuple[str, ...]]:
+    """Full budget-aware decision — M5 Final #4/#5 single source of truth.
+
+    Shared by the RepairCoordinator (decision time) and the Store v28
+    disposition revalidation (write time), so a disposition can never be
+    persisted unless the Store independently recomputes the same action
+    from Store-derived budget counts.
+    """
+    if policy is None:
+        policy = DEFAULT_POLICY
+
+    base_action, base_reasons = evaluate_disposition(
+        predicate_type=predicate_type,
+        verification_status=verification_status,
+        failure_kind=failure_kind,
+        attempt_no=attempt_no,
+        max_attempts=policy.max_attempts_per_plan_entry,
+        same_signature_count=same_signature_count,
+        effect_is_ambiguous=effect_is_ambiguous,
+        policy=policy,
+    )
+
+    extra_reasons: list[str] = []
+    if (
+        generation_repair_count
+        >= policy.max_total_auto_repairs_per_generation
+    ):
+        extra_reasons.append("repair_policy.generation_budget_exhausted")
+    if successor_depth >= policy.max_subject_successor_depth:
+        extra_reasons.append("repair_policy.successor_depth_exhausted")
+    if (
+        subject_kind in ("effect", "repository")
+        and side_effect_repair_count
+        >= policy.max_side_effecting_repairs_per_entry
+    ):
+        extra_reasons.append("repair_policy.side_effect_budget_exhausted")
+
+    # M5 Final #5: any exhausted budget overrides a base REPAIR.
+    if extra_reasons and base_action == "REPAIR":
+        return "REVIEW", tuple(extra_reasons)
+    return base_action, base_reasons
+
+
 __all__ = [
     "DEFAULT_POLICY",
     "RepairPolicyConfig",
+    "compute_disposition_action",
     "evaluate_disposition",
+    "MAX_REPAIR_EXECUTION_BUDGET_MS",
+    "MAX_REPAIR_EXPIRY_DELTA_MS",
+    "MIN_REPAIR_EXECUTION_BUDGET_MS",
     "POLICY_VERSION",
 ]

@@ -19,6 +19,19 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 29:
+        connection.execute(
+            "DROP INDEX IF EXISTS repair_execution_binding_attempt_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS repair_execution_binding")
+        connection.execute("DROP INDEX IF EXISTS repair_attempt_number_idx")
+        connection.execute(
+            "DROP INDEX IF EXISTS verification_subject_successor_attempt_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS artifact_subject_authority")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 29")
+        connection.execute("PRAGMA user_version = 28")
+        version = 28
     if version == 28:
         connection.execute("DROP TABLE IF EXISTS repair_attempt")
         connection.execute("DROP TABLE IF EXISTS verification_subject_successor")

@@ -22,7 +22,19 @@ def gateway_store_write_transaction(
     checks, and domain SQL remain responsibilities of ``GatewayStateStore``.
     The control flow deliberately keeps COMMIT inside the try block so a COMMIT
     failure follows the historical ROLLBACK path.
+
+    Re-entrant: a nested call JOINS the outer transaction instead
+    of failing on "cannot start a transaction within a transaction".
+    An exception inside the nested scope still propagates and rolls
+    back the whole outer transaction (fail-closed, never a partial
+    commit). This lets composite Store APIs move TWO authorities
+    (the EffectLedger and the repair execution binding) in ONE
+    atomic transition.
     """
+
+    if getattr(connection, "in_transaction", False):
+        yield
+        return
 
     connection.execute("BEGIN IMMEDIATE")
     try:

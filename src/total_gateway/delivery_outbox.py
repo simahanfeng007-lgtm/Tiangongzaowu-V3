@@ -94,6 +94,7 @@ class GatewayDeliveryOutboxWorker:
         gateway_epoch: int,
         worker_id: str,
         advance: Callable[..., object],
+        repair_dispatch: Callable[..., object] | None = None,
     ) -> None:
         self._store = store
         self._objects = objects
@@ -104,6 +105,81 @@ class GatewayDeliveryOutboxWorker:
         self._epoch = gateway_epoch
         self._worker_id = worker_id
         self._advance = advance
+        # P0-3: optional bridge to the EXISTING runtime for artifact-only
+        # channel repairs. When absent NOTHING is auto-repaired here —
+        # the delivery boundary is never blindly replayed.
+        self._repair_dispatch = repair_dispatch
+
+    def _run_channel_repair_loop(self, *, active_plan, readiness, artifacts):
+        """P0-3: channel-side repair with delivery-boundary safety.
+
+        Both finalization paths run AFTER the delivery side effect left
+        the process (receipt = confirmed delivered; ambiguous = unknown).
+        Therefore:
+        - effect / repository subjects are NEVER auto-repaired here —
+          replaying an external side effect is forbidden;
+        - artifact subjects may only be repaired through an injected
+          EXISTING-runtime bridge (artifact content repair does not
+          touch the delivery side effect); without the bridge nothing
+          executes and the REPAIR disposition keeps the request
+          IN_PROGRESS at the Gate;
+        - the delivery itself is never re-sent by this loop.
+        Returns (final_readiness, disposition, failure_evidence).
+        """
+        from total_gateway.verification_plan_executor import (
+            VerificationPlanExecutor,
+        )
+        from total_gateway.verification_repair_coordinator import (
+            RepairDispatchResult,
+            VerificationRepairCoordinator,
+        )
+        from total_gateway.orchestration import _verification_snapshot
+
+        coordinator = VerificationRepairCoordinator(store=self._store)
+
+        def _dispatch(directive):
+            if self._repair_dispatch is None:
+                # Unreachable when kinds=(): kept as a fail-closed guard.
+                return RepairDispatchResult(
+                    execution_outcome="EXECUTION_FAILED",
+                    produced_subject_identity=(
+                        directive.effective_subject_identity
+                    ),
+                    execution_effect_ids=(),
+                )
+            return self._repair_dispatch(directive)
+
+        def _reverify():
+            executor = VerificationPlanExecutor(
+                snapshot=_verification_snapshot(
+                    self._store, active_plan.registry_snapshot_sha256,
+                ),
+                store=self._store,
+                object_store=self._objects,
+                fact_ledger=self._facts,
+                plan=active_plan,
+            )
+            return executor.execute(
+                evaluated_at_ms=time.time_ns() // 1_000_000,
+                artifact_manifests=tuple(artifacts),
+            )
+
+        dispatchable = (
+            ("artifact",) if self._repair_dispatch is not None else ()
+        )
+        readiness, disposition = coordinator.execute_repair_loop(
+            plan=active_plan,
+            readiness=readiness,
+            dispatch=_dispatch,
+            reverify=_reverify,
+            dispatchable_subject_kinds=dispatchable,
+        )
+        evidence = None
+        if disposition is not None:
+            evidence = self._store.get_verification_failure_evidence_by_id(
+                disposition.failure_evidence_id
+            )
+        return readiness, disposition, evidence
 
     def _load_payload(self, record: OutboxRecord) -> DeliveryOutboxPayload:
         intent = record.intent
@@ -530,6 +606,8 @@ class GatewayDeliveryOutboxWorker:
                 run_id=plan.run_id,
                 generation=plan.generation,
             )
+            verification_disposition = None
+            verification_failure_evidence = None
             if active_plan is not None:
                 from total_gateway.verification_plan_executor import (
                     VerificationPlanExecutor,
@@ -546,10 +624,22 @@ class GatewayDeliveryOutboxWorker:
                     fact_ledger=self._facts,
                     plan=active_plan,
                 )
-                executor.execute(
+                readiness = executor.execute(
                     evaluated_at_ms=completed_at_ms,
                     artifact_manifests=tuple(artifacts),
                 )
+                # P0-3: channel repair runs through the SAME loop with
+                # delivery-boundary safety semantics (no replay).
+                if not readiness.verification_ready:
+                    (
+                        readiness,
+                        verification_disposition,
+                        verification_failure_evidence,
+                    ) = self._run_channel_repair_loop(
+                        active_plan=active_plan,
+                        readiness=readiness,
+                        artifacts=artifacts,
+                    )
             decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
                 requirements,
                 candidate_text=text_parts[0] if text_parts else None,
@@ -557,6 +647,8 @@ class GatewayDeliveryOutboxWorker:
                 outbound_plan=plan,
                 delivery_failure="AMBIGUOUS" if ambiguous else "FAILED_FINAL",
                 active_plan=active_plan,
+                verification_disposition=verification_disposition,
+                verification_failure_evidence=verification_failure_evidence,
                 verification_readiness=self._store.get_latest_verification_readiness(
                     request_id=plan.request_id,
                     run_id=plan.run_id,
@@ -714,6 +806,8 @@ class GatewayDeliveryOutboxWorker:
             run_id=plan.run_id,
             generation=plan.generation,
         )
+        verification_disposition = None
+        verification_failure_evidence = None
         if active_plan is not None:
             from total_gateway.verification_plan_executor import (
                 VerificationPlanExecutor,
@@ -729,10 +823,22 @@ class GatewayDeliveryOutboxWorker:
                 fact_ledger=self._facts,
                 plan=active_plan,
             )
-            executor.execute(
+            readiness = executor.execute(
                 evaluated_at_ms=completed_at_ms,
                 artifact_manifests=tuple(artifacts),
             )
+            # P0-3: receipt branch — delivery side effect already
+            # happened; the same no-replay repair loop applies.
+            if not readiness.verification_ready:
+                (
+                    readiness,
+                    verification_disposition,
+                    verification_failure_evidence,
+                ) = self._run_channel_repair_loop(
+                    active_plan=active_plan,
+                    readiness=readiness,
+                    artifacts=artifacts,
+                )
         decision = CompletionGate(self._objects, self._facts, head_state_reader=self._store.get_effect_head_state).evaluate(
             requirements,
             candidate_text=text_parts[0] if text_parts else None,
@@ -740,6 +846,8 @@ class GatewayDeliveryOutboxWorker:
             outbound_plan=plan,
             delivery_receipt=receipt,
             active_plan=active_plan,
+            verification_disposition=verification_disposition,
+            verification_failure_evidence=verification_failure_evidence,
             verification_readiness=self._store.get_latest_verification_readiness(
                 request_id=plan.request_id,
                 run_id=plan.run_id,

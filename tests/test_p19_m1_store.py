@@ -151,11 +151,21 @@ class MigrationTests(unittest.TestCase):
         """
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
+        connection.execute(
+            "DROP INDEX IF EXISTS repair_execution_binding_attempt_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS repair_execution_binding")
+        connection.execute("DROP INDEX IF EXISTS repair_attempt_number_idx")
+        connection.execute(
+            "DROP INDEX IF EXISTS verification_subject_successor_attempt_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS artifact_subject_authority")
         connection.execute("DROP TABLE IF EXISTS repair_attempt")
         connection.execute("DROP TABLE IF EXISTS verification_subject_successor")
         connection.execute("DROP TABLE IF EXISTS repair_directive")
         connection.execute("DROP TABLE IF EXISTS verification_disposition")
         connection.execute("DROP TABLE IF EXISTS verification_failure_evidence")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 29")
         connection.execute("DELETE FROM schema_migrations WHERE version = 28")
         connection.execute("DROP TABLE verification_plan_activation")
         connection.execute("DELETE FROM schema_migrations WHERE version = 27")
@@ -178,7 +188,7 @@ class MigrationTests(unittest.TestCase):
     def test_fresh_db_opens_at_v23(self) -> None:  # checklist 2
         store = GatewayStateStore.open(self.path, now_ms=900)
         try:
-            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 28)
+            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 29)
         finally:
             store.close()
 
@@ -189,7 +199,7 @@ class MigrationTests(unittest.TestCase):
         try:
             health = upgraded.health_check(full=True, now_ms=960)
             self.assertTrue(health.healthy)
-            self.assertEqual(health.schema_version, 28)
+            self.assertEqual(health.schema_version, 29)
         finally:
             upgraded.close()
         reopened = GatewayStateStore.open(self.path, now_ms=1_000)

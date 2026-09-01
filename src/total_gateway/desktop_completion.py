@@ -33,6 +33,8 @@ def evaluate_desktop_completion(
     head_state_reader=None,
     verification_readiness=None,
     active_plan=None,
+    verification_disposition=None,
+    verification_failure_evidence=None,
 ) -> CompletionDecision:
     requirements = CompletionRequirements(
         request_id=request_id,
@@ -61,6 +63,8 @@ def evaluate_desktop_completion(
             artifacts=artifacts,
             verification_readiness=verification_readiness,
             active_plan=active_plan,
+            verification_disposition=verification_disposition,
+            verification_failure_evidence=verification_failure_evidence,
         )
     except CompletionGateError as exc:
         raise DesktopCompletionError(exc.code) from exc

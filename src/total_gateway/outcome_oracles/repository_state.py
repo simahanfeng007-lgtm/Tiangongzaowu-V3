@@ -157,7 +157,12 @@ class RepositoryStateOracle:
         status, reason_codes, observation, lineage, repo_id = self._evaluate_to_status(
             subject_effect_id, pre_binding_id, post_binding_id, predicate
         )
-        subject_identity = f"{repo_id}:{post_binding_id}"
+        # M5 Final P0-2: the record subject is the STABLE mutation effect
+        # id — the same identity space the plan entry binds, the Store
+        # successor chain advances, and the executor resolves bindings
+        # with. The observation window identity (repo_id + post binding)
+        # stays fully auditable in evidence_refs below.
+        subject_identity = subject_effect_id
         return assemble_record(
             descriptor=self._descriptor,  # type: ignore[attr-defined]
             snapshot=self._snapshot,  # type: ignore[attr-defined]

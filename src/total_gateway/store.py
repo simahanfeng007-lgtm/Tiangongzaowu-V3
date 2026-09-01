@@ -88,7 +88,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 28
+STORE_SCHEMA_VERSION = 29
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
@@ -1798,6 +1798,72 @@ _MIGRATION_V28_STATEMENTS = (
     """,
 )
 
+_MIGRATION_V29_ID = "gateway-repair-authority-hardening-v29"
+_MIGRATION_V29_STATEMENTS = (
+    """
+    CREATE TABLE artifact_subject_authority (
+        artifact_revision_id TEXT NOT NULL PRIMARY KEY,
+        object_id TEXT NOT NULL,
+        artifact_sha256 TEXT NOT NULL
+            CHECK (length(artifact_sha256) = 64 AND artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        registered_at_ms INTEGER NOT NULL CHECK (registered_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE INDEX artifact_subject_authority_lineage_idx
+        ON artifact_subject_authority (request_id, run_id, generation)
+    """,
+    """
+    CREATE UNIQUE INDEX verification_subject_successor_attempt_idx
+        ON verification_subject_successor (plan_entry_id, repair_attempt_no)
+    """,
+    """
+    CREATE UNIQUE INDEX repair_attempt_number_idx
+        ON repair_attempt (plan_entry_id, repair_attempt_no)
+    """,
+    """
+    CREATE TABLE repair_execution_binding (
+        repair_directive_id TEXT NOT NULL PRIMARY KEY,
+        repair_directive_sha256 TEXT NOT NULL
+            CHECK (length(repair_directive_sha256) = 64
+                   AND repair_directive_sha256 NOT GLOB '*[^0-9a-f]*'),
+        plan_entry_id TEXT NOT NULL,
+        repair_attempt_no INTEGER NOT NULL CHECK (repair_attempt_no >= 1),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        state TEXT NOT NULL CHECK (
+            state IN ('RESERVED','SIDE_EFFECT_STARTED','SUCCEEDED',
+                      'FAILED_FINAL','AMBIGUOUS')
+        ),
+        effect_id TEXT NOT NULL UNIQUE,
+        effect_intent_sha256 TEXT NOT NULL
+            CHECK (length(effect_intent_sha256) = 64
+                   AND effect_intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+        dispatch_claim_id TEXT NOT NULL DEFAULT '',
+        claim_revision INTEGER NOT NULL DEFAULT 1,
+        claim_expires_at_ms INTEGER NOT NULL DEFAULT 0,
+        produced_subject_identity TEXT NOT NULL DEFAULT '',
+        produced_subject_kind TEXT NOT NULL DEFAULT '',
+        runtime_result_ref TEXT NOT NULL DEFAULT '',
+        runtime_result_sha256 TEXT NOT NULL DEFAULT ''
+            CHECK (runtime_result_sha256 = ''
+                   OR (length(runtime_result_sha256) = 64
+                       AND runtime_result_sha256 NOT GLOB '*[^0-9a-f]*')),
+        reserved_at_ms INTEGER NOT NULL CHECK (reserved_at_ms >= 0),
+        started_at_ms INTEGER CHECK (started_at_ms IS NULL OR started_at_ms >= 0),
+        completed_at_ms INTEGER CHECK (completed_at_ms IS NULL OR completed_at_ms >= 0)
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX repair_execution_binding_attempt_idx
+        ON repair_execution_binding (plan_entry_id, repair_attempt_no)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1827,6 +1893,7 @@ _MIGRATIONS = (
     (26, _MIGRATION_V26_ID, _MIGRATION_V26_STATEMENTS),
     (27, _MIGRATION_V27_ID, _MIGRATION_V27_STATEMENTS),
     (28, _MIGRATION_V28_ID, _MIGRATION_V28_STATEMENTS),
+    (29, _MIGRATION_V29_ID, _MIGRATION_V29_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -10559,6 +10626,1245 @@ class GatewayStateStore:
     # P19-R2 M5: Evidence-Driven Repair store APIs (v28 tables)
     # ------------------------------------------------------------------
 
+    def get_verification_readiness_by_sha(
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        readiness_sha256: str,
+    ):
+        from contracts.verification import VerificationReadiness
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT readiness_json FROM verification_readiness"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " AND readiness_sha256 = ?",
+                (request_id, run_id, generation, readiness_sha256),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationReadiness.model_validate_json(
+                row["readiness_json"], strict=True
+            )
+
+    def get_verification_failure_evidence_by_id(
+        self, failure_evidence_id: str
+    ):
+        from contracts.verification import FailureEvidence
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT evidence_json FROM verification_failure_evidence"
+                " WHERE failure_evidence_id = ?",
+                (failure_evidence_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return FailureEvidence.model_validate_json(
+                row["evidence_json"], strict=True
+            )
+
+    def get_verification_disposition_by_id(
+        self, verification_disposition_id: str
+    ):
+        from contracts.verification import VerificationDisposition
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE verification_disposition_id = ?",
+                (verification_disposition_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return VerificationDisposition.model_validate_json(
+                row["disposition_json"], strict=True
+            )
+
+    def get_repair_directive_by_id(self, repair_directive_id: str):
+        from contracts.verification import RepairDirective
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT directive_json FROM repair_directive"
+                " WHERE repair_directive_id = ?",
+                (repair_directive_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return RepairDirective.model_validate_json(
+                row["directive_json"], strict=True
+            )
+
+    def list_repair_directives(self, plan_entry_id: str):
+        from contracts.verification import RepairDirective
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT directive_json FROM repair_directive"
+                " WHERE plan_entry_id = ? ORDER BY issued_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                RepairDirective.model_validate_json(
+                    r["directive_json"], strict=True
+                )
+                for r in rows
+            )
+
+    def list_repair_attempts(self, plan_entry_id: str):
+        from contracts.verification_repair import RepairAttemptRecord
+
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT attempt_json FROM repair_attempt"
+                " WHERE plan_entry_id = ? ORDER BY started_at_ms",
+                (plan_entry_id,),
+            ).fetchall()
+            return tuple(
+                RepairAttemptRecord.model_validate_json(
+                    r["attempt_json"], strict=True
+                )
+                for r in rows
+            )
+
+    # ------------------------------------------------------------------
+    # Repair Execution Binding — the Gateway's persistent dispatch
+    # boundary for repairs (final P0). NOT a second runtime: it is the
+    # Store-side authority that decides, atomically, WHICH worker may
+    # cross into the existing Runtime for a given (plan entry, attempt)
+    # — and it survives crashes so the produced reality can be
+    # recovered without re-executing the runtime.
+    # ------------------------------------------------------------------
+
+    def reserve_repair_execution(
+        self,
+        *,
+        repair_directive_id: str,
+        repair_directive_sha256: str,
+        plan_entry_id: str,
+        repair_attempt_no: int,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        effect_id: str,
+        effect_intent_sha256: str,
+        reserved_at_ms: int,
+        dispatch_claim_id: str,
+        claim_expires_at_ms: int,
+    ) -> dict:
+        """Atomically claim the repair dispatch authority.
+
+        Returns ``{"outcome": "EXECUTE"|"FOLLOW", "binding": dict}``.
+        The caller supplies an invocation-scoped ``dispatch_claim_id``
+        (NOT a gateway instance id — two threads in one process must
+        still single-flight) plus its lease expiry.
+
+        State machine (Final P0-1):
+        - no binding: INSERT with this claim → EXECUTE
+        - same directive, RESERVED, same live claim → idempotent EXECUTE
+        - same directive, RESERVED, different LIVE claim → FOLLOW
+        - same directive, RESERVED, claim lease EXPIRED (and the side
+          effect never started) → this claim CAS-takes over → EXECUTE
+        - SIDE_EFFECT_STARTED / terminal → FOLLOW (never takeover,
+          never replay)
+        Every supplied field is first verified against the persisted
+        authoritative RepairDirective — a fabricated or drifted
+        directive payload cannot reserve anything.
+        """
+        if not dispatch_claim_id or claim_expires_at_ms < reserved_at_ms:
+            raise ValueError("dispatch claim identity/lease is invalid")
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=reserved_at_ms,
+            )
+            directive_row = self.get_repair_directive_by_id(
+                repair_directive_id
+            )
+            if directive_row is None:
+                raise ValueError(
+                    "repair dispatch reserve: directive absent from store"
+                )
+            if (
+                directive_row.directive_sha256 != repair_directive_sha256
+                or directive_row.plan_entry_id != plan_entry_id
+                or directive_row.repair_attempt_no != repair_attempt_no
+                or directive_row.request_id != request_id
+                or directive_row.run_id != run_id
+                or directive_row.generation != generation
+            ):
+                raise ValueError(
+                    "repair dispatch reserve: directive fields do not"
+                    " match the authoritative store content"
+                )
+            existing = self._binding_row_locked(repair_directive_id)
+            if existing is not None:
+                if (
+                    str(existing["plan_entry_id"]) != plan_entry_id
+                    or int(existing["repair_attempt_no"]) != repair_attempt_no
+                    or str(existing["request_id"]) != request_id
+                    or str(existing["run_id"]) != run_id
+                    or int(existing["generation"]) != generation
+                    or str(existing["effect_id"]) != effect_id
+                ):
+                    raise StoreConflictError(
+                        "repair execution binding identity was reused"
+                        " for different content"
+                    )
+                state = str(existing["state"])
+                if state == "RESERVED":
+                    same_claim = (
+                        str(existing["dispatch_claim_id"]) == dispatch_claim_id
+                    )
+                    live = (
+                        int(existing["claim_expires_at_ms"]) > reserved_at_ms
+                    )
+                    if same_claim and live:
+                        # idempotent re-entry by the CURRENT live claim —
+                        # the fencing token (claim_revision) must NOT be
+                        # bumped, or takeover semantics get dirty.
+                        return {"outcome": "EXECUTE", "binding": dict(existing)}
+                    if not live:
+                        # expired pre-start lease: this claim CAS-takes
+                        # over; only NOW does the revision advance
+                        self._connection.execute(
+                            "UPDATE repair_execution_binding SET"
+                            " dispatch_claim_id = ?, claim_revision ="
+                            " claim_revision + 1, claim_expires_at_ms = ?"
+                            " WHERE repair_directive_id = ?"
+                            " AND state = 'RESERVED'",
+                            (
+                                dispatch_claim_id, claim_expires_at_ms,
+                                repair_directive_id,
+                            ),
+                        )
+                        row = self._binding_row_locked(repair_directive_id)
+                        assert row is not None
+                        return {"outcome": "EXECUTE", "binding": dict(row)}
+                    return {"outcome": "FOLLOW", "binding": dict(existing)}
+                return {"outcome": "FOLLOW", "binding": dict(existing)}
+            competing = self._connection.execute(
+                "SELECT * FROM repair_execution_binding"
+                " WHERE plan_entry_id = ? AND repair_attempt_no = ?",
+                (plan_entry_id, repair_attempt_no),
+            ).fetchone()
+            if competing is not None:
+                return {"outcome": "FOLLOW", "binding": dict(competing)}
+            self._connection.execute(
+                "INSERT INTO repair_execution_binding ("
+                "repair_directive_id, repair_directive_sha256,"
+                " plan_entry_id, repair_attempt_no, request_id, run_id,"
+                " generation, state, effect_id, effect_intent_sha256,"
+                " dispatch_claim_id, claim_revision, claim_expires_at_ms,"
+                " reserved_at_ms"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    repair_directive_id, repair_directive_sha256,
+                    plan_entry_id, repair_attempt_no, request_id, run_id,
+                    generation, "RESERVED", effect_id, effect_intent_sha256,
+                    dispatch_claim_id, 1, claim_expires_at_ms,
+                    reserved_at_ms,
+                ),
+            )
+            row = self._binding_row_locked(repair_directive_id)
+            assert row is not None
+            return {"outcome": "EXECUTE", "binding": dict(row)}
+
+    def start_repair_execution(
+        self,
+        *,
+        repair_directive_id: str,
+        effect_id: str,
+        started_at_ms: int,
+        dispatch_claim_id: str,
+        expected_claim_revision: int,
+    ) -> dict:
+        """ONE atomic, CLAIM-FENCED authority transition:
+
+            EffectLedger  CLAIMED → SIDE_EFFECT_STARTED
+            RepairBinding RESERVED → SIDE_EFFECT_STARTED
+
+        The CAS must hold on ALL of: state RESERVED, dispatch_claim_id
+        exactly the caller's, claim_revision exactly the caller's
+        fencing token, the lease STILL LIVE at start time, and the
+        binding owning exactly ``effect_id``. Only the winner gets
+        ``{"outcome": "STARTED"}`` — the only result that authorizes
+        entering the runtime. An already-crossed boundary returns
+        ``ALREADY_STARTED`` (the caller must NOT execute the runtime);
+        a stale or expired claim is rejected outright.
+        """
+        with self._lock, self._write_transaction():
+            row = self._binding_row_locked(repair_directive_id)
+            if row is None:
+                raise ValueError("repair execution binding is absent")
+            if str(row["effect_id"]) != effect_id:
+                raise ValueError(
+                    "repair execution binding owns a different effect"
+                )
+            state = str(row["state"])
+            if state == "SIDE_EFFECT_STARTED":
+                return {
+                    "outcome": "ALREADY_STARTED",
+                    "binding": dict(row),
+                }
+            if state != "RESERVED":
+                raise ValueError(
+                    "repair execution binding is not in a startable"
+                    f" state: {state}"
+                )
+            if started_at_ms < int(row["reserved_at_ms"]):
+                raise ValueError(
+                    "repair execution start predates its reservation"
+                )
+            # Claim fencing: the caller must be the CURRENT live claim
+            # owner with the CURRENT revision. A claim that lost a
+            # takeover can never cross the runtime boundary.
+            updated = self._connection.execute(
+                "UPDATE repair_execution_binding SET state ="
+                " 'SIDE_EFFECT_STARTED', started_at_ms = ?"
+                " WHERE repair_directive_id = ? AND state = 'RESERVED'"
+                " AND dispatch_claim_id = ? AND claim_revision = ?"
+                " AND claim_expires_at_ms > ?",
+                (
+                    started_at_ms, repair_directive_id,
+                    dispatch_claim_id, expected_claim_revision,
+                    started_at_ms,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise StoreCasConflict(
+                    "stale dispatch claim: this caller no longer owns the"
+                    " repair execution (claim/revision/lease mismatch)"
+                )
+            # Same transaction: cross the EffectLedger boundary.
+            self.mark_effect_started(
+                effect_id, started_at_ms=started_at_ms
+            )
+            updated_row = self._binding_row_locked(repair_directive_id)
+            assert updated_row is not None
+            return {"outcome": "STARTED", "binding": dict(updated_row)}
+
+    def complete_repair_execution(
+        self,
+        *,
+        repair_directive_id: str,
+        state: str,
+        produced_subject_identity: str,
+        produced_subject_kind: str,
+        runtime_result_ref: str = "",
+        runtime_result_sha256: str = "",
+        completed_at_ms: int,
+        error_code: str | None = None,
+    ) -> dict:
+        """ONE atomic terminal transition (Final P0-2):
+
+            EffectLedger  → SUCCEEDED / FAILED_FINAL / AMBIGUOUS
+            RepairBinding → the SAME terminal state, plus the produced
+                            subject and the runtime result reference.
+
+        No committed state may ever expose binding SUCCEEDED with a
+        non-SUCCEEDED effect (or the reverse). SUCCEEDED / AMBIGUOUS
+        require the side-effect boundary to have been crossed;
+        SUCCEEDED requires the produced subject. FAILED_FINAL is legal
+        straight from RESERVED (policy deny: the runtime was never
+        entered).
+        """
+        if state not in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
+            raise ValueError("invalid terminal repair execution state")
+        with self._lock, self._write_transaction():
+            row = self._binding_row_locked(repair_directive_id)
+            if row is None:
+                raise ValueError("repair execution binding is absent")
+            current = str(row["state"])
+            effect_id = str(row["effect_id"])
+            directive = self.get_repair_directive_by_id(repair_directive_id)
+            if directive is not None and produced_subject_kind != (
+                directive.subject_kind
+            ):
+                raise ValueError(
+                    "repair execution produced subject kind does not"
+                    " match the directive"
+                )
+            boundary_ms = int(row["started_at_ms"] or row["reserved_at_ms"])
+            if completed_at_ms < boundary_ms:
+                raise ValueError(
+                    "repair execution completion predates its boundary"
+                )
+            if current in ("SUCCEEDED", "FAILED_FINAL", "AMBIGUOUS"):
+                same = (
+                    current == state
+                    and str(row["produced_subject_identity"])
+                    == produced_subject_identity
+                    and str(row["runtime_result_sha256"])
+                    == runtime_result_sha256
+                )
+                if same:
+                    return dict(row)
+                raise StoreConflictError(
+                    "repair execution binding was already completed with"
+                    " different content"
+                )
+            if state in ("SUCCEEDED", "AMBIGUOUS") and current != (
+                "SIDE_EFFECT_STARTED"
+            ):
+                raise ValueError(
+                    "repair execution cannot reach a side-effect terminal"
+                    f" state from {current}"
+                )
+            if state == "SUCCEEDED" and not produced_subject_identity:
+                raise ValueError(
+                    "successful repair execution must record its produced"
+                    " subject"
+                )
+            # Same transaction: terminalize the EffectLedger first —
+            # its own CHECK constraints validate the transition.
+            from .effects import EffectResult
+
+            terminal_result = EffectResult(
+                result_id="effect-result-" + effect_id[4:20],
+                effect_id=effect_id,
+                status=state,
+                fact_id="fact-effect-" + effect_id[4:20],
+                evidence_sha256=canonical_sha256(
+                    {
+                        "code": error_code,
+                        "runtime_result_sha256": runtime_result_sha256,
+                        "state": state,
+                    }
+                ),
+                error_code=error_code if state != "SUCCEEDED" else None,
+                observed_at_ms=completed_at_ms,
+                result_sha256="0" * 64,
+            ).with_computed_sha256()
+            self.complete_effect(terminal_result)
+            updated = self._connection.execute(
+                "UPDATE repair_execution_binding SET state = ?,"
+                " produced_subject_identity = ?, produced_subject_kind = ?,"
+                " runtime_result_ref = ?, runtime_result_sha256 = ?,"
+                " completed_at_ms = ? WHERE repair_directive_id = ?",
+                (
+                    state, produced_subject_identity, produced_subject_kind,
+                    runtime_result_ref, runtime_result_sha256,
+                    completed_at_ms, repair_directive_id,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise StoreCasConflict(
+                    "repair execution binding changed before completion"
+                )
+            final_row = self._binding_row_locked(repair_directive_id)
+            assert final_row is not None
+            return dict(final_row)
+
+    def get_repair_execution_binding(self, repair_directive_id: str):
+        with self._lock:
+            row = self._binding_row_locked(repair_directive_id)
+            return None if row is None else dict(row)
+
+    def get_repair_execution_binding_by_attempt(
+        self, plan_entry_id: str, repair_attempt_no: int
+    ):
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM repair_execution_binding"
+                " WHERE plan_entry_id = ? AND repair_attempt_no = ?",
+                (plan_entry_id, repair_attempt_no),
+            ).fetchone()
+            return None if row is None else dict(row)
+
+    def _binding_row_locked(self, repair_directive_id: str):
+        return self._connection.execute(
+            "SELECT * FROM repair_execution_binding"
+            " WHERE repair_directive_id = ?",
+            (repair_directive_id,),
+        ).fetchone()
+
+    def register_artifact_subject(
+        self,
+        *,
+        artifact_revision_id: str,
+        object_id: str,
+        artifact_sha256: str,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        registered_at_ms: int,
+    ) -> bool:
+        """P1-6 (v29): the Artifact authority projection inside the Store.
+
+        Only manifests that passed the REAL ArtifactGate/QC pipeline may
+        be registered (callers are the gate pipeline itself). The
+        successor write boundary requires an artifact successor to be
+        present here — a fabricated revision can never become the
+        authoritative effective subject first and fail later.
+        """
+        if (
+            len(artifact_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in artifact_sha256)
+        ):
+            raise ValueError("artifact digest is invalid")
+        if not artifact_revision_id or not object_id:
+            raise ValueError("artifact subject identity is invalid")
+        with self._lock, self._write_transaction():
+            self._assert_request_binding_locked(
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation,
+                recorded_at_ms=registered_at_ms,
+            )
+            existing = self._connection.execute(
+                "SELECT object_id, artifact_sha256 FROM"
+                " artifact_subject_authority WHERE artifact_revision_id = ?",
+                (artifact_revision_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    str(existing["object_id"]) != object_id
+                    or str(existing["artifact_sha256"]) != artifact_sha256
+                ):
+                    raise StoreConflictError(
+                        "artifact subject identity was reused for"
+                        " different content"
+                    )
+                return False
+            self._connection.execute(
+                "INSERT INTO artifact_subject_authority ("
+                "artifact_revision_id, object_id, artifact_sha256,"
+                " request_id, run_id, generation, registered_at_ms"
+                ") VALUES (?,?,?,?,?,?,?)",
+                (
+                    artifact_revision_id,
+                    object_id,
+                    artifact_sha256,
+                    request_id,
+                    run_id,
+                    generation,
+                    registered_at_ms,
+                ),
+            )
+            return True
+
+    def artifact_subject_exists(
+        self,
+        artifact_revision_id: str,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+    ) -> bool:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT 1 FROM artifact_subject_authority"
+                " WHERE artifact_revision_id = ? AND request_id = ?"
+                " AND run_id = ? AND generation = ?",
+                (artifact_revision_id, request_id, run_id, generation),
+            ).fetchone()
+            return row is not None
+
+    # ------------------------------------------------------------------
+    # M5 Final #4: v28 write-boundary cross-object revalidation.
+    # Every put_* below re-derives its payload from authoritative Store
+    # state before insert — callers cannot smuggle in a "why", a
+    # decision, or a subject that the Store itself cannot reproduce.
+    # All helpers run inside the caller's transaction (self._lock is an
+    # RLock, so nested Store reads are safe).
+    # ------------------------------------------------------------------
+
+    def _revalidate_failure_evidence(self, evidence) -> None:
+        from total_gateway.verification_failure_evidence import (
+            build_failure_evidence,
+        )
+
+        plan = self.get_verification_plan(evidence.verification_plan_id)
+        if plan is None:
+            raise ValueError(
+                "failure evidence revalidation: plan absent from store"
+            )
+        readiness = self.get_verification_readiness_by_sha(
+            request_id=evidence.request_id,
+            run_id=evidence.run_id,
+            generation=evidence.generation,
+            readiness_sha256=evidence.readiness_sha256,
+        )
+        if readiness is None:
+            raise ValueError(
+                "failure evidence revalidation: readiness absent from store"
+            )
+        rebuilt = build_failure_evidence(
+            plan=plan,
+            readiness=readiness,
+            store=self,
+            effective_subject_resolver=(
+                lambda plan_entry_id: (
+                    self.resolve_verification_subject(plan_entry_id).get(
+                        "effective_subject_identity"
+                    )
+                )
+            ),
+            observed_at_ms=evidence.observed_at_ms,
+        )
+        for candidate in rebuilt:
+            if (
+                candidate.failure_evidence_id == evidence.failure_evidence_id
+                and candidate.failure_evidence_sha256
+                == evidence.failure_evidence_sha256
+            ):
+                return
+        raise ValueError(
+            "failure evidence revalidation: store cannot re-derive the"
+            " supplied evidence from plan + readiness + records"
+        )
+
+    def _revalidate_disposition(self, disposition) -> None:
+        from total_gateway.verification_repair_policy import (
+            DEFAULT_POLICY,
+            POLICY_VERSION,
+            compute_disposition_action,
+        )
+
+        evidence = self.get_verification_failure_evidence_by_id(
+            disposition.failure_evidence_id
+        )
+        if evidence is None:
+            raise ValueError(
+                "disposition revalidation: failure evidence absent from store"
+            )
+        if (
+            evidence.failure_evidence_sha256
+            != disposition.failure_evidence_sha256
+        ):
+            raise ValueError(
+                "disposition revalidation: failure evidence hash mismatch"
+            )
+
+        prev = self.list_verification_dispositions(
+            plan_entry_id=disposition.plan_entry_id
+        )
+        # P1-7: attempt_no counts REAL executed attempts, matching the
+        # coordinator's budget semantics (crash before dispatch must not
+        # burn the budget).
+        executed_attempts = self.list_repair_attempts(
+            disposition.plan_entry_id
+        )
+        prior_repair_count = len(executed_attempts)
+        # Same failure signature — de-duplicated by readiness; the FE
+        # under test is already persisted, so the count is the distinct
+        # readiness set MINUS this evidence's own contribution. This
+        # matches the coordinator's pre-insert computation exactly.
+        same_signature_count = len({
+            fe.readiness_sha256
+            for fe in self.list_verification_failure_evidence(
+                plan_entry_id=disposition.plan_entry_id
+            )
+            if fe.failure_signature_sha256
+            == evidence.failure_signature_sha256
+        } - {evidence.readiness_sha256})
+        resolution = self.resolve_verification_subject(
+            disposition.plan_entry_id
+        )
+        successor_depth = resolution.get("successor_depth", 0)
+        generation_repair_count = sum(
+            1
+            for d in self.list_all_verification_dispositions(
+                request_id=disposition.request_id,
+                run_id=disposition.run_id,
+                generation=disposition.generation,
+            )
+            if d.action == "REPAIR"
+            and d.verification_disposition_id
+            != disposition.verification_disposition_id
+        )
+        side_effect_repair_count = (
+            prior_repair_count
+            if evidence.subject_kind in ("effect", "repository")
+            else 0
+        )
+
+        # P0-1: an executed-but-AMBIGUOUS repair attempt makes every
+        # later disposition for this entry RECONCILE — regardless of the
+        # FE subject kind (artifact repairs too).
+        effect_ambiguous = any(
+            attempt.execution_outcome == "EXECUTION_AMBIGUOUS"
+            for attempt in executed_attempts
+        )
+        if not effect_ambiguous and evidence.subject_kind == "effect":
+            record = self.get_effect(evidence.effective_subject_identity)
+            if record is not None:
+                effect_ambiguous = record.state in (
+                    "AMBIGUOUS",
+                    "SIDE_EFFECT_STARTED",
+                )
+
+        expected_action, expected_reasons = compute_disposition_action(
+            predicate_type=evidence.predicate_type,
+            verification_status=evidence.verification_status,
+            failure_kind=evidence.failure_kind,
+            attempt_no=prior_repair_count,
+            same_signature_count=same_signature_count,
+            successor_depth=successor_depth,
+            generation_repair_count=generation_repair_count,
+            side_effect_repair_count=side_effect_repair_count,
+            subject_kind=evidence.subject_kind,
+            effect_is_ambiguous=effect_ambiguous,
+            policy=DEFAULT_POLICY,
+        )
+        if disposition.action != expected_action:
+            raise ValueError(
+                "disposition revalidation: action does not match the"
+                " deterministic policy re-computation"
+                f" (got {disposition.action}, expected {expected_action})"
+            )
+        if tuple(disposition.reason_codes) != tuple(expected_reasons):
+            raise ValueError(
+                "disposition revalidation: reason codes do not match the"
+                " deterministic policy re-computation"
+            )
+        if disposition.attempt_no != prior_repair_count:
+            raise ValueError(
+                "disposition revalidation: attempt_no does not match the"
+                " store-derived REPAIR count"
+            )
+        if disposition.policy_version != POLICY_VERSION:
+            raise ValueError(
+                "disposition revalidation: unknown policy version"
+            )
+        if disposition.policy_config_sha256 != DEFAULT_POLICY.config_sha256():
+            raise ValueError(
+                "disposition revalidation: policy config hash does not"
+                " match the authoritative policy"
+            )
+        if disposition.max_attempts != DEFAULT_POLICY.max_attempts_per_plan_entry:
+            raise ValueError(
+                "disposition revalidation: max_attempts does not match the"
+                " authoritative policy"
+            )
+
+    def _revalidate_repair_directive(
+        self, directive, *, recorded_at_ms: int
+    ) -> None:
+        from total_gateway.verification_repair_policy import (
+            DEFAULT_POLICY,
+            MAX_REPAIR_EXECUTION_BUDGET_MS,
+            MAX_REPAIR_EXPIRY_DELTA_MS,
+            MIN_REPAIR_EXECUTION_BUDGET_MS,
+        )
+
+        disposition = self.get_verification_disposition_by_id(
+            directive.disposition_id
+        )
+        if disposition is None:
+            raise ValueError(
+                "repair directive revalidation: disposition absent from store"
+            )
+        if disposition.action != "REPAIR":
+            raise ValueError(
+                "repair directive revalidation: bound disposition is not"
+                " REPAIR"
+            )
+        if disposition.disposition_sha256 != directive.disposition_sha256:
+            raise ValueError(
+                "repair directive revalidation: disposition hash mismatch"
+            )
+        if disposition.plan_entry_id != directive.plan_entry_id:
+            raise ValueError(
+                "repair directive revalidation: plan entry mismatch"
+            )
+        if (
+            disposition.failure_evidence_id != directive.failure_evidence_id
+            or disposition.failure_evidence_sha256
+            != directive.failure_evidence_sha256
+        ):
+            raise ValueError(
+                "repair directive revalidation: failure evidence linkage"
+                " mismatch"
+            )
+        plan = self.get_verification_plan(directive.verification_plan_id)
+        if plan is None:
+            raise ValueError(
+                "repair directive revalidation: plan absent from store"
+            )
+        if plan.plan_sha256 != directive.verification_plan_sha256:
+            raise ValueError(
+                "repair directive revalidation: plan hash mismatch"
+            )
+        entry = next(
+            (
+                e
+                for e in plan.entries
+                if e.plan_entry_id == directive.plan_entry_id
+            ),
+            None,
+        )
+        if entry is None:
+            raise ValueError(
+                "repair directive revalidation: plan entry absent from plan"
+            )
+        if entry.entry_sha256 != directive.plan_entry_sha256:
+            raise ValueError(
+                "repair directive revalidation: plan entry hash mismatch"
+            )
+        if (
+            entry.predicate.predicate_id != directive.predicate_id
+            or entry.predicate.predicate_sha256
+            != directive.predicate_sha256
+        ):
+            raise ValueError(
+                "repair directive revalidation: predicate linkage mismatch"
+            )
+        if entry.subject_identity != directive.original_subject_identity:
+            raise ValueError(
+                "repair directive revalidation: original subject mismatch"
+            )
+        resolution = self.resolve_verification_subject(entry.plan_entry_id)
+        effective = (
+            resolution.get("effective_subject_identity")
+            or entry.subject_identity
+        )
+        if effective != directive.effective_subject_identity:
+            raise ValueError(
+                "repair directive revalidation: effective subject does not"
+                " match the store successor chain"
+            )
+        # P1-4: attempt numbering must continue the disposition's.
+        if directive.repair_attempt_no != disposition.attempt_no + 1:
+            raise ValueError(
+                "repair directive revalidation: attempt number must be"
+                " disposition.attempt_no + 1"
+            )
+        if directive.max_attempts != DEFAULT_POLICY.max_attempts_per_plan_entry:
+            raise ValueError(
+                "repair directive revalidation: max_attempts does not"
+                " match the authoritative policy"
+            )
+        # P1-4: expiry — an already-expired or over-long directive is
+        # invalid at write time.
+        if directive.expires_at_ms < recorded_at_ms:
+            raise ValueError(
+                "repair directive revalidation: directive is already"
+                " expired"
+            )
+        if directive.expires_at_ms - directive.issued_at_ms > (
+            MAX_REPAIR_EXPIRY_DELTA_MS
+        ):
+            raise ValueError(
+                "repair directive revalidation: expiry window exceeds the"
+                " authoritative policy limit"
+            )
+        if not (
+            MIN_REPAIR_EXECUTION_BUDGET_MS
+            <= directive.execution_budget_ms
+            <= MAX_REPAIR_EXECUTION_BUDGET_MS
+        ):
+            raise ValueError(
+                "repair directive revalidation: execution budget outside"
+                " the authoritative policy limits"
+            )
+        # P1-4: target scope — a repair may only touch the current
+        # effective subject; widened or tampered scopes are rejected.
+        if tuple(directive.allowed_target_refs) != (effective,):
+            raise ValueError(
+                "repair directive revalidation: allowed target scope must"
+                " be exactly the current effective subject"
+            )
+        if tuple(directive.forbidden_target_refs):
+            raise ValueError(
+                "repair directive revalidation: forbidden target refs"
+                " cannot be populated"
+            )
+        if directive.repair_goal_kind != (
+            f"repair:{entry.predicate.predicate_type}"
+        ):
+            raise ValueError(
+                "repair directive revalidation: repair goal kind does"
+                " not match the plan entry predicate"
+            )
+
+    def _revalidate_repair_attempt(self, attempt) -> None:
+        directive = self.get_repair_directive_by_id(
+            attempt.repair_directive_id
+        )
+        if directive is None:
+            raise ValueError(
+                "repair attempt revalidation: directive absent from store"
+            )
+        if directive.plan_entry_id != attempt.plan_entry_id:
+            raise ValueError(
+                "repair attempt revalidation: plan entry mismatch"
+            )
+        if directive.repair_attempt_no != attempt.repair_attempt_no:
+            raise ValueError(
+                "repair attempt revalidation: attempt number mismatch"
+            )
+        if directive.effective_subject_identity != attempt.prior_subject_identity:
+            raise ValueError(
+                "repair attempt revalidation: prior subject mismatch"
+            )
+        # P1-5: one attempt per (plan entry, attempt number) — two
+        # coordinators racing for attempt #1 cannot both land it.
+        duplicate = self._connection.execute(
+            "SELECT repair_attempt_id FROM repair_attempt"
+            " WHERE plan_entry_id = ? AND repair_attempt_no = ?"
+            " AND repair_attempt_id != ?",
+            (
+                attempt.plan_entry_id,
+                attempt.repair_attempt_no,
+                attempt.repair_attempt_id,
+            ),
+        ).fetchone()
+        if duplicate is not None:
+            raise ValueError(
+                "repair attempt revalidation: an attempt with this number"
+                " already exists for the plan entry"
+            )
+        # Final P0: the attempt must execute EXACTLY the effect the
+        # repair execution binding authorized for this attempt — an
+        # unrelated same-lineage effect cannot impersonate a repair.
+        binding = self.get_repair_execution_binding_by_attempt(
+            attempt.plan_entry_id, attempt.repair_attempt_no
+        )
+        if binding is None:
+            raise ValueError(
+                "repair attempt revalidation: no repair execution"
+                " binding owns this attempt"
+            )
+        if str(binding["repair_directive_id"]) != attempt.repair_directive_id:
+            raise ValueError(
+                "repair attempt revalidation: binding belongs to a"
+                " different directive"
+            )
+        binding_state = str(binding["state"])
+        # Final P0-2 #5: the outcome must match the EXACT (binding,
+        # effect) terminal pair — the EffectLedger state is read
+        # explicitly (never implied from the binding dict).
+        effect_row = self._connection.execute(
+            "SELECT state FROM effect_ledger WHERE effect_id = ?",
+            (str(binding["effect_id"]),),
+        ).fetchone()
+        if effect_row is None:
+            raise ValueError(
+                "repair attempt revalidation: binding effect absent from"
+                " the effect ledger"
+            )
+        effect_state = str(effect_row["state"])
+        expected_pairs = {
+            "DISPATCHED": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_PASS": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_FAIL": (("SUCCEEDED", "SUCCEEDED"),),
+            "REVERIFY_ERROR": (("SUCCEEDED", "SUCCEEDED"),),
+            "EXECUTION_FAILED": (("FAILED_FINAL", "FAILED_FINAL"),),
+            "EXECUTION_AMBIGUOUS": (
+                ("AMBIGUOUS", "AMBIGUOUS"),
+                ("SIDE_EFFECT_STARTED", "SIDE_EFFECT_STARTED"),
+            ),
+        }.get(attempt.execution_outcome, ())
+        if (
+            tuple(attempt.execution_effect_ids)
+            != (str(binding["effect_id"]),)
+            or (binding_state, effect_state) not in expected_pairs
+        ):
+            raise ValueError(
+                "repair attempt revalidation: execution effects do not"
+                " match the repair execution binding authorities"
+            )
+        allowed_states = {
+            "DISPATCHED": ("SUCCEEDED",),
+            "EXECUTION_FAILED": ("FAILED_FINAL",),
+            "EXECUTION_AMBIGUOUS": ("AMBIGUOUS", "SIDE_EFFECT_STARTED", "CLAIMED"),
+        }.get(attempt.execution_outcome)
+        for effect_id in attempt.execution_effect_ids:
+            row = self._connection.execute(
+                "SELECT request_id, run_id, generation, state,"
+                " claimed_at_ms FROM effect_ledger WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    "repair attempt revalidation: execution effect absent"
+                    " from the effect ledger"
+                )
+            if (
+                str(row["request_id"]) != attempt.request_id
+                or str(row["run_id"]) != attempt.run_id
+                or int(row["generation"]) != attempt.generation
+            ):
+                raise ValueError(
+                    "repair attempt revalidation: execution effect lineage"
+                    " mismatch"
+                )
+            if int(row["claimed_at_ms"]) < directive.issued_at_ms:
+                raise ValueError(
+                    "repair attempt revalidation: execution effect"
+                    " predates the directive"
+                )
+            if (
+                allowed_states is not None
+                and str(row["state"]) not in allowed_states
+            ):
+                raise ValueError(
+                    "repair attempt revalidation: execution effect state"
+                    " contradicts the recorded outcome"
+                )
+        if attempt.reverify_record_id is not None:
+            # P1-5: the re-verification record must fully bind to THIS
+            # directive: lineage, verifier, predicate, effective subject,
+            # and a status consistent with the recorded outcome.
+            row = self._connection.execute(
+                "SELECT request_id, run_id, generation, verifier_id,"
+                " verifier_version, predicate_id, subject_identity,"
+                " status FROM verification_record"
+                " WHERE verification_record_id = ?",
+                (attempt.reverify_record_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    "repair attempt revalidation: re-verification record"
+                    " absent from the store"
+                )
+            plan = self.get_verification_plan(directive.verification_plan_id)
+            entry = next(
+                (
+                    e
+                    for e in (plan.entries if plan else ())
+                    if e.plan_entry_id == directive.plan_entry_id
+                ),
+                None,
+            )
+            expected_status = {
+                "REVERIFY_PASS": "PASS",
+                "REVERIFY_FAIL": "FAIL",
+                "REVERIFY_ERROR": "ERROR",
+            }.get(attempt.execution_outcome)
+            if (
+                str(row["request_id"]) != attempt.request_id
+                or str(row["run_id"]) != attempt.run_id
+                or int(row["generation"]) != attempt.generation
+                or str(row["predicate_id"]) != directive.predicate_id
+                or str(row["subject_identity"])
+                != attempt.produced_subject_identity
+                or entry is None
+                or str(row["verifier_id"]) != entry.verifier_id
+                or str(row["verifier_version"]) != entry.verifier_version
+                or (
+                    expected_status is not None
+                    and str(row["status"]) != expected_status
+                )
+            ):
+                raise ValueError(
+                    "repair attempt revalidation: re-verification record"
+                    " does not bind to this directive"
+                )
+
+    def _revalidate_subject_successor(self, successor) -> None:
+        directive = self.get_repair_directive_by_id(
+            successor.repair_directive_id
+        )
+        if directive is None:
+            raise ValueError(
+                "subject successor revalidation: directive absent from store"
+            )
+        if directive.directive_sha256 != successor.repair_directive_sha256:
+            raise ValueError(
+                "subject successor revalidation: directive hash mismatch"
+            )
+        if directive.plan_entry_id != successor.plan_entry_id:
+            raise ValueError(
+                "subject successor revalidation: plan entry mismatch"
+            )
+        if directive.subject_kind != successor.subject_kind:
+            raise ValueError(
+                "subject successor revalidation: subject kind mismatch"
+            )
+        if directive.repair_attempt_no != successor.repair_attempt_no:
+            raise ValueError(
+                "subject successor revalidation: attempt number mismatch"
+            )
+        # The predecessor must be the CURRENT effective subject — a
+        # successor of an already-superseded subject would fork the chain.
+        resolution = self.resolve_verification_subject(successor.plan_entry_id)
+        current_effective = resolution.get("effective_subject_identity")
+        if current_effective is None:
+            plan = self.get_verification_plan(successor.verification_plan_id)
+            entry = next(
+                (
+                    e
+                    for e in (plan.entries if plan else ())
+                    if e.plan_entry_id == successor.plan_entry_id
+                ),
+                None,
+            )
+            current_effective = (
+                entry.subject_identity if entry is not None else None
+            )
+        if successor.predecessor_subject_identity != current_effective:
+            raise ValueError(
+                "subject successor revalidation: predecessor is not the"
+                " current effective subject"
+            )
+        # P1-6: one successor per (plan entry, attempt number).
+        duplicate = self._connection.execute(
+            "SELECT successor_binding_id FROM verification_subject_successor"
+            " WHERE plan_entry_id = ? AND repair_attempt_no = ?"
+            " AND successor_binding_id != ?",
+            (
+                successor.plan_entry_id,
+                successor.repair_attempt_no,
+                successor.successor_binding_id,
+            ),
+        ).fetchone()
+        if duplicate is not None:
+            raise ValueError(
+                "subject successor revalidation: a binding for this"
+                " attempt number already exists for the plan entry"
+            )
+        # Final P0: the successor must be exactly the reality the repair
+        # execution binding recorded for THIS attempt — an unrelated
+        # same-lineage effect cannot impersonate the producing effect,
+        # and the successor identity must equal the binding's persisted
+        # produced subject.
+        binding = self.get_repair_execution_binding_by_attempt(
+            successor.plan_entry_id, successor.repair_attempt_no
+        )
+        if binding is None:
+            raise ValueError(
+                "subject successor revalidation: no repair execution"
+                " binding owns this attempt"
+            )
+        if str(binding["repair_directive_id"]) != successor.repair_directive_id:
+            raise ValueError(
+                "subject successor revalidation: binding belongs to a"
+                " different directive"
+            )
+        if str(binding["state"]) != "SUCCEEDED":
+            raise ValueError(
+                "subject successor revalidation: binding did not reach"
+                " SUCCEEDED"
+            )
+        if successor.produced_by_effect_id != str(binding["effect_id"]):
+            raise ValueError(
+                "subject successor revalidation: producing effect is not"
+                " the repair execution binding's effect"
+            )
+        if successor.successor_subject_identity != str(
+            binding["produced_subject_identity"]
+        ):
+            raise ValueError(
+                "subject successor revalidation: successor does not"
+                " match the binding's persisted produced subject"
+            )
+        # Final P0-2 #5: the EffectLedger authority is read explicitly —
+        # a SUCCEEDED binding can never certify a successor whose
+        # effect is not SUCCEEDED in the ledger.
+        successor_effect_row = self._connection.execute(
+            "SELECT state FROM effect_ledger WHERE effect_id = ?",
+            (str(binding["effect_id"]),),
+        ).fetchone()
+        if successor_effect_row is None or str(
+            successor_effect_row["state"]
+        ) != "SUCCEEDED":
+            raise ValueError(
+                "subject successor revalidation: binding effect is not"
+                " SUCCEEDED in the effect ledger"
+            )
+        # P1-6: cycle fail-closed — the successor may not be the
+        # predecessor itself nor any identity already on the chain
+        # (including the plan's original subject).
+        plan = self.get_verification_plan(successor.verification_plan_id)
+        entry = next(
+            (
+                e
+                for e in (plan.entries if plan else ())
+                if e.plan_entry_id == successor.plan_entry_id
+            ),
+            None,
+        )
+        chain_identities = {
+            b.predecessor_subject_identity
+            for b in self.list_verification_subject_successors(
+                successor.plan_entry_id
+            )
+        }
+        chain_identities.update(
+            b.successor_subject_identity
+            for b in self.list_verification_subject_successors(
+                successor.plan_entry_id
+            )
+        )
+        if entry is not None:
+            chain_identities.add(entry.subject_identity)
+        if (
+            successor.successor_subject_identity
+            == successor.predecessor_subject_identity
+            or successor.successor_subject_identity in chain_identities
+        ):
+            raise ValueError(
+                "subject successor revalidation: successor would create a"
+                " subject cycle"
+            )
+        # P1-6: successor depth is enforced at the WRITE boundary too,
+        # not only by the policy.
+        from total_gateway.verification_repair_policy import DEFAULT_POLICY
+
+        depth = resolution.get("successor_depth", 0)
+        if depth + 1 > DEFAULT_POLICY.max_subject_successor_depth:
+            raise ValueError(
+                "subject successor revalidation: successor depth budget"
+                " exceeded"
+            )
+        # P1-6: the producing effect must share the binding's lineage
+        # and belong to THIS repair (claimed at/after the directive).
+        producing = self._connection.execute(
+            "SELECT request_id, run_id, generation, claimed_at_ms FROM"
+            " effect_ledger WHERE effect_id = ?",
+            (successor.produced_by_effect_id,),
+        ).fetchone()
+        if producing is None:
+            raise ValueError(
+                "subject successor revalidation: producing effect absent"
+                " from the effect ledger"
+            )
+        if (
+            str(producing["request_id"]) != successor.request_id
+            or str(producing["run_id"]) != successor.run_id
+            or int(producing["generation"]) != successor.generation
+            or int(producing["claimed_at_ms"]) < directive.issued_at_ms
+        ):
+            raise ValueError(
+                "subject successor revalidation: producing effect"
+                " lineage does not bind to this repair"
+            )
+        # P1-6: the successor must exist in authoritative reality NOW —
+        # never "become authoritative first, fail at re-verification".
+        if successor.subject_kind == "effect":
+            if self.get_effect(successor.successor_subject_identity) is None:
+                raise ValueError(
+                    "subject successor revalidation: successor effect"
+                    " absent from the effect ledger"
+                )
+        elif successor.subject_kind == "repository":
+            if not self.list_repository_bindings_for_subject(
+                successor.successor_subject_identity
+            ):
+                raise ValueError(
+                    "subject successor revalidation: successor has no"
+                    " repository observation bindings"
+                )
+        elif successor.subject_kind == "artifact":
+            if not self.artifact_subject_exists(
+                successor.successor_subject_identity,
+                request_id=successor.request_id,
+                run_id=successor.run_id,
+                generation=successor.generation,
+            ):
+                raise ValueError(
+                    "subject successor revalidation: artifact successor"
+                    " is not registered in the artifact authority"
+                )
+
     def put_verification_failure_evidence(self, evidence, *, recorded_at_ms: int) -> bool:
         from contracts.verification import FailureEvidence
         if not isinstance(evidence, FailureEvidence):
@@ -10587,6 +11893,8 @@ class GatewayStateStore:
                         "failure evidence identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: re-derive from plan + readiness + records.
+            self._revalidate_failure_evidence(evidence)
             self._connection.execute(
                 "INSERT INTO verification_failure_evidence ("
                 "failure_evidence_id, request_id, run_id, generation,"
@@ -10644,6 +11952,9 @@ class GatewayStateStore:
                         "disposition identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: the Store must be able to reproduce the
+            # decision from its own state before accepting it.
+            self._revalidate_disposition(disposition)
             self._connection.execute(
                 "INSERT INTO verification_disposition ("
                 "verification_disposition_id, request_id, run_id, generation,"
@@ -10659,6 +11970,24 @@ class GatewayStateStore:
                  recorded_at_ms),
             )
             return True
+
+    def list_all_verification_dispositions(
+        self, *, request_id: str, run_id: str, generation: int,
+    ):
+        from contracts.verification import VerificationDisposition
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT disposition_json FROM verification_disposition"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " ORDER BY decided_at_ms",
+                (request_id, run_id, generation),
+            ).fetchall()
+            return tuple(
+                VerificationDisposition.model_validate_json(
+                    r["disposition_json"], strict=True
+                )
+                for r in rows
+            )
 
     def get_current_verification_disposition(
         self,
@@ -10748,6 +12077,12 @@ class GatewayStateStore:
                         "repair directive identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: directive must bind a stored REPAIR
+            # disposition, the plan entry, and the current effective
+            # subject.
+            self._revalidate_repair_directive(
+                directive, recorded_at_ms=recorded_at_ms
+            )
             self._connection.execute(
                 "INSERT INTO repair_directive ("
                 "repair_directive_id, request_id, run_id, generation,"
@@ -10791,6 +12126,9 @@ class GatewayStateStore:
                         "repair attempt identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: every bound execution effect must exist in
+            # the authoritative EffectLedger.
+            self._revalidate_repair_attempt(attempt)
             self._connection.execute(
                 "INSERT INTO repair_attempt ("
                 "repair_attempt_id, repair_directive_id, repair_attempt_no,"
@@ -10837,6 +12175,10 @@ class GatewayStateStore:
                         "subject successor identity was reused for different content"
                     )
                 return False
+            # M5 Final #4: predecessor must be the current effective
+            # subject and the successor must exist in authoritative
+            # reality.
+            self._revalidate_subject_successor(successor)
             self._connection.execute(
                 "INSERT INTO verification_subject_successor ("
                 "successor_binding_id, request_id, run_id, generation,"
@@ -10868,7 +12210,8 @@ class GatewayStateStore:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT binding_json FROM verification_subject_successor"
-                " WHERE plan_entry_id = ? ORDER BY bound_at_ms, successor_binding_id",
+                " WHERE plan_entry_id = ?"
+                " ORDER BY bound_at_ms, rowid",
                 (plan_entry_id,),
             ).fetchall()
         bindings = [
