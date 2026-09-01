@@ -335,9 +335,23 @@ def compare_or_update(trace: dict) -> None:
         )
     expected = json.loads(baseline_path.read_text(encoding="utf-8"))
     if _stable_text(expected) != _stable_text(normalized):
+        import difflib
+
+        diff = "
+".join(
+            line
+            for line in difflib.unified_diff(
+                _stable_text(expected).splitlines(),
+                _stable_text(normalized).splitlines(),
+                lineterm="",
+            )
+            if line.startswith(("+", "-"))
+        )[:2000]
         raise AssertionError(
             f"golden trace mismatch for {case_id} (compare-only;"
-            " update baselines explicitly with UPDATE_GOLDEN=1)"
+            " update baselines explicitly with UPDATE_GOLDEN=1)
+"
+            f"{diff}"
         )
 
 
