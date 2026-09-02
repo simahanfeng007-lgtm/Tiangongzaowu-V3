@@ -24,8 +24,8 @@ Editable production roots remain:
 - `app/backend/tiangong-backend/v3`
 - `app/backend/tiangong-backend/tiangong_kernel`
 
-For this phase the only production source modified is under `src/contracts`.
-Generated/runtime mirrors are not edited directly. They remain outputs of the existing source sync mechanism.
+For this phase the only human-edited production source is under `src/contracts`.
+Tracked generated/runtime mirrors are produced only by the official `scripts/sync-generated-sources.py --write` mechanism; no generated mirror is manually edited.
 
 ## Existing authorities preserved
 
@@ -83,11 +83,13 @@ No Planner, Compiler, Validator, Adapter, Tool Registry, Runtime, WorldState Sto
 
 ## Gate
 
-P0 requires the current full regression gate to be green. This environment cannot execute the repository test suite locally and the GitHub combined-status endpoint did not expose usable checks for the base merge commit. Therefore the implementation branch must be validated by the repository's protected PR checks before P2 begins, including:
+P0 requires the current full regression gate to be green. The implementation branch is validated by the repository's protected PR checks before P2 begins, including:
 
 - `source-authority-ubuntu-latest`
 - `source-authority-windows-latest`
 - `full-regression-ubuntu-latest`
 - `full-regression-windows-latest`
+
+The first PR run correctly failed because the newly added authoritative contract had not yet been propagated to its tracked runtime mirror. The defect was repaired by running the repository's official `scripts/sync-generated-sources.py --write` path, which generated the mirror and marker deterministically. The one-shot CI helper used to invoke that canonical sync was then removed from the branch.
 
 P2 MUST NOT begin on a red P0/P1 gate.
