@@ -122,6 +122,8 @@ def _validated_source_files(
         posix = PurePosixPath(path)
         if (
             not path
+            or path != path.strip()
+            or str(posix) != path
             or "\\" in path
             or posix.is_absolute()
             or ".." in posix.parts
