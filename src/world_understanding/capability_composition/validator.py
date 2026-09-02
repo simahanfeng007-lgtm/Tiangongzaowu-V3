@@ -160,7 +160,8 @@ def _validate_dependency_compatibility(
                 else ()
             )
         }
-        if not predecessor_outputs.intersection(consumer.consumes):
+        missing_inputs = set(consumer.consumes) - predecessor_outputs
+        if missing_inputs:
             findings.append(
                 _finding(
                     "validator.dependency.type_incompatible",
@@ -169,6 +170,7 @@ def _validate_dependency_compatibility(
                     {
                         "consumes": list(consumer.consumes),
                         "predecessor_outputs": sorted(predecessor_outputs),
+                        "missing_inputs": sorted(missing_inputs),
                     },
                 )
             )
@@ -232,12 +234,13 @@ def _unknown_findings(
                     primitive.availability,
                 )
             )
-        if primitive.idempotency == "UNKNOWN":
+        if primitive.idempotency in {"UNKNOWN", "CONDITIONAL"}:
             findings.append(
                 _finding(
                     "validator.action.idempotency_unknown",
                     "UNKNOWN",
                     action_id,
+                    primitive.idempotency,
                 )
             )
         if primitive.determinism_class != "DETERMINISTIC":
@@ -327,6 +330,18 @@ def validate_capability_composition_plan(
         raise ValueError("validated_at_ms must be non-negative")
 
     invalid: list[CompositionValidationFindingV1] = []
+    if validated_at_ms < plan.created_at_ms:
+        invalid.append(
+            _finding(
+                "validator.time.before_plan",
+                "PROVED_INVALID",
+                plan.plan_id,
+                {
+                    "created_at_ms": plan.created_at_ms,
+                    "validated_at_ms": validated_at_ms,
+                },
+            )
+        )
     if not plan_has_valid_sha256(plan):
         invalid.append(
             _finding(
