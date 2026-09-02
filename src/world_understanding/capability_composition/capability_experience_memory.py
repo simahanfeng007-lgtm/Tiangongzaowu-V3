@@ -1,12 +1,15 @@
 """P5 bridge contracts for the existing MemoryCoordinator materialization seam.
 
-This module does not write Memory.  It deterministically converts an admitted
-capability experience DATA record into the existing MemoryPromotionDisposition
-contract.  Only the current MemoryCoordinator may consume that disposition and
-perform the actual LifeShadowStore transaction.
+This module never opens or mutates a Store itself. It deterministically converts
+an admitted capability-experience DATA record into the existing
+MemoryPromotionDisposition and delegates materialization to the one current
+MemoryCoordinator authority.
 """
 
 from __future__ import annotations
+
+import hashlib
+from typing import Any
 
 from contracts import (
     MemoryDerivationV1,
@@ -36,6 +39,8 @@ def build_memory_coordinator_disposition(
         raise ValueError("memory intent is not bound to the experience state")
     if intent.policy_version != CAPABILITY_EXPERIENCE_POLICY_VERSION:
         raise ValueError("capability experience policy version drifted")
+    if intent.created_at_ms < state.last_observed_at_ms:
+        raise ValueError("memory intent predates the admitted experience")
     if not parents:
         raise ValueError("capability experience requires Memory parents")
     parents = tuple(sorted(parents, key=lambda item: item.derivation_id))
@@ -110,4 +115,60 @@ def build_memory_coordinator_disposition(
     ).with_computed_disposition_sha256()
 
 
-__all__ = ["build_memory_coordinator_disposition"]
+def commit_capability_experience_via_memory_coordinator(
+    coordinator: Any,
+    state: CapabilityExperienceAggregateStateV1,
+    intent: CapabilityExperienceMemoryIntentV1,
+    parents: tuple[MemoryDerivationV1, ...],
+    plaintext: bytes,
+):
+    """Validate DATA bytes, then delegate the sole write to MemoryCoordinator.
+
+    This is an adapter, not a second coordinator. It refuses arbitrary writer
+    objects and never obtains a Store handle. The existing coordinator's
+    materialization method remains the only persistence call.
+    """
+
+    coordinator_type = type(coordinator)
+    if (
+        coordinator_type.__name__ != "MemoryCoordinator"
+        or not coordinator_type.__module__.endswith(
+            "life_service.memory_coordinator"
+        )
+    ):
+        raise TypeError("existing MemoryCoordinator authority is required")
+    if not isinstance(plaintext, bytes) or not plaintext:
+        raise ValueError("capability experience plaintext must be non-empty bytes")
+    if hashlib.sha256(plaintext).hexdigest() != intent.plaintext_sha256:
+        raise ValueError("capability experience plaintext digest is invalid")
+    disposition = build_memory_coordinator_disposition(state, intent, parents)
+    materialize = getattr(coordinator, "_materialize_promotion", None)
+    if not callable(materialize):
+        raise TypeError("MemoryCoordinator materialization seam is unavailable")
+    result = materialize(
+        disposition=disposition,
+        parents=tuple(sorted(parents, key=lambda item: item.derivation_id)),
+        principal_ref=state.principal_ref,
+        privacy_scope=state.privacy_scope,
+        plaintext=plaintext,
+        created_at_ms=intent.created_at_ms,
+        policy_version=intent.policy_version,
+    )
+    assertion, derivation, _created = result
+    if (
+        derivation.layer != "L3_EXPERIENCE"
+        or derivation.semantic_domain != "CAPABILITY_KNOWLEDGE"
+        or derivation.world_candidate_eligible
+        or derivation.principal_ref != state.principal_ref
+        or derivation.privacy_scope != state.privacy_scope
+    ):
+        raise RuntimeError("MemoryCoordinator materialized an invalid capability experience")
+    if assertion.life_id != state.life_id:
+        raise RuntimeError("materialized capability experience crossed Life identity")
+    return result
+
+
+__all__ = [
+    "build_memory_coordinator_disposition",
+    "commit_capability_experience_via_memory_coordinator",
+]
