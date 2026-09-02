@@ -4,8 +4,8 @@ Base: `main @ ccc5da5a0aa9b27631d652dd67d3a29c03107b86`.
 
 ## Purpose
 
-P3 establishes a deterministic, read-only Skill Method World.  It does not
-replace the current Static Skill Planner yet.  Existing static Skills are used
+P3 establishes a deterministic, read-only Skill Method World. It does not
+replace the current Static Skill Planner yet. Existing static Skills are used
 only as migration evidence to identify reusable problem-solving methods.
 
 The future semantic chain is:
@@ -64,6 +64,28 @@ as a stable method fact.
 It deliberately discards the original action lists and full procedural
 instructions, so the method world cannot become a second Static Skill Planner
 or Action Registry.
+
+## Reviewed production method set
+
+The production P3 seed catalog is implemented in
+`src/world_understanding/skill_method_world/production_catalog.py`.
+It compiles the checked-in Static Skill catalog into five initial reusable
+method primitives:
+
+- `decompose_goal`
+- `generate_then_verify`
+- `retry_after_diagnosis`
+- `acceptance_review`
+- `finalize_verified_artifact`
+
+Each seed is content-addressed, non-authorizing and supported by multiple real
+Static Skills. The production compiler checks those exact Skill identities,
+source hashes and required lifecycle phases before emitting a Method World
+snapshot. It never copies their Action IDs or full instructions.
+
+The five methods are a conservative cold-start set, not a claim that all future
+method semantics have already been discovered. Additional methods require the
+same reviewed-source, many-to-one evidence and deterministic validation path.
 
 ## Deterministic phase evidence
 
