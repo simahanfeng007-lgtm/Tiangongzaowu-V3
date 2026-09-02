@@ -5,8 +5,11 @@ from pydantic import ValidationError
 
 from contracts.capability_composition import (
     AttributionIntegrityV1,
+    CapabilityCombinationExperienceV1,
+    CapabilityCompositionPlanV1,
     CapabilityDescriptorObservationV1,
     CompositionActivationContractV1,
+    CompositionPlanStepV1,
     CompositionProposalV1,
     CompositionValidationResultV1,
     ProposalStepV1,
@@ -147,6 +150,96 @@ def test_activation_is_request_run_generation_scoped_and_expiring() -> None:
             expires_at_ms=20,
             activation_sha256=H,
         )
+
+
+def test_generation_zero_is_valid_across_composition_identity_contracts() -> None:
+    revision = source_revision()
+    plan = CapabilityCompositionPlanV1(
+        plan_id="plan.zero",
+        request_id=REQ,
+        run_id=RUN,
+        generation=0,
+        principal_scope_hash=H,
+        world_state_ref="world.zero",
+        world_state_sha256=H,
+        goal_fingerprint=H,
+        environment_class="env.test",
+        context_fingerprint_sha256=H,
+        action_source_refs=(revision,),
+        steps=(
+            CompositionPlanStepV1(
+                step_id="step.zero",
+                action_id="file.read",
+                action_version="1",
+            ),
+        ),
+        dependency_graph_sha256=H,
+        bindings_sha256=H,
+        control_flow="DAG",
+        permission_requirements=("file.read",),
+        risk_floor="A0",
+        composition_risk="A0",
+        source_manifest_sha256=H,
+        capability_manifest_sha256=H,
+        created_at_ms=0,
+        plan_sha256=H,
+    )
+    activation = CompositionActivationContractV1(
+        composition_activation_id="activation.zero",
+        composition_plan_id=plan.plan_id,
+        composition_plan_sha256=H,
+        request_id=REQ,
+        run_id=RUN,
+        generation=0,
+        principal_scope_hash=H,
+        world_state_sha256=H,
+        source_manifest_sha256=H,
+        capability_manifest_sha256=H,
+        allowed_action_ids=("file.read",),
+        allowed_action_versions=("1",),
+        issued_at_ms=0,
+        expires_at_ms=1,
+        activation_sha256=H,
+    )
+    integrity = AttributionIntegrityV1(
+        request_id=REQ,
+        run_id=RUN,
+        generation=0,
+        composition_plan_sha256=H,
+        state="PASS",
+        checked_lineage_sha256=H,
+        checked_at_ms=0,
+        attribution_sha256=H,
+    )
+    experience = CapabilityCombinationExperienceV1(
+        experience_id="experience.zero",
+        goal_class="goal.test",
+        environment_class="env.test",
+        scene_fingerprint=H,
+        context_fingerprint_sha256=H,
+        action_source_refs=(revision,),
+        topology_sha256=H,
+        composition_plan_sha256=H,
+        request_id=REQ,
+        run_id=RUN,
+        generation=0,
+        completion_decision_sha256=H,
+        verification_readiness_sha256=H,
+        outcome="SUCCESS",
+        success_count=1,
+        failure_count=0,
+        independent_context_count=1,
+        posterior_success_milli=500,
+        lower_confidence_milli=0,
+        lifecycle="PROBATION",
+        source_revision_family="source.family",
+        exact_source_hashes=(H,),
+        experience_sha256=H,
+    )
+    assert plan.generation == 0
+    assert activation.generation == 0
+    assert integrity.generation == 0
+    assert experience.generation == 0
 
 
 def test_attribution_integrity_is_bound_to_exact_plan_identity() -> None:
