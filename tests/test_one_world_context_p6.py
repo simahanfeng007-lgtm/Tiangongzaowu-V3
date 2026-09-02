@@ -298,7 +298,7 @@ def test_context_failure_policy_has_no_implicit_default_fallback() -> None:
         frame_binding_sha256=tools.frame_binding.binding_sha256,
         candidates=candidates,
     )
-    tight = _world_packet(snapshot, token_budget=128)
+    tight = _world_packet(snapshot, token_budget=256)
     shadow = build_capability_world_context_slot(
         tight, capability, mode="SHADOW"
     )
