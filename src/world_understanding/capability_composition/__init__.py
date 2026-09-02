@@ -15,7 +15,10 @@ from .capability_experience_attribution import (
     computed_attribution_sha256,
     evaluate_attribution_integrity,
 )
-from .capability_experience_memory import build_memory_coordinator_disposition
+from .capability_experience_memory import (
+    build_memory_coordinator_disposition,
+    commit_capability_experience_via_memory_coordinator,
+)
 from .capability_experience_policy import (
     CAPABILITY_EXPERIENCE_POLICY_VERSION,
     CapabilityExperienceAdmissionDecisionV1,
@@ -119,6 +122,7 @@ __all__ = [
     "build_memory_coordinator_disposition",
     "build_negative_capability_evidence",
     "capability_experience_key",
+    "commit_capability_experience_via_memory_coordinator",
     "compile_capability_composition_plan",
     "completion_evidence_from_decision",
     "computed_attribution_sha256",
