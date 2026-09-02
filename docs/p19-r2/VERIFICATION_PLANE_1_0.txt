@@ -1,0 +1,78 @@
+Tiangong Verification Plane 1.0
+（P19-R2 最终架构说明；基线 a94035f221d8769dcf4d5bcd1e7fa2827aa9623a）
+
+Tiangong Verification Plane 1.0 provides evidence-backed completion,
+deterministic failure disposition, bounded evidence-driven repair
+through the existing Runtime authority, crash-safe and single-flight
+repair execution, immutable acceptance obligations, independent
+re-verification, stale-authority rejection, and CompletionGate-
+exclusive terminal authority.
+
+天工造物 Verification Plane 1.0 已形成可信执行闭环：现实执行结果
+必须由权威证据和独立验证证明；失败由确定性策略分类并在严格预算
+与权限边界内通过既有 Runtime 修复；修复执行具备单飞、fencing、
+崩溃恢复与现实继任语义；验收义务保持不可变，修复后必须重新运行
+原 Predicate；陈旧证据不得影响当前状态，最终完成权始终唯一归属
+CompletionGate。
+
+----------------------------------------------------------------------
+核心机制（M0–M6 冻结）
+----------------------------------------------------------------------
+
+1. 验证即事实（RECORD-only）
+   Oracle/Verifier 只产生 VerificationRecord；永不阻塞、永不产生
+   终局状态。判负与完成解耦。
+
+2. 验收义务不可变（Plan invariant）
+   VerificationPlan 激活后不可变；修复不得修改 predicate。修复后
+   必须以原 predicate 对新现实重新独立验证。
+
+3. 确定性修复决策
+   REPAIR/WAIT/RECONCILE/REVIEW 由 Gateway 确定性 policy 决定；
+   LLM 零参与决策，仅参与修复执行。五项预算（per-entry/
+   generation/same-signature/successor-depth/side-effect）全部
+   代码强制。
+
+4. 单飞修复执行（Repair Execution Binding）
+   Store 持久派发边界：invocation-scoped claim + fencing
+   revision + 实时租约 CAS；只有唯一 worker 且唯一一次可跨入
+   既有 Runtime。SIDE_EFFECT_STARTED 之后永不重放。
+
+5. 双权威原子转换
+   EffectLedger 与 RepairExecutionBinding 的跨界/终态化各为单事
+   务原子转换；已提交状态不存在分裂组合。
+
+6. 现实继任（Subject Successor）
+   修复产生新现实对象（新 artifact revision / 新 effect / 新
+   mutation effect+观测窗口）；append-only successor 链决定当前
+   effective subject；Readiness 只消费 effective subject 的记录。
+
+7. 独立现实证据
+   Repository 修复的 PRE/POST 观测来自只读 sensor（
+   v3.repository_perception over workspace Git authority），绝不
+   来自 runtime 自报。采集失败永不 SUCCEEDED。
+
+8. 陈旧权威拒斥
+   Store 写边界重验一切（FE 重派生、disposition 重算、directive
+   全字段绑权威、attempt/successor 绑 binding 专属 effect 与
+   produced subject）；CompletionGate 终验 current plan/readiness/
+   disposition/FailureEvidence 完整绑定。
+
+9. CompletionGate 唯一完成权威
+   COMPLETED/FAILED/RECONCILE_REQUIRED 仅由 CompletionGate 产生；
+   陈旧 readiness/disposition/evidence 无法污染当前完成。
+
+10. Golden 冻结
+    15 个 canonical 权威轨迹 + 16 项故障矩阵 + 校准 corpus +
+    指纹 + freeze manifest 全部进入 CI（compare-only）。
+
+----------------------------------------------------------------------
+版本与冻结
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.0"
+（唯一来源：src/total_gateway/verification_plane.py）
+
+Freeze manifest: docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+Authority map:   docs/p19-r2/AUTHORITY_MAP.txt
+设计说明:        docs/p19-r2/M6_DESIGN.txt

@@ -1,0 +1,24 @@
+{
+ "golden_cases_total": 15,
+ "golden_cases_passed": 15,
+ "golden_mismatch_count": 0,
+ "false_completion_count": 0,
+ "false_pass_count": 0,
+ "false_fail_count": 0,
+ "duplicate_side_effect_count": 0,
+ "ambiguous_replay_count": 0,
+ "crash_cases_total": 16,
+ "crash_cases_recovered": 16,
+ "concurrency_cases_total": 4,
+ "singleflight_violations": 0,
+ "stale_authority_acceptance_count": 0,
+ "cross_platform_mismatches": 0,
+ "calibration_cases_total": 24,
+ "notes": [
+  "G14 (two-worker race) is invariant-based (runtime==1) by design; timing nondeterminism",
+  "repository unchanged-window expressed via non-empty delta excluding the required path (observation identity contract)",
+  "channel post-delivery artifact repair bridge: injection point present, assembly intentionally deferred (zero auto-execution, zero replay)",
+  "G09 (multi-round budget exhaustion) is invariant-based like G14: cross-platform reference numbering shifts in full-trace form"
+ ],
+ "full_regression_required": true
+}

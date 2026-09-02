@@ -1,0 +1,167 @@
+P19-R2 M6 — Verification Plane 1.0 Final Freeze 设计说明
+基线：a94035f221d8769dcf4d5bcd1e7fa2827aa9623a
+
+# 0. 目的
+
+M6 不开发新的 Verification/Repair 能力。M0–M5 已交付完整闭环：
+Execution → Reality Evidence → Verification → FailureEvidence →
+Deterministic Repair Policy → RepairDirective → Single-flight existing
+Runtime → New Reality → Subject Successor → Same Predicate
+Re-verification → CompletionGate。
+
+M6 的任务是证明该系统在正常/异常/崩溃/并发/漂移/跨平台/长程
+条件下保持相同 authority semantics，并冻结为 Verification
+Plane 1.0。
+
+# 1. 六个工作流
+
+A. Golden Trace
+   tests/golden/p19_r2/test_golden_trace.py（G01–G15）
+   - 每个 canonical scenario 跑真实 Store/Gate/executor/policy/
+     repair loop，收集全部权威对象为 machine-readable trace
+   - 归一化：wall clock/volatile id 永不入比较；trust-boundary
+     hash 以 intern（同值同占位）保留拓扑；completion decision 的
+     states 数组降维为 QC 状态多重集（其拓扑已由 records/
+     successors 锁定）；非时序对象数组按去占位结构排序
+   - G14（双 worker race）为时序非确定场景，golden 契约为不变量
+     集：runtime execution count == 1、单 attempt、单 successor、
+     单 SUCCEEDED binding
+   - compare-only：CI 永不重写基线；显式维护命令 UPDATE_GOLDEN=1
+
+B. Golden CI + Architecture Guards
+   .github/workflows/p19-r2-golden-gate.yml（ubuntu+windows）
+   tests/golden/p19_r2/test_freeze_and_guards.py
+   - AST 结构扫描（非字符串扫）：CompletionGate/GatewayStateStore/
+     BackendClient/VerificationRepairCoordinator/
+     VerificationPlanExecutor/ArtifactGate/EffectStateOracle/
+     RepositoryStateOracle 类定义各恰好 1 处；STORE_SCHEMA_VERSION
+     唯一且无第二 GATEWAY* schema 权威；CompletionDecision 构造仅
+     存在于 completion_gate.py；无独立 repair daemon 入口
+
+C. Calibration & Drift
+   tests/golden/p19_r2/test_calibration_and_stability.py
+   - Artifact corpus：docx/xlsx/text 正负样本（空文件在 object
+     store 权威层即被拒——正确的 fail-closed）
+   - Effect corpus：六 ledger 状态下 terminal_succeeded 判定
+     （AMBIGUOUS 永不 PASS）
+   - Repository corpus：真实 git 仓库 + 独立 sensor（path changed/
+     unchanged/wrong path）
+   - 验收：False PASS == 0（release BLOCKER）；False FAIL == 0 或
+     已分类说明
+   - Drift：VERIFICATION_PLANE_FINGERPRINT.json 锁 registry/
+     verifiers/policy config/gate sha/store schema/authority map/
+     golden corpus；不匹配即 UNEXPECTED_DRIFT → CI FAIL；显式
+     升级须人工更新指纹（UPDATE_FINGERPRINT=1）并同步声明
+
+D. Fault Injection
+   tests/golden/p19_r2/test_fault_matrix.py（F01–F16）
+   - 在权威流水线的精确点截断（真实 Store 状态、绝不 mock 核心权威）
+   - 恢复语义：RESERVED 未跨界→同 directive 继续；跨 SIDE_EFFECT_
+     STARTED→零重放 RECONCILE；SUCCEEDED→仅 Store 恢复零 Runtime；
+     PASS 后 Gate 未跑→不得 repair
+   - 硬指标（全部为 0）：False Completion / Duplicate Side Effect /
+     AMBIGUOUS Replay / Stale PASS Reuse / Completion Bypass
+
+E. Stability / Long-Horizon
+   - 150-turn 连续验证链 + 每 30 turn Store 重开（continuity/
+     supersession/无陈旧完成）
+   - successor 链：真实修复推进且受预算约束（不 fork、不 cycle）
+   - 并发认证：双 worker 同 FAIL/同 directive/successor 幂等竞争
+   - Performance envelope：p50/p95/p99 记录于
+     PERFORMANCE_ENVELOPE.json；只防灾难性退化（p99 < 5s）
+
+F. Architecture Freeze
+   - VERIFICATION_PLANE_VERSION = "1.0"（唯一机器可读版本源：
+     src/total_gateway/verification_plane.py）
+   - VERIFICATION_PLANE_FREEZE.json 锁 authority surface hashes；
+     任何 completion/repair/plan/successor/fencing/binding/schema
+     语义文件变化 → VERIFICATION_PLANE_FREEZE_CHANGED → CI FAIL，
+     要求显式版本升级（UPDATE_FREEZE=1 重生成 + 版本声明）
+   - docs/p19-r2/AUTHORITY_MAP.txt 终版权威链
+
+# 2. 已知边界（诚实声明）
+
+1. repository「完全无变更」窗口：wall-clock 观测契约下零 delta
+   的 POST 与 PRE 共享内容身份，unchanged-FAIL 语义由「非空 delta
+   但不含 required path」表达（calibration 注记）。
+2. 长 revision 链受策略预算约束（per-entry 2 次修复、successor
+   depth 4）——「不 fork 不 cycle」在预算可达范围内验证。
+3. Channel 侧 artifact 修复桥注入点就绪但装配层未接（M5 冻结的
+   安全保守行为：delivery 后零自动执行、零重发）。
+
+# 3. Release hard thresholds（§20）
+
+False Completion = 0；False PASS = 0；Duplicate Side Effect = 0；
+AMBIGUOUS Replay = 0；Completion Authority Bypass = 0；Stale
+Authority Acceptance = 0；Single-flight Violation = 0；Golden
+Critical Case Failure = 0。任何一项非 0 不得封板。
+
+# 4. 缺陷处理纪律（§29）
+
+Golden/fault 发现 M0–M5 缺陷时：指明被破坏的 invariant、只修现有
+authority、不建第二系统、补 regression、Golden 更新仅限获批语义
+变化、全部回归重跑、不开 M6.x。
+
+
+----------------------------------------------------------------------
+M6 Final Certification Correction（8 项，2026-09-02）
+----------------------------------------------------------------------
+
+1. Golden corpus digest 改为 path + 实际文件字节的聚合 SHA——
+   基线内容被改而文件名不变时 Freeze/Fingerprint 立即失效。
+2. Freeze manifest 新增 authority_surface_sha256：store.py、
+   store_unit_of_work.py、verification_repair_coordinator.py、
+   verification_repair_policy.py、verification_plan_executor.py、
+   verification_readiness.py、verification_failure_evidence.py、
+   outcome_oracles/effect_state.py、completion_gate.py 及三大契约
+   ——Store schema version 未变但权威语义漂移时同样报警。
+3. G10 重写：权威 BLOCK（携带本 plane 的 policy identity、完整绑定
+   当前 FailureEvidence 与 readiness）→ CompletionGate FAILED；
+   foreign-policy BLOCK 仍被拒绝。
+4. F03 重写为真实截断：FE 写入 → crash → Store reopen → 从同一
+   持久化管线派生并写入 disposition。
+5. Calibration 补齐：PPTX/JSON/generic-binary corpus（oracle 现实
+   判定如实记录：json 提取无 markers→FAIL、binary→INCONCLUSIVE）、
+   Effect 六 ledger 状态（CLAIMED/STARTED=INCONCLUSIVE，永不
+   PASS）、VERIFIER_CALIBRATION.json 现含 artifact/effect/
+   repository 完整三 section。
+6. MixedLongHorizonTests：PASS → AUTHORITY_ERROR→RECONCILE →
+   恢复 → WAIT 窗口 → 稳态 PASS 的混合序列（同 lineage 全程
+   request/run/generation 连续）。原 150-cycle 测试如实命名为
+   endurance。
+7. PerformanceEnvelopeFullTests：verification / readiness build /
+   store write / repair coordination / CompletionGate / 代表性
+   golden case 六类指标 × small/medium/stress 三档。
+8. RELIABILITY_SCORECARD 由入库认证工件派生并在 CI 比对——
+   删除 case、手改数字、过期的 scorecard 均导致 CI FAIL
+   （UPDATE_SCORECARD=1 显式重生成）。
+
+----------------------------------------------------------------------
+M6 Final Certification Correction II（6 项，2026-09-02）
+----------------------------------------------------------------------
+
+1. G10 终版：BLOCK 冻结为 contract-reserved / currently unreachable
+   （v1 deterministic policy 无 BLOCK 生产分支，亦无 operator-BLOCK
+   authority）。G10-A 认证 fabricated BLOCK（即使带正确 policy
+   identity 与完整 FE/readiness 绑定）被 Gate 的
+   disposition_authority_reader 拒绝（disposition_not_authoritative）；
+   G10-B 认证真实 verification terminal failure → CompletionGate
+   FAILED。生产三处（desktop/orchestration、outbox 两分支）全部
+   透传 Store reader。
+2. Calibration 诚实纪律：任何 expectation mismatch（ok=false）即
+   certification FAIL；语义显式分类 PASS/FAIL/INCONCLUSIVE/
+   NOT_APPLICABLE/GATE_REJECTED；json→NOT_APPLICABLE、binary→
+   INCONCLUSIVE、pdf→INCONCLUSIVE 均为 oracle 真实判定；新增
+   expectation_mismatch 计数（=0）。
+3. Scorecard 核心零指标由 ReliabilityProbeTests 真实运行 probe
+   派生（单飞/duplicate、ambiguous replay+false completion、stale
+   authority），committed JSON 仅作比对对象；
+   full_regression_status 移除，改为 full_regression_required=true
+   （由 required workflow 证明）。
+4. Freeze surface 补全三个 verifier implementation
+   （artifact_content / effect_state / repository_state）与
+   verification_registry —— PASS 判定语义现在全部 content-frozen。
+5. Mixed horizon 诚实化：删除未发生的 WAIT 声明（同 plan 有记录
+   后 MISSING 不可达；WAIT 由 G05/F02 单独权威认证）。
+6. Performance：repair coordination 用真实 FAIL readiness；
+   representative_golden_case_ms = 真实 G02 golden 测试端到端墙钟。

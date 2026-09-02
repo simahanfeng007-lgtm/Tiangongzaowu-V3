@@ -1,0 +1,353 @@
+{
+ "authority_events": [
+  {
+   "enforcement": "RECORD",
+   "kind": "verification_record",
+   "predicate_type": "repository.required_paths_changed",
+   "status": "FAIL",
+   "subject_kind": "repository"
+  },
+  {
+   "enforcement": "RECORD",
+   "kind": "verification_record",
+   "predicate_type": "repository.required_paths_changed",
+   "status": "PASS",
+   "subject_kind": "repository"
+  },
+  {
+   "action": "REPAIR",
+   "attempt_no": 0,
+   "kind": "disposition",
+   "reason_codes": [
+    "repair_policy.repository_path_repairable"
+   ]
+  },
+  {
+   "claim_revision": 1,
+   "kind": "repair_binding",
+   "state": "SUCCEEDED"
+  },
+  {
+   "execution_outcome": "REVERIFY_PASS",
+   "kind": "repair_attempt",
+   "repair_attempt_no": 1
+  },
+  {
+   "kind": "subject_successor",
+   "repair_attempt_no": 1
+  },
+  {
+   "kind": "successor_resolution",
+   "successor_depth": 1
+  },
+  {
+   "kind": "completion_decision",
+   "outcome": "COMPLETED",
+   "verification_mode": "PLAN_BOUND",
+   "verification_ready": true
+  }
+ ],
+ "completion_decision": {
+  "artifact_revision_states": [],
+  "artifacts_ready": true,
+  "can_claim_platform_delivered": false,
+  "can_transition_request_completed": true,
+  "candidate_text_sha256": "ref0",
+  "decision_sha256": "ref1",
+  "delivery_parts": [],
+  "delivery_ready": true,
+  "delivery_receipt_sha256": null,
+  "execution_effect_states": [],
+  "execution_ready": true,
+  "generation": 2,
+  "model_generated": false,
+  "needs_reconciliation": false,
+  "outbound_plan_sha256": null,
+  "outcome": "COMPLETED",
+  "reason_code": "completion.requirements_satisfied",
+  "request_id": "ref2",
+  "run_id": "ref3",
+  "supporting_fact_ids": [],
+  "text_ready": true,
+  "verification_mode": "PLAN_BOUND",
+  "verification_plan_sha256": "ref4",
+  "verification_readiness_sha256": "ref5",
+  "verification_ready": true
+ },
+ "dispositions": [
+  {
+   "action": "REPAIR",
+   "attempt_no": 0,
+   "decided_at_ms": "<ts>",
+   "disposition_sha256": "ref6",
+   "failure_evidence_id": "ref7",
+   "failure_evidence_sha256": "ref8",
+   "generation": 2,
+   "max_attempts": 2,
+   "model_generated": false,
+   "plan_entry_id": "ref9",
+   "policy_config_sha256": "ref10",
+   "policy_version": "v1",
+   "reason_codes": [
+    "repair_policy.repository_path_repairable"
+   ],
+   "request_id": "ref2",
+   "run_id": "ref3",
+   "schema_id": "VerificationDisposition",
+   "schema_version": "tiangong.verification_disposition.v1",
+   "verification_disposition_id": "ref11",
+   "verification_plan_id": "ref12"
+  }
+ ],
+ "failure_evidence": [
+  {
+   "effective_subject_identity": "ref13",
+   "evidence_refs": [
+    "repo_observation_binding_pre:ref14",
+    "repo_observation_binding_post:ref15",
+    "predicate_sha256:ref16",
+    "observation_sha256:ref17"
+   ],
+   "failure_evidence_id": "ref7",
+   "failure_evidence_sha256": "ref8",
+   "failure_kind": "VERIFICATION_FAILED",
+   "failure_signature_sha256": "ref18",
+   "generation": 2,
+   "observed_at_ms": "<ts>",
+   "original_subject_identity": "ref13",
+   "plan_entry_id": "ref9",
+   "plan_entry_sha256": "ref19",
+   "predicate_id": "ref20",
+   "predicate_sha256": "ref16",
+   "predicate_type": "repository.required_paths_changed",
+   "readiness_id": "ref21",
+   "readiness_sha256": "ref22",
+   "reason_codes": [
+    "repository.required_paths_not_changed"
+   ],
+   "registry_snapshot_sha256": "ref23",
+   "request_id": "ref2",
+   "run_id": "ref3",
+   "schema_id": "FailureEvidence",
+   "schema_version": "tiangong.verification_failure_evidence.v1",
+   "subject_kind": "repository",
+   "verification_evidence_sha256": "ref16",
+   "verification_plan_id": "ref12",
+   "verification_plan_sha256": "ref4",
+   "verification_record_id": "ref24",
+   "verification_result_sha256": "ref25",
+   "verification_status": "FAIL",
+   "verifier_id": "verifier.repository_state",
+   "verifier_version": "2"
+  }
+ ],
+ "golden_case_id": "G04",
+ "input_class": "repository.fail_repair_pass",
+ "readiness": {
+  "entry_assessments": [
+   {
+    "plan_entry_id": "ref9",
+    "reason_code": null,
+    "status": "PASS",
+    "verification_record_id": "ref26"
+   }
+  ],
+  "evaluated_at_ms": "<ts>",
+  "failure_class": "NONE",
+  "generation": 2,
+  "readiness_sha256": "ref5",
+  "reason_codes": [],
+  "registry_snapshot_sha256": "ref23",
+  "request_id": "ref2",
+  "required_entry_count": 1,
+  "run_id": "ref3",
+  "satisfied_entry_count": 1,
+  "schema_id": "VerificationReadiness",
+  "schema_version": "tiangong.verification_readiness.v1",
+  "supporting_verification_record_ids": [
+   "ref26"
+  ],
+  "verification_plan_id": "ref12",
+  "verification_plan_sha256": "ref4",
+  "verification_readiness_id": "ref27",
+  "verification_ready": true
+ },
+ "repair_attempts": [
+  {
+   "attempt_sha256": "ref28",
+   "execution_effect_ids": [
+    "ref29"
+   ],
+   "execution_outcome": "REVERIFY_PASS",
+   "finished_at_ms": "<ts>",
+   "generation": 2,
+   "plan_entry_id": "ref9",
+   "prior_subject_identity": "ref13",
+   "produced_subject_identity": "ref29",
+   "repair_attempt_id": "ref30",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref31",
+   "request_id": "ref2",
+   "reverify_record_id": "ref26",
+   "run_id": "ref3",
+   "schema_id": "RepairAttemptRecord",
+   "schema_version": "tiangong.repair_attempt.v1",
+   "started_at_ms": "<ts>"
+  }
+ ],
+ "repair_bindings": [
+  {
+   "claim_expires_at_ms": "<ts>",
+   "claim_revision": 1,
+   "completed_at_ms": "<ts>",
+   "dispatch_claim_id": "ref32",
+   "effect_id": "ref29",
+   "effect_intent_sha256": "ref33",
+   "generation": 2,
+   "plan_entry_id": "ref9",
+   "produced_subject_identity": "ref29",
+   "produced_subject_kind": "repository",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref31",
+   "repair_directive_sha256": "ref34",
+   "request_id": "ref2",
+   "reserved_at_ms": "<ts>",
+   "run_id": "ref3",
+   "runtime_result_ref": "test",
+   "runtime_result_sha256": "",
+   "started_at_ms": "<ts>",
+   "state": "SUCCEEDED"
+  }
+ ],
+ "repair_directives": [
+  {
+   "allowed_target_refs": [
+    "ref13"
+   ],
+   "directive_sha256": "ref34",
+   "disposition_id": "ref11",
+   "disposition_sha256": "ref6",
+   "effective_subject_identity": "ref13",
+   "execution_budget_ms": 120000,
+   "expires_at_ms": "<ts>",
+   "failure_evidence_id": "ref7",
+   "failure_evidence_sha256": "ref8",
+   "forbidden_target_refs": [],
+   "generation": 2,
+   "issued_at_ms": "<ts>",
+   "max_attempts": 2,
+   "original_subject_identity": "ref13",
+   "plan_entry_id": "ref9",
+   "plan_entry_sha256": "ref19",
+   "predicate_id": "ref20",
+   "predicate_sha256": "ref16",
+   "repair_attempt_no": 1,
+   "repair_constraints": [],
+   "repair_directive_id": "ref31",
+   "repair_goal_kind": "repair:repository.required_paths_changed",
+   "request_id": "ref2",
+   "requires_reverification": true,
+   "run_id": "ref3",
+   "schema_id": "RepairDirective",
+   "schema_version": "tiangong.repair_directive.v1",
+   "subject_kind": "repository",
+   "verification_plan_id": "ref12",
+   "verification_plan_sha256": "ref4"
+  }
+ ],
+ "runtime_execution_count": 1,
+ "subject_successors": [
+  {
+   "__resolution__": {
+    "chain_binding_ids": [
+     "ref35"
+    ],
+    "effective_subject_identity": "ref29",
+    "successor_depth": 1
+   }
+  },
+  {
+   "bound_at_ms": "<ts>",
+   "generation": 2,
+   "plan_entry_id": "ref9",
+   "predecessor_subject_identity": "ref13",
+   "produced_by_effect_id": "ref29",
+   "repair_attempt_no": 1,
+   "repair_directive_id": "ref31",
+   "repair_directive_sha256": "ref34",
+   "request_id": "ref2",
+   "run_id": "ref3",
+   "schema_id": "VerificationSubjectSuccessor",
+   "schema_version": "tiangong.verification_subject_successor.v1",
+   "subject_kind": "repository",
+   "successor_binding_id": "ref35",
+   "successor_binding_sha256": "ref36",
+   "successor_subject_identity": "ref29",
+   "verification_plan_id": "ref12"
+  }
+ ],
+ "verification_records": [
+  {
+   "enforcement": "RECORD",
+   "evaluated_at_ms": "<ts>",
+   "evaluation_phase": "POST_EXECUTION",
+   "evidence_refs": [
+    "repo_observation_binding_pre:ref14",
+    "repo_observation_binding_post:ref15",
+    "predicate_sha256:ref16",
+    "observation_sha256:ref17"
+   ],
+   "evidence_sha256": "ref37",
+   "generation": 2,
+   "model_generated": false,
+   "predicate_id": "ref20",
+   "predicate_type": "repository.required_paths_changed",
+   "producer_component_id": "tiangong-gateway",
+   "reason_codes": [
+    "repository.required_paths_not_changed"
+   ],
+   "registry_snapshot_sha256": "ref23",
+   "request_id": "ref2",
+   "result_sha256": "ref25",
+   "run_id": "ref3",
+   "schema_id": "VerificationRecord",
+   "schema_version": "tiangong.verification_record.v1",
+   "status": "FAIL",
+   "subject_identity": "ref13",
+   "subject_kind": "repository",
+   "verification_record_id": "ref24",
+   "verifier_id": "verifier.repository_state",
+   "verifier_version": "2"
+  },
+  {
+   "enforcement": "RECORD",
+   "evaluated_at_ms": "<ts>",
+   "evaluation_phase": "POST_EXECUTION",
+   "evidence_refs": [
+    "repo_observation_binding_pre:ref38",
+    "repo_observation_binding_post:ref39",
+    "predicate_sha256:ref16",
+    "observation_sha256:ref40"
+   ],
+   "evidence_sha256": "ref41",
+   "generation": 2,
+   "model_generated": false,
+   "predicate_id": "ref20",
+   "predicate_type": "repository.required_paths_changed",
+   "producer_component_id": "tiangong-gateway",
+   "reason_codes": [],
+   "registry_snapshot_sha256": "ref23",
+   "request_id": "ref2",
+   "result_sha256": "ref42",
+   "run_id": "ref3",
+   "schema_id": "VerificationRecord",
+   "schema_version": "tiangong.verification_record.v1",
+   "status": "PASS",
+   "subject_identity": "ref29",
+   "subject_kind": "repository",
+   "verification_record_id": "ref26",
+   "verifier_id": "verifier.repository_state",
+   "verifier_version": "2"
+  }
+ ]
+}

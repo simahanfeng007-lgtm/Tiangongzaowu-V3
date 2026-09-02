@@ -1,0 +1,188 @@
+{
+ "artifact": {
+  "total": 15,
+  "true_pass": 6,
+  "true_fail": 5,
+  "expected_inconclusive": 2,
+  "false_pass": 0,
+  "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 1,
+  "expected_gate_rejected": 1,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "text.empty_fail",
+    "expected": "GATE_REJECTED",
+    "actual": "GATE_REJECTED",
+    "ok": true
+   },
+   {
+    "case": "text.nonempty_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "docx.too_few_chars_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "docx.enough_chars_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "xlsx.missing_column_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "xlsx.columns_present_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "xlsx.too_few_rows_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "xlsx.enough_rows_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "pptx.no_slides_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "pptx.enough_slides_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "json.format_markers_not_applicable",
+    "expected": "NOT_APPLICABLE",
+    "actual": "NOT_APPLICABLE",
+    "ok": true
+   },
+   {
+    "case": "binary.nonempty_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "pdf.nonempty_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "text.marker_missing_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "text.markers_present_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   }
+  ]
+ },
+ "effect": {
+  "total": 6,
+  "true_pass": 1,
+  "true_fail": 1,
+  "expected_inconclusive": 4,
+  "false_pass": 0,
+  "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 0,
+  "expected_gate_rejected": 0,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "effect.failed_final_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "effect.succeeded_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "effect.ambiguous_unproven_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.reconciled_unproven_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.claimed_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.started_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   }
+  ]
+ },
+ "repository": {
+  "total": 3,
+  "true_pass": 1,
+  "true_fail": 2,
+  "expected_inconclusive": 0,
+  "false_pass": 0,
+  "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 0,
+  "expected_gate_rejected": 0,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "repo.path_changed_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "repo.path_unchanged_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "repo.wrong_path_changed_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   }
+  ]
+ }
+}

@@ -1,0 +1,88 @@
+{
+ "tiers": {
+  "small": {
+   "verification_latency_ms": {
+    "p50": 29.286,
+    "p95": 34.174,
+    "p99": 34.174
+   },
+   "readiness_build_latency_ms": {
+    "p50": 2.843,
+    "p95": 3.77,
+    "p99": 3.77
+   },
+   "store_verification_write_latency_ms": {
+    "p50": 4.007,
+    "p95": 5.302,
+    "p99": 5.302
+   },
+   "repair_coordination_latency_ms": {
+    "p50": 16.106,
+    "p95": 16.264,
+    "p99": 16.264
+   },
+   "completion_gate_latency_ms": {
+    "p50": 9.308,
+    "p95": 9.767,
+    "p99": 9.767
+   },
+   "representative_golden_case_ms": 515.491
+  },
+  "medium": {
+   "verification_latency_ms": {
+    "p50": 30.573,
+    "p95": 38.927,
+    "p99": 41.655
+   },
+   "readiness_build_latency_ms": {
+    "p50": 8.615,
+    "p95": 10.974,
+    "p99": 11.694
+   },
+   "store_verification_write_latency_ms": {
+    "p50": 4.395,
+    "p95": 9.237,
+    "p99": 17.262
+   },
+   "repair_coordination_latency_ms": {
+    "p50": 19.056,
+    "p95": 20.742,
+    "p99": 20.742
+   },
+   "completion_gate_latency_ms": {
+    "p50": 7.661,
+    "p95": 14.82,
+    "p99": 14.82
+   },
+   "representative_golden_case_ms": 515.491
+  },
+  "stress": {
+   "verification_latency_ms": {
+    "p50": 72.611,
+    "p95": 98.635,
+    "p99": 129.314
+   },
+   "readiness_build_latency_ms": {
+    "p50": 31.507,
+    "p95": 40.967,
+    "p99": 49.831
+   },
+   "store_verification_write_latency_ms": {
+    "p50": 5.047,
+    "p95": 7.365,
+    "p99": 9.385
+   },
+   "repair_coordination_latency_ms": {
+    "p50": 31.763,
+    "p95": 49.064,
+    "p99": 50.277
+   },
+   "completion_gate_latency_ms": {
+    "p50": 7.619,
+    "p95": 9.519,
+    "p99": 9.72
+   },
+   "representative_golden_case_ms": 515.491
+  }
+ }
+}

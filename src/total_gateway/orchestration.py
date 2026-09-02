@@ -3523,6 +3523,9 @@ class GatewayOrchestrationWorker:
                 active_plan=active_plan,
                 verification_disposition=verification_disposition,
                 verification_failure_evidence=verification_failure_evidence,
+                disposition_authority_reader=(
+                    self._store.get_verification_disposition_by_id
+                ),
             )
             desktop_now = time.time_ns() // 1_000_000
             desktop_evidence = canonical_sha256(
