@@ -161,7 +161,7 @@ class CapabilityCompositionPlanV1(ContractModel):
     plan_id: OpaqueId
     request_id: RequestId
     run_id: RunId
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=0)
     principal_scope_hash: Sha256
     world_state_ref: OpaqueId
     world_state_sha256: Sha256
@@ -221,7 +221,7 @@ class AttributionIntegrityV1(ContractModel):
     schema_version: Literal[CAPABILITY_COMPOSITION_SCHEMA] = CAPABILITY_COMPOSITION_SCHEMA
     request_id: RequestId
     run_id: RunId
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=0)
     composition_plan_sha256: Sha256
     state: AttributionState
     reason_codes: tuple[OpaqueId, ...] = ()
@@ -243,7 +243,7 @@ class CapabilityCombinationExperienceV1(ContractModel):
     composition_plan_sha256: Sha256
     request_id: RequestId
     run_id: RunId
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=0)
     completion_decision_sha256: Sha256
     verification_readiness_sha256: Sha256
     verification_record_refs: tuple[OpaqueId, ...] = ()
@@ -271,7 +271,7 @@ class CompositionActivationContractV1(ContractModel):
     composition_plan_sha256: Sha256
     request_id: RequestId
     run_id: RunId
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=0)
     principal_scope_hash: Sha256
     world_state_sha256: Sha256
     source_manifest_sha256: Sha256
