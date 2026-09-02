@@ -77,7 +77,9 @@ class P4ModelMetricsV1:
     repair_attempt_count: int
     repair_success_count: int
     final_parse_failure_count: int
+    plan_success_count: int
     plan_compile_failure_count: int
+    semantic_validation_failure_count: int
     proved_valid_count: int
     proved_invalid_count: int
     unknown_count: int
@@ -90,7 +92,9 @@ class P4ModelMetricsV1:
             "repair_attempt_count": self.repair_attempt_count,
             "repair_success_count": self.repair_success_count,
             "final_parse_failure_count": self.final_parse_failure_count,
+            "plan_success_count": self.plan_success_count,
             "plan_compile_failure_count": self.plan_compile_failure_count,
+            "semantic_validation_failure_count": self.semantic_validation_failure_count,
             "proved_valid_count": self.proved_valid_count,
             "proved_invalid_count": self.proved_invalid_count,
             "unknown_count": self.unknown_count,
@@ -143,15 +147,18 @@ def _metrics(
         primary_parse_failure_count=sum(
             item.primary_error_code is not None for item in selected
         ),
-        repair_attempt_count=sum(
-            item.repair_attempted for item in selected
-        ),
+        repair_attempt_count=sum(item.repair_attempted for item in selected),
         repair_success_count=sum(item.repaired for item in selected),
         final_parse_failure_count=sum(
             not item.parse_succeeded for item in selected
         ),
+        plan_success_count=sum(item.plan_succeeded for item in selected),
         plan_compile_failure_count=sum(
             item.parse_succeeded and not item.plan_succeeded
+            for item in selected
+        ),
+        semantic_validation_failure_count=sum(
+            item.validation_result in {"PROVED_INVALID", "UNKNOWN"}
             for item in selected
         ),
         proved_valid_count=sum(
