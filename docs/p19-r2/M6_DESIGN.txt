@@ -101,3 +101,37 @@ Critical Case Failure = 0。任何一项非 0 不得封板。
 Golden/fault 发现 M0–M5 缺陷时：指明被破坏的 invariant、只修现有
 authority、不建第二系统、补 regression、Golden 更新仅限获批语义
 变化、全部回归重跑、不开 M6.x。
+
+
+----------------------------------------------------------------------
+M6 Final Certification Correction（8 项，2026-09-02）
+----------------------------------------------------------------------
+
+1. Golden corpus digest 改为 path + 实际文件字节的聚合 SHA——
+   基线内容被改而文件名不变时 Freeze/Fingerprint 立即失效。
+2. Freeze manifest 新增 authority_surface_sha256：store.py、
+   store_unit_of_work.py、verification_repair_coordinator.py、
+   verification_repair_policy.py、verification_plan_executor.py、
+   verification_readiness.py、verification_failure_evidence.py、
+   outcome_oracles/effect_state.py、completion_gate.py 及三大契约
+   ——Store schema version 未变但权威语义漂移时同样报警。
+3. G10 重写：权威 BLOCK（携带本 plane 的 policy identity、完整绑定
+   当前 FailureEvidence 与 readiness）→ CompletionGate FAILED；
+   foreign-policy BLOCK 仍被拒绝。
+4. F03 重写为真实截断：FE 写入 → crash → Store reopen → 从同一
+   持久化管线派生并写入 disposition。
+5. Calibration 补齐：PPTX/JSON/generic-binary corpus（oracle 现实
+   判定如实记录：json 提取无 markers→FAIL、binary→INCONCLUSIVE）、
+   Effect 六 ledger 状态（CLAIMED/STARTED=INCONCLUSIVE，永不
+   PASS）、VERIFIER_CALIBRATION.json 现含 artifact/effect/
+   repository 完整三 section。
+6. MixedLongHorizonTests：PASS → AUTHORITY_ERROR→RECONCILE →
+   恢复 → WAIT 窗口 → 稳态 PASS 的混合序列（同 lineage 全程
+   request/run/generation 连续）。原 150-cycle 测试如实命名为
+   endurance。
+7. PerformanceEnvelopeFullTests：verification / readiness build /
+   store write / repair coordination / CompletionGate / 代表性
+   golden case 六类指标 × small/medium/stress 三档。
+8. RELIABILITY_SCORECARD 由入库认证工件派生并在 CI 比对——
+   删除 case、手改数字、过期的 scorecard 均导致 CI FAIL
+   （UPDATE_SCORECARD=1 显式重生成）。

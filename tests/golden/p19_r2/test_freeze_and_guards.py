@@ -204,19 +204,53 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
+            # every M5 core authority file, content-hashed (M6
+            # correction #2): semantic drift in store/binding/
+            # coordinator/executor/readiness/fencing/successor now
+            # trips the freeze even when the schema version is unchanged
+            "authority_surface_sha256": self._authority_surface(),
         }
 
-    @staticmethod
-    def _corpus_sha() -> str:
-        names = sorted(
-            p.name
-            for p in (
-                ROOT / "tests" / "golden" / "p19_r2" / "baselines"
-            ).glob("*.json")
+    #: The authority surface frozen at 1.0.
+    AUTHORITY_SURFACE_FILES = (
+        "src/total_gateway/store.py",
+        "src/total_gateway/store_unit_of_work.py",
+        "src/total_gateway/verification_repair_coordinator.py",
+        "src/total_gateway/verification_repair_policy.py",
+        "src/total_gateway/verification_plan_executor.py",
+        "src/total_gateway/verification_readiness.py",
+        "src/total_gateway/verification_failure_evidence.py",
+        "src/total_gateway/outcome_oracles/effect_state.py",
+        "src/total_gateway/completion_gate.py",
+        "src/contracts/verification.py",
+        "src/contracts/verification_repair.py",
+        "src/total_gateway/effects.py",
+    )
+
+    @classmethod
+    def _corpus_sha(cls) -> str:
+        # Content-addressed corpus digest (M6 correction #1): relative
+        # path + ACTUAL FILE BYTES — editing a baseline in place can no
+        # longer slip past the freeze.
+        baselines_dir = (
+            ROOT / "tests" / "golden" / "p19_r2" / "baselines"
         )
-        return hashlib.sha256(
-            "".join(names).encode("utf-8")
-        ).hexdigest()
+        aggregate = hashlib.sha256()
+        for path in sorted(
+            baselines_dir.glob("*.json"), key=lambda item: item.name
+        ):
+            aggregate.update(path.name.encode("utf-8"))
+            aggregate.update(b":")
+            aggregate.update(hashlib.sha256(path.read_bytes()).digest())
+            aggregate.update(bytes([10]))
+        return aggregate.hexdigest()
+
+    @classmethod
+    def _authority_surface(cls) -> dict:
+        return {
+            rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+            for rel in cls.AUTHORITY_SURFACE_FILES
+        }
 
     def test_freeze_manifest_unchanged(self) -> None:
         current = self._freeze_manifest()

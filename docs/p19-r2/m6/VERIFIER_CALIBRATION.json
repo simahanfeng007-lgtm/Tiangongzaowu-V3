@@ -1,9 +1,9 @@
 {
  "artifact": {
-  "total": 10,
-  "true_pass": 5,
-  "true_fail": 5,
-  "expected_inconclusive": 0,
+  "total": 14,
+  "true_pass": 6,
+  "true_fail": 6,
+  "expected_inconclusive": 1,
   "false_pass": 0,
   "false_fail": 0,
   "authority_error": 0,
@@ -57,6 +57,30 @@
     "ok": true
    },
    {
+    "case": "pptx.no_slides_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "pptx.enough_slides_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "json.format_extraction_yields_no_text_markers_fail",
+    "expected": "FAIL",
+    "actual": "NOT_APPLICABLE",
+    "ok": false
+   },
+   {
+    "case": "binary.nonempty_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
     "case": "text.marker_missing_fail",
     "expected": "FAIL",
     "actual": "FAIL",
@@ -66,6 +90,82 @@
     "case": "text.markers_present_pass",
     "expected": "PASS",
     "actual": "PASS",
+    "ok": true
+   }
+  ]
+ },
+ "effect": {
+  "total": 6,
+  "true_pass": 1,
+  "true_fail": 1,
+  "expected_inconclusive": 4,
+  "false_pass": 0,
+  "false_fail": 0,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "effect.failed_final_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "effect.succeeded_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "effect.ambiguous_unproven_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.reconciled_unproven_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.claimed_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "effect.started_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   }
+  ]
+ },
+ "repository": {
+  "total": 3,
+  "true_pass": 1,
+  "true_fail": 2,
+  "expected_inconclusive": 0,
+  "false_pass": 0,
+  "false_fail": 0,
+  "authority_error": 0,
+  "cases": [
+   {
+    "case": "repo.path_changed_pass",
+    "expected": "PASS",
+    "actual": "PASS",
+    "ok": true
+   },
+   {
+    "case": "repo.path_unchanged_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
+    "ok": true
+   },
+   {
+    "case": "repo.wrong_path_changed_fail",
+    "expected": "FAIL",
+    "actual": "FAIL",
     "ok": true
    }
   ]

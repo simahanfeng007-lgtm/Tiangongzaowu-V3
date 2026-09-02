@@ -10,6 +10,20 @@
  "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
  "completion_authority_sha256": "da8e3ede85036ca2386decba28211acf01fb43fce8cfd4322cb53ebbd01ca9a9",
  "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
- "golden_corpus_sha256": "7e474e29f612d61fb8b7f737055deb66adc52b71f3a2ea084979a92efcc5a813",
- "golden_trace_version": "1"
+ "golden_corpus_sha256": "052814f157fb8ea5d78ca17c8f58ce50b542bd06faa3512f112930e4fe1cdb31",
+ "golden_trace_version": "1",
+ "authority_surface_sha256": {
+  "src/total_gateway/store.py": "eb5b1314b08ef3bfc71eda284c4e8b06b7792074a86df284bb9432c790ed5c62",
+  "src/total_gateway/store_unit_of_work.py": "fc5cf98d9377cce92a83a6003f15ac873a3c20a695aae89c2b00a42d81af29fd",
+  "src/total_gateway/verification_repair_coordinator.py": "0bd855befabe95fb7fa8931a4020194a6c525706f1a7d68cd1d92ad4166c57c9",
+  "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
+  "src/total_gateway/verification_plan_executor.py": "c7978c349570c5aa526566299809b8561996822f5646936af5ca06b77e3bb465",
+  "src/total_gateway/verification_readiness.py": "3535e6c51986389e8986d190f8945bd9f9f3fe30720d2676b6f1efd2f6187e87",
+  "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
+  "src/total_gateway/outcome_oracles/effect_state.py": "9d1bd2fd5556cf0bed18af2d7fea6b78589b4cab4a0ffcfffa57b7f2f8a0759e",
+  "src/total_gateway/completion_gate.py": "da8e3ede85036ca2386decba28211acf01fb43fce8cfd4322cb53ebbd01ca9a9",
+  "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
+  "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
+  "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f"
+ }
 }

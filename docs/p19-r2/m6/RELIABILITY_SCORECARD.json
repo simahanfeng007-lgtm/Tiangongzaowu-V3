@@ -13,7 +13,7 @@
  "singleflight_violations": 0,
  "stale_authority_acceptance_count": 0,
  "cross_platform_mismatches": 0,
- "calibration_cases_total": 17,
+ "calibration_cases_total": 23,
  "full_regression_status": "3535 passed, 17 skipped (local, 30m26s); mirrors synced",
  "notes": [
   "G14 (two-worker race) is invariant-based (runtime==1) by design; timing nondeterminism",

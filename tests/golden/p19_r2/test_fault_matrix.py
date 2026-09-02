@@ -88,14 +88,63 @@ class FaultMatrixTests(_GoldenArtifactFixture):
 
     # F03: evidence written, disposition not ----------------------------
     def test_f03_evidence_without_disposition_recovery(self) -> None:
+        import time as _time
+        from pathlib import Path as _Path
+
+        from total_gateway.store import GatewayStateStore
+        from total_gateway.verification_failure_evidence import (
+            build_failure_evidence,
+        )
+
         readiness = self._reverify()
-        # truncate: process only the evidence half (disposition write
-        # crashed) — re-running process_readiness derives it cleanly
+        # TRUNCATION at the exact midpoint: FailureEvidence built and
+        # persisted (through the Store re-deriving write boundary), the
+        # disposition write CRASHES.
+        evidences = build_failure_evidence(
+            plan=self.plan,
+            readiness=readiness,
+            store=self.gateway_store,
+            observed_at_ms=_time.time_ns() // 1_000_000,
+        )
+        self.assertTrue(evidences)
+        for evidence in evidences:
+            self.gateway_store.put_verification_failure_evidence(
+                evidence,
+                recorded_at_ms=_time.time_ns() // 1_000_000,
+            )
+        # crash-proof: evidence present, disposition absent
+        stored = self.gateway_store.list_verification_failure_evidence(
+            self.entry.plan_entry_id
+        )
+        self.assertTrue(stored)
+        self.assertEqual(
+            self.gateway_store.list_verification_dispositions(
+                self.entry.plan_entry_id
+            ),
+            (),
+        )
+        # REOPEN like a new process, then derive + persist the
+        # disposition from the SAME persisted evidence pipeline.
+        self.gateway_store.close()
+        reopened = GatewayStateStore.open(
+            _Path(self.temporary.name) / "gateway.sqlite3",
+            now_ms=_time.time_ns() // 1_000_000,
+        )
+        self.gateway_store = reopened
+        self.coordinator = type(self.coordinator)(store=reopened)
         dispositions = self.coordinator.process_readiness(
             plan=self.plan, readiness=readiness
         )
         self.assertEqual(len(dispositions), 1)
         self.assertEqual(dispositions[0].action, "REPAIR")
+        self.assertEqual(
+            len(
+                reopened.list_verification_dispositions(
+                    self.entry.plan_entry_id
+                )
+            ),
+            1,
+        )
 
     # F04: directive written, binding not reserved ----------------------
     def test_f04_directive_without_binding_recovery(self) -> None:
