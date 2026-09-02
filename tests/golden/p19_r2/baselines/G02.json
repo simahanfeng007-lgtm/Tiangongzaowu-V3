@@ -107,9 +107,9 @@
  ],
  "failure_evidence": [
   {
-   "effective_subject_identity": "ref0",
+   "effective_subject_identity": "ref1",
    "evidence_refs": [
-    "artifact_revision:ref0",
+    "artifact_revision:ref1",
     "manifest_sha256:ref16",
     "content_object:ref17",
     "content_sha256:ref18",
@@ -123,7 +123,7 @@
    "failure_signature_sha256": "ref22",
    "generation": 2,
    "observed_at_ms": "<ts>",
-   "original_subject_identity": "ref0",
+   "original_subject_identity": "ref1",
    "plan_entry_id": "ref12",
    "plan_entry_sha256": "ref23",
    "predicate_id": "ref24",
@@ -191,8 +191,8 @@
    "finished_at_ms": "<ts>",
    "generation": 2,
    "plan_entry_id": "ref12",
-   "prior_subject_identity": "ref0",
-   "produced_subject_identity": "ref1",
+   "prior_subject_identity": "ref1",
+   "produced_subject_identity": "ref0",
    "repair_attempt_id": "ref34",
    "repair_attempt_no": 1,
    "repair_directive_id": "ref35",
@@ -214,7 +214,7 @@
    "effect_intent_sha256": "ref37",
    "generation": 2,
    "plan_entry_id": "ref12",
-   "produced_subject_identity": "ref1",
+   "produced_subject_identity": "ref0",
    "produced_subject_kind": "artifact",
    "repair_attempt_no": 1,
    "repair_directive_id": "ref35",
@@ -231,12 +231,12 @@
  "repair_directives": [
   {
    "allowed_target_refs": [
-    "ref0"
+    "ref1"
    ],
    "directive_sha256": "ref38",
    "disposition_id": "ref14",
    "disposition_sha256": "ref9",
-   "effective_subject_identity": "ref0",
+   "effective_subject_identity": "ref1",
    "execution_budget_ms": 120000,
    "expires_at_ms": "<ts>",
    "failure_evidence_id": "ref10",
@@ -245,7 +245,7 @@
    "generation": 2,
    "issued_at_ms": "<ts>",
    "max_attempts": 2,
-   "original_subject_identity": "ref0",
+   "original_subject_identity": "ref1",
    "plan_entry_id": "ref12",
    "plan_entry_sha256": "ref23",
    "predicate_id": "ref24",
@@ -271,7 +271,7 @@
     "chain_binding_ids": [
      "ref39"
     ],
-    "effective_subject_identity": "ref1",
+    "effective_subject_identity": "ref0",
     "successor_depth": 1
    }
   },
@@ -279,7 +279,7 @@
    "bound_at_ms": "<ts>",
    "generation": 2,
    "plan_entry_id": "ref12",
-   "predecessor_subject_identity": "ref0",
+   "predecessor_subject_identity": "ref1",
    "produced_by_effect_id": "ref33",
    "repair_attempt_no": 1,
    "repair_directive_id": "ref35",
@@ -291,7 +291,7 @@
    "subject_kind": "artifact",
    "successor_binding_id": "ref39",
    "successor_binding_sha256": "ref40",
-   "successor_subject_identity": "ref1",
+   "successor_subject_identity": "ref0",
    "verification_plan_id": "ref15"
   }
  ],
@@ -301,7 +301,7 @@
    "evaluated_at_ms": "<ts>",
    "evaluation_phase": "POST_EXECUTION",
    "evidence_refs": [
-    "artifact_revision:ref0",
+    "artifact_revision:ref1",
     "manifest_sha256:ref16",
     "content_object:ref17",
     "content_sha256:ref18",
@@ -325,7 +325,7 @@
    "schema_id": "VerificationRecord",
    "schema_version": "tiangong.verification_record.v1",
    "status": "FAIL",
-   "subject_identity": "ref0",
+   "subject_identity": "ref1",
    "subject_kind": "artifact",
    "verification_record_id": "ref28",
    "verifier_id": "verifier.artifact_content",
@@ -336,7 +336,7 @@
    "evaluated_at_ms": "<ts>",
    "evaluation_phase": "POST_EXECUTION",
    "evidence_refs": [
-    "artifact_revision:ref1",
+    "artifact_revision:ref0",
     "manifest_sha256:ref42",
     "content_object:ref43",
     "content_sha256:ref44",
@@ -358,7 +358,7 @@
    "schema_id": "VerificationRecord",
    "schema_version": "tiangong.verification_record.v1",
    "status": "PASS",
-   "subject_identity": "ref1",
+   "subject_identity": "ref0",
    "subject_kind": "artifact",
    "verification_record_id": "ref30",
    "verifier_id": "verifier.artifact_content",

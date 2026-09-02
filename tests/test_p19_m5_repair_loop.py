@@ -1864,6 +1864,9 @@ class TestGateAuthorityChecks(RepairLoopE2EBase):
                 active_plan=self.plan,
                 verification_readiness=final,
                 verification_disposition=disposition,
+                disposition_authority_reader=(
+                    self.gateway_store.get_verification_disposition_by_id
+                ),
             )
 
     def test_stale_evidence_rejected(self) -> None:
@@ -1887,6 +1890,9 @@ class TestGateAuthorityChecks(RepairLoopE2EBase):
                 verification_readiness=final,
                 verification_disposition=disposition,
                 verification_failure_evidence=stale,
+                disposition_authority_reader=(
+                    self.gateway_store.get_verification_disposition_by_id
+                ),
             )
 
     def test_fully_bound_disposition_drives_in_progress(self) -> None:
@@ -1899,6 +1905,9 @@ class TestGateAuthorityChecks(RepairLoopE2EBase):
             verification_readiness=final,
             verification_disposition=disposition,
             verification_failure_evidence=evidence,
+            disposition_authority_reader=(
+                self.gateway_store.get_verification_disposition_by_id
+            ),
         )
         self.assertEqual(decision.outcome, "IN_PROGRESS")
 

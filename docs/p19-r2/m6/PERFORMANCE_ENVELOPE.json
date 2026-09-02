@@ -2,87 +2,87 @@
  "tiers": {
   "small": {
    "verification_latency_ms": {
-    "p50": 22.128,
-    "p95": 36.945,
-    "p99": 36.945
+    "p50": 21.402,
+    "p95": 46.52,
+    "p99": 46.52
    },
    "readiness_build_latency_ms": {
-    "p50": 3.235,
-    "p95": 4.216,
-    "p99": 4.216
+    "p50": 1.812,
+    "p95": 2.425,
+    "p99": 2.425
    },
    "store_verification_write_latency_ms": {
-    "p50": 2.895,
-    "p95": 4.141,
-    "p99": 4.141
+    "p50": 2.295,
+    "p95": 2.611,
+    "p99": 2.611
    },
    "repair_coordination_latency_ms": {
-    "p50": 7.325,
-    "p95": 7.445,
-    "p99": 7.445
+    "p50": 10.633,
+    "p95": 11.842,
+    "p99": 11.842
    },
    "completion_gate_latency_ms": {
-    "p50": 5.791,
-    "p95": 6.475,
-    "p99": 6.475
+    "p50": 7.632,
+    "p95": 11.301,
+    "p99": 11.301
    },
-   "representative_golden_case_ms": null
+   "representative_golden_case_ms": 400.408
   },
   "medium": {
    "verification_latency_ms": {
-    "p50": 28.013,
-    "p95": 42.043,
-    "p99": 44.263
+    "p50": 20.291,
+    "p95": 37.397,
+    "p99": 41.234
    },
    "readiness_build_latency_ms": {
-    "p50": 8.861,
-    "p95": 11.875,
-    "p99": 12.734
+    "p50": 8.829,
+    "p95": 9.858,
+    "p99": 10.079
    },
    "store_verification_write_latency_ms": {
-    "p50": 3.43,
-    "p95": 5.512,
-    "p99": 14.082
+    "p50": 2.826,
+    "p95": 5.387,
+    "p99": 16.518
    },
    "repair_coordination_latency_ms": {
-    "p50": 15.049,
-    "p95": 19.619,
-    "p99": 19.619
+    "p50": 13.7,
+    "p95": 17.764,
+    "p99": 17.764
    },
    "completion_gate_latency_ms": {
-    "p50": 8.464,
-    "p95": 9.726,
-    "p99": 9.726
+    "p50": 8.813,
+    "p95": 10.779,
+    "p99": 10.779
    },
-   "representative_golden_case_ms": null
+   "representative_golden_case_ms": 400.408
   },
   "stress": {
    "verification_latency_ms": {
-    "p50": 56.981,
-    "p95": 85.371,
-    "p99": 124.492
+    "p50": 62.634,
+    "p95": 93.41,
+    "p99": 129.813
    },
    "readiness_build_latency_ms": {
-    "p50": 29.265,
-    "p95": 35.848,
-    "p99": 38.716
+    "p50": 31.123,
+    "p95": 39.335,
+    "p99": 42.253
    },
    "store_verification_write_latency_ms": {
-    "p50": 3.26,
-    "p95": 4.547,
-    "p99": 5.058
+    "p50": 3.149,
+    "p95": 4.639,
+    "p99": 5.818
    },
    "repair_coordination_latency_ms": {
-    "p50": 24.481,
-    "p95": 39.123,
-    "p99": 41.009
+    "p50": 26.943,
+    "p95": 44.149,
+    "p99": 55.477
    },
    "completion_gate_latency_ms": {
-    "p50": 7.56,
-    "p95": 9.023,
-    "p99": 9.129
+    "p50": 7.654,
+    "p95": 11.217,
+    "p99": 11.553
    },
-   "representative_golden_case_ms": null
+   "representative_golden_case_ms": 400.408
   }
  }
 }

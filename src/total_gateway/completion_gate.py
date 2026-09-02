@@ -177,16 +177,18 @@ class CompletionGate:
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
         ):
             raise CompletionGateError("completion.text.invalid")
-        # Final certification correction #1: when a Store-authority
-        # reader is provided, a disposition MUST exist in the Store with
-        # the exact same content hash — a hand-forged disposition that
-        # merely imitates the plane's policy identity and evidence
-        # bindings is REJECTED. The Gate never invents authority; it
-        # binds to the one persistence authority.
-        if (
-            verification_disposition is not None
-            and disposition_authority_reader is not None
-        ):
+        # Final certification correction #1: a disposition MUST come
+        # from the one persistence authority. When a disposition is
+        # provided, the Store-authority reader is REQUIRED — a caller
+        # that forgets the reader fails closed instead of silently
+        # skipping the authority check. The Gate never invents
+        # authority; it binds to the one persistence authority.
+        if verification_disposition is not None:
+            if disposition_authority_reader is None:
+                raise CompletionGateError(
+                    "completion.verification."
+                    "disposition_authority_reader_required"
+                )
             authoritative = disposition_authority_reader(
                 verification_disposition.verification_disposition_id
             )

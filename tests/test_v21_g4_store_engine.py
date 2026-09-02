@@ -278,7 +278,7 @@ def test_t26b_security_surface_files_unchanged_since_g0() -> None:
         "src/contracts/security.py": "ad65e3cbb1b844333f8f873da5abfb49a2320aabe27056fb34f83baa5978c698",
         "src/contracts/scope.py": "4447d3db1f71dea26cbfd7a19704400f8d058c4fe3ec5b3bfa775de4d821f60e",
         "src/contracts/delivery_authorization.py": "95031e740a22137b5258205fe762fe408768fd3ddb947105d88fbfefa24c31ef",
-        "src/total_gateway/completion_gate.py": "2a81107df23b0d067d6ef7efe8673502eba888e53bf472292fefc64f0ff0e158",
+        "src/total_gateway/completion_gate.py": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
         "src/total_gateway/skill_authority.py": "41741c054b33cfe47752066b537c44cae2119c94c161156aceefbe734b1941ab",
     }
     root = Path(__file__).resolve().parents[1]

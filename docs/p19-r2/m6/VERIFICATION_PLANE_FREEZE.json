@@ -8,9 +8,9 @@
  },
  "registry_fingerprint": "6216982d89b5e18aac4026b063fb264ad787b1a2334e05a63a77411a28b45ec9",
  "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
- "completion_authority_sha256": "2a81107df23b0d067d6ef7efe8673502eba888e53bf472292fefc64f0ff0e158",
+ "completion_authority_sha256": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
  "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
- "golden_corpus_sha256": "6209d0df5b959729bc07fdbc42a6bacfd41794714b84ae1ab7669faa4153b5b0",
+ "golden_corpus_sha256": "8d8c13c6038f5a381bc35e090755fc001c17ce9f3259ca0c8cfb030859df59d7",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
   "src/total_gateway/store.py": "eb5b1314b08ef3bfc71eda284c4e8b06b7792074a86df284bb9432c790ed5c62",
@@ -24,7 +24,7 @@
   "src/total_gateway/outcome_oracles/artifact_content.py": "cbf65221625a245885e8a9d5c3378517c5441a00a3c25469fa5268c5489bc8d4",
   "src/total_gateway/outcome_oracles/effect_state.py": "9d1bd2fd5556cf0bed18af2d7fea6b78589b4cab4a0ffcfffa57b7f2f8a0759e",
   "src/total_gateway/outcome_oracles/repository_state.py": "0e271c69c416f1b389d15c27c4d74dea82b3e70c3b5caab42ef5e6363e0125cd",
-  "src/total_gateway/completion_gate.py": "2a81107df23b0d067d6ef7efe8673502eba888e53bf472292fefc64f0ff0e158",
+  "src/total_gateway/completion_gate.py": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
   "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f"

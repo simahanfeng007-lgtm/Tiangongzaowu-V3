@@ -774,10 +774,14 @@ class LongHorizonGoodPlanTests(RepairLoopE2EBase):
 
 
 class MixedLongHorizonTests(RepairLoopE2EBase):
-    """M6 correction #6: a mixed-outcome long-horizon execution
-    sequence (40 stages across PASS / FAIL->REPAIR->PASS / WAIT /
-    RECONCILE / REVIEW), verifying request/run/generation continuity,
-    readiness freshness and no stale completion at every boundary."""
+    """M6 correction #6: a mixed-outcome long-horizon sequence within
+    ONE lineage, covering exactly the outcomes actually exercised:
+    PASS -> AUTHORITY_ERROR/RECONCILE -> restored PASS -> steady PASS.
+    (FAIL->REPAIR is exercised by the golden/fault suites on their own
+    fixtures; WAIT and REVIEW are separately certified by G05/F02 and
+    G09/F-matrix respectively — MISSING is unreachable inside a plan
+    that already has records.) Verifies request/run/generation
+    continuity, readiness freshness and no stale completion."""
 
     def _good_manifest(self):
         return self._passed_manifest(
@@ -1136,6 +1140,17 @@ class PerformanceEnvelopeFullTests(RepairLoopE2EBase):
                 finally:
                     case.tearDown()
 
+            if golden_case_ms is None:
+                started = time.perf_counter()
+                golden_case_cycle()
+                golden_case_ms = round(
+                    (time.perf_counter() - started) * 1000.0, 3,
+                )
+            # regression guard: the reported wall-clock must be a real
+            # measured number — never null/zero (a silently-skipped
+            # measurement would otherwise re-enter the envelope)
+            self.assertIsNotNone(golden_case_ms)
+            self.assertGreater(golden_case_ms, 0)
             metrics["representative_golden_case_ms"] = golden_case_ms
             envelope["tiers"][tier] = metrics
         if os.environ.get("UPDATE_PERF") == "1":
