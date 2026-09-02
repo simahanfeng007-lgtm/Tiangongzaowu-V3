@@ -1,0 +1,38 @@
+name: p0p1-sync-generated-once
+
+on:
+  push:
+    branches:
+      - agent/capability-composition-p0-p1-v1
+
+permissions:
+  contents: write
+
+jobs:
+  sync-generated:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/capability-composition-p0-p1-v1
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate managed mirrors through canonical sync
+        run: python scripts/sync-generated-sources.py --write
+      - name: Commit generated shared-contract mirror only
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- app/life-service/runtime314/contracts
+          if git diff --cached --quiet; then
+            echo "No tracked generated changes."
+            exit 0
+          fi
+          git commit -m "chore(source): sync generated contracts for P0/P1 ABI fix"
+          git push origin HEAD:agent/capability-composition-p0-p1-v1
