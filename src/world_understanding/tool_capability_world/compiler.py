@@ -13,6 +13,7 @@ WorldState store, or executable route.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 import re
 from typing import Any, Mapping
 
@@ -104,15 +105,49 @@ class ToolCapabilityWorldSnapshotV1:
         return self.snapshot_sha256 == canonical_sha256(self.payload())
 
 
-def _implementation_refs(source: SourceRevisionRefV1) -> tuple[SourceSpanRefV1, ...]:
-    refs = source.source_spans or tuple(
-        SourceSpanRefV1(path=path) for path in source.source_files
-    )
-    keys = tuple(
-        (item.path, item.start_line or 0, item.end_line or 0) for item in refs
-    )
-    if len(keys) != len(set(keys)):
-        raise ToolCapabilityWorldError("source revision contains duplicate implementation refs")
+def _validated_source_files(
+    source: SourceRevisionRefV1,
+    *,
+    action_id: str,
+) -> tuple[str, ...]:
+    files = tuple(source.source_files)
+    if files != tuple(sorted(set(files))):
+        # SourceRevisionRef is an immutable identity record; accepting multiple
+        # byte representations for the same file set would make replay hashes
+        # caller-order dependent.
+        raise ToolCapabilityWorldError(
+            f"source revision files must be sorted and unique: {action_id}"
+        )
+    for path in files:
+        posix = PurePosixPath(path)
+        if (
+            not path
+            or "\\" in path
+            or posix.is_absolute()
+            or ".." in posix.parts
+            or "." in posix.parts
+        ):
+            raise ToolCapabilityWorldError(
+                f"source revision contains an unsafe repository path: {action_id}"
+            )
+    return files
+
+
+def _implementation_refs(
+    source: SourceRevisionRefV1,
+    *,
+    action_id: str,
+) -> tuple[SourceSpanRefV1, ...]:
+    files = _validated_source_files(source, action_id=action_id)
+    refs = source.source_spans or tuple(SourceSpanRefV1(path=path) for path in files)
+    keys = tuple((item.path, item.start_line or 0, item.end_line or 0) for item in refs)
+    if (
+        len(keys) != len(set(keys))
+        or any(item.path not in files for item in refs)
+    ):
+        raise ToolCapabilityWorldError(
+            f"source revision implementation refs are invalid: {action_id}"
+        )
     return tuple(
         sorted(refs, key=lambda item: (item.path, item.start_line or 0, item.end_line or 0))
     )
@@ -153,7 +188,7 @@ def _build_primitive(
         action_id=action_id,
         action_version=str(permission.action_version),
         provider_component_id=_CANONICAL_PROVIDER_COMPONENT_ID,
-        implementation_refs=_implementation_refs(source),
+        implementation_refs=_implementation_refs(source, action_id=action_id),
         implementation_hashes=(source.source_sha256,),
         action_manifest_sha256=permission.source_manifest_sha256,
         argument_schema_sha256=argument_schema_sha256,
@@ -167,7 +202,9 @@ def _build_primitive(
         determinism_class="NONDETERMINISTIC",
         resource_scope=tuple(sorted(set(resources))),
         read_set_descriptor=("resource:read",) if effect in {"read", "verify"} else (),
-        write_set_descriptor=("resource:write",) if effect in {"create", "write", "update", "execute"} else (),
+        write_set_descriptor=("resource:write",)
+        if effect in {"create", "write", "update", "execute"}
+        else (),
         evidence_contract=(),
         verifier_refs=(),
         failure_taxonomy=("runtime_failure", "unavailable", "verification_failure"),
@@ -233,11 +270,21 @@ def compile_tool_capability_world(
         arg_hash = argument_schema_hashes.get(action_id)
         result_hash = result_schema_hashes.get(action_id)
         if source is None or arg_hash is None or result_hash is None:
-            raise ToolCapabilityWorldError(f"missing deterministic source/schema binding: {action_id}")
-        if source.source_kind != "TOOL_ACTION" or source.semantic_id != action_id:
-            raise ToolCapabilityWorldError(f"source revision identity mismatch: {action_id}")
+            raise ToolCapabilityWorldError(
+                f"missing deterministic source/schema binding: {action_id}"
+            )
+        if (
+            source.source_kind != "TOOL_ACTION"
+            or source.semantic_id != action_id
+            or source.version != str(permission.action_version)
+        ):
+            raise ToolCapabilityWorldError(
+                f"source revision identity/version mismatch: {action_id}"
+            )
         if source.manifest_sha256 != manifest_sha256:
-            raise ToolCapabilityWorldError(f"source revision manifest mismatch: {action_id}")
+            raise ToolCapabilityWorldError(
+                f"source revision manifest mismatch: {action_id}"
+            )
 
         primitive = _build_primitive(
             action_id=action_id,
