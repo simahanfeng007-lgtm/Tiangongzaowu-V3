@@ -1,7 +1,7 @@
 """Merge exact-frame P6 domain contributions before one existing materialization.
 
 The adapter creates a transaction-local SparseWorldGraph, adds Software/Tool/
-Method records, and calls the existing WorldStateMaterializer exactly once.  It
+Method records, and calls the existing WorldStateMaterializer exactly once. It
 does not own a Store, current-head index, publication path, or WorldState type.
 """
 
@@ -11,6 +11,8 @@ from dataclasses import replace
 
 from contracts.canonical import canonical_sha256
 from contracts.world_understanding._base import WorldRecordRef
+from contracts.world_understanding.entity import WorldEntity
+from contracts.world_understanding.relation import WorldRelation
 from world_understanding.domain_contribution import WorldDomainContributionV1
 from world_understanding.software_world.graph import SparseWorldGraph
 
@@ -19,7 +21,7 @@ from .materializer import MaterializationInput, WorldStateMaterializer
 from .store import MaterializedWorldSnapshot
 
 
-def _entity_ref(value: object) -> WorldRecordRef:
+def _entity_ref(value: WorldEntity) -> WorldRecordRef:
     return WorldRecordRef(
         record_type="world_entity",
         record_id=value.entity_id,
@@ -28,7 +30,7 @@ def _entity_ref(value: object) -> WorldRecordRef:
     )
 
 
-def _relation_ref(value: object) -> WorldRecordRef:
+def _relation_ref(value: WorldRelation) -> WorldRecordRef:
     return WorldRecordRef(
         record_type="world_relation",
         record_id=value.relation_id,
@@ -37,7 +39,7 @@ def _relation_ref(value: object) -> WorldRecordRef:
     )
 
 
-def _merge_entity(graph: SparseWorldGraph, incoming: object) -> None:
+def _merge_entity(graph: SparseWorldGraph, incoming: WorldEntity) -> None:
     previous = graph.entity(incoming.entity_id)
     if previous is not None:
         if previous.entity_sha256 == incoming.entity_sha256:
@@ -50,7 +52,7 @@ def _merge_entity(graph: SparseWorldGraph, incoming: object) -> None:
     graph.upsert_entity(incoming)
 
 
-def _merge_relation(graph: SparseWorldGraph, incoming: object) -> None:
+def _merge_relation(graph: SparseWorldGraph, incoming: WorldRelation) -> None:
     previous = graph.relation(incoming.relation_id)
     if previous is not None:
         if previous.relation_sha256 == incoming.relation_sha256:
@@ -97,7 +99,7 @@ def bind_domain_contributions(
     )
     ids = tuple(item.contribution_id for item in ordered)
     kinds = tuple(item.contribution_kind for item in ordered)
-    if ids != tuple(sorted(set(ids))):
+    if len(ids) != len(set(ids)):
         raise ValueError("WORLD_DOMAIN_CONTRIBUTION_ID_DUPLICATE")
     if len(kinds) != len(set(kinds)):
         raise ValueError("WORLD_DOMAIN_CONTRIBUTION_KIND_DUPLICATE")
