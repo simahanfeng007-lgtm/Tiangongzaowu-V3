@@ -40,6 +40,7 @@ class P4EvaluationCaseResultV1:
     evidence_mode: str
     parse_succeeded: bool
     repaired: bool
+    repair_attempted: bool
     primary_error_code: str | None
     plan_succeeded: bool
     validation_result: str | None
@@ -56,6 +57,7 @@ class P4EvaluationCaseResultV1:
             "evidence_mode": self.evidence_mode,
             "parse_succeeded": self.parse_succeeded,
             "repaired": self.repaired,
+            "repair_attempted": self.repair_attempted,
             "primary_error_code": self.primary_error_code,
             "plan_succeeded": self.plan_succeeded,
             "validation_result": self.validation_result,
@@ -142,7 +144,7 @@ def _metrics(
             item.primary_error_code is not None for item in selected
         ),
         repair_attempt_count=sum(
-            item.primary_error_code is not None for item in selected
+            item.repair_attempted for item in selected
         ),
         repair_success_count=sum(item.repaired for item in selected),
         final_parse_failure_count=sum(
@@ -210,6 +212,7 @@ def run_p4_early_evaluation(
                     evidence_mode=evidence_mode,
                     parse_succeeded=False,
                     repaired=False,
+                    repair_attempted=item.repair_text is not None,
                     primary_error_code=primary_error_code,
                     plan_succeeded=False,
                     validation_result=None,
@@ -235,6 +238,10 @@ def run_p4_early_evaluation(
                     evidence_mode=evidence_mode,
                     parse_succeeded=True,
                     repaired=parsed.repaired,
+                    repair_attempted=(
+                        parsed.primary_error_code is not None
+                        and item.repair_text is not None
+                    ),
                     primary_error_code=parsed.primary_error_code,
                     plan_succeeded=False,
                     validation_result=None,
@@ -263,6 +270,10 @@ def run_p4_early_evaluation(
                 evidence_mode=evidence_mode,
                 parse_succeeded=True,
                 repaired=parsed.repaired,
+                repair_attempted=(
+                    parsed.primary_error_code is not None
+                    and item.repair_text is not None
+                ),
                 primary_error_code=parsed.primary_error_code,
                 plan_succeeded=True,
                 validation_result=validation.result,
