@@ -250,22 +250,31 @@ def _unknown_findings(
                 )
             )
 
-    missing_verifiers = tuple(
-        sorted(
-            intent
-            for intent in plan.verification_intents
-            if intent not in available_verifiers
-        )
-    )
-    if missing_verifiers:
+    if not plan.verification_intents:
         findings.append(
             _finding(
-                "validator.verifier.unavailable",
+                "validator.verifier.binding_missing",
                 "UNKNOWN",
                 plan.plan_id,
-                list(missing_verifiers),
             )
         )
+    else:
+        missing_verifiers = tuple(
+            sorted(
+                intent
+                for intent in plan.verification_intents
+                if intent not in available_verifiers
+            )
+        )
+        if missing_verifiers:
+            findings.append(
+                _finding(
+                    "validator.verifier.unavailable",
+                    "UNKNOWN",
+                    plan.plan_id,
+                    list(missing_verifiers),
+                )
+            )
     return findings
 
 
@@ -406,12 +415,8 @@ def validate_capability_composition_plan(
         )
 
     primitives = _primitive_by_action(candidates)
-    invalid.extend(
-        _validate_dependency_compatibility(plan, primitives)
-    )
-    invalid.extend(
-        _validate_parallel_write_conflicts(plan, primitives)
-    )
+    invalid.extend(_validate_dependency_compatibility(plan, primitives))
+    invalid.extend(_validate_parallel_write_conflicts(plan, primitives))
     for action_id in plan.permission_requirements:
         primitive = primitives.get(action_id)
         if primitive is None:
