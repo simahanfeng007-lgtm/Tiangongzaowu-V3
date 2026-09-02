@@ -61,9 +61,7 @@ def test_candidate_builder_recomputes_tool_descriptor_integrity() -> None:
         )
     )
     original = tool_world.primitives[0]
-    tampered = original.model_copy(
-        update={"produces": ("type:tampered",)}
-    )
+    tampered = original.model_copy(update={"produces": ("type:tampered",)})
     forged_world = replace(
         tool_world,
         primitives=(tampered,),
@@ -173,6 +171,119 @@ def test_missing_verification_binding_is_unknown_and_rejected() -> None:
     assert any(
         item.code == "validator.verifier.binding_missing"
         for item in result.findings
+    )
+
+
+def test_dependency_requires_every_declared_input_type() -> None:
+    specs = (
+        {
+            "action_id": "artifact.read",
+            "risk": "A0",
+            "effect": "read",
+            "side_effects": ("read",),
+            "produces": ("type:text",),
+        },
+        {
+            "action_id": "artifact.combine",
+            "risk": "A0",
+            "effect": "verify",
+            "side_effects": ("read",),
+            "consumes": ("type:image", "type:text"),
+            "produces": ("type:artifact",),
+        },
+    )
+    registry, tool_world, method_world = _worlds(specs)
+    candidates = build_candidate_snapshot(
+        tool_world,
+        method_world,
+        method_ids=("generate_then_verify",),
+        action_ids=("artifact.combine", "artifact.read"),
+    )
+    proposal = parse_composition_proposal(
+        _proposal_document(
+            goal_ref="goal.partial-inputs",
+            methods=("M01",),
+            actions=("A01", "A02"),
+            steps=(
+                ("step.01", "A02", ()),
+                ("step.02", "A01", ("step.01",)),
+            ),
+        ),
+        candidates,
+    )
+    context = _context(goal_ref="goal.partial-inputs")
+    plan = compile_capability_composition_plan(
+        proposal,
+        candidates,
+        context,
+        registry,
+    )
+    result = validate_capability_composition_plan(
+        plan,
+        proposal,
+        candidates,
+        context,
+        registry,
+        available_verifiers=frozenset({"verifier:artifact"}),
+        validated_at_ms=11,
+    )
+    assert result.result == "PROVED_INVALID"
+    assert any(
+        item.code == "validator.dependency.type_incompatible"
+        for item in result.findings
+    )
+
+
+def test_conditional_idempotency_remains_unknown() -> None:
+    registry, candidates, context, document = _single_read_fixture(
+        idempotency="CONDITIONAL",
+        determinism="DETERMINISTIC",
+    )
+    proposal = parse_composition_proposal(document, candidates)
+    plan = compile_capability_composition_plan(
+        proposal,
+        candidates,
+        context,
+        registry,
+    )
+    result = validate_capability_composition_plan(
+        plan,
+        proposal,
+        candidates,
+        context,
+        registry,
+        available_verifiers=frozenset({"verifier:artifact"}),
+        validated_at_ms=11,
+    )
+    assert result.result == "UNKNOWN"
+    assert result.unknown_disposition == "PROVISIONAL_ALLOW"
+    assert any(
+        item.code == "validator.action.idempotency_unknown"
+        for item in result.findings
+    )
+
+
+def test_validation_timestamp_cannot_predate_plan() -> None:
+    registry, candidates, context, document = _single_read_fixture()
+    proposal = parse_composition_proposal(document, candidates)
+    plan = compile_capability_composition_plan(
+        proposal,
+        candidates,
+        context,
+        registry,
+    )
+    result = validate_capability_composition_plan(
+        plan,
+        proposal,
+        candidates,
+        context,
+        registry,
+        available_verifiers=frozenset({"verifier:artifact"}),
+        validated_at_ms=plan.created_at_ms - 1,
+    )
+    assert result.result == "PROVED_INVALID"
+    assert any(
+        item.code == "validator.time.before_plan" for item in result.findings
     )
 
 
