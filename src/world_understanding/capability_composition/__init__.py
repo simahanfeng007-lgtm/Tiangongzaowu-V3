@@ -6,6 +6,14 @@ exclusively by the existing Total Gateway / Policy / Ticket / Grant / Omni Body
 existing MemoryCoordinator and LifeShadowStore.
 """
 
+from .capability_experience_api import (
+    apply_capability_experience_observation,
+    build_capability_experience_memory_intent,
+    evaluate_capability_experience_admission,
+    exact_source_hashes,
+    mark_capability_experience_source_change,
+    recall_capability_experiences,
+)
 from .capability_experience_attribution import (
     ATTRIBUTION_TRACE_SCHEMA,
     AttributionTraceV1,
@@ -31,18 +39,12 @@ from .capability_experience_policy import (
     CapabilityExperienceRecallQueryV1,
     DEFAULT_CAPABILITY_EXPERIENCE_POLICY,
     NegativeCapabilityEvidenceV1,
-    apply_capability_experience_observation,
     assess_capability_experience_source_freshness,
-    build_capability_experience_memory_intent,
     build_negative_capability_evidence,
     capability_experience_key,
     computed_experience_sha256,
-    evaluate_capability_experience_admission,
-    exact_source_hashes,
     experience_has_valid_sha256,
-    mark_capability_experience_source_change,
     posterior_success_milli,
-    recall_capability_experiences,
     source_revision_family,
     wilson_lower_confidence_milli,
 )
