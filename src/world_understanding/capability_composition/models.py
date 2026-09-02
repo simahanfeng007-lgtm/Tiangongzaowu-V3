@@ -17,7 +17,10 @@ from contracts.capability_composition import (
     SourceRevisionRefV1,
     ToolSourcePrimitiveV1,
 )
-from world_understanding.skill_method_world import SkillMethodWorldSnapshotV1
+from world_understanding.skill_method_world import (
+    SkillMethodWorldSnapshotV1,
+    computed_skill_method_descriptor_sha256,
+)
 from world_understanding.tool_capability_world import ToolCapabilityWorldSnapshotV1
 
 
@@ -51,8 +54,76 @@ def _require_opaque(value: str, field: str) -> None:
         raise CapabilityCompositionError("composition.identity.invalid", field)
 
 
-def _primitive_payload(value: SkillSourcePrimitiveV1 | ToolSourcePrimitiveV1) -> dict[str, Any]:
+def _primitive_payload(
+    value: SkillSourcePrimitiveV1 | ToolSourcePrimitiveV1,
+) -> dict[str, Any]:
     return value.model_dump(mode="json")
+
+
+def _computed_tool_descriptor_sha256(
+    primitive: ToolSourcePrimitiveV1,
+) -> str:
+    return canonical_sha256(
+        primitive.model_dump(mode="json", exclude={"descriptor_sha256"})
+    )
+
+
+def _derived_action_source_revision(
+    primitive: ToolSourcePrimitiveV1,
+) -> SourceRevisionRefV1:
+    files = tuple(sorted({item.path for item in primitive.implementation_refs}))
+    if not files:
+        raise CapabilityCompositionError(
+            "candidate.action_source.empty", primitive.action_id
+        )
+    implementation_hashes = tuple(sorted(set(primitive.implementation_hashes)))
+    if not implementation_hashes:
+        raise CapabilityCompositionError(
+            "candidate.action_source.hash_empty", primitive.action_id
+        )
+    if any(_SHA256.fullmatch(value) is None for value in implementation_hashes):
+        raise CapabilityCompositionError(
+            "candidate.action_source.hash_invalid", primitive.action_id
+        )
+    if len(implementation_hashes) == 1:
+        source_sha256 = implementation_hashes[0]
+    else:
+        source_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.tool-source-revision-derived.v1",
+                "implementation_hashes": list(implementation_hashes),
+                "implementation_refs": [
+                    item.model_dump(mode="json")
+                    for item in sorted(
+                        primitive.implementation_refs,
+                        key=lambda item: (
+                            item.path,
+                            item.start_line or 0,
+                            item.end_line or 0,
+                        ),
+                    )
+                ],
+            }
+        )
+    return SourceRevisionRefV1(
+        source_kind="TOOL_ACTION",
+        semantic_id=primitive.action_id,
+        version=primitive.action_version,
+        source_files=files,
+        source_spans=tuple(
+            sorted(
+                primitive.implementation_refs,
+                key=lambda item: (
+                    item.path,
+                    item.start_line or 0,
+                    item.end_line or 0,
+                ),
+            )
+        ),
+        source_sha256=source_sha256,
+        descriptor_sha256=primitive.descriptor_sha256,
+        manifest_sha256=primitive.action_manifest_sha256,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +146,12 @@ class MethodCandidateBindingV1:
             or self.primitive.source_ref.semantic_id != self.primitive.method_id
             or self.primitive.source_ref.version != self.primitive.version
             or self.primitive.source_ref.manifest_sha256 is not None
-            or self.primitive.source_sha256 != self.primitive.source_ref.source_sha256
+            or self.primitive.source_sha256
+            != self.primitive.source_ref.source_sha256
             or self.primitive.descriptor_sha256
             != self.primitive.source_ref.descriptor_sha256
+            or self.primitive.descriptor_sha256
+            != computed_skill_method_descriptor_sha256(self.primitive)
         ):
             raise CapabilityCompositionError(
                 "candidate.method_source.invalid", self.primitive.method_id
@@ -119,13 +193,9 @@ class ActionCandidateBindingV1:
         if self.may_authorize or self.may_execute:
             raise CapabilityCompositionError("candidate.action.authority_forbidden")
         if (
-            self.source_revision.source_kind != "TOOL_ACTION"
-            or self.source_revision.semantic_id != self.primitive.action_id
-            or self.source_revision.version != self.primitive.action_version
-            or self.source_revision.manifest_sha256
-            != self.primitive.action_manifest_sha256
-            or self.source_revision.descriptor_sha256
-            != self.primitive.descriptor_sha256
+            self.primitive.descriptor_sha256
+            != _computed_tool_descriptor_sha256(self.primitive)
+            or self.source_revision != _derived_action_source_revision(self.primitive)
         ):
             raise CapabilityCompositionError(
                 "candidate.action_source.invalid", self.primitive.action_id
@@ -173,14 +243,20 @@ class CompositionCandidateSnapshotV1:
 
         method_ids = tuple(item.candidate_id for item in self.method_candidates)
         action_ids = tuple(item.candidate_id for item in self.action_candidates)
+        expected_method_ids = tuple(
+            f"M{index:02d}" for index in range(1, len(method_ids) + 1)
+        )
+        expected_action_ids = tuple(
+            f"A{index:02d}" for index in range(1, len(action_ids) + 1)
+        )
         if (
-            method_ids != tuple(sorted(set(method_ids)))
+            method_ids != expected_method_ids
             or len(method_ids) > MAX_METHOD_CANDIDATES
         ):
             raise CapabilityCompositionError("candidate.method_set.invalid")
         if (
             not action_ids
-            or action_ids != tuple(sorted(set(action_ids)))
+            or action_ids != expected_action_ids
             or len(action_ids) > MAX_ACTION_CANDIDATES
         ):
             raise CapabilityCompositionError("candidate.action_set.invalid")
@@ -300,55 +376,7 @@ def derive_action_source_revision(
 ) -> SourceRevisionRefV1:
     """Derive a SourceRevisionRef from the already-validated P2 primitive."""
 
-    files = tuple(sorted({item.path for item in primitive.implementation_refs}))
-    if not files:
-        raise CapabilityCompositionError(
-            "candidate.action_source.empty", primitive.action_id
-        )
-    implementation_hashes = tuple(sorted(set(primitive.implementation_hashes)))
-    if not implementation_hashes:
-        raise CapabilityCompositionError(
-            "candidate.action_source.hash_empty", primitive.action_id
-        )
-    if len(implementation_hashes) == 1:
-        source_sha256 = implementation_hashes[0]
-    else:
-        source_sha256 = canonical_sha256(
-            {
-                "domain": "tiangong.tool-source-revision-derived.v1",
-                "implementation_hashes": list(implementation_hashes),
-                "implementation_refs": [
-                    item.model_dump(mode="json")
-                    for item in sorted(
-                        primitive.implementation_refs,
-                        key=lambda item: (
-                            item.path,
-                            item.start_line or 0,
-                            item.end_line or 0,
-                        ),
-                    )
-                ],
-            }
-        )
-    return SourceRevisionRefV1(
-        source_kind="TOOL_ACTION",
-        semantic_id=primitive.action_id,
-        version=primitive.action_version,
-        source_files=files,
-        source_spans=tuple(
-            sorted(
-                primitive.implementation_refs,
-                key=lambda item: (
-                    item.path,
-                    item.start_line or 0,
-                    item.end_line or 0,
-                ),
-            )
-        ),
-        source_sha256=source_sha256,
-        descriptor_sha256=primitive.descriptor_sha256,
-        manifest_sha256=primitive.action_manifest_sha256,
-    )
+    return _derived_action_source_revision(primitive)
 
 
 def _normalize_selection(
@@ -363,7 +391,9 @@ def _normalize_selection(
     else:
         raw = tuple(values)
         if len(raw) != len(set(raw)):
-            raise CapabilityCompositionError(f"candidate.{kind}.selection_duplicate")
+            raise CapabilityCompositionError(
+                f"candidate.{kind}.selection_duplicate"
+            )
         selected = tuple(sorted(raw))
     if len(selected) > limit:
         raise CapabilityCompositionError(f"candidate.{kind}.budget_exceeded")
@@ -375,6 +405,60 @@ def _normalize_selection(
     return selected
 
 
+def _validate_tool_world_integrity(
+    tool_world: ToolCapabilityWorldSnapshotV1,
+) -> None:
+    if not tool_world.has_valid_sha256():
+        raise CapabilityCompositionError("candidate.tool_world.hash_invalid")
+    if tool_world.may_authorize or tool_world.may_execute:
+        raise CapabilityCompositionError("candidate.tool_world.authority_forbidden")
+    if any(
+        primitive.action_manifest_sha256 != tool_world.source_manifest_sha256
+        or primitive.descriptor_sha256
+        != _computed_tool_descriptor_sha256(primitive)
+        for primitive in tool_world.primitives
+    ):
+        raise CapabilityCompositionError("candidate.tool_world.primitive_invalid")
+
+
+def _validate_method_world_integrity(
+    method_world: SkillMethodWorldSnapshotV1,
+) -> None:
+    if not method_world.has_valid_sha256():
+        raise CapabilityCompositionError("candidate.method_world.hash_invalid")
+    if method_world.may_authorize or method_world.may_execute:
+        raise CapabilityCompositionError(
+            "candidate.method_world.authority_forbidden"
+        )
+    if any(
+        not binding.has_valid_sha256()
+        for binding in method_world.migration_bindings
+    ):
+        raise CapabilityCompositionError(
+            "candidate.method_world.binding_invalid"
+        )
+    expected_sources_sha256 = canonical_sha256(
+        {
+            "domain": "tiangong.skill-method-sources.v1",
+            "primitives": [
+                item.model_dump(mode="json")
+                for item in method_world.primitives
+            ],
+        }
+    )
+    if (
+        method_world.method_sources_sha256 != expected_sources_sha256
+        or any(
+            primitive.descriptor_sha256
+            != computed_skill_method_descriptor_sha256(primitive)
+            for primitive in method_world.primitives
+        )
+    ):
+        raise CapabilityCompositionError(
+            "candidate.method_world.primitive_invalid"
+        )
+
+
 def build_candidate_snapshot(
     tool_world: ToolCapabilityWorldSnapshotV1,
     method_world: SkillMethodWorldSnapshotV1,
@@ -384,14 +468,8 @@ def build_candidate_snapshot(
 ) -> CompositionCandidateSnapshotV1:
     """Bind a bounded candidate set from P2/P3 read-only world projections."""
 
-    if not tool_world.has_valid_sha256():
-        raise CapabilityCompositionError("candidate.tool_world.hash_invalid")
-    if not method_world.has_valid_sha256():
-        raise CapabilityCompositionError("candidate.method_world.hash_invalid")
-    if tool_world.may_authorize or tool_world.may_execute:
-        raise CapabilityCompositionError("candidate.tool_world.authority_forbidden")
-    if method_world.may_authorize or method_world.may_execute:
-        raise CapabilityCompositionError("candidate.method_world.authority_forbidden")
+    _validate_tool_world_integrity(tool_world)
+    _validate_method_world_integrity(method_world)
 
     methods_by_id = {item.method_id: item for item in method_world.primitives}
     actions_by_id = {item.action_id: item for item in tool_world.primitives}
@@ -459,10 +537,12 @@ def validate_registry_binding(
             or permission.source_manifest_sha256
             != item.primitive.action_manifest_sha256
             or permission.effective_risk != item.primitive.risk_floor
-            or permission.effect != item.primitive.effect_class.removeprefix("effect:")
+            or permission.effect
+            != item.primitive.effect_class.removeprefix("effect:")
         ):
             raise CapabilityCompositionError(
-                "candidate.registry.binding_mismatch", item.primitive.action_id
+                "candidate.registry.binding_mismatch",
+                item.primitive.action_id,
             )
 
 
