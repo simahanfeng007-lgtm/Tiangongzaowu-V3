@@ -69,6 +69,13 @@ def build_memory_coordinator_disposition(
     )
     if not lineage_root_event_ids:
         raise ValueError("capability experience parents have no Reality lineage")
+    # LifeShadowStore requires every parent derivation to predate the child.
+    # Deterministically clamp the materialization time rather than weakening
+    # that invariant or depending on wall-clock timing between subsystems.
+    effective_created_at_ms = max(
+        intent.created_at_ms,
+        max(parent.created_at_ms for parent in parents) + 1,
+    )
     experience = state.experience
     total = experience.success_count + experience.failure_count
     counter_milli = (
@@ -110,7 +117,7 @@ def build_memory_coordinator_disposition(
         independence_group_count=experience.independent_context_count,
         recurrence_count=total,
         valid_from_ms=state.last_observed_at_ms,
-        created_at_ms=intent.created_at_ms,
+        created_at_ms=effective_created_at_ms,
         disposition_sha256="0" * 64,
     ).with_computed_disposition_sha256()
 
@@ -151,7 +158,7 @@ def commit_capability_experience_via_memory_coordinator(
         principal_ref=state.principal_ref,
         privacy_scope=state.privacy_scope,
         plaintext=plaintext,
-        created_at_ms=intent.created_at_ms,
+        created_at_ms=disposition.created_at_ms,
         policy_version=intent.policy_version,
     )
     assertion, derivation, _created = result
