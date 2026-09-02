@@ -18,14 +18,24 @@ from .models import (
     SkillMethodWorldError,
     SkillMethodWorldSnapshotV1,
 )
+from .production_catalog import (
+    PRODUCTION_METHOD_SEEDS,
+    PRODUCTION_METHOD_SEEDS_SHA256,
+    ReviewedMethodSeedV1,
+    compile_production_skill_method_world,
+)
 
 __all__ = [
     "LegacySkillMethodCorpusV1",
     "LegacySkillMethodEvidenceV1",
     "MethodMigrationBindingV1",
+    "PRODUCTION_METHOD_SEEDS",
+    "PRODUCTION_METHOD_SEEDS_SHA256",
+    "ReviewedMethodSeedV1",
     "SkillMethodRelationV1",
     "SkillMethodWorldError",
     "SkillMethodWorldSnapshotV1",
+    "compile_production_skill_method_world",
     "compile_skill_method_world",
     "computed_skill_method_descriptor_sha256",
     "method_source_revision_sha256",
