@@ -220,7 +220,14 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/verification_plan_executor.py",
         "src/total_gateway/verification_readiness.py",
         "src/total_gateway/verification_failure_evidence.py",
+        "src/total_gateway/verification_registry.py",
+        # ALL THREE verifier implementations + the registry: artifact /
+        # effect / repository PASS semantics are content-frozen — a
+        # silent change to any PASS rule trips the freeze even when
+        # verifier ids/versions and the registry digest stay untouched.
+        "src/total_gateway/outcome_oracles/artifact_content.py",
         "src/total_gateway/outcome_oracles/effect_state.py",
+        "src/total_gateway/outcome_oracles/repository_state.py",
         "src/total_gateway/completion_gate.py",
         "src/contracts/verification.py",
         "src/contracts/verification_repair.py",

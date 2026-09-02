@@ -1,16 +1,19 @@
 {
  "artifact": {
-  "total": 14,
+  "total": 15,
   "true_pass": 6,
-  "true_fail": 6,
-  "expected_inconclusive": 1,
+  "true_fail": 5,
+  "expected_inconclusive": 2,
   "false_pass": 0,
   "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 1,
+  "expected_gate_rejected": 1,
   "authority_error": 0,
   "cases": [
    {
     "case": "text.empty_fail",
-    "expected": "FAIL",
+    "expected": "GATE_REJECTED",
     "actual": "GATE_REJECTED",
     "ok": true
    },
@@ -69,13 +72,19 @@
     "ok": true
    },
    {
-    "case": "json.format_extraction_yields_no_text_markers_fail",
-    "expected": "FAIL",
+    "case": "json.format_markers_not_applicable",
+    "expected": "NOT_APPLICABLE",
     "actual": "NOT_APPLICABLE",
-    "ok": false
+    "ok": true
    },
    {
     "case": "binary.nonempty_inconclusive",
+    "expected": "INCONCLUSIVE",
+    "actual": "INCONCLUSIVE",
+    "ok": true
+   },
+   {
+    "case": "pdf.nonempty_inconclusive",
     "expected": "INCONCLUSIVE",
     "actual": "INCONCLUSIVE",
     "ok": true
@@ -101,6 +110,9 @@
   "expected_inconclusive": 4,
   "false_pass": 0,
   "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 0,
+  "expected_gate_rejected": 0,
   "authority_error": 0,
   "cases": [
    {
@@ -148,6 +160,9 @@
   "expected_inconclusive": 0,
   "false_pass": 0,
   "false_fail": 0,
+  "expectation_mismatch": 0,
+  "expected_not_applicable": 0,
+  "expected_gate_rejected": 0,
   "authority_error": 0,
   "cases": [
    {

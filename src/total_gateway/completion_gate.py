@@ -171,11 +171,33 @@ class CompletionGate:
         active_plan=None,
         verification_disposition=None,
         verification_failure_evidence=None,
+        disposition_authority_reader=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
         ):
             raise CompletionGateError("completion.text.invalid")
+        # Final certification correction #1: when a Store-authority
+        # reader is provided, a disposition MUST exist in the Store with
+        # the exact same content hash — a hand-forged disposition that
+        # merely imitates the plane's policy identity and evidence
+        # bindings is REJECTED. The Gate never invents authority; it
+        # binds to the one persistence authority.
+        if (
+            verification_disposition is not None
+            and disposition_authority_reader is not None
+        ):
+            authoritative = disposition_authority_reader(
+                verification_disposition.verification_disposition_id
+            )
+            if (
+                authoritative is None
+                or authoritative.disposition_sha256
+                != verification_disposition.disposition_sha256
+            ):
+                raise CompletionGateError(
+                    "completion.verification.disposition_not_authoritative"
+                )
         fact_ids: set[str] = set()
         execution_states, execution_ready, execution_failed, execution_ambiguous = (
             self._execution_assessments(requirements, fact_ids)

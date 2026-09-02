@@ -7,10 +7,10 @@
  ],
  "repair_policy_version": "v1",
  "repair_policy_config_sha256": "a7002f614547ff00b5cd48b201c8b8c1873578531b165d216cf27f662e45c9ba",
- "completion_gate_sha256": "da8e3ede85036ca2386decba28211acf01fb43fce8cfd4322cb53ebbd01ca9a9",
+ "completion_gate_sha256": "2a81107df23b0d067d6ef7efe8673502eba888e53bf472292fefc64f0ff0e158",
  "store_schema_version": 29,
  "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
  "golden_corpus_files": 13,
- "golden_corpus_sha256": "052814f157fb8ea5d78ca17c8f58ce50b542bd06faa3512f112930e4fe1cdb31",
+ "golden_corpus_sha256": "6209d0df5b959729bc07fdbc42a6bacfd41794714b84ae1ab7669faa4153b5b0",
  "golden_trace_version": "1"
 }

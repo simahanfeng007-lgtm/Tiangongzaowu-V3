@@ -649,6 +649,9 @@ class GatewayDeliveryOutboxWorker:
                 active_plan=active_plan,
                 verification_disposition=verification_disposition,
                 verification_failure_evidence=verification_failure_evidence,
+                disposition_authority_reader=(
+                    self._store.get_verification_disposition_by_id
+                ),
                 verification_readiness=self._store.get_latest_verification_readiness(
                     request_id=plan.request_id,
                     run_id=plan.run_id,
@@ -848,6 +851,9 @@ class GatewayDeliveryOutboxWorker:
             active_plan=active_plan,
             verification_disposition=verification_disposition,
             verification_failure_evidence=verification_failure_evidence,
+            disposition_authority_reader=(
+                self._store.get_verification_disposition_by_id
+            ),
             verification_readiness=self._store.get_latest_verification_readiness(
                 request_id=plan.request_id,
                 run_id=plan.run_id,

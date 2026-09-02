@@ -135,3 +135,33 @@ M6 Final Certification Correction（8 项，2026-09-02）
 8. RELIABILITY_SCORECARD 由入库认证工件派生并在 CI 比对——
    删除 case、手改数字、过期的 scorecard 均导致 CI FAIL
    （UPDATE_SCORECARD=1 显式重生成）。
+
+----------------------------------------------------------------------
+M6 Final Certification Correction II（6 项，2026-09-02）
+----------------------------------------------------------------------
+
+1. G10 终版：BLOCK 冻结为 contract-reserved / currently unreachable
+   （v1 deterministic policy 无 BLOCK 生产分支，亦无 operator-BLOCK
+   authority）。G10-A 认证 fabricated BLOCK（即使带正确 policy
+   identity 与完整 FE/readiness 绑定）被 Gate 的
+   disposition_authority_reader 拒绝（disposition_not_authoritative）；
+   G10-B 认证真实 verification terminal failure → CompletionGate
+   FAILED。生产三处（desktop/orchestration、outbox 两分支）全部
+   透传 Store reader。
+2. Calibration 诚实纪律：任何 expectation mismatch（ok=false）即
+   certification FAIL；语义显式分类 PASS/FAIL/INCONCLUSIVE/
+   NOT_APPLICABLE/GATE_REJECTED；json→NOT_APPLICABLE、binary→
+   INCONCLUSIVE、pdf→INCONCLUSIVE 均为 oracle 真实判定；新增
+   expectation_mismatch 计数（=0）。
+3. Scorecard 核心零指标由 ReliabilityProbeTests 真实运行 probe
+   派生（单飞/duplicate、ambiguous replay+false completion、stale
+   authority），committed JSON 仅作比对对象；
+   full_regression_status 移除，改为 full_regression_required=true
+   （由 required workflow 证明）。
+4. Freeze surface 补全三个 verifier implementation
+   （artifact_content / effect_state / repository_state）与
+   verification_registry —— PASS 判定语义现在全部 content-frozen。
+5. Mixed horizon 诚实化：删除未发生的 WAIT 声明（同 plan 有记录
+   后 MISSING 不可达；WAIT 由 G05/F02 单独权威认证）。
+6. Performance：repair coordination 用真实 FAIL readiness；
+   representative_golden_case_ms = 真实 G02 golden 测试端到端墙钟。

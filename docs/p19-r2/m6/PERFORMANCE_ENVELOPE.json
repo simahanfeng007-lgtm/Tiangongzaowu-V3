@@ -2,87 +2,87 @@
  "tiers": {
   "small": {
    "verification_latency_ms": {
-    "p50": 16.621,
-    "p95": 20.087,
-    "p99": 20.087
+    "p50": 22.128,
+    "p95": 36.945,
+    "p99": 36.945
    },
    "readiness_build_latency_ms": {
-    "p50": 0.785,
-    "p95": 1.69,
-    "p99": 1.69
+    "p50": 3.235,
+    "p95": 4.216,
+    "p99": 4.216
    },
    "store_verification_write_latency_ms": {
-    "p50": 3.719,
-    "p95": 4.475,
-    "p99": 4.475
+    "p50": 2.895,
+    "p95": 4.141,
+    "p99": 4.141
    },
    "repair_coordination_latency_ms": {
-    "p50": 0.003,
-    "p95": 0.006,
-    "p99": 0.006
+    "p50": 7.325,
+    "p95": 7.445,
+    "p99": 7.445
    },
    "completion_gate_latency_ms": {
-    "p50": 3.712,
-    "p95": 4.377,
-    "p99": 4.377
+    "p50": 5.791,
+    "p95": 6.475,
+    "p99": 6.475
    },
-   "representative_golden_case_ms": 21.777
+   "representative_golden_case_ms": null
   },
   "medium": {
    "verification_latency_ms": {
-    "p50": 18.392,
-    "p95": 25.031,
-    "p99": 26.298
+    "p50": 28.013,
+    "p95": 42.043,
+    "p99": 44.263
    },
    "readiness_build_latency_ms": {
-    "p50": 3.117,
-    "p95": 4.783,
-    "p99": 5.225
+    "p50": 8.861,
+    "p95": 11.875,
+    "p99": 12.734
    },
    "store_verification_write_latency_ms": {
-    "p50": 4.067,
-    "p95": 7.307,
-    "p99": 13.672
+    "p50": 3.43,
+    "p95": 5.512,
+    "p99": 14.082
    },
    "repair_coordination_latency_ms": {
-    "p50": 0.0,
-    "p95": 0.003,
-    "p99": 0.003
+    "p50": 15.049,
+    "p95": 19.619,
+    "p99": 19.619
    },
    "completion_gate_latency_ms": {
-    "p50": 2.889,
-    "p95": 5.166,
-    "p99": 5.166
+    "p50": 8.464,
+    "p95": 9.726,
+    "p99": 9.726
    },
-   "representative_golden_case_ms": 29.814
+   "representative_golden_case_ms": null
   },
   "stress": {
    "verification_latency_ms": {
-    "p50": 27.839,
-    "p95": 36.154,
-    "p99": 62.783
+    "p50": 56.981,
+    "p95": 85.371,
+    "p99": 124.492
    },
    "readiness_build_latency_ms": {
-    "p50": 10.361,
-    "p95": 13.257,
-    "p99": 17.855
+    "p50": 29.265,
+    "p95": 35.848,
+    "p99": 38.716
    },
    "store_verification_write_latency_ms": {
-    "p50": 4.754,
-    "p95": 6.555,
-    "p99": 7.779
+    "p50": 3.26,
+    "p95": 4.547,
+    "p99": 5.058
    },
    "repair_coordination_latency_ms": {
-    "p50": 0.0,
-    "p95": 0.001,
-    "p99": 0.004
+    "p50": 24.481,
+    "p95": 39.123,
+    "p99": 41.009
    },
    "completion_gate_latency_ms": {
-    "p50": 2.561,
-    "p95": 3.626,
-    "p99": 4.046
+    "p50": 7.56,
+    "p95": 9.023,
+    "p99": 9.129
    },
-   "representative_golden_case_ms": 49.411
+   "representative_golden_case_ms": null
   }
  }
 }
