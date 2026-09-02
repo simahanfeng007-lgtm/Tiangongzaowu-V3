@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from contracts import canonical_sha256
 from world_understanding.capability_composition import (
     CapabilityCompositionError,
     CompositionCandidateSnapshotV1,
@@ -70,8 +71,7 @@ def test_candidate_builder_recomputes_tool_descriptor_integrity() -> None:
     )
     forged_world = replace(
         forged_world,
-        snapshot_sha256=forged_world.payload()
-        and __import__("contracts").canonical_sha256(forged_world.payload()),
+        snapshot_sha256=canonical_sha256(forged_world.payload()),
     )
 
     with pytest.raises(
@@ -108,9 +108,7 @@ def test_candidate_builder_recomputes_method_descriptor_integrity() -> None:
     )
     forged_world = replace(
         forged_world,
-        snapshot_sha256=__import__("contracts").canonical_sha256(
-            forged_world.payload()
-        ),
+        snapshot_sha256=canonical_sha256(forged_world.payload()),
     )
 
     with pytest.raises(
