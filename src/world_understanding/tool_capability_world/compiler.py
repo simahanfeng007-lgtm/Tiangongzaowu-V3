@@ -13,6 +13,7 @@ WorldState store, or executable route.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Mapping
 
 from contracts import ActionRegistrySnapshot, canonical_sha256
@@ -20,6 +21,22 @@ from contracts.capability_composition import (
     SourceRevisionRefV1,
     SourceSpanRefV1,
     ToolSourcePrimitiveV1,
+)
+
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_PROVIDER_COMPONENT_ID = "omni-body"
+_P2_RELATION_TYPES = frozenset(
+    {
+        "COMPILES_TO",
+        "IMPLEMENTED_BY",
+        "PROVIDED_BY",
+        "AVAILABLE_IN",
+        "ALIASES",
+        "READS",
+        "WRITES",
+        "PRODUCES",
+    }
 )
 
 
@@ -32,6 +49,12 @@ class ToolCapabilityRelationV1:
     relation_type: str
     source_ref: str
     target_ref: str
+
+    def __post_init__(self) -> None:
+        if self.relation_type not in _P2_RELATION_TYPES:
+            raise ToolCapabilityWorldError("P2 relation type is not mechanically authorized")
+        if not self.source_ref or not self.target_ref:
+            raise ToolCapabilityWorldError("P2 relation endpoints must be non-empty")
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -49,12 +72,30 @@ class ToolCapabilityWorldSnapshotV1:
     primitives: tuple[ToolSourcePrimitiveV1, ...]
     relations: tuple[ToolCapabilityRelationV1, ...]
     snapshot_sha256: str
+    may_authorize: bool = False
+    may_execute: bool = False
+
+    def __post_init__(self) -> None:
+        if self.schema != "tiangong.tool-capability-world.v1":
+            raise ToolCapabilityWorldError("unsupported Tool Capability World snapshot schema")
+        if self.may_authorize or self.may_execute:
+            raise ToolCapabilityWorldError("Tool Capability World is non-authorizing and non-executing")
+        primitive_ids = tuple(item.action_id for item in self.primitives)
+        if primitive_ids != tuple(sorted(set(primitive_ids))):
+            raise ToolCapabilityWorldError("Tool Capability World primitives must be sorted and unique")
+        relation_keys = tuple(
+            (item.relation_type, item.source_ref, item.target_ref) for item in self.relations
+        )
+        if relation_keys != tuple(sorted(set(relation_keys))):
+            raise ToolCapabilityWorldError("Tool Capability World relations must be sorted and unique")
 
     def payload(self) -> dict[str, Any]:
         return {
             "schema": self.schema,
             "source_manifest_sha256": self.source_manifest_sha256,
             "action_registry_sha256": self.action_registry_sha256,
+            "may_authorize": self.may_authorize,
+            "may_execute": self.may_execute,
             "primitives": [item.model_dump(mode="json") for item in self.primitives],
             "relations": [item.to_dict() for item in self.relations],
         }
@@ -64,28 +105,38 @@ class ToolCapabilityWorldSnapshotV1:
 
 
 def _implementation_refs(source: SourceRevisionRefV1) -> tuple[SourceSpanRefV1, ...]:
-    if source.source_spans:
-        return source.source_spans
-    return tuple(SourceSpanRefV1(path=path) for path in source.source_files)
+    refs = source.source_spans or tuple(
+        SourceSpanRefV1(path=path) for path in source.source_files
+    )
+    keys = tuple(
+        (item.path, item.start_line or 0, item.end_line or 0) for item in refs
+    )
+    if len(keys) != len(set(keys)):
+        raise ToolCapabilityWorldError("source revision contains duplicate implementation refs")
+    return tuple(
+        sorted(refs, key=lambda item: (item.path, item.start_line or 0, item.end_line or 0))
+    )
 
 
 def _primitive_sha256_payload(primitive: ToolSourcePrimitiveV1) -> dict[str, Any]:
     return primitive.model_dump(mode="json", exclude={"descriptor_sha256"})
 
 
+def _require_sha256(value: object, *, field: str, action_id: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise ToolCapabilityWorldError(f"invalid {field} binding: {action_id}")
+    return value
+
+
 def _build_primitive(
     *,
     action_id: str,
-    raw: Mapping[str, Any],
     permission: Any,
     source: SourceRevisionRefV1,
     argument_schema_sha256: str,
     result_schema_sha256: str,
-    provider_component_id: str,
 ) -> ToolSourcePrimitiveV1:
     effect = str(permission.effect)
-    idempotency = "IDEMPOTENT" if effect in {"read", "verify"} else "UNKNOWN"
-    determinism = "DETERMINISTIC" if effect == "verify" else "BOUNDED_NONDETERMINISTIC"
     resources = [str(permission.path_policy)]
     if permission.allow_absolute_paths:
         resources.append("absolute_paths")
@@ -94,11 +145,14 @@ def _build_primitive(
     if permission.allow_python:
         resources.append("python")
 
+    # P2 has no independent evidence proving operational idempotency or
+    # determinism. Preserve UNKNOWN/conservative semantics instead of guessing
+    # from effect labels such as read/verify.
     primitive = ToolSourcePrimitiveV1(
         source_primitive_id=f"tool-source:{action_id}",
         action_id=action_id,
         action_version=str(permission.action_version),
-        provider_component_id=provider_component_id,
+        provider_component_id=_CANONICAL_PROVIDER_COMPONENT_ID,
         implementation_refs=_implementation_refs(source),
         implementation_hashes=(source.source_sha256,),
         action_manifest_sha256=permission.source_manifest_sha256,
@@ -109,14 +163,14 @@ def _build_primitive(
         effect_class=f"effect:{effect}",
         side_effects=tuple(str(item) for item in permission.allowed_side_effects),
         risk_floor=str(permission.effective_risk),
-        idempotency=idempotency,
-        determinism_class=determinism,
+        idempotency="UNKNOWN",
+        determinism_class="NONDETERMINISTIC",
         resource_scope=tuple(sorted(set(resources))),
         read_set_descriptor=("resource:read",) if effect in {"read", "verify"} else (),
         write_set_descriptor=("resource:write",) if effect in {"create", "write", "update", "execute"} else (),
         evidence_contract=(),
         verifier_refs=(),
-        failure_taxonomy=("unavailable", "runtime_failure", "verification_failure"),
+        failure_taxonomy=("runtime_failure", "unavailable", "verification_failure"),
         availability="AVAILABLE",
         descriptor_sha256="0" * 64,
     )
@@ -132,7 +186,6 @@ def compile_tool_capability_world(
     source_revisions: Mapping[str, SourceRevisionRefV1],
     argument_schema_hashes: Mapping[str, str],
     result_schema_hashes: Mapping[str, str],
-    provider_component_id: str = "omni-body",
 ) -> ToolCapabilityWorldSnapshotV1:
     """Project the existing execution authorities into deterministic semantics.
 
@@ -147,8 +200,10 @@ def compile_tool_capability_world(
     validation = manifest.get("validation")
     if not isinstance(capabilities, Mapping) or not isinstance(validation, Mapping):
         raise ToolCapabilityWorldError("capability manifest is incomplete")
-    if validation.get("ok") is not True:
+    if validation.get("ok") is not True or validation.get("executable_without_route") != []:
         raise ToolCapabilityWorldError("capability manifest is not healthy")
+    if validation.get("source_hash") != manifest.get("source_hash"):
+        raise ToolCapabilityWorldError("capability manifest validation hash is stale")
 
     manifest_sha256 = canonical_sha256(dict(manifest))
     if registry.source_manifest_sha256 != manifest_sha256:
@@ -161,7 +216,9 @@ def compile_tool_capability_world(
         sorted(
             action_id
             for action_id, raw in capabilities.items()
-            if isinstance(raw, Mapping) and raw.get("executable") is True
+            if isinstance(action_id, str)
+            and isinstance(raw, Mapping)
+            and raw.get("executable") is True
         )
     )
     if executable_ids != tuple(sorted(permissions)):
@@ -179,26 +236,32 @@ def compile_tool_capability_world(
             raise ToolCapabilityWorldError(f"missing deterministic source/schema binding: {action_id}")
         if source.source_kind != "TOOL_ACTION" or source.semantic_id != action_id:
             raise ToolCapabilityWorldError(f"source revision identity mismatch: {action_id}")
-        if source.manifest_sha256 not in {None, manifest_sha256}:
+        if source.manifest_sha256 != manifest_sha256:
             raise ToolCapabilityWorldError(f"source revision manifest mismatch: {action_id}")
 
         primitive = _build_primitive(
             action_id=action_id,
-            raw=raw,
             permission=permission,
             source=source,
-            argument_schema_sha256=arg_hash,
-            result_schema_sha256=result_hash,
-            provider_component_id=provider_component_id,
+            argument_schema_sha256=_require_sha256(
+                arg_hash, field="argument schema", action_id=action_id
+            ),
+            result_schema_sha256=_require_sha256(
+                result_hash, field="result schema", action_id=action_id
+            ),
         )
         primitives.append(primitive)
 
         primitive_ref = primitive.source_primitive_id
         relations.add(("COMPILES_TO", primitive_ref, f"action:{action_id}"))
-        relations.add(("PROVIDED_BY", primitive_ref, f"provider:{provider_component_id}"))
+        relations.add(
+            ("PROVIDED_BY", primitive_ref, f"provider:{_CANONICAL_PROVIDER_COMPONENT_ID}")
+        )
         relations.add(("AVAILABLE_IN", primitive_ref, f"manifest:{manifest_sha256}"))
-        for path in source.source_files:
-            relations.add(("IMPLEMENTED_BY", primitive_ref, f"source:{path}"))
+        for implementation_ref in primitive.implementation_refs:
+            relations.add(
+                ("IMPLEMENTED_BY", primitive_ref, f"source:{implementation_ref.path}")
+            )
         alias_to = str(raw.get("alias_to") or "").strip()
         if alias_to:
             relations.add(("ALIASES", f"action:{action_id}", f"action:{alias_to}"))
