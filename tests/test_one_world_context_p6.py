@@ -217,7 +217,12 @@ def test_binding_is_order_independent_and_materializes_once() -> None:
     first = bind_domain_contributions(data, (tools, methods))
     second = bind_domain_contributions(data, (methods, tools))
     assert first.source_transaction_id == second.source_transaction_id
-    assert first.graph.refs() == second.graph.refs()
+    assert first.graph.entities() == second.graph.entities()
+    assert first.graph.relations() == second.graph.relations()
+    assert (
+        first.graph.applied_git_delta_ids()
+        == second.graph.applied_git_delta_ids()
+    )
 
     materializer = WorldStateMaterializer(WorldStateStore())
     calls: list[str] = []
