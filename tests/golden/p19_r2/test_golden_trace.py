@@ -924,16 +924,17 @@ class GoldenBlockCase(RepairLoopE2EBase):
         clean._testMethodName = "_g10b_fresh"
         clean.setUp()
         try:
+            # fresh fixture → real FAIL readiness. The coordinator is
+            # NEVER invoked: no process_readiness, no repair loop —
+            # the Store has never produced a single disposition.
             clean_readiness = clean._reverify()
-            clean_final, _ = clean.coordinator.execute_repair_loop(
-                plan=clean.plan,
-                readiness=clean_readiness,
-                dispatch=clean._dispatch_success,
-                reverify=clean._reverify,
-            )
-            # assert the CLEAN authority state: nothing pending for the
-            # FAILING readiness — no process_readiness was called for it
             self.assertFalse(clean_readiness.verification_ready)
+            self.assertEqual(
+                clean.gateway_store.list_verification_dispositions(
+                    clean.entry.plan_entry_id
+                ),
+                (),
+            )
             current = clean.gateway_store.get_current_verification_disposition(
                 request_id=clean.request.request_id,
                 run_id=clean.run.run_id,

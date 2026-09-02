@@ -10,7 +10,7 @@
  "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
  "completion_authority_sha256": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
  "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
- "golden_corpus_sha256": "8d8c13c6038f5a381bc35e090755fc001c17ce9f3259ca0c8cfb030859df59d7",
+ "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
   "src/total_gateway/store.py": "eb5b1314b08ef3bfc71eda284c4e8b06b7792074a86df284bb9432c790ed5c62",
