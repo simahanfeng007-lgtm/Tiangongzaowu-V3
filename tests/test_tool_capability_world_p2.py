@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from contracts import canonical_sha256
-from contracts.capability_composition import SourceRevisionRefV1
+from contracts.capability_composition import SourceRevisionRefV1, SourceSpanRefV1
 from total_gateway.action_registry import compile_action_registry
 from world_understanding.tool_capability_world import (
     ToolCapabilityRelationV1,
@@ -43,7 +43,11 @@ def manifest() -> dict:
         "unavailable": 0,
         "dynamic_actions": [],
         "capabilities": capabilities,
-        "validation": {"ok": True, "source_hash": H, "executable_without_route": []},
+        "validation": {
+            "ok": True,
+            "source_hash": H,
+            "executable_without_route": [],
+        },
     }
 
 
@@ -51,15 +55,18 @@ def source_ref(
     action_id: str,
     manifest_sha: str | None,
     *,
+    version: str = "omni-registry-v1",
     source_files: tuple[str, ...] = (
         "src/omni_body_skill/tools/omni_body_tool.py",
     ),
+    source_spans: tuple[SourceSpanRefV1, ...] = (),
 ) -> SourceRevisionRefV1:
     return SourceRevisionRefV1(
         source_kind="TOOL_ACTION",
         semantic_id=action_id,
-        version="omni-registry-v1",
+        version=version,
         source_files=source_files,
+        source_spans=source_spans,
         source_sha256=H,
         descriptor_sha256=H,
         manifest_sha256=manifest_sha,
@@ -84,6 +91,24 @@ def compile_snapshot():
     )
 
 
+def compile_with_sources(
+    sources: dict[str, SourceRevisionRefV1],
+    *,
+    argument_schema_hashes: dict[str, str] | None = None,
+    result_schema_hashes: dict[str, str] | None = None,
+):
+    document = manifest()
+    registry = compile_action_registry(document, generated_at_ms=1)
+    schemas = {action_id: H for action_id in document["capabilities"]}
+    return compile_tool_capability_world(
+        document,
+        registry,
+        source_revisions=sources,
+        argument_schema_hashes=argument_schema_hashes or schemas,
+        result_schema_hashes=result_schema_hashes or schemas,
+    )
+
+
 def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
     document, registry, snapshot = compile_snapshot()
     assert snapshot.source_manifest_sha256 == registry.source_manifest_sha256
@@ -100,7 +125,10 @@ def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
         item.action_manifest_sha256 == registry.source_manifest_sha256
         for item in snapshot.primitives
     )
-    assert all(item.provider_component_id == "omni-body" for item in snapshot.primitives)
+    assert all(
+        item.provider_component_id == "omni-body"
+        for item in snapshot.primitives
+    )
     assert all(item.idempotency == "UNKNOWN" for item in snapshot.primitives)
     assert all(
         item.determinism_class == "NONDETERMINISTIC"
@@ -124,37 +152,32 @@ def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
     assert second.snapshot_sha256 == snapshot.snapshot_sha256
 
 
-def test_source_file_order_cannot_change_snapshot_identity() -> None:
+def test_source_file_order_is_rejected_instead_of_creating_two_identities() -> None:
     document = manifest()
-    registry = compile_action_registry(document, generated_at_ms=1)
     manifest_sha = canonical_sha256(document)
-    files_a = (
-        "src/omni_body_skill/tools/omni_body_tool.py",
+    files = (
         "app/backend/tiangong-backend/v3/fact_kernel/__init__.py",
+        "src/omni_body_skill/tools/omni_body_tool.py",
     )
-    files_b = tuple(reversed(files_a))
-    schemas = {action_id: H for action_id in document["capabilities"]}
-    first = compile_tool_capability_world(
-        document,
-        registry,
-        source_revisions={
-            action_id: source_ref(action_id, manifest_sha, source_files=files_a)
-            for action_id in document["capabilities"]
-        },
-        argument_schema_hashes=schemas,
-        result_schema_hashes=schemas,
-    )
-    second = compile_tool_capability_world(
-        document,
-        registry,
-        source_revisions={
-            action_id: source_ref(action_id, manifest_sha, source_files=files_b)
-            for action_id in document["capabilities"]
-        },
-        argument_schema_hashes=schemas,
-        result_schema_hashes=schemas,
-    )
-    assert first.snapshot_sha256 == second.snapshot_sha256
+    sources = {
+        action_id: source_ref(action_id, manifest_sha, source_files=files)
+        for action_id in document["capabilities"]
+    }
+    compile_with_sources(sources)
+
+    reversed_sources = {
+        action_id: source_ref(
+            action_id,
+            manifest_sha,
+            source_files=tuple(reversed(files)),
+        )
+        for action_id in document["capabilities"]
+    }
+    with pytest.raises(
+        ToolCapabilityWorldError,
+        match="files must be sorted and unique",
+    ):
+        compile_with_sources(reversed_sources)
 
 
 def test_projection_contains_only_deterministic_structural_relations() -> None:
@@ -246,9 +269,7 @@ def test_projection_fails_closed_when_source_binding_is_missing() -> None:
 
 def test_projection_requires_exact_tool_source_manifest_binding() -> None:
     document = manifest()
-    registry = compile_action_registry(document, generated_at_ms=1)
     manifest_sha = canonical_sha256(document)
-    schemas = {action_id: H for action_id in document["capabilities"]}
     sources = {
         action_id: source_ref(action_id, manifest_sha)
         for action_id in document["capabilities"]
@@ -258,18 +279,74 @@ def test_projection_requires_exact_tool_source_manifest_binding() -> None:
         ToolCapabilityWorldError,
         match="source revision manifest mismatch",
     ):
-        compile_tool_capability_world(
-            document,
-            registry,
-            source_revisions=sources,
-            argument_schema_hashes=schemas,
-            result_schema_hashes=schemas,
-        )
+        compile_with_sources(sources)
+
+
+def test_projection_requires_exact_action_version_binding() -> None:
+    document = manifest()
+    manifest_sha = canonical_sha256(document)
+    sources = {
+        action_id: source_ref(action_id, manifest_sha)
+        for action_id in document["capabilities"]
+    }
+    sources["file.read"] = source_ref(
+        "file.read",
+        manifest_sha,
+        version="stale-action-version",
+    )
+    with pytest.raises(
+        ToolCapabilityWorldError,
+        match="identity/version mismatch",
+    ):
+        compile_with_sources(sources)
+
+
+def test_projection_rejects_source_span_outside_declared_files() -> None:
+    document = manifest()
+    manifest_sha = canonical_sha256(document)
+    sources = {
+        action_id: source_ref(action_id, manifest_sha)
+        for action_id in document["capabilities"]
+    }
+    sources["file.read"] = source_ref(
+        "file.read",
+        manifest_sha,
+        source_spans=(
+            SourceSpanRefV1(
+                path="src/unrelated.py",
+                start_line=1,
+                end_line=10,
+            ),
+        ),
+    )
+    with pytest.raises(
+        ToolCapabilityWorldError,
+        match="implementation refs are invalid",
+    ):
+        compile_with_sources(sources)
+
+
+def test_projection_rejects_unsafe_repository_source_path() -> None:
+    document = manifest()
+    manifest_sha = canonical_sha256(document)
+    sources = {
+        action_id: source_ref(action_id, manifest_sha)
+        for action_id in document["capabilities"]
+    }
+    sources["file.read"] = source_ref(
+        "file.read",
+        manifest_sha,
+        source_files=("../outside.py",),
+    )
+    with pytest.raises(
+        ToolCapabilityWorldError,
+        match="unsafe repository path",
+    ):
+        compile_with_sources(sources)
 
 
 def test_projection_rejects_malformed_schema_hash_binding() -> None:
     document = manifest()
-    registry = compile_action_registry(document, generated_at_ms=1)
     manifest_sha = canonical_sha256(document)
     sources = {
         action_id: source_ref(action_id, manifest_sha)
@@ -278,14 +355,9 @@ def test_projection_rejects_malformed_schema_hash_binding() -> None:
     schemas = {action_id: H for action_id in document["capabilities"]}
     schemas["file.read"] = "not-a-sha256"
     with pytest.raises(ToolCapabilityWorldError, match="argument schema"):
-        compile_tool_capability_world(
-            document,
-            registry,
-            source_revisions=sources,
+        compile_with_sources(
+            sources,
             argument_schema_hashes=schemas,
-            result_schema_hashes={
-                action_id: H for action_id in document["capabilities"]
-            },
         )
 
 
