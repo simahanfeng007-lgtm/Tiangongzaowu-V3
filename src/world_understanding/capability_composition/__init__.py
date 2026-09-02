@@ -1,10 +1,53 @@
-"""P4 proposal, compiler, validator, and early-evaluation core.
+"""Capability composition proposal, validation, and experience core.
 
-This package is side-effect free and non-authorizing. Execution continues to be
-owned exclusively by the existing Total Gateway / Policy / Ticket / Grant /
-Omni Body / Runtime / P19 chain.
+This package is side-effect free and non-authorizing. Execution remains owned
+exclusively by the existing Total Gateway / Policy / Ticket / Grant / Omni Body
+/ Runtime / P19 chain. Capability experience persistence remains owned by the
+existing MemoryCoordinator and LifeShadowStore.
 """
 
+from .capability_experience_api import (
+    apply_capability_experience_observation,
+    build_capability_experience_memory_intent,
+    evaluate_capability_experience_admission,
+    exact_source_hashes,
+    mark_capability_experience_source_change,
+    recall_capability_experiences,
+)
+from .capability_experience_attribution import (
+    ATTRIBUTION_TRACE_SCHEMA,
+    AttributionTraceV1,
+    CompletionEvidenceV1,
+    attribution_has_valid_sha256,
+    completion_evidence_from_decision,
+    computed_attribution_sha256,
+    evaluate_attribution_integrity,
+)
+from .capability_experience_memory import (
+    build_memory_coordinator_disposition,
+    commit_capability_experience_via_memory_coordinator,
+)
+from .capability_experience_policy import (
+    CAPABILITY_EXPERIENCE_POLICY_VERSION,
+    CapabilityExperienceAdmissionDecisionV1,
+    CapabilityExperienceAggregateStateV1,
+    CapabilityExperienceInvalidationIntentV1,
+    CapabilityExperienceMemoryIntentV1,
+    CapabilityExperienceObservationV1,
+    CapabilityExperiencePolicyConfigV1,
+    CapabilityExperienceRecallItemV1,
+    CapabilityExperienceRecallQueryV1,
+    DEFAULT_CAPABILITY_EXPERIENCE_POLICY,
+    NegativeCapabilityEvidenceV1,
+    assess_capability_experience_source_freshness,
+    build_negative_capability_evidence,
+    capability_experience_key,
+    computed_experience_sha256,
+    experience_has_valid_sha256,
+    posterior_success_milli,
+    source_revision_family,
+    wilson_lower_confidence_milli,
+)
 from .compiler import (
     analyze_composition_risk,
     compile_capability_composition_plan,
@@ -45,32 +88,66 @@ from .validator import (
 )
 
 __all__ = [
+    "ATTRIBUTION_TRACE_SCHEMA",
     "ActionCandidateBindingV1",
+    "AttributionTraceV1",
+    "CAPABILITY_EXPERIENCE_POLICY_VERSION",
     "CapabilityCompositionError",
+    "CapabilityExperienceAdmissionDecisionV1",
+    "CapabilityExperienceAggregateStateV1",
+    "CapabilityExperienceInvalidationIntentV1",
+    "CapabilityExperienceMemoryIntentV1",
+    "CapabilityExperienceObservationV1",
+    "CapabilityExperiencePolicyConfigV1",
+    "CapabilityExperienceRecallItemV1",
+    "CapabilityExperienceRecallQueryV1",
+    "CompletionEvidenceV1",
     "CompositionCandidateSnapshotV1",
     "CompositionCompileContextV1",
     "CompositionProposalParseError",
+    "DEFAULT_CAPABILITY_EXPERIENCE_POLICY",
     "MAX_ACTION_CANDIDATES",
     "MAX_METHOD_CANDIDATES",
     "MethodCandidateBindingV1",
+    "NegativeCapabilityEvidenceV1",
     "P4EarlyEvaluationReportV1",
     "P4EvaluationCaseResultV1",
     "P4EvaluationInputV1",
     "P4ModelMetricsV1",
     "ProposalParseOutcomeV1",
     "analyze_composition_risk",
+    "apply_capability_experience_observation",
+    "assess_capability_experience_source_freshness",
+    "attribution_has_valid_sha256",
     "build_candidate_snapshot",
+    "build_capability_experience_memory_intent",
+    "build_memory_coordinator_disposition",
+    "build_negative_capability_evidence",
+    "capability_experience_key",
+    "commit_capability_experience_via_memory_coordinator",
     "compile_capability_composition_plan",
+    "completion_evidence_from_decision",
+    "computed_attribution_sha256",
+    "computed_experience_sha256",
     "computed_plan_sha256",
     "computed_proposal_sha256",
     "computed_validation_sha256",
     "derive_action_source_revision",
+    "evaluate_attribution_integrity",
+    "evaluate_capability_experience_admission",
+    "exact_source_hashes",
+    "experience_has_valid_sha256",
+    "mark_capability_experience_source_change",
     "parse_composition_proposal",
     "parse_with_single_repair",
     "plan_has_valid_sha256",
+    "posterior_success_milli",
     "proposal_has_valid_sha256",
+    "recall_capability_experiences",
     "run_p4_early_evaluation",
+    "source_revision_family",
     "validate_capability_composition_plan",
     "validate_registry_binding",
     "validation_has_valid_sha256",
+    "wilson_lower_confidence_milli",
 ]
