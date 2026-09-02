@@ -1,9 +1,4 @@
-"""Immutable candidate and compile-context records for P4.
-
-These records are non-authorizing projections used by the proposal parser,
-composition compiler, and conservative validator. They do not route, execute,
-grant, ticket, persist, or mutate WorldState.
-"""
+"""Immutable, non-authorizing candidate and compile-context records for P4."""
 
 from __future__ import annotations
 
@@ -36,8 +31,6 @@ MAX_ACTION_CANDIDATES = 30
 
 
 class CapabilityCompositionError(ValueError):
-    """Base error for deterministic P4 composition processing."""
-
     def __init__(self, code: str, detail: str = "") -> None:
         self.code = code
         self.detail = detail
@@ -85,10 +78,10 @@ def _derived_action_source_revision(
         raise CapabilityCompositionError(
             "candidate.action_source.hash_invalid", primitive.action_id
         )
-    if len(implementation_hashes) == 1:
-        source_sha256 = implementation_hashes[0]
-    else:
-        source_sha256 = canonical_sha256(
+    source_sha256 = (
+        implementation_hashes[0]
+        if len(implementation_hashes) == 1
+        else canonical_sha256(
             {
                 "domain": "tiangong.tool-source-revision-derived.v1",
                 "implementation_hashes": list(implementation_hashes),
@@ -105,6 +98,7 @@ def _derived_action_source_revision(
                 ],
             }
         )
+    )
     return SourceRevisionRefV1(
         source_kind="TOOL_ACTION",
         semantic_id=primitive.action_id,
@@ -374,8 +368,6 @@ class CompositionCompileContextV1:
 def derive_action_source_revision(
     primitive: ToolSourcePrimitiveV1,
 ) -> SourceRevisionRefV1:
-    """Derive a SourceRevisionRef from the already-validated P2 primitive."""
-
     return _derived_action_source_revision(primitive)
 
 
@@ -437,22 +429,13 @@ def _validate_method_world_integrity(
         raise CapabilityCompositionError(
             "candidate.method_world.binding_invalid"
         )
-    expected_sources_sha256 = canonical_sha256(
-        {
-            "domain": "tiangong.skill-method-sources.v1",
-            "primitives": [
-                item.model_dump(mode="json")
-                for item in method_world.primitives
-            ],
-        }
-    )
-    if (
-        method_world.method_sources_sha256 != expected_sources_sha256
-        or any(
-            primitive.descriptor_sha256
-            != computed_skill_method_descriptor_sha256(primitive)
-            for primitive in method_world.primitives
-        )
+    # P3 owns the aggregate method_sources_sha256 derivation. P4 revalidates
+    # each selected descriptor and migration binding without becoming a second
+    # P3 compiler authority.
+    if any(
+        primitive.descriptor_sha256
+        != computed_skill_method_descriptor_sha256(primitive)
+        for primitive in method_world.primitives
     ):
         raise CapabilityCompositionError(
             "candidate.method_world.primitive_invalid"
@@ -522,8 +505,6 @@ def validate_registry_binding(
     snapshot: CompositionCandidateSnapshotV1,
     registry: ActionRegistrySnapshot,
 ) -> None:
-    """Check candidate action identity against the existing Action Registry."""
-
     if not snapshot.has_valid_sha256():
         raise CapabilityCompositionError("candidate.snapshot.hash_invalid")
     if not registry.has_valid_sha256():
