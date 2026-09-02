@@ -326,7 +326,18 @@ def test_projection_rejects_source_span_outside_declared_files() -> None:
         compile_with_sources(sources)
 
 
-def test_projection_rejects_unsafe_repository_source_path() -> None:
+@pytest.mark.parametrize(
+    "unsafe_path",
+    (
+        "../outside.py",
+        "src//double-separator.py",
+        "src/./dot-segment.py",
+        " src/leading-space.py",
+    ),
+)
+def test_projection_rejects_unsafe_repository_source_path(
+    unsafe_path: str,
+) -> None:
     document = manifest()
     manifest_sha = canonical_sha256(document)
     sources = {
@@ -336,7 +347,7 @@ def test_projection_rejects_unsafe_repository_source_path() -> None:
     sources["file.read"] = source_ref(
         "file.read",
         manifest_sha,
-        source_files=("../outside.py",),
+        source_files=(unsafe_path,),
     )
     with pytest.raises(
         ToolCapabilityWorldError,
