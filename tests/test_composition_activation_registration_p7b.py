@@ -26,6 +26,15 @@ from world_understanding.capability_composition import (
 from tests.test_capability_composition_p4 import _single_read_fixture
 
 
+def _different_sha256(current: str, preferred: str = "f") -> str:
+    candidate = preferred * 64
+    if candidate != current:
+        return candidate
+    fallback = "e" * 64
+    assert fallback != current
+    return fallback
+
+
 def _fixture(*, risk: str = "A0", effect: str = "read"):
     action_registry, candidates, context, document = _single_read_fixture(
         risk=risk,
@@ -261,8 +270,11 @@ def test_rejects_expired_or_not_yet_valid_activation() -> None:
 def test_rehashed_world_state_forgery_fails_authoritative_rebuild() -> None:
     fixture = _fixture()
     proposal = fixture["proposal"]
+    forged_world_state = _different_sha256(
+        proposal.activation_contract.world_state_sha256
+    )
     tampered_activation = proposal.activation_contract.model_copy(
-        update={"world_state_sha256": "b" * 64}
+        update={"world_state_sha256": forged_world_state}
     )
     tampered_activation = tampered_activation.model_copy(
         update={
@@ -283,7 +295,9 @@ def test_rehashed_world_state_forgery_fails_authoritative_rebuild() -> None:
 
 def test_wrong_current_world_state_fails_before_registration() -> None:
     fixture = _fixture()
-    fixture["current_world_state_sha256"] = "f" * 64
+    fixture["current_world_state_sha256"] = _different_sha256(
+        fixture["plan"].world_state_sha256
+    )
     with pytest.raises(
         LimitedActivationRegistrationError,
         match="authoritative_rebuild_failed.*shadow.world_state.mismatch",
@@ -295,7 +309,11 @@ def test_same_registration_key_with_different_authority_is_a_collision() -> None
     fixture = _fixture()
     valid = _compile(fixture, registered_at_ms=30)
     forged = valid.model_copy(
-        update={"world_state_sha256": "e" * 64}
+        update={
+            "world_state_sha256": _different_sha256(
+                valid.world_state_sha256, preferred="e"
+            )
+        }
     ).with_computed_identity()
     assert forged.registration_id == valid.registration_id
     assert forged.has_valid_identity()
