@@ -82,14 +82,23 @@ from .regenerative_execution import (
     build_execution_ledger_event,
     build_regenerative_checkpoint,
 )
+from .composition_activation_store import (
+    LimitedActivationBundleRegistration,
+    LimitedActivationStoreRecord,
+    canonical_registration_json,
+    canonical_string_tuple_json,
+    computed_limited_activation_lifecycle_sha256,
+    limited_activation_record_from_row,
+)
 
 if TYPE_CHECKING:
     from .completion_gate import CompletionDecision
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 29
+STORE_SCHEMA_VERSION = 30
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
+_LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN = object()
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
     """
@@ -1864,6 +1873,99 @@ _MIGRATION_V29_STATEMENTS = (
     """,
 )
 
+
+_MIGRATION_V30_ID = "gateway-composition-activation-registration-v30"
+_MIGRATION_V30_STATEMENTS = (
+    """
+    CREATE TABLE composition_activation_registration (
+        registration_id TEXT NOT NULL PRIMARY KEY
+            CHECK (registration_id GLOB 'car_[0-9a-f]*'),
+        composition_activation_id TEXT NOT NULL UNIQUE,
+        composition_activation_sha256 TEXT NOT NULL
+            CHECK (length(composition_activation_sha256) = 64
+                   AND composition_activation_sha256 NOT GLOB '*[^0-9a-f]*'),
+        shadow_proposal_sha256 TEXT NOT NULL
+            CHECK (length(shadow_proposal_sha256) = 64
+                   AND shadow_proposal_sha256 NOT GLOB '*[^0-9a-f]*'),
+        differential_trace_sha256 TEXT NOT NULL
+            CHECK (length(differential_trace_sha256) = 64
+                   AND differential_trace_sha256 NOT GLOB '*[^0-9a-f]*'),
+        composition_plan_id TEXT NOT NULL,
+        composition_plan_sha256 TEXT NOT NULL
+            CHECK (length(composition_plan_sha256) = 64
+                   AND composition_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        verification_plan_id TEXT NOT NULL,
+        verification_plan_sha256 TEXT NOT NULL
+            CHECK (length(verification_plan_sha256) = 64
+                   AND verification_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        verification_plan_activation_id TEXT NOT NULL,
+        validation_mode TEXT NOT NULL
+            CHECK (validation_mode IN ('PROVED_VALID','PROVISIONAL_UNKNOWN')),
+        validation_sha256 TEXT NOT NULL
+            CHECK (length(validation_sha256) = 64
+                   AND validation_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        principal_scope_hash TEXT NOT NULL
+            CHECK (length(principal_scope_hash) = 64
+                   AND principal_scope_hash NOT GLOB '*[^0-9a-f]*'),
+        world_state_sha256 TEXT NOT NULL
+            CHECK (length(world_state_sha256) = 64
+                   AND world_state_sha256 NOT GLOB '*[^0-9a-f]*'),
+        source_manifest_sha256 TEXT NOT NULL
+            CHECK (length(source_manifest_sha256) = 64
+                   AND source_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+        capability_manifest_sha256 TEXT NOT NULL
+            CHECK (length(capability_manifest_sha256) = 64
+                   AND capability_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+        action_registry_sha256 TEXT NOT NULL
+            CHECK (length(action_registry_sha256) = 64
+                   AND action_registry_sha256 NOT GLOB '*[^0-9a-f]*'),
+        verification_registry_sha256 TEXT NOT NULL
+            CHECK (length(verification_registry_sha256) = 64
+                   AND verification_registry_sha256 NOT GLOB '*[^0-9a-f]*'),
+        allowed_action_ids_json TEXT NOT NULL CHECK (json_valid(allowed_action_ids_json)),
+        allowed_action_versions_json TEXT NOT NULL CHECK (json_valid(allowed_action_versions_json)),
+        issued_at_ms INTEGER NOT NULL CHECK (issued_at_ms >= 0),
+        expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms > issued_at_ms),
+        registered_at_ms INTEGER NOT NULL
+            CHECK (registered_at_ms >= issued_at_ms AND registered_at_ms < expires_at_ms),
+        provisional_verification_required INTEGER NOT NULL
+            CHECK (provisional_verification_required IN (0,1)),
+        state TEXT NOT NULL CHECK (state IN ('ACTIVE','EXPIRED')),
+        expired_at_ms INTEGER CHECK (expired_at_ms IS NULL OR expired_at_ms >= expires_at_ms),
+        registration_json TEXT NOT NULL CHECK (json_valid(registration_json)),
+        registration_sha256 TEXT NOT NULL
+            CHECK (length(registration_sha256) = 64
+                   AND registration_sha256 NOT GLOB '*[^0-9a-f]*'),
+        lifecycle_sha256 TEXT NOT NULL
+            CHECK (length(lifecycle_sha256) = 64
+                   AND lifecycle_sha256 NOT GLOB '*[^0-9a-f]*'),
+        CHECK (
+            (validation_mode = 'PROVISIONAL_UNKNOWN' AND provisional_verification_required = 1)
+            OR (validation_mode = 'PROVED_VALID' AND provisional_verification_required = 0)
+        ),
+        CHECK (
+            (state = 'ACTIVE' AND expired_at_ms IS NULL)
+            OR (state = 'EXPIRED' AND expired_at_ms IS NOT NULL)
+        ),
+        FOREIGN KEY (verification_plan_id)
+            REFERENCES verification_plan(verification_plan_id),
+        FOREIGN KEY (verification_plan_activation_id)
+            REFERENCES verification_plan_activation(activation_id)
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX composition_activation_registration_lineage_idx
+        ON composition_activation_registration (request_id, run_id, generation)
+    """,
+    """
+    CREATE INDEX composition_activation_registration_expiry_idx
+        ON composition_activation_registration (state, expires_at_ms, registration_id)
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1894,6 +1996,7 @@ _MIGRATIONS = (
     (27, _MIGRATION_V27_ID, _MIGRATION_V27_STATEMENTS),
     (28, _MIGRATION_V28_ID, _MIGRATION_V28_STATEMENTS),
     (29, _MIGRATION_V29_ID, _MIGRATION_V29_STATEMENTS),
+    (30, _MIGRATION_V30_ID, _MIGRATION_V30_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -3718,6 +3821,126 @@ def _verify_channel_cutover_rows(connection: sqlite3.Connection) -> None:
                 raise StoreCorruptionError("channel ownership epochs overlap")
 
 
+
+def _verify_limited_activation_registration_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    """Verify v30 composition registrations against canonical P19 authorities."""
+
+    from contracts.verification import VerificationPlan
+
+    rows = connection.execute(
+        "SELECT * FROM composition_activation_registration ORDER BY registration_id"
+    ).fetchall()
+    for row in rows:
+        try:
+            record = limited_activation_record_from_row(row)
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "stored limited activation registration is invalid"
+            ) from exc
+        registration = record.registration
+
+        registry_row = connection.execute(
+            "SELECT * FROM verification_registry_snapshot WHERE snapshot_sha256 = ?",
+            (registration.verification_registry_sha256,),
+        ).fetchone()
+        if registry_row is None:
+            raise StoreCorruptionError(
+                "limited activation references a missing verification registry"
+            )
+        try:
+            snapshot = RegistrySnapshot.model_validate_json(
+                registry_row["snapshot_json"], strict=True
+            )
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "limited activation verification registry is invalid"
+            ) from exc
+        if (
+            not snapshot.has_valid_identity()
+            or snapshot.snapshot_sha256
+            != registration.verification_registry_sha256
+            or registry_row["registry_snapshot_id"]
+            != snapshot.registry_snapshot_id
+            or registry_row["snapshot_sha256"] != snapshot.snapshot_sha256
+        ):
+            raise StoreCorruptionError(
+                "limited activation verification registry binding is invalid"
+            )
+
+        plan_row = connection.execute(
+            "SELECT * FROM verification_plan WHERE verification_plan_id = ?",
+            (registration.verification_plan_id,),
+        ).fetchone()
+        if plan_row is None:
+            raise StoreCorruptionError(
+                "limited activation references a missing verification plan"
+            )
+        try:
+            plan = VerificationPlan.model_validate_json(
+                plan_row["plan_json"], strict=True
+            )
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "limited activation verification plan is invalid"
+            ) from exc
+        if (
+            not plan.has_valid_identity()
+            or plan.verification_plan_id != registration.verification_plan_id
+            or plan.plan_sha256 != registration.verification_plan_sha256
+            or plan.request_id != registration.request_id
+            or plan.run_id != registration.run_id
+            or plan.generation != registration.generation
+            or plan.registry_snapshot_sha256
+            != registration.verification_registry_sha256
+            or plan_row["plan_sha256"] != plan.plan_sha256
+        ):
+            raise StoreCorruptionError(
+                "limited activation verification plan binding is invalid"
+            )
+
+        activation_row = connection.execute(
+            "SELECT * FROM verification_plan_activation WHERE activation_id = ?",
+            (record.verification_plan_activation_id,),
+        ).fetchone()
+        if activation_row is None:
+            raise StoreCorruptionError(
+                "limited activation references a missing plan activation"
+            )
+        expected_activation_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.verification-plan-activation.v1",
+                "request_id": activation_row["request_id"],
+                "run_id": activation_row["run_id"],
+                "generation": activation_row["generation"],
+                "verification_plan_id": activation_row["verification_plan_id"],
+                "verification_plan_sha256": activation_row[
+                    "verification_plan_sha256"
+                ],
+                "registry_snapshot_sha256": activation_row[
+                    "registry_snapshot_sha256"
+                ],
+            }
+        )
+        if (
+            activation_row["request_id"] != registration.request_id
+            or activation_row["run_id"] != registration.run_id
+            or activation_row["generation"] != registration.generation
+            or activation_row["verification_plan_id"]
+            != registration.verification_plan_id
+            or activation_row["verification_plan_sha256"]
+            != registration.verification_plan_sha256
+            or activation_row["registry_snapshot_sha256"]
+            != registration.verification_registry_sha256
+            or activation_row["activation_sha256"]
+            != expected_activation_sha256
+        ):
+            raise StoreCorruptionError(
+                "limited activation P19 activation binding is invalid"
+            )
+
+
 def _verify_full_event_chain(connection: sqlite3.Connection) -> None:
     _verify_current_state_rows(connection)
     grouped: dict[tuple[str, str], list[TransitionDecision]] = {}
@@ -3771,6 +3994,7 @@ class GatewayStateStore:
             _configure_connection(connection)
             _migrate(connection, applied_at_ms=now_ms)
             store = cls(path, connection)
+            store.expire_limited_activation_registrations(now_ms=now_ms)
             health = store.health_check(now_ms=now_ms, full=True)
             if not health.healthy:
                 raise StoreCorruptionError(health.reason_code)
@@ -12999,6 +13223,512 @@ class GatewayStateStore:
             ).fetchall()
             return tuple(_object_owner_from_row(row) for row in rows)
 
+
+    def get_limited_activation_registration_record(
+        self, registration_id: str
+    ) -> LimitedActivationStoreRecord | None:
+        if not registration_id:
+            raise ValueError("limited activation registration identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_activation_registration "
+                "WHERE registration_id = ?",
+                (registration_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                return limited_activation_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored limited activation registration is invalid"
+                ) from exc
+
+    def get_limited_activation_registration(self, registration_id: str):
+        record = self.get_limited_activation_registration_record(registration_id)
+        return None if record is None else record.registration
+
+    def _put_limited_activation_registration_from_bundle(
+        self,
+        registration,
+        *,
+        expected_absent: bool,
+        recorded_at_ms: int,
+        _bundle_write_token: object,
+    ) -> bool:
+        """Private sink reachable only through the authoritative bundle path."""
+
+        if _bundle_write_token is not _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN:
+            raise StoreConflictError(
+                "limited activation writes require the authoritative bundle path"
+            )
+
+        from contracts.verification import VerificationPlan
+        from .composition_activation_registration import (
+            LimitedCompositionActivationRegistrationV1,
+        )
+
+        if not isinstance(
+            registration, LimitedCompositionActivationRegistrationV1
+        ):
+            raise ValueError("limited activation registration has the wrong type")
+        if not registration.has_valid_identity():
+            raise ValueError("limited activation registration identity is invalid")
+        if expected_absent is not True:
+            raise ValueError("limited activation registration requires expected_absent")
+        if recorded_at_ms != registration.registered_at_ms:
+            raise ValueError(
+                "limited activation registration time differs from its row"
+            )
+        if not (
+            registration.issued_at_ms
+            <= recorded_at_ms
+            < registration.expires_at_ms
+        ):
+            raise ValueError("limited activation registration is not live")
+
+        with self._lock, self._write_transaction():
+            current = self._assert_request_binding_locked(
+                request_id=registration.request_id,
+                run_id=registration.run_id,
+                generation=registration.generation,
+                recorded_at_ms=recorded_at_ms,
+            )
+            if current["status"] != "ACTIVE":
+                raise StoreConflictError(
+                    "limited activation registration generation is not active"
+                )
+
+            registry_row = self._connection.execute(
+                "SELECT * FROM verification_registry_snapshot "
+                "WHERE snapshot_sha256 = ?",
+                (registration.verification_registry_sha256,),
+            ).fetchone()
+            if registry_row is None:
+                raise StoreNotFoundError(
+                    "limited activation verification registry does not exist"
+                )
+            snapshot = RegistrySnapshot.model_validate_json(
+                registry_row["snapshot_json"], strict=True
+            )
+            if (
+                not snapshot.has_valid_identity()
+                or snapshot.snapshot_sha256
+                != registration.verification_registry_sha256
+            ):
+                raise StoreConflictError(
+                    "limited activation verification registry changed"
+                )
+
+            plan_row = self._connection.execute(
+                "SELECT * FROM verification_plan WHERE verification_plan_id = ?",
+                (registration.verification_plan_id,),
+            ).fetchone()
+            if plan_row is None:
+                raise StoreNotFoundError(
+                    "limited activation verification plan does not exist"
+                )
+            plan = VerificationPlan.model_validate_json(
+                plan_row["plan_json"], strict=True
+            )
+            if (
+                not plan.has_valid_identity()
+                or plan.plan_sha256 != registration.verification_plan_sha256
+                or plan.request_id != registration.request_id
+                or plan.run_id != registration.run_id
+                or plan.generation != registration.generation
+                or plan.registry_snapshot_sha256
+                != registration.verification_registry_sha256
+            ):
+                raise StoreConflictError(
+                    "limited activation verification plan changed"
+                )
+
+            activation_row = self._connection.execute(
+                "SELECT * FROM verification_plan_activation "
+                "WHERE request_id = ? AND run_id = ? AND generation = ?",
+                (
+                    registration.request_id,
+                    registration.run_id,
+                    registration.generation,
+                ),
+            ).fetchone()
+            if activation_row is None:
+                raise StoreNotFoundError(
+                    "limited activation P19 plan is not active"
+                )
+            if (
+                activation_row["verification_plan_id"]
+                != registration.verification_plan_id
+                or activation_row["verification_plan_sha256"]
+                != registration.verification_plan_sha256
+                or activation_row["registry_snapshot_sha256"]
+                != registration.verification_registry_sha256
+            ):
+                raise StoreConflictError(
+                    "limited activation crossed its active P19 plan"
+                )
+
+            rows = self._connection.execute(
+                "SELECT * FROM composition_activation_registration "
+                "WHERE registration_id = ? OR composition_activation_id = ? "
+                "OR (request_id = ? AND run_id = ? AND generation = ?)",
+                (
+                    registration.registration_id,
+                    registration.composition_activation_id,
+                    registration.request_id,
+                    registration.run_id,
+                    registration.generation,
+                ),
+            ).fetchall()
+            if rows:
+                if len(rows) != 1:
+                    raise StoreCorruptionError(
+                        "limited activation identities diverged"
+                    )
+                try:
+                    existing = limited_activation_record_from_row(rows[0])
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored limited activation registration is invalid"
+                    ) from exc
+                if not existing.registration.has_same_authority(registration):
+                    raise StoreConflictError(
+                        "limited activation identity was reused for different authority"
+                    )
+                return False
+
+            registration_json = canonical_registration_json(registration)
+            action_ids_json = canonical_string_tuple_json(
+                registration.allowed_action_ids
+            )
+            action_versions_json = canonical_string_tuple_json(
+                registration.allowed_action_versions
+            )
+            lifecycle_sha256 = computed_limited_activation_lifecycle_sha256(
+                registration_id=registration.registration_id,
+                registration_sha256=registration.registration_sha256,
+                state="ACTIVE",
+                expires_at_ms=registration.expires_at_ms,
+                expired_at_ms=None,
+            )
+            self._connection.execute(
+                """
+                INSERT INTO composition_activation_registration(
+                    registration_id, composition_activation_id,
+                    composition_activation_sha256, shadow_proposal_sha256,
+                    differential_trace_sha256, composition_plan_id,
+                    composition_plan_sha256, verification_plan_id,
+                    verification_plan_sha256,
+                    verification_plan_activation_id, validation_mode,
+                    validation_sha256, request_id, run_id, generation,
+                    principal_scope_hash, world_state_sha256,
+                    source_manifest_sha256, capability_manifest_sha256,
+                    action_registry_sha256, verification_registry_sha256,
+                    allowed_action_ids_json, allowed_action_versions_json,
+                    issued_at_ms, expires_at_ms, registered_at_ms,
+                    provisional_verification_required, state, expired_at_ms,
+                    registration_json, registration_sha256, lifecycle_sha256
+                ) VALUES (
+                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                    'ACTIVE',NULL,?,?,?
+                )
+                """,
+                (
+                    registration.registration_id,
+                    registration.composition_activation_id,
+                    registration.composition_activation_sha256,
+                    registration.shadow_proposal_sha256,
+                    registration.differential_trace_sha256,
+                    registration.composition_plan_id,
+                    registration.composition_plan_sha256,
+                    registration.verification_plan_id,
+                    registration.verification_plan_sha256,
+                    activation_row["activation_id"],
+                    registration.validation_mode,
+                    registration.validation_sha256,
+                    registration.request_id,
+                    registration.run_id,
+                    registration.generation,
+                    registration.principal_scope_hash,
+                    registration.world_state_sha256,
+                    registration.source_manifest_sha256,
+                    registration.capability_manifest_sha256,
+                    registration.action_registry_sha256,
+                    registration.verification_registry_sha256,
+                    action_ids_json,
+                    action_versions_json,
+                    registration.issued_at_ms,
+                    registration.expires_at_ms,
+                    registration.registered_at_ms,
+                    int(registration.provisional_verification_required),
+                    registration_json,
+                    registration.registration_sha256,
+                    lifecycle_sha256,
+                ),
+            )
+            return True
+
+    def expire_limited_activation_registrations(
+        self, *, now_ms: int
+    ) -> tuple[str, ...]:
+        if now_ms < 0:
+            raise ValueError("limited activation expiry time is invalid")
+        expired: list[str] = []
+        with self._lock, self._write_transaction():
+            rows = self._connection.execute(
+                "SELECT * FROM composition_activation_registration "
+                "WHERE state = 'ACTIVE' AND expires_at_ms <= ? "
+                "ORDER BY registration_id",
+                (now_ms,),
+            ).fetchall()
+            for row in rows:
+                try:
+                    record = limited_activation_record_from_row(row)
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored limited activation registration is invalid"
+                    ) from exc
+                registration = record.registration
+                lifecycle_sha256 = (
+                    computed_limited_activation_lifecycle_sha256(
+                        registration_id=registration.registration_id,
+                        registration_sha256=registration.registration_sha256,
+                        state="EXPIRED",
+                        expires_at_ms=registration.expires_at_ms,
+                        expired_at_ms=now_ms,
+                    )
+                )
+                update = self._connection.execute(
+                    "UPDATE composition_activation_registration "
+                    "SET state = 'EXPIRED', expired_at_ms = ?, "
+                    "lifecycle_sha256 = ? "
+                    "WHERE registration_id = ? AND state = 'ACTIVE' "
+                    "AND lifecycle_sha256 = ?",
+                    (
+                        now_ms,
+                        lifecycle_sha256,
+                        registration.registration_id,
+                        record.lifecycle_sha256,
+                    ),
+                )
+                if update.rowcount != 1:
+                    raise StoreCasConflict(
+                        "limited activation changed during expiry"
+                    )
+                expired.append(registration.registration_id)
+        return tuple(expired)
+
+    def recover_limited_activation_registrations(
+        self, *, now_ms: int
+    ) -> tuple[LimitedActivationStoreRecord, ...]:
+        """Recover only live registrations still on the current generation."""
+
+        self.expire_limited_activation_registrations(now_ms=now_ms)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            rows = self._connection.execute(
+                """
+                SELECT c.*
+                FROM composition_activation_registration AS c
+                JOIN request_generation AS g ON g.request_id = c.request_id
+                WHERE c.state = 'ACTIVE'
+                  AND c.registered_at_ms <= ? AND c.expires_at_ms > ?
+                  AND g.run_id = c.run_id
+                  AND g.current_generation = c.generation
+                  AND g.status = 'ACTIVE'
+                ORDER BY c.registered_at_ms, c.registration_id
+                """,
+                (now_ms, now_ms),
+            ).fetchall()
+            recovered: list[LimitedActivationStoreRecord] = []
+            for row in rows:
+                try:
+                    recovered.append(
+                        limited_activation_record_from_row(
+                            row, recovered_after_restart=True
+                        )
+                    )
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored limited activation registration is invalid"
+                    ) from exc
+            return tuple(recovered)
+
+    def get_active_limited_activation_registration(
+        self, registration_id: str, *, now_ms: int
+    ) -> LimitedActivationStoreRecord | None:
+        self.expire_limited_activation_registrations(now_ms=now_ms)
+        record = self.get_limited_activation_registration_record(registration_id)
+        if record is None or record.state == "EXPIRED":
+            return None
+        if not record.active_at(now_ms):
+            return None
+        registration = record.registration
+        with self._lock:
+            current = self._connection.execute(
+                "SELECT run_id, current_generation, status "
+                "FROM request_generation WHERE request_id = ?",
+                (registration.request_id,),
+            ).fetchone()
+            if (
+                current is None
+                or current["run_id"] != registration.run_id
+                or current["current_generation"] != registration.generation
+                or current["status"] != "ACTIVE"
+            ):
+                raise StoreConflictError(
+                    "limited activation registration is not bound to current generation"
+                )
+        return record
+
+    def register_limited_composition_activation_bundle(
+        self,
+        proposal,
+        *,
+        plan,
+        validation,
+        action_registry,
+        verification_registry,
+        verification_bindings,
+        current_world_state_sha256: str,
+        expected_principal_scope_hash: str,
+        recorded_at_ms: int,
+    ) -> LimitedActivationBundleRegistration:
+        """Atomically persist P19 authorities and one P7B.1 registration."""
+
+        from .composition_activation_registration import (
+            EXISTING_GATEWAY_STATE_STORE_AUTHORITY,
+            LimitedCompositionActivationRegistrar,
+            compile_limited_activation_registration,
+        )
+
+        with self._lock, self._write_transaction():
+            expected_registration = compile_limited_activation_registration(
+                proposal,
+                plan=plan,
+                validation=validation,
+                action_registry=action_registry,
+                verification_registry=verification_registry,
+                verification_bindings=verification_bindings,
+                current_world_state_sha256=current_world_state_sha256,
+                expected_principal_scope_hash=expected_principal_scope_hash,
+                registered_at_ms=recorded_at_ms,
+            )
+
+            class _BundleRegistrationPort:
+                authority_kind = EXISTING_GATEWAY_STATE_STORE_AUTHORITY
+
+                def __init__(self, owner, expected) -> None:
+                    self._owner = owner
+                    self._expected = expected
+
+                def get_limited_activation_registration(self, registration_id):
+                    if registration_id != self._expected.registration_id:
+                        raise StoreConflictError(
+                            "limited activation bundle requested another identity"
+                        )
+                    return self._owner.get_limited_activation_registration(
+                        registration_id
+                    )
+
+                def put_limited_activation_registration(
+                    self,
+                    registration,
+                    *,
+                    expected_absent: bool,
+                    recorded_at_ms: int,
+                ) -> bool:
+                    if registration != self._expected:
+                        raise StoreConflictError(
+                            "limited activation bundle write differs from rebuilt authority"
+                        )
+                    return self._owner._put_limited_activation_registration_from_bundle(
+                        registration,
+                        expected_absent=expected_absent,
+                        recorded_at_ms=recorded_at_ms,
+                        _bundle_write_token=(
+                            _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN
+                        ),
+                    )
+
+            registration_port = _BundleRegistrationPort(
+                self, expected_registration
+            )
+            registry_created = self.put_registry_snapshot(
+                verification_registry, recorded_at_ms=recorded_at_ms
+            )
+            verification_plan_created = self.put_verification_plan(
+                proposal.verification_plan, recorded_at_ms=recorded_at_ms
+            )
+            verification_plan_activation_id = self.activate_verification_plan(
+                request_id=proposal.verification_plan.request_id,
+                run_id=proposal.verification_plan.run_id,
+                generation=proposal.verification_plan.generation,
+                verification_plan_id=(
+                    proposal.verification_plan.verification_plan_id
+                ),
+                verification_plan_sha256=proposal.verification_plan.plan_sha256,
+                registry_snapshot_sha256=(
+                    proposal.verification_plan.registry_snapshot_sha256
+                ),
+                activated_at_ms=recorded_at_ms,
+            )
+            receipt = LimitedCompositionActivationRegistrar(
+                registration_port
+            ).register(
+                proposal,
+                plan=plan,
+                validation=validation,
+                action_registry=action_registry,
+                verification_registry=verification_registry,
+                verification_bindings=verification_bindings,
+                current_world_state_sha256=current_world_state_sha256,
+                expected_principal_scope_hash=expected_principal_scope_hash,
+                recorded_at_ms=recorded_at_ms,
+            )
+            row = self._connection.execute(
+                "SELECT * FROM composition_activation_registration "
+                "WHERE registration_id = ?",
+                (receipt.registration_id,),
+            ).fetchone()
+            if row is None:
+                raise StoreCorruptionError(
+                    "limited activation registration write disappeared"
+                )
+            created = not receipt.idempotent_replay
+            try:
+                record = limited_activation_record_from_row(
+                    row,
+                    created_by_this_call=created,
+                    duplicate=not created,
+                )
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored limited activation registration is invalid"
+                ) from exc
+            if (
+                record.verification_plan_activation_id
+                != verification_plan_activation_id
+            ):
+                raise StoreCorruptionError(
+                    "limited activation registration crossed P19 activation"
+                )
+            return LimitedActivationBundleRegistration(
+                record=record,
+                receipt=receipt,
+                registry_created=registry_created,
+                verification_plan_created=verification_plan_created,
+                verification_plan_activation_id=(
+                    verification_plan_activation_id
+                ),
+                created_by_this_call=created,
+                duplicate=not created,
+            )
+
     def count_journal_entries(self) -> int:
         with self._lock:
             if self._closed:
@@ -13060,6 +13790,7 @@ class GatewayStateStore:
                 _verify_coordination_rows(self._connection)
                 _verify_shadow_rows(self._connection)
                 _verify_channel_cutover_rows(self._connection)
+                _verify_limited_activation_registration_rows(self._connection)
                 if full:
                     _verify_full_event_chain(self._connection)
                 schema_sha256 = _schema_fingerprint(self._connection)
@@ -13143,6 +13874,8 @@ __all__ = [
     "FencedResultDecision",
     "GenerationLeaseView",
     "JournalRegistration",
+    "LimitedActivationBundleRegistration",
+    "LimitedActivationStoreRecord",
     "NonceConsumption",
     "OutboxDispatchBoundary",
     "OutboxRecord",

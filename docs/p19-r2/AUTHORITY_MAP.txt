@@ -187,3 +187,19 @@ CompletionGate  （唯一完成权威）
                              绝非 runtime 自报）
   Completion Authority     : 仅 CompletionGate
   Persistence Authority    : 仅 Gateway Store
+
+P7B.2｜Limited Composition Activation Persistence（Verification Plane 1.1）
+----------------------------------------------------------------------
+
+src/total_gateway/composition_activation_shadow.py
+src/total_gateway/composition_activation_registration.py
+src/total_gateway/composition_activation_store.py
+src/total_gateway/store.py migration v30
+
+上述新增面只负责把 P7A/P7B.1 的 A0-only eligibility registration 与既有
+RegistrySnapshot、VerificationPlan、VerificationPlanActivation 在同一个
+GatewayStateStore UoW 中原子持久化，并负责重启恢复、过期回收和完整性扫描。
+
+它不改变 verifier PASS 语义、VerificationReadiness、Repair Policy 或
+CompletionGate；不签发 PolicyDecision、ExecutionTicket、CapabilityGrant；
+不调用 Runtime。

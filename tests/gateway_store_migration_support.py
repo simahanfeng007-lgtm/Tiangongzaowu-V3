@@ -19,6 +19,22 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 30:
+        # v30 additive: P7B.2 limited composition activation registration.
+        # Remove its indexes and row table before removing the P19 plan and
+        # RegistrySnapshot authorities referenced by its foreign keys.
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_activation_registration_expiry_idx"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_activation_registration_lineage_idx"
+        )
+        connection.execute(
+            "DROP TABLE IF EXISTS composition_activation_registration"
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE version = 30")
+        connection.execute("PRAGMA user_version = 29")
+        version = 29
     if version == 29:
         connection.execute(
             "DROP INDEX IF EXISTS repair_execution_binding_attempt_idx"
