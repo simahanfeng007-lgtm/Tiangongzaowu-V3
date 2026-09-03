@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
 
-from contracts import (
-    AcceptancePredicate,
-    CompositionValidationResultV1,
-)
+from contracts.capability_composition import CompositionValidationResultV1
+from contracts.verification import AcceptancePredicate
 from total_gateway.composition_activation_shadow import (
     CompositionShadowActivationError,
     activation_has_valid_sha256,
@@ -72,7 +71,9 @@ def _validation_for(plan, *, result="PROVED_VALID"):
         plan_sha256=plan.plan_sha256,
         result=result,
         unknown_disposition=(
-            "PROVISIONAL_ALLOW" if result == "UNKNOWN" else "NOT_APPLICABLE"
+            "PROVISIONAL_ALLOW"
+            if result == "UNKNOWN"
+            else "NOT_APPLICABLE"
         ),
         findings=(),
         mandatory_verification=result == "UNKNOWN",
@@ -84,19 +85,51 @@ def _validation_for(plan, *, result="PROVED_VALID"):
     )
 
 
-def test_shadow_adapter_proposes_exact_activation_and_p19_plan() -> None:
-    action_registry, plan, validation, verifier_registry, bindings = (
-        _validated_read_plan()
-    )
-    result = propose_shadow_composition_activation(
+def _propose(
+    action_registry,
+    plan,
+    validation,
+    verifier_registry,
+    bindings,
+    *,
+    current_world_state_sha256=None,
+    expected_principal_scope_hash=None,
+    issued_at_ms=20,
+    expires_at_ms=60,
+    legacy_allowed_action_ids=(),
+):
+    return propose_shadow_composition_activation(
         plan,
         validation,
         action_registry,
         verifier_registry,
         bindings,
-        issued_at_ms=20,
-        expires_at_ms=60,
-        legacy_allowed_action_ids=(),
+        current_world_state_sha256=(
+            plan.world_state_sha256
+            if current_world_state_sha256 is None
+            else current_world_state_sha256
+        ),
+        expected_principal_scope_hash=(
+            plan.principal_scope_hash
+            if expected_principal_scope_hash is None
+            else expected_principal_scope_hash
+        ),
+        issued_at_ms=issued_at_ms,
+        expires_at_ms=expires_at_ms,
+        legacy_allowed_action_ids=legacy_allowed_action_ids,
+    )
+
+
+def test_shadow_adapter_proposes_exact_activation_and_p19_plan() -> None:
+    action_registry, plan, validation, verifier_registry, bindings = (
+        _validated_read_plan()
+    )
+    result = _propose(
+        action_registry,
+        plan,
+        validation,
+        verifier_registry,
+        bindings,
     )
     activation = result.activation_contract
     verification_plan = result.verification_plan
@@ -117,14 +150,17 @@ def test_shadow_adapter_proposes_exact_activation_and_p19_plan() -> None:
     )
     assert activation.allowed_action_ids == plan.permission_requirements
     assert activation.allowed_action_versions == ("omni-registry-v1",)
-    assert activation.verification_plan_ref == (
-        verification_plan.verification_plan_id
+    assert (
+        activation.verification_plan_ref
+        == verification_plan.verification_plan_id
     )
-    assert verification_plan.registry_snapshot_sha256 == (
-        verifier_registry.snapshot_sha256
+    assert (
+        verification_plan.registry_snapshot_sha256
+        == verifier_registry.snapshot_sha256
     )
-    assert verification_plan.entries[0].predicate.predicate_type == (
-        "artifact.nonempty"
+    assert (
+        verification_plan.entries[0].predicate.predicate_type
+        == "artifact.nonempty"
     )
     assert result.proposed_only is True
     assert result.persistence_allowed is False
@@ -132,39 +168,35 @@ def test_shadow_adapter_proposes_exact_activation_and_p19_plan() -> None:
     assert result.confirms is False
     assert result.changes_risk is False
     assert result.may_execute is False
-    assert result.differential_trace.persisted is False
-    assert result.differential_trace.authorizes is False
-    assert result.differential_trace.may_execute is False
-    assert result.differential_trace.registry_subset is True
-    assert result.differential_trace.exact_action_set is True
-    assert result.differential_trace.verification_bindings_complete is True
-    assert result.differential_trace.limited_production_eligible is True
+    trace = result.differential_trace
+    assert trace.persisted is False
+    assert trace.authorizes is False
+    assert trace.may_execute is False
+    assert trace.registry_subset is True
+    assert trace.exact_action_set is True
+    assert trace.verification_bindings_complete is True
+    assert trace.limited_production_eligible is True
 
 
 def test_shadow_adapter_is_deterministic_and_records_legacy_difference() -> None:
     action_registry, plan, validation, verifier_registry, bindings = (
         _validated_read_plan()
     )
-    kwargs = dict(
-        issued_at_ms=20,
-        expires_at_ms=60,
+    first = _propose(
+        action_registry,
+        plan,
+        validation,
+        verifier_registry,
+        bindings,
         legacy_allowed_action_ids=("legacy.only",),
     )
-    first = propose_shadow_composition_activation(
+    second = _propose(
+        action_registry,
         plan,
         validation,
-        action_registry,
         verifier_registry,
         bindings,
-        **kwargs,
-    )
-    second = propose_shadow_composition_activation(
-        plan,
-        validation,
-        action_registry,
-        verifier_registry,
-        bindings,
-        **kwargs,
+        legacy_allowed_action_ids=("legacy.only",),
     )
     assert first == second
     assert first.proposal_sha256 == second.proposal_sha256
@@ -210,14 +242,12 @@ def test_missing_or_drifted_verification_binding_fails_closed() -> None:
         CompositionShadowActivationError,
         match="verification_bindings.incomplete",
     ):
-        propose_shadow_composition_activation(
+        _propose(
+            action_registry,
             plan,
             validation,
-            action_registry,
             verifier_registry,
             (),
-            issued_at_ms=20,
-            expires_at_ms=60,
         )
 
     drifted = bindings[0].model_copy(
@@ -227,14 +257,12 @@ def test_missing_or_drifted_verification_binding_fails_closed() -> None:
         CompositionShadowActivationError,
         match="verification_binding.invalid",
     ):
-        propose_shadow_composition_activation(
+        _propose(
+            action_registry,
             plan,
             validation,
-            action_registry,
             verifier_registry,
             (drifted,),
-            issued_at_ms=20,
-            expires_at_ms=60,
         )
 
 
@@ -258,14 +286,12 @@ def test_permission_expansion_and_source_drift_fail_closed() -> None:
         CompositionShadowActivationError,
         match="plan.action_set_inconsistent",
     ):
-        propose_shadow_composition_activation(
+        _propose(
+            action_registry,
             expanded,
             _validation_for(expanded),
-            action_registry,
             verifier_registry,
             bindings,
-            issued_at_ms=20,
-            expires_at_ms=60,
         )
 
     source = plan.action_source_refs[0].model_copy(
@@ -284,14 +310,12 @@ def test_permission_expansion_and_source_drift_fail_closed() -> None:
         CompositionShadowActivationError,
         match="source_manifest.hash_invalid|version_or_source_mismatch",
     ):
-        propose_shadow_composition_activation(
+        _propose(
+            action_registry,
             drifted,
             _validation_for(drifted),
-            action_registry,
             verifier_registry,
             bindings,
-            issued_at_ms=20,
-            expires_at_ms=60,
         )
 
 
@@ -300,14 +324,12 @@ def test_only_valid_or_provisional_unknown_validation_is_shadow_activatable() ->
         _validated_read_plan()
     )
     unknown = _validation_for(plan, result="UNKNOWN")
-    proposed = propose_shadow_composition_activation(
+    proposed = _propose(
+        action_registry,
         plan,
         unknown,
-        action_registry,
         verifier_registry,
         bindings,
-        issued_at_ms=20,
-        expires_at_ms=60,
     )
     assert proposed.validation_mode == "PROVISIONAL_UNKNOWN"
     assert proposed.verification_plan.entries[0].required is True
@@ -317,14 +339,52 @@ def test_only_valid_or_provisional_unknown_validation_is_shadow_activatable() ->
         CompositionShadowActivationError,
         match="validation.not_activatable",
     ):
-        propose_shadow_composition_activation(
+        _propose(
+            action_registry,
             plan,
             invalid,
-            action_registry,
             verifier_registry,
             bindings,
-            issued_at_ms=20,
-            expires_at_ms=60,
+        )
+
+
+def test_current_scope_world_state_and_time_are_required() -> None:
+    action_registry, plan, validation, verifier_registry, bindings = (
+        _validated_read_plan()
+    )
+    with pytest.raises(
+        CompositionShadowActivationError, match="world_state.mismatch"
+    ):
+        _propose(
+            action_registry,
+            plan,
+            validation,
+            verifier_registry,
+            bindings,
+            current_world_state_sha256="9" * 64,
+        )
+    with pytest.raises(
+        CompositionShadowActivationError, match="principal_scope.mismatch"
+    ):
+        _propose(
+            action_registry,
+            plan,
+            validation,
+            verifier_registry,
+            bindings,
+            expected_principal_scope_hash="8" * 64,
+        )
+    with pytest.raises(
+        CompositionShadowActivationError, match="activation.time_inverted"
+    ):
+        _propose(
+            action_registry,
+            plan,
+            validation,
+            verifier_registry,
+            bindings,
+            issued_at_ms=11,
+            expires_at_ms=50,
         )
 
 
@@ -380,14 +440,12 @@ def test_a2_write_can_be_compared_in_shadow_but_is_not_limited_eligible() -> Non
         evaluation_phase="POST_EXECUTION",
         registry_snapshot=verifier_registry,
     )
-    result = propose_shadow_composition_activation(
+    result = _propose(
+        action_registry,
         plan,
         validation,
-        action_registry,
         verifier_registry,
         (binding,),
-        issued_at_ms=20,
-        expires_at_ms=60,
     )
     assert result.proposed_only is True
     assert result.differential_trace.limited_production_eligible is False
@@ -406,19 +464,38 @@ def test_p7a_module_has_no_store_runtime_ticket_or_verifier_execution_path() -> 
         / "total_gateway"
         / "composition_activation_shadow.py"
     )
-    source = path.read_text(encoding="utf-8")
-    forbidden = (
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    forbidden_imports = {
         "GatewayStateStore",
-        "put_verification_plan",
-        "ExecutionTicket(",
-        "OmniCapabilityGrant(",
+        "ExecutionTicket",
+        "OmniCapabilityGrant",
         "BodyRuntime",
         "VerificationPlanExecutor",
         "VerificationRecorder",
-        ".execute(",
-        ".dispatch(",
-        "status=\"PASS\"",
-        "status='PASS'",
-    )
-    for token in forbidden:
-        assert token not in source, token
+        "VerificationRecord",
+    }
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    }
+    assert forbidden_imports.isdisjoint(imported)
+
+    forbidden_calls = {
+        "dispatch",
+        "execute",
+        "put_verification_plan",
+        "record",
+        "record_result",
+        "submit",
+    }
+    calls = {
+        node.func.id
+        if isinstance(node.func, ast.Name)
+        else node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, (ast.Name, ast.Attribute))
+    }
+    assert forbidden_calls.isdisjoint(calls)
