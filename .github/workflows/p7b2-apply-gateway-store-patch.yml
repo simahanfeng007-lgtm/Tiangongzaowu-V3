@@ -34,6 +34,32 @@ jobs:
       - name: Apply deterministic source patch
         run: python scripts/p7b2_apply_gateway_store_patch.py
 
+      - name: Normalize authority map and refresh frozen digest
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          authority = Path("docs/p19-r2/AUTHORITY_MAP.txt")
+          authority.write_text(
+              authority.read_text(encoding="utf-8").rstrip() + "\n",
+              encoding="utf-8",
+              newline="\n",
+          )
+          freeze = Path("docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json")
+          payload = json.loads(freeze.read_text(encoding="utf-8"))
+          payload["authority_map_sha256"] = hashlib.sha256(
+              authority.read_bytes()
+          ).hexdigest()
+          freeze.write_text(
+              json.dumps(payload, ensure_ascii=False, indent=1) + "\n",
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY
+
       - name: Synchronize generated source mirrors
         run: python scripts/sync-generated-sources.py --write
 
