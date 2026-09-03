@@ -1,19 +1,19 @@
 {
- "verification_plane_version": "1.0",
- "baseline_sha": "a94035f221d8769dcf4d5bcd1e7fa2827aa9623a",
- "store_schema_version": 29,
+ "verification_plane_version": "1.1",
+ "baseline_sha": "14f9ef400786d01b65fd1cb495ea42aaa55473e1",
+ "store_schema_version": 30,
  "contract_schema_versions": {
   "verification": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "verification_repair": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb"
  },
  "registry_fingerprint": "6216982d89b5e18aac4026b063fb264ad787b1a2334e05a63a77411a28b45ec9",
- "authority_map_sha256": "8da40b1a5f500e616e4e255703fca1558af032a94e94471938d12f72d758ba4a",
+ "authority_map_sha256": "8f9c69cf273ade37358dff34e7983797e4c2dd1283d7fe96b085fcb7db9502e9",
  "completion_authority_sha256": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
  "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "src/total_gateway/store.py": "eb5b1314b08ef3bfc71eda284c4e8b06b7792074a86df284bb9432c790ed5c62",
+  "src/total_gateway/store.py": "98b5ce46f2a51552757f467042762d0890822cfbdb62e3e6903c290213e1908c",
   "src/total_gateway/store_unit_of_work.py": "fc5cf98d9377cce92a83a6003f15ac873a3c20a695aae89c2b00a42d81af29fd",
   "src/total_gateway/verification_repair_coordinator.py": "0bd855befabe95fb7fa8931a4020194a6c525706f1a7d68cd1d92ad4166c57c9",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
@@ -27,6 +27,9 @@
   "src/total_gateway/completion_gate.py": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
-  "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f"
+  "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f",
+  "src/total_gateway/composition_activation_shadow.py": "f545fb5e6541997b85567f65fb1b430d7cc242dabbcfddb158d83cb3564b15be",
+  "src/total_gateway/composition_activation_registration.py": "9e98e250887f461f20e09a025f7d2cf2aa37fb316d8286957cb4c74ed666a0ec",
+  "src/total_gateway/composition_activation_store.py": "3822af3364224bfac977e5d978a2cdc66654b80e596e72d979c1b91ce4877925"
  }
 }

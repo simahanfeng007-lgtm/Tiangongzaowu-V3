@@ -392,9 +392,8 @@ def test_active_read_fails_closed_after_generation_scope_changes() -> None:
         with GatewayStateStore.open(path, now_ms=1_000) as store:
             fixture = _bundle_fixture(store)
             result = _persist(store, fixture, recorded_at_ms=1_600)
-            store.release_generation_lease(
-                request_id=fixture["plan"].request_id,
-                lease_id="lease_p7b2",
+            store.release_generation(
+                fixture["plan"].request_id,
                 released_at_ms=1_700,
             )
             with pytest.raises(StoreConflictError, match="current generation"):
