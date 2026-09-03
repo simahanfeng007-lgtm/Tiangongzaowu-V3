@@ -227,6 +227,17 @@ def test_write_race_reconciles_the_first_gateway_store_record() -> None:
     assert writer.write_count == 1
 
 
+def test_p7a_future_a1_telemetry_cannot_enter_first_batch() -> None:
+    fixture = _fixture(risk="A1", effect="read")
+    # P7A remains shadow-only and may report the future second-batch envelope.
+    assert fixture["proposal"].differential_trace.limited_production_eligible is True
+    with pytest.raises(
+        LimitedActivationRegistrationError,
+        match="limited_registration.first_batch_a0_only",
+    ):
+        _compile(fixture)
+
+
 def test_rejects_real_p7a_proposal_outside_limited_batch() -> None:
     fixture = _fixture(risk="A2", effect="write")
     assert fixture["proposal"].differential_trace.limited_production_eligible is False
