@@ -4,12 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from contracts.capability_composition import CompositionActivationContractV1
-from contracts.verification import (
-    AcceptancePredicate,
-    VerificationPlan,
-    VerificationPlanEntryV2,
-)
+from contracts.verification import AcceptancePredicate
 from total_gateway.composition_activation_registration import (
     EXISTING_GATEWAY_STATE_STORE_AUTHORITY,
     LimitedActivationRegistrationError,
@@ -17,109 +12,111 @@ from total_gateway.composition_activation_registration import (
     compile_limited_activation_registration,
 )
 from total_gateway.composition_activation_shadow import (
-    ShadowActivationDifferentialTraceV1,
-    ShadowCompositionActivationProposalV1,
+    build_system_verification_binding,
     computed_activation_sha256,
+    propose_shadow_composition_activation,
+)
+from total_gateway.verification_registry import VerifierRegistry
+from world_understanding.capability_composition import (
+    compile_capability_composition_plan,
+    parse_composition_proposal,
+    validate_capability_composition_plan,
 )
 
-
-REQUEST_ID = "req_" + "1" * 64
-RUN_ID = "run_" + "2" * 64
-PLAN_ID = "plan.p7b.demo"
-PLAN_SHA256 = "3" * 64
-VALIDATION_SHA256 = "4" * 64
-ACTION_REGISTRY_SHA256 = "5" * 64
-VERIFICATION_REGISTRY_SHA256 = "6" * 64
-WORLD_STATE_SHA256 = "7" * 64
-SOURCE_MANIFEST_SHA256 = "8" * 64
-CAPABILITY_MANIFEST_SHA256 = "9" * 64
-PRINCIPAL_SCOPE_HASH = "a" * 64
-ACTION_ID = "filesystem.read_file"
-ACTION_VERSION = "1"
+from tests.test_capability_composition_p4 import _single_read_fixture
 
 
-def _proposal(*, eligible: bool = True) -> ShadowCompositionActivationProposalV1:
+def _fixture(*, risk: str = "A0", effect: str = "read"):
+    action_registry, candidates, context, document = _single_read_fixture(
+        risk=risk,
+        effect=effect,
+    )
+    parsed = parse_composition_proposal(document, candidates)
+    plan = compile_capability_composition_plan(
+        parsed,
+        candidates,
+        context,
+        action_registry,
+    )
+    validation = validate_capability_composition_plan(
+        plan,
+        parsed,
+        candidates,
+        context,
+        action_registry,
+        available_verifiers=frozenset(plan.verification_intents),
+        validated_at_ms=11,
+    )
+    assert validation.result == "PROVED_VALID"
+    verification_registry = VerifierRegistry.with_defaults().snapshot(
+        captured_at_ms=12
+    )
     predicate = AcceptancePredicate.create(
         predicate_type="artifact.nonempty",
         subject_kind="artifact",
+        params={},
     )
-    entry = VerificationPlanEntryV2(
-        plan_entry_id="vpe_" + "0" * 64,
-        verifier_id="verifier.artifact_content",
-        verifier_version="2",
+    binding = build_system_verification_binding(
+        intent_ref=plan.verification_intents[0],
         predicate=predicate,
-        subject_identity="artifact:p7b-demo",
+        subject_identity="object:p7b-registration-output",
         evaluation_phase="POST_EXECUTION",
-        required=True,
-        entry_sha256="0" * 64,
-    ).with_computed_sha256()
-    verification = VerificationPlan(
-        verification_plan_id="vpl_" + "0" * 64,
-        request_id=REQUEST_ID,
-        run_id=RUN_ID,
-        generation=1,
-        registry_snapshot_sha256=VERIFICATION_REGISTRY_SHA256,
-        entries=(entry,),
-        plan_sha256="0" * 64,
-    ).with_computed_sha256()
-
-    activation = CompositionActivationContractV1(
-        composition_activation_id="activation.p7b.demo",
-        composition_plan_id=PLAN_ID,
-        composition_plan_sha256=PLAN_SHA256,
-        request_id=REQUEST_ID,
-        run_id=RUN_ID,
-        generation=1,
-        principal_scope_hash=PRINCIPAL_SCOPE_HASH,
-        world_state_sha256=WORLD_STATE_SHA256,
-        source_manifest_sha256=SOURCE_MANIFEST_SHA256,
-        capability_manifest_sha256=CAPABILITY_MANIFEST_SHA256,
-        allowed_action_ids=(ACTION_ID,),
-        allowed_action_versions=(ACTION_VERSION,),
-        verification_plan_ref=verification.verification_plan_id,
-        issued_at_ms=1_000,
-        expires_at_ms=2_000,
-        activation_sha256="0" * 64,
+        registry_snapshot=verification_registry,
     )
-    activation = activation.model_copy(
-        update={"activation_sha256": computed_activation_sha256(activation)}
+    bindings = (binding,)
+    shadow = propose_shadow_composition_activation(
+        plan,
+        validation,
+        action_registry,
+        verification_registry,
+        bindings,
+        current_world_state_sha256=plan.world_state_sha256,
+        expected_principal_scope_hash=plan.principal_scope_hash,
+        issued_at_ms=20,
+        expires_at_ms=60,
+    )
+    return {
+        "proposal": shadow,
+        "plan": plan,
+        "validation": validation,
+        "action_registry": action_registry,
+        "verification_registry": verification_registry,
+        "verification_bindings": bindings,
+        "current_world_state_sha256": plan.world_state_sha256,
+        "expected_principal_scope_hash": plan.principal_scope_hash,
+    }
+
+
+def _compile(fixture, *, registered_at_ms: int = 30):
+    return compile_limited_activation_registration(
+        fixture["proposal"],
+        plan=fixture["plan"],
+        validation=fixture["validation"],
+        action_registry=fixture["action_registry"],
+        verification_registry=fixture["verification_registry"],
+        verification_bindings=fixture["verification_bindings"],
+        current_world_state_sha256=fixture["current_world_state_sha256"],
+        expected_principal_scope_hash=fixture[
+            "expected_principal_scope_hash"
+        ],
+        registered_at_ms=registered_at_ms,
     )
 
-    rejection_codes = () if eligible else ("limited.risk_not_a0_a1",)
-    trace = ShadowActivationDifferentialTraceV1(
-        request_id=REQUEST_ID,
-        run_id=RUN_ID,
-        generation=1,
-        composition_plan_id=PLAN_ID,
-        composition_plan_sha256=PLAN_SHA256,
-        validation_sha256=VALIDATION_SHA256,
-        action_registry_sha256=ACTION_REGISTRY_SHA256,
-        verification_registry_sha256=VERIFICATION_REGISTRY_SHA256,
-        verification_plan_sha256=verification.plan_sha256,
-        planned_action_ids=(ACTION_ID,),
-        proposed_allowed_action_ids=(ACTION_ID,),
-        legacy_allowed_action_ids=(),
-        added_vs_legacy=(ACTION_ID,),
-        removed_vs_legacy=(),
-        exact_action_set=True,
-        registry_subset=True,
-        source_manifest_exact=True,
-        action_versions_exact=True,
-        verification_bindings_complete=True,
-        limited_production_eligible=eligible,
-        limited_rejection_codes=rejection_codes,
-        trace_sha256="0" * 64,
-    ).with_computed_sha256()
-    return ShadowCompositionActivationProposalV1(
-        activation_contract=activation,
-        verification_plan=verification,
-        validation_mode="PROVED_VALID",
-        validation_sha256=VALIDATION_SHA256,
-        action_registry_sha256=ACTION_REGISTRY_SHA256,
-        verification_registry_sha256=VERIFICATION_REGISTRY_SHA256,
-        differential_trace=trace,
-        proposal_sha256="0" * 64,
-    ).with_computed_sha256()
+
+def _register(registrar, fixture, *, recorded_at_ms: int):
+    return registrar.register(
+        fixture["proposal"],
+        plan=fixture["plan"],
+        validation=fixture["validation"],
+        action_registry=fixture["action_registry"],
+        verification_registry=fixture["verification_registry"],
+        verification_bindings=fixture["verification_bindings"],
+        current_world_state_sha256=fixture["current_world_state_sha256"],
+        expected_principal_scope_hash=fixture[
+            "expected_principal_scope_hash"
+        ],
+        recorded_at_ms=recorded_at_ms,
+    )
 
 
 class _GatewayStorePort:
@@ -148,19 +145,42 @@ class _WrongAuthorityPort(_GatewayStorePort):
     authority_kind = "ARBITRARY_WRITER"
 
 
+class _RaceWinnerPort(_GatewayStorePort):
+    def put_limited_activation_registration(
+        self, registration, *, expected_absent, recorded_at_ms
+    ):
+        assert expected_absent is True
+        self.write_count += 1
+        winner = registration.model_copy(
+            update={"registered_at_ms": recorded_at_ms - 1}
+        ).with_computed_identity()
+        self.records[winner.registration_id] = winner
+        return False
+
+
 def test_compiles_exact_non_authorizing_limited_registration() -> None:
-    proposal = _proposal()
-    registration = compile_limited_activation_registration(
-        proposal, registered_at_ms=1_500
-    )
+    fixture = _fixture()
+    registration = _compile(fixture)
+    proposal = fixture["proposal"]
     assert registration.has_valid_identity()
-    assert registration.composition_activation_id == "activation.p7b.demo"
-    assert registration.composition_plan_id == PLAN_ID
+    assert registration.shadow_proposal_sha256 == proposal.proposal_sha256
+    assert (
+        registration.differential_trace_sha256
+        == proposal.differential_trace.trace_sha256
+    )
+    assert registration.composition_activation_id == (
+        proposal.activation_contract.composition_activation_id
+    )
+    assert registration.composition_plan_id == fixture["plan"].plan_id
     assert registration.verification_plan_id == (
         proposal.verification_plan.verification_plan_id
     )
-    assert registration.allowed_action_ids == (ACTION_ID,)
-    assert registration.allowed_action_versions == (ACTION_VERSION,)
+    assert registration.allowed_action_ids == (
+        proposal.activation_contract.allowed_action_ids
+    )
+    assert registration.allowed_action_versions == (
+        proposal.activation_contract.allowed_action_versions
+    )
     assert registration.activation_mode == "LIMITED_PRODUCTION"
     assert registration.eligibility_only is True
     assert registration.authorizes is False
@@ -169,43 +189,67 @@ def test_compiles_exact_non_authorizing_limited_registration() -> None:
     assert registration.may_execute is False
 
 
-def test_registration_is_single_write_and_idempotent_for_same_command() -> None:
+def test_replay_at_a_later_time_keeps_one_logical_registration() -> None:
+    fixture = _fixture()
+    at_30 = _compile(fixture, registered_at_ms=30)
+    at_31 = _compile(fixture, registered_at_ms=31)
+    assert at_30.registration_id == at_31.registration_id
+    assert at_30.registration_sha256 != at_31.registration_sha256
+    assert at_30.has_same_authority(at_31)
+
     writer = _GatewayStorePort()
     registrar = LimitedCompositionActivationRegistrar(writer)
-    first = registrar.register(_proposal(), recorded_at_ms=1_500)
-    second = registrar.register(_proposal(), recorded_at_ms=1_500)
+    first = _register(registrar, fixture, recorded_at_ms=30)
+    second = _register(registrar, fixture, recorded_at_ms=31)
     assert first.has_valid_identity()
     assert second.has_valid_identity()
     assert first.registration_id == second.registration_id
+    assert first.registration_sha256 == second.registration_sha256
     assert first.idempotent_replay is False
     assert second.idempotent_replay is True
     assert writer.write_count == 1
     assert len(writer.records) == 1
 
 
-def test_rejects_noneligible_shadow_proposal() -> None:
+def test_write_race_reconciles_the_first_gateway_store_record() -> None:
+    fixture = _fixture()
+    writer = _RaceWinnerPort()
+    receipt = _register(
+        LimitedCompositionActivationRegistrar(writer),
+        fixture,
+        recorded_at_ms=31,
+    )
+    persisted = next(iter(writer.records.values()))
+    assert receipt.idempotent_replay is True
+    assert receipt.registration_id == persisted.registration_id
+    assert receipt.registration_sha256 == persisted.registration_sha256
+    assert persisted.registered_at_ms == 30
+    assert writer.write_count == 1
+
+
+def test_rejects_real_p7a_proposal_outside_limited_batch() -> None:
+    fixture = _fixture(risk="A2", effect="write")
+    assert fixture["proposal"].differential_trace.limited_production_eligible is False
     with pytest.raises(
         LimitedActivationRegistrationError,
         match="limited_registration.not_eligible",
     ):
-        compile_limited_activation_registration(
-            _proposal(eligible=False), registered_at_ms=1_500
-        )
+        _compile(fixture)
 
 
 def test_rejects_expired_or_not_yet_valid_activation() -> None:
-    for timestamp in (999, 2_000, 2_001):
+    fixture = _fixture()
+    for timestamp in (19, 60, 61):
         with pytest.raises(
             LimitedActivationRegistrationError,
             match="expired_or_not_yet_valid",
         ):
-            compile_limited_activation_registration(
-                _proposal(), registered_at_ms=timestamp
-            )
+            _compile(fixture, registered_at_ms=timestamp)
 
 
-def test_rejects_tampered_cross_scope_binding_even_with_rehashed_proposal() -> None:
-    proposal = _proposal()
+def test_rehashed_world_state_forgery_fails_authoritative_rebuild() -> None:
+    fixture = _fixture()
+    proposal = fixture["proposal"]
     tampered_activation = proposal.activation_contract.model_copy(
         update={"world_state_sha256": "b" * 64}
     )
@@ -216,28 +260,48 @@ def test_rejects_tampered_cross_scope_binding_even_with_rehashed_proposal() -> N
             )
         }
     )
-    tampered = proposal.model_copy(
+    fixture["proposal"] = proposal.model_copy(
         update={"activation_contract": tampered_activation}
-    ).with_computed_sha256()
-    registration = compile_limited_activation_registration(
-        tampered, registered_at_ms=1_500
-    )
-    assert registration.world_state_sha256 == "b" * 64
-    assert registration.has_valid_identity()
-
-    mismatched_plan = tampered.verification_plan.model_copy(
-        update={"request_id": "req_" + "c" * 64}
-    ).with_computed_sha256()
-    broken = tampered.model_copy(
-        update={"verification_plan": mismatched_plan}
     ).with_computed_sha256()
     with pytest.raises(
         LimitedActivationRegistrationError,
-        match="limited_registration.binding_mismatch",
+        match="limited_registration.shadow_rebuild_mismatch",
     ):
-        compile_limited_activation_registration(
-            broken, registered_at_ms=1_500
+        _compile(fixture)
+
+
+def test_wrong_current_world_state_fails_before_registration() -> None:
+    fixture = _fixture()
+    fixture["current_world_state_sha256"] = "f" * 64
+    with pytest.raises(
+        LimitedActivationRegistrationError,
+        match="authoritative_rebuild_failed.*shadow.world_state.mismatch",
+    ):
+        _compile(fixture)
+
+
+def test_same_registration_key_with_different_authority_is_a_collision() -> None:
+    fixture = _fixture()
+    valid = _compile(fixture, registered_at_ms=30)
+    forged = valid.model_copy(
+        update={"world_state_sha256": "e" * 64}
+    ).with_computed_identity()
+    assert forged.registration_id == valid.registration_id
+    assert forged.has_valid_identity()
+    assert not forged.has_same_authority(valid)
+
+    writer = _GatewayStorePort()
+    writer.records[forged.registration_id] = forged
+    with pytest.raises(
+        LimitedActivationRegistrationError,
+        match="limited_registration.identity_collision",
+    ):
+        _register(
+            LimitedCompositionActivationRegistrar(writer),
+            fixture,
+            recorded_at_ms=31,
         )
+    assert writer.write_count == 0
 
 
 def test_rejects_non_gateway_writer_authority() -> None:
