@@ -98,6 +98,7 @@ if TYPE_CHECKING:
 APPLICATION_ID = 0x54475633
 STORE_SCHEMA_VERSION = 30
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
+_LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN = object()
 _MIGRATION_V1_ID = "gateway-store-v1"
 _MIGRATION_V1_STATEMENTS = (
     """
@@ -13223,14 +13224,6 @@ class GatewayStateStore:
             return tuple(_object_owner_from_row(row) for row in rows)
 
 
-    @property
-    def authority_kind(self) -> str:
-        from .composition_activation_registration import (
-            EXISTING_GATEWAY_STATE_STORE_AUTHORITY,
-        )
-
-        return EXISTING_GATEWAY_STATE_STORE_AUTHORITY
-
     def get_limited_activation_registration_record(
         self, registration_id: str
     ) -> LimitedActivationStoreRecord | None:
@@ -13257,14 +13250,20 @@ class GatewayStateStore:
         record = self.get_limited_activation_registration_record(registration_id)
         return None if record is None else record.registration
 
-    def put_limited_activation_registration(
+    def _put_limited_activation_registration_from_bundle(
         self,
         registration,
         *,
         expected_absent: bool,
         recorded_at_ms: int,
+        _bundle_write_token: object,
     ) -> bool:
-        """Persist one P7B.1 eligibility row under existing Store authority."""
+        """Private sink reachable only through the authoritative bundle path."""
+
+        if _bundle_write_token is not _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN:
+            raise StoreConflictError(
+                "limited activation writes require the authoritative bundle path"
+            )
 
         from contracts.verification import VerificationPlan
         from .composition_activation_registration import (
@@ -13602,10 +13601,63 @@ class GatewayStateStore:
         """Atomically persist P19 authorities and one P7B.1 registration."""
 
         from .composition_activation_registration import (
+            EXISTING_GATEWAY_STATE_STORE_AUTHORITY,
             LimitedCompositionActivationRegistrar,
+            compile_limited_activation_registration,
         )
 
         with self._lock, self._write_transaction():
+            expected_registration = compile_limited_activation_registration(
+                proposal,
+                plan=plan,
+                validation=validation,
+                action_registry=action_registry,
+                verification_registry=verification_registry,
+                verification_bindings=verification_bindings,
+                current_world_state_sha256=current_world_state_sha256,
+                expected_principal_scope_hash=expected_principal_scope_hash,
+                registered_at_ms=recorded_at_ms,
+            )
+
+            class _BundleRegistrationPort:
+                authority_kind = EXISTING_GATEWAY_STATE_STORE_AUTHORITY
+
+                def __init__(self, owner, expected) -> None:
+                    self._owner = owner
+                    self._expected = expected
+
+                def get_limited_activation_registration(self, registration_id):
+                    if registration_id != self._expected.registration_id:
+                        raise StoreConflictError(
+                            "limited activation bundle requested another identity"
+                        )
+                    return self._owner.get_limited_activation_registration(
+                        registration_id
+                    )
+
+                def put_limited_activation_registration(
+                    self,
+                    registration,
+                    *,
+                    expected_absent: bool,
+                    recorded_at_ms: int,
+                ) -> bool:
+                    if registration != self._expected:
+                        raise StoreConflictError(
+                            "limited activation bundle write differs from rebuilt authority"
+                        )
+                    return self._owner._put_limited_activation_registration_from_bundle(
+                        registration,
+                        expected_absent=expected_absent,
+                        recorded_at_ms=recorded_at_ms,
+                        _bundle_write_token=(
+                            _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN
+                        ),
+                    )
+
+            registration_port = _BundleRegistrationPort(
+                self, expected_registration
+            )
             registry_created = self.put_registry_snapshot(
                 verification_registry, recorded_at_ms=recorded_at_ms
             )
@@ -13625,7 +13677,9 @@ class GatewayStateStore:
                 ),
                 activated_at_ms=recorded_at_ms,
             )
-            receipt = LimitedCompositionActivationRegistrar(self).register(
+            receipt = LimitedCompositionActivationRegistrar(
+                registration_port
+            ).register(
                 proposal,
                 plan=plan,
                 validation=validation,

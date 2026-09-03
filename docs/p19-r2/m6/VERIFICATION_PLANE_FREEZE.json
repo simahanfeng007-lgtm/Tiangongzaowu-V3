@@ -13,7 +13,7 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "src/total_gateway/store.py": "98b5ce46f2a51552757f467042762d0890822cfbdb62e3e6903c290213e1908c",
+  "src/total_gateway/store.py": "02038f52b20cf3628b0902d6a5b0e7f4d587207b5a9ad0d5d1eaad2753d27caf",
   "src/total_gateway/store_unit_of_work.py": "fc5cf98d9377cce92a83a6003f15ac873a3c20a695aae89c2b00a42d81af29fd",
   "src/total_gateway/verification_repair_coordinator.py": "0bd855befabe95fb7fa8931a4020194a6c525706f1a7d68cd1d92ad4166c57c9",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",

@@ -98,6 +98,13 @@ The P7B.1 registration ID is independent of retry wall-clock time.
 
 No in-memory production dictionary participates in the decision.
 
+The `GatewayStateStore` object itself is deliberately **not** the public P7B.1
+registration port. The bundle method first rebuilds the expected registration
+from P7A/P7B.1 authorities, creates a transaction-local private port bound to
+that exact object, and presents that port to the registrar. The underlying
+Store insert is private and requires a module-local unforgeable identity token.
+Calling the Store directly therefore cannot bypass the authoritative rebuild.
+
 ## Restart and expiry
 
 Opening the existing Store performs additive migration, expires every durable

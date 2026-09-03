@@ -18,6 +18,10 @@ from contracts import (
     derive_run_identity,
 )
 from contracts.verification import AcceptancePredicate
+from total_gateway.composition_activation_registration import (
+    ExistingGatewayActivationRegistrationPort,
+    compile_limited_activation_registration,
+)
 from total_gateway.composition_activation_shadow import (
     build_system_verification_binding,
     propose_shadow_composition_activation,
@@ -281,7 +285,7 @@ def test_p19_and_registration_writes_roll_back_as_one_uow() -> None:
             fixture = _bundle_fixture(store)
             with mock.patch.object(
                 GatewayStateStore,
-                "put_limited_activation_registration",
+                "_put_limited_activation_registration_from_bundle",
                 side_effect=RuntimeError("forced registration failure"),
             ):
                 with pytest.raises(RuntimeError, match="forced registration"):
@@ -420,6 +424,46 @@ def test_integrity_scan_detects_column_payload_tampering() -> None:
             health = store.health_check(now_ms=1_700, full=True)
             assert health.healthy is False
             assert health.reason_code == "store.check.failed"
+
+
+
+def test_direct_store_registration_port_is_closed_and_private_sink_is_guarded() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / "gateway.sqlite3"
+        with GatewayStateStore.open(path, now_ms=1_000) as store:
+            fixture = _bundle_fixture(store)
+            registration = compile_limited_activation_registration(
+                fixture["proposal"],
+                plan=fixture["plan"],
+                validation=fixture["validation"],
+                action_registry=fixture["action_registry"],
+                verification_registry=fixture["verification_registry"],
+                verification_bindings=fixture["verification_bindings"],
+                current_world_state_sha256=fixture[
+                    "current_world_state_sha256"
+                ],
+                expected_principal_scope_hash=fixture[
+                    "expected_principal_scope_hash"
+                ],
+                registered_at_ms=1_600,
+            )
+            assert not isinstance(
+                store, ExistingGatewayActivationRegistrationPort
+            )
+            assert not hasattr(store, "put_limited_activation_registration")
+            with pytest.raises(
+                StoreConflictError,
+                match="authoritative bundle path",
+            ):
+                store._put_limited_activation_registration_from_bundle(
+                    registration,
+                    expected_absent=True,
+                    recorded_at_ms=1_600,
+                    _bundle_write_token=object(),
+                )
+            assert store._connection.execute(
+                "SELECT count(*) FROM composition_activation_registration"
+            ).fetchone()[0] == 0
 
 
 def test_p7b2_has_no_second_store_or_execution_authority() -> None:
