@@ -1,10 +1,10 @@
 """P7B.1 limited-production composition activation registration seam.
 
-This module converts one valid P7A shadow proposal into a gateway-owned,
-content-addressed registration and delegates the write to the existing Gateway
-state-store authority through a narrow port.  A registration is eligibility
-state only: it is not a PolicyDecision, permission, Grant, Ticket, Runtime
-invocation, verification result, or Completion decision.
+This module converts one *authoritatively rebuilt* P7A shadow proposal into a
+Gateway-owned, content-addressed registration and delegates the write to the
+existing Gateway state-store authority through a narrow port.  A registration
+is eligibility state only: it is not a PolicyDecision, permission, Grant,
+Ticket, Runtime invocation, verification result, or Completion decision.
 """
 
 from __future__ import annotations
@@ -14,10 +14,19 @@ from typing import Literal, Protocol, Self, runtime_checkable
 from pydantic import Field, field_validator, model_validator
 
 from contracts.canonical import canonical_sha256
+from contracts.capability_composition import (
+    CapabilityCompositionPlanV1,
+    CompositionValidationResultV1,
+)
 from contracts.models import ContractModel, OpaqueId, RequestId, RunId, Sha256
+from contracts.policy import ActionRegistrySnapshot
+from contracts.verification import RegistrySnapshot
 from total_gateway.composition_activation_shadow import (
+    CompositionShadowActivationError,
     ShadowCompositionActivationProposalV1,
+    SystemVerificationBindingV1,
     activation_has_valid_sha256,
+    propose_shadow_composition_activation,
 )
 
 
@@ -51,6 +60,8 @@ class LimitedCompositionActivationRegistrationV1(ContractModel):
     )
     registration_id: OpaqueId
     activation_mode: Literal["LIMITED_PRODUCTION"] = "LIMITED_PRODUCTION"
+    shadow_proposal_sha256: Sha256
+    differential_trace_sha256: Sha256
     composition_activation_id: OpaqueId
     composition_activation_sha256: Sha256
     composition_plan_id: OpaqueId
@@ -99,36 +110,68 @@ class LimitedCompositionActivationRegistrationV1(ContractModel):
         return self
 
     def payload(self) -> dict[str, object]:
+        """The complete immutable row payload, including first-write time."""
+
         return self.model_dump(
             mode="json",
             exclude={"registration_id", "registration_sha256"},
         )
 
+    def authority_payload(self) -> dict[str, object]:
+        """Stable authority content used to reconcile retries and write races.
+
+        ``registered_at_ms`` is observation metadata chosen by the first
+        successful Gateway Store write.  It must be covered by the row hash, but
+        it must not create a second logical registration when a retry arrives at
+        a later wall-clock time.
+        """
+
+        return self.model_dump(
+            mode="json",
+            exclude={
+                "registration_id",
+                "registration_sha256",
+                "registered_at_ms",
+            },
+        )
+
     def computed_registration_sha256(self) -> str:
         return canonical_sha256(self.payload())
 
-    def has_valid_identity(self) -> bool:
-        if self.registration_sha256 != self.computed_registration_sha256():
-            return False
-        return self.registration_id == "car_" + canonical_sha256(
+    def computed_registration_id(self) -> str:
+        # One logical registration per system-derived activation identity.  A
+        # reused activation id with different authority content therefore maps
+        # to the same key and is rejected as a collision instead of creating a
+        # second record under a timestamp-dependent hash.
+        return "car_" + canonical_sha256(
             {
                 "domain": self.schema_version,
-                "registration_sha256": self.registration_sha256,
+                "composition_activation_id": self.composition_activation_id,
+                "request_id": self.request_id,
+                "run_id": self.run_id,
+                "generation": self.generation,
             }
         )
 
+    def has_valid_identity(self) -> bool:
+        return (
+            self.registration_sha256 == self.computed_registration_sha256()
+            and self.registration_id == self.computed_registration_id()
+        )
+
+    def has_same_authority(
+        self, other: "LimitedCompositionActivationRegistrationV1"
+    ) -> bool:
+        return (
+            self.registration_id == other.registration_id
+            and self.authority_payload() == other.authority_payload()
+        )
+
     def with_computed_identity(self) -> "LimitedCompositionActivationRegistrationV1":
-        digest = self.computed_registration_sha256()
         return self.model_copy(
             update={
-                "registration_sha256": digest,
-                "registration_id": "car_"
-                + canonical_sha256(
-                    {
-                        "domain": self.schema_version,
-                        "registration_sha256": digest,
-                    }
-                ),
+                "registration_id": self.computed_registration_id(),
+                "registration_sha256": self.computed_registration_sha256(),
             }
         )
 
@@ -209,17 +252,73 @@ class ExistingGatewayActivationRegistrationPort(Protocol):
     ) -> bool: ...
 
 
+def _rebuild_authoritative_shadow(
+    proposal: ShadowCompositionActivationProposalV1,
+    *,
+    plan: CapabilityCompositionPlanV1,
+    validation: CompositionValidationResultV1,
+    action_registry: ActionRegistrySnapshot,
+    verification_registry: RegistrySnapshot,
+    verification_bindings: tuple[SystemVerificationBindingV1, ...],
+    current_world_state_sha256: str,
+    expected_principal_scope_hash: str,
+) -> ShadowCompositionActivationProposalV1:
+    """Re-run P7A from its authorities and require byte-equivalent output."""
+
+    try:
+        rebuilt = propose_shadow_composition_activation(
+            plan,
+            validation,
+            action_registry,
+            verification_registry,
+            verification_bindings,
+            current_world_state_sha256=current_world_state_sha256,
+            expected_principal_scope_hash=expected_principal_scope_hash,
+            issued_at_ms=proposal.activation_contract.issued_at_ms,
+            expires_at_ms=proposal.activation_contract.expires_at_ms,
+            legacy_allowed_action_ids=(
+                proposal.differential_trace.legacy_allowed_action_ids
+            ),
+        )
+    except CompositionShadowActivationError as exc:
+        raise LimitedActivationRegistrationError(
+            "limited_registration.authoritative_rebuild_failed", exc.code
+        ) from exc
+    if rebuilt != proposal:
+        raise LimitedActivationRegistrationError(
+            "limited_registration.shadow_rebuild_mismatch"
+        )
+    return rebuilt
+
+
 def compile_limited_activation_registration(
     proposal: ShadowCompositionActivationProposalV1,
     *,
+    plan: CapabilityCompositionPlanV1,
+    validation: CompositionValidationResultV1,
+    action_registry: ActionRegistrySnapshot,
+    verification_registry: RegistrySnapshot,
+    verification_bindings: tuple[SystemVerificationBindingV1, ...],
+    current_world_state_sha256: str,
+    expected_principal_scope_hash: str,
     registered_at_ms: int,
 ) -> LimitedCompositionActivationRegistrationV1:
-    """Seal a P7A proposal into non-executing limited-production eligibility."""
+    """Seal an authoritatively rebuilt P7A proposal into eligibility state."""
 
     if not proposal.has_valid_sha256():
         raise LimitedActivationRegistrationError(
             "limited_registration.proposal.hash_invalid"
         )
+    proposal = _rebuild_authoritative_shadow(
+        proposal,
+        plan=plan,
+        validation=validation,
+        action_registry=action_registry,
+        verification_registry=verification_registry,
+        verification_bindings=verification_bindings,
+        current_world_state_sha256=current_world_state_sha256,
+        expected_principal_scope_hash=expected_principal_scope_hash,
+    )
     if (
         not proposal.proposed_only
         or proposal.persistence_allowed
@@ -282,16 +381,11 @@ def compile_limited_activation_registration(
         raise LimitedActivationRegistrationError(
             "limited_registration.binding_mismatch"
         )
-    if proposal.validation_mode not in {
-        "PROVED_VALID",
-        "PROVISIONAL_UNKNOWN",
-    }:
-        raise LimitedActivationRegistrationError(
-            "limited_registration.validation_mode.invalid"
-        )
 
     value = LimitedCompositionActivationRegistrationV1(
         registration_id="car_" + "0" * 64,
+        shadow_proposal_sha256=proposal.proposal_sha256,
+        differential_trace_sha256=trace.trace_sha256,
         composition_activation_id=activation.composition_activation_id,
         composition_activation_sha256=activation.activation_sha256,
         composition_plan_id=activation.composition_plan_id,
@@ -336,49 +430,69 @@ class LimitedCompositionActivationRegistrar:
         self,
         proposal: ShadowCompositionActivationProposalV1,
         *,
+        plan: CapabilityCompositionPlanV1,
+        validation: CompositionValidationResultV1,
+        action_registry: ActionRegistrySnapshot,
+        verification_registry: RegistrySnapshot,
+        verification_bindings: tuple[SystemVerificationBindingV1, ...],
+        current_world_state_sha256: str,
+        expected_principal_scope_hash: str,
         recorded_at_ms: int,
     ) -> LimitedActivationRegistrationReceiptV1:
-        registration = compile_limited_activation_registration(
-            proposal, registered_at_ms=recorded_at_ms
+        candidate = compile_limited_activation_registration(
+            proposal,
+            plan=plan,
+            validation=validation,
+            action_registry=action_registry,
+            verification_registry=verification_registry,
+            verification_bindings=verification_bindings,
+            current_world_state_sha256=current_world_state_sha256,
+            expected_principal_scope_hash=expected_principal_scope_hash,
+            registered_at_ms=recorded_at_ms,
         )
+        persisted = candidate
         existing = self._writer.get_limited_activation_registration(
-            registration.registration_id
+            candidate.registration_id
         )
         idempotent = False
         if existing is not None:
-            if not existing.has_valid_identity() or existing != registration:
+            if not existing.has_valid_identity() or not existing.has_same_authority(
+                candidate
+            ):
                 raise LimitedActivationRegistrationError(
                     "limited_registration.identity_collision"
                 )
+            persisted = existing
             idempotent = True
         else:
             inserted = self._writer.put_limited_activation_registration(
-                registration,
+                candidate,
                 expected_absent=True,
                 recorded_at_ms=recorded_at_ms,
             )
             if not inserted:
                 raced = self._writer.get_limited_activation_registration(
-                    registration.registration_id
+                    candidate.registration_id
                 )
                 if (
                     raced is None
                     or not raced.has_valid_identity()
-                    or raced != registration
+                    or not raced.has_same_authority(candidate)
                 ):
                     raise LimitedActivationRegistrationError(
                         "limited_registration.write_conflict"
                     )
+                persisted = raced
                 idempotent = True
 
         receipt = LimitedActivationRegistrationReceiptV1(
             receipt_id="carr_" + "0" * 64,
-            registration_id=registration.registration_id,
-            registration_sha256=registration.registration_sha256,
-            composition_activation_id=registration.composition_activation_id,
-            request_id=registration.request_id,
-            run_id=registration.run_id,
-            generation=registration.generation,
+            registration_id=persisted.registration_id,
+            registration_sha256=persisted.registration_sha256,
+            composition_activation_id=persisted.composition_activation_id,
+            request_id=persisted.request_id,
+            run_id=persisted.run_id,
+            generation=persisted.generation,
             idempotent_replay=idempotent,
             recorded_at_ms=recorded_at_ms,
             receipt_sha256="0" * 64,
