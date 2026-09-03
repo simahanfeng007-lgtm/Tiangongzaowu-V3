@@ -29,6 +29,25 @@ jobs:
           python-version: "3.12"
       - name: Install source dependencies
         run: python -m pip install -r requirements-source.lock
+      - name: Normalize capability-contract import seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/contracts/capability_composition.py")
+          text = path.read_text(encoding="utf-8")
+          old = "from .models import ActionId, ContractModel, OpaqueId, RequestId, RunId, Sha256"
+          new = """from .models import (
+              ActionId,
+              ContractModel,
+              OpaqueId,
+              RequestId,
+              RunId,
+              Sha256,
+          )"""
+          if text.count(old) != 1:
+              raise RuntimeError(f"expected one capability contract import seam, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
       - name: Apply deterministic P7B patch
         run: python scripts/p7b_apply.py
       - name: Synchronize generated-source mirrors
