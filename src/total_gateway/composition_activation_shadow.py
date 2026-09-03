@@ -1,33 +1,34 @@
 """P7A shadow-only composition activation adapter.
 
 The adapter validates a system-compiled composition plan against the current
-Action Registry and P19 verifier RegistrySnapshot, then emits a proposed
-activation contract, a proposed VerificationPlan, and a deterministic
-differential trace.  It never writes GatewayStateStore, issues a real Grant or
-Ticket, invokes Runtime, runs a verifier, records PASS, or changes Completion.
+principal, WorldState, Action Registry, and P19 verifier RegistrySnapshot. It
+emits proposed-only activation/verification records and a differential trace.
+It never writes GatewayStateStore, issues a real Grant or Ticket, invokes
+Runtime, runs a verifier, records PASS, or changes Completion.
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal, Self
+import re
+from typing import Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
-from contracts import (
-    AcceptancePredicate,
-    ActionRegistrySnapshot,
+from contracts.canonical import canonical_sha256
+from contracts.capability_composition import (
+    CapabilityCompositionPlanV1,
     CompositionActivationContractV1,
     CompositionValidationResultV1,
+    SourceRevisionRefV1,
+)
+from contracts.models import ContractModel, OpaqueId, RequestId, RunId, Sha256
+from contracts.policy import ActionRegistrySnapshot
+from contracts.verification import (
+    AcceptancePredicate,
     RegistrySnapshot,
     VerificationPlan,
     VerificationPlanEntryV2,
-    canonical_sha256,
 )
-from contracts.capability_composition import (
-    CapabilityCompositionPlanV1,
-    SourceRevisionRefV1,
-)
-from contracts.models import ContractModel, OpaqueId, Sha256
 from world_understanding.capability_composition import (
     plan_has_valid_sha256,
     validation_has_valid_sha256,
@@ -47,6 +48,7 @@ EvaluationPhase = Literal[
 ]
 AcceptedValidationMode = Literal["PROVED_VALID", "PROVISIONAL_UNKNOWN"]
 
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HIGH_RISK_SIDE_EFFECTS = frozenset(
     {
         "credential_read",
@@ -67,8 +69,17 @@ class CompositionShadowActivationError(ValueError):
 
 def _sorted_unique(values: tuple[str, ...]) -> tuple[str, ...]:
     if values != tuple(sorted(set(values))):
-        raise ValueError("set-like shadow activation fields must be sorted and unique")
+        raise ValueError(
+            "set-like shadow activation fields must be sorted and unique"
+        )
     return values
+
+
+def _require_sha256(value: str, field: str) -> None:
+    if _SHA256.fullmatch(value) is None:
+        raise CompositionShadowActivationError(
+            "shadow.identity.sha256_invalid", field
+        )
 
 
 def _source_sort_key(
@@ -95,14 +106,20 @@ def computed_activation_sha256(
 def activation_has_valid_sha256(
     activation: CompositionActivationContractV1,
 ) -> bool:
-    return activation.activation_sha256 == computed_activation_sha256(activation)
+    return activation.activation_sha256 == computed_activation_sha256(
+        activation
+    )
 
 
 def computed_composition_source_manifest_sha256(
     plan: CapabilityCompositionPlanV1,
 ) -> str:
-    action_sources = tuple(sorted(plan.action_source_refs, key=_source_sort_key))
-    method_sources = tuple(sorted(plan.method_source_refs, key=_source_sort_key))
+    action_sources = tuple(
+        sorted(plan.action_source_refs, key=_source_sort_key)
+    )
+    method_sources = tuple(
+        sorted(plan.method_source_refs, key=_source_sort_key)
+    )
     return canonical_sha256(
         {
             "domain": "tiangong.capability-composition.source-manifest.v1",
@@ -130,14 +147,18 @@ class SystemVerificationBindingV1(ContractModel):
     evaluation_phase: EvaluationPhase
     required: Literal[True] = True
     registry_snapshot_sha256: Sha256
-    producer_component_id: Literal["tiangong-gateway"] = "tiangong-gateway"
+    producer_component_id: Literal["tiangong-gateway"] = (
+        "tiangong-gateway"
+    )
     model_generated: Literal[False] = False
     binding_sha256: Sha256
 
     @model_validator(mode="after")
     def validate_binding(self) -> Self:
         if not self.predicate.has_valid_identity():
-            raise ValueError("verification binding predicate identity is invalid")
+            raise ValueError(
+                "verification binding predicate identity is invalid"
+            )
         return self
 
     def computed_sha256(self) -> str:
@@ -149,15 +170,17 @@ class SystemVerificationBindingV1(ContractModel):
         return self.binding_sha256 == self.computed_sha256()
 
     def with_computed_sha256(self) -> "SystemVerificationBindingV1":
-        return self.model_copy(update={"binding_sha256": self.computed_sha256()})
+        return self.model_copy(
+            update={"binding_sha256": self.computed_sha256()}
+        )
 
 
 class ShadowActivationDifferentialTraceV1(ContractModel):
     schema_version: Literal[
         "tiangong.composition-shadow-activation-trace.v1"
     ] = "tiangong.composition-shadow-activation-trace.v1"
-    request_id: OpaqueId
-    run_id: OpaqueId
+    request_id: RequestId
+    run_id: RunId
     generation: int = Field(ge=0)
     composition_plan_id: OpaqueId
     composition_plan_sha256: Sha256
@@ -170,11 +193,11 @@ class ShadowActivationDifferentialTraceV1(ContractModel):
     legacy_allowed_action_ids: tuple[OpaqueId, ...] = ()
     added_vs_legacy: tuple[OpaqueId, ...] = ()
     removed_vs_legacy: tuple[OpaqueId, ...] = ()
-    exact_action_set: bool
-    registry_subset: bool
-    source_manifest_exact: bool
-    action_versions_exact: bool
-    verification_bindings_complete: bool
+    exact_action_set: Literal[True] = True
+    registry_subset: Literal[True] = True
+    source_manifest_exact: Literal[True] = True
+    action_versions_exact: Literal[True] = True
+    verification_bindings_complete: Literal[True] = True
     limited_production_eligible: bool
     limited_rejection_codes: tuple[OpaqueId, ...] = ()
     proposed_only: Literal[True] = True
@@ -192,6 +215,23 @@ class ShadowActivationDifferentialTraceV1(ContractModel):
         "limited_rejection_codes",
     )(_sorted_unique)
 
+    @model_validator(mode="after")
+    def validate_differential(self) -> Self:
+        planned = set(self.planned_action_ids)
+        proposed = set(self.proposed_allowed_action_ids)
+        legacy = set(self.legacy_allowed_action_ids)
+        if planned != proposed:
+            raise ValueError("shadow proposed action set differs from plan")
+        if set(self.added_vs_legacy) != proposed - legacy:
+            raise ValueError("shadow added Action differential is invalid")
+        if set(self.removed_vs_legacy) != legacy - proposed:
+            raise ValueError("shadow removed Action differential is invalid")
+        if self.limited_production_eligible != (
+            not self.limited_rejection_codes
+        ):
+            raise ValueError("limited eligibility disagrees with reasons")
+        return self
+
     def computed_sha256(self) -> str:
         return canonical_sha256(
             self.model_dump(mode="json", exclude={"trace_sha256"})
@@ -200,14 +240,20 @@ class ShadowActivationDifferentialTraceV1(ContractModel):
     def has_valid_sha256(self) -> bool:
         return self.trace_sha256 == self.computed_sha256()
 
-    def with_computed_sha256(self) -> "ShadowActivationDifferentialTraceV1":
-        return self.model_copy(update={"trace_sha256": self.computed_sha256()})
+    def with_computed_sha256(
+        self,
+    ) -> "ShadowActivationDifferentialTraceV1":
+        return self.model_copy(
+            update={"trace_sha256": self.computed_sha256()}
+        )
 
 
 class ShadowCompositionActivationProposalV1(ContractModel):
-    """Proposed-only P7A output. It is deliberately not a real gateway grant."""
+    """Proposed-only P7A output. It is deliberately not a gateway grant."""
 
-    schema_version: Literal[SHADOW_ACTIVATION_SCHEMA] = SHADOW_ACTIVATION_SCHEMA
+    schema_version: Literal[SHADOW_ACTIVATION_SCHEMA] = (
+        SHADOW_ACTIVATION_SCHEMA
+    )
     activation_contract: CompositionActivationContractV1
     verification_plan: VerificationPlan
     validation_mode: AcceptedValidationMode
@@ -235,8 +281,20 @@ class ShadowCompositionActivationProposalV1(ContractModel):
         if not trace.has_valid_sha256():
             raise ValueError("shadow differential trace hash is invalid")
         if (
-            activation.verification_plan_ref != verification.verification_plan_id
+            activation.request_id != verification.request_id
+            or activation.run_id != verification.run_id
+            or activation.generation != verification.generation
+            or activation.request_id != trace.request_id
+            or activation.run_id != trace.run_id
+            or activation.generation != trace.generation
+            or activation.composition_plan_id != trace.composition_plan_id
+            or activation.composition_plan_sha256
+            != trace.composition_plan_sha256
+            or activation.verification_plan_ref
+            != verification.verification_plan_id
             or verification.plan_sha256 != trace.verification_plan_sha256
+            or verification.registry_snapshot_sha256
+            != self.verification_registry_sha256
             or self.validation_sha256 != trace.validation_sha256
             or self.action_registry_sha256 != trace.action_registry_sha256
             or self.verification_registry_sha256
@@ -244,7 +302,9 @@ class ShadowCompositionActivationProposalV1(ContractModel):
             or activation.allowed_action_ids
             != trace.proposed_allowed_action_ids
         ):
-            raise ValueError("shadow activation output bindings are inconsistent")
+            raise ValueError(
+                "shadow activation output bindings are inconsistent"
+            )
         return self
 
     def computed_sha256(self) -> str:
@@ -255,8 +315,12 @@ class ShadowCompositionActivationProposalV1(ContractModel):
     def has_valid_sha256(self) -> bool:
         return self.proposal_sha256 == self.computed_sha256()
 
-    def with_computed_sha256(self) -> "ShadowCompositionActivationProposalV1":
-        return self.model_copy(update={"proposal_sha256": self.computed_sha256()})
+    def with_computed_sha256(
+        self,
+    ) -> "ShadowCompositionActivationProposalV1":
+        return self.model_copy(
+            update={"proposal_sha256": self.computed_sha256()}
+        )
 
 
 def build_system_verification_binding(
@@ -281,7 +345,8 @@ def build_system_verification_binding(
         if descriptor.has_valid_descriptor_sha256()
         and descriptor.layer == "L0_DETERMINISTIC"
         and descriptor.deterministic
-        and predicate.predicate_type in descriptor.supported_predicate_types
+        and predicate.predicate_type
+        in descriptor.supported_predicate_types
         and predicate.subject_kind in descriptor.supported_subject_kinds
     )
     if len(eligible) != 1:
@@ -327,7 +392,9 @@ def _validate_plan_and_registry(
             "shadow.source_manifest.hash_invalid"
         )
 
-    planned_actions = tuple(sorted(set(step.action_id for step in plan.steps)))
+    planned_actions = tuple(
+        sorted(set(step.action_id for step in plan.steps))
+    )
     if (
         plan.permission_requirements
         != tuple(sorted(set(plan.permission_requirements)))
@@ -473,8 +540,12 @@ def _compile_verification_plan(
             entry_sha256="0" * 64,
         ).with_computed_sha256()
         entries.append(entry)
-    entries_tuple = tuple(sorted(entries, key=lambda item: item.plan_entry_id))
-    if len({entry.plan_entry_id for entry in entries_tuple}) != len(entries_tuple):
+    entries_tuple = tuple(
+        sorted(entries, key=lambda item: item.plan_entry_id)
+    )
+    if len({entry.plan_entry_id for entry in entries_tuple}) != len(
+        entries_tuple
+    ):
         raise CompositionShadowActivationError(
             "shadow.verification_entries.duplicate"
         )
@@ -534,15 +605,36 @@ def propose_shadow_composition_activation(
     verification_registry: RegistrySnapshot,
     verification_bindings: tuple[SystemVerificationBindingV1, ...],
     *,
+    current_world_state_sha256: str,
+    expected_principal_scope_hash: str,
     issued_at_ms: int,
     expires_at_ms: int,
     legacy_allowed_action_ids: tuple[str, ...] = (),
 ) -> ShadowCompositionActivationProposalV1:
     """Create a fully checked proposal without persistence or authority."""
 
+    _require_sha256(current_world_state_sha256, "current WorldState")
+    _require_sha256(expected_principal_scope_hash, "principal scope")
+    if plan.world_state_sha256 != current_world_state_sha256:
+        raise CompositionShadowActivationError(
+            "shadow.world_state.mismatch"
+        )
+    if plan.principal_scope_hash != expected_principal_scope_hash:
+        raise CompositionShadowActivationError(
+            "shadow.principal_scope.mismatch"
+        )
     if not 0 <= issued_at_ms < expires_at_ms <= issued_at_ms + 60_000:
         raise CompositionShadowActivationError(
             "shadow.activation.lifetime_invalid"
+        )
+    validation_mode = _validate_validation(plan, validation)
+    if issued_at_ms < max(
+        plan.created_at_ms,
+        validation.validated_at_ms,
+        verification_registry.captured_at_ms,
+    ):
+        raise CompositionShadowActivationError(
+            "shadow.activation.time_inverted"
         )
     if legacy_allowed_action_ids != tuple(
         sorted(set(legacy_allowed_action_ids))
@@ -550,7 +642,6 @@ def propose_shadow_composition_activation(
         raise CompositionShadowActivationError(
             "shadow.legacy_action_set.invalid"
         )
-    validation_mode = _validate_validation(plan, validation)
     planned_actions, versions = _validate_plan_and_registry(
         plan, action_registry
     )
@@ -573,6 +664,8 @@ def propose_shadow_composition_activation(
                 verification_registry.snapshot_sha256
             ),
             "verification_plan_sha256": verification_plan.plan_sha256,
+            "current_world_state_sha256": current_world_state_sha256,
+            "expected_principal_scope_hash": expected_principal_scope_hash,
             "issued_at_ms": issued_at_ms,
             "expires_at_ms": expires_at_ms,
         }
@@ -596,7 +689,9 @@ def propose_shadow_composition_activation(
         activation_sha256="0" * 64,
     )
     activation = activation.model_copy(
-        update={"activation_sha256": computed_activation_sha256(activation)}
+        update={
+            "activation_sha256": computed_activation_sha256(activation)
+        }
     )
 
     legacy = set(legacy_allowed_action_ids)
@@ -609,18 +704,15 @@ def propose_shadow_composition_activation(
         composition_plan_sha256=plan.plan_sha256,
         validation_sha256=validation.validation_sha256,
         action_registry_sha256=action_registry.registry_sha256,
-        verification_registry_sha256=verification_registry.snapshot_sha256,
+        verification_registry_sha256=(
+            verification_registry.snapshot_sha256
+        ),
         verification_plan_sha256=verification_plan.plan_sha256,
         planned_action_ids=planned_actions,
         proposed_allowed_action_ids=planned_actions,
         legacy_allowed_action_ids=legacy_allowed_action_ids,
         added_vs_legacy=tuple(sorted(proposed - legacy)),
         removed_vs_legacy=tuple(sorted(legacy - proposed)),
-        exact_action_set=True,
-        registry_subset=True,
-        source_manifest_exact=True,
-        action_versions_exact=True,
-        verification_bindings_complete=True,
         limited_production_eligible=limited_eligible,
         limited_rejection_codes=limited_reasons,
         trace_sha256="0" * 64,
@@ -631,7 +723,9 @@ def propose_shadow_composition_activation(
         validation_mode=validation_mode,
         validation_sha256=validation.validation_sha256,
         action_registry_sha256=action_registry.registry_sha256,
-        verification_registry_sha256=verification_registry.snapshot_sha256,
+        verification_registry_sha256=(
+            verification_registry.snapshot_sha256
+        ),
         differential_trace=trace,
         proposal_sha256="0" * 64,
     )
