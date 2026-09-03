@@ -1,0 +1,66 @@
+P19-R2 VERIFICATION PLANE 1.1 — P7B.2 COMPATIBILITY REVISION
+======================================================================
+
+性质
+----------------------------------------------------------------------
+
+本版本是 P7B.2 对既有 P19 Verification Plane 的显式兼容修订。
+
+它只增加：
+
+1. GatewayStateStore schema v29 → v30；
+2. 一个与现有 VerificationPlan / VerificationPlanActivation 强绑定的
+   composition_activation_registration 持久化表；
+3. P7B.1 A0-only limited-production eligibility registration 的原子 UoW、
+   重启恢复、过期回收与完整性扫描；
+4. 对新增组合激活登记权威文件的冻结清单覆盖。
+
+它不改变：
+
+- verifier PASS / FAIL / INCONCLUSIVE 语义；
+- VerificationRecord 结构与记录规则；
+- VerificationReadiness 推导；
+- Artifact / Effect / Repository Oracle；
+- Evidence-driven Repair Policy；
+- CompletionGate；
+- P19 对完成声明的最终验证权。
+
+版本与权威
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.1"
+唯一机器可读来源：
+
+    src/total_gateway/verification_plane.py
+
+Gateway Store schema：30。
+
+P7B.2 组合登记仍然只是 eligibility evidence：
+
+    eligibility_only=true
+    authorizes=false
+    confirms=false
+    changes_risk=false
+    may_execute=false
+
+P19 RegistrySnapshot、VerificationPlan 和 VerificationPlanActivation 必须与组合登记
+在同一个既有 GatewayStateStore UoW 中原子落盘。任何一步失败，整组事务回滚。
+
+冻结
+----------------------------------------------------------------------
+
+Freeze manifest：
+
+    docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+
+本次修订显式更新版本、主干基线、Store schema 和 authority surface hashes。
+禁止在不推进 VERIFICATION_PLANE_VERSION 的情况下静默修改该权威面。
+
+后续边界
+----------------------------------------------------------------------
+
+P7C 只能读取 ACTIVE、未过期、仍绑定当前 Request/Run/Generation 的登记，然后继续
+调用既有 Policy → ExecutionTicket → CapabilityGrant 权威链。
+
+P7B.2 不签发 PolicyDecision、ExecutionTicket 或 Grant，不调用 Runtime，不生成
+VerificationRecord/PASS，不改变 Readiness，也不形成 CompletionDecision。
