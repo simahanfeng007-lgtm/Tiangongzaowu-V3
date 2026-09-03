@@ -137,6 +137,12 @@ The freeze manifest is regenerated explicitly. P19 PASS semantics, verifier
 implementations, readiness derivation, repair policy and CompletionGate are not
 changed.
 
+Historical migration fixtures are also advanced explicitly. A current v30 test
+database first removes the additive composition-registration table and its
+migration record, returns to exact v29, and then follows the existing historical
+downgrade chain. Current-schema assertions now require v30; no older fixture is
+silently redefined.
+
 ## Authority boundary after P7B.2
 
 A durable registration remains:
