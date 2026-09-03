@@ -37,6 +37,15 @@ LIMITED_ACTIVATION_RECEIPT_SCHEMA = (
     "tiangong.composition-limited-activation-registration-receipt.v1"
 )
 EXISTING_GATEWAY_STATE_STORE_AUTHORITY = "EXISTING_GATEWAY_STATE_STORE"
+_FIRST_BATCH_FORBIDDEN_SIDE_EFFECTS = frozenset(
+    {
+        "credential_read",
+        "destructive",
+        "external_send",
+        "external_write",
+        "irreversible",
+    }
+)
 
 
 class LimitedActivationRegistrationError(ValueError):
@@ -53,7 +62,7 @@ def _sorted_unique(values: tuple[str, ...]) -> tuple[str, ...]:
 
 
 class LimitedCompositionActivationRegistrationV1(ContractModel):
-    """Durable eligibility registration for the first A0/A1 production batch."""
+    """Durable eligibility registration for the first A0-only production batch."""
 
     schema_version: Literal[LIMITED_ACTIVATION_REGISTRATION_SCHEMA] = (
         LIMITED_ACTIVATION_REGISTRATION_SCHEMA
@@ -291,6 +300,52 @@ def _rebuild_authoritative_shadow(
     return rebuilt
 
 
+def _enforce_first_batch_a0(
+    *,
+    plan: CapabilityCompositionPlanV1,
+    action_registry: ActionRegistrySnapshot,
+) -> None:
+    """Apply the operational first-batch ceiling independently from P7A.
+
+    P7A shadow telemetry may describe future A1 eligibility.  P7B.1 is the
+    production registration boundary, so it enforces the current rollout
+    setting itself: composition risk A0, every current permission A0, and only
+    read/verify effects with no privileged side-effect family.
+    """
+
+    reasons: set[str] = set()
+    if plan.risk_floor != "A0":
+        reasons.add("plan_risk_floor_not_a0")
+    if plan.composition_risk != "A0":
+        reasons.add("composition_risk_not_a0")
+    permission_by_action = {
+        permission.action_id: permission
+        for permission in action_registry.permissions
+    }
+    for action_id in plan.permission_requirements:
+        permission = permission_by_action.get(action_id)
+        if permission is None:
+            reasons.add(f"action_missing:{action_id}")
+            continue
+        if permission.effective_risk != "A0":
+            reasons.add(f"action_risk_not_a0:{action_id}")
+        if permission.effect not in {"read", "verify"}:
+            reasons.add(f"effect_not_read_verify:{action_id}")
+        if permission.allow_shell:
+            reasons.add(f"shell_forbidden:{action_id}")
+        if permission.allow_python:
+            reasons.add(f"python_forbidden:{action_id}")
+        if set(permission.allowed_side_effects) & (
+            _FIRST_BATCH_FORBIDDEN_SIDE_EFFECTS
+        ):
+            reasons.add(f"forbidden_side_effect:{action_id}")
+    if reasons:
+        raise LimitedActivationRegistrationError(
+            "limited_registration.first_batch_a0_only",
+            ",".join(sorted(reasons)),
+        )
+
+
 def compile_limited_activation_registration(
     proposal: ShadowCompositionActivationProposalV1,
     *,
@@ -350,6 +405,7 @@ def compile_limited_activation_registration(
         raise LimitedActivationRegistrationError(
             "limited_registration.not_eligible"
         )
+    _enforce_first_batch_a0(plan=plan, action_registry=action_registry)
     if not all(
         (
             trace.exact_action_set,
