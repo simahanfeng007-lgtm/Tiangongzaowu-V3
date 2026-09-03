@@ -16,7 +16,7 @@ The chain is:
 `P7A ShadowCompositionActivationProposalV1`
 → rebuild P7A from authoritative Plan / Validation / registries / current scope
 → exact equality with the submitted shadow object
-→ limited-eligibility revalidation
+→ independently enforce the first-batch A0 ceiling
 → `LimitedCompositionActivationRegistrationV1`
 → existing Gateway State Store single-writer port
 → content-addressed registration receipt.
@@ -42,6 +42,30 @@ recomputes public hashes is rejected with
 `limited_registration.shadow_rebuild_mismatch` or
 `limited_registration.authoritative_rebuild_failed`.
 
+## First-batch ceiling
+
+The rollout master fixes the initial Limited batch at **A0 only**. P7B.1 applies
+that ceiling independently from P7A shadow telemetry. A P7A trace may represent
+an A1 candidate for a future second batch, but it is not registrable now.
+
+Every first-batch registration therefore requires:
+
+- `plan.risk_floor = A0`;
+- `plan.composition_risk = A0`;
+- every current `ActionPermission.effective_risk = A0`;
+- effect is `read` or `verify`;
+- no Shell or Python;
+- no credential read;
+- no destructive or irreversible effect;
+- no external write or external send;
+- complete deterministic P19 verification bindings.
+
+Any A1 or higher plan is rejected with
+`limited_registration.first_batch_a0_only` unless it was already rejected by a
+stricter P7A eligibility rule. A1 admission belongs to the second rollout batch
+and requires a separate audited promotion; it cannot be enabled by model input,
+Context, or a rehashed proposal.
+
 ## Admission rules
 
 Registration is accepted only when all of the following remain true at the
@@ -55,6 +79,7 @@ write boundary:
 - differential trace hash is valid;
 - `limited_production_eligible = true`;
 - no limited-production rejection code exists;
+- the independent A0 first-batch ceiling passes;
 - exact action set is proved;
 - every action is a current Action Registry member;
 - source manifest is exact;
@@ -63,16 +88,6 @@ write boundary:
 - registration time is inside the activation lifetime;
 - activation, VerificationPlan, trace and registries agree on request, run,
   generation, Plan, allowed Actions and hashes.
-
-The first limited-production batch therefore remains the P7A subset:
-
-- A0/A1 only;
-- read/verify effects only;
-- no Shell or Python;
-- no credential access;
-- no destructive/irreversible side effects;
-- no external write or external send;
-- complete deterministic P19 verification bindings.
 
 ## Registration identity and row integrity
 
@@ -145,6 +160,7 @@ transactional write-race enforcement.
 ## Gate before P7B.2
 
 - focused P7B.1 tests pass;
+- A1 shadow eligibility is explicitly rejected by the first-batch boundary;
 - rehashed WorldState/principal/Plan/registry/verifier forgeries fail closed;
 - invalid, expired, ineligible and cross-request bindings fail closed;
 - first write occurs exactly once;
