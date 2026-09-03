@@ -152,6 +152,16 @@ class MigrationTests(unittest.TestCase):
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
         connection.execute(
+            "DROP INDEX IF EXISTS composition_activation_registration_expiry_idx"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_activation_registration_lineage_idx"
+        )
+        connection.execute(
+            "DROP TABLE IF EXISTS composition_activation_registration"
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE version = 30")
+        connection.execute(
             "DROP INDEX IF EXISTS repair_execution_binding_attempt_idx"
         )
         connection.execute("DROP TABLE IF EXISTS repair_execution_binding")
@@ -188,18 +198,18 @@ class MigrationTests(unittest.TestCase):
     def test_fresh_db_opens_at_v23(self) -> None:  # checklist 2
         store = GatewayStateStore.open(self.path, now_ms=900)
         try:
-            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 29)
+            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 30)
         finally:
             store.close()
 
     def test_v22_upgrade_lossless_and_reopen_idempotent(self) -> None:  # 1/3/5
         self._strip_to_v22()
-        # Upgrade path: opening with the current binary migrates 22 -> 23.
+        # Upgrade path: opening with the current binary migrates 22 -> 30.
         upgraded = GatewayStateStore.open(self.path, now_ms=950)
         try:
             health = upgraded.health_check(full=True, now_ms=960)
             self.assertTrue(health.healthy)
-            self.assertEqual(health.schema_version, 29)
+            self.assertEqual(health.schema_version, 30)
         finally:
             upgraded.close()
         reopened = GatewayStateStore.open(self.path, now_ms=1_000)
