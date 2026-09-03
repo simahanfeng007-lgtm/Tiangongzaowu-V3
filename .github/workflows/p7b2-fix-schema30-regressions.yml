@@ -1,0 +1,70 @@
+name: P7B.2 fix schema v30 regressions
+
+on:
+  push:
+    branches:
+      - agent/capability-composition-p7b2-gateway-store-registration-v1
+    paths:
+      - scripts/p7b2_fix_schema30_regressions.py
+      - .github/workflows/p7b2-fix-schema30-regressions.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p7b2-fix-schema30-regressions
+  cancel-in-progress: false
+
+jobs:
+  patch-test-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout P7B.2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/capability-composition-p7b2-gateway-store-registration-v1
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Apply schema-v30 compatibility patch
+        run: python scripts/p7b2_fix_schema30_regressions.py
+
+      - name: Install source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+
+      - name: Compile changed source and tests
+        run: >-
+          python -m compileall -q
+          src/total_gateway
+          tests/gateway_store_migration_support.py
+          tests/test_p19_m1_store.py
+          tests/test_p19_m3_write_evidence_v2.py
+          tests/test_composition_activation_store_p7b2.py
+
+      - name: Run failing P19 compatibility regressions
+        run: >-
+          python -m pytest -q
+          tests/test_p19_m1_store.py
+          tests/test_p19_m3_write_evidence_v2.py
+          tests/test_composition_activation_store_p7b2.py
+          tests/golden/p19_r2/test_calibration_and_stability.py
+          tests/golden/p19_r2/test_freeze_and_guards.py
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm -f scripts/p7b2_fix_schema30_regressions.py
+          rm -f .github/workflows/p7b2-fix-schema30-regressions.yml
+
+      - name: Commit verified compatibility fixtures
+        run: |
+          git config user.name "tiangong-p7b2-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test(p7b2): update P19 migration fixtures for schema v30"
+          git push origin HEAD:agent/capability-composition-p7b2-gateway-store-registration-v1
