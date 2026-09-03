@@ -165,3 +165,17 @@ may_execute=false
 P7C may consume only an `ACTIVE`, non-expired, current-generation registration
 and must still pass through the existing Policy → ExecutionTicket →
 CapabilityGrant chain. Runtime execution remains outside P7B.2.
+
+## Final closure evidence
+
+Final production head closes the direct-Store write bypass by retaining only a
+transaction-local registration port and a token-guarded private Store sink. The
+rollback regression injects failure at that private sink and proves that the P19
+RegistrySnapshot, VerificationPlan, VerificationPlanActivation and composition
+registration still roll back as one existing-Store UoW.
+
+The closure run completed generated-source synchronization and exact mirror
+checking, compiled the authoritative and generated Gateway surfaces, and passed
+68 focused P7B.1/P7B.2/P19 tests. All one-shot repair scripts and workflows were
+removed before the final branch commit; none is part of the P7B.2 production
+diff.
