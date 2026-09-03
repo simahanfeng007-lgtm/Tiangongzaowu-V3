@@ -1,0 +1,62 @@
+name: P7C audit source export
+
+on:
+  push:
+    branches:
+      - agent/capability-composition-p7c-local-audit-export
+    paths:
+      - .github/workflows/p7c-audit-source-export.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/capability-composition-p7c-local-audit-export
+          fetch-depth: 1
+
+      - name: Build bounded source snapshot
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          root = Path.cwd()
+          include_roots = (
+              root / 'src',
+              root / 'tests',
+              root / 'docs' / 'capability-composition',
+              root / 'docs' / 'p19-r2' / 'm6',
+          )
+          exact = (
+              root / 'source-ownership.json',
+              root / 'requirements-source.lock',
+              root / 'pyproject.toml',
+          )
+          out = root / 'p7c-audit-source.zip'
+          with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+              for base in include_roots:
+                  if not base.exists():
+                      continue
+                  for path in sorted(base.rglob('*')):
+                      if path.is_file() and '__pycache__' not in path.parts:
+                          zf.write(path, path.relative_to(root).as_posix())
+              for path in exact:
+                  if path.is_file():
+                      zf.write(path, path.relative_to(root).as_posix())
+          print(out.stat().st_size)
+          PY
+
+      - name: Upload audit snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7c-audit-source
+          path: p7c-audit-source.zip
+          if-no-files-found: error
+          retention-days: 1
