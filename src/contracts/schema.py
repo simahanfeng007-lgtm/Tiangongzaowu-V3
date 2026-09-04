@@ -50,7 +50,13 @@ from .agency import (
     ReflectionCard,
     ReflectionQuestionDecision,
 )
-from .execution import CapabilityManifest, ExecutionResult, ExecutionTicket, FactRecord
+from .execution import (
+    CapabilityManifest,
+    CompositionExecutionBindingV1,
+    ExecutionResult,
+    ExecutionTicket,
+    FactRecord,
+)
 from .write_evidence import WriteEvidenceV2
 from .verification import (
     EntryAssessment,
@@ -168,6 +174,7 @@ CONTRACT_MODELS = (
     CausalNodeV3,
     ComponentManifest,
     ComponentReadinessEvidence,
+    CompositionExecutionBindingV1,
     ContextTokenBudget,
     DeliveryReceipt,
     DeliveryIdentity,

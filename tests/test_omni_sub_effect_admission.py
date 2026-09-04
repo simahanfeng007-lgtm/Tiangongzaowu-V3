@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 from contracts import canonical_sha256, derive_run_identity
 from runtime_security import EphemeralTestProtector
+from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.orchestration import GatewayOrchestrationWorker
 from total_gateway.store import (
     GatewayStateStore,
@@ -44,6 +45,11 @@ class OmniSubEffectAdmissionTests(unittest.TestCase):
             self.state_root / "gateway-state" / "gateway.sqlite3", now_ms=self.now_ms
         )
         self.addCleanup(self.store.close)
+        self.objects = ContentAddressedObjectStore.open(
+            self.state_root / "gateway-objects",
+            now_ms=self.now_ms,
+        )
+        self.addCleanup(self.objects.close)
         self._protector = EphemeralTestProtector()
         self.worker = self._new_worker()
         self.addCleanup(lambda: self.worker.close())
@@ -66,7 +72,7 @@ class OmniSubEffectAdmissionTests(unittest.TestCase):
             config=config,
             activator=SimpleNamespace(),
             store=self.store,
-            objects=SimpleNamespace(),
+            objects=self.objects,
             facts=SimpleNamespace(),
             gateway_epoch=71,
             gateway_instance_id="gateway-omni-admission",

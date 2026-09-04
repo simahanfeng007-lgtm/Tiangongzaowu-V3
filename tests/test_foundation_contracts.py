@@ -273,6 +273,7 @@ class SchemaBundleTests(unittest.TestCase):
                 "CircuitUpdate",
                 "ComponentManifest",
                 "ComponentReadinessEvidence",
+                "CompositionExecutionBindingV1",
                 "ContextTokenBudget",
                 "DeliveryIdentity",
                 "DeliveryReceipt",

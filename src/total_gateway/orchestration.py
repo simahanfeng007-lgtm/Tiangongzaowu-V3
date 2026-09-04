@@ -42,7 +42,8 @@ from contracts import (
 )
 
 from .active_requests import ActiveRequestActivator
-from .action_registry import load_action_registry
+from .action_registry import ActionSchemaCatalog
+from .composition_activation_adapter import CompositionActivationAdapter
 from .impact_evaluator import compute_action_impact, derive_impact_knobs, probe_target_state
 from .omni_grant_authority import OmniGrantAuthority
 from .policy_engine import PolicyEngine, SourceRef
@@ -355,6 +356,7 @@ class GatewayOrchestrationWorker:
         skill_selection: SkillSelectionService | None = None,
         skill_capabilities: CapabilityManifest | None = None,
         omni_registry: ActionRegistrySnapshot | None = None,
+        omni_schema_catalog: ActionSchemaCatalog | None = None,
         policy_evidence: PolicyEvidenceLedger | None = None,
         gateway_url: str = DEFAULT_GATEWAY_URL,
         poll_interval_seconds: float = 0.25,
@@ -411,7 +413,13 @@ class GatewayOrchestrationWorker:
                 now_ms=now_ms,
             ),
             effect_store=store,
+            action_schema_catalog=omni_schema_catalog,
+            object_store=objects,
+            capability_source_manifest_hash=omni_registry.source_manifest_sha256,
             gateway_url=self._gateway_url,
+        )
+        self._composition_activation_adapter = CompositionActivationAdapter(
+            self._omni_grants
         )
         self._context_projector = SessionContextProjector(store, objects)
         self._poll_seconds = poll_interval_seconds
@@ -535,6 +543,7 @@ class GatewayOrchestrationWorker:
         skill_selection = None
         skill_capabilities = None
         omni_registry = None
+        omni_schema_catalog = None
         skill_root = getattr(config, "skill_root", None)
         if skill_root is None and config.release_source_root is not None:
             skill_root = (
@@ -555,16 +564,19 @@ class GatewayOrchestrationWorker:
             )
             skill_selection = SkillSelectionService(loaded.catalog)
             capability_path = skill_root / "registry" / "capability_manifest.generated.json"
-            skill_capabilities = load_model_capability_manifest(
+            loaded_capabilities = load_model_capability_manifest(
                 capability_path,
                 expected_sha256=release.capability_manifest_sha256,
                 component_manifest_hash=release.component_manifest.manifest_sha256,
                 generated_at_ms=release.generated_at_ms,
-            ).manifest
-            omni_registry = load_action_registry(
-                capability_path.resolve(strict=True),
-                generated_at_ms=release.generated_at_ms,
             )
+            skill_capabilities = loaded_capabilities.manifest
+            # One verified file read owns both projections.  Re-reading here
+            # would leave a TOCTOU seam between the model-routing manifest and
+            # the registry/schema authority used for composition admission.
+            action_authority = loaded_capabilities.action_authority
+            omni_registry = action_authority.registry
+            omni_schema_catalog = action_authority.schema_catalog
         assert config.workspace_root is not None
         return cls(
             activator=activator,
@@ -591,6 +603,7 @@ class GatewayOrchestrationWorker:
             skill_selection=skill_selection,
             skill_capabilities=skill_capabilities,
             omni_registry=omni_registry,
+            omni_schema_catalog=omni_schema_catalog,
             # Keep the evidence root compact: content addresses are 64 hex
             # characters and must remain writable under deep Windows profiles.
             policy_evidence=PolicyEvidenceLedger(config.state_root / "p"),
@@ -660,6 +673,10 @@ class GatewayOrchestrationWorker:
     @property
     def omni_grant_authority(self) -> OmniGrantAuthority:
         return self._omni_grants
+
+    @property
+    def composition_activation_adapter(self) -> CompositionActivationAdapter:
+        return self._composition_activation_adapter
 
     # ------------------------------------------------------------------
     # D-14 澄清不是确认（最小集）

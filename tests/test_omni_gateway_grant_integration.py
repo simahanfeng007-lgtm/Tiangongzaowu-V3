@@ -5,12 +5,14 @@ import os
 import tempfile
 import time
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from runtime_security import EphemeralTestProtector
 from contracts import derive_run_identity
+from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.orchestration import GatewayOrchestrationWorker
 from total_gateway.omni_grant_authority import OmniGrantAuthorityError
 from total_gateway.store import GatewayStateStore
@@ -33,7 +35,7 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
     def test_gateway_issued_grant_and_inline_trust_verify_end_to_end(self) -> None:
         now_ms = time.time_ns() // 1_000_000
         source = ROOT
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as resources:
             state_root = Path(temporary).resolve()
             workspace_file = state_root / "sample.txt"
             workspace_file.write_text("trusted", encoding="utf-8")
@@ -51,16 +53,23 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
             # D-06 统一 admission：authority 必须接真实 effect 台账（机械适配：
             # SimpleNamespace → 真 store；合成 run_id → 派生 run_id）。
             store = GatewayStateStore.open(state_root / "gateway-state" / "gateway.sqlite3", now_ms=now_ms)
+            resources.callback(store.close)
+            objects = ContentAddressedObjectStore.open(
+                state_root / "gateway-objects",
+                now_ms=now_ms,
+            )
+            resources.callback(objects.close)
             worker = GatewayOrchestrationWorker.from_runtime_config(
                 config=config,
                 activator=SimpleNamespace(),
                 store=store,
-                objects=SimpleNamespace(),
+                objects=objects,
                 facts=SimpleNamespace(),
                 gateway_epoch=7,
                 gateway_instance_id="gateway-omni-integration",
                 now_ms=now_ms,
             )
+            resources.callback(worker.close)
             authority = worker.omni_grant_authority
             request_id = "req_" + "7" * 64
             outer = execution_ticket(
@@ -141,8 +150,6 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
             self.assertRegex(verified["grant_sha256"], r"^[0-9a-f]{64}$")
             self.assertFalse(verified["allow_shell"])
             authority.unregister(outer.payload.ticket_id)
-            worker.close()
-            store.close()
 
 
 if __name__ == "__main__":

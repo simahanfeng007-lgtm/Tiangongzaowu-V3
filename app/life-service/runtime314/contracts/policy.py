@@ -7,7 +7,12 @@ from typing import Literal, Self
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .canonical import canonical_sha256
-from .execution import Base64UrlEd25519Signature, RiskClass, SideEffectClass
+from .execution import (
+    Base64UrlEd25519Signature,
+    CompositionExecutionBindingV1,
+    RiskClass,
+    SideEffectClass,
+)
 from .models import (
     ActionId,
     ContractModel,
@@ -94,6 +99,10 @@ class ActionIntent(ContractModel):
     life_snapshot_sha256: Sha256 | None = None
     payload_sha256: Sha256 = _UNSET_SHA256
     attachment_set_sha256: Sha256 = _EMPTY_SET_SHA256
+    composition_execution_binding: CompositionExecutionBindingV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     created_at_ms: int = Field(ge=0)
     expires_at_ms: int = Field(ge=0)
     intent_sha256: Sha256
@@ -169,6 +178,26 @@ class ActionIntent(ContractModel):
             }
         ):
             raise ValueError("action intent canonical invocation digest is invalid")
+        binding = self.composition_execution_binding
+        if binding is not None:
+            if not binding.has_valid_sha256():
+                raise ValueError("action intent composition binding digest is invalid")
+            if (
+                binding.request_id != self.request_id
+                or binding.run_id != self.run_id
+                or binding.generation != self.generation
+                or binding.action_id != self.action_id
+                or binding.action_version != self.action_version
+                or binding.materialized_arguments_sha256 != self.payload_sha256
+                or binding.canonical_invocation_sha256
+                != self.canonical_invocation_sha256
+                or binding.target_snapshot_sha256 != self.target_snapshot_sha256
+                or binding.workspace_id != self.workspace_id
+                or binding.workspace_scope_hash != self.workspace_scope_hash
+            ):
+                raise ValueError(
+                    "action intent composition binding does not match intent scope"
+                )
         return self
 
     @property
@@ -385,6 +414,10 @@ class PolicyDecision(ContractModel):
     confirmation_sha256: Sha256 | None = None
     skill_activation_id: OpaqueId | None = None
     skill_activation_sha256: Sha256 | None = None
+    composition_execution_binding: CompositionExecutionBindingV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     reason_codes: tuple[str, ...] = Field(min_length=1, max_length=64)
     decided_at_ms: int = Field(ge=0)
     decision_sha256: Sha256
@@ -406,6 +439,11 @@ class PolicyDecision(ContractModel):
             raise ValueError("A0-A4 policy decisions cannot require confirmation")
         if self.confirmation_id is not None:
             raise ValueError("A0-A5 policy decisions do not consume confirmation grants")
+        if (
+            self.composition_execution_binding is not None
+            and not self.composition_execution_binding.has_valid_sha256()
+        ):
+            raise ValueError("policy composition binding digest is invalid")
         return self
 
     def computed_sha256(self) -> str:
@@ -465,6 +503,10 @@ class OmniCapabilityGrantPayload(ContractModel):
     skill_version: OpaqueId | None = None
     skill_sha256: Sha256 | None = None
     skill_activation_sha256: Sha256 | None = None
+    composition_execution_binding: CompositionExecutionBindingV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     gateway_epoch: int = Field(ge=1)
     nonce: OpaqueId
     issued_at_ms: int = Field(ge=0)
@@ -488,6 +530,23 @@ class OmniCapabilityGrantPayload(ContractModel):
             raise ValueError("capability grant Skill binding is incomplete")
         if (self.skill_id is None) != (self.skill_activation_sha256 is None):
             raise ValueError("capability grant Skill activation binding is incomplete")
+        binding = self.composition_execution_binding
+        if binding is not None:
+            if not binding.has_valid_sha256():
+                raise ValueError("capability composition binding digest is invalid")
+            if (
+                binding.request_id != self.request_id
+                or binding.run_id != self.run_id
+                or binding.generation != self.generation
+                or binding.effect_id != self.effect_id
+                or binding.action_id != self.action_id
+                or binding.action_version != self.action_version
+                or binding.workspace_id != self.workspace_id
+                or binding.workspace_scope_hash != self.workspace_scope_hash
+            ):
+                raise ValueError(
+                    "capability composition binding does not match grant scope"
+                )
         # Keep the signed path-location capability orthogonal to impact risk;
         # shell and Python elevation still require A4.  This mirrors
         # ActionPermission and permits user-selected files outside the active

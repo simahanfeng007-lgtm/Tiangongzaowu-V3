@@ -3,6 +3,6 @@
   "mapping_id": "omni-body-runtime",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "src/omni_body_skill",
-  "tree_sha256": "825c485d88dd541e593eb1532e6ee57c07f7a75f459a7a8cbd3dde0ee0d96d9d",
+  "tree_sha256": "5eda88cc5ef436b9cba31edd654f49f7c219a3735a3d9a48227df301c6616b18",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

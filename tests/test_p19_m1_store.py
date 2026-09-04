@@ -37,7 +37,10 @@ from total_gateway.store import (
     StoreMigrationError,
     StoreNotFoundError,
 )
-from gateway_store_migration_support import downgrade_v12_to_v11
+from gateway_store_migration_support import (
+    downgrade_v12_to_v11,
+    downgrade_v32_to_v31,
+)
 
 HASH_A = "a" * 64
 
@@ -152,6 +155,7 @@ class MigrationTests(unittest.TestCase):
         """
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
+        downgrade_v32_to_v31(connection)
         connection.execute(
             "DROP TRIGGER IF EXISTS "
             "composition_executable_plan_immutable_delete_guard"

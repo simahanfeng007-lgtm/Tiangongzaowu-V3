@@ -14,7 +14,12 @@ from typing import Protocol
 
 from .agency import ActionImpact
 from .canonical import canonical_sha256
-from .execution import CapabilityAction, CapabilityManifest, ExecutionTicket
+from .execution import (
+    CapabilityAction,
+    CapabilityManifest,
+    CompositionExecutionBindingV1,
+    ExecutionTicket,
+)
 from .life import LIFE_CONTRACT_SCHEMA_VERSION
 from .models import SCHEMA_VERSION
 from .policy import ActionIntent, OmniCapabilityGrant, PolicyDecision
@@ -60,6 +65,10 @@ def authorize_execution_contract(
     nonce_already_consumed: bool = False,
     expected_target_snapshot_sha256: str | None = None,
     actual_arguments_sha256: str | None = None,
+    expected_composition_binding: CompositionExecutionBindingV1 | None = None,
+    actual_materialized_arguments_sha256: str | None = None,
+    actual_target_sha256: str | None = None,
+    actual_target_snapshot_sha256: str | None = None,
 ) -> CapabilityAction:
     """Return the exact authorized action or fail closed with a stable reason code.
 
@@ -101,6 +110,81 @@ def authorize_execution_contract(
     # 4. capability manifest digest.
     if not manifest.has_valid_sha256():
         raise ExecutionAuthorizationError("capability_manifest.digest.invalid")
+    # 4a. A composition binding is never trusted merely because it is signed.
+    # The active-plan adapter must supply the independently re-read expected
+    # value, and every signed host must carry that exact value all-or-none.
+    grant_binding = (
+        grant.payload.composition_execution_binding if grant is not None else None
+    )
+    intent_binding = intent.composition_execution_binding if intent is not None else None
+    decision_binding = (
+        decision.composition_execution_binding if decision is not None else None
+    )
+    ticket_binding = payload.composition_execution_binding
+    composition_present = expected_composition_binding is not None or any(
+        item is not None
+        for item in (ticket_binding, grant_binding, intent_binding, decision_binding)
+    )
+    if composition_present:
+        if expected_composition_binding is None:
+            raise ExecutionAuthorizationError("ticket.composition_binding.untrusted")
+        if grant is None or intent is None or decision is None or any(
+            item is None
+            for item in (ticket_binding, grant_binding, intent_binding, decision_binding)
+        ):
+            raise ExecutionAuthorizationError("ticket.composition_binding.incomplete")
+        binding = expected_composition_binding
+        if (
+            not isinstance(binding, CompositionExecutionBindingV1)
+            or not binding.has_valid_sha256()
+            or ticket_binding != binding
+            or grant_binding != binding
+            or intent_binding != binding
+            or decision_binding != binding
+        ):
+            raise ExecutionAuthorizationError("ticket.composition_binding.mismatch")
+        if (
+            binding.request_id != payload.request_id
+            or binding.run_id != payload.run_id
+            or binding.generation != payload.generation
+            or binding.effect_id != payload.effect_id
+            or binding.action_id != payload.action_id
+            or binding.action_version != payload.action_version
+            or binding.canonical_invocation_sha256
+            != payload.canonical_invocation_sha256
+            or binding.workspace_id != payload.workspace_id
+            or binding.request_id != intent.request_id
+            or binding.run_id != intent.run_id
+            or binding.generation != intent.generation
+            or binding.action_id != intent.action_id
+            or binding.action_version != intent.action_version
+            or binding.materialized_arguments_sha256 != intent.payload_sha256
+            or binding.canonical_invocation_sha256
+            != intent.canonical_invocation_sha256
+            or binding.target_snapshot_sha256 != intent.target_snapshot_sha256
+            or binding.workspace_id != intent.workspace_id
+            or binding.workspace_scope_hash != intent.workspace_scope_hash
+            or grant.payload.request_id != binding.request_id
+            or grant.payload.run_id != binding.run_id
+            or grant.payload.generation != binding.generation
+            or grant.payload.effect_id != binding.effect_id
+            or grant.payload.action_id != binding.action_id
+            or grant.payload.action_version != binding.action_version
+            or grant.payload.arguments_sha256 != payload.arguments_hash
+            or grant.payload.workspace_id != binding.workspace_id
+            or grant.payload.workspace_scope_hash != binding.workspace_scope_hash
+        ):
+            raise ExecutionAuthorizationError("ticket.composition_binding.mismatch")
+        if actual_arguments_sha256 is None or actual_materialized_arguments_sha256 is None:
+            raise ExecutionAuthorizationError("ticket.composition_arguments.missing")
+        if actual_materialized_arguments_sha256 != binding.materialized_arguments_sha256:
+            raise ExecutionAuthorizationError("ticket.composition_arguments.mismatch")
+        if actual_target_sha256 is None:
+            raise ExecutionAuthorizationError("ticket.composition_target.missing")
+        if actual_target_sha256 != binding.target_sha256:
+            raise ExecutionAuthorizationError("ticket.composition_target.mismatch")
+        if actual_target_snapshot_sha256 != binding.target_snapshot_sha256:
+            raise ExecutionAuthorizationError("ticket.composition_target_snapshot.mismatch")
     # 5. exact grant -> ticket binding.
     if grant is not None:
         grant_payload = grant.payload
@@ -192,9 +276,14 @@ def authorize_execution_contract(
         ):
             raise ExecutionAuthorizationError("ticket.claim.lease_epoch.stale")
     # 17. optimistic target concurrency (create-type actions carry no target).
-    if intent is not None and intent.target_ref is not None and (
-        intent.target_snapshot_sha256 is None
-        or expected_target_snapshot_sha256 != intent.target_snapshot_sha256
+    if (
+        not composition_present
+        and intent is not None
+        and intent.target_ref is not None
+        and (
+            intent.target_snapshot_sha256 is None
+            or expected_target_snapshot_sha256 != intent.target_snapshot_sha256
+        )
     ):
         raise ExecutionAuthorizationError("ticket.target.version_mismatch")
 

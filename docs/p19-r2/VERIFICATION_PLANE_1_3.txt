@@ -1,0 +1,59 @@
+P19-R2 VERIFICATION PLANE 1.3 — P7C.1 COMPATIBILITY REVISION
+======================================================================
+
+性质
+----------------------------------------------------------------------
+
+本版本是 P7C.1 对既有 P19 Verification Plane 的显式兼容修订。
+
+它只增加：
+
+1. GatewayStateStore schema v31 → v32；
+2. 一个与 v31 executable composition plan 和现有
+   PolicyEngine → ExecutionTicket → CapabilityGrant 链精确绑定的
+   composition_step_authorization append-only receipt；
+3. 重启可验的完整签名证据、parent ticket 活性、ObjectGrant、
+   request/run/generation/principal/workspace 与 action/schema/permission 绑定；
+4. 对新增 receipt codec 和 Store v32 权威面的冻结清单覆盖。
+
+它不改变：
+
+- verifier PASS / FAIL / INCONCLUSIVE 语义；
+- VerificationRecord 结构与记录规则；
+- VerificationReadiness 推导；
+- Artifact / Effect / Repository Oracle；
+- Evidence-driven Repair Policy；
+- CompletionGate；
+- P19 对完成声明的最终验证权。
+
+版本与权威
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.3"
+唯一机器可读来源：
+
+    src/total_gateway/verification_plane.py
+
+Gateway Store schema：32。
+
+P7C.1 仅为 A0 read/verify 步骤签发和持久化执行前授权。
+持久化 receipt 本身不消耗 ticket/grant，不执行 action，不生成
+Effect、Fact 或 VerificationRecord，不形成 CompletionDecision。
+
+冻结
+----------------------------------------------------------------------
+
+Freeze manifest：
+
+    docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+
+本次修订显式更新版本、主干基线、Store schema 和 authority surface
+hashes；历史 1.0/1.1/1.2 声明与冻结语义保留，不覆盖。
+禁止在不推进 VERIFICATION_PLANE_VERSION 的情况下静默修改该权威面。
+
+后续边界
+----------------------------------------------------------------------
+
+P7D 只能消费仍处于有效期内且完整性校验通过的签名 ticket/grant，
+并继续复用唯一 Runtime、Effect/Fact、P19 verify/repair 和 CompletionGate。
+P7C.1 不新增 Gateway、Store、Policy、Runtime、P19、Memory 或 Completion 权威。

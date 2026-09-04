@@ -231,3 +231,22 @@ P7C.0 只冻结 schema/path-policy digest 与显式数据流，不证明 schema-
 兼容，也不把 permission.path_policy 当成现有已执行的路径授权。禁止通过摘要猜测
 或反推执行参数。P7C.0 不签发 PolicyDecision、ExecutionTicket、CapabilityGrant，
 不调用 Runtime，不改变 P19 或 CompletionGate 的唯一权威。
+
+P7C.1｜Composition Step Authorization Persistence（Verification Plane 1.3）
+----------------------------------------------------------------------
+
+src/total_gateway/composition_step_authorization.py
+src/total_gateway/store.py migration v32
+
+上述新增面只把已通过当前 Action Registry、schema、permission、
+ObjectGrant 与既有 PolicyEngine → ExecutionTicket → CapabilityGrant 链的
+A0 read/verify 组合步授权证据，作为 append-only receipt 持久化到唯一
+GatewayStateStore。它不消耗 ticket/grant，不调用 Runtime，不生成 Effect/Fact/
+VerificationRecord，不改变 verifier PASS 语义、Readiness、Repair Policy 或
+CompletionGate。
+
+v32 receipt 必须绑定完整签名 parent ticket、当前 request/run/generation/
+principal/workspace、活跃时间窗、精确 ObjectGrant 以及同一组 intent/impact/
+decision/ticket/grant/runtime-response 证据。表、identity、UPDATE 与 DELETE guards
+均保持 append-only；重放必须重新校验当前 parent 权威，不得将该 receipt
+解释为执行、验证通过或完成声明。

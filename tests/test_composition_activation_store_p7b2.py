@@ -177,10 +177,11 @@ def _persist(store: GatewayStateStore, fixture: dict, *, recorded_at_ms: int):
 
 
 def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
-    # P7B.2 remains the v30 registration layer; P7C.0 adds the current v31
-    # executable-Plan companion without changing P7B eligibility semantics.
-    assert STORE_SCHEMA_VERSION == 31
-    assert VERIFICATION_PLANE_VERSION == "1.2"
+    # P7B.2 remains v30, P7C.0 adds the v31 executable-Plan companion, and
+    # P7C.1 adds the current v32 authorization receipt.  Neither later layer
+    # changes P7B eligibility semantics.
+    assert STORE_SCHEMA_VERSION == 32
+    assert VERIFICATION_PLANE_VERSION == "1.3"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:
@@ -213,10 +214,25 @@ def test_v29_store_migrates_additively_through_v30_to_current() -> None:
             assert store.health_check(now_ms=1_500, full=True).healthy
             assert store._connection.execute(
                 "PRAGMA user_version"
-            ).fetchone()[0] == 31
+            ).fetchone()[0] == 32
+            assert tuple(
+                row[0]
+                for row in store._connection.execute(
+                    "SELECT version FROM schema_migrations "
+                    "WHERE version BETWEEN 30 AND 32 ORDER BY version"
+                ).fetchall()
+            ) == (30, 31, 32)
             assert store._connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' "
                 "AND name='composition_activation_registration'"
+            ).fetchone() is not None
+            assert store._connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='composition_executable_plan'"
+            ).fetchone() is not None
+            assert store._connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='composition_step_authorization'"
             ).fetchone() is not None
 
 

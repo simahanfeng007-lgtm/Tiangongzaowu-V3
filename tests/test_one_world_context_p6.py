@@ -38,7 +38,12 @@ from world_understanding.world_state import (
 
 from tests.test_capability_composition_p4 import _single_read_fixture
 from tests.test_skill_method_world_p3_production import _production_inputs
-from tests.test_tool_capability_world_p2 import H, manifest, source_ref
+from tests.test_tool_capability_world_p2 import (
+    H,
+    _argument_schema_hashes,
+    manifest,
+    source_ref,
+)
 from tests.test_world_understanding_p9_world_state import cut, graph_for
 
 
@@ -54,7 +59,7 @@ def _capability_worlds():
             action_id: source_ref(action_id, manifest_sha256)
             for action_id in action_ids
         },
-        argument_schema_hashes={action_id: H for action_id in action_ids},
+        argument_schema_hashes=_argument_schema_hashes(document),
         result_schema_hashes={action_id: H for action_id in action_ids},
     )
     index, index_sha256, source_hashes = _production_inputs()

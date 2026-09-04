@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -378,11 +379,95 @@ def schema_for_action(action: Any) -> dict[str, Any]:
     normalized = canonical_action(action)
     return {
         "action": normalized,
-        **dict(ACTION_ARGUMENT_SCHEMAS.get(normalized) or {
-            "target": "action-specific target; use system.action_schema when uncertain",
-            "args": "action-specific object",
-        }),
+        **copy.deepcopy(
+            ACTION_ARGUMENT_SCHEMAS.get(normalized)
+            or {
+                "target": "action-specific target; use system.action_schema when uncertain",
+                "args": "action-specific object",
+            }
+        ),
     }
+
+
+def argument_validator_source_sha256() -> str:
+    """Return the portable source identity of the actual request validator.
+
+    The checked-in capability manifest must bind the descriptive argument body
+    to the code that enforces it.  ``read_text`` performs universal-newline
+    decoding, and the explicit replacement makes the identity stable for
+    source checkouts materialized on either Windows or POSIX.
+    """
+
+    source = Path(__file__).read_text(encoding="utf-8", errors="strict")
+    portable = source.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(portable.encode("utf-8")).hexdigest()
+
+
+def _argument_schema_sha256(body: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        dict(body),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def action_schema_descriptor(action: Any) -> dict[str, Any]:
+    """Build one deterministic schema descriptor without granting authority.
+
+    ``OPAQUE`` is an honest compatibility description for actions that do not
+    yet have an explicit contract.  P7C admission is required to request an
+    ``EXPLICIT`` descriptor and therefore fails closed for those rows.
+    """
+
+    normalized = canonical_action(action)
+    body = schema_for_action(normalized)
+    return {
+        "argument_schema": body,
+        "argument_schema_sha256": _argument_schema_sha256(body),
+        "argument_schema_kind": (
+            "EXPLICIT" if normalized in ACTION_ARGUMENT_SCHEMAS else "OPAQUE"
+        ),
+        "argument_validator_source_sha256": argument_validator_source_sha256(),
+    }
+
+
+def build_action_schema_catalog(
+    capabilities: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Resolve manifest aliases and build one schema descriptor per action.
+
+    Alias resolution uses the manifest's exact ``alias_to`` chain instead of
+    guessing from action-name prefixes.  Every alias receives byte-identical
+    schema authority to its final canonical target.
+    """
+
+    normalized_capabilities = {
+        str(action_id): dict(metadata)
+        for action_id, metadata in capabilities.items()
+        if isinstance(action_id, str) and isinstance(metadata, Mapping)
+    }
+
+    def resolve(action_id: str, trail: tuple[str, ...] = ()) -> str:
+        if action_id in trail:
+            raise ValueError("action schema alias cycle detected")
+        metadata = normalized_capabilities.get(action_id)
+        if metadata is None:
+            raise ValueError(f"action schema alias target is missing: {action_id}")
+        alias_to = str(metadata.get("alias_to") or "").strip()
+        if alias_to:
+            return resolve(alias_to, (*trail, action_id))
+        built_in = canonical_action(action_id)
+        if built_in != action_id and built_in in normalized_capabilities:
+            return resolve(built_in, (*trail, action_id))
+        return built_in
+
+    result: dict[str, dict[str, Any]] = {}
+    for action_id in sorted(normalized_capabilities):
+        result[action_id] = action_schema_descriptor(resolve(action_id))
+    return result
 
 
 def _inside_workspace(raw: str, workspace: str | Path) -> tuple[bool, str]:
@@ -1428,3 +1513,82 @@ def validate_tool_request(
             }
         )
     return result
+
+
+def validate_tool_request_exact(
+    action: Any,
+    target: Any,
+    args: Any,
+    *,
+    canonical_action_id: str | None = None,
+    workspace: str | Path,
+    available_actions: Iterable[str] = (),
+    user_roots: Iterable[str | Path] = (),
+) -> dict[str, Any]:
+    """Validate a sealed invocation without permitting silent normalization.
+
+    The ordinary interactive tool path intentionally repairs a small set of
+    aliases and argument shorthands.  A P7C plan is already sealed, so applying
+    those repairs after its hash was computed would change the authorized
+    invocation.  This adapter delegates all semantic checks to
+    :func:`validate_tool_request` and then requires exact JSON identity for the
+    target and argument values.  A manifest-resolved alias may name the call,
+    while validation is performed against its trusted canonical action.
+    """
+
+    received_action = str(action or "")
+    trusted_action = str(canonical_action_id or action or "")
+    if not received_action or received_action != received_action.strip():
+        raise ValueError("sealed action identity is invalid")
+    if not trusted_action or trusted_action != trusted_action.strip():
+        raise ValueError("canonical action identity is invalid")
+    if not isinstance(target, str):
+        raise ValueError("sealed target must be a string")
+    if not isinstance(args, Mapping):
+        raise ValueError("sealed arguments must be an object")
+    sealed_args = copy.deepcopy(dict(args))
+    try:
+        sealed_args_bytes = json.dumps(
+            sealed_args,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("sealed arguments are not strict JSON") from exc
+
+    result = validate_tool_request(
+        trusted_action,
+        target,
+        sealed_args,
+        workspace=workspace,
+        available_actions=available_actions,
+        user_roots=user_roots,
+    )
+    if result.get("ok") is not True:
+        raise ValueError("sealed invocation failed action argument validation")
+    normalized_args = result.get("args")
+    try:
+        normalized_args_bytes = json.dumps(
+            normalized_args,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("validator returned non-JSON arguments") from exc
+    if (
+        result.get("action") != trusted_action
+        or type(result.get("target")) is not str
+        or result.get("target") != target
+        or normalized_args_bytes != sealed_args_bytes
+    ):
+        raise ValueError("sealed invocation requires forbidden normalization")
+    return {
+        **result,
+        "action": received_action,
+        "canonical_action": trusted_action,
+        "args": copy.deepcopy(sealed_args),
+    }

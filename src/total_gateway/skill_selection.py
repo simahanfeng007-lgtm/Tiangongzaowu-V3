@@ -19,6 +19,7 @@ from contracts import (
     SkillSelectionRecord,
     canonical_sha256,
 )
+from .action_registry import LoadedActionAuthority, compile_action_authority
 
 
 SkillOperation = Literal["skill.route", "skill.list", "skill.get", "skill.read"]
@@ -129,6 +130,7 @@ class LoadedModelCapabilityManifest:
     manifest: CapabilityManifest
     source_sha256: str
     executable_count: int
+    action_authority: LoadedActionAuthority
 
 
 def _strict_json_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -366,6 +368,16 @@ def load_model_capability_manifest(
     ):
         raise SkillSelectionError("model capability manifest counts are invalid")
 
+    try:
+        action_authority = compile_action_authority(
+            payload,
+            generated_at_ms=generated_at_ms,
+        )
+    except (TypeError, ValueError) as exc:
+        raise SkillSelectionError(
+            "model capability schema authority is invalid"
+        ) from exc
+
     actions: list[CapabilityAction] = []
     for action_id, raw in capabilities.items():
         if not isinstance(action_id, str) or not isinstance(raw, dict) or raw.get("id") != action_id:
@@ -376,18 +388,21 @@ def load_model_capability_manifest(
         if risk not in {"A0", "A1", "A2", "A3", "A4", "A5"}:
             raise SkillSelectionError("model capability risk class is invalid")
         effect = str(raw.get("effect") or "execute")
+        try:
+            argument_schema_sha256 = action_authority.schema_catalog.resolve(
+                action_id,
+                "omni-registry-v1",
+            ).argument_schema_sha256
+        except (TypeError, ValueError) as exc:
+            raise SkillSelectionError(
+                "model capability schema binding is invalid"
+            ) from exc
         actions.append(
             CapabilityAction(
                 action_id=action_id,
                 version="runtime-capability-v1",
                 provider_component_id="tiangong-backend",
-                argument_schema_sha256=canonical_sha256(
-                    {
-                        "domain": "tiangong.model-capability.arguments.v1",
-                        "action_id": action_id,
-                        "source_hash": payload["source_hash"],
-                    }
-                ),
+                argument_schema_sha256=argument_schema_sha256,
                 result_schema_sha256=canonical_sha256(
                     {
                         "domain": "tiangong.model-capability.result.v1",
@@ -417,6 +432,7 @@ def load_model_capability_manifest(
         manifest=manifest,
         source_sha256=expected_sha256,
         executable_count=executable_count,
+        action_authority=action_authority,
     )
 
 
