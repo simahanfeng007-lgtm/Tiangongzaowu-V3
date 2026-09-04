@@ -1,0 +1,102 @@
+P19-R2 VERIFICATION PLANE 1.2 — P7C.0 COMPATIBILITY REVISION
+======================================================================
+
+性质
+----------------------------------------------------------------------
+
+本版本是 P7C.0 对既有 P19 Verification Plane 的显式兼容修订。
+
+它只增加：
+
+1. GatewayStateStore schema v30 → v31；
+2. 一个与现有 limited composition activation registration、
+   VerificationPlan 和 VerificationPlanActivation 强绑定的
+   composition_executable_plan companion 持久化表，以及 parent 上的
+   executable_plan_required 单向标记（1 不得回退为 0）；companion 是
+   append-only authority，schema-fingerprinted guards 禁止冲突身份的
+   INSERT OR REPLACE、任何 UPDATE 及任何 DELETE；
+3. A0-only ExecutableCompositionPlan 的完整规范化内容、typed STEP_OUTPUT
+   动态绑定、原子 UoW、重启恢复、过期排除与完整性扫描；
+4. ObjectGrant 与 AVAILABLE inbound attachment 的逐字段绑定，以及复用
+   既有 object_owners 的 request-wide 保留根；owner 留存期不得短于引用它的
+   历史 executable-plan companion，不能仅因请求终态而删除；Store-wide
+   object_id → sha256 和 owner identity 通过 insert/replace/update/delete
+   guards 保持不可重绑；
+5. 对新增 executable-plan 权威文件的冻结清单覆盖。
+
+它不改变：
+
+- verifier PASS / FAIL / INCONCLUSIVE 语义；
+- VerificationRecord 结构与记录规则；
+- VerificationReadiness 推导；
+- Artifact / Effect / Repository Oracle；
+- Evidence-driven Repair Policy；
+- CompletionGate；
+- P19 对完成声明的最终验证权。
+
+版本与权威
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.2"
+唯一机器可读来源：
+
+    src/total_gateway/verification_plane.py
+
+Gateway Store schema：31。
+
+P7C.0 executable plan 仍然只是持久化的执行前提，不是执行授权：
+
+    eligibility_only=true
+    authorizes=false
+    confirms=false
+    changes_risk=false
+    may_execute=false
+    issues_ticket=false
+    issues_grant=false
+    may_record_verification=false
+    may_complete=false
+    schema_compatibility_proven=false
+    dispatch_schema_validation_required=true
+    path_policy_enforced=false
+    dispatch_path_policy_validation_required=true
+
+ExecutableCompositionPlan 必须把每一步 action、target、args skeleton、typed
+input binding、declared output，以及其 Registry/Manifest/P19/lineage 锚点完整落盘。
+只保存摘要的 v30 registration 不得在重启后被猜测或反推成可执行计划。
+
+RegistrySnapshot、VerificationPlan、VerificationPlanActivation、limited activation
+registration 和 executable plan 必须在同一个既有 GatewayStateStore UoW 中原子
+落盘；如有 ObjectGrant 输入，相应 request object owner 也在同一 UoW 中创建或
+验证。任何一步失败，整组事务回滚。
+
+同一 accepted envelope 可固定同一 object_id 的多个不同 revision，但这些 revision
+必须仍指向相同 hash/size/MIME/scope 的不可变对象并复用同一个 REQUEST owner；同一
+object_id 出现不同内容则拒绝，因为既有 ObjectStore/GC 的 object_id → sha256 权威是
+单值的。owner 行不得被 REPLACE、UPDATE 或 DELETE 后重绑；companion 行同样不得在
+seal 后被 REPLACE、UPDATE 或 DELETE，即使调用者重新计算全部嵌套与根 hash。
+
+P7C.0 的 typed/hash 绑定不等于 schema-body 兼容证明，也不把当前
+permission.path_policy 变成已执行的路径授权。ObjectStore 实体/字节、schema body
+和 materialized target/args 必须由 P7C.1 在 Policy/Ticket/Grant/dispatch 前重新
+验证，失败不得出票或执行。
+
+冻结
+----------------------------------------------------------------------
+
+Freeze manifest：
+
+    docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+
+本次修订显式更新版本、主干基线、Store schema 和 authority surface hashes。
+禁止在不推进 VERIFICATION_PLANE_VERSION 的情况下静默修改该权威面。
+
+后续边界
+----------------------------------------------------------------------
+
+P7C 后续阶段只能读取 parent marker=1、ACTIVE、未过期、仍绑定当前
+Request/Run/Generation 且完整性校验通过的 executable plan，然后继续调用既有
+Policy → ExecutionTicket → CapabilityGrant 权威链。marker=0 的历史或独立 P7B
+记录保持 audit-only；marker=1 却缺 companion 是 Store corruption。
+
+P7C.0 不签发 PolicyDecision、ExecutionTicket 或 Grant，不调用 Runtime，不生成
+VerificationRecord/PASS，不改变 Readiness，也不形成 CompletionDecision。

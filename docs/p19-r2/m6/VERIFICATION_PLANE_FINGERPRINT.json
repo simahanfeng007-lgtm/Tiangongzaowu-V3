@@ -8,8 +8,8 @@
  "repair_policy_version": "v1",
  "repair_policy_config_sha256": "a7002f614547ff00b5cd48b201c8b8c1873578531b165d216cf27f662e45c9ba",
  "completion_gate_sha256": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
- "store_schema_version": 30,
- "authority_map_sha256": "8f9c69cf273ade37358dff34e7983797e4c2dd1283d7fe96b085fcb7db9502e9",
+ "store_schema_version": 31,
+ "authority_map_sha256": "b0645cad70383fae6812231dc41300a225e9f3d13f94860dce0cd501c58de17e",
  "golden_corpus_files": 13,
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1"
