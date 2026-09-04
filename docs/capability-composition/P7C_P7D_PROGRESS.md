@@ -27,7 +27,7 @@ release/merge claim. This document does not represent that suite as rerun.
 | Stage | State | Completed in current work | Still required |
 |---|---|---|---|
 | P7C.0 | `MERGED / CLOSED` | Final successor `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #69; PR #69 merged as `b75d0c8aec926e18bebbf92938ded423b44a8016` | None for P7C.0; preserve the immutable PR evidence while later stages extend the same authorities |
-| P7C.1 | `FIRST_REMOTE_GATE_PASS / EVIDENCE_COMMIT_PREP` | One verified manifest read now owns the current Action Registry and exact argument-schema catalog; exact active registration/plan/generation/fence/object bytes are rechecked before the existing Policy/Ticket/Grant chain signs one `CompositionExecutionBindingV1`; Store v32 persists an insert-only receipt and revalidates it transactionally; the current A0 read/verify, object-grant-only adapter is exposed only through the existing worker and `OmniGrantAuthority`; all local gates and the first nine-check remote round passed on candidate `9e744d0b2185f0b6e4abca0981daa62dc9494a7c`; PR #70 had no reviews, comments or review threads and was `CLEAN` when captured | Commit this evidence-only ledger update, rerun all nine checks on the successor HEAD, prove exact local/remote/PR/check head match, post immutable PR evidence, then merge |
+| P7C.1 | `FIRST_REMOTE_GATE_PASS / EVIDENCE_COMMIT_PREP` | One verified manifest read now owns the current Action Registry and exact argument-schema catalog; exact active registration/plan/generation/fence/object bytes are rechecked before the existing Policy/Ticket/Grant chain signs one `CompositionExecutionBindingV1`; Store v32 persists an insert-only receipt and revalidates it transactionally; the issuance-only adapter is exposed on the existing worker and delegates to `OmniGrantAuthority`; it does not consume nonces, invoke Runtime/handlers, or record action Effect/Fact; all local gates and the first nine-check remote round passed on candidate `9e744d0b2185f0b6e4abca0981daa62dc9494a7c`; PR #70 had no reviews, comments or review threads and was `CLEAN` when captured | Commit this evidence-only ledger update, rerun all nine checks on the successor HEAD, prove exact local/remote/PR/check head match, post immutable PR evidence, then merge |
 | P7D.1 | `NOT_STARTED` | Unique Runtime seam and A0 first-slice boundary documented | Existing-worker/regenerative/Effect/Fact/BackendClient/Omni integration and evidence |
 | P7D.2 | `NOT_STARTED` | DAG/`STEP_OUTPUT`/P19/Completion boundary documented | Durable DAG/restart/reconcile, P19 readiness, CompletionGate closeout, production A0 evidence |
 
@@ -105,7 +105,7 @@ does not change the tested product/test tree.
 - [x] Only exact active v31 registration + companion enters authorization, and
   the v32 receipt is inserted only after the transaction rechecks current state.
 - [x] Current Action Registry and effective A0 permission are rechecked at the
-  immediate authorization/dispatch boundary.
+  immediate authorization/issuance boundary.
 - [x] Resolved arguments, workspace, target state, request/run/generation,
   executable-plan hash, step and Action/version are bound into existing
   Policy/Ticket/Grant artifacts.
@@ -217,11 +217,11 @@ checks against one unchanged candidate SHA.
 |---|---|---|---|---|
 | `source-authority-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 | `source-authority-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `Architecture full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `Architecture full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
+| `full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
+| `full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 | `p14-focused-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 | `p14-focused-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `P14 full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
+| `full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 | `p19-r2-golden-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 | `p19-r2-golden-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
 
@@ -234,11 +234,11 @@ and completion time below. A green check on another SHA does not count.
 |---|---|---|---|---|---|---|
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `source-authority-ubuntu-latest` | [job 100878450510 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450510) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:29:37Z` |
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `source-authority-windows-latest` | [job 100878450316 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450316) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:30:39Z` |
-| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `Architecture full-regression-ubuntu-latest` | [job 100878450455 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450455) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:34:44Z` |
-| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `Architecture full-regression-windows-latest` | [job 100878450486 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450486) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:46:00Z` |
+| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `full-regression-ubuntu-latest` | [job 100878450455 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450455) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:34:44Z` |
+| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `full-regression-windows-latest` | [job 100878450486 / run 33825924970](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924970/job/100878450486) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:46:00Z` |
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `p14-focused-ubuntu-latest` | [job 100878450464 / run 33825925001](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825925001/job/100878450464) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:30:08Z` |
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `p14-focused-windows-latest` | [job 100878450494 / run 33825925001](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825925001/job/100878450494) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:32:23Z` |
-| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `P14 full-regression-ubuntu` | [job 100878450298 / run 33825925001](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825925001/job/100878450298) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:33:52Z` |
+| P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `full-regression-ubuntu` | [job 100878450298 / run 33825925001](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825925001/job/100878450298) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:33:52Z` |
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `p19-r2-golden-ubuntu-latest` | [job 100878450255 / run 33825924964](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924964/job/100878450255) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:31:10Z` |
 | P7C.0 | `439b018fe807c32bba625998272e4021b230111c` | `p19-r2-golden-windows-latest` | [job 100878450351 / run 33825924964](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33825924964/job/100878450351) | `SUCCESS` | `439b018fe807c32bba625998272e4021b230111c` | `2026-09-04T01:33:31Z` |
 | P7C.1 | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `source-authority-ubuntu-latest` | [job 100907262114 / run 33835568527](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33835568527/job/100907262114) | `SUCCESS` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `2026-09-04T04:07:10Z` |
