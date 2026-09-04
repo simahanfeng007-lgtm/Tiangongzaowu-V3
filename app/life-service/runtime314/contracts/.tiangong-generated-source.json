@@ -3,6 +3,6 @@
   "mapping_id": "shared-contracts",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "src/contracts",
-  "tree_sha256": "8d12fd9d33b8461b2a34aed347438f429d49fd2e0ec283ed51f33823daf695a5",
+  "tree_sha256": "2550a86f3691163f35f154e8e853d795595da7a0a6ba582706e848c638864282",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

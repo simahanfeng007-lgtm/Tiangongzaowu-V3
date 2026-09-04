@@ -8,10 +8,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from contracts import (
     CapabilityManifest,
+    CompositionExecutionBindingV1,
     ExecutionResult,
     ExecutionTicket,
     TrustBundle,
@@ -30,11 +31,26 @@ _BACKEND_VERIFIED_RESPONSE = object()
 
 
 class BackendClientError(RuntimeError):
-    def __init__(self, code: str, *, status: int = 0, ambiguous: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        status: int = 0,
+        ambiguous: bool = False,
+        pending_transport_future: object | None = None,
+    ) -> None:
         super().__init__(code)
+        if pending_transport_future is not None and not callable(
+            getattr(pending_transport_future, "add_done_callback", None)
+        ):
+            raise TypeError("pending transport future is invalid")
         self.code = code
         self.status = status
         self.ambiguous = ambiguous
+        # A running in-process transport cannot be killed when its caller's
+        # timeout expires.  The composition owner uses this handle only to
+        # retain its durable dispatch permit until the real call has stopped.
+        self.pending_transport_future = pending_transport_future
 
 
 class BackendExecutionTransport(Protocol):
@@ -242,15 +258,39 @@ class BackendClient:
         expected_fence_epoch: int | None = None,
         active_lease_epoch: int | None = None,
         expected_target_snapshot_sha256: str | None = None,
+        expected_composition_binding: CompositionExecutionBindingV1 | None = None,
+        actual_target_snapshot_sha256: str | None = None,
+        before_dispatch: Callable[[int], None] | None = None,
+        transport_runner: Callable[
+            [Callable[[], dict[str, Any]], float], dict[str, Any]
+        ]
+        | None = None,
     ) -> BackendExecutionResponse:
         if now_ms < 0 or expected_gateway_epoch < 1 or minimum_generation < 0:
             raise ValueError("backend execution boundary time or generation is invalid")
+        if transport_runner is not None and not callable(transport_runner):
+            raise ValueError("backend transport runner is invalid")
         _reject_host_paths(arguments)
         argument_bytes = canonical_json_bytes(arguments)
         if len(argument_bytes) > 8 * 1024 * 1024:
             raise BackendClientError("backend.arguments.too_large")
         if canonical_sha256(arguments) != ticket.payload.arguments_hash:
             raise BackendClientError("backend.arguments.digest_mismatch")
+
+        composition_arguments_sha256: str | None = None
+        composition_target_sha256: str | None = None
+        if expected_composition_binding is not None:
+            if (
+                set(arguments) != {"action", "target", "args"}
+                or not isinstance(arguments.get("action"), str)
+                or not isinstance(arguments.get("target"), str)
+                or not isinstance(arguments.get("args"), dict)
+                or arguments.get("action")
+                != expected_composition_binding.action_id
+            ):
+                raise BackendClientError("backend.composition.invocation_invalid")
+            composition_arguments_sha256 = canonical_sha256(arguments["args"])
+            composition_target_sha256 = canonical_sha256(arguments["target"])
 
         verify_execution_ticket(ticket, trust_bundle, now_ms=now_ms)
         authorize_execution_contract(
@@ -269,7 +309,19 @@ class BackendClient:
             active_lease_epoch=active_lease_epoch,
             expected_target_snapshot_sha256=expected_target_snapshot_sha256,
             actual_arguments_sha256=canonical_sha256(arguments),
+            expected_composition_binding=expected_composition_binding,
+            actual_materialized_arguments_sha256=(
+                composition_arguments_sha256
+            ),
+            actual_target_sha256=composition_target_sha256,
+            actual_target_snapshot_sha256=(
+                actual_target_snapshot_sha256
+            ),
         )
+        dispatch_boundary_crossed = False
+        if before_dispatch is not None:
+            before_dispatch(now_ms)
+            dispatch_boundary_crossed = True
         ticket_sha256 = canonical_sha256(ticket.model_dump(mode="json"))
         try:
             consumed = self._nonce_store.consume_security_nonce(
@@ -284,19 +336,51 @@ class BackendClient:
                 expires_at_ms=ticket.payload.expires_at_ms,
             )
         except StoreConflictError as exc:
-            raise BackendClientError("backend.ticket.replay_conflict") from exc
+            raise BackendClientError(
+                "backend.ticket.replay_conflict",
+                ambiguous=dispatch_boundary_crossed,
+            ) from exc
         if not consumed.consumed_by_this_call:
-            raise BackendClientError("backend.ticket.replay_forbidden")
+            raise BackendClientError(
+                "backend.ticket.replay_forbidden",
+                ambiguous=dispatch_boundary_crossed,
+            )
 
         wire = {
             "schema": "tiangong.backend.execute-ticket.v1",
             "ticket": ticket.model_dump(mode="json"),
             "arguments": arguments,
         }
-        payload = self._transport.execute(
-            canonical_json_bytes(wire),
-            timeout_seconds=ticket.payload.max_runtime_ms / 1000,
-        )
+        timeout_seconds = ticket.payload.max_runtime_ms / 1000
+        request_bytes = canonical_json_bytes(wire)
+        try:
+            if transport_runner is None:
+                payload = self._transport.execute(
+                    request_bytes,
+                    timeout_seconds=timeout_seconds,
+                )
+            else:
+                payload = transport_runner(
+                    lambda: self._transport.execute(
+                        request_bytes,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                    timeout_seconds,
+                )
+        except BackendClientError as exc:
+            if dispatch_boundary_crossed and not exc.ambiguous:
+                raise BackendClientError(
+                    exc.code,
+                    status=exc.status,
+                    ambiguous=True,
+                    pending_transport_future=exc.pending_transport_future,
+                ) from exc
+            raise
+        except Exception as exc:
+            raise BackendClientError(
+                "backend.transport.failed",
+                ambiguous=dispatch_boundary_crossed,
+            ) from exc
         if set(payload) != {"ok", "api_contract", "execution_result", "result_payload"}:
             raise BackendClientError("backend.result.envelope_invalid", ambiguous=True)
         if payload.get("ok") is not True or payload.get("api_contract") != BACKEND_API_CONTRACT:
@@ -322,6 +406,7 @@ class BackendClient:
             or result.effect_id != expected.effect_id
             or result.action_id != expected.action_id
             or result.action_version != expected.action_version
+            or (claim is not None and result.attempt != claim.attempt)
             or result.result_payload_sha256 != result_payload_sha256
         ):
             raise BackendClientError("backend.result.binding_mismatch", ambiguous=True)

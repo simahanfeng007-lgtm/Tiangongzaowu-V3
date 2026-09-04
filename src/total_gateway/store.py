@@ -6,6 +6,7 @@ from .diagnostics import diagnostic_log
 
 import os
 import json
+import re
 import sqlite3
 
 from .store_unit_of_work import gateway_store_write_transaction
@@ -6247,14 +6248,24 @@ class GatewayStateStore:
                     effect_id, attempt, claim_revision, lease_epoch, pipeline_version,
                     state, ticket_id, ticket_sha256, grant_sha256, nonce_sha256,
                     claimed_at_ms, side_effect_started_at_ms, terminal_at_ms, terminal_kind
-                ) VALUES (?, 1, 1, NULL, NULL, 'CLAIMED', NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, 'CLAIMED', NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL)
                 """,
-                (claim.effect_id, claim.claimed_at_ms),
+                (
+                    claim.effect_id,
+                    claim.attempt,
+                    claim.claim_revision,
+                    claim.lease_epoch,
+                    claim.pipeline_version,
+                    claim.claimed_at_ms,
+                ),
             )
             claim_payload = json.loads(claim_json)
             claim_payload["action_fence_epoch"] = int(self._action_fence_row_locked()["action_fence_epoch"])
             self._append_effect_fact_locked(
-                effect_id=claim.effect_id, attempt=1, fact_kind="CLAIM", verdict=None,
+                effect_id=claim.effect_id,
+                attempt=claim.attempt,
+                fact_kind="CLAIM",
+                verdict=None,
                 payload=claim_payload, created_at_ms=claim.claimed_at_ms,
             )
             return _effect_record_from_row(row), True
@@ -6314,6 +6325,53 @@ class GatewayStateStore:
             ).fetchall()
             return tuple(_effect_record_from_row(row) for row in rows)
 
+    def list_effects_for_pipeline(
+        self,
+        pipeline_version: str,
+        *,
+        states: tuple[str, ...] = (
+            "CLAIMED",
+            "SIDE_EFFECT_STARTED",
+            "SUCCEEDED",
+            "FAILED_FINAL",
+            "AMBIGUOUS",
+            "RECONCILED",
+        ),
+    ) -> tuple[EffectLedgerRecord, ...]:
+        """Read Effect heads whose immutable claim belongs to one pipeline."""
+
+        valid_states = {
+            "CLAIMED",
+            "SIDE_EFFECT_STARTED",
+            "SUCCEEDED",
+            "FAILED_FINAL",
+            "AMBIGUOUS",
+            "RECONCILED",
+        }
+        if (
+            not isinstance(pipeline_version, str)
+            or not pipeline_version
+            or len(pipeline_version) > 160
+            or not states
+            or set(states) - valid_states
+        ):
+            raise ValueError("effect pipeline query is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            placeholders = ",".join("?" for _ in states)
+            rows = self._connection.execute(
+                f"SELECT * FROM effect_ledger WHERE state IN ({placeholders}) "
+                "ORDER BY claimed_at_ms, effect_id",
+                states,
+            ).fetchall()
+            records = tuple(_effect_record_from_row(row) for row in rows)
+            return tuple(
+                record
+                for record in records
+                if record.claim.pipeline_version == pipeline_version
+            )
+
     def list_started_execution_effects_for_request(
         self,
         request_id: str,
@@ -6366,20 +6424,33 @@ class GatewayStateStore:
                 """,
                 (effect_id,),
             ).fetchone()
-            anchor_epoch = 0
-            if claim_fact is not None:
-                try:
-                    anchor_epoch = int(json.loads(claim_fact["payload_json"]).get("action_fence_epoch") or 0)
-                except Exception as exc:
-                    # 读损坏 fail-closed：CLAIM fact 半写/损坏时静默当作
-                    # epoch 0 放行，等于把 fence 锚点校验整体架空。
-                    raise StoreCorruptionError(
-                        f"effect claim fact payload is corrupt: {effect_id}"
-                    ) from exc
-            current_epoch = int(self._action_fence_row_locked()["action_fence_epoch"])
-            if current_epoch != anchor_epoch:
+            if claim_fact is None:
+                raise StoreCorruptionError(
+                    f"effect claim fact is missing: {effect_id}"
+                )
+            try:
+                anchor_epoch = int(
+                    json.loads(claim_fact["payload_json"]).get(
+                        "action_fence_epoch"
+                    )
+                    or 0
+                )
+            except Exception as exc:
+                # 读损坏 fail-closed：CLAIM fact 半写/损坏时静默当作
+                # epoch 0 放行，等于把 fence 锚点校验整体架空。
+                raise StoreCorruptionError(
+                    f"effect claim fact payload is corrupt: {effect_id}"
+                ) from exc
+            action_fence = self._action_fence_row_locked()
+            current_epoch = int(action_fence["action_fence_epoch"])
+            if (
+                current_epoch != anchor_epoch
+                or current_epoch != 0
+                or bool(action_fence["draining"])
+            ):
                 raise StoreConflictError(
-                    f"action fence epoch advanced since claim: {anchor_epoch} -> {current_epoch}"
+                    "action fence is closed for effect start: "
+                    f"claim epoch {anchor_epoch}, current {current_epoch}"
                 )
             updated = self._connection.execute(
                 """
@@ -6413,9 +6484,23 @@ class GatewayStateStore:
                 ).fetchone()
             )
 
-    def complete_effect(self, result: EffectResult) -> EffectLedgerRecord:
+    def complete_effect(
+        self,
+        result: EffectResult,
+        *,
+        expected_state: Literal["CLAIMED", "SIDE_EFFECT_STARTED"] | None = None,
+        release_dispatch_permit: bool = True,
+    ) -> EffectLedgerRecord:
         if not result.has_valid_sha256():
             raise ValueError("effect result digest is invalid")
+        if expected_state not in {None, "CLAIMED", "SIDE_EFFECT_STARTED"}:
+            raise ValueError("effect expected state is invalid")
+        if type(release_dispatch_permit) is not bool:
+            raise ValueError("effect dispatch permit release flag is invalid")
+        if not release_dispatch_permit and result.status != "AMBIGUOUS":
+            raise ValueError(
+                "retaining an effect dispatch permit requires an ambiguous result"
+            )
         result_json, result_digest = _effect_model_payload(result)
         with self._lock, self._write_transaction():
             row = self._connection.execute(
@@ -6428,6 +6513,8 @@ class GatewayStateStore:
                 if record.result != result:
                     raise StoreConflictError("effect already has a different first result")
                 return record
+            if expected_state is not None and record.state != expected_state:
+                raise StoreConflictError("effect crossed its expected completion state")
             if result.observed_at_ms < (record.side_effect_started_at_ms or record.claim.claimed_at_ms):
                 raise ValueError("effect result predates its durable boundary")
             if result.status in {"SUCCEEDED", "AMBIGUOUS", "RECONCILED"} and record.state != "SIDE_EFFECT_STARTED":
@@ -6477,7 +6564,7 @@ class GatewayStateStore:
                 """,
                 (result.effect_id,),
             ).fetchone()
-            if open_permit is not None:
+            if open_permit is not None and release_dispatch_permit:
                 self._connection.execute(
                     """
                     UPDATE action_fence
@@ -6501,16 +6588,32 @@ class GatewayStateStore:
                 ).fetchone()
             )
 
-    def recover_started_effects(self, *, now_ms: int) -> tuple[EffectLedgerRecord, ...]:
+    def recover_started_effects(
+        self,
+        *,
+        now_ms: int,
+        exclude_pipeline_versions: tuple[str, ...] = (),
+    ) -> tuple[EffectLedgerRecord, ...]:
         # V14：先把 attempt 层 STARTED 标记为 RECONCILE_REQUIRED + INCONCLUSIVE
-        self.recover_started_attempts(now_ms=now_ms)
+        self.recover_started_attempts(
+            now_ms=now_ms,
+            exclude_pipeline_versions=exclude_pipeline_versions,
+        )
         with self._lock:
             rows = self._connection.execute(
                 "SELECT * FROM effect_ledger WHERE state = 'SIDE_EFFECT_STARTED' ORDER BY effect_id"
             ).fetchall()
         recovered = []
         for row in rows:
-            claim = _effect_record_from_row(row).claim
+            record = _effect_record_from_row(row)
+            claim = record.claim
+            if claim.pipeline_version in exclude_pipeline_versions:
+                continue
+            recovered_at_ms = max(
+                now_ms,
+                record.side_effect_started_at_ms
+                or record.claim.claimed_at_ms,
+            )
             if str(claim.owner_component_id) == "tiangong-backend":
                 # The gateway's own execution wrapper never recorded a terminal
                 # result, which is provable: no terminal fact exists.  Finalize
@@ -6531,7 +6634,7 @@ class GatewayStateStore:
                     fact_id="fact_effect_interrupted_" + claim.effect_id[4:20],
                     evidence_sha256=evidence,
                     error_code="effect.execution_interrupted_by_restart",
-                    observed_at_ms=now_ms,
+                    observed_at_ms=recovered_at_ms,
                     result_sha256="0" * 64,
                 ).with_computed_sha256()
             else:
@@ -6549,7 +6652,7 @@ class GatewayStateStore:
                     fact_id="fact_effect_recovery_" + claim.effect_id[4:20],
                     evidence_sha256=evidence,
                     error_code="effect.result_missing_after_restart",
-                    observed_at_ms=now_ms,
+                    observed_at_ms=recovered_at_ms,
                     result_sha256="0" * 64,
                 ).with_computed_sha256()
             recovered.append(self.complete_effect(result))
@@ -8029,6 +8132,12 @@ class GatewayStateStore:
         ticket_id: str | None = None,
         ticket_sha256: str | None = None,
         grant_sha256: str | None = None,
+        expected_request_id: str | None = None,
+        expected_run_id: str | None = None,
+        expected_generation: int | None = None,
+        expected_gateway_epoch: int | None = None,
+        expected_owner_instance_id: str | None = None,
+        required_parent_effect_id: str | None = None,
         now_ms: int,
     ) -> dict:
         """dispatch CAS（与 action_fence_epoch 同一事务、同一 store 行）。
@@ -8036,18 +8145,91 @@ class GatewayStateStore:
         stop 先提交则 epoch 已变 → 拒绝（handler=0）；dispatch 先提交则该 attempt
         按"可能已施加"对账。STARTED 与 dispatch fact 在此同事务持久化（先发前记）。
         """
+        scoped_values = (
+            expected_request_id,
+            expected_run_id,
+            expected_generation,
+            expected_gateway_epoch,
+            expected_owner_instance_id,
+            required_parent_effect_id,
+        )
+        if any(value is not None for value in scoped_values) and any(
+            value is None for value in scoped_values
+        ):
+            raise ValueError("dispatch generation scope is incomplete")
         with self._lock, self._write_transaction():
             fence = self._action_fence_row_locked()
             epoch = int(fence["action_fence_epoch"])
-            if epoch != expected_fence_epoch:
+            if (
+                epoch != expected_fence_epoch
+                or epoch != 0
+                or bool(fence["draining"])
+            ):
                 raise StoreConflictError(
-                    f"action fence epoch advanced: ticket epoch {expected_fence_epoch} < current {epoch}"
+                    "action fence is closed for dispatch: "
+                    f"ticket epoch {expected_fence_epoch}, current {epoch}"
                 )
             row = self._get_effect_attempt_locked(effect_id, attempt)
             if row is None:
                 raise StoreNotFoundError("dispatch target attempt is missing")
             if row["state"] != "CLAIMED":
                 raise StoreConflictError("dispatch permit requires a pre-start claim")
+            if expected_request_id is not None:
+                generation_row = self._connection.execute(
+                    "SELECT * FROM request_generation WHERE request_id = ?",
+                    (expected_request_id,),
+                ).fetchone()
+                if generation_row is None:
+                    raise StoreConflictError(
+                        "dispatch request generation is missing"
+                    )
+                generation_view = _generation_view(
+                    self._connection, generation_row
+                )
+                fence_row = self._connection.execute(
+                    "SELECT state FROM generation_fences WHERE fence_id = ?",
+                    (generation_row["current_fence_id"],),
+                ).fetchone()
+                if fence_row is None:
+                    raise StoreCorruptionError(
+                        "request generation references a missing fence"
+                    )
+                if (
+                    generation_view.run_id != expected_run_id
+                    or generation_view.generation != expected_generation
+                    or generation_view.gateway_epoch != expected_gateway_epoch
+                    or generation_view.owner_instance_id
+                    != expected_owner_instance_id
+                    or generation_view.status != "ACTIVE"
+                    or generation_view.lease_id is None
+                    or fence_row["state"] != "ACTIVE"
+                    or now_ms > generation_view.fence.expires_at_ms
+                    or row["lease_epoch"] != expected_gateway_epoch
+                ):
+                    raise StoreConflictError(
+                        "dispatch request generation is no longer active"
+                    )
+                parent_row = self._connection.execute(
+                    "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                    (required_parent_effect_id,),
+                ).fetchone()
+                if parent_row is None:
+                    raise StoreConflictError(
+                        "dispatch parent effect is missing"
+                    )
+                parent = _effect_record_from_row(parent_row)
+                if (
+                    parent.state != "SUCCEEDED"
+                    or parent.result is None
+                    or parent.result.status != "SUCCEEDED"
+                    or parent.claim.effect_kind != "execution"
+                    or parent.claim.request_id != expected_request_id
+                    or parent.claim.run_id != expected_run_id
+                    or parent.claim.generation != expected_generation
+                ):
+                    raise StoreConflictError(
+                        "dispatch parent effect is not successful"
+                    )
             updated = self._connection.execute(
                 """
                 UPDATE effect_attempts
@@ -8100,6 +8282,200 @@ class GatewayStateStore:
             )
             return {"fence_epoch": epoch, "started_fact": started}
 
+    def consume_composition_handler_permit(
+        self,
+        *,
+        effect_id: str,
+        ticket_id: str,
+        ticket_nonce: str,
+        ticket_sha256: str,
+        grant_nonce: str,
+        grant_sha256: str,
+        gateway_epoch: int,
+        expected_ticket_consumer_instance_id: str,
+        handler_consumer_instance_id: str,
+        now_ms: int,
+    ) -> dict:
+        """Admit the private composition handler exactly once.
+
+        ``acquire_dispatch_permit`` durably crosses the Effect boundary and
+        ``BackendClient`` consumes the execution-ticket nonce before transport.
+        The embedded runtime calls this method immediately before Omni Body.
+        It rebinds both facts to the immutable P7C receipt and consumes the
+        grant nonce in the same transaction, so the generic in-process service
+        port cannot replay or self-authorize the private route.
+        """
+
+        identities = (
+            effect_id,
+            ticket_id,
+            ticket_nonce,
+            grant_nonce,
+            expected_ticket_consumer_instance_id,
+            handler_consumer_instance_id,
+        )
+        if (
+            any(not isinstance(value, str) or not value for value in identities)
+            or re.fullmatch(r"eff_[0-9a-f]{64}", effect_id) is None
+            or any(len(value) > 240 for value in identities)
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", value or "") is None
+                for value in (ticket_sha256, grant_sha256)
+            )
+            or type(gateway_epoch) is not int
+            or gateway_epoch < 1
+            or type(now_ms) is not int
+            or now_ms < 0
+        ):
+            raise ValueError("composition handler permit arguments are invalid")
+
+        with self._lock, self._write_transaction():
+            authorization_row = self._connection.execute(
+                "SELECT * FROM composition_step_authorization "
+                "WHERE prebound_effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if authorization_row is None:
+                raise StoreConflictError(
+                    "composition handler authorization is missing"
+                )
+            try:
+                authorization = authorization_record_from_row(
+                    authorization_row
+                )
+                _verify_composition_step_authorization_authorities(
+                    self._connection,
+                    authorization,
+                )
+                restored = authorization.artifacts.restore_contracts()
+                stored_ticket = restored[3]
+                stored_grant = restored[4]
+            except (TypeError, ValueError) as exc:
+                raise StoreCorruptionError(
+                    "stored composition handler authorization is invalid"
+                ) from exc
+
+            request = authorization.request
+            expected_ticket_sha256 = canonical_sha256(
+                stored_ticket.model_dump(mode="json")
+            )
+            expected_grant_sha256 = canonical_sha256(
+                stored_grant.model_dump(mode="json")
+            )
+            if (
+                stored_ticket.payload.ticket_id != ticket_id
+                or stored_ticket.payload.nonce != ticket_nonce
+                or stored_ticket.payload.effect_id != effect_id
+                or stored_ticket.payload.gateway_epoch != gateway_epoch
+                or stored_grant.payload.ticket_id != ticket_id
+                or stored_grant.payload.nonce != grant_nonce
+                or stored_grant.payload.effect_id != effect_id
+                or stored_grant.payload.gateway_epoch != gateway_epoch
+                or ticket_sha256 != expected_ticket_sha256
+                or grant_sha256 != expected_grant_sha256
+                or now_ms > stored_grant.payload.expires_at_ms
+            ):
+                raise StoreConflictError(
+                    "composition handler authority does not match its receipt"
+                )
+
+            attempt_row = self._get_effect_attempt_locked(
+                effect_id,
+                request.attempt,
+            )
+            head_row = self._connection.execute(
+                "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if attempt_row is None or head_row is None:
+                raise StoreConflictError(
+                    "composition handler Effect permit is missing"
+                )
+            head = _effect_record_from_row(head_row)
+            expected_nonce_sha256 = canonical_sha256(
+                {
+                    "execution_ticket_nonce": ticket_nonce,
+                    "omni_grant_nonce": grant_nonce,
+                }
+            )
+            if (
+                attempt_row["state"] != "SIDE_EFFECT_STARTED"
+                or head.state != "SIDE_EFFECT_STARTED"
+                or head.claim.pipeline_version
+                != "tiangong.composition-step-authorization.v1"
+                or head.claim.attempt != request.attempt
+                or head.claim.claim_revision != attempt_row["claim_revision"]
+                or head.claim.lease_epoch != gateway_epoch
+                or head.claim.request_id != request.request_id
+                or head.claim.run_id != request.run_id
+                or head.claim.generation != request.generation
+                or attempt_row["ticket_id"] != ticket_id
+                or attempt_row["ticket_sha256"] != ticket_sha256
+                or attempt_row["grant_sha256"] != grant_sha256
+                or attempt_row["nonce_sha256"] != expected_nonce_sha256
+            ):
+                raise StoreConflictError(
+                    "composition handler Effect permit is not current"
+                )
+
+            consumed_ticket = self._connection.execute(
+                """
+                SELECT * FROM security_nonce_ledger
+                WHERE issuer = 'tiangong-total-gateway'
+                  AND audience = 'tiangong-backend'
+                  AND purpose = 'execution_ticket'
+                  AND nonce = ?
+                """,
+                (ticket_nonce,),
+            ).fetchone()
+            if (
+                consumed_ticket is None
+                or consumed_ticket["payload_sha256"] != ticket_sha256
+                or consumed_ticket["gateway_epoch"] != gateway_epoch
+                or consumed_ticket["consumer_instance_id"]
+                != expected_ticket_consumer_instance_id
+                or consumed_ticket["consumed_at_ms"]
+                < int(attempt_row["side_effect_started_at_ms"] or 0)
+                or consumed_ticket["consumed_at_ms"] > now_ms
+                or consumed_ticket["expires_at_ms"]
+                != stored_ticket.payload.expires_at_ms
+                or now_ms > stored_ticket.payload.expires_at_ms
+            ):
+                raise StoreConflictError(
+                    "composition execution ticket was not consumed by this dispatch"
+                )
+
+            try:
+                self._connection.execute(
+                    """
+                    INSERT INTO security_nonce_ledger(
+                        issuer, audience, purpose, nonce, payload_sha256,
+                        gateway_epoch, consumer_instance_id, consumed_at_ms,
+                        expires_at_ms
+                    ) VALUES (
+                        'tiangong-total-gateway', 'tiangong-backend',
+                        'omni_capability_grant', ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        grant_nonce,
+                        grant_sha256,
+                        gateway_epoch,
+                        handler_consumer_instance_id,
+                        now_ms,
+                        stored_grant.payload.expires_at_ms,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise StoreConflictError(
+                    "composition handler grant nonce was already consumed"
+                ) from exc
+            return {
+                "effect_id": effect_id,
+                "attempt": request.attempt,
+                "handler_consumer_instance_id": handler_consumer_instance_id,
+            }
+
     def release_dispatch_permit(self, *, effect_id: str, attempt: int, now_ms: int) -> None:
         """attempt 收尾：inflight 归还（receipt 落地后调用）。
 
@@ -8150,7 +8526,79 @@ class GatewayStateStore:
                 (effect_id, attempt, now_ms),
             )
 
-    def recover_started_attempts(self, *, now_ms: int) -> tuple[dict, ...]:
+    def recover_terminal_dispatch_permits(
+        self,
+        *,
+        pipeline_version: str,
+        now_ms: int,
+    ) -> tuple[dict[str, object], ...]:
+        """Release terminal permits whose in-process handler died with its process.
+
+        A composition timeout may terminalize its Effect as ``AMBIGUOUS`` while
+        retaining the permit until the still-running Future exits.  If the
+        process dies first, no handler survives the single-instance restart;
+        the missing release row is therefore safe to reconcile at startup.
+        """
+
+        if (
+            not isinstance(pipeline_version, str)
+            or not pipeline_version
+            or len(pipeline_version) > 160
+            or type(now_ms) is not int
+            or now_ms < 0
+        ):
+            raise ValueError("terminal dispatch permit recovery scope is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            rows = self._connection.execute(
+                """
+                SELECT a.effect_id, a.attempt, a.side_effect_started_at_ms,
+                       a.terminal_at_ms
+                FROM effect_attempts a
+                WHERE a.pipeline_version = ?
+                  AND a.state IN ('SUCCEEDED','FAILED_FINAL','AMBIGUOUS','RECONCILED')
+                  AND EXISTS (
+                      SELECT 1 FROM effect_facts f
+                      WHERE f.effect_id = a.effect_id
+                        AND f.attempt = a.attempt
+                        AND f.fact_kind = 'DISPATCH_PERMIT'
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dispatch_permit_release r
+                      WHERE r.effect_id = a.effect_id
+                        AND r.attempt = a.attempt
+                  )
+                ORDER BY a.effect_id, a.attempt
+                """,
+                (pipeline_version,),
+            ).fetchall()
+        recovered: list[dict[str, object]] = []
+        for row in rows:
+            released_at_ms = max(
+                now_ms,
+                int(row["side_effect_started_at_ms"] or 0),
+                int(row["terminal_at_ms"] or 0),
+            )
+            self.release_dispatch_permit(
+                effect_id=str(row["effect_id"]),
+                attempt=int(row["attempt"]),
+                now_ms=released_at_ms,
+            )
+            recovered.append(
+                {
+                    "effect_id": str(row["effect_id"]),
+                    "attempt": int(row["attempt"]),
+                }
+            )
+        return tuple(recovered)
+
+    def recover_started_attempts(
+        self,
+        *,
+        now_ms: int,
+        exclude_pipeline_versions: tuple[str, ...] = (),
+    ) -> tuple[dict, ...]:
         """启动恢复：SIDE_EFFECT_STARTED 的 attempt 标记 RECONCILE_REQUIRED 并落 INCONCLUSIVE。
 
         只读对账由协调方随后用 record_effect_reconciliation 推进；
@@ -8158,10 +8606,18 @@ class GatewayStateStore:
         """
         with self._lock:
             rows = self._connection.execute(
-                "SELECT effect_id, attempt FROM effect_attempts WHERE state = 'SIDE_EFFECT_STARTED' ORDER BY effect_id, attempt"
+                "SELECT effect_id, attempt, pipeline_version, claimed_at_ms, "
+                "side_effect_started_at_ms FROM effect_attempts "
+                "WHERE state = 'SIDE_EFFECT_STARTED' ORDER BY effect_id, attempt"
             ).fetchall()
         recovered = []
         for row in rows:
+            if row["pipeline_version"] in exclude_pipeline_versions:
+                continue
+            recovered_at_ms = max(
+                now_ms,
+                int(row["side_effect_started_at_ms"] or row["claimed_at_ms"]),
+            )
             with self._lock, self._write_transaction():
                 self._connection.execute(
                     """
@@ -8178,7 +8634,7 @@ class GatewayStateStore:
                         "reason": "started_attempt_missing_terminal_fact_after_restart",
                         "note": "进入只读对账；APPLIED/PROVEN_NOT_APPLIED 结论须由动作专属证据适配器给出",
                     },
-                    created_at_ms=now_ms,
+                    created_at_ms=recovered_at_ms,
                 )
                 recovered.append({"effect_id": row["effect_id"], "attempt": row["attempt"]})
         return tuple(recovered)
@@ -8188,7 +8644,12 @@ class GatewayStateStore:
         *,
         issuer: str,
         audience: str,
-        purpose: Literal["execution_ticket", "delivery_ticket", "service_auth"],
+        purpose: Literal[
+            "execution_ticket",
+            "delivery_ticket",
+            "service_auth",
+            "omni_capability_grant",
+        ],
         nonce: str,
         payload_sha256: str,
         gateway_epoch: int,
@@ -15011,6 +15472,53 @@ class GatewayStateStore:
             )
             return record
 
+    def get_executable_composition_plan_for_request(
+        self,
+        request_id: str,
+        *,
+        run_id: str,
+        generation: int,
+    ) -> ExecutableCompositionPlanStoreRecord | None:
+        """Return an immutable plan obligation for one exact request lineage.
+
+        Unlike ``get_active_executable_composition_plan``, this read does not
+        hide an expired plan.  Once a request has a durable executable-plan
+        companion, an expired or otherwise non-dispatchable authorization is
+        still an obligation that must fail closed before delivery; it must not
+        be mistaken for a request that never had composition work.
+        """
+
+        if (
+            not isinstance(request_id, str)
+            or not request_id
+            or not isinstance(run_id, str)
+            or not run_id
+            or type(generation) is not int
+            or generation < 0
+        ):
+            raise ValueError("composition request lineage is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE request_id = ? AND run_id = ? AND generation = ?",
+                (request_id, run_id, generation),
+            ).fetchone()
+            if row is None:
+                _assert_no_required_executable_plan_missing(self._connection)
+                return None
+            try:
+                record = executable_plan_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored executable composition plan is invalid"
+                ) from exc
+            _verify_executable_composition_plan_authorities(
+                self._connection, record
+            )
+            return record
+
     def get_active_executable_composition_plan(
         self, registration_id: str, *, now_ms: int
     ) -> ExecutableCompositionPlanStoreRecord | None:
@@ -15632,6 +16140,44 @@ class GatewayStateStore:
                 "SELECT * FROM composition_step_authorization "
                 "WHERE executable_plan_id = ? AND step_id = ? AND attempt = ?",
                 (executable_plan_id, step_id, attempt),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                record = authorization_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored composition step authorization is invalid"
+                ) from exc
+            _verify_composition_step_authorization_authorities(
+                self._connection, record
+            )
+            if now_ms is not None:
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, record, now_ms=now_ms
+                )
+            return record
+
+    def get_composition_step_authorization_for_effect(
+        self,
+        effect_id: str,
+        *,
+        now_ms: int | None = None,
+    ) -> CompositionStepAuthorizationStoreRecord | None:
+        """Resolve the unique persisted composition receipt for an Effect."""
+
+        if (
+            not isinstance(effect_id, str)
+            or re.fullmatch(r"eff_[0-9a-f]{64}", effect_id) is None
+        ):
+            raise ValueError("composition authorization effect identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_step_authorization "
+                "WHERE prebound_effect_id = ?",
+                (effect_id,),
             ).fetchone()
             if row is None:
                 return None

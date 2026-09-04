@@ -1,6 +1,6 @@
 # P7C / P7D Continuous Progress and Evidence Ledger
 
-Last updated: 2026-09-04 12:32 +08:00.
+Last updated: 2026-09-04 17:22 +08:00.
 
 This file is the continuous status ledger for P7C.0, P7C.1, P7D.1 and P7D.2.
 It separates observed baseline evidence from planned or not-yet-run evidence.
@@ -10,12 +10,12 @@ It separates observed baseline evidence from planned or not-yet-run evidence.
 
 | Item | Value | Evidence status |
 |---|---|---|
-| Worktree | `C:\Users\77571\Documents\天工造物v3-p7c-p7d` | Observed in this work session |
-| Baseline commit | `14f6946a9d994e70654b9d64ecfcaae9c74baba4` | `git rev-parse HEAD` matched before document edits |
+| Worktree | `C:\Users\77571\Documents\天工造物v3-p7d1` | Independent P7D.1 worktree observed in this work session |
+| Baseline commit | `acb39a63bd267b5db1b9c0b7076110c5391704c8` | Exact merged P7C.1 `main` tip from which P7D.1 was branched |
 | Baseline branch relationship | Based on latest `main` fixed by the task | Exact remote/head-match evidence still required before a stage closes |
 | Baseline focused suite | `75 passed` | Inherited baseline evidence supplied for this work; not rerun by this documentation change |
-| Store baseline | schema v30 | Observed at baseline source (`STORE_SCHEMA_VERSION = 30`) |
-| Durable P7B baseline | P19 RegistrySnapshot + VerificationPlan + activation + limited registration in one existing-Store UoW | Observed at baseline source |
+| Store baseline | schema v32 | Observed at P7D.1 baseline source (`STORE_SCHEMA_VERSION = 32`) |
+| Durable P7C baseline | P19 RegistrySnapshot + VerificationPlan + activation + limited registration + executable plan + immutable authorization receipt in the existing Store | Observed at merged P7C.1 baseline source |
 | Production authority baseline | one existing Gateway/Store/Policy/Ticket/Grant/Runtime/P19/Completion chain | Must remain invariant through every stage |
 
 The `75 passed` row records the supplied baseline only. Its original command,
@@ -27,9 +27,9 @@ release/merge claim. This document does not represent that suite as rerun.
 | Stage | State | Completed in current work | Still required |
 |---|---|---|---|
 | P7C.0 | `MERGED / CLOSED` | Final successor `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #69; PR #69 merged as `b75d0c8aec926e18bebbf92938ded423b44a8016` | None for P7C.0; preserve the immutable PR evidence while later stages extend the same authorities |
-| P7C.1 | `FIRST_REMOTE_GATE_PASS / EVIDENCE_COMMIT_PREP` | One verified manifest read now owns the current Action Registry and exact argument-schema catalog; exact active registration/plan/generation/fence/object bytes are rechecked before the existing Policy/Ticket/Grant chain signs one `CompositionExecutionBindingV1`; Store v32 persists an insert-only receipt and revalidates it transactionally; the issuance-only adapter is exposed on the existing worker and delegates to `OmniGrantAuthority`; it does not consume nonces, invoke Runtime/handlers, or record action Effect/Fact; all local gates and the first nine-check remote round passed on candidate `9e744d0b2185f0b6e4abca0981daa62dc9494a7c`; PR #70 had no reviews, comments or review threads and was `CLEAN` when captured | Commit this evidence-only ledger update, rerun all nine checks on the successor HEAD, prove exact local/remote/PR/check head match, post immutable PR evidence, then merge |
-| P7D.1 | `NOT_STARTED` | Unique Runtime seam and A0 first-slice boundary documented | Existing-worker/regenerative/Effect/Fact/BackendClient/Omni integration and evidence |
-| P7D.2 | `NOT_STARTED` | DAG/`STEP_OUTPUT`/P19/Completion boundary documented | Durable DAG/restart/reconcile, P19 readiness, CompletionGate closeout, production A0 evidence |
+| P7C.1 | `MERGED / CLOSED` | Final successor `e6023ba100f2b8a19331e1a0b0b46e0251533a32` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #70; PR #70 merged as `acb39a63bd267b5db1b9c0b7076110c5391704c8` | None for P7C.1; P7D must continue to consume the same Policy/Ticket/Grant authorities rather than minting replacements |
+| P7D.1 | `FINAL-RERUN DEFECT REPAIRED / NEW SUCCESSOR PREP` | The existing `GatewayOrchestrationWorker` dispatches one persisted static A0 root through the existing Backend compatibility client into Omni Body and `BodyRuntime`; exact receipt/plan/registry/schema/object/fence/trust are revalidated, ticket and grant nonces are consumed at the handler boundary, Gateway Fact precedes terminal Effect, and timeout/restart recovery never replays an unknown `STARTED` attempt. All nine first-round checks passed on `c327851a1e18deb7c602673c3f3f87c6afa785f7`. The evidence successor `331e675a7e159493d78fc4242612a1bdb8aed41f` was correctly rejected at 8/9 when Windows exposed a cross-ledger `os.replace` race; product/test repair `24937b440746ec90b4e0000723280bef0e88f49e` now uses atomic no-clobber publication with exact-byte validation and has complete local gates | Commit this ledger-only successor, rerun all nine checks on that exact head, record immutable local/remote/PR/check head-match evidence and merge; this stage intentionally does not claim DAG, dynamic `STEP_OUTPUT`, P19 closeout or production completion before P7D.2 |
+| P7D.2 | `DESIGN RECON COMPLETE / IMPLEMENTATION NOT STARTED` | Read-only production-path and v1.2 cross-checks identified the no-second-frontier design, explicit result-schema authority, final-output alias, multi-disposition and multi-Fact CompletionGate gaps, restart/epoch continuation-authority requirement, dependency-edge leaf semantics, exact P19 subject coverage and running-manifest-lock conflict | Durable DAG/restart/reconcile, result/value-schema authority, current-epoch continuation issuance, exact P19 readiness/disposition aggregation, CompletionGate closeout and production A0 evidence |
 
 ## 3. P7C.0 implementation checklist
 
@@ -118,24 +118,35 @@ does not change the tested product/test tree.
   evidence is recorded on code candidate
   `9e744d0b2185f0b6e4abca0981daa62dc9494a7c`.
 - [x] The first nine-check remote round passed on that unchanged code candidate.
-- [ ] Pass all nine remote checks again on the evidence-only successor SHA that
+- [x] Pass all nine remote checks again on the evidence-only successor SHA that
   is intended to merge.
-- [ ] Record exact local/remote/PR/check head match for that successor SHA.
+- [x] Record exact local/remote/PR/check head match for that successor SHA and
+  merge PR #70 as `acb39a63bd267b5db1b9c0b7076110c5391704c8`.
 
 ### P7D.1
 
-- [ ] Existing `GatewayOrchestrationWorker` is the only scheduler.
-- [ ] Existing regenerative execution seam and canonical Gateway Effect/Fact
+- [x] Existing `GatewayOrchestrationWorker` is the only scheduler.
+- [x] Existing worker dispatch seam and canonical Gateway Effect/Fact
   authorities own durable progress; `ExecutionEngine` is not introduced as a
   production scheduler/outcome ledger.
-- [ ] A0 read/verify goes through existing `BackendClient` → Omni Body →
+- [x] A0 read/verify goes through existing `BackendClient` → Omni Body →
   `BodyRuntime` using exact Ticket/Grant bindings.
-- [ ] Pre-dispatch rejection invokes no handler.
-- [ ] Timeout/error after the execution boundary becomes `AMBIGUOUS` or
+- [x] Pre-dispatch rejection invokes no handler and consumes no handler nonce.
+- [x] Timeout/error after the execution boundary becomes `AMBIGUOUS` or
   reconcile-required and is not replayed blindly.
-- [ ] Single-step restart cut points prove no duplicate handler call.
-- [ ] P7D.1 cannot claim production completion before P7D.2.
-- [ ] Focused/local evidence, nine remote checks and head-match are recorded.
+- [x] Single-step restart cut points prove no duplicate handler call; exact Fact
+  recovers terminal Effect, while missing Fact closes unknown work
+  `AMBIGUOUS`.
+- [x] P7D.1 cannot claim production completion before P7D.2.
+- [x] Focused, adversarial, generated-source, P14, P19 and Node local evidence
+  is recorded on the current pre-commit candidate tree.
+- [x] Full Python final rerun is recorded on the current pre-commit candidate
+  tree.
+- [x] The first nine-check remote round and exact head match are recorded on
+  candidate `c327851a1e18deb7c602673c3f3f87c6afa785f7`.
+- [ ] Nine remote checks and exact head-match are recorded on the new successor
+  that contains repair `24937b440746ec90b4e0000723280bef0e88f49e` plus this
+  evidence update and is intended to merge.
 
 ### P7D.2
 
@@ -185,19 +196,38 @@ assumption.
 | P7C.1 | P19 Golden Gate | `python -m pytest tests/golden/p19_r2/ -q` | Windows / Python 3.12.10 | `PASS` | 55 passed | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | 38.08 s; completed in this work session before the candidate commit |
 | P7C.1 | P19/verification/repair selection | `python -m pytest tests/ -k "p19 or verification or repair" -q` | Windows / Python 3.12.10 | `PASS` | 316 passed, 3594 deselected | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | 76.66 s; completed in this work session before the candidate commit |
 | P7C.1 | Official generation, mirrors and Source Authority | `python scripts/sync-generated-sources.py --check`; `python scripts/sync-generated-sources.py --check-committed`; `python scripts/sync_omni_capability_manifest.py --check`; `python scripts/check-source-authority.py`; `git diff --check` | Windows / Python 3.12.10 + Git | `PASS` | 16 independent authorities, 1 alias, 24 generated targets, 1 closed-world boundary; both mirror modes and manifest check passed | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | Final staged-tree checks completed in this work session before the candidate commit |
-| P7D.1 | runtime/effect/fact/restart/timeout | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
-| P7D.1 | generated-source sync/check + mirrors | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
-| P7D.1 | selected/full local regression | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
+| P7D.1 | Runtime/Effect/Fact/restart/timeout focused regression | `python -m pytest -q tests/test_composition_step_execution_p7d1.py tests/test_composition_backend_transport_p7d1.py tests/test_composition_execution_manifest_p7d1.py tests/test_gateway_worker_composition_integration_p7d1.py tests/test_gateway_worker_composition_recovery_p7d1.py tests/test_effect_fact_chain_v14.py tests/test_execution_contract_epoch.py tests/test_p18_m4_authority_repairs.py tests/test_effect_ledger.py` | Windows / Python 3.12.10, current-worktree sources | `PASS` | 97 passed | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 67.27 s; rerun after timeout-permit repair |
+| P7D.1 | P19 Golden Gate | `python -m pytest tests/golden/p19_r2/ -q` | Windows / Python 3.12.10, refreshed 1.4 freeze/fingerprint | `PASS` | 55 passed | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 38.48 s; rerun after final watchdog compatibility fix |
+| P7D.1 | P19/verification/repair selection | `python -m pytest tests/ -k "p19 or verification or repair" -q` | Windows / Python 3.12.10 | `PASS` | 316 passed, 3670 deselected | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 77.42 s |
+| P7D.1 | P14 focused regression | `python -m pytest -q tests/test_repository_structure_p14_m2.py tests/test_repository_structure_p14_m2_wiring.py tests/test_repository_query_p14_m3.py tests/test_repository_query_p14_m3_coherence.py tests/test_repository_query_p14_m3_wiring.py tests/test_repository_context_p14_m4.py tests/test_repository_context_p14_m4_wiring.py tests/test_repository_incremental_p14_m5.py tests/test_repository_security_p14.py tests/test_life_repository_bridge_p14.py tests/test_reflection_capability_p8.py tests/test_life_capability_health_flow.py` | Windows / Python 3.12.10 | `PASS` | 109 passed | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 13.98 s; rerun after final product changes |
+| P7D.1 | Full Node regression | `$NodeTests = @(Get-ChildItem -LiteralPath tests -Filter '*.test.mjs' -File \| Sort-Object FullName \| ForEach-Object { $_.FullName }); node --test @NodeTests` | Windows / Node v24.14.0 | `PASS` | 224 passed, 2 skipped, 0 failed in 29 files | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 2011.00 ms Node duration; worktree byte-equivalent before/after |
+| P7D.1 | Official generation, manifests and Source Authority | `python scripts/sync-generated-sources.py --write`; `python scripts/sync-generated-sources.py --check`; `python scripts/sync_omni_capability_manifest.py --check`; `python scripts/check-source-authority.py`; `git diff --check` | Windows / Python 3.12.10 + Git | `PASS` | 19 managed novel Actions, 790 total, 290 executable; 16 independent authorities, 1 alias, 24 generated targets, 1 closed-world boundary | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | Final official write/check completed after product fixes |
+| P7D.1 | Full Python regression | `python -m pytest -q` | Windows / Python 3.12.10, current-worktree sources | `PASS` | 3969 passed, 17 skipped, 847 subtests passed | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | 709.48 s; final clean rerun after all product/test fixes |
+| P7D.1 remediation | P7D runtime + evidence concurrency focused regression | `python -m pytest -q tests/test_composition_step_execution_p7d1.py tests/test_composition_backend_transport_p7d1.py tests/test_composition_execution_manifest_p7d1.py tests/test_gateway_worker_composition_integration_p7d1.py tests/test_gateway_worker_composition_recovery_p7d1.py tests/test_effect_fact_chain_v14.py tests/test_execution_contract_epoch.py tests/test_p18_m4_authority_repairs.py tests/test_effect_ledger.py tests/test_policy_evidence_concurrency.py` | Windows / Python 3.12.10, exact product repair commit | `PASS` | 99 passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 77.70 s; includes deterministic two-ledger no-clobber race and publication-failure cleanup |
+| P7D.1 remediation | P7C.1 authority + evidence concurrency regression | `python -m pytest -q tests/test_policy_evidence_concurrency.py tests/test_composition_grant_authority_p7c1.py` | Windows / Python 3.12.10, repaired product/test tree | `PASS` | 30 passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 13.45 s; original two-authority race also passed 20/20 isolated repetitions |
+| P7D.1 remediation | Full Python regression after official mirror sync | `python -m pytest -q` | Windows / Python 3.12.10, repaired product/test tree | `PASS` | 3971 passed, 17 skipped, 847 subtests passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 723.92 s; 8 existing warnings |
+| P7D.1 remediation | P19 Golden Gate | `python -m pytest tests/golden/p19_r2/ -q` | Windows / Python 3.12.10 | `PASS` | 55 passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 39.40 s |
+| P7D.1 remediation | P19/verification/repair selection | `python -m pytest tests/ -k "p19 or verification or repair" -q` | Windows / Python 3.12.10 | `PASS` | 316 passed, 3672 deselected | `24937b440746ec90b4e0000723280bef0e88f49e` | 77.75 s |
+| P7D.1 remediation | P14 focused regression | Same 12-file P14 selection recorded above | Windows / Python 3.12.10 | `PASS` | 109 passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 14.53 s |
+| P7D.1 remediation | Full Node regression | `$NodeTests = @(Get-ChildItem -LiteralPath tests -Filter '*.test.mjs' -File \| Sort-Object FullName \| ForEach-Object { $_.FullName }); node --test @NodeTests` | Windows / Node v24.14.0 | `PASS` | 224 passed, 2 skipped, 0 failed in 29 files | `24937b440746ec90b4e0000723280bef0e88f49e` | 1960.69 ms; repaired transport wait helper also passed 50/50 isolated stress runs |
+| P7D.1 remediation | Official generation, manifests and Source Authority | `python scripts/sync-generated-sources.py --write`; both mirror checks; Omni manifest check; `python scripts/check-source-authority.py`; `git diff --check` | Windows / Python 3.12.10 + Git | `PASS` | 19 managed novel Actions, 790 total, 290 executable; 16 independent authorities, 1 alias, 24 generated targets, 1 closed-world boundary | `24937b440746ec90b4e0000723280bef0e88f49e` | Official write followed by final check/check-committed and source-authority PASS |
 | P7D.2 | DAG/`STEP_OUTPUT`/reconcile/P19/Completion | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
 | P7D.2 | generated-source sync/check + mirrors | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
 | P7D.2 | selected/full local regression | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
 
-The first discovered Node full-suite run had one timeout before the `cancel`
+An earlier discovered Node full-suite run had one timeout before the `cancel`
 assertions in the pre-existing `test_avatar_p2b_transport.test.mjs` readiness
 helper. The same unchanged test failed on baseline `main`; repeated isolation
-was 20/20 green, and a subsequent discovered full suite was 224 passed / 2
-skipped / 0 failed. This is recorded as a baseline timing flake, not hidden as
-a product-code pass.
+was then 20/20 green, and a subsequent discovered full suite passed. During the
+P7D.1 remediation gate, the canonical suite hit the same helper in `cancel`,
+then an isolated rerun hit the adjacent backpressure test at the same initial
+wait. The helper comment prohibited fixed-turn timing assumptions, but its code
+still exhausted 200 `setImmediate` turns before real file I/O was guaranteed to
+complete. Repair `24937b440746ec90b4e0000723280bef0e88f49e` replaces that
+non-contract turn count with the file's existing two-second wall-clock pattern;
+all protocol assertions remain unchanged. The file passed 28/28, isolated
+stress passed 50/50, and the canonical suite passed 224/2/0 afterward. The two
+failed discovery runs are not counted as PASS.
 
 The first P7C.1 Node discovery run was executed before this independent
 worktree had installed the locked `app/package-lock.json` dependencies. Six
@@ -207,6 +237,26 @@ as PASS. After `npm ci --ignore-scripts --no-audit --no-fund`, the unchanged
 Node suite was rerun without concurrent Python load and completed with 224
 passed, 2 skipped and 0 failed.
 
+The first P7D.1 full Python run is not counted as PASS: it exposed one missing
+reviewed-lineage successor for the deliberately changed authorization contract
+and two legacy watchdog-test doubles without a production `claim` field. The
+minimal lineage and compatibility fixes passed a 14-test targeted rerun. The
+subsequent complete unchanged-tree run is the 3969-pass result recorded above.
+
+The first remediation full Python run is also not counted as PASS: it was run
+before the mandatory generated-source write and correctly reported only the
+authoritative `policy_evidence.py` mirror and marker as stale (3970 passed, two
+source-authority failures). After the official write/check, both exact failures
+passed and the complete unchanged-tree rerun passed 3971 tests.
+
+The evidence-only successor `331e675a7e159493d78fc4242612a1bdb8aed41f`
+is not a final PASS. Eight checks succeeded, but Windows full regression failed
+when two independent policy-evidence ledgers concurrently published the same
+digest path and Windows rejected the second `os.replace` with `WinError 5`.
+Repair `24937b440746ec90b4e0000723280bef0e88f49e` uses atomic no-clobber
+publication, validates the winning bytes and cleans temporary files. Independent
+review found no P0/P1 defect in that repair or in the bounded Node wait repair.
+
 ## 7. Nine required GitHub checks per stage
 
 Focused/migration/tamper tests and local sync/check evidence must be green
@@ -215,15 +265,15 @@ checks against one unchanged candidate SHA.
 
 | Required GitHub check | P7C.0 | P7C.1 | P7D.1 | P7D.2 |
 |---|---|---|---|---|
-| `source-authority-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `source-authority-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `p14-focused-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `p14-focused-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `p19-r2-golden-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
-| `p19-r2-golden-windows-latest` | `FINAL PASS @ c7b1ba1…` | `ROUND 1 PASS @ 9e744d0… / FINAL HEAD RERUN PENDING` | `PENDING` | `PENDING` |
+| `source-authority-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `source-authority-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FAIL @ 331e675… / REPAIRED / NEW HEAD RERUN PENDING` | `PENDING` |
+| `p14-focused-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `p14-focused-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `p19-r2-golden-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `p19-r2-golden-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
 
 For every non-pending cell, attach the GitHub run URL, conclusion, checked SHA
 and completion time below. A green check on another SHA does not count.
@@ -250,27 +300,55 @@ and completion time below. A green check on another SHA does not count.
 | P7C.1 | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `full-regression-ubuntu` | [job 100907261791 / run 33835568522](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33835568522/job/100907261791) | `SUCCESS` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `2026-09-04T04:13:55Z` |
 | P7C.1 | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `p19-r2-golden-ubuntu-latest` | [job 100907262023 / run 33835568541](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33835568541/job/100907262023) | `SUCCESS` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `2026-09-04T04:08:34Z` |
 | P7C.1 | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `p19-r2-golden-windows-latest` | [job 100907261769 / run 33835568541](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33835568541/job/100907261769) | `SUCCESS` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `2026-09-04T04:11:05Z` |
-| P7D.1 | `TBD` | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `source-authority-ubuntu-latest` | [job 100914435934 / run 33838030691](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030691/job/100914435934) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:46:59Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `source-authority-windows-latest` | [job 100914435969 / run 33838030691](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030691/job/100914435969) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:48:01Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `full-regression-ubuntu-latest` | [job 100914435711 / run 33838030691](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030691/job/100914435711) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:53:18Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `full-regression-windows-latest` | [job 100914435873 / run 33838030691](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030691/job/100914435873) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T05:08:45Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `p14-focused-ubuntu-latest` | [job 100914435922 / run 33838030697](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030697/job/100914435922) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:46:54Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `p14-focused-windows-latest` | [job 100914435661 / run 33838030697](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030697/job/100914435661) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:48:11Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `full-regression-ubuntu` | [job 100914435835 / run 33838030697](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030697/job/100914435835) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:53:19Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `p19-r2-golden-ubuntu-latest` | [job 100914435755 / run 33838030724](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030724/job/100914435755) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:48:18Z` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `p19-r2-golden-windows-latest` | [job 100914435931 / run 33838030724](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33838030724/job/100914435931) | `SUCCESS` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `2026-09-04T04:51:21Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `source-authority-ubuntu-latest` | [job 100951168554 / run 33850249911](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249911/job/100951168554) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:47:03Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `source-authority-windows-latest` | [job 100951168479 / run 33850249911](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249911/job/100951168479) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:48:01Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `full-regression-ubuntu-latest` | [job 100951168374 / run 33850249911](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249911/job/100951168374) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:55:48Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `full-regression-windows-latest` | [job 100951168645 / run 33850249911](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249911/job/100951168645) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T08:16:29Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `p14-focused-ubuntu-latest` | [job 100951168818 / run 33850249966](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249966/job/100951168818) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:47:21Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `p14-focused-windows-latest` | [job 100951168990 / run 33850249966](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249966/job/100951168990) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:49:51Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `full-regression-ubuntu` | [job 100951168672 / run 33850249966](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850249966/job/100951168672) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:55:14Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `p19-r2-golden-ubuntu-latest` | [job 100951168883 / run 33850250071](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850250071/job/100951168883) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:48:34Z` |
+| P7D.1 | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `p19-r2-golden-windows-latest` | [job 100951169066 / run 33850250071](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33850250071/job/100951169066) | `SUCCESS` | `c327851a1e18deb7c602673c3f3f87c6afa785f7` | `2026-09-04T07:52:56Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `source-authority-ubuntu-latest` | [job 100959704470 / run 33852963416](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963416/job/100959704470) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:21:22Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `source-authority-windows-latest` | [job 100959704672 / run 33852963416](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963416/job/100959704672) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:22:27Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `full-regression-ubuntu-latest` | [job 100959704749 / run 33852963416](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963416/job/100959704749) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:29:24Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `full-regression-windows-latest` | [job 100959704783 / run 33852963416](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963416/job/100959704783) | `FAILURE` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:43:54Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `p14-focused-ubuntu-latest` | [job 100959705011 / run 33852963463](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963463/job/100959705011) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:21:10Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `p14-focused-windows-latest` | [job 100959705060 / run 33852963463](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963463/job/100959705060) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:23:23Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `full-regression-ubuntu` | [job 100959704863 / run 33852963463](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963463/job/100959704863) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:30:09Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `p19-r2-golden-ubuntu-latest` | [job 100959704524 / run 33852963431](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963431/job/100959704524) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:22:52Z` |
+| P7D.1 | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `p19-r2-golden-windows-latest` | [job 100959704620 / run 33852963431](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33852963431/job/100959704620) | `SUCCESS` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `2026-09-04T08:26:08Z` |
 | P7D.2 | `TBD` | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` |
 
 Add nine rows for a stage when its candidate is pushed; do not summarize mixed
 SHAs into one PASS.
 
-The P7C.0 rows above are its first remote round. Its exact successor-head rerun
-matrix is preserved in the immutable PR #69 comment, and that successor was
-merged. The P7C.1 rows above are likewise the first remote round. Committing
-this evidence changes PR #70's head and therefore resets final closure. The
-exact successor-head rerun matrix will be posted as an immutable PR #70 comment
-after all nine checks finish, so recording it does not create an endlessly
-self-invalidating repository commit.
+The P7C.0 first-round rows above are supplemented by the exact successor-head
+rerun matrix in the immutable PR #69 comment. The P7C.1 rows above are its first
+remote round; the exact final `e6023ba100f2b8a19331e1a0b0b46e0251533a32`
+successor-head matrix is preserved in the immutable PR #70 evidence comment.
+Both exact successor heads were merged. Keeping final rerun matrices in
+immutable PR comments avoids creating an endlessly self-invalidating evidence
+commit. The P7D.1 rows include its successful first round and the rejected
+eight-of-nine evidence-only successor. Only an exact new successor-head rerun,
+immutable PR #71 evidence and four-way head match can close P7D.1.
 
 ## 9. Head-match closure
 
 | Stage | Local reviewed HEAD | Remote branch tip | PR head SHA | Nine-check SHA | Worktree clean | Status |
 |---|---|---|---|---|---|---|
 | P7C.0 | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `YES` | `CLOSED / PR #69 MERGED AS b75d0c8…` |
-| P7C.1 | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `9e744d0b2185f0b6e4abca0981daa62dc9494a7c` | `YES` | `ROUND 1 PASS / EVIDENCE COMMIT WILL RESET` |
-| P7D.1 | `TBD` | `TBD` | `TBD` | `TBD` | `TBD` | `PENDING` |
+| P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `YES` | `CLOSED / PR #70 MERGED AS acb39a63…` |
+| P7D.1 | `24937b440746ec90b4e0000723280bef0e88f49e` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `REJECTED 8/9 @ 331e675a7e159493d78fc4242612a1bdb8aed41f` | `YES BEFORE THIS LEDGER-ONLY UPDATE` | `REMEDIATION PRODUCT COMMITTED / FINAL EVIDENCE SUCCESSOR PENDING` |
 | P7D.2 | `TBD` | `TBD` | `TBD` | `TBD` | `TBD` | `PENDING` |
 
 Closure requires all four SHA columns to be identical, all nine checks green on
@@ -287,15 +365,19 @@ remote-check and head-match cells to `PENDING`.
 | Same object identity replaced/deleted/rebound across owners or requests | Store-wide pre-insert check + canonical REQUEST owner + append-only schema guards + legacy integrity scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
 | Sealed executable companion replaced, changed or deleted after commit | identity INSERT/REPLACE/UPSERT guard + unconditional UPDATE/DELETE guards + schema fingerprint + integrity scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
 | Marker-1 companion corruption bypasses P7B paths | registration-scoped full companion parse/cross-authority validation on each P7B read/recovery/expiry/replay target; global open/health scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
-| Dynamic result drift/substitution | exact upstream Effect+Fact+lineage and schema-bound `STEP_OUTPUT` | P7D.2 | `OPEN` |
-| Plan A0 label used as permission | current compiled permission + Policy at immediate boundary | P7C.1 | `CONTROL IMPLEMENTED / FULL LOCAL PASS / FIRST REMOTE PASS / FINAL HEAD RERUN PENDING` |
-| Capability manifest changes between model loading and authorization authority compilation | compile Registry and schema catalog from the same single verified file read, then reuse that authority in orchestration | P7C.1 | `CONTROL IMPLEMENTED / FULL LOCAL PASS / FIRST REMOTE PASS / FINAL HEAD RERUN PENDING` |
-| Request/plan/step/arguments/target/generation crossing under a valid signature | exact `CompositionExecutionBindingV1` on Intent, Decision, Ticket and Grant plus independent expected binding | P7C.1 | `CONTROL IMPLEMENTED / FULL LOCAL PASS / FIRST REMOTE PASS / FINAL HEAD RERUN PENDING` |
-| Durable receipt treated as signature authority after restart | Store validates canonical structure and hashes; `OmniGrantAuthority` must reverify current ticket/grant signatures before return or replay; P7D consumers must preserve that gate | P7C.1/P7D.1 | `P7C.1 CONTROL IMPLEMENTED / P7D CONSUMER OPEN` |
+| Dynamic result drift/substitution | exact upstream Effect+Fact+lineage and schema-bound `STEP_OUTPUT` backed by an explicit result/value schema body in the existing Omni catalog | P7D.2 | `OPEN; CURRENT CATALOG HAS ARGUMENT SCHEMAS BUT NO RESULT/VALUE SCHEMA AUTHORITY` |
+| Parent authorization disappears after unregister or gateway epoch restart | insert-only, non-executable continuation delegation may only re-enter the current Policy/Ticket/Grant chain; it can never authorize Runtime directly | P7D.2 | `OPEN; OLD RECEIPT/TICKET MUST NOT CROSS EPOCH` |
+| Pre-start receipt cannot be safely resumed in a new epoch | Store proves handler count zero and nonces unconsumed before bounded attempt+1/new Effect ID supersession | P7D.2 | `OPEN; STARTED REMAINS NO-REPLAY` |
+| Existing CompletionGate treats a legal multi-Fact batch as a conflict | compare the complete exact FactBatch ID tuple and bind every required leaf Effect/Fact | P7D.2 | `OPEN` |
+| Composition writes the regenerative `execution_frontier` | derive a read-only frontier from sealed plan + receipts + Effect heads + Fact batches; preserve the existing single writer | P7D.2 | `PROHIBITED / DESIGN CONTROL IDENTIFIED` |
+| Plan A0 label used as permission | current compiled permission + Policy at immediate boundary | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
+| Capability manifest changes between model loading and authorization authority compilation | compile Registry and schema catalog from the same single verified file read, then reuse that authority in orchestration | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
+| Request/plan/step/arguments/target/generation crossing under a valid signature | exact `CompositionExecutionBindingV1` on Intent, Decision, Ticket and Grant plus independent expected binding | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
+| Durable receipt treated as signature authority after restart | Store validates canonical structure and hashes; the P7D consumer revalidates the immutable receipt, current trust, ticket and grant before dispatch | P7C.1/P7D.1 | `P7D.1 STATIC-ROOT CONTROL IMPLEMENTED / MULTI-STEP CURRENT-EPOCH CONTINUATION OPEN IN P7D.2` |
 | Same-size path content changes after snapshot | strengthen path snapshot before any path-based composition execution | P7D.1 | `OPEN BEFORE PATH-BASED EXECUTION` |
-| Second scheduler/outcome authority | only `GatewayOrchestrationWorker` + existing regenerative/Effect/Fact seams | P7D.1 | `OPEN` |
-| Cross-boundary timeout replay | `AMBIGUOUS`/reconcile-required; no blind replay | P7D.1/P7D.2 | `OPEN` |
-| Grant-admission evidence mistaken for action success | require canonical action Effect head + Gateway execution fact | P7D.1/P7D.2 | `OPEN` |
+| Second scheduler/outcome authority | only `GatewayOrchestrationWorker` + canonical Effect/Fact seams | P7D.1 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / DAG DERIVATION OPEN IN P7D.2` |
+| Cross-boundary timeout replay | `AMBIGUOUS`/reconcile-required; no blind replay | P7D.1/P7D.2 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / DAG CUT-POINT MATRIX OPEN IN P7D.2` |
+| Grant-admission evidence mistaken for action success | require canonical action Effect head + Gateway execution fact | P7D.1/P7D.2 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / LEAF BARRIER OPEN IN P7D.2` |
 | Verification or repair escapes A0 | exact P19 plan; no A1+ repair dispatch in first batch | P7D.2 | `OPEN` |
 | Partial leaf success declared complete | CompletionGate requires every required leaf Effect/fact | P7D.2 | `OPEN` |
 | Read-only composition triggers channel delivery | initial P7D batch excludes external delivery/send | P7D.2 | `OPEN` |

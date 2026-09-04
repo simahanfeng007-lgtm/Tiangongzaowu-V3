@@ -75,5 +75,17 @@ class CompatibilityJsonClient:
         ).encode("utf-8")
         return status, value, hashlib.sha256(raw).hexdigest()
 
+    def set_composition_dispatch_authorizer(self, provider: Any) -> None:
+        setter = getattr(
+            self._service,
+            "set_composition_dispatch_authorizer",
+            None,
+        )
+        if not callable(setter):
+            raise TypeError(
+                "service does not expose composition dispatch authority binding"
+            )
+        setter(provider)
+
 
 __all__.append("CompatibilityJsonClient")

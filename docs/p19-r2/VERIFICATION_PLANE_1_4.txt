@@ -1,0 +1,68 @@
+P19-R2 VERIFICATION PLANE 1.4 — P7D.1 RUNTIME COMPATIBILITY REVISION
+======================================================================
+
+性质
+----------------------------------------------------------------------
+
+本版本是 P7D.1 对既有 P19 Verification Plane 的显式兼容修订。
+
+它只增加：
+
+1. 既有 GatewayStateStore Effect/Fact 边界对 composition pipeline 的精确查询、
+   dispatch permit 与重启对账约束；
+2. request/run/generation 当前租约、generation fence、全局 action fence 和已成功
+   parent Effect 在同一 Store 事务内的 dispatch 前校验；
+3. 已持久化 executable composition plan 的 obligation 查询。该查询不会因 plan
+   或 receipt 过期而把“必须执行但已不可执行”误判为“没有组合步骤”；
+4. P7D.1 新增的单步 A0 read/verify 运行接缝和对抗测试所需 authority-surface
+   冻结更新。
+
+它不改变：
+
+- verifier PASS / FAIL / INCONCLUSIVE 语义；
+- VerificationRecord 结构与记录规则；
+- VerificationReadiness 推导；
+- Artifact / Effect / Repository Oracle；
+- Evidence-driven Repair Policy；
+- CompletionGate；
+- P19 对完成声明的最终验证权。
+
+版本与权威
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.4"
+唯一机器可读来源：
+
+    src/total_gateway/verification_plane.py
+
+Gateway Store schema 仍为 32；本修订不新增 Store、表或第二执行状态权威。
+基线为 P7C.1 合并后的 main：
+
+    acb39a63bd267b5db1b9c0b7076110c5391704c8
+
+运行边界
+----------------------------------------------------------------------
+
+P7D.1 仅允许既有 GatewayOrchestrationWorker 在 parent execution 的 Gateway Fact
+和 SUCCEEDED Effect 均已提交后，消费一个仍可执行的 A0 read/verify composition
+receipt。调用链保持为既有 BackendClient → Omni Body → BodyRuntime；Gateway
+FactLedger 和 GatewayStateStore 仍分别持有机器事实与 Effect head。
+
+dispatch 前的拒绝不得调用 handler 或消费 nonce。STARTED 后结果未知必须进入
+AMBIGUOUS/reconcile-required，重启时只允许从 exact immutable Fact 收口，不得重放
+handler。已存在的 FAILED_FINAL/AMBIGUOUS child、缺失或过期 receipt、不可用 executor
+都必须在 artifact、Life、outbox 和 delivery 前 fail closed。
+
+P7D.1 仍不声明组合体系 production complete。DAG、STEP_OUTPUT、P19 执行、A0-only
+repair 和 all-leaf CompletionGate closeout 属于 P7D.2。
+
+冻结
+----------------------------------------------------------------------
+
+Freeze manifest：
+
+    docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+
+本次修订显式更新版本、主干基线、AUTHORITY_MAP 和 authority surface hashes；历史
+1.0/1.1/1.2/1.3 声明与冻结语义保留，不覆盖。禁止在不推进
+VERIFICATION_PLANE_VERSION 的情况下静默修改该权威面。

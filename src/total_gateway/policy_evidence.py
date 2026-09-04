@@ -88,7 +88,27 @@ class PolicyEvidenceLedger:
                         stream.write(body)
                         stream.flush()
                         os.fsync(stream.fileno())
-                    os.replace(temp, path)
+                    # Publish without replacing an existing content address.
+                    # ``self._lock`` only coordinates one ledger instance;
+                    # separate workers can therefore reach this point at the
+                    # same time.  ``os.replace`` lets both writers overwrite
+                    # the destination and Windows can reject that race with
+                    # ``PermissionError``.  A hard link is an atomic
+                    # create-if-absent operation because the staging file is
+                    # in the same directory.  The losing writer may accept the
+                    # winner only after verifying the authoritative bytes.
+                    try:
+                        os.link(temp, path)
+                    except FileExistsError:
+                        pass
+                    if (
+                        path.is_symlink()
+                        or not path.is_file()
+                        or path.read_bytes() != body
+                    ):
+                        raise PolicyEvidenceError(
+                            "policy evidence content-address conflict"
+                        )
                 finally:
                     temp.unlink(missing_ok=True)
         return {"kind": kind, "object_id": object_id, "sha256": digest, "path": str(path)}
