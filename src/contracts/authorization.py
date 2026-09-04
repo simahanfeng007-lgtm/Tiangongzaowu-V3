@@ -267,7 +267,17 @@ def authorize_execution_contract(
             not claim.has_valid_sha256()
             or claim.claim_sha256 != payload.claim_sha256
             or claim.claim_revision != payload.claim_revision
-            or claim.intent_sha256 != payload.intent_sha256
+            # Composition uses a separate deterministic effect-intent hash to
+            # derive the pre-bound Effect ID.  Its ActionIntent hash includes
+            # that Effect/binding and therefore cannot equal the effect-intent
+            # hash without an identity cycle.  The signed claim digest plus
+            # the independently rebuilt CompositionExecutionBinding still
+            # binds both identities exactly.  Non-composition tickets retain
+            # the legacy same-intent invariant.
+            or (
+                not composition_present
+                and claim.intent_sha256 != payload.intent_sha256
+            )
             or claim.effect_id != payload.effect_id
         ):
             raise ExecutionAuthorizationError("ticket.claim.mismatch")

@@ -24,7 +24,6 @@ from contracts import (
     ActionImpact,
     ActionIntent,
     ActionRegistrySnapshot,
-    CompositionExecutionBindingV1,
     ExecutionTicket,
     ExecutionTicketPayload,
     OmniCapabilityGrant,
@@ -40,6 +39,11 @@ from .action_registry import ActionRegistryError, ActionSchemaCatalog
 from .composition_activation_adapter import (
     CompositionActivationAdapterError,
     materialize_static_root_step,
+)
+from .composition_execution_binding import (
+    COMPOSITION_STEP_PIPELINE_VERSION,
+    CompositionExecutionBindingError,
+    derive_composition_execution_binding,
 )
 from .composition_step_authorization import (
     CompositionStepAuthorizationArtifacts,
@@ -196,7 +200,6 @@ def _user_specified_roots_from_text(text: str) -> tuple[Path, ...]:
 # D-06 统一 admission：子 effect 与父级共用 effect 台账 + security_nonce_ledger。
 _OMNI_SUB_EFFECT_PIPELINE_VERSION = "tiangong.omni-grant-authority.v1"
 _OMNI_NONCE_CONSUMER_ID = "tiangong-total-gateway:omni-grant-authority"
-_COMPOSITION_STEP_PIPELINE_VERSION = "tiangong.composition-step-authorization.v1"
 # run_sequence 探测上限：run_id 由 derive_run_identity(request_id, seq) 派生，
 # 超过该上界的 run 视为合成/越界身份，fail-closed。
 _RUN_SEQUENCE_PROBE_LIMIT = 256
@@ -237,6 +240,8 @@ class OmniGrantAuthority:
         action_schema_catalog: ActionSchemaCatalog | None = None,
         object_store=None,
         capability_source_manifest_hash: str | None = None,
+        parent_capability_manifest_hash: str | None = None,
+        composition_capability_manifest_hash: str | None = None,
         gateway_url: str = DEFAULT_GATEWAY_URL,
     ) -> None:
         if not registry.has_valid_sha256():
@@ -273,8 +278,31 @@ class OmniGrantAuthority:
         )
         if re.fullmatch(r"[0-9a-f]{64}", source_manifest_hash) is None:
             raise ValueError("Omni capability source manifest binding is invalid")
+        parent_manifest_hash = (
+            capability_manifest_hash
+            if parent_capability_manifest_hash is None
+            else parent_capability_manifest_hash
+        )
+        composition_manifest_hash = (
+            capability_manifest_hash
+            if composition_capability_manifest_hash is None
+            else composition_capability_manifest_hash
+        )
+        if any(
+            re.fullmatch(r"[0-9a-f]{64}", value) is None
+            for value in (parent_manifest_hash, composition_manifest_hash)
+        ):
+            raise ValueError("Omni composition manifest binding is invalid")
         self.capability_manifest_hash = capability_manifest_hash
         self.capability_source_manifest_hash = source_manifest_hash
+        # These are deliberately distinct authorities.  The parent ticket is
+        # issued against the Gateway compatibility manifest, while a
+        # composition child executes one real registry Action under the
+        # compiled composition execution manifest.  The raw source-file hash
+        # remains drift evidence only and is never presented as a
+        # ``CapabilityManifest.sha256`` at the execution boundary.
+        self.parent_capability_manifest_hash = parent_manifest_hash
+        self.composition_capability_manifest_hash = composition_manifest_hash
         self.component_manifest_hash = component_manifest_hash
         self.skill_catalog_hash = skill_catalog_hash
         self.signer = signer
@@ -716,7 +744,8 @@ class OmniGrantAuthority:
             not signature_is_current
             or outer.ticket_id != parent_ticket_id
             or outer.gateway_epoch != self.gateway_epoch
-            or outer.capability_manifest_hash != self.capability_manifest_hash
+            or outer.capability_manifest_hash
+            != self.parent_capability_manifest_hash
             or outer.component_manifest_hash != self.component_manifest_hash
             or outer.request_id != plan.request_id
             or outer.run_id != plan.run_id
@@ -807,7 +836,7 @@ class OmniGrantAuthority:
                 or runtime["session_id"] != active.session_id
                 or runtime["gateway_epoch"] != self.gateway_epoch
                 or runtime["capability_manifest_hash"]
-                != self.capability_manifest_hash
+                != self.composition_capability_manifest_hash
                 or runtime["component_manifest_hash"]
                 != self.component_manifest_hash
             ):
@@ -999,74 +1028,22 @@ class OmniGrantAuthority:
         target_snapshot_sha256 = (
             None if target_state is None else canonical_sha256(target_state)
         )
-        canonical_invocation_sha256 = canonical_sha256(
-            {
-                "action_id": permission.action_id,
-                "action_version": permission.action_version,
-                "payload_sha256": materialized_arguments_sha256,
-                "target_ref": target_ref,
-                "workspace_id": self.workspace_id,
-            }
-        )
         try:
-            run_sequence = self._derive_run_sequence(plan.request_id, plan.run_id)
-        except OmniGrantAuthorityError:
-            raise
-        ordinal = next(
-            index + 1
-            for index, item in enumerate(plan.step_bindings)
-            if item.step_id == step_id
-        )
-        effect_intent_sha256 = canonical_sha256(
-            {
-                "domain": "tiangong.composition-step-effect-intent.v1",
-                "parent_ticket_id": parent_ticket_id,
-                "registration_id": registration_id,
-                "executable_plan_id": plan.executable_plan_id,
-                "executable_plan_sha256": plan.executable_plan_sha256,
-                "step_id": step_id,
-                "step_binding_sha256": materialized.step.sha256,
-                "action_id": permission.action_id,
-                "action_version": permission.action_version,
-                "arguments_sha256": arguments_sha256,
-                "materialized_arguments_sha256": materialized_arguments_sha256,
-                "target_sha256": materialized.target_sha256,
-                "target_snapshot_sha256": target_snapshot_sha256,
-                "workspace_id": self.workspace_id,
-                "workspace_scope_hash": self.workspace_scope_hash,
-                "request_id": plan.request_id,
-                "run_id": plan.run_id,
-                "generation": plan.generation,
-            }
-        )
-        effect_id = derive_effect_identity(
-            request_id=plan.request_id,
-            run_id=plan.run_id,
-            run_sequence=run_sequence,
-            generation=plan.generation,
-            effect_kind="execution",
-            ordinal=ordinal,
-            intent_sha256=effect_intent_sha256,
-        ).effect_id
-        binding = CompositionExecutionBindingV1(
-            executable_plan_id=plan.executable_plan_id,
-            executable_plan_sha256=plan.executable_plan_sha256,
-            step_id=step_id,
-            step_binding_sha256=materialized.step.sha256,
-            request_id=plan.request_id,
-            run_id=plan.run_id,
-            generation=plan.generation,
-            effect_id=effect_id,
-            action_id=permission.action_id,
-            action_version=permission.action_version,
-            materialized_arguments_sha256=materialized_arguments_sha256,
-            canonical_invocation_sha256=canonical_invocation_sha256,
-            target_sha256=materialized.target_sha256,
-            target_snapshot_sha256=target_snapshot_sha256,
-            workspace_id=self.workspace_id,
-            workspace_scope_hash=self.workspace_scope_hash,
-            binding_sha256="0" * 64,
-        ).with_computed_sha256()
+            derived_binding = derive_composition_execution_binding(
+                plan,
+                materialized,
+                parent_ticket_id=parent_ticket_id,
+                workspace_id=self.workspace_id,
+                workspace_scope_hash=self.workspace_scope_hash,
+                target_snapshot_sha256=target_snapshot_sha256,
+            )
+        except CompositionExecutionBindingError as exc:
+            raise OmniGrantAuthorityError(exc.code, status=409) from exc
+        run_sequence = derived_binding.run_sequence
+        ordinal = derived_binding.ordinal
+        effect_intent_sha256 = derived_binding.effect_intent_sha256
+        effect_id = derived_binding.effect_id
+        binding = derived_binding.binding
 
         fence_status = store.action_fence_status()
         raw_fence_epoch = int(fence_status.get("action_fence_epoch", -1))
@@ -1276,7 +1253,7 @@ class OmniGrantAuthority:
             self.registry,
             policy_snapshot_sha256=policy_snapshot_sha256,
             skill_catalog_hash=self.skill_catalog_hash,
-            capability_manifest_hash=self.capability_manifest_hash,
+            capability_manifest_hash=self.composition_capability_manifest_hash,
             component_manifest_hash=self.component_manifest_hash,
         ).evaluate(
             intent,
@@ -1298,7 +1275,7 @@ class OmniGrantAuthority:
             effect_kind="execution",
             ordinal=ordinal,
             intent_sha256=effect_intent_sha256,
-            pipeline_version=_COMPOSITION_STEP_PIPELINE_VERSION,
+            pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
             attempt=1,
             claim_revision=1,
             lease_epoch=self.gateway_epoch,
@@ -1335,7 +1312,7 @@ class OmniGrantAuthority:
             link_account_id=outer.link_account_id,
             conversation_scope_hash=outer.conversation_scope_hash,
             principal_scope_hash=outer.principal_scope_hash,
-            capability_manifest_hash=self.capability_manifest_hash,
+            capability_manifest_hash=self.composition_capability_manifest_hash,
             policy_snapshot_hash=decision.policy_snapshot_sha256,
             policy_coverage_sha256=decision.policy_coverage_sha256,
             intent_id=intent.intent_id,
@@ -1407,7 +1384,7 @@ class OmniGrantAuthority:
             "impact_sha256": impact.impact_sha256,
             "action_permission_sha256": permission.permission_sha256,
             "action_registry_sha256": self.registry.registry_sha256,
-            "capability_manifest_hash": self.capability_manifest_hash,
+            "capability_manifest_hash": self.composition_capability_manifest_hash,
             "component_manifest_hash": self.component_manifest_hash,
             "confirmation_sha256": None,
             "skill_id": None,
@@ -1416,6 +1393,9 @@ class OmniGrantAuthority:
             "skill_activation_sha256": None,
             "gateway_url": self.gateway_url,
             "session_id": active.session_id,
+            # This is the immutable authorization receipt.  The P7D runtime
+            # coordinator derives a detached execution copy and forces that
+            # copy to False so Gateway FactLedger remains the sole fact writer.
             "fact_kernel_enabled": True,
             "gateway_epoch": self.gateway_epoch,
             "trust_bundle_sha256": trust_bundle.bundle_sha256,

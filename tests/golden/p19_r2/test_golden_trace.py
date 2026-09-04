@@ -447,9 +447,17 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
         self.assertEqual(len(bindings), 2)
 
     def test_g11_crash_before_boundary(self) -> None:
+        import time as _time
+
+        # Keep the pre-crash disposition observably earlier than the resumed
+        # loop.  A wall-clock millisecond collision otherwise makes the two
+        # deterministic disposition identities collapse on fast runners.
+        crash_snapshot_ms = _time.time_ns() // 1_000_000 - 1_000
         readiness = self._reverify()
         dispositions = self.coordinator.process_readiness(
-            plan=self.plan, readiness=readiness
+            plan=self.plan,
+            readiness=readiness,
+            now_ms=crash_snapshot_ms,
         )
         evidence = (
             self.gateway_store.get_verification_failure_evidence_by_id(
@@ -460,6 +468,7 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             disposition=dispositions[0],
             failure_evidence=evidence,
             plan=self.plan,
+            now_ms=crash_snapshot_ms,
         )
         # CRASH: directive persisted, no binding, runtime never entered.
 
@@ -1324,9 +1333,17 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
         self.assertEqual(len(bindings), 2)
 
     def test_g11_crash_before_boundary(self) -> None:
+        import time as _time
+
+        # Keep the pre-crash disposition observably earlier than the resumed
+        # loop.  A wall-clock millisecond collision otherwise makes the two
+        # deterministic disposition identities collapse on fast runners.
+        crash_snapshot_ms = _time.time_ns() // 1_000_000 - 1_000
         readiness = self._reverify()
         dispositions = self.coordinator.process_readiness(
-            plan=self.plan, readiness=readiness
+            plan=self.plan,
+            readiness=readiness,
+            now_ms=crash_snapshot_ms,
         )
         evidence = (
             self.gateway_store.get_verification_failure_evidence_by_id(
@@ -1337,6 +1354,7 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             disposition=dispositions[0],
             failure_evidence=evidence,
             plan=self.plan,
+            now_ms=crash_snapshot_ms,
         )
         # CRASH: directive persisted, no binding, runtime never entered.
 
@@ -2157,9 +2175,17 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
         self.assertEqual(len(bindings), 2)
 
     def test_g11_crash_before_boundary(self) -> None:
+        import time as _time
+
+        # Keep the pre-crash disposition observably earlier than the resumed
+        # loop.  A wall-clock millisecond collision otherwise makes the two
+        # deterministic disposition identities collapse on fast runners.
+        crash_snapshot_ms = _time.time_ns() // 1_000_000 - 1_000
         readiness = self._reverify()
         dispositions = self.coordinator.process_readiness(
-            plan=self.plan, readiness=readiness
+            plan=self.plan,
+            readiness=readiness,
+            now_ms=crash_snapshot_ms,
         )
         evidence = (
             self.gateway_store.get_verification_failure_evidence_by_id(
@@ -2170,6 +2196,7 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             disposition=dispositions[0],
             failure_evidence=evidence,
             plan=self.plan,
+            now_ms=crash_snapshot_ms,
         )
         # CRASH: directive persisted, no binding, runtime never entered.
 
@@ -2994,9 +3021,17 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
         self.assertEqual(len(bindings), 2)
 
     def test_g11_crash_before_boundary(self) -> None:
+        import time as _time
+
+        # Keep the pre-crash disposition observably earlier than the resumed
+        # loop.  A wall-clock millisecond collision otherwise makes the two
+        # deterministic disposition identities collapse on fast runners.
+        crash_snapshot_ms = _time.time_ns() // 1_000_000 - 1_000
         readiness = self._reverify()
         dispositions = self.coordinator.process_readiness(
-            plan=self.plan, readiness=readiness
+            plan=self.plan,
+            readiness=readiness,
+            now_ms=crash_snapshot_ms,
         )
         evidence = (
             self.gateway_store.get_verification_failure_evidence_by_id(
@@ -3007,6 +3042,7 @@ class GoldenArtifactCase(_GoldenArtifactFixture):
             disposition=dispositions[0],
             failure_evidence=evidence,
             plan=self.plan,
+            now_ms=crash_snapshot_ms,
         )
         # CRASH: directive persisted, no binding, runtime never entered.
 

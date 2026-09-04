@@ -246,10 +246,18 @@ def materialize_static_root_step(
 class CompositionActivationAdapter:
     """Narrow P7C.1 entry point backed by the one existing grant authority."""
 
-    def __init__(self, issuer: _CompositionGrantIssuer) -> None:
+    def __init__(
+        self,
+        issuer: _CompositionGrantIssuer,
+        *,
+        execution_available: bool = True,
+    ) -> None:
         if not callable(getattr(issuer, "issue_composition_step", None)):
             raise ValueError("composition adapter requires the Omni grant authority")
+        if type(execution_available) is not bool:
+            raise ValueError("composition execution availability is invalid")
         self._issuer = issuer
+        self._execution_available = execution_available
 
     def authorize_step(
         self,
@@ -259,6 +267,8 @@ class CompositionActivationAdapter:
         step_id: str,
         now_ms: int | None = None,
     ) -> dict[str, Any]:
+        if not self._execution_available:
+            _error("composition.authorization.execution_unavailable")
         for value in (parent_ticket_id, registration_id, step_id):
             if not isinstance(value, str) or _OPAQUE_ID.fullmatch(value) is None:
                 _error("composition.authorization.identity_invalid")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -1104,6 +1105,63 @@ class FactLedger:
                 "SELECT * FROM execution_fact_batches WHERE result_id = ?", (result_id,)
             ).fetchone()
             return None if row is None else self._parse_batch(row, verify_payload=verify_payload)
+
+    def get_batch_for_effect(
+        self,
+        effect_id: str,
+        *,
+        verify_payload: bool = True,
+    ) -> FactBatchRecord | None:
+        """Return the unique immutable execution batch for one Effect.
+
+        ``execution_fact_batches.effect_id`` is UNIQUE, so this is the
+        authoritative crash-recovery lookup for a STARTED composition Effect;
+        callers never infer completion from a loose Fact search.
+        """
+
+        if not isinstance(effect_id, str) or re.fullmatch(
+            r"eff_[0-9a-f]{64}", effect_id
+        ) is None:
+            raise ValueError("fact effect identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise FactLedgerError("fact ledger is closed")
+            row = self._connection.execute(
+                "SELECT * FROM execution_fact_batches WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            return (
+                None
+                if row is None
+                else self._parse_batch(row, verify_payload=verify_payload)
+            )
+
+    def get_batch_for_ticket(
+        self,
+        ticket_id: str,
+        *,
+        verify_payload: bool = True,
+    ) -> FactBatchRecord | None:
+        """Return the unique immutable execution batch for one ticket."""
+
+        if (
+            not isinstance(ticket_id, str)
+            or not ticket_id
+            or len(ticket_id) > 160
+        ):
+            raise ValueError("fact ticket identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise FactLedgerError("fact ledger is closed")
+            row = self._connection.execute(
+                "SELECT * FROM execution_fact_batches WHERE ticket_id = ?",
+                (ticket_id,),
+            ).fetchone()
+            return (
+                None
+                if row is None
+                else self._parse_batch(row, verify_payload=verify_payload)
+            )
 
     def get_batch_for_fact(
         self,

@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.3"
+- the single Verification Plane version source exists and is "1.4"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.3")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.4")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.3"' in (
+            if '"1.4"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -182,7 +182,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         )
         return {
             "verification_plane_version": VERIFICATION_PLANE_VERSION,
-            "baseline_sha": "b75d0c8aec926e18bebbf92938ded423b44a8016",
+            "baseline_sha": "acb39a63bd267b5db1b9c0b7076110c5391704c8",
             "store_schema_version": STORE_SCHEMA_VERSION,
             "contract_schema_versions": {
                 "verification": sha(
@@ -211,7 +211,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.3.
+    #: The authority surface frozen at 1.4.
     AUTHORITY_SURFACE_FILES = (
         "src/total_gateway/store.py",
         "src/total_gateway/store_unit_of_work.py",

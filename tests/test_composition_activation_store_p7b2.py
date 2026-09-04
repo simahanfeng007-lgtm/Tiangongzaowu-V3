@@ -181,7 +181,7 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # P7C.1 adds the current v32 authorization receipt.  Neither later layer
     # changes P7B eligibility semantics.
     assert STORE_SCHEMA_VERSION == 32
-    assert VERIFICATION_PLANE_VERSION == "1.3"
+    assert VERIFICATION_PLANE_VERSION == "1.4"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

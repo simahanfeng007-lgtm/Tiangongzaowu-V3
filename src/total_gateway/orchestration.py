@@ -31,6 +31,7 @@ from contracts import (
     OutboundPart,
     OutboundPlan,
     OutboundScope,
+    TrustBundle,
     TransitionEvent,
     canonical_json_bytes,
     canonical_sha256,
@@ -40,10 +41,19 @@ from contracts import (
     new_state_snapshot,
     text_sha256,
 )
+from runtime_security import (
+    verify_execution_ticket,
+    verify_omni_capability_grant,
+)
 
 from .active_requests import ActiveRequestActivator
 from .action_registry import ActionSchemaCatalog
 from .composition_activation_adapter import CompositionActivationAdapter
+from .composition_execution_binding import COMPOSITION_STEP_PIPELINE_VERSION
+from .composition_step_execution import (
+    CompositionStepExecutionCoordinator,
+    CompositionStepExecutionError,
+)
 from .impact_evaluator import compute_action_impact, derive_impact_knobs, probe_target_state
 from .omni_grant_authority import OmniGrantAuthority
 from .policy_engine import PolicyEngine, SourceRef
@@ -57,6 +67,47 @@ _EXECUTION_WATCHDOG_POOL = concurrent.futures.ThreadPoolExecutor(
     max_workers=8,
     thread_name_prefix="execution-watchdog",
 )
+_COMPOSITION_WATCHDOG_SLOT = threading.BoundedSemaphore(value=1)
+
+
+def _run_backend_transport_with_watchdog(
+    call: Callable[[], dict[str, Any]], timeout_seconds: float
+) -> dict[str, Any]:
+    """Run only the already-authorized transport call in the existing pool.
+
+    The caller crosses the durable Effect permit and consumes the ticket nonce
+    before this helper is entered.  If the in-process handler ignores its
+    timeout, its late return is deliberately discarded: the canonical Effect
+    closes AMBIGUOUS and no late Fact can race that terminal head.
+    """
+
+    if not _COMPOSITION_WATCHDOG_SLOT.acquire(blocking=False):
+        raise BackendClientError(
+            "backend.composition.watchdog_capacity_exhausted",
+            ambiguous=True,
+        )
+    try:
+        future = _EXECUTION_WATCHDOG_POOL.submit(
+            contextvars.copy_context().run,
+            call,
+        )
+    except BaseException:
+        _COMPOSITION_WATCHDOG_SLOT.release()
+        raise
+    future.add_done_callback(lambda _future: _COMPOSITION_WATCHDOG_SLOT.release())
+    try:
+        return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError as exc:
+        # If the task has not begun, prevent a delayed handler invocation.  A
+        # running in-process call cannot be killed safely; this first batch is
+        # A0 read/verify only, so its unknown late return is ignored and never
+        # promoted to a machine Fact.
+        cancelled = future.cancel()
+        raise BackendClientError(
+            "backend.composition.execution_timeout",
+            ambiguous=True,
+            pending_transport_future=(None if cancelled else future),
+        ) from exc
 
 
 def _append_orchestration_effect_event(
@@ -153,6 +204,7 @@ from .release_manifest import (
 from .runtime_authority import RuntimeTicketAuthority
 from .skill_selection import (
     SkillSelectionService,
+    compile_composition_execution_manifest,
     load_filesystem_skill_catalog,
     load_model_capability_manifest,
 )
@@ -398,7 +450,19 @@ class GatewayOrchestrationWorker:
 
         if omni_registry is None or policy_evidence is None or skill_capabilities is None:
             raise ValueError("production orchestration requires Omni registry and policy evidence")
+        if omni_schema_catalog is None:
+            raise ValueError("production orchestration requires Omni schema authority")
         self._policy_evidence = policy_evidence
+        self._composition_capabilities = compile_composition_execution_manifest(
+            skill_capabilities,
+            omni_registry,
+            omni_schema_catalog,
+            generated_at_ms=self._components.generated_at_ms,
+        )
+        parent_capabilities = compatibility_capability_manifest(
+            self._components.manifest_sha256,
+            generated_at_ms=self._components.generated_at_ms,
+        )
         self._omni_grants = OmniGrantAuthority(
             registry=omni_registry,
             capability_manifest_hash=self._release_manifest.capability_manifest_sha256,
@@ -416,10 +480,51 @@ class GatewayOrchestrationWorker:
             action_schema_catalog=omni_schema_catalog,
             object_store=objects,
             capability_source_manifest_hash=omni_registry.source_manifest_sha256,
+            parent_capability_manifest_hash=parent_capabilities.sha256,
+            composition_capability_manifest_hash=(
+                self._composition_capabilities.sha256
+            ),
             gateway_url=self._gateway_url,
         )
+        composition_execution_available = False
+        if backend_compat_client is not None:
+            binder = getattr(
+                backend_compat_client,
+                "set_composition_dispatch_authorizer",
+                None,
+            )
+            if callable(binder) and callable(
+                getattr(store, "consume_composition_handler_permit", None)
+            ):
+                binder(self._authorize_composition_handler_entry)
+                composition_execution_available = True
         self._composition_activation_adapter = CompositionActivationAdapter(
-            self._omni_grants
+            self._omni_grants,
+            execution_available=composition_execution_available,
+        )
+        self._composition_steps = (
+            None
+            if not composition_execution_available
+            else CompositionStepExecutionCoordinator(
+                store=store,
+                objects=objects,
+                facts=facts,
+                registry=omni_registry,
+                schema_catalog=omni_schema_catalog,
+                capability_manifest=self._composition_capabilities,
+                trust_bundle_provider=lambda now_ms: (
+                    self._authority.execution_trust_bundle(
+                        gateway_epoch=self._epoch,
+                        now_ms=now_ms,
+                    )
+                ),
+                backend_compat_client=backend_compat_client,
+                workspace_root=self._workspace_root,
+                gateway_epoch=self._epoch,
+                gateway_instance_id=self._instance_id,
+                append_effect_event=_append_orchestration_effect_event,
+                transport_runner=_run_backend_transport_with_watchdog,
+            )
         )
         self._context_projector = SessionContextProjector(store, objects)
         self._poll_seconds = poll_interval_seconds
@@ -613,19 +718,76 @@ class GatewayOrchestrationWorker:
     def start(self) -> None:
         if self._thread is not None:
             return
-        # V14 草案 §3.2：启动时先把上次崩溃遗留的 STARTED attempt 收口为
-        # RECONCILE_REQUIRED（head 层 AMBIGUOUS），进入只读对账；
-        # 未完成提交不再悬挂（此前 recover_started_effects 无生产调用方）。
+        now_ms = time.time_ns() // 1_000_000
+        # Composition owns an exact Effect -> Fact recovery adapter.  It must
+        # run before the generic V14 recovery, otherwise a provable successful
+        # A0 read could be overwritten by the generic interrupted-wrapper rule.
+        if self._composition_steps is not None:
+            try:
+                recovered_composition = self._composition_steps.recover_started(
+                    now_ms=now_ms
+                )
+                if recovered_composition:
+                    diagnostic_log(
+                        "[ORCHESTRATION] recovered "
+                        f"{len(recovered_composition)} composition effects from exact Facts"
+                    )
+            except Exception as exc:  # noqa: BLE001 - fail closed; never replay STARTED
+                diagnostic_log(
+                    "[ORCHESTRATION] composition-effect recovery failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                raise OrchestrationError(
+                    "orchestration.composition.recovery_failed",
+                    ambiguous=True,
+                ) from exc
+        else:
+            stranded_composition = self._store.list_effects_for_pipeline(
+                COMPOSITION_STEP_PIPELINE_VERSION,
+                states=("SIDE_EFFECT_STARTED",),
+            )
+            if stranded_composition:
+                raise OrchestrationError(
+                    "orchestration.composition.executor_unavailable",
+                    ambiguous=True,
+                )
+        try:
+            recovered_parent = self._recover_parent_started_effects(
+                now_ms=now_ms
+            )
+            if recovered_parent:
+                diagnostic_log(
+                    "[ORCHESTRATION] recovered "
+                    f"{recovered_parent} parent effects from exact Facts"
+                )
+        except Exception as exc:  # noqa: BLE001 - corrupt recovery must block start
+            diagnostic_log(
+                "[ORCHESTRATION] parent-effect recovery failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise OrchestrationError(
+                "orchestration.parent.recovery_failed",
+                ambiguous=True,
+            ) from exc
+        # V14 草案 §3.2：其余 STARTED attempt 进入既有保守恢复。P7D
+        # pipeline is always excluded, including deployments without the
+        # embedded executor, so it can never be blindly replayed or mislabeled
+        # as an ordinary backend-wrapper interruption.
         try:
             recovered = self._store.recover_started_effects(
-                now_ms=time.time_ns() // 1_000_000
+                now_ms=now_ms,
+                exclude_pipeline_versions=(COMPOSITION_STEP_PIPELINE_VERSION,),
             )
             if recovered:
                 diagnostic_log(
                     f"[ORCHESTRATION] recovered {len(recovered)} started effects into reconcile-required"
                 )
-        except Exception as exc:  # noqa: BLE001 - 恢复失败不得阻止 worker 启动，但必须留痕
+        except Exception as exc:  # noqa: BLE001 - recovery corruption blocks new work
             diagnostic_log(f"[ORCHESTRATION] started-effect recovery failed: {type(exc).__name__}: {exc}")
+            raise OrchestrationError(
+                "orchestration.effect.recovery_failed",
+                ambiguous=True,
+            ) from exc
         self._thread = threading.Thread(
             target=self._run,
             name="tiangong-gateway-orchestration",
@@ -677,6 +839,335 @@ class GatewayOrchestrationWorker:
     @property
     def composition_activation_adapter(self) -> CompositionActivationAdapter:
         return self._composition_activation_adapter
+
+    @property
+    def composition_capability_manifest(self) -> CapabilityManifest:
+        """Current execution manifest for registry-versioned composition Actions."""
+
+        return self._composition_capabilities
+
+    @property
+    def composition_step_executor(
+        self,
+    ) -> CompositionStepExecutionCoordinator | None:
+        """The worker-owned P7D seam; absent outside embedded deployments."""
+
+        return self._composition_steps
+
+    def _authorize_composition_handler_entry(
+        self,
+        *,
+        ticket: Any,
+        grant: Any,
+        trust_bundle: Any,
+        runtime_meta: Mapping[str, Any],
+        now_ms: int,
+    ) -> None:
+        """Pin the private backend route to current Gateway authority.
+
+        This callback runs inside the embedded backend immediately before Omni
+        Body.  It does not mint authority: it independently rebuilds the
+        current trust bundle and atomically consumes the already-issued grant
+        nonce against the existing Effect dispatch permit.
+        """
+
+        if (
+            not isinstance(trust_bundle, TrustBundle)
+            or not trust_bundle.has_valid_sha256()
+            or trust_bundle.gateway_epoch != self._epoch
+            or trust_bundle.generated_at_ms > now_ms
+            or not isinstance(runtime_meta, Mapping)
+        ):
+            raise OrchestrationError(
+                "orchestration.composition.handler_trust_invalid"
+            )
+        current_trust = self._authority.execution_trust_bundle(
+            gateway_epoch=self._epoch,
+            now_ms=trust_bundle.generated_at_ms,
+        )
+        if current_trust != trust_bundle:
+            raise OrchestrationError(
+                "orchestration.composition.handler_trust_not_current"
+            )
+        try:
+            verify_execution_ticket(ticket, current_trust, now_ms=now_ms)
+            verify_omni_capability_grant(grant, current_trust, now_ms=now_ms)
+            ticket_payload = ticket.payload
+            grant_payload = grant.payload
+        except Exception as exc:
+            raise OrchestrationError(
+                "orchestration.composition.handler_signature_invalid"
+            ) from exc
+        if (
+            ticket_payload.composition_execution_binding is None
+            or grant_payload.composition_execution_binding
+            != ticket_payload.composition_execution_binding
+            or runtime_meta.get("trust_bundle_sha256")
+            != current_trust.bundle_sha256
+            or runtime_meta.get("gateway_epoch") != self._epoch
+        ):
+            raise OrchestrationError(
+                "orchestration.composition.handler_binding_invalid"
+            )
+        self._store.consume_composition_handler_permit(
+            effect_id=ticket_payload.effect_id,
+            ticket_id=ticket_payload.ticket_id,
+            ticket_nonce=ticket_payload.nonce,
+            ticket_sha256=canonical_sha256(ticket.model_dump(mode="json")),
+            grant_nonce=grant_payload.nonce,
+            grant_sha256=canonical_sha256(grant.model_dump(mode="json")),
+            gateway_epoch=self._epoch,
+            expected_ticket_consumer_instance_id=(
+                "composition-inprocess-" + self._instance_id
+            ),
+            handler_consumer_instance_id=(
+                "composition-runtime-" + self._instance_id
+            ),
+            now_ms=now_ms,
+        )
+
+    def _dispatch_next_composition_step(
+        self,
+        *,
+        now_ms: int,
+        request_id: str | None = None,
+        run_id: str | None = None,
+        generation: int | None = None,
+    ):
+        executor = self._composition_steps
+        if executor is None:
+            return None
+        outcome = executor.dispatch_next(
+            now_ms=now_ms,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation,
+        )
+        return outcome
+
+    def _recover_parent_started_effects(self, *, now_ms: int) -> int:
+        """Close the parent Fact-before-Effect crash window without replay.
+
+        The generic Store recovery cannot inspect the separate FactLedger and
+        therefore must not be allowed to overwrite an exact backend Fact with
+        an interruption failure.  This worker owns both authorities and first
+        promotes only an exact immutable parent batch.  A STARTED parent with
+        no batch is outcome-unknown (the handler may have returned before the
+        Fact commit), so this owner-aware layer closes it AMBIGUOUS instead of
+        letting the Store's legacy wrapper rule mislabel it FAILED_FINAL.
+        """
+
+        recovered = 0
+        for effect in self._store.list_effects_for_pipeline(
+            "unspecified",
+            states=("SIDE_EFFECT_STARTED",),
+        ):
+            claim = effect.claim
+            if (
+                claim.owner_component_id != "tiangong-backend"
+                or claim.effect_kind != "execution"
+                or claim.ordinal != 0
+            ):
+                continue
+            batch = self._facts.get_batch_for_effect(
+                claim.effect_id,
+                verify_payload=True,
+            )
+            if batch is None:
+                status = "AMBIGUOUS"
+                observed_at_ms = max(
+                    now_ms,
+                    effect.side_effect_started_at_ms
+                    or claim.claimed_at_ms,
+                )
+                evidence_sha256 = canonical_sha256(
+                    {
+                        "domain": "tiangong.gateway.parent-effect-recovery.v1",
+                        "effect_id": claim.effect_id,
+                        "reason": "result_missing_after_restart",
+                    }
+                )
+                effect_result = EffectResult(
+                    result_id=(
+                        "effect-result-parent-ambiguous-"
+                        + claim.effect_id[4:20]
+                    ),
+                    effect_id=claim.effect_id,
+                    status=status,
+                    fact_id="fact-parent-recovery-" + claim.effect_id[4:20],
+                    evidence_sha256=evidence_sha256,
+                    error_code="effect.result_missing_after_restart",
+                    observed_at_ms=observed_at_ms,
+                    result_sha256="0" * 64,
+                ).with_computed_sha256()
+            else:
+                result = batch.result
+                if (
+                    not batch.facts
+                    or tuple(item.fact_id for item in batch.facts)
+                    != result.fact_ids
+                    or result.effect_id != claim.effect_id
+                    or result.request_id != claim.request_id
+                    or result.run_id != claim.run_id
+                    or result.generation != claim.generation
+                    or result.attempt != claim.attempt
+                    or result.action_id != "gateway.model.run"
+                    or result.action_version != "1.0.0"
+                    or not result.side_effect_started
+                ):
+                    raise OrchestrationError(
+                        "orchestration.parent.recovery_fact_mismatch",
+                        ambiguous=True,
+                    )
+                status = (
+                    "SUCCEEDED"
+                    if result.status == "SUCCEEDED"
+                    else "AMBIGUOUS"
+                    if result.status == "AMBIGUOUS"
+                    else "FAILED_FINAL"
+                )
+                effect_result = EffectResult(
+                    result_id="effect-result-" + result.result_id[:120],
+                    effect_id=claim.effect_id,
+                    status=status,
+                    fact_id=result.fact_ids[0],
+                    result_object_id=batch.result_payload_object_id,
+                    result_object_sha256=batch.result_payload_sha256,
+                    evidence_sha256=batch.response_sha256,
+                    error_code=(
+                        None
+                        if status == "SUCCEEDED"
+                        else result.error_code or "execution.failed"
+                    ),
+                    observed_at_ms=max(
+                        batch.observed_at_ms,
+                        effect.side_effect_started_at_ms
+                        or claim.claimed_at_ms,
+                    ),
+                    result_sha256="0" * 64,
+                ).with_computed_sha256()
+            self._store.complete_effect(
+                effect_result,
+                expected_state="SIDE_EFFECT_STARTED",
+            )
+            _append_orchestration_effect_event(
+                self._store,
+                event_key=(
+                    "step.committed:"
+                    if status == "SUCCEEDED"
+                    else "step.ambiguous:"
+                    if status == "AMBIGUOUS"
+                    else "step.failed:"
+                )
+                + claim.effect_id,
+                event_type=(
+                    "step.committed"
+                    if status == "SUCCEEDED"
+                    else "step.ambiguous"
+                    if status == "AMBIGUOUS"
+                    else "step.failed"
+                ),
+                payload={
+                    "effect_state": status,
+                    "source": "gateway_orchestration_parent_recovery",
+                },
+                request_id=claim.request_id,
+                run_id=claim.run_id,
+                generation=claim.generation,
+                effect_id=claim.effect_id,
+                created_at_ms=effect_result.observed_at_ms,
+            )
+            recovered += 1
+        return recovered
+
+    def _terminalize_composition_failure(
+        self,
+        activation: ActiveRequestActivation,
+        *,
+        execution_entity: str,
+        delivery_entity: str,
+        code: str,
+        ambiguous: bool,
+        observed_at_ms: int,
+        fact_id: str | None = None,
+        evidence_sha256: str | None = None,
+    ) -> None:
+        """Stop the parent request before artifact, Life or delivery commits."""
+
+        request_id = activation.entry.request_id
+        run_id = activation.generation.run_id
+        generation = activation.generation.generation
+        evidence = evidence_sha256 or canonical_sha256(
+            {
+                "code": code,
+                "domain": "tiangong.gateway.composition-execution-failure.v1",
+                "generation": generation,
+                "request_id": request_id,
+                "run_id": run_id,
+            }
+        )
+        transition_fact_id = fact_id or (
+            "fact-composition-" + evidence[:32]
+        )
+        execution = self._store.get_snapshot("execution", execution_entity)
+        if execution is not None and not execution.is_terminal:
+            if ambiguous:
+                if execution.state not in {"AMBIGUOUS", "RECONCILE_REQUIRED"}:
+                    self._advance(
+                        "execution",
+                        execution_entity,
+                        "AMBIGUOUS",
+                        now_ms=observed_at_ms,
+                        fact_id=transition_fact_id,
+                        evidence_sha256=evidence,
+                    )
+                self._advance(
+                    "execution",
+                    execution_entity,
+                    "RECONCILE_REQUIRED",
+                    now_ms=observed_at_ms,
+                    fact_id=transition_fact_id,
+                    evidence_sha256=evidence,
+                )
+            else:
+                self._advance(
+                    "execution",
+                    execution_entity,
+                    "FAILED_FINAL",
+                    now_ms=observed_at_ms,
+                    fact_id=transition_fact_id,
+                    evidence_sha256=evidence,
+                )
+        delivery = self._store.get_snapshot("delivery", delivery_entity)
+        if delivery is not None and not delivery.is_terminal:
+            self._advance(
+                "delivery",
+                delivery_entity,
+                "CANCELLED",
+                now_ms=observed_at_ms,
+            )
+        request = self._store.get_snapshot("request", request_id)
+        if request is not None and not request.is_terminal:
+            self._advance(
+                "request",
+                request_id,
+                "FAILED",
+                now_ms=observed_at_ms,
+                fact_id=transition_fact_id,
+                evidence_sha256=evidence,
+            )
+        self._persist_interruption(
+            activation,
+            reason_code=code,
+            observed_at_ms=observed_at_ms,
+            fact_id=transition_fact_id,
+        )
+        self._store.complete_session_request(
+            activation.entry.session_scope_hash,
+            request_id,
+            completed_at_ms=observed_at_ms,
+            release_generation=True,
+        )
 
     # ------------------------------------------------------------------
     # D-14 澄清不是确认（最小集）
@@ -1418,6 +1909,14 @@ class GatewayOrchestrationWorker:
         ):
             effect = self._store.get_effect(effect_id)
             if effect is None or effect.state not in {"CLAIMED", "SIDE_EFFECT_STARTED"}:
+                continue
+            # Composition STARTED effects have a dedicated exact-Fact recovery
+            # path.  The generic timeout watchdog must not race that path or
+            # convert a provable success into an arbitrary AMBIGUOUS head.
+            if (
+                getattr(getattr(effect, "claim", None), "pipeline_version", None)
+                == COMPOSITION_STEP_PIPELINE_VERSION
+            ):
                 continue
             result = EffectResult(
                 result_id="effect-result-" + effect_id[4:20],
@@ -3093,6 +3592,7 @@ class GatewayOrchestrationWorker:
             try:
                 response = execution_future.result(timeout=watchdog_ms / 1000.0)
             except concurrent.futures.TimeoutError:
+                execution_future.cancel()
                 effect_record = self._store.get_effect(effect.effect_id)
                 raise BackendClientError(
                     "effect_execution_timeout",
@@ -3200,15 +3700,20 @@ class GatewayOrchestrationWorker:
             effect_id=effect.effect_id,
             created_at_ms=observed_at,
         )
-        self._advance(
-            "execution",
-            execution_entity,
-            response.result.status if response.result.status in {"SUCCEEDED", "AMBIGUOUS", "FAILED_FINAL"} else "FAILED_FINAL",
-            now_ms=observed_at,
-            fact_id=response.result.fact_ids[0],
-            evidence_sha256=response.response_sha256,
-        )
         if response.result.status != "SUCCEEDED":
+            self._advance(
+                "execution",
+                execution_entity,
+                (
+                    response.result.status
+                    if response.result.status
+                    in {"AMBIGUOUS", "FAILED_FINAL"}
+                    else "FAILED_FINAL"
+                ),
+                now_ms=observed_at,
+                fact_id=response.result.fact_ids[0],
+                evidence_sha256=response.response_sha256,
+            )
             if response.result.status == "AMBIGUOUS":
                 self._advance(
                     "execution",
@@ -3240,6 +3745,118 @@ class GatewayOrchestrationWorker:
                 completed_at_ms=observed_at,
             )
             raise OrchestrationError(response.result.error_code or "orchestration.execution.failed")
+
+        # P7D.1 executes only a persisted, single A0 root authorization and
+        # does so after the parent response has both an immutable Gateway Fact
+        # and a successful Effect head.  This point is also after parent Omni
+        # authority unregister/core-lock release, but before aggregate success,
+        # artifact/Life commits or any delivery intent.
+        composition_outcome = None
+        try:
+            if self._composition_steps is None:
+                required_plan = (
+                    self._store.get_executable_composition_plan_for_request(
+                        request_id,
+                        run_id=run_id,
+                        generation=generation.generation,
+                    )
+                )
+                if required_plan is not None:
+                    raise CompositionStepExecutionError(
+                        "composition.execution.executor_unavailable"
+                    )
+            else:
+                composition_outcome = self._dispatch_next_composition_step(
+                    now_ms=observed_at,
+                    request_id=request_id,
+                    run_id=run_id,
+                    generation=generation.generation,
+                )
+                if (
+                    composition_outcome is not None
+                    and composition_outcome.status != "SUCCEEDED"
+                ):
+                    child = self._store.get_effect(
+                        composition_outcome.effect_id
+                    )
+                    child_result = None if child is None else child.result
+                    raise CompositionStepExecutionError(
+                        (
+                            "composition.execution.failed"
+                            if child_result is None
+                            or child_result.error_code is None
+                            else child_result.error_code
+                        ),
+                        ambiguous=(
+                            composition_outcome.status == "AMBIGUOUS"
+                        ),
+                    )
+        except Exception as exc:
+            composition_effects = tuple(
+                item
+                for item in self._store.list_effects_for_request(
+                    request_id,
+                    run_id=run_id,
+                    generation=generation.generation,
+                )
+                if item.claim.pipeline_version
+                == COMPOSITION_STEP_PIPELINE_VERSION
+            )
+            child = composition_effects[-1] if composition_effects else None
+            child_result = None if child is None else child.result
+            ambiguous = bool(getattr(exc, "ambiguous", False)) or any(
+                item.state in {"SIDE_EFFECT_STARTED", "AMBIGUOUS"}
+                for item in composition_effects
+            )
+            code = str(
+                getattr(exc, "code", None)
+                or (
+                    None
+                    if child_result is None
+                    else child_result.error_code
+                )
+                or "composition.execution.failed"
+            )[:160]
+            failed_at_ms = max(
+                observed_at,
+                time.time_ns() // 1_000_000,
+                0
+                if child_result is None
+                else child_result.observed_at_ms,
+            )
+            self._terminalize_composition_failure(
+                activation,
+                execution_entity=execution_entity,
+                delivery_entity=delivery_entity,
+                code=code,
+                ambiguous=ambiguous,
+                observed_at_ms=failed_at_ms,
+                fact_id=(
+                    None if child_result is None else child_result.fact_id
+                ),
+                evidence_sha256=(
+                    None
+                    if child_result is None
+                    else child_result.evidence_sha256
+                ),
+            )
+            raise OrchestrationError(code, ambiguous=ambiguous) from exc
+
+        self._advance(
+            "execution",
+            execution_entity,
+            "SUCCEEDED",
+            now_ms=max(
+                observed_at,
+                (
+                    0
+                    if composition_outcome is None
+                    else time.time_ns() // 1_000_000
+                ),
+            ),
+            fact_id=response.result.fact_ids[0],
+            evidence_sha256=response.response_sha256,
+        )
 
         result_payload = response.result_payload if isinstance(response.result_payload, dict) else {}
         reply = str(result_payload.get("reply_text") or "").strip()

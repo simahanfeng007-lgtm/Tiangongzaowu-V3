@@ -13,13 +13,19 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from contracts import (
+    ActionRegistrySnapshot,
     CapabilityAction,
     CapabilityManifest,
     SkillCandidate,
     SkillSelectionRecord,
     canonical_sha256,
 )
-from .action_registry import LoadedActionAuthority, compile_action_authority
+from .action_registry import (
+    ActionSchemaCatalog,
+    LoadedActionAuthority,
+    ResolvedActionSchema,
+    compile_action_authority,
+)
 
 
 SkillOperation = Literal["skill.route", "skill.list", "skill.get", "skill.read"]
@@ -436,6 +442,211 @@ def load_model_capability_manifest(
     )
 
 
+def compile_composition_execution_manifest(
+    model_manifest: CapabilityManifest,
+    registry: ActionRegistrySnapshot,
+    schema_catalog: ActionSchemaCatalog,
+    *,
+    generated_at_ms: int | None = None,
+) -> CapabilityManifest:
+    """Join the model, permission, and schema views into an execution manifest.
+
+    ``load_model_capability_manifest`` intentionally exposes model-facing
+    action versions. Composition tickets, however, carry the current Action
+    Registry permission version. Passing the model-facing projection directly
+    to ``BackendClient`` therefore cannot authorize a real composition action.
+
+    This compiler does not treat the raw source-manifest digest as a
+    ``CapabilityManifest`` digest. It validates the contract digest on the
+    supplied model view, joins every registry permission to exactly one model
+    action and one current schema entry, then computes a new contract digest
+    over the resulting execution view.
+    """
+
+    if not isinstance(model_manifest, CapabilityManifest):
+        raise SkillSelectionError(
+            "composition execution model capability manifest is invalid"
+        )
+    if not isinstance(registry, ActionRegistrySnapshot):
+        raise SkillSelectionError(
+            "composition execution action registry is invalid"
+        )
+    if not isinstance(schema_catalog, ActionSchemaCatalog):
+        raise SkillSelectionError(
+            "composition execution action schema catalog is invalid"
+        )
+    if generated_at_ms is not None and (
+        type(generated_at_ms) is not int or generated_at_ms < 0
+    ):
+        raise ValueError("composition execution manifest generation time is invalid")
+
+    # model_copy/model_construct can bypass Pydantic validators. Re-parse the
+    # supplied contracts before trusting their ordering and nested invariants,
+    # and independently verify their content-addressed digests.
+    try:
+        checked_model = CapabilityManifest.model_validate(
+            model_manifest.model_dump(mode="python"), strict=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise SkillSelectionError(
+            "composition execution model capability manifest is invalid"
+        ) from exc
+    if not checked_model.has_valid_sha256():
+        raise SkillSelectionError(
+            "composition execution model capability manifest digest is invalid"
+        )
+
+    try:
+        checked_registry = ActionRegistrySnapshot.model_validate(
+            registry.model_dump(mode="python"), strict=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise SkillSelectionError(
+            "composition execution action registry is invalid"
+        ) from exc
+    if not checked_registry.has_valid_sha256():
+        raise SkillSelectionError(
+            "composition execution action registry digest is invalid"
+        )
+
+    try:
+        catalog_valid = schema_catalog.has_valid_sha256()
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise SkillSelectionError(
+            "composition execution action schema catalog is invalid"
+        ) from exc
+    if not catalog_valid:
+        raise SkillSelectionError(
+            "composition execution action schema catalog digest is invalid"
+        )
+    if (
+        not isinstance(schema_catalog.source_manifest_sha256, str)
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", schema_catalog.source_manifest_sha256
+        )
+        or schema_catalog.source_manifest_sha256
+        != checked_registry.source_manifest_sha256
+    ):
+        raise SkillSelectionError(
+            "composition execution authority source manifest mismatch"
+        )
+
+    permissions = checked_registry.permissions
+    permission_ids = tuple(item.action_id for item in permissions)
+    if permission_ids != tuple(sorted(set(permission_ids))):
+        raise SkillSelectionError(
+            "composition execution action permissions are unordered or ambiguous"
+        )
+
+    model_actions: dict[str, CapabilityAction] = {}
+    for action in checked_model.actions:
+        if action.action_id in model_actions:
+            raise SkillSelectionError(
+                "composition execution model action identity is ambiguous"
+            )
+        model_actions[action.action_id] = action
+    if set(model_actions) != set(permission_ids):
+        raise SkillSelectionError(
+            "composition execution model and permission coverage mismatch"
+        )
+
+    entries = schema_catalog.entries
+    if not isinstance(entries, tuple) or not entries:
+        raise SkillSelectionError(
+            "composition execution action schema catalog is invalid"
+        )
+    if any(not isinstance(entry, ResolvedActionSchema) for entry in entries):
+        raise SkillSelectionError(
+            "composition execution action schema entry is invalid"
+        )
+    entry_ids = tuple(entry.action_id for entry in entries)
+    if entry_ids != permission_ids:
+        raise SkillSelectionError(
+            "composition execution permission and schema coverage mismatch"
+        )
+
+    compiled_actions: list[CapabilityAction] = []
+    for permission, entry in zip(permissions, entries, strict=True):
+        if (
+            entry.action_id != permission.action_id
+            or entry.action_version != permission.action_version
+            or entry.source_manifest_sha256
+            != schema_catalog.source_manifest_sha256
+            or entry.kind not in {"EXPLICIT", "OPAQUE"}
+            or not isinstance(entry.argument_schema_sha256, str)
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", entry.argument_schema_sha256
+            )
+            or not isinstance(entry.validator_source_sha256, str)
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", entry.validator_source_sha256
+            )
+        ):
+            raise SkillSelectionError(
+                "composition execution permission and schema binding mismatch"
+            )
+        try:
+            schema_body = entry.body()
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise SkillSelectionError(
+                "composition execution action schema entry is invalid"
+            ) from exc
+        if (
+            canonical_sha256(schema_body) != entry.argument_schema_sha256
+            or schema_body.get("action") != entry.canonical_action_id
+        ):
+            raise SkillSelectionError(
+                "composition execution action schema body is invalid"
+            )
+
+        model_action = model_actions[permission.action_id]
+        if model_action.argument_schema_sha256 != entry.argument_schema_sha256:
+            raise SkillSelectionError(
+                "composition execution model and current schema mismatch"
+            )
+        compiled_actions.append(
+            CapabilityAction(
+                action_id=permission.action_id,
+                version=permission.action_version,
+                provider_component_id=model_action.provider_component_id,
+                argument_schema_sha256=entry.argument_schema_sha256,
+                result_schema_sha256=model_action.result_schema_sha256,
+                risk_class=permission.effective_risk,
+                allowed_side_effects=permission.allowed_side_effects,
+                idempotency_mode=model_action.idempotency_mode,
+                max_runtime_ms=model_action.max_runtime_ms,
+                max_output_bytes=model_action.max_output_bytes,
+                max_tool_calls=model_action.max_tool_calls,
+                available=model_action.available,
+                unavailable_reason=model_action.unavailable_reason,
+                model_visible=model_action.model_visible,
+            )
+        )
+
+    draft = CapabilityManifest(
+        manifest_id="omni-body-composition-execution-capabilities-v1",
+        revision=checked_model.revision,
+        generated_at_ms=(
+            checked_model.generated_at_ms
+            if generated_at_ms is None
+            else generated_at_ms
+        ),
+        component_manifest_hash=checked_model.component_manifest_hash,
+        actions=tuple(
+            sorted(
+                compiled_actions,
+                key=lambda item: (item.action_id, item.version),
+            )
+        ),
+        sha256="0" * 64,
+    ).with_computed_sha256()
+    if not draft.has_valid_sha256():  # defensive: never return unhashed authority
+        raise SkillSelectionError(
+            "composition execution capability manifest digest is invalid"
+        )
+    return draft
+
+
 class SkillResolution(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -781,6 +992,7 @@ __all__ = [
     "SkillResolution",
     "SkillSelectionError",
     "SkillSelectionService",
+    "compile_composition_execution_manifest",
     "load_filesystem_skill_catalog",
     "load_model_capability_manifest",
 ]

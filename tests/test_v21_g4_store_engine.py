@@ -291,6 +291,10 @@ def test_t26b_security_surface_files_match_reviewed_lineage() -> None:
                 "p7c1-composition-execution-binding",
                 "cbbed31ee82fb9c3973ffaf14427495562be12fb9eeb2fb6abd3330acfb44f63",
             ),
+            (
+                "p7d1-composition-effect-intent-cycle-break",
+                "f58945c978567df9facce05216ac7141fcf682bcc3cfd8397459de049e8549de",
+            ),
         ),
     }
     root = Path(__file__).resolve().parents[1]

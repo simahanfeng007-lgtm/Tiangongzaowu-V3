@@ -48,14 +48,16 @@ class ExecutionContractEpochTests(unittest.TestCase):
         # 无 fence → 拒绝
         with self.assertRaises(StoreConflictError):
             self.store.activate_execution_contract_epoch(contract_epoch="vNext", dispositions=[], now_ms=1_000)
-        self.store.increment_action_fence(reason="cutover", now_ms=1_100)
-        # 有非终态 effect → 拒绝
+        # 先启动一个既有 effect，再进入 cutover fence；fence 生效后不得
+        # 新跨越 side-effect boundary，但已启动项仍必须被 disposition。
         claim = make_claim()
         self.store.claim_effect(claim)
+        self.store.mark_effect_started(claim.effect_id, started_at_ms=1_050)
+        self.store.increment_action_fence(reason="cutover", now_ms=1_100)
+        # 有非终态 effect → 拒绝
         with self.assertRaises(StoreConflictError):
             self.store.activate_execution_contract_epoch(contract_epoch="vNext", dispositions=[], now_ms=1_200)
         # 完成 disposition → 允许
-        self.store.mark_effect_started(claim.effect_id, started_at_ms=1_150)
         self.store.complete_effect(make_result(claim.effect_id))
         digest = self.store.activate_execution_contract_epoch(
             contract_epoch="vNext",

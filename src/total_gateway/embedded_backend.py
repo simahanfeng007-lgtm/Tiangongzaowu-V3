@@ -109,6 +109,7 @@ class EmbeddedBackendRuntime:
         self._learning_ingest_provider: Any = None
         self._p15_memory_remember_provider: Any = None
         self._p15_memory_recall_provider: Any = None
+        self._composition_dispatch_authorizer: Any = None
         self._last_conversation_context: dict[str, Any] = {}
         self._last_user_name = ""
         self._last_user_text = ""
@@ -399,6 +400,25 @@ class EmbeddedBackendRuntime:
 
     def set_life_skill_overlay_provider(self, provider: Any) -> None:
         self._life_skill_overlay_provider = provider
+
+    def set_composition_dispatch_authorizer(self, provider: Any) -> None:
+        """Bind the private Omni composition route to the one Gateway Store.
+
+        The route is deliberately unusable until the owning orchestration
+        worker installs this current-trust/dispatch-permit callback.  Binding
+        is one-shot so another in-process subsystem cannot replace Gateway
+        authority after startup.
+        """
+
+        if not callable(provider):
+            raise TypeError("composition dispatch authorizer must be callable")
+        with self._lock:
+            existing = getattr(self, "_composition_dispatch_authorizer", None)
+            if existing is not None and existing is not provider:
+                raise EmbeddedBackendError(
+                    "embedded_backend.composition_authorizer_already_bound"
+                )
+            self._composition_dispatch_authorizer = provider
 
     def set_life_activity_query_provider(self, provider: Any) -> None:
         if not callable(provider):
@@ -1094,6 +1114,175 @@ class EmbeddedBackendRuntime:
             raise ValueError("share compose model output is invalid")
         return {"ok": True, "preview": value, "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest()}
 
+    def _execute_composition_action(
+        self, body: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Enter the existing Omni Body without chat/model or grant minting.
+
+        The Total Gateway has already verified the ExecutionTicket and crossed
+        its durable dispatch permit.  This private in-process route accepts
+        only the exact invocation plus the already-signed Omni grant/current
+        runtime trust metadata.  Omni remains the consumer-side grant verifier
+        and ``BodyRuntime`` remains the sole action runtime.
+        """
+
+        if set(body) != {
+            "schema",
+            "execute_ticket",
+            "capability_grant",
+            "runtime",
+        } or body.get("schema") != "tiangong.backend.composition-execute-ticket.v1":
+            raise ValueError("composition execution fields are invalid")
+        execute_ticket = body.get("execute_ticket")
+        grant_value = body.get("capability_grant")
+        runtime_value = body.get("runtime")
+        if (
+            not isinstance(execute_ticket, Mapping)
+            or set(execute_ticket) != {"schema", "ticket", "arguments"}
+            or execute_ticket.get("schema")
+            != "tiangong.backend.execute-ticket.v1"
+            or not isinstance(grant_value, Mapping)
+            or not isinstance(runtime_value, Mapping)
+        ):
+            raise ValueError("composition execution values are invalid")
+
+        # This private route is a second, independent consumer-side check.  It
+        # does not trust the transport's in-memory model objects and restores
+        # every signed contract from the exact wire payload before entering
+        # Omni Body.
+        from contracts import (
+            ExecutionTicket,
+            OmniCapabilityGrant,
+            TrustBundle,
+            canonical_json_bytes,
+            canonical_sha256,
+        )
+        from runtime_security import (
+            verify_execution_ticket,
+            verify_omni_capability_grant,
+        )
+
+        try:
+            ticket = ExecutionTicket.model_validate_json(
+                canonical_json_bytes(execute_ticket["ticket"]), strict=True
+            )
+            grant = OmniCapabilityGrant.model_validate_json(
+                canonical_json_bytes(grant_value), strict=True
+            )
+            runtime_meta = dict(runtime_value)
+            trust_bundle = TrustBundle.model_validate_json(
+                canonical_json_bytes(runtime_meta.get("trust_bundle")),
+                strict=True,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("composition signed authority is invalid") from exc
+
+        invocation = execute_ticket.get("arguments")
+        if (
+            not isinstance(invocation, Mapping)
+            or set(invocation) != {"action", "target", "args"}
+            or not isinstance(invocation.get("action"), str)
+            or not invocation.get("action")
+            or not isinstance(invocation.get("target"), str)
+            or not isinstance(invocation.get("args"), Mapping)
+        ):
+            raise ValueError("composition invocation is invalid")
+        action = str(invocation["action"])
+        target = str(invocation["target"])
+        arguments = dict(invocation["args"])
+        now_ms = time.time_ns() // 1_000_000
+        verify_execution_ticket(ticket, trust_bundle, now_ms=now_ms)
+        verify_omni_capability_grant(grant, trust_bundle, now_ms=now_ms)
+
+        ticket_payload = ticket.payload
+        grant_payload = grant.payload
+        ticket_binding = ticket_payload.composition_execution_binding
+        grant_binding = grant_payload.composition_execution_binding
+        required_runtime = {
+            "execution_ticket_id": ticket_payload.ticket_id,
+            "request_id": ticket_payload.request_id,
+            "run_id": ticket_payload.run_id,
+            "generation": ticket_payload.generation,
+            "effect_id": ticket_payload.effect_id,
+            "principal_scope_hash": ticket_payload.principal_scope_hash,
+            "workspace_id": ticket_payload.workspace_id,
+            "action_id": ticket_payload.action_id,
+            "action_version": ticket_payload.action_version,
+            "decision_sha256": ticket_payload.decision_sha256,
+            "impact_sha256": ticket_payload.impact_sha256,
+            "action_permission_sha256": ticket_payload.action_permission_sha256,
+            "action_registry_sha256": grant_payload.action_registry_sha256,
+            "capability_manifest_hash": ticket_payload.capability_manifest_hash,
+            "component_manifest_hash": ticket_payload.component_manifest_hash,
+            "gateway_epoch": ticket_payload.gateway_epoch,
+            "trust_bundle_sha256": trust_bundle.bundle_sha256,
+            "fact_kernel_enabled": False,
+        }
+        if (
+            ticket_binding is None
+            or grant_binding is None
+            or ticket_binding != grant_binding
+            or runtime_meta.get("composition_execution_binding")
+            != ticket_binding.model_dump(mode="json")
+            or runtime_meta.get("composition_binding_sha256")
+            != ticket_binding.binding_sha256
+            or any(runtime_meta.get(key) != expected for key, expected in required_runtime.items())
+            or ticket_payload.risk_class != "A0"
+            or grant_payload.risk_class != "A0"
+            or any(
+                item not in {"none", "read"}
+                for item in (*ticket_payload.allowed_side_effects, *grant_payload.allowed_side_effects)
+            )
+            or grant_payload.allow_shell
+            or grant_payload.allow_python
+            or action != ticket_payload.action_id
+            or action != grant_payload.action_id
+            or ticket_payload.action_version != grant_payload.action_version
+            or canonical_sha256(dict(invocation)) != ticket_payload.arguments_hash
+            or canonical_sha256(dict(invocation)) != grant_payload.arguments_sha256
+            or canonical_sha256(ticket_payload.model_dump(mode="json"))
+            != grant_payload.ticket_sha256
+            or canonical_sha256(arguments)
+            != ticket_binding.materialized_arguments_sha256
+            or canonical_sha256(target) != ticket_binding.target_sha256
+        ):
+            raise ValueError("composition execution authority mismatch")
+        authorizer = getattr(
+            self,
+            "_composition_dispatch_authorizer",
+            None,
+        )
+        if not callable(authorizer):
+            raise PermissionError("composition dispatch authority is unavailable")
+        try:
+            authorizer(
+                ticket=ticket,
+                grant=grant,
+                trust_bundle=trust_bundle,
+                runtime_meta=deepcopy(runtime_meta),
+                now_ms=now_ms,
+            )
+        except Exception as exc:
+            raise PermissionError(
+                "composition dispatch permit rejected"
+            ) from exc
+        muscle = importlib.import_module("v3.jineng.jirou_ceng")
+        runner = getattr(muscle, "_run_omni_body_tool", None)
+        if not callable(runner):
+            raise RuntimeError("omni_body_runner_missing")
+        result = runner(
+            {
+                "action": action,
+                "target": target,
+                "args": deepcopy(arguments),
+                "__capability_grant": deepcopy(dict(grant_value)),
+                "__runtime": deepcopy(runtime_meta),
+            }
+        )
+        if not isinstance(result, dict):
+            raise RuntimeError("omni_body_result_invalid")
+        return result
+
     def request(
         self,
         method: str,
@@ -1182,6 +1371,13 @@ class EmbeddedBackendRuntime:
             elif verb == "POST" and path == "/api/v1/internal/life-action/invoke":
                 with core_lock:
                     result = self._invoke_life_bound_action(body)
+            elif (
+                verb == "POST"
+                and target
+                == "/api/v1/internal/composition/execute-ticket"
+            ):
+                with core_lock:
+                    result = self._execute_composition_action(body)
             elif verb == "POST" and path == "/api/v1/internal/learning/synthesize":
                 result = self._learning_synthesis(body)
             elif verb == "POST" and path == "/api/v1/internal/capability/patch/decision":

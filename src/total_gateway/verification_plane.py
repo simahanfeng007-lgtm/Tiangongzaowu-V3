@@ -10,6 +10,6 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-VERIFICATION_PLANE_VERSION = "1.3"
+VERIFICATION_PLANE_VERSION = "1.4"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
