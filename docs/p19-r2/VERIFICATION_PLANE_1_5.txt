@@ -1,0 +1,93 @@
+P19-R2 VERIFICATION PLANE 1.5 — P7D.2 DAG COMPLETION REVISION
+======================================================================
+
+性质
+----------------------------------------------------------------------
+
+本版本是 P7D.2 对既有 P19 Verification Plane 的显式兼容修订，关闭限定的
+A0 read/verify-only composition 生产闭环。
+
+它增加：
+
+1. GatewayStateStore v33 的 insert-only、不可执行 continuation delegation，及
+   每步至多一次安全 pre-start successor attempt；
+2. 从不可变 plan、当前 authorization、Effect head 与 exact Fact batch 推导的
+   fixed-point DAG frontier 和 schema-bound STEP_OUTPUT；
+3. all-step barrier 后的 plural P19 readiness/disposition/failure-evidence 绑定；
+4. parent 加全部 leaf Effects 的 required Completion set，以及全部 authorized
+   attempts 的 exact lineage；
+5. P19、Life 与 desktop completion 共享持久 execution SUCCEEDED 时钟，保证崩溃
+   重入产生字节级相同的 completion evidence；
+6. durable resume 对同一稳定时钟复用 exact entry-record/readiness 与 disposition
+   prefix，只补缺失后缀；任何 identity、plan、registry、predicate、subject、hash
+   或 clock 漂移均 fail closed；
+7. Life 在任何可变 evidence 采样前恢复并校验既有 terminal record/commit SHA；startup
+   watchdog 排除所有绑定 executable plan 的 CLAIMED/SIDE_EFFECT_STARTED parent 与
+   child pipeline，只由专用 durable adapter 依据 exact Fact 裁决；
+8. CompletionDecision 在 Life 前由 Store 事务重算 readiness 并封存，同时拒绝同一
+   generation 的后续 verification write；composition Life 只提交 stable terminal
+   core，不采样可漂移的 repository enrichment，unknown outcome 保留 durable tail。
+
+它不改变：
+
+- Artifact / Effect / Repository verifier 的 PASS / FAIL / INCONCLUSIVE 语义；
+- Evidence-driven Repair Policy；
+- 唯一 Runtime、Gateway、Store、Policy、FactLedger、P19 或 Completion authority；
+- 非 composition 的既有 P19 repair 与 delivery 路径。
+
+版本与权威
+----------------------------------------------------------------------
+
+VERIFICATION_PLANE_VERSION = "1.5"
+唯一机器可读来源：
+
+    src/total_gateway/verification_plane.py
+
+Gateway Store schema 为 33；这是唯一 gateway.sqlite3 的 additive migration，
+不创建第二 Store 或执行状态权威。基线为 P7D.1 合并后的 main：
+
+    f268d6ac3293ee31e6c20b7e7f706f46cfa3e040
+
+运行边界
+----------------------------------------------------------------------
+
+P7D.2 只允许既有 GatewayOrchestrationWorker 驱动已持久化、ACTIVE、未过期、
+当前 Request/Run/Generation 的 A0 read/verify DAG。每一步仍须通过既有
+PolicyEngine → ExecutionTicket → CapabilityGrant → BackendClient → Omni Body →
+BodyRuntime 链。拒绝必须发生在 handler 和 nonce 前；STARTED 仅能由 exact Fact
+恢复，否则进入 AMBIGUOUS/reconcile-required。
+
+durable parent-success resume 在 DAG projection、P19、Completion、Life 和 delivery
+前先读取 Request/Execution/Delivery 三个现有状态机快照，校验 request/run/
+generation 绑定与仅向前的 shared-tail 状态矩阵；冲突必须在任何外部 authority
+采样前终止。completion clock 取 parent observed_at、每个 leaf FactBatch observed_at、
+每个 leaf result finished_at 与持久 execution SUCCEEDED updated_at 的最大值。
+
+完成边界
+----------------------------------------------------------------------
+
+P19 只在所有步骤已有 exact success evidence 后执行。任意 non-PASS 证据均完整
+持久化，但本阶段禁止 repair dispatch、A1+、外部写入和外部发送。只有现有
+CompletionGate 可接受 parent、全部 leaf、全部 lineage 与当前 P19 evidence 后的
+desktop 结果。重启复用 byte-stable P19/Life 证据，不重跑已持久的 live oracle，
+也不让已持久 disposition prefix 重复消耗 generation budget。readiness 重算、
+CompletionDecision seal 与 late-record fence 位于同一 Store transaction；Life
+recovery 不可用、格式错误、内容/hash 不匹配时 fail closed，不得回退到 provider。
+已封存 composition CompletionDecision 的重启只恢复 Life/desktop terminal tail，可
+越过通用 generation revision 上限和关闭的 request reexecution 配置，但不得再次调用
+handler。request 已终态但 session queue head 仍为 ACTIVE 的崩溃窗，由 worker startup
+幂等退休 queue projection 后再晋升后继请求。
+
+冻结
+----------------------------------------------------------------------
+
+Freeze manifest：
+
+    docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json
+
+本次修订显式更新版本、P7D.1 合并基线、AUTHORITY_MAP、Store schema、Completion
+authority 与 authority surface hashes。1.5 surface 覆盖 result/value schema 源定义、
+生成 manifest、Registry/World 编译与传播校验链、Fact/transport/runtime 执行接缝、
+Gateway DAG/P19/Completion/Life 尾段；并补齐 1.4 已声明的 transport、execution
+binding 与 FactLedger。历史 1.0 至 1.4 声明与冻结语义保留，禁止在不推进
+VERIFICATION_PLANE_VERSION 的情况下静默修改该权威面。

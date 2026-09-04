@@ -1,6 +1,6 @@
 # P7C / P7D Continuous Progress and Evidence Ledger
 
-Last updated: 2026-09-04 17:22 +08:00.
+Last updated: 2026-09-04 23:14 +08:00.
 
 This file is the continuous status ledger for P7C.0, P7C.1, P7D.1 and P7D.2.
 It separates observed baseline evidence from planned or not-yet-run evidence.
@@ -10,17 +10,17 @@ It separates observed baseline evidence from planned or not-yet-run evidence.
 
 | Item | Value | Evidence status |
 |---|---|---|
-| Worktree | `C:\Users\77571\Documents\天工造物v3-p7d1` | Independent P7D.1 worktree observed in this work session |
-| Baseline commit | `acb39a63bd267b5db1b9c0b7076110c5391704c8` | Exact merged P7C.1 `main` tip from which P7D.1 was branched |
-| Baseline branch relationship | Based on latest `main` fixed by the task | Exact remote/head-match evidence still required before a stage closes |
-| Baseline focused suite | `75 passed` | Inherited baseline evidence supplied for this work; not rerun by this documentation change |
+| Worktree | `C:\Users\77571\Documents\天工造物v3-p7d2` | Independent P7D.2 worktree observed in this work session |
+| Baseline commit | `f268d6ac3293ee31e6c20b7e7f706f46cfa3e040` | Exact merged P7D.1 `main` tip from which P7D.2 was branched |
+| Baseline branch relationship | P7D.2 branch is based on the merged PR #71 tip | Exact P7D.2 remote/head-match evidence is still required before this stage closes |
+| Baseline focused suite | P7D.1 final remote `9/9 SUCCESS` | Immutable exact-head evidence is recorded in PR #71 |
 | Store baseline | schema v32 | Observed at P7D.1 baseline source (`STORE_SCHEMA_VERSION = 32`) |
+| Store candidate | schema v33 | Additive P7D.2 continuation and attempt-2 authority migration in this worktree |
 | Durable P7C baseline | P19 RegistrySnapshot + VerificationPlan + activation + limited registration + executable plan + immutable authorization receipt in the existing Store | Observed at merged P7C.1 baseline source |
 | Production authority baseline | one existing Gateway/Store/Policy/Ticket/Grant/Runtime/P19/Completion chain | Must remain invariant through every stage |
 
-The `75 passed` row records the supplied baseline only. Its original command,
-platform, timestamp and run artifact must be attached before it is reused as a
-release/merge claim. This document does not represent that suite as rerun.
+The P7D.1 baseline is closed only by the immutable exact-head PR #71 evidence;
+P7D.2 must produce its own local and remote evidence and cannot reuse that PASS.
 
 ## 2. Current status
 
@@ -28,8 +28,8 @@ release/merge claim. This document does not represent that suite as rerun.
 |---|---|---|---|
 | P7C.0 | `MERGED / CLOSED` | Final successor `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #69; PR #69 merged as `b75d0c8aec926e18bebbf92938ded423b44a8016` | None for P7C.0; preserve the immutable PR evidence while later stages extend the same authorities |
 | P7C.1 | `MERGED / CLOSED` | Final successor `e6023ba100f2b8a19331e1a0b0b46e0251533a32` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #70; PR #70 merged as `acb39a63bd267b5db1b9c0b7076110c5391704c8` | None for P7C.1; P7D must continue to consume the same Policy/Ticket/Grant authorities rather than minting replacements |
-| P7D.1 | `FINAL-RERUN DEFECT REPAIRED / NEW SUCCESSOR PREP` | The existing `GatewayOrchestrationWorker` dispatches one persisted static A0 root through the existing Backend compatibility client into Omni Body and `BodyRuntime`; exact receipt/plan/registry/schema/object/fence/trust are revalidated, ticket and grant nonces are consumed at the handler boundary, Gateway Fact precedes terminal Effect, and timeout/restart recovery never replays an unknown `STARTED` attempt. All nine first-round checks passed on `c327851a1e18deb7c602673c3f3f87c6afa785f7`. The evidence successor `331e675a7e159493d78fc4242612a1bdb8aed41f` was correctly rejected at 8/9 when Windows exposed a cross-ledger `os.replace` race; product/test repair `24937b440746ec90b4e0000723280bef0e88f49e` now uses atomic no-clobber publication with exact-byte validation and has complete local gates | Commit this ledger-only successor, rerun all nine checks on that exact head, record immutable local/remote/PR/check head-match evidence and merge; this stage intentionally does not claim DAG, dynamic `STEP_OUTPUT`, P19 closeout or production completion before P7D.2 |
-| P7D.2 | `DESIGN RECON COMPLETE / IMPLEMENTATION NOT STARTED` | Read-only production-path and v1.2 cross-checks identified the no-second-frontier design, explicit result-schema authority, final-output alias, multi-disposition and multi-Fact CompletionGate gaps, restart/epoch continuation-authority requirement, dependency-edge leaf semantics, exact P19 subject coverage and running-manifest-lock conflict | Durable DAG/restart/reconcile, result/value-schema authority, current-epoch continuation issuance, exact P19 readiness/disposition aggregation, CompletionGate closeout and production A0 evidence |
+| P7D.1 | `MERGED / CLOSED` | Final head `4ffaf51809e1b299b574fe7c61dbf76614981c6d` passed all nine checks with exact local/remote/PR/check head match; immutable evidence is recorded in PR #71; PR #71 merged as `f268d6ac3293ee31e6c20b7e7f706f46cfa3e040` | None for P7D.1; P7D.2 continues through the same worker, Runtime, Effect/Fact and authority seams |
+| P7D.2 | `LOCAL GATES PASS / REMOTE VERIFICATION PENDING` | Durable fixed-point DAG projection, exact `STEP_OUTPUT`, explicit result/value schemas, inert restart continuation with one bounded pre-start successor, scoped recovery, plural P19 readiness/dispositions, readiness/decision write fencing, stable Life recovery and parent-plus-leaves Completion are implemented in the independent P7D.2 worktree. The final focused set is `353 passed`; the final full source verifier and Python regression passed; P19, P14, Node, freeze/fingerprint, official generation, refreshed source-release manifests, mirrors and Source Authority pass | Push one unchanged head for all nine GitHub checks, record immutable exact-head evidence, and merge only after all nine pass |
 
 ## 3. P7C.0 implementation checklist
 
@@ -144,28 +144,29 @@ does not change the tested product/test tree.
   tree.
 - [x] The first nine-check remote round and exact head match are recorded on
   candidate `c327851a1e18deb7c602673c3f3f87c6afa785f7`.
-- [ ] Nine remote checks and exact head-match are recorded on the new successor
-  that contains repair `24937b440746ec90b4e0000723280bef0e88f49e` plus this
-  evidence update and is intended to merge.
+- [x] Nine remote checks and exact head-match are recorded on final successor
+  `4ffaf51809e1b299b574fe7c61dbf76614981c6d`; immutable evidence is in PR #71,
+  merged as `f268d6ac3293ee31e6c20b7e7f706f46cfa3e040`.
 
 ### P7D.2
 
-- [ ] Durable topological scheduling unlocks a step only after every dependency
+- [x] Durable topological scheduling unlocks a step only after every dependency
   has an authoritative successful Effect head and exact Gateway fact.
-- [ ] `STEP_OUTPUT` resolves only from the exact upstream fact and its resolved
+- [x] `STEP_OUTPUT` resolves only from the exact upstream fact and its resolved
   arguments hash is persisted before dispatch.
-- [ ] Crash windows before/after claim, started boundary, handler, Fact write,
+- [x] Crash windows before/after claim, started boundary, handler, Fact write,
   Effect completion, frontier/checkpoint and P19 are covered.
-- [ ] Fact/Effect disagreement, ambiguous outcomes and stale generations enter
+- [x] Fact/Effect disagreement, ambiguous outcomes and stale generations enter
   reconciliation; no duplicate side effect is possible.
-- [ ] P19 uses the exact active Plan/Registry/subjects and derives readiness
+- [x] P19 uses the exact active Plan/Registry/subjects and derives readiness
   through the existing readiness authority.
-- [ ] Failed/inconclusive/error verification cannot complete; A0 rollout cannot
+- [x] Failed/inconclusive/error verification cannot complete; A0 rollout cannot
   dispatch an A1+ repair.
-- [ ] Existing `CompletionGate` checks every required leaf Effect/fact and is the
+- [x] Existing `CompletionGate` checks every required leaf Effect/fact and is the
   only completed-status source.
-- [ ] No external send/delivery and no A1+ Action is enabled in the first batch.
-- [ ] Focused/local evidence, nine remote checks and head-match are recorded.
+- [x] No external send/delivery and no A1+ Action is enabled in the first batch.
+- [x] All required local evidence, including the final full Python gate, is recorded.
+- [ ] Nine remote checks and exact head-match are recorded.
 
 ## 6. Local evidence before remote CI
 
@@ -211,9 +212,14 @@ assumption.
 | P7D.1 remediation | P14 focused regression | Same 12-file P14 selection recorded above | Windows / Python 3.12.10 | `PASS` | 109 passed | `24937b440746ec90b4e0000723280bef0e88f49e` | 14.53 s |
 | P7D.1 remediation | Full Node regression | `$NodeTests = @(Get-ChildItem -LiteralPath tests -Filter '*.test.mjs' -File \| Sort-Object FullName \| ForEach-Object { $_.FullName }); node --test @NodeTests` | Windows / Node v24.14.0 | `PASS` | 224 passed, 2 skipped, 0 failed in 29 files | `24937b440746ec90b4e0000723280bef0e88f49e` | 1960.69 ms; repaired transport wait helper also passed 50/50 isolated stress runs |
 | P7D.1 remediation | Official generation, manifests and Source Authority | `python scripts/sync-generated-sources.py --write`; both mirror checks; Omni manifest check; `python scripts/check-source-authority.py`; `git diff --check` | Windows / Python 3.12.10 + Git | `PASS` | 19 managed novel Actions, 790 total, 290 executable; 16 independent authorities, 1 alias, 24 generated targets, 1 closed-world boundary | `24937b440746ec90b4e0000723280bef0e88f49e` | Official write followed by final check/check-committed and source-authority PASS |
-| P7D.2 | DAG/`STEP_OUTPUT`/reconcile/P19/Completion | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
-| P7D.2 | generated-source sync/check + mirrors | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
-| P7D.2 | selected/full local regression | `TBD` | `TBD` | `PENDING` | `TBD` | `TBD` | `TBD` |
+| P7D.2 | DAG/`STEP_OUTPUT`/reconcile/P19/Completion focused regression | `$P7D2Tests = @(Get-ChildItem tests -Filter '*p7d2.py' -File \| Sort-Object FullName \| ForEach-Object FullName); python -m pytest -q @P7D2Tests tests/test_action_schema_catalog_p7c1.py tests/test_composition_executable_plan_p7c0.py tests/test_composition_step_execution_p7d1.py tests/test_gateway_worker_composition_integration_p7d1.py tests/test_gateway_worker_composition_recovery_p7d1.py tests/test_watchdog_stale_effect_regression.py tests/test_p19_m5_repair_loop.py tests/test_active_request_activation.py tests/test_gateway_life_continuity.py tests/test_life_journal_projection_recovery.py` | Windows / Python 3.12.10, current-worktree sources | `PASS` | 353 passed | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 227.50 s; final rerun completed 2026-09-04 after the readiness seal repair |
+| P7D.2 | Official generation, release manifests, mirrors and Source Authority | `python scripts/sync_omni_capability_manifest.py`; `python scripts/sync-generated-sources.py --write`; `python scripts/refresh-source-release.py`; `python scripts/sync_omni_capability_manifest.py --check`; `python scripts/sync-generated-sources.py --check`; `python scripts/check-source-authority.py` | Windows / Python 3.12.10 + Git | `PASS` | 19 managed novel Actions, 790 total, 290 executable; 16 independent authorities, 1 alias, 24 generated targets, 1 closed-world boundary; capability manifest `0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d`; contract schema bundle `39b15ea6c5ab6403c8b135b9db7f5f6c4abc9bf919426aa1405892511d77647b`; component manifest `4406a102397336564995a3c8800963324873f4e3f80849c6700d5b2dbe4341dd`; release manifest `4e85ddbe52aedd39f1b60e4736f1008bed4bbbbdc1f64ac42dc17f3627829ebc`; all three release-manifest copies byte-identical with file SHA-256 `d25c8a14eb31efffd21926ebeeafcd6b97268a778eced41f7b7e471ba0063abd` | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | Official refresh/check completed after the final capability and contract-schema changes |
+| P7D.2 | P19 1.5 freeze + drift fingerprint | `python -m pytest -q tests/golden/p19_r2/test_freeze_and_guards.py tests/golden/p19_r2/test_calibration_and_stability.py::DriftFingerprintTests::test_fingerprint_matches_or_declared` | Windows / Python 3.12.10 | `PASS` | 7 passed | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 7.44 s compare-only run after refreshing the 38-file authority surface |
+| P7D.2 | P19 Golden Gate | `python -m pytest tests/golden/p19_r2/ -q` | Windows / Python 3.12.10 | `PASS` | 55 passed | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 51.44 s; final stable-tree rerun |
+| P7D.2 | P19/verification/repair selection | `python -m pytest tests/ -k "p19 or verification or repair" -q` | Windows / Python 3.12.10 | `PASS` | 324 passed, 3768 deselected | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 101.05 s; final stable-tree rerun |
+| P7D.2 | P14 focused regression | `python -m pytest -q tests/test_repository_structure_p14_m2.py tests/test_repository_structure_p14_m2_wiring.py tests/test_repository_query_p14_m3.py tests/test_repository_query_p14_m3_coherence.py tests/test_repository_query_p14_m3_wiring.py tests/test_repository_context_p14_m4.py tests/test_repository_context_p14_m4_wiring.py tests/test_repository_incremental_p14_m5.py tests/test_repository_security_p14.py tests/test_life_repository_bridge_p14.py tests/test_reflection_capability_p8.py tests/test_life_capability_health_flow.py` | Windows / Python 3.12.10 | `PASS` | 109 passed | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 15.94 s; final stable-tree rerun |
+| P7D.2 | Full Node regression | `$NodeTests = @(Get-ChildItem -LiteralPath tests -Filter '*.test.mjs' -File \| Sort-Object FullName \| ForEach-Object { $_.FullName }); node --test @NodeTests` | Windows / Node v24.14.0; existing locked dependencies | `PASS` | 224 passed, 2 skipped, 0 failed in 29 files | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 1980.7034 ms Node duration; final stable-tree run |
+| P7D.2 | Full source verification + Python regression | `python scripts/verify_source.py` | Windows / Python 3.12.10, current-worktree sources | `PASS` | 4075 passed, 17 skipped, 847 subtests passed | Pre-commit P7D.2 candidate tree; final SHA will be bound in immutable PR evidence | 907.82 s; final unchanged-tree run completed 2026-09-04 23:14 +08:00 |
 
 An earlier discovered Node full-suite run had one timeout before the `cancel`
 assertions in the pre-existing `test_avatar_p2b_transport.test.mjs` readiness
@@ -265,15 +271,15 @@ checks against one unchanged candidate SHA.
 
 | Required GitHub check | P7C.0 | P7C.1 | P7D.1 | P7D.2 |
 |---|---|---|---|---|
-| `source-authority-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `source-authority-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FAIL @ 331e675… / REPAIRED / NEW HEAD RERUN PENDING` | `PENDING` |
-| `p14-focused-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `p14-focused-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `p19-r2-golden-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
-| `p19-r2-golden-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `PASS @ 331e675… / NEW HEAD RERUN PENDING` | `PENDING` |
+| `source-authority-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `source-authority-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `full-regression-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `full-regression-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `p14-focused-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `p14-focused-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `full-regression-ubuntu` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `p19-r2-golden-ubuntu-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
+| `p19-r2-golden-windows-latest` | `FINAL PASS @ c7b1ba1…` | `FINAL PASS @ e6023ba…` | `FINAL PASS @ 4ffaf518…` | `PENDING` |
 
 For every non-pending cell, attach the GitHub run URL, conclusion, checked SHA
 and completion time below. A green check on another SHA does not count.
@@ -339,8 +345,10 @@ successor-head matrix is preserved in the immutable PR #70 evidence comment.
 Both exact successor heads were merged. Keeping final rerun matrices in
 immutable PR comments avoids creating an endlessly self-invalidating evidence
 commit. The P7D.1 rows include its successful first round and the rejected
-eight-of-nine evidence-only successor. Only an exact new successor-head rerun,
-immutable PR #71 evidence and four-way head match can close P7D.1.
+eight-of-nine evidence-only predecessor. Final successor
+`4ffaf51809e1b299b574fe7c61dbf76614981c6d` passed all nine checks; its exact
+run links and four-way head match are preserved in the immutable PR #71
+evidence comment, and that head merged as `f268d6ac3293ee31e6c20b7e7f706f46cfa3e040`.
 
 ## 9. Head-match closure
 
@@ -348,7 +356,7 @@ immutable PR #71 evidence and four-way head match can close P7D.1.
 |---|---|---|---|---|---|---|
 | P7C.0 | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `c7b1ba1d33bf12e8e66eed1940be248b7d048adc` | `YES` | `CLOSED / PR #69 MERGED AS b75d0c8…` |
 | P7C.1 | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `e6023ba100f2b8a19331e1a0b0b46e0251533a32` | `YES` | `CLOSED / PR #70 MERGED AS acb39a63…` |
-| P7D.1 | `24937b440746ec90b4e0000723280bef0e88f49e` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `331e675a7e159493d78fc4242612a1bdb8aed41f` | `REJECTED 8/9 @ 331e675a7e159493d78fc4242612a1bdb8aed41f` | `YES BEFORE THIS LEDGER-ONLY UPDATE` | `REMEDIATION PRODUCT COMMITTED / FINAL EVIDENCE SUCCESSOR PENDING` |
+| P7D.1 | `4ffaf51809e1b299b574fe7c61dbf76614981c6d` | `4ffaf51809e1b299b574fe7c61dbf76614981c6d` | `4ffaf51809e1b299b574fe7c61dbf76614981c6d` | `4ffaf51809e1b299b574fe7c61dbf76614981c6d` | `YES` | `CLOSED / PR #71 MERGED AS f268d6ac…` |
 | P7D.2 | `TBD` | `TBD` | `TBD` | `TBD` | `TBD` | `PENDING` |
 
 Closure requires all four SHA columns to be identical, all nine checks green on
@@ -365,19 +373,19 @@ remote-check and head-match cells to `PENDING`.
 | Same object identity replaced/deleted/rebound across owners or requests | Store-wide pre-insert check + canonical REQUEST owner + append-only schema guards + legacy integrity scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
 | Sealed executable companion replaced, changed or deleted after commit | identity INSERT/REPLACE/UPSERT guard + unconditional UPDATE/DELETE guards + schema fingerprint + integrity scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
 | Marker-1 companion corruption bypasses P7B paths | registration-scoped full companion parse/cross-authority validation on each P7B read/recovery/expiry/replay target; global open/health scan | P7C.0 | `CLOSED @ c7b1ba1… / MERGED IN b75d0c8…` |
-| Dynamic result drift/substitution | exact upstream Effect+Fact+lineage and schema-bound `STEP_OUTPUT` backed by an explicit result/value schema body in the existing Omni catalog | P7D.2 | `OPEN; CURRENT CATALOG HAS ARGUMENT SCHEMAS BUT NO RESULT/VALUE SCHEMA AUTHORITY` |
-| Parent authorization disappears after unregister or gateway epoch restart | insert-only, non-executable continuation delegation may only re-enter the current Policy/Ticket/Grant chain; it can never authorize Runtime directly | P7D.2 | `OPEN; OLD RECEIPT/TICKET MUST NOT CROSS EPOCH` |
-| Pre-start receipt cannot be safely resumed in a new epoch | Store proves handler count zero and nonces unconsumed before bounded attempt+1/new Effect ID supersession | P7D.2 | `OPEN; STARTED REMAINS NO-REPLAY` |
-| Existing CompletionGate treats a legal multi-Fact batch as a conflict | compare the complete exact FactBatch ID tuple and bind every required leaf Effect/Fact | P7D.2 | `OPEN` |
-| Composition writes the regenerative `execution_frontier` | derive a read-only frontier from sealed plan + receipts + Effect heads + Fact batches; preserve the existing single writer | P7D.2 | `PROHIBITED / DESIGN CONTROL IDENTIFIED` |
+| Dynamic result drift/substitution | exact upstream Effect+Fact+lineage and schema-bound `STEP_OUTPUT` backed by an explicit result/value schema body in the existing Omni catalog | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Parent authorization disappears after unregister or gateway epoch restart | insert-only, non-executable continuation delegation may only re-enter the current Policy/Ticket/Grant chain; it can never authorize Runtime directly | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Pre-start receipt cannot be safely resumed in a new epoch | Store proves handler count zero and nonces unconsumed before bounded attempt+1/new Effect ID supersession | P7D.2 | `CONTROL IMPLEMENTED; ATTEMPT 2 BOUNDED / STARTED NO-REPLAY / LOCAL GATES PASS / REMOTE PENDING` |
+| Existing CompletionGate treats a legal multi-Fact batch as a conflict | compare the complete exact FactBatch ID tuple and bind every required leaf Effect/Fact | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Composition writes the regenerative `execution_frontier` | derive a read-only frontier from sealed plan + receipts + Effect heads + Fact batches; preserve the existing single writer | P7D.2 | `PROHIBITED / READ-ONLY PROJECTION IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
 | Plan A0 label used as permission | current compiled permission + Policy at immediate boundary | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
 | Capability manifest changes between model loading and authorization authority compilation | compile Registry and schema catalog from the same single verified file read, then reuse that authority in orchestration | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
 | Request/plan/step/arguments/target/generation crossing under a valid signature | exact `CompositionExecutionBindingV1` on Intent, Decision, Ticket and Grant plus independent expected binding | P7C.1 | `CLOSED @ e6023ba… / MERGED IN acb39a63…` |
-| Durable receipt treated as signature authority after restart | Store validates canonical structure and hashes; the P7D consumer revalidates the immutable receipt, current trust, ticket and grant before dispatch | P7C.1/P7D.1 | `P7D.1 STATIC-ROOT CONTROL IMPLEMENTED / MULTI-STEP CURRENT-EPOCH CONTINUATION OPEN IN P7D.2` |
-| Same-size path content changes after snapshot | strengthen path snapshot before any path-based composition execution | P7D.1 | `OPEN BEFORE PATH-BASED EXECUTION` |
-| Second scheduler/outcome authority | only `GatewayOrchestrationWorker` + canonical Effect/Fact seams | P7D.1 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / DAG DERIVATION OPEN IN P7D.2` |
-| Cross-boundary timeout replay | `AMBIGUOUS`/reconcile-required; no blind replay | P7D.1/P7D.2 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / DAG CUT-POINT MATRIX OPEN IN P7D.2` |
-| Grant-admission evidence mistaken for action success | require canonical action Effect head + Gateway execution fact | P7D.1/P7D.2 | `P7D.1 STATIC ROOT CONTROL IMPLEMENTED / LEAF BARRIER OPEN IN P7D.2` |
-| Verification or repair escapes A0 | exact P19 plan; no A1+ repair dispatch in first batch | P7D.2 | `OPEN` |
-| Partial leaf success declared complete | CompletionGate requires every required leaf Effect/fact | P7D.2 | `OPEN` |
-| Read-only composition triggers channel delivery | initial P7D batch excludes external delivery/send | P7D.2 | `OPEN` |
+| Durable receipt treated as signature authority after restart | Store validates canonical structure and hashes; the P7D consumer revalidates the immutable receipt, current trust, ticket and grant before dispatch | P7C.1/P7D.1 | `P7D.2 CURRENT-EPOCH CONTINUATION CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Same-size path content changes after snapshot | strengthen path snapshot before any path-based composition execution | P7D.1 | `CLOSED BY SCOPE: RAW HOST PATHS REMAIN FORBIDDEN; OBJECT BYTES/REVISION AND OPAQUE TARGET SNAPSHOT ARE REVALIDATED` |
+| Second scheduler/outcome authority | only `GatewayOrchestrationWorker` + canonical Effect/Fact seams | P7D.1 | `P7D.2 READ-ONLY DAG PROJECTION IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Cross-boundary timeout replay | `AMBIGUOUS`/reconcile-required; no blind replay | P7D.1/P7D.2 | `CONTROL IMPLEMENTED ACROSS DAG CUT-POINT MATRIX / LOCAL GATES PASS / REMOTE PENDING` |
+| Grant-admission evidence mistaken for action success | require canonical action Effect head + Gateway execution fact | P7D.1/P7D.2 | `PARENT-PLUS-LEAF EFFECT/FACT BARRIER IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Verification or repair escapes A0 | exact P19 plan; no A1+ repair dispatch in first batch | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Partial leaf success declared complete | CompletionGate requires every required leaf Effect/fact | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |
+| Read-only composition triggers channel delivery | initial P7D batch excludes external delivery/send | P7D.2 | `CONTROL IMPLEMENTED / LOCAL GATES PASS / REMOTE PENDING` |

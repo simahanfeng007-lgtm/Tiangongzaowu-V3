@@ -296,6 +296,12 @@ def test_t26b_security_surface_files_match_reviewed_lineage() -> None:
                 "f58945c978567df9facce05216ac7141fcf682bcc3cfd8397459de049e8549de",
             ),
         ),
+        "src/total_gateway/completion_gate.py": (
+            (
+                "p7d2-durable-dag-completion",
+                "6e6b8f08b9a2eedbf9b341449189d47bda51e0f5f8d597828cf9d868e59e672f",
+            ),
+        ),
     }
     root = Path(__file__).resolve().parents[1]
     import hashlib

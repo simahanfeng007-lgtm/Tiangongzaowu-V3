@@ -28,10 +28,48 @@ from contracts import (
 COMPOSITION_STEP_AUTHORIZATION_SCHEMA = (
     "tiangong.composition-step-authorization.v1"
 )
+COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2 = (
+    "tiangong.composition-step-authorization.v2"
+)
+COMPOSITION_CONTINUATION_DELEGATION_SCHEMA = (
+    "tiangong.composition-continuation-delegation.v1"
+)
 MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES = 2 * 1024 * 1024
 _ZERO_SHA256 = "0" * 64
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _SAFE_A0_SIDE_EFFECTS = frozenset({"none", "read"})
+_VALID_SIDE_EFFECTS = frozenset(
+    {
+        "none",
+        "read",
+        "local_write",
+        "external_write",
+        "external_send",
+        "destructive",
+    }
+)
+_CONTINUATION_ISSUANCE_CONTEXT_KEYS = frozenset(
+    {
+        "channel",
+        "tenant_id",
+        "link_account_id",
+        "conversation_scope_hash",
+        "life_id",
+        "life_evidence_ref",
+        "session_id",
+        "life_snapshot_revision",
+        "life_snapshot_hash",
+        "output_root_id",
+        "artifact_intent_id",
+        "parent_ticket_payload_sha256",
+        "max_output_bytes",
+        "max_runtime_ms",
+        "max_tool_calls",
+        "resource_envelope_sha256",
+        "allowed_side_effects",
+        "side_effect_envelope_sha256",
+    }
+)
 
 
 def _json_value(value: Any) -> Any:
@@ -127,6 +165,509 @@ def _restore_contract(model_type: Any, payload: str, *, label: str) -> Any:
     return restored
 
 
+def _validate_continuation_issuance_context(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != _CONTINUATION_ISSUANCE_CONTEXT_KEYS:
+        raise ValueError("composition continuation issuance context is invalid")
+    for field in (
+        "tenant_id",
+        "link_account_id",
+        "life_id",
+        "session_id",
+        "output_root_id",
+    ):
+        _require_nonempty(value[field], label=f"continuation {field}")
+    if value["channel"] not in {"desktop", "wechat", "feishu", "system", "test"}:
+        raise ValueError("composition continuation channel is invalid")
+    if (
+        not isinstance(value["life_evidence_ref"], str)
+        or re.fullmatch(r"lev_[0-9a-f]{64}", value["life_evidence_ref"])
+        is None
+    ):
+        raise ValueError("composition continuation life evidence is invalid")
+    if value["artifact_intent_id"] is not None:
+        _require_nonempty(
+            value["artifact_intent_id"],
+            label="continuation artifact intent id",
+        )
+    for field in (
+        "conversation_scope_hash",
+        "life_snapshot_hash",
+        "parent_ticket_payload_sha256",
+        "resource_envelope_sha256",
+        "side_effect_envelope_sha256",
+    ):
+        _require_sha256(value[field], label=f"continuation {field}")
+    for field, minimum, maximum in (
+        ("life_snapshot_revision", 1, 2**63 - 1),
+        ("max_output_bytes", 0, 2_147_483_648),
+        ("max_runtime_ms", 1, 3_600_000),
+        ("max_tool_calls", 1, 10_000),
+    ):
+        field_value = value[field]
+        if (
+            not isinstance(field_value, int)
+            or isinstance(field_value, bool)
+            or not minimum <= field_value <= maximum
+        ):
+            raise ValueError(
+                f"composition continuation {field} is invalid"
+            )
+    resources = {
+        "max_output_bytes": value["max_output_bytes"],
+        "max_runtime_ms": value["max_runtime_ms"],
+        "max_tool_calls": value["max_tool_calls"],
+    }
+    if value["resource_envelope_sha256"] != canonical_sha256(resources):
+        raise ValueError("composition continuation resource envelope is invalid")
+    side_effects = value["allowed_side_effects"]
+    if (
+        not isinstance(side_effects, list)
+        or tuple(side_effects) != tuple(sorted(set(side_effects)))
+        # This envelope describes the parent authority captured for later
+        # re-issuance; it is inert and therefore may faithfully preserve a
+        # non-A0 parent ticket.  Each materialized child remains independently
+        # constrained to the A0-only envelope below.
+        or not set(side_effects).issubset(_VALID_SIDE_EFFECTS)
+        or value["side_effect_envelope_sha256"]
+        != canonical_sha256({"allowed_side_effects": side_effects})
+    ):
+        raise ValueError("composition continuation side-effect envelope is invalid")
+    return value
+
+
+def build_composition_continuation_issuance_context(
+    parent_ticket: ExecutionTicket,
+    *,
+    life_id: str,
+    life_evidence_ref: str,
+    session_id: str,
+) -> dict[str, Any]:
+    """Project only non-executable reissuance metadata from a live parent.
+
+    The caller supplies the three ``ActiveExecutionAuthority`` values that are
+    not part of the signed parent payload.  The returned canonical JSON value
+    contains no signature or nonce and is revalidated again by the Store.
+    """
+
+    if not isinstance(parent_ticket, ExecutionTicket):
+        raise TypeError("composition continuation parent ticket is invalid")
+    payload = parent_ticket.payload
+    return _validate_continuation_issuance_context(
+        _json_value(
+            {
+                "channel": payload.channel,
+                "tenant_id": payload.tenant_id,
+                "link_account_id": payload.link_account_id,
+                "conversation_scope_hash": payload.conversation_scope_hash,
+                "life_id": life_id,
+                "life_evidence_ref": life_evidence_ref,
+                "session_id": session_id,
+                "life_snapshot_revision": payload.life_snapshot_revision,
+                "life_snapshot_hash": payload.life_snapshot_hash,
+                "output_root_id": payload.output_root_id,
+                "artifact_intent_id": payload.artifact_intent_id,
+                "parent_ticket_payload_sha256": canonical_sha256(
+                    payload.model_dump(mode="json")
+                ),
+                "max_output_bytes": payload.max_output_bytes,
+                "max_runtime_ms": payload.max_runtime_ms,
+                "max_tool_calls": payload.max_tool_calls,
+                "resource_envelope_sha256": payload.resource_envelope_sha256,
+                "allowed_side_effects": list(payload.allowed_side_effects),
+                "side_effect_envelope_sha256": (
+                    payload.side_effect_envelope_sha256
+                ),
+            }
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CompositionContinuationDelegation:
+    """Durable, deliberately non-executable evidence for later issuance.
+
+    The record carries no nonce, signature, Ticket, Grant, or dispatch right.
+    Its only consumer is the existing policy issuer, which must re-read this
+    evidence and issue a fresh current-epoch authorization.
+    """
+
+    delegation_id: str
+    registration_id: str
+    registration_sha256: str
+    executable_plan_id: str
+    executable_plan_sha256: str
+    request_id: str
+    run_id: str
+    generation: int
+    principal_scope_hash: str
+    parent_ticket_id: str
+    parent_ticket_sha256: str
+    parent_ticket_expires_at_ms: int
+    parent_effect_id: str
+    parent_effect_claim_sha256: str
+    source_manifest_sha256: str
+    capability_manifest_sha256: str
+    action_registry_sha256: str
+    schema_catalog_sha256: str
+    composition_execution_manifest_sha256: str
+    component_manifest_sha256: str
+    verification_plan_id: str
+    verification_plan_sha256: str
+    verification_plan_activation_id: str
+    workspace_id: str
+    workspace_scope_sha256: str
+    object_grants_sha256: str
+    issuance_context_json: str
+    issuance_context_sha256: str
+    allowed_action_versions_json: str
+    allowed_action_versions_sha256: str
+    issued_at_ms: int
+    expires_at_ms: int
+    delegation_sha256: str
+    schema_version: str = COMPOSITION_CONTINUATION_DELEGATION_SCHEMA
+    record_type: str = "NON_EXECUTABLE_CONTINUATION"
+    executable: bool = False
+
+    def __post_init__(self) -> None:
+        if self.schema_version != COMPOSITION_CONTINUATION_DELEGATION_SCHEMA:
+            raise ValueError("composition continuation schema is invalid")
+        if self.record_type != "NON_EXECUTABLE_CONTINUATION" or self.executable:
+            raise ValueError("composition continuation must remain non-executable")
+        for label, value in (
+            ("delegation id", self.delegation_id),
+            ("registration id", self.registration_id),
+            ("executable plan id", self.executable_plan_id),
+            ("request id", self.request_id),
+            ("run id", self.run_id),
+            ("parent ticket id", self.parent_ticket_id),
+            ("verification plan id", self.verification_plan_id),
+            ("verification plan activation id", self.verification_plan_activation_id),
+            ("workspace id", self.workspace_id),
+        ):
+            _require_nonempty(value, label=label)
+        if (
+            not self.delegation_id.startswith("ccd_")
+            or len(self.delegation_id) != 68
+            or _SHA256.fullmatch(self.delegation_id[4:]) is None
+        ):
+            raise ValueError("composition continuation identity is invalid")
+        if (
+            not self.parent_effect_id.startswith("eff_")
+            or len(self.parent_effect_id) != 68
+            or _SHA256.fullmatch(self.parent_effect_id[4:]) is None
+        ):
+            raise ValueError("composition continuation parent Effect is invalid")
+        for label, value in (
+            ("registration", self.registration_sha256),
+            ("executable plan", self.executable_plan_sha256),
+            ("principal scope", self.principal_scope_hash),
+            ("parent ticket", self.parent_ticket_sha256),
+            ("parent Effect claim", self.parent_effect_claim_sha256),
+            ("source manifest", self.source_manifest_sha256),
+            ("capability manifest", self.capability_manifest_sha256),
+            ("action registry", self.action_registry_sha256),
+            ("schema catalog", self.schema_catalog_sha256),
+            ("composition execution manifest", self.composition_execution_manifest_sha256),
+            ("component manifest", self.component_manifest_sha256),
+            ("verification plan", self.verification_plan_sha256),
+            ("workspace scope", self.workspace_scope_sha256),
+            ("object grants", self.object_grants_sha256),
+            ("issuance context", self.issuance_context_sha256),
+            ("allowed action versions", self.allowed_action_versions_sha256),
+            ("delegation", self.delegation_sha256),
+        ):
+            _require_sha256(value, label=label)
+        allowed = _parse_canonical_json(
+            self.allowed_action_versions_json,
+            label="allowed action versions",
+            expected_type=list,
+        )
+        issuance_context = _validate_continuation_issuance_context(
+            _parse_canonical_json(
+                self.issuance_context_json,
+                label="composition continuation issuance context",
+                expected_type=dict,
+            )
+        )
+        if self.issuance_context_sha256 != canonical_sha256(issuance_context):
+            raise ValueError("composition continuation issuance context digest is invalid")
+        if (
+            any(not isinstance(item, dict) for item in allowed)
+            or self.allowed_action_versions_sha256 != canonical_sha256(allowed)
+        ):
+            raise ValueError("composition continuation actions are invalid")
+        if (
+            not isinstance(self.generation, int)
+            or isinstance(self.generation, bool)
+            or self.generation < 0
+            or any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                for value in (
+                    self.parent_ticket_expires_at_ms,
+                    self.issued_at_ms,
+                    self.expires_at_ms,
+                )
+            )
+            or not self.issued_at_ms < self.expires_at_ms
+        ):
+            raise ValueError("composition continuation counters are invalid")
+        if self.delegation_id != derive_composition_continuation_delegation_id(
+            self.identity_payload()
+        ):
+            raise ValueError("composition continuation ID is not canonical")
+        if self.delegation_sha256 not in {_ZERO_SHA256, self.computed_sha256()}:
+            raise ValueError("composition continuation digest is invalid")
+
+    @property
+    def allowed_action_versions(self) -> list[dict[str, Any]]:
+        return deepcopy(json.loads(self.allowed_action_versions_json))
+
+    @property
+    def issuance_context(self) -> dict[str, Any]:
+        """Detached non-authorizing metadata used for fresh Policy issuance."""
+
+        return deepcopy(json.loads(self.issuance_context_json))
+
+    def identity_payload(self) -> dict[str, Any]:
+        return {
+            "registration_id": self.registration_id,
+            "executable_plan_id": self.executable_plan_id,
+            "executable_plan_sha256": self.executable_plan_sha256,
+            "request_id": self.request_id,
+            "run_id": self.run_id,
+            "generation": self.generation,
+            "parent_ticket_id": self.parent_ticket_id,
+            "parent_ticket_sha256": self.parent_ticket_sha256,
+            "parent_effect_id": self.parent_effect_id,
+            "parent_effect_claim_sha256": self.parent_effect_claim_sha256,
+        }
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "record_type": self.record_type,
+            "executable": self.executable,
+            "delegation_id": self.delegation_id,
+            "registration_id": self.registration_id,
+            "registration_sha256": self.registration_sha256,
+            "executable_plan_id": self.executable_plan_id,
+            "executable_plan_sha256": self.executable_plan_sha256,
+            "request_id": self.request_id,
+            "run_id": self.run_id,
+            "generation": self.generation,
+            "principal_scope_hash": self.principal_scope_hash,
+            "parent_ticket_id": self.parent_ticket_id,
+            "parent_ticket_sha256": self.parent_ticket_sha256,
+            "parent_ticket_expires_at_ms": self.parent_ticket_expires_at_ms,
+            "parent_effect_id": self.parent_effect_id,
+            "parent_effect_claim_sha256": self.parent_effect_claim_sha256,
+            "source_manifest_sha256": self.source_manifest_sha256,
+            "capability_manifest_sha256": self.capability_manifest_sha256,
+            "action_registry_sha256": self.action_registry_sha256,
+            "schema_catalog_sha256": self.schema_catalog_sha256,
+            "composition_execution_manifest_sha256": self.composition_execution_manifest_sha256,
+            "component_manifest_sha256": self.component_manifest_sha256,
+            "verification_plan_id": self.verification_plan_id,
+            "verification_plan_sha256": self.verification_plan_sha256,
+            "verification_plan_activation_id": self.verification_plan_activation_id,
+            "workspace_id": self.workspace_id,
+            "workspace_scope_sha256": self.workspace_scope_sha256,
+            "object_grants_sha256": self.object_grants_sha256,
+            "issuance_context": self.issuance_context,
+            "issuance_context_sha256": self.issuance_context_sha256,
+            "allowed_action_versions": self.allowed_action_versions,
+            "allowed_action_versions_sha256": self.allowed_action_versions_sha256,
+            "issued_at_ms": self.issued_at_ms,
+            "expires_at_ms": self.expires_at_ms,
+        }
+
+    def computed_sha256(self) -> str:
+        return canonical_sha256(self.payload())
+
+    def has_valid_sha256(self) -> bool:
+        return self.delegation_sha256 == self.computed_sha256()
+
+    @property
+    def canonical_json(self) -> str:
+        return canonical_json_text(
+            {**self.payload(), "delegation_sha256": self.delegation_sha256}
+        )
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        registration_id: str,
+        registration_sha256: str,
+        executable_plan_id: str,
+        executable_plan_sha256: str,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        principal_scope_hash: str,
+        parent_ticket_id: str,
+        parent_ticket_sha256: str,
+        parent_ticket_expires_at_ms: int,
+        parent_effect_id: str,
+        parent_effect_claim_sha256: str,
+        source_manifest_sha256: str,
+        capability_manifest_sha256: str,
+        action_registry_sha256: str,
+        schema_catalog_sha256: str,
+        composition_execution_manifest_sha256: str,
+        component_manifest_sha256: str,
+        verification_plan_id: str,
+        verification_plan_sha256: str,
+        verification_plan_activation_id: str,
+        workspace_id: str,
+        workspace_scope_sha256: str,
+        object_grants_sha256: str,
+        issuance_context: Mapping[str, Any],
+        allowed_action_versions: Sequence[Mapping[str, Any]],
+        issued_at_ms: int,
+        expires_at_ms: int,
+    ) -> Self:
+        allowed = _json_value(list(allowed_action_versions))
+        context = _validate_continuation_issuance_context(
+            _json_value(dict(issuance_context))
+        )
+        identity = {
+            "registration_id": registration_id,
+            "executable_plan_id": executable_plan_id,
+            "executable_plan_sha256": executable_plan_sha256,
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "parent_ticket_id": parent_ticket_id,
+            "parent_ticket_sha256": parent_ticket_sha256,
+            "parent_effect_id": parent_effect_id,
+            "parent_effect_claim_sha256": parent_effect_claim_sha256,
+        }
+        draft = cls(
+            delegation_id=derive_composition_continuation_delegation_id(identity),
+            registration_id=registration_id,
+            registration_sha256=registration_sha256,
+            executable_plan_id=executable_plan_id,
+            executable_plan_sha256=executable_plan_sha256,
+            request_id=request_id,
+            run_id=run_id,
+            generation=generation,
+            principal_scope_hash=principal_scope_hash,
+            parent_ticket_id=parent_ticket_id,
+            parent_ticket_sha256=parent_ticket_sha256,
+            parent_ticket_expires_at_ms=parent_ticket_expires_at_ms,
+            parent_effect_id=parent_effect_id,
+            parent_effect_claim_sha256=parent_effect_claim_sha256,
+            source_manifest_sha256=source_manifest_sha256,
+            capability_manifest_sha256=capability_manifest_sha256,
+            action_registry_sha256=action_registry_sha256,
+            schema_catalog_sha256=schema_catalog_sha256,
+            composition_execution_manifest_sha256=composition_execution_manifest_sha256,
+            component_manifest_sha256=component_manifest_sha256,
+            verification_plan_id=verification_plan_id,
+            verification_plan_sha256=verification_plan_sha256,
+            verification_plan_activation_id=verification_plan_activation_id,
+            workspace_id=workspace_id,
+            workspace_scope_sha256=workspace_scope_sha256,
+            object_grants_sha256=object_grants_sha256,
+            issuance_context_json=canonical_json_text(context),
+            issuance_context_sha256=canonical_sha256(context),
+            allowed_action_versions_json=canonical_json_text(allowed),
+            allowed_action_versions_sha256=canonical_sha256(allowed),
+            issued_at_ms=issued_at_ms,
+            expires_at_ms=expires_at_ms,
+            delegation_sha256=_ZERO_SHA256,
+        )
+        return replace(draft, delegation_sha256=draft.computed_sha256())
+
+
+def derive_composition_continuation_delegation_id(
+    identity: Mapping[str, Any],
+) -> str:
+    return "ccd_" + canonical_sha256(
+        {
+            "domain": "tiangong.composition-continuation-delegation.v1.id",
+            **dict(identity),
+        }
+    )
+
+
+def continuation_delegation_from_row(row: Any) -> CompositionContinuationDelegation:
+    payload = _parse_canonical_json(
+        row["delegation_json"],
+        label="composition continuation delegation",
+        expected_type=dict,
+    )
+    try:
+        delegation = CompositionContinuationDelegation(
+            delegation_id=payload["delegation_id"],
+            registration_id=payload["registration_id"],
+            registration_sha256=payload["registration_sha256"],
+            executable_plan_id=payload["executable_plan_id"],
+            executable_plan_sha256=payload["executable_plan_sha256"],
+            request_id=payload["request_id"],
+            run_id=payload["run_id"],
+            generation=payload["generation"],
+            principal_scope_hash=payload["principal_scope_hash"],
+            parent_ticket_id=payload["parent_ticket_id"],
+            parent_ticket_sha256=payload["parent_ticket_sha256"],
+            parent_ticket_expires_at_ms=payload["parent_ticket_expires_at_ms"],
+            parent_effect_id=payload["parent_effect_id"],
+            parent_effect_claim_sha256=payload["parent_effect_claim_sha256"],
+            source_manifest_sha256=payload["source_manifest_sha256"],
+            capability_manifest_sha256=payload["capability_manifest_sha256"],
+            action_registry_sha256=payload["action_registry_sha256"],
+            schema_catalog_sha256=payload["schema_catalog_sha256"],
+            composition_execution_manifest_sha256=payload[
+                "composition_execution_manifest_sha256"
+            ],
+            component_manifest_sha256=payload["component_manifest_sha256"],
+            verification_plan_id=payload["verification_plan_id"],
+            verification_plan_sha256=payload["verification_plan_sha256"],
+            verification_plan_activation_id=payload[
+                "verification_plan_activation_id"
+            ],
+            workspace_id=payload["workspace_id"],
+            workspace_scope_sha256=payload["workspace_scope_sha256"],
+            object_grants_sha256=payload["object_grants_sha256"],
+            issuance_context_json=canonical_json_text(
+                payload["issuance_context"]
+            ),
+            issuance_context_sha256=payload["issuance_context_sha256"],
+            allowed_action_versions_json=canonical_json_text(
+                payload["allowed_action_versions"]
+            ),
+            allowed_action_versions_sha256=payload[
+                "allowed_action_versions_sha256"
+            ],
+            issued_at_ms=payload["issued_at_ms"],
+            expires_at_ms=payload["expires_at_ms"],
+            delegation_sha256=payload["delegation_sha256"],
+            schema_version=payload["schema_version"],
+            record_type=payload["record_type"],
+            executable=payload["executable"],
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("stored composition continuation is invalid") from exc
+    expected = {
+        "delegation_id": delegation.delegation_id,
+        "registration_id": delegation.registration_id,
+        "executable_plan_id": delegation.executable_plan_id,
+        "request_id": delegation.request_id,
+        "run_id": delegation.run_id,
+        "generation": delegation.generation,
+        "parent_effect_id": delegation.parent_effect_id,
+        "delegation_sha256": delegation.delegation_sha256,
+        "issued_at_ms": delegation.issued_at_ms,
+        "expires_at_ms": delegation.expires_at_ms,
+    }
+    if any(row[name] != value for name, value in expected.items()):
+        raise ValueError("composition continuation columns disagree with payload")
+    if delegation.canonical_json != row["delegation_json"]:
+        raise ValueError("stored composition continuation JSON is not canonical")
+    return delegation
+
+
 @dataclass(frozen=True, slots=True)
 class CompositionStepAuthorizationRequest:
     """Stable logical authorization request plus non-stable issuance ceiling.
@@ -179,6 +720,14 @@ class CompositionStepAuthorizationRequest:
     expires_at_ms: int
     authorization_ceiling_ms: int
     authorization_request_sha256: str
+    schema_version: str = COMPOSITION_STEP_AUTHORIZATION_SCHEMA
+    continuation_delegation_id: str | None = None
+    continuation_delegation_sha256: str | None = None
+    dependency_evidence_json: str | None = None
+    dependency_evidence_sha256: str | None = None
+    supersedes_authorization_id: str | None = None
+    supersedes_effect_id: str | None = None
+    supersedes_claim_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for label, value in (
@@ -219,11 +768,18 @@ class CompositionStepAuthorizationRequest:
             _require_sha256(
                 self.target_snapshot_sha256, label="target snapshot"
             )
+        if self.schema_version not in {
+            COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+            COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2,
+        }:
+            raise ValueError("composition authorization schema is invalid")
         if (
             not isinstance(self.generation, int)
             or isinstance(self.generation, bool)
             or self.generation < 0
-            or self.attempt != 1
+            or not isinstance(self.attempt, int)
+            or isinstance(self.attempt, bool)
+            or self.attempt < 1
             or not isinstance(self.action_fence_epoch, int)
             or isinstance(self.action_fence_epoch, bool)
             or self.action_fence_epoch < 0
@@ -266,6 +822,74 @@ class CompositionStepAuthorizationRequest:
             raise ValueError("target snapshot digest is invalid")
         if self.object_grants_sha256 != canonical_sha256(object_grants):
             raise ValueError("object grants digest is invalid")
+        continuation = (
+            self.continuation_delegation_id,
+            self.continuation_delegation_sha256,
+            self.dependency_evidence_json,
+            self.dependency_evidence_sha256,
+        )
+        predecessor = (
+            self.supersedes_authorization_id,
+            self.supersedes_effect_id,
+            self.supersedes_claim_sha256,
+        )
+        if self.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA:
+            if self.attempt != 1 or any(
+                value is not None for value in (*continuation, *predecessor)
+            ):
+                raise ValueError(
+                    "v1 composition authorization cannot carry continuation fields"
+                )
+        else:
+            if any(value is None for value in continuation):
+                raise ValueError(
+                    "v2 composition authorization requires continuation evidence"
+                )
+            _require_nonempty(
+                self.continuation_delegation_id,
+                label="continuation delegation id",
+            )
+            _require_sha256(
+                self.continuation_delegation_sha256,
+                label="continuation delegation",
+            )
+            dependency_evidence = _parse_canonical_json(
+                self.dependency_evidence_json,
+                label="composition dependency evidence",
+                expected_type=list,
+            )
+            if any(not isinstance(item, dict) for item in dependency_evidence):
+                raise ValueError(
+                    "composition dependency evidence must contain JSON objects"
+                )
+            if self.dependency_evidence_sha256 != canonical_sha256(
+                dependency_evidence
+            ):
+                raise ValueError("composition dependency evidence digest is invalid")
+            if self.attempt == 1:
+                if any(value is not None for value in predecessor):
+                    raise ValueError(
+                        "first composition attempt cannot supersede another authorization"
+                    )
+            else:
+                if any(value is None for value in predecessor):
+                    raise ValueError(
+                        "later composition attempt requires a complete predecessor"
+                    )
+                _require_nonempty(
+                    self.supersedes_authorization_id,
+                    label="superseded authorization id",
+                )
+                if (
+                    not self.supersedes_effect_id.startswith("eff_")
+                    or len(self.supersedes_effect_id) != 68
+                    or _SHA256.fullmatch(self.supersedes_effect_id[4:]) is None
+                ):
+                    raise ValueError("superseded Effect identity is invalid")
+                _require_sha256(
+                    self.supersedes_claim_sha256,
+                    label="superseded Effect claim",
+                )
         if self.action_fence_sha256 != canonical_sha256(
             {
                 "domain": "tiangong.gateway.action-fence-binding.v1",
@@ -279,15 +903,21 @@ class CompositionStepAuthorizationRequest:
             self.authorization_ceiling_ms,
             self.parent_ticket_expires_at_ms,
         )
-        if any(
+        lifetime_is_valid = not any(
             not isinstance(value, int) or isinstance(value, bool) or value < 0
             for value in times
-        ) or not (
+        ) and (
             self.issued_at_ms
             < self.expires_at_ms
             <= self.authorization_ceiling_ms
-            <= self.parent_ticket_expires_at_ms
-        ):
+        )
+        if self.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA:
+            lifetime_is_valid = (
+                lifetime_is_valid
+                and self.authorization_ceiling_ms
+                <= self.parent_ticket_expires_at_ms
+            )
+        if not lifetime_is_valid:
             raise ValueError("composition authorization lifetime is invalid")
 
     @property
@@ -302,11 +932,17 @@ class CompositionStepAuthorizationRequest:
     def object_grants(self) -> list[dict[str, Any]]:
         return deepcopy(json.loads(self.object_grants_json))
 
+    @property
+    def dependency_evidence(self) -> list[dict[str, Any]] | None:
+        if self.dependency_evidence_json is None:
+            return None
+        return deepcopy(json.loads(self.dependency_evidence_json))
+
     def stable_payload(self) -> dict[str, Any]:
         """Payload hashed for restart-stable logical request identity."""
 
-        return {
-            "schema_version": COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+        payload = {
+            "schema_version": self.schema_version,
             "registration_id": self.registration_id,
             "registration_sha256": self.registration_sha256,
             "executable_plan_id": self.executable_plan_id,
@@ -347,6 +983,19 @@ class CompositionStepAuthorizationRequest:
             "action_fence_epoch": self.action_fence_epoch,
             "action_fence_sha256": self.action_fence_sha256,
         }
+        if self.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+            payload.update(
+                {
+                    "continuation_delegation_id": self.continuation_delegation_id,
+                    "continuation_delegation_sha256": self.continuation_delegation_sha256,
+                    "dependency_evidence": self.dependency_evidence,
+                    "dependency_evidence_sha256": self.dependency_evidence_sha256,
+                    "supersedes_authorization_id": self.supersedes_authorization_id,
+                    "supersedes_effect_id": self.supersedes_effect_id,
+                    "supersedes_claim_sha256": self.supersedes_claim_sha256,
+                }
+            )
+        return payload
 
     def computed_sha256(self) -> str:
         return canonical_sha256(self.stable_payload())
@@ -416,10 +1065,22 @@ class CompositionStepAuthorizationRequest:
         issued_at_ms: int,
         expires_at_ms: int,
         authorization_ceiling_ms: int,
+        schema_version: str = COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+        continuation_delegation_id: str | None = None,
+        continuation_delegation_sha256: str | None = None,
+        dependency_evidence: Sequence[Mapping[str, Any]] | None = None,
+        supersedes_authorization_id: str | None = None,
+        supersedes_effect_id: str | None = None,
+        supersedes_claim_sha256: str | None = None,
     ) -> Self:
         arguments_value = _json_value(dict(materialized_arguments))
         snapshot_value = _json_value(target_snapshot)
         grants_value = _json_value(list(object_grants))
+        dependency_value = (
+            None
+            if dependency_evidence is None
+            else _json_value(list(dependency_evidence))
+        )
         arguments_sha256 = canonical_sha256(
             {"action": action_id, "args": arguments_value, "target": target}
         )
@@ -476,6 +1137,22 @@ class CompositionStepAuthorizationRequest:
             expires_at_ms=expires_at_ms,
             authorization_ceiling_ms=authorization_ceiling_ms,
             authorization_request_sha256=_ZERO_SHA256,
+            schema_version=schema_version,
+            continuation_delegation_id=continuation_delegation_id,
+            continuation_delegation_sha256=continuation_delegation_sha256,
+            dependency_evidence_json=(
+                None
+                if dependency_value is None
+                else canonical_json_text(dependency_value)
+            ),
+            dependency_evidence_sha256=(
+                None
+                if dependency_value is None
+                else canonical_sha256(dependency_value)
+            ),
+            supersedes_authorization_id=supersedes_authorization_id,
+            supersedes_effect_id=supersedes_effect_id,
+            supersedes_claim_sha256=supersedes_claim_sha256,
         )
         return request.with_computed_sha256()
 
@@ -615,6 +1292,7 @@ class CompositionStepAuthorizationArtifacts:
         ):
             raise ValueError("signed composition execution bindings diverged")
         expected_binding = {
+            "schema_version": "tiangong.composition-execution-binding.v1",
             "executable_plan_id": request.executable_plan_id,
             "executable_plan_sha256": request.executable_plan_sha256,
             "step_id": request.step_id,
@@ -633,6 +1311,26 @@ class CompositionStepAuthorizationArtifacts:
             "workspace_id": request.workspace_id,
             "workspace_scope_hash": request.workspace_scope_sha256,
         }
+        if request.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+            expected_binding.update(
+                {
+                    "attempt": request.attempt,
+                    "continuation_delegation_id": (
+                        request.continuation_delegation_id
+                    ),
+                    "continuation_delegation_sha256": (
+                        request.continuation_delegation_sha256
+                    ),
+                    "dependency_evidence_sha256": (
+                        request.dependency_evidence_sha256
+                    ),
+                    "supersedes_authorization_id": (
+                        request.supersedes_authorization_id
+                    ),
+                    "supersedes_effect_id": request.supersedes_effect_id,
+                    "supersedes_claim_sha256": request.supersedes_claim_sha256,
+                }
+            )
         if (
             intent_binding.get("binding_sha256")
             != request.composition_binding_sha256
@@ -963,10 +1661,38 @@ class CompositionStepAuthorizationStoreRecord:
     def runtime_response(self) -> dict[str, Any]:
         return self.artifacts.runtime_response
 
+    @property
+    def step_id(self) -> str:
+        return self.request.step_id
+
+    @property
+    def attempt(self) -> int:
+        return self.request.attempt
+
+    @property
+    def prebound_effect_id(self) -> str:
+        return self.request.prebound_effect_id
+
+    @property
+    def supersedes_authorization_id(self) -> str | None:
+        return self.request.supersedes_authorization_id
+
+    @property
+    def supersedes_effect_id(self) -> str | None:
+        return self.request.supersedes_effect_id
+
+    @property
+    def supersedes_claim_sha256(self) -> str | None:
+        return self.request.supersedes_claim_sha256
+
+    @property
+    def dependency_evidence(self) -> list[dict[str, Any]] | None:
+        return self.request.dependency_evidence
+
     def record_payload(self) -> dict[str, Any]:
         projections = self.artifacts.validate_for_request(self.request)
         return {
-            "schema_version": COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+            "schema_version": self.request.schema_version,
             "authorization_id": self.authorization_id,
             "state": "ISSUED",
             "authorization_request": self.request.stored_payload(),
@@ -1009,7 +1735,7 @@ def authorization_record_from_row(
     duplicate: bool = False,
     recovered_after_restart: bool = False,
 ) -> CompositionStepAuthorizationStoreRecord:
-    """Strictly parse and cross-check every projection in one v32 row."""
+    """Strictly parse and cross-check every projection in one v32/v33 row."""
 
     request_payload = _parse_canonical_json(
         row["authorization_request_json"],
@@ -1088,6 +1814,28 @@ def authorization_record_from_row(
             authorization_request_sha256=request_payload[
                 "authorization_request_sha256"
             ],
+            schema_version=request_payload["schema_version"],
+            continuation_delegation_id=request_payload.get(
+                "continuation_delegation_id"
+            ),
+            continuation_delegation_sha256=request_payload.get(
+                "continuation_delegation_sha256"
+            ),
+            dependency_evidence_json=(
+                None
+                if "dependency_evidence" not in request_payload
+                else canonical_json_text(request_payload["dependency_evidence"])
+            ),
+            dependency_evidence_sha256=request_payload.get(
+                "dependency_evidence_sha256"
+            ),
+            supersedes_authorization_id=request_payload.get(
+                "supersedes_authorization_id"
+            ),
+            supersedes_effect_id=request_payload.get("supersedes_effect_id"),
+            supersedes_claim_sha256=request_payload.get(
+                "supersedes_claim_sha256"
+            ),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("stored authorization request is invalid") from exc
@@ -1137,6 +1885,14 @@ def authorization_record_from_row(
         ),
         "action_fence_epoch": request.action_fence_epoch,
         "action_fence_sha256": request.action_fence_sha256,
+        "continuation_delegation_id": request.continuation_delegation_id,
+        "continuation_delegation_sha256": (
+            request.continuation_delegation_sha256
+        ),
+        "dependency_evidence_sha256": request.dependency_evidence_sha256,
+        "supersedes_authorization_id": request.supersedes_authorization_id,
+        "supersedes_effect_id": request.supersedes_effect_id,
+        "supersedes_claim_sha256": request.supersedes_claim_sha256,
         "authorization_request_sha256": (
             request.authorization_request_sha256
         ),
@@ -1167,12 +1923,18 @@ def authorization_record_from_row(
 
 
 __all__ = [
+    "COMPOSITION_CONTINUATION_DELEGATION_SCHEMA",
     "COMPOSITION_STEP_AUTHORIZATION_SCHEMA",
+    "COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2",
     "MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES",
+    "CompositionContinuationDelegation",
     "CompositionStepAuthorizationArtifacts",
     "CompositionStepAuthorizationRequest",
     "CompositionStepAuthorizationStoreRecord",
     "authorization_record_from_row",
+    "build_composition_continuation_issuance_context",
     "canonical_json_text",
+    "continuation_delegation_from_row",
+    "derive_composition_continuation_delegation_id",
     "derive_composition_step_authorization_id",
 ]

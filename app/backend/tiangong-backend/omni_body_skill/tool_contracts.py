@@ -12,6 +12,7 @@ import copy
 import difflib
 import hashlib
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -370,6 +371,356 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+RESULT_SCHEMA_ID = "tiangong.omni-action-result-schema.v1"
+VALUE_SCHEMA_ID = "tiangong.omni-action-value-schema.v1"
+
+
+def _runtime_success_schema(
+    action: str,
+    *,
+    properties: Mapping[str, Any],
+    required: Iterable[str],
+) -> dict[str, Any]:
+    merged = {
+        "success": {"const": True},
+        "op_id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "action": {"type": "string", "minLength": 1, "maxLength": 200},
+        "risk_level": {"const": "A0"},
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        **copy.deepcopy(dict(properties)),
+    }
+    return {
+        "type": "object",
+        "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            *required,
+        ],
+        "properties": merged,
+        "additionalProperties": True,
+        "runtime_action": action,
+    }
+
+
+def _successful_omni_schema(action: str, runtime_result: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "required": [
+            "schema",
+            "ok",
+            "zhuangtai",
+            "gongju",
+            "action",
+            "target",
+            "result",
+            "llm_brief",
+            "evidence",
+        ],
+        "properties": {
+            "schema": {"const": "tiangong.v3.omni_body.v1"},
+            "ok": {"const": True},
+            "zhuangtai": {"const": "wancheng"},
+            "gongju": {"const": "omni_body"},
+            "action": {"type": "string", "minLength": 1, "maxLength": 200},
+            "target": {"type": "string", "maxLength": 4096},
+            "result": copy.deepcopy(dict(runtime_result)),
+            "llm_brief": {"type": "string", "maxLength": 8192},
+            "evidence": {"type": "object"},
+        },
+        "additionalProperties": True,
+        "result_action": action,
+    }
+
+
+_SKILL_CANDIDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": [
+        "id",
+        "version",
+        "sha256",
+        "source_ref",
+        "score_millis",
+        "required_actions",
+        "missing_actions",
+        "compatible",
+        "incompatible_reasons",
+    ],
+    "properties": {
+        "id": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "sha256": {"type": ["string", "null"]},
+        "source_ref": {"type": ["string", "null"]},
+        "score_millis": {"type": ["integer", "null"]},
+        "required_actions": {"type": "array", "items": {"type": "string"}},
+        "missing_actions": {"type": "array", "items": {"type": "string"}},
+        "compatible": {"type": "boolean"},
+        "incompatible_reasons": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
+_SKILL_SELECTION_SCHEMA: dict[str, Any] = {"type": "object"}
+_ACTIVATION_SCHEMA: dict[str, Any] = {"type": "object"}
+_FACT_ID_SCHEMA: dict[str, Any] = {
+    "schema": VALUE_SCHEMA_ID,
+    "type": "string",
+    "pattern": r"^fact_[0-9a-f]{64}$",
+}
+_SHA256_VALUE_SCHEMA: dict[str, Any] = {
+    "schema": VALUE_SCHEMA_ID,
+    "type": "string",
+    "pattern": r"^[0-9a-f]{64}$",
+}
+
+
+# These are success-result contracts, not execution permissions.  The catalog
+# only publishes them as EXPLICIT when the canonical manifest Action is both A0
+# and read/verify.  All other Actions receive a hashed OPAQUE descriptor.
+ACTION_RESULT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "life.body.state.query": _successful_omni_schema(
+        "life.body.state.query",
+        _runtime_success_schema(
+            "life.body.state.query",
+            properties={
+                "ok": {"const": True},
+                "read_only": {"const": True},
+                "schema": {"const": "tiangong.gateway.self-body-state.v1"},
+                "selected_sections": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "authority": {"type": "object"},
+                "life": {"type": "object"},
+                "runtime_body": {"type": "object"},
+                "state_sha256": copy.deepcopy(_SHA256_VALUE_SCHEMA),
+            },
+            required=(
+                "ok",
+                "read_only",
+                "schema",
+                "selected_sections",
+                "authority",
+                "life",
+                "runtime_body",
+                "state_sha256",
+            ),
+        ),
+    ),
+    "pptx.read": _successful_omni_schema(
+        "pptx.read",
+        _runtime_success_schema(
+            "pptx.read",
+            properties={
+                "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "inspection": {
+                    "type": "object",
+                    "required": ["slides", "slide_count"],
+                    "properties": {
+                        "slides": {"type": "array", "items": {"type": "object"}},
+                        "slide_count": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": True,
+                },
+                "evidence": {"type": "object"},
+            },
+            required=("path", "inspection", "evidence"),
+        ),
+    ),
+    "qc.ppt.delivery_check": _successful_omni_schema(
+        "qc.ppt.delivery_check",
+        _runtime_success_schema(
+            "qc.ppt.delivery_check",
+            properties={
+                "result": {
+                    "type": "object",
+                    "required": ["type", "score", "grade", "issues", "warnings", "acceptance"],
+                    "properties": {
+                        "type": {"const": "executive_ppt_delivery"},
+                        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                        "grade": {"type": "string", "minLength": 1},
+                        "issues": {"type": "array", "items": {"type": "object"}},
+                        "warnings": {"type": "array", "items": {"type": "object"}},
+                        "acceptance": {"type": "boolean"},
+                    },
+                    "additionalProperties": True,
+                },
+                "evidence": {"type": "object"},
+            },
+            required=("result", "evidence"),
+        ),
+    ),
+    "skill.list": _successful_omni_schema(
+        "skill.list",
+        _runtime_success_schema(
+            "skill.list",
+            properties={
+                "result": {
+                    "type": "object",
+                    "required": ["items", "selection"],
+                    "properties": {
+                        "items": {"type": "array", "items": copy.deepcopy(_SKILL_CANDIDATE_SCHEMA)},
+                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
+                    },
+                    "additionalProperties": False,
+                },
+                "evidence": {"type": "object"},
+            },
+            required=("result", "evidence"),
+        ),
+    ),
+    "skill.get": _successful_omni_schema(
+        "skill.get",
+        _runtime_success_schema(
+            "skill.get",
+            properties={
+                "result": {
+                    "type": "object",
+                    "required": ["markdown", "selection", "activation"],
+                    "properties": {
+                        "markdown": {"type": "string"},
+                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
+                        "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
+                    },
+                    "additionalProperties": False,
+                },
+                "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
+                "evidence": {"type": "object"},
+            },
+            required=("result", "activation", "evidence"),
+        ),
+    ),
+    "skill.read": _successful_omni_schema(
+        "skill.read",
+        _runtime_success_schema(
+            "skill.read",
+            properties={
+                "result": {
+                    "type": "object",
+                    "required": ["markdown", "selection", "activation"],
+                    "properties": {
+                        "markdown": {"type": "string"},
+                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
+                        "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
+                    },
+                    "additionalProperties": False,
+                },
+                "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
+                "evidence": {"type": "object"},
+            },
+            required=("result", "activation", "evidence"),
+        ),
+    ),
+}
+
+
+# Each stable id binds a source selector to one immutable value-schema body.
+# The later DAG materializer may accept only these declared selectors/hashes;
+# it must not invent a schema from an observed value.
+ACTION_VALUE_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
+    "life.body.state.query": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "state_sha256": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/state_sha256",
+            "value_schema": _SHA256_VALUE_SCHEMA,
+        },
+        "life": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/life",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+        "runtime_body": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/runtime_body",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+    "pptx.read": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "path": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/path",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string", "minLength": 1, "maxLength": 4096},
+        },
+        "inspection": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/inspection",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+    "qc.ppt.delivery_check": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "acceptance": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/acceptance",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "boolean"},
+        },
+        "score": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/score",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "integer", "minimum": 0, "maximum": 100},
+        },
+        "report": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+    "skill.list": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "items": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/items",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "array", "items": _SKILL_CANDIDATE_SCHEMA},
+        },
+        "selection": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/selection",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+    "skill.get": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "markdown": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/markdown",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"},
+        },
+        "selection": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/selection",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+        "activation": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/activation",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+    "skill.read": {
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+        "markdown": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/markdown",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"},
+        },
+        "selection": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/selection",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+        "activation": {
+            "source_kind": "RESULT_PAYLOAD",
+            "json_pointer": "/result/result/activation",
+            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
+        },
+    },
+}
+
+
 def canonical_action(action: Any) -> str:
     normalized = str(action or "").strip().lower()
     return CANONICAL_ACTION_ALIASES.get(normalized, normalized)
@@ -403,6 +754,18 @@ def argument_validator_source_sha256() -> str:
     return hashlib.sha256(portable.encode("utf-8")).hexdigest()
 
 
+def result_validator_source_sha256() -> str:
+    """Return the source identity of the exact result validator."""
+
+    return argument_validator_source_sha256()
+
+
+def value_validator_source_sha256() -> str:
+    """Return the source identity of the exact materialized-value validator."""
+
+    return argument_validator_source_sha256()
+
+
 def _argument_schema_sha256(body: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         dict(body),
@@ -414,7 +777,255 @@ def _argument_schema_sha256(body: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def action_schema_descriptor(action: Any) -> dict[str, Any]:
+def _result_schema_for_action(action: str, *, explicit: bool) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "schema": RESULT_SCHEMA_ID,
+        "action": action,
+        "kind": "EXPLICIT" if explicit else "OPAQUE",
+    }
+    if explicit:
+        body["root"] = copy.deepcopy(ACTION_RESULT_SCHEMAS[action])
+    return body
+
+
+def _value_schema_descriptors_for_action(
+    action: str,
+    *,
+    explicit: bool,
+) -> dict[str, dict[str, Any]]:
+    if not explicit:
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for value_schema_id in sorted(ACTION_VALUE_SCHEMAS[action]):
+        declared = ACTION_VALUE_SCHEMAS[action][value_schema_id]
+        root = copy.deepcopy(dict(declared["value_schema"]))
+        body = {
+            "schema": VALUE_SCHEMA_ID,
+            "value_schema_id": value_schema_id,
+            "kind": "EXPLICIT",
+            "root": root,
+        }
+        descriptor: dict[str, Any] = {
+            "value_schema_id": value_schema_id,
+            "source_kind": str(declared["source_kind"]),
+            "value_schema": body,
+            "value_schema_sha256": _argument_schema_sha256(body),
+            "value_schema_kind": "EXPLICIT",
+        }
+        json_pointer = declared.get("json_pointer")
+        if json_pointer is not None:
+            descriptor["json_pointer"] = str(json_pointer)
+        result[value_schema_id] = descriptor
+    return result
+
+
+def _assert_strict_json(
+    value: Any,
+    *,
+    path: str = "$",
+    depth: int = 0,
+    budget: list[int] | None = None,
+) -> None:
+    if depth > 64:
+        raise ValueError(f"JSON value exceeds maximum depth at {path}")
+    if budget is None:
+        budget = [50_000]
+    budget[0] -= 1
+    if budget[0] < 0:
+        raise ValueError("JSON value exceeds maximum node count")
+    if value is None or type(value) in {bool, int, str}:
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"JSON value contains a non-finite number at {path}")
+        return
+    if type(value) is list:
+        for index, item in enumerate(value):
+            _assert_strict_json(
+                item,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+                budget=budget,
+            )
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError(f"JSON object key is not a string at {path}")
+            _assert_strict_json(
+                item,
+                path=f"{path}.{key}",
+                depth=depth + 1,
+                budget=budget,
+            )
+        return
+    raise ValueError(f"value is not strict JSON at {path}")
+
+
+def _matches_json_type(value: Any, expected: str) -> bool:
+    return {
+        "null": value is None,
+        "boolean": type(value) is bool,
+        "integer": type(value) is int,
+        "number": type(value) in {int, float} and type(value) is not bool,
+        "string": type(value) is str,
+        "array": type(value) is list,
+        "object": type(value) is dict,
+    }.get(expected, False)
+
+
+def _validate_json_schema_exact(
+    schema: Mapping[str, Any],
+    value: Any,
+    *,
+    path: str = "$",
+) -> None:
+    expected_type = schema.get("type")
+    if isinstance(expected_type, str):
+        expected_types = (expected_type,)
+    elif type(expected_type) is list and all(type(item) is str for item in expected_type):
+        expected_types = tuple(expected_type)
+    elif expected_type is None:
+        expected_types = ()
+    else:
+        raise ValueError(f"schema type is invalid at {path}")
+    if expected_types and not any(
+        _matches_json_type(value, item) for item in expected_types
+    ):
+        raise ValueError(f"value type does not match schema at {path}")
+
+    if "const" in schema and (
+        type(value) is not type(schema["const"]) or value != schema["const"]
+    ):
+        raise ValueError(f"value does not match schema constant at {path}")
+
+    if type(value) is str:
+        minimum = schema.get("minLength")
+        maximum = schema.get("maxLength")
+        if type(minimum) is int and len(value) < minimum:
+            raise ValueError(f"string is shorter than schema minimum at {path}")
+        if type(maximum) is int and len(value) > maximum:
+            raise ValueError(f"string is longer than schema maximum at {path}")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.search(pattern, value) is None:
+            raise ValueError(f"string does not match schema pattern at {path}")
+
+    if type(value) in {int, float} and type(value) is not bool:
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if type(minimum) in {int, float} and value < minimum:
+            raise ValueError(f"number is below schema minimum at {path}")
+        if type(maximum) in {int, float} and value > maximum:
+            raise ValueError(f"number is above schema maximum at {path}")
+
+    if type(value) is list:
+        minimum = schema.get("minItems")
+        maximum = schema.get("maxItems")
+        if type(minimum) is int and len(value) < minimum:
+            raise ValueError(f"array is shorter than schema minimum at {path}")
+        if type(maximum) is int and len(value) > maximum:
+            raise ValueError(f"array is longer than schema maximum at {path}")
+        item_schema = schema.get("items")
+        if item_schema is not None:
+            if not isinstance(item_schema, Mapping):
+                raise ValueError(f"array item schema is invalid at {path}")
+            for index, item in enumerate(value):
+                _validate_json_schema_exact(
+                    item_schema,
+                    item,
+                    path=f"{path}[{index}]",
+                )
+
+    if type(value) is dict:
+        raw_properties = schema.get("properties", {})
+        raw_required = schema.get("required", [])
+        if not isinstance(raw_properties, Mapping) or type(raw_required) is not list:
+            raise ValueError(f"object schema is invalid at {path}")
+        required = tuple(str(item) for item in raw_required)
+        if len(required) != len(raw_required) or len(required) != len(set(required)):
+            raise ValueError(f"object schema required fields are invalid at {path}")
+        missing = [item for item in required if item not in value]
+        if missing:
+            raise ValueError(f"object is missing required field {missing[0]!r} at {path}")
+        if schema.get("additionalProperties", True) is False:
+            extra = sorted(set(value) - set(raw_properties))
+            if extra:
+                raise ValueError(f"object contains undeclared field {extra[0]!r} at {path}")
+        for key, item_schema in raw_properties.items():
+            if key not in value:
+                continue
+            if type(key) is not str or not isinstance(item_schema, Mapping):
+                raise ValueError(f"object property schema is invalid at {path}")
+            _validate_json_schema_exact(
+                item_schema,
+                value[key],
+                path=f"{path}.{key}",
+            )
+
+
+def validate_tool_result_exact(
+    action: Any,
+    result_payload: Any,
+    *,
+    canonical_action_id: str | None = None,
+) -> None:
+    """Validate one successful raw Omni result against explicit authority."""
+
+    normalized = str(action or "").strip().lower()
+    canonical = canonical_action_id or canonical_action(normalized)
+    schema = ACTION_RESULT_SCHEMAS.get(canonical)
+    if schema is None:
+        raise ValueError("action result schema is not explicit")
+    _assert_strict_json(result_payload)
+    try:
+        encoded = json.dumps(
+            result_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("action result is not strict JSON") from exc
+    if len(encoded) > 16 * 1024 * 1024:
+        raise ValueError("action result exceeds maximum validation size")
+    _validate_json_schema_exact(schema, result_payload)
+    if result_payload.get("action") != normalized:
+        raise ValueError("action result identity mismatch")
+    runtime_result = result_payload.get("result")
+    if not isinstance(runtime_result, dict) or runtime_result.get("action") != normalized:
+        raise ValueError("runtime result identity mismatch")
+
+
+def validate_value_exact(value_schema_sha256: str, value: Any) -> None:
+    """Validate a JSON value against one recognized content-addressed schema."""
+
+    if not isinstance(value_schema_sha256, str) or re.fullmatch(
+        r"[0-9a-f]{64}", value_schema_sha256
+    ) is None:
+        raise ValueError("value schema hash is invalid")
+    bodies: dict[str, dict[str, Any]] = {}
+    for action in sorted(ACTION_VALUE_SCHEMAS):
+        descriptors = _value_schema_descriptors_for_action(action, explicit=True)
+        for descriptor in descriptors.values():
+            digest = str(descriptor["value_schema_sha256"])
+            body = dict(descriptor["value_schema"])
+            existing = bodies.get(digest)
+            if existing is not None and existing != body:
+                raise ValueError("value schema hash is ambiguous")
+            bodies[digest] = body
+    body = bodies.get(value_schema_sha256)
+    if body is None or body.get("kind") != "EXPLICIT":
+        raise ValueError("value schema hash is not recognized")
+    _assert_strict_json(value)
+    _validate_json_schema_exact(dict(body["root"]), value)
+
+
+def action_schema_descriptor(
+    action: Any,
+    *,
+    enable_explicit_result: bool | None = None,
+) -> dict[str, Any]:
     """Build one deterministic schema descriptor without granting authority.
 
     ``OPAQUE`` is an honest compatibility description for actions that do not
@@ -424,6 +1035,15 @@ def action_schema_descriptor(action: Any) -> dict[str, Any]:
 
     normalized = canonical_action(action)
     body = schema_for_action(normalized)
+    explicit_result = (
+        normalized in ACTION_RESULT_SCHEMAS
+        if enable_explicit_result is None
+        else enable_explicit_result and normalized in ACTION_RESULT_SCHEMAS
+    )
+    result_body = _result_schema_for_action(
+        normalized,
+        explicit=explicit_result,
+    )
     return {
         "argument_schema": body,
         "argument_schema_sha256": _argument_schema_sha256(body),
@@ -431,6 +1051,16 @@ def action_schema_descriptor(action: Any) -> dict[str, Any]:
             "EXPLICIT" if normalized in ACTION_ARGUMENT_SCHEMAS else "OPAQUE"
         ),
         "argument_validator_source_sha256": argument_validator_source_sha256(),
+        "result_schema": result_body,
+        "result_schema_sha256": _argument_schema_sha256(result_body),
+        "result_schema_kind": "EXPLICIT" if explicit_result else "OPAQUE",
+        "result_validator_source_sha256": result_validator_source_sha256(),
+        "value_schemas": _value_schema_descriptors_for_action(
+            normalized,
+            explicit=explicit_result,
+        ),
+        "value_schema_kind": "EXPLICIT" if explicit_result else "OPAQUE",
+        "value_validator_source_sha256": value_validator_source_sha256(),
     }
 
 
@@ -466,7 +1096,20 @@ def build_action_schema_catalog(
 
     result: dict[str, dict[str, Any]] = {}
     for action_id in sorted(normalized_capabilities):
-        result[action_id] = action_schema_descriptor(resolve(action_id))
+        canonical = resolve(action_id)
+        metadata = normalized_capabilities.get(canonical, {})
+        risk = str(metadata.get("risk") or "")
+        declared_effect = str(metadata.get("effect") or "").strip()
+        effect = declared_effect or ("read" if risk == "A0" else "write")
+        enable_explicit_result = (
+            canonical in ACTION_RESULT_SCHEMAS
+            and risk == "A0"
+            and effect in {"read", "verify"}
+        )
+        result[action_id] = action_schema_descriptor(
+            canonical,
+            enable_explicit_result=enable_explicit_result,
+        )
     return result
 
 

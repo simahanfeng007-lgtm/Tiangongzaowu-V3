@@ -61,6 +61,13 @@ def _argument_schema_hashes(document: dict) -> dict[str, str]:
     }
 
 
+def _result_schema_hashes(document: dict) -> dict[str, str]:
+    return {
+        action_id: raw["result_schema_sha256"]
+        for action_id, raw in document["capabilities"].items()
+    }
+
+
 def source_ref(
     action_id: str,
     manifest_sha: str | None,
@@ -97,9 +104,7 @@ def compile_snapshot():
         registry,
         source_revisions=sources,
         argument_schema_hashes=schemas,
-        result_schema_hashes={
-            action_id: H for action_id in document["capabilities"]
-        },
+        result_schema_hashes=_result_schema_hashes(document),
     )
 
 
@@ -121,7 +126,11 @@ def compile_with_sources(
             if argument_schema_hashes is not None
             else schemas
         ),
-        result_schema_hashes=result_schema_hashes or schemas,
+        result_schema_hashes=(
+            _result_schema_hashes(document)
+            if result_schema_hashes is None
+            else result_schema_hashes
+        ),
     )
 
 
@@ -150,6 +159,9 @@ def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
         item.determinism_class == "NONDETERMINISTIC"
         for item in snapshot.primitives
     )
+    assert {
+        item.action_id: item.result_schema_sha256 for item in snapshot.primitives
+    } == _result_schema_hashes(document)
 
     second = compile_tool_capability_world(
         document,
@@ -159,11 +171,38 @@ def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
             for action_id in document["capabilities"]
         },
         argument_schema_hashes=_argument_schema_hashes(document),
-        result_schema_hashes={
-            action_id: H for action_id in document["capabilities"]
-        },
+        result_schema_hashes=_result_schema_hashes(document),
     )
     assert second.snapshot_sha256 == snapshot.snapshot_sha256
+
+
+def test_result_schema_is_manifest_authority_and_caller_is_only_an_assertion() -> None:
+    document = manifest()
+    registry = compile_action_registry(document, generated_at_ms=1)
+    manifest_sha = canonical_sha256(document)
+    sources = {
+        action_id: source_ref(action_id, manifest_sha)
+        for action_id in document["capabilities"]
+    }
+    snapshot = compile_tool_capability_world(
+        document,
+        registry,
+        source_revisions=sources,
+    )
+    assert {
+        item.action_id: item.result_schema_sha256 for item in snapshot.primitives
+    } == _result_schema_hashes(document)
+
+    with pytest.raises(
+        ToolCapabilityWorldError,
+        match="caller result schema differs from manifest authority",
+    ):
+        compile_tool_capability_world(
+            document,
+            registry,
+            source_revisions=sources,
+            result_schema_hashes={action_id: H for action_id in sources},
+        )
 
 
 def test_source_file_order_is_rejected_instead_of_creating_two_identities() -> None:
@@ -238,7 +277,7 @@ def test_projection_fails_closed_on_registry_manifest_drift() -> None:
             registry,
             source_revisions=sources,
             argument_schema_hashes=schemas,
-            result_schema_hashes=schemas,
+            result_schema_hashes=_result_schema_hashes(changed),
         )
 
 
@@ -257,7 +296,7 @@ def test_projection_fails_closed_on_stale_manifest_validation_hash() -> None:
                 for action_id in document["capabilities"]
             },
             argument_schema_hashes=schemas,
-            result_schema_hashes=schemas,
+            result_schema_hashes=_result_schema_hashes(document),
         )
 
 
@@ -277,7 +316,7 @@ def test_projection_fails_closed_when_source_binding_is_missing() -> None:
                 "file.read": source_ref("file.read", manifest_sha)
             },
             argument_schema_hashes=schemas,
-            result_schema_hashes=schemas,
+            result_schema_hashes=_result_schema_hashes(document),
         )
 
 
@@ -401,7 +440,7 @@ def test_projection_cannot_create_new_executable_action() -> None:
         registry,
         source_revisions=sources,
         argument_schema_hashes=schemas,
-        result_schema_hashes=schemas,
+        result_schema_hashes=_result_schema_hashes(document),
     )
     assert "invented.action" not in {
         item.action_id for item in snapshot.primitives

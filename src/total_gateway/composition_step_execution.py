@@ -1,4 +1,4 @@
-"""Durable P7D.1 execution seam for one authorized composition root step.
+"""Durable P7D execution seam for authorized composition DAG steps.
 
 This module is deliberately not a scheduler or Runtime.  The existing
 ``GatewayOrchestrationWorker`` calls it, the existing Store owns Effect state,
@@ -9,16 +9,20 @@ and Omni ``BodyRuntime`` remains the only action runtime.
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import time
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from contracts import (
     ActionRegistrySnapshot,
     CapabilityManifest,
     TrustBundle,
+    canonical_json_bytes,
     canonical_sha256,
 )
 from runtime_security import verify_omni_capability_grant
@@ -36,10 +40,21 @@ from .composition_execution_binding import (
     derive_composition_execution_binding,
     rebuild_composition_effect_claim,
 )
+from .composition_execution_projection import (
+    CompositionAttemptObservationV1,
+    CompositionExecutionProjectionError,
+    CompositionExecutionProjectionV1,
+    derive_composition_execution_projection,
+    materialize_ready_composition_step,
+    resolve_final_output_aliases,
+)
+from .composition_step_authorization import (
+    COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2,
+)
 from .effects import EffectClaim, EffectResult
 from .fact_ledger import FactBatchRecord, FactLedger
 from .impact_evaluator import probe_target_state
-
+from .store import StoreConflictError
 
 _SAFE_SIDE_EFFECTS = frozenset({"none", "read"})
 
@@ -62,6 +77,19 @@ class CompositionStepExecutionOutcome:
     recovered: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class CompositionExecutionFinalization:
+    """Exact terminal projection consumed by orchestration and Completion."""
+
+    executable_plan_id: str
+    parent_effect_id: str
+    leaf_effect_ids: tuple[str, ...]
+    lineage_effect_ids: tuple[str, ...]
+    fact_ids: tuple[str, ...]
+    final_output_aliases: dict[str, Any]
+    completed_at_ms: int
+
+
 class CompositionStepExecutionCoordinator:
     """Project persisted P7C authority through the one existing runtime chain."""
 
@@ -80,6 +108,7 @@ class CompositionStepExecutionCoordinator:
         gateway_epoch: int,
         gateway_instance_id: str,
         append_effect_event: Callable[..., bool] | None = None,
+        continuation_authorizer: Callable[..., dict[str, Any]] | None = None,
         transport_runner: Callable[
             [Callable[[], dict[str, Any]], float], dict[str, Any]
         ]
@@ -101,6 +130,10 @@ class CompositionStepExecutionCoordinator:
             or not gateway_instance_id
             or not callable(trust_bundle_provider)
             or not callable(getattr(backend_compat_client, "request", None))
+            or (
+                continuation_authorizer is not None
+                and not callable(continuation_authorizer)
+            )
             or (transport_runner is not None and not callable(transport_runner))
         ):
             raise ValueError("composition execution runtime is invalid")
@@ -110,6 +143,10 @@ class CompositionStepExecutionCoordinator:
             "get_active_executable_composition_plan",
             "get_composition_step_authorization",
             "get_composition_step_authorization_for_effect",
+            "get_current_composition_step_authorization",
+            "list_composition_authorizations_for_plan",
+            "get_composition_continuation_delegation",
+            "get_composition_continuation_for_plan",
             "list_effects_for_pipeline",
             "get_effect",
             "claim_effect",
@@ -147,7 +184,269 @@ class CompositionStepExecutionCoordinator:
         self._gateway_epoch = gateway_epoch
         self._instance_id = gateway_instance_id
         self._append_effect_event = append_effect_event
+        self._continuation_authorizer = continuation_authorizer
         self._transport_runner = transport_runner
+
+    def _validate_result_exact(
+        self,
+        action_id: str,
+        action_version: str,
+        result_schema_sha256: str,
+        value: Any,
+    ) -> None:
+        self._schemas.resolve(
+            action_id,
+            action_version,
+            expected_result_sha256=result_schema_sha256,
+            require_result_explicit=True,
+        )
+        self._schemas.validate_result_exact(action_id, action_version, value)
+
+    @staticmethod
+    def _strict_json_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON object key")
+            result[key] = value
+        return result
+
+    @staticmethod
+    def _reject_json_constant(_value: str) -> None:
+        raise ValueError("non-finite JSON value")
+
+    def _load_fact_payload(self, batch: FactBatchRecord) -> Any:
+        try:
+            reference = self._objects.get_reference(
+                batch.result_payload_object_id
+            )
+            payload_bytes = self._objects.read_bytes(
+                batch.result_payload_object_id
+            )
+            payload = json.loads(
+                payload_bytes.decode("utf-8", errors="strict"),
+                object_pairs_hook=self._strict_json_pairs,
+                parse_constant=self._reject_json_constant,
+            )
+            canonical = canonical_json_bytes(payload)
+        except Exception as exc:
+            raise CompositionStepExecutionError(
+                "composition.execution.fact_payload_invalid",
+                ambiguous=True,
+            ) from exc
+        if (
+            reference is None
+            or not reference.has_valid_sha256()
+            or reference.object_id != batch.result_payload_object_id
+            or reference.kind != "payload"
+            or reference.sha256 != batch.result_payload_sha256
+            or reference.size_bytes != len(payload_bytes)
+            or reference.tenant_id != batch.tenant_id
+            or reference.link_account_id != batch.link_account_id
+            or reference.conversation_scope_hash
+            != batch.conversation_scope_hash
+            or hashlib.sha256(payload_bytes).hexdigest()
+            != batch.result_payload_sha256
+            or canonical != payload_bytes
+        ):
+            raise CompositionStepExecutionError(
+                "composition.execution.fact_payload_invalid",
+                ambiguous=True,
+            )
+        return payload
+
+    def _observations_for_plan(
+        self, plan: Any
+    ) -> tuple[CompositionAttemptObservationV1, ...]:
+        try:
+            records = self._store.list_composition_authorizations_for_plan(
+                plan.executable_plan_id,
+                current_only=False,
+            )
+            observations: list[CompositionAttemptObservationV1] = []
+            for record in records:
+                request = record.request
+                effect = self._store.get_effect(request.prebound_effect_id)
+                batch = (
+                    None
+                    if effect is None
+                    else self._facts.get_batch_for_effect(
+                        request.prebound_effect_id,
+                        verify_payload=True,
+                    )
+                )
+                values: dict[str, Any] = {
+                    "authorization_id": record.authorization_id,
+                    "step_id": request.step_id,
+                    "attempt": request.attempt,
+                    "prebound_effect_id": request.prebound_effect_id,
+                    "supersedes_authorization_id": (
+                        request.supersedes_authorization_id
+                    ),
+                    "supersedes_effect_id": request.supersedes_effect_id,
+                    "supersedes_claim_sha256": (
+                        request.supersedes_claim_sha256
+                    ),
+                    "effect": effect,
+                    "fact_batch": batch,
+                }
+                if batch is not None:
+                    values["result_payload"] = self._load_fact_payload(batch)
+                    references = tuple(
+                        self._objects.get_reference(object_id)
+                        for object_id in batch.result.output_object_refs
+                    )
+                    if any(item is None for item in references):
+                        raise CompositionStepExecutionError(
+                            "composition.execution.output_object_missing",
+                            ambiguous=True,
+                        )
+                    values["output_object_references"] = references
+                observations.append(CompositionAttemptObservationV1(**values))
+            return tuple(observations)
+        except CompositionStepExecutionError:
+            raise
+        except Exception as exc:
+            raise CompositionStepExecutionError(
+                "composition.execution.observation_invalid",
+                ambiguous=True,
+            ) from exc
+
+    def project_plan(self, plan: Any) -> CompositionExecutionProjectionV1:
+        """Derive the current DAG state from authoritative Store/Fact rows."""
+
+        try:
+            return derive_composition_execution_projection(
+                plan,
+                self._observations_for_plan(plan),
+                validate_result=self._validate_result_exact,
+            )
+        except CompositionExecutionProjectionError as exc:
+            raise CompositionStepExecutionError(exc.code, ambiguous=True) from exc
+
+    def finalize_plan(self, plan: Any) -> CompositionExecutionFinalization:
+        """Resolve a completely committed DAG without reply/output fallbacks."""
+
+        observations = self._observations_for_plan(plan)
+        try:
+            projection = derive_composition_execution_projection(
+                plan,
+                observations,
+                validate_result=self._validate_result_exact,
+            )
+            if (
+                not projection.all_steps_succeeded
+                or projection.next_step_id is not None
+                or projection.failed_step_ids
+                or projection.reconcile_step_ids
+                or projection.recoverable_step_ids
+                or len(projection.leaf_effect_ids)
+                != len(projection.leaf_step_ids)
+            ):
+                raise CompositionExecutionProjectionError(
+                    "composition.projection.final_outputs_before_completion"
+                )
+            by_authorization = {
+                item.authorization_id: item for item in observations
+            }
+            committed: dict[str, CompositionAttemptObservationV1] = {}
+            projection_by_step = projection.by_step_id()
+            for step in plan.step_bindings:
+                projected = projection_by_step[step.step_id]
+                if projected.authorization_id is None:
+                    raise CompositionExecutionProjectionError(
+                        "composition.projection.final_outputs_before_completion"
+                    )
+                observation = by_authorization.get(
+                    projected.authorization_id
+                )
+                if observation is None:
+                    raise CompositionExecutionProjectionError(
+                        "composition.projection.final_outputs_before_completion"
+                    )
+                committed[step.step_id] = observation
+            aliases = resolve_final_output_aliases(
+                plan,
+                committed=committed,
+                validate_value=self._schemas.validate_value_exact,
+                validate_result=self._validate_result_exact,
+                resolve_value_schema=self._schemas.resolve_value_schema,
+            )
+        except CompositionExecutionProjectionError as exc:
+            raise CompositionStepExecutionError(exc.code, ambiguous=True) from exc
+
+        records = {
+            item.authorization_id: item
+            for item in self._store.list_composition_authorizations_for_plan(
+                plan.executable_plan_id,
+                current_only=False,
+            )
+        }
+        current_records = []
+        for step in plan.step_bindings:
+            observation = committed[step.step_id]
+            record = records.get(observation.authorization_id)
+            if record is None:
+                raise CompositionStepExecutionError(
+                    "composition.execution.authorization_missing",
+                    ambiguous=True,
+                )
+            current_records.append(record)
+        parent_effect_ids = {
+            self._verify_parent_success(record.request)
+            for record in current_records
+        }
+        if len(parent_effect_ids) != 1:
+            raise CompositionStepExecutionError(
+                "composition.execution.parent_effect_mismatch",
+                ambiguous=True,
+            )
+
+        step_ordinal = {
+            step.step_id: ordinal
+            for ordinal, step in enumerate(plan.step_bindings)
+        }
+        lineage = tuple(
+            item.prebound_effect_id
+            for item in sorted(
+                observations,
+                key=lambda item: (step_ordinal[item.step_id], item.attempt),
+            )
+        )
+        fact_ids = tuple(
+            fact_id
+            for step in plan.step_bindings
+            for fact_id in committed[step.step_id].fact_batch.result.fact_ids
+        )
+        completed_at_ms = max(
+            max(
+                observation.fact_batch.observed_at_ms,
+                observation.fact_batch.result.finished_at_ms,
+            )
+            for observation in committed.values()
+        )
+        parent_effect_id = next(iter(parent_effect_ids))
+        if (
+            len(lineage) != len(set(lineage))
+            or len(lineage) > 256
+            or parent_effect_id in lineage
+            or len(projection.leaf_effect_ids)
+            != len(set(projection.leaf_effect_ids))
+            or len(fact_ids) != len(set(fact_ids))
+        ):
+            raise CompositionStepExecutionError(
+                "composition.execution.final_lineage_invalid",
+                ambiguous=True,
+            )
+        return CompositionExecutionFinalization(
+            executable_plan_id=plan.executable_plan_id,
+            parent_effect_id=parent_effect_id,
+            leaf_effect_ids=projection.leaf_effect_ids,
+            lineage_effect_ids=lineage,
+            fact_ids=fact_ids,
+            final_output_aliases=deepcopy(aliases),
+            completed_at_ms=completed_at_ms,
+        )
 
     def _event(
         self,
@@ -283,6 +582,126 @@ class CompositionStepExecutionCoordinator:
             )
         return parent.claim.effect_id
 
+    def _materialize_authorized_step(
+        self,
+        plan: Any,
+        request: Any,
+        *,
+        now_ms: int,
+    ) -> Any:
+        if request.schema_version != COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+            if len(plan.step_bindings) != 1:
+                raise CompositionStepExecutionError(
+                    "composition.execution.v1_multistep_forbidden"
+                )
+            try:
+                return materialize_static_root_step(plan, step_id=request.step_id)
+            except CompositionActivationAdapterError as exc:
+                raise CompositionStepExecutionError(exc.code) from exc
+
+        try:
+            continuation = self._store.get_composition_continuation_delegation(
+                request.continuation_delegation_id,
+                now_ms=now_ms,
+                require_parent_success=True,
+            )
+        except Exception as exc:
+            raise CompositionStepExecutionError(
+                "composition.execution.continuation_invalid"
+            ) from exc
+        if (
+            continuation is None
+            or continuation.delegation_id
+            != request.continuation_delegation_id
+            or continuation.delegation_sha256
+            != request.continuation_delegation_sha256
+            or continuation.registration_id != plan.registration_id
+            or continuation.registration_sha256 != plan.registration_sha256
+            or continuation.executable_plan_id != plan.executable_plan_id
+            or continuation.executable_plan_sha256
+            != plan.executable_plan_sha256
+            or continuation.request_id != plan.request_id
+            or continuation.run_id != plan.run_id
+            or continuation.generation != plan.generation
+            or continuation.principal_scope_hash
+            != plan.principal_scope_hash
+            or continuation.parent_ticket_id != request.parent_ticket_id
+            or continuation.parent_ticket_sha256
+            != request.parent_ticket_sha256
+            or continuation.action_registry_sha256
+            != self._registry.registry_sha256
+            or continuation.schema_catalog_sha256
+            != self._schemas.catalog_sha256
+            or continuation.composition_execution_manifest_sha256
+            != self._manifest.sha256
+            or continuation.component_manifest_sha256
+            != self._manifest.component_manifest_hash
+            or continuation.workspace_id != plan.workspace.workspace_id
+            or continuation.workspace_scope_sha256
+            != plan.workspace.workspace_scope_sha256
+        ):
+            raise CompositionStepExecutionError(
+                "composition.execution.continuation_mismatch"
+            )
+
+        try:
+            observations = self._observations_for_plan(plan)
+            by_authorization = {
+                item.authorization_id: item for item in observations
+            }
+            matches = tuple(
+                item for item in plan.step_bindings if item.step_id == request.step_id
+            )
+            if len(matches) != 1:
+                raise CompositionExecutionProjectionError(
+                    "composition.projection.step_missing"
+                )
+            committed: dict[str, CompositionAttemptObservationV1] = {}
+            for dependency_id in matches[0].depends_on:
+                dependency = (
+                    self._store.get_current_composition_step_authorization(
+                        plan.executable_plan_id,
+                        dependency_id,
+                    )
+                )
+                if dependency is None:
+                    raise CompositionExecutionProjectionError(
+                        "composition.projection.dependency_not_committed"
+                    )
+                observation = by_authorization.get(dependency.authorization_id)
+                if observation is None:
+                    raise CompositionExecutionProjectionError(
+                        "composition.projection.dependency_not_committed"
+                    )
+                committed[dependency_id] = observation
+            dispatch = materialize_ready_composition_step(
+                plan,
+                step_id=request.step_id,
+                committed=committed,
+                validate_value=self._schemas.validate_value_exact,
+                validate_result=self._validate_result_exact,
+                resolve_value_schema=self._schemas.resolve_value_schema,
+            )
+        except CompositionExecutionProjectionError as exc:
+            raise CompositionStepExecutionError(exc.code) from exc
+        expected_evidence = [
+            item.payload() for item in dispatch.dependency_evidence
+        ]
+        # The Store restores JSON arrays as ``list`` while the in-memory
+        # projection payload can still contain tuples.  Compare the canonical
+        # JSON bodies (and their bound digest), not Python container identity,
+        # so a process restart cannot reject byte-identical dependency proof.
+        if (
+            canonical_json_bytes(request.dependency_evidence)
+            != canonical_json_bytes(expected_evidence)
+            or request.dependency_evidence_sha256
+            != dispatch.dependency_evidence_sha256
+        ):
+            raise CompositionStepExecutionError(
+                "composition.execution.dependency_evidence_mismatch"
+            )
+        return dispatch.step
+
     def _preflight(self, record: Any, *, now_ms: int) -> dict[str, Any]:
         request = record.request
         if not record.has_valid_record_sha256():
@@ -320,24 +739,19 @@ class CompositionStepExecutionCoordinator:
             or plan.workspace.workspace_id != request.workspace_id
             or plan.workspace.workspace_scope_sha256
             != request.workspace_scope_sha256
-            or len(plan.step_bindings) != 1
         ):
             raise CompositionStepExecutionError(
                 "composition.execution.plan_mismatch"
             )
-        try:
-            materialized = materialize_static_root_step(
-                plan, step_id=request.step_id
-            )
-        except CompositionActivationAdapterError as exc:
-            raise CompositionStepExecutionError(exc.code) from exc
+        materialized = self._materialize_authorized_step(
+            plan,
+            request,
+            now_ms=now_ms,
+        )
         # A non-empty target is not necessarily a host path (for example
-        # ``skill.get(target="word_delivery")``).  P7C's current
-        # object-grant-only path policy has already rejected raw host paths;
-        # P7D rechecks that immutable permission and the live target snapshot
-        # below instead of weakening the signed target to an empty-string
-        # special case.  STEP_OUTPUT materialization remains unavailable in
-        # this first slice because ``materialize_static_root_step`` rejects it.
+        # ``skill.get(target="word_delivery")``).  P7C's object-grant path
+        # policy has already rejected raw host paths; the runtime rechecks the
+        # exact materialized target and current target snapshot below.
         permission = self._permission_for_step(self._registry, materialized.step)
         try:
             schema = self._schemas.resolve(
@@ -390,6 +804,21 @@ class CompositionStepExecutionCoordinator:
                 workspace_id=request.workspace_id,
                 workspace_scope_hash=request.workspace_scope_sha256,
                 target_snapshot_sha256=target_snapshot_sha256,
+                attempt=request.attempt,
+                continuation_delegation_id=(
+                    request.continuation_delegation_id
+                ),
+                continuation_delegation_sha256=(
+                    request.continuation_delegation_sha256
+                ),
+                dependency_evidence_sha256=(
+                    request.dependency_evidence_sha256
+                ),
+                supersedes_authorization_id=(
+                    request.supersedes_authorization_id
+                ),
+                supersedes_effect_id=request.supersedes_effect_id,
+                supersedes_claim_sha256=request.supersedes_claim_sha256,
             )
             claim = rebuild_composition_effect_claim(
                 request,
@@ -736,6 +1165,10 @@ class CompositionStepExecutionCoordinator:
             self._backend,
             signed_grant=prepared["grant"].model_dump(mode="json"),
             runtime_meta=prepared["runtime"],
+            schema_catalog=self._schemas,
+            expected_result_schema_sha256=(
+                record.request.result_schema_sha256
+            ),
         )
         client = BackendClient(
             transport,
@@ -807,7 +1240,7 @@ class CompositionStepExecutionCoordinator:
                                 time.time_ns() // 1_000_000,
                             ),
                         )
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - callback must not escape
                         # Fail closed: a release failure leaves inflight > 0;
                         # startup recovery can reconcile the durable permit.
                         return
@@ -925,6 +1358,27 @@ class CompositionStepExecutionCoordinator:
             recovered=True,
         )
 
+    def _receipt_uses_current_gateway_epoch(self, record: Any) -> bool:
+        """Select old-epoch pre-start receipts for continuation supersession.
+
+        V2 Store reads already enforce this fence, while the durable V1 shape
+        predates it.  Signature and full binding verification remain owned by
+        ``_preflight`` and the continuation issuer; this predicate only keeps
+        an otherwise-live old-epoch receipt away from the dispatch boundary.
+        """
+
+        try:
+            _, _, _, ticket, grant = record.artifacts.restore_contracts()
+        except Exception as exc:
+            raise CompositionStepExecutionError(
+                "composition.execution.signed_chain_invalid"
+            ) from exc
+        return bool(
+            ticket.payload.gateway_epoch == self._gateway_epoch
+            and ticket.payload.claim_lease_epoch == self._gateway_epoch
+            and grant.payload.gateway_epoch == self._gateway_epoch
+        )
+
     def dispatch_next(
         self,
         *,
@@ -947,55 +1401,140 @@ class CompositionStepExecutionCoordinator:
             if plan_record is None:
                 return None
             plan = plan_record.executable_plan
-            if len(plan.step_bindings) != 1:
-                raise CompositionStepExecutionError(
-                    "composition.execution.p7d1_step_count_unsupported"
+            # Single-root plans use the same durable projection as every DAG.
+            # In particular, this keeps current attempt selection, exact-Fact
+            # STARTED recovery and the one bounded continuation successor on
+            # one authority path instead of reviving the legacy attempt-1 view.
+            projection = self.project_plan(plan)
+            if projection.recoverable_step_ids:
+                projected_by_step = projection.by_step_id()
+                recoverable_effect_ids = tuple(
+                    projected_by_step[step_id].effect_id
+                    for step_id in projection.recoverable_step_ids
+                    if projected_by_step[step_id].effect_id is not None
                 )
-            step_id = plan.step_bindings[0].step_id
-            record = self._store.get_composition_step_authorization(
+                if len(recoverable_effect_ids) != len(
+                    projection.recoverable_step_ids
+                ):
+                    raise CompositionStepExecutionError(
+                        "composition.execution.recovery_effect_missing",
+                        ambiguous=True,
+                    )
+                # This is a live request path, not the worker-start boundary.
+                # Recover only the exact Fact-backed Effects projected for this
+                # plan; a global scan could misclassify another request's
+                # currently running handler as a restart orphan.
+                self.recover_started(
+                    now_ms=now_ms,
+                    effect_ids=recoverable_effect_ids,
+                )
+                projection = self.project_plan(plan)
+            if projection.reconcile_step_ids or projection.recoverable_step_ids:
+                raise CompositionStepExecutionError(
+                    "composition.execution.reconciliation_required",
+                    ambiguous=True,
+                )
+            if projection.failed_step_ids:
+                failed_step_id = projection.failed_step_ids[0]
+                failed_record = (
+                    self._store.get_current_composition_step_authorization(
+                        plan.executable_plan_id,
+                        failed_step_id,
+                    )
+                )
+                if failed_record is None:
+                    raise CompositionStepExecutionError(
+                        "composition.execution.failed_receipt_missing",
+                        ambiguous=True,
+                    )
+                failed_effect = self._store.get_effect(
+                    failed_record.request.prebound_effect_id
+                )
+                if failed_effect is None or failed_effect.result is None:
+                    raise CompositionStepExecutionError(
+                        "composition.execution.failed_effect_missing",
+                        ambiguous=True,
+                    )
+                return self._existing_outcome(failed_record, failed_effect)
+            if projection.all_steps_succeeded:
+                return None
+            step_id = projection.next_step_id
+            if step_id is None:
+                raise CompositionStepExecutionError(
+                    "composition.execution.frontier_stalled",
+                    ambiguous=True,
+                )
+            record = self._store.get_current_composition_step_authorization(
                 plan.executable_plan_id,
                 step_id,
             )
-            if record is None:
-                raise CompositionStepExecutionError(
-                    "composition.execution.authorization_missing"
-                )
-            effect = self._store.get_effect(record.request.prebound_effect_id)
-            if effect is not None and effect.result is not None:
-                return self._existing_outcome(record, effect)
+            effect = (
+                None
+                if record is None
+                else self._store.get_effect(record.request.prebound_effect_id)
+            )
             if effect is not None and effect.state == "SIDE_EFFECT_STARTED":
                 raise CompositionStepExecutionError(
                     "composition.execution.already_started", ambiguous=True
                 )
-            try:
-                live_record = self._store.get_composition_step_authorization(
-                    plan.executable_plan_id,
-                    step_id,
-                    now_ms=now_ms,
-                )
-            except Exception as exc:
-                if effect is not None and effect.state == "CLAIMED":
-                    completed = self._complete_without_backend_fact(
-                        record,
-                        status="FAILED_FINAL",
-                        code="composition.execution.authorization_not_live",
-                        observed_at_ms=max(
-                            now_ms,
-                            effect.claim.claimed_at_ms,
-                        ),
-                        expected_state="CLAIMED",
+            live_record = None
+            if record is not None:
+                try:
+                    candidate = (
+                        self._store.get_current_composition_step_authorization(
+                            plan.executable_plan_id,
+                            step_id,
+                            now_ms=now_ms,
+                        )
                     )
-                    return CompositionStepExecutionOutcome(
-                        record.authorization_id,
-                        record.request.executable_plan_id,
-                        record.request.step_id,
-                        record.request.prebound_effect_id,
-                        completed.status,
-                        (completed.fact_id,),
+                    if (
+                        candidate is not None
+                        and self._receipt_uses_current_gateway_epoch(candidate)
+                    ):
+                        live_record = candidate
+                except StoreConflictError:
+                    live_record = None
+            if live_record is None:
+                if self._continuation_authorizer is None:
+                    raise CompositionStepExecutionError(
+                        "composition.execution.continuation_authority_unavailable"
                     )
-                raise CompositionStepExecutionError(
-                    "composition.execution.authorization_not_live"
-                ) from exc
+                try:
+                    continuation = self._store.get_composition_continuation_for_plan(
+                        plan.executable_plan_id,
+                        now_ms=now_ms,
+                        require_parent_success=True,
+                    )
+                    if continuation is None:
+                        raise ValueError("continuation missing")
+                    self._continuation_authorizer(
+                        continuation_delegation_id=continuation.delegation_id,
+                        registration_id=plan.registration_id,
+                        step_id=step_id,
+                        now_ms=now_ms,
+                    )
+                    live_record = (
+                        self._store.get_current_composition_step_authorization(
+                            plan.executable_plan_id,
+                            step_id,
+                            now_ms=now_ms,
+                        )
+                    )
+                except Exception as exc:
+                    code = getattr(exc, "code", None)
+                    if (
+                        not isinstance(code, str)
+                        or not code.startswith("composition.")
+                        or len(code) > 160
+                    ):
+                        code = (
+                            "composition.execution."
+                            "continuation_authorization_failed"
+                        )
+                    raise CompositionStepExecutionError(
+                        code,
+                        ambiguous=bool(getattr(exc, "ambiguous", False)),
+                    ) from exc
             if live_record is None:
                 raise CompositionStepExecutionError(
                     "composition.execution.authorization_missing"
@@ -1022,21 +1561,60 @@ class CompositionStepExecutionCoordinator:
         return None
 
     def recover_started(
-        self, *, now_ms: int
+        self,
+        *,
+        now_ms: int,
+        effect_ids: tuple[str, ...] | None = None,
     ) -> tuple[CompositionStepExecutionOutcome, ...]:
-        # A previous process may have committed an AMBIGUOUS timeout while its
-        # unkillable in-process Future still owned the dispatch permit.  No
-        # such handler survives the single-instance process restart, so close
-        # that durable release gap before recovering STARTED Effects.
-        self._store.recover_terminal_dispatch_permits(
-            pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
-            now_ms=now_ms,
-        )
+        if type(now_ms) is not int or now_ms < 0:
+            raise ValueError("composition recovery time is invalid")
+        if effect_ids is not None and (
+            not isinstance(effect_ids, tuple)
+            or len(effect_ids) > 256
+            or tuple(dict.fromkeys(effect_ids)) != effect_ids
+            or any(
+                not isinstance(effect_id, str)
+                or re.fullmatch(r"eff_[0-9a-f]{64}", effect_id) is None
+                for effect_id in effect_ids
+            )
+        ):
+            raise ValueError("composition recovery effect scope is invalid")
+        if effect_ids is None:
+            # Only the worker-start caller may use the global restart proof. A
+            # previous process may have committed AMBIGUOUS while its
+            # unkillable Future still owned a permit; no such handler survives
+            # process restart, so the global release is safe only here.
+            self._store.recover_terminal_dispatch_permits(
+                pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
+                now_ms=now_ms,
+            )
+            effects = self._store.list_effects_for_pipeline(
+                COMPOSITION_STEP_PIPELINE_VERSION,
+                states=("SIDE_EFFECT_STARTED",),
+            )
+        else:
+            selected = tuple(
+                self._store.get_effect(effect_id) for effect_id in effect_ids
+            )
+            if any(effect is None for effect in selected):
+                raise CompositionStepExecutionError(
+                    "composition.execution.recovery_effect_missing",
+                    ambiguous=True,
+                )
+            effects = tuple(
+                effect
+                for effect in selected
+                if effect is not None
+                and effect.state == "SIDE_EFFECT_STARTED"
+                and effect.claim.pipeline_version
+                == COMPOSITION_STEP_PIPELINE_VERSION
+            )
+            if len(effects) != len(effect_ids):
+                raise CompositionStepExecutionError(
+                    "composition.execution.recovery_effect_not_started",
+                    ambiguous=True,
+                )
         outcomes: list[CompositionStepExecutionOutcome] = []
-        effects = self._store.list_effects_for_pipeline(
-            COMPOSITION_STEP_PIPELINE_VERSION,
-            states=("SIDE_EFFECT_STARTED",),
-        )
         for effect in effects:
             record = self._store.get_composition_step_authorization_for_effect(
                 effect.claim.effect_id
@@ -1100,6 +1678,7 @@ class CompositionStepExecutionCoordinator:
 
 
 __all__ = [
+    "CompositionExecutionFinalization",
     "CompositionStepExecutionCoordinator",
     "CompositionStepExecutionError",
     "CompositionStepExecutionOutcome",

@@ -271,3 +271,64 @@ nonce 前。STARTED 重启只从 exact Fact 收口，无 Fact 则 AMBIGUOUS，�
 executor 不可用都不得退化为“没有组合步骤”，已有 FAILED_FINAL/AMBIGUOUS child 也
 不得被 None 吞掉。P7D.1 仅覆盖单个静态 A0 read/verify root；DAG、STEP_OUTPUT、
 P19 readiness、repair 与 CompletionGate all-leaf closeout 仍由 P7D.2 完成。
+
+P7D.2｜Durable A0 DAG and all-leaf Completion（Verification Plane 1.5）
+----------------------------------------------------------------------
+
+app/backend/tiangong-backend/v3/fact_kernel/__init__.py
+src/contracts/execution.py
+src/omni_body_skill/registry/capability_manifest.generated.json
+src/omni_body_skill/tool_contracts.py
+src/total_gateway/action_registry.py
+src/total_gateway/composition_activation_adapter.py
+src/total_gateway/composition_backend_transport.py
+src/total_gateway/composition_execution_binding.py
+src/total_gateway/composition_execution_projection.py
+src/total_gateway/composition_step_execution.py
+src/total_gateway/composition_step_authorization.py
+src/total_gateway/completion_gate.py
+src/total_gateway/desktop_completion.py
+src/total_gateway/fact_ledger.py
+src/total_gateway/omni_grant_authority.py
+src/total_gateway/orchestration.py
+src/total_gateway/skill_selection.py
+src/total_gateway/store.py migration v33
+src/total_gateway/verification_plan_executor.py
+src/total_gateway/verification_plane.py
+src/total_gateway/verification_readiness.py
+src/total_gateway/verification_repair_coordinator.py
+src/world_understanding/tool_capability_world/compiler.py
+
+既有 GatewayOrchestrationWorker 从不可变 ExecutableCompositionPlan 投影唯一 DAG
+frontier；投影只读取当前 authorization、Effect head 与 exact Fact batch，不写入第二
+scheduler/frontier authority。动态 STEP_OUTPUT 只接受 schema-bound JSON pointer、
+当前成功 attempt、内容寻址 payload 与声明依赖证据。重启 continuation 本身不可执行，
+只能让既有 Policy/Ticket/Grant 链签发一次有界 attempt-2；STARTED 绝不重放。
+
+显式 result/value schema 的源定义、生成 manifest、Registry 编译、World 编译、模型
+投影、activation/authorization/binding/grant 传播、Fact runtime 边界与 backend transport
+均属于 1.5 冻结面；历史 1.4 已声明的 transport、execution binding 与 FactLedger 也在
+本次冻结中补齐。runtime/generated mirror 仍由 source-ownership 同步检查证明与上述
+source authority 一致，不建立第二个可编辑权威。
+
+P19 在 all-step barrier 后运行。Composition Completion 使用 parent 加全部 leaf
+Effects 作为 required set，并把所有 authorized attempts 纳入 lineage；每个 non-PASS
+plan entry 都必须有当前 disposition/failure evidence。本 A0 read/verify-only 阶段不
+触发 repair，也不跨 external delivery/send。CompletionGate 仍是唯一完成权威，
+GatewayStateStore、FactLedger、Runtime、Policy 与 P19 均保持单一既有实例。
+
+durable shared tail 在任何 projection/P19/Completion/Life/delivery 前重读并绑定
+Request、Execution、Delivery 状态机；非法终态或倒退组合 fail closed。composition
+completion clock 取 parent/leaf exact Fact 与持久 execution transition 的最新时间。
+P19 对同一 stable clock 复用 exact entry record、current readiness 和 disposition
+prefix，只补缺失项；Life 则先恢复并验证既有 request terminal record/commit SHA，
+composition terminal core 不加入可漂移的 repository enrichment。CompletionDecision
+在 Life 前由同一 Store transaction 重算 readiness 并封存，随后拒绝该 generation
+的 late verification write。Life recovery unavailable/malformed/mismatch 与 unknown
+commit 均保留 fail-closed durable tail，不得回退到 provider。startup watchdog 必须
+排除所有已绑定 executable plan 且仍为 CLAIMED/SIDE_EFFECT_STARTED 的 composition
+parent 及其 child pipeline，只允许专用 durable adapter 依据 exact Fact 裁决，
+不得由 generic stale reconciliation 改写。已封存 composition CompletionDecision 的
+重启只恢复 Life/desktop terminal tail，可绕过通用 generation revision 上限与关闭的
+request reexecution 配置，但绝不重放 handler。若 request 已终态而 session queue head
+仍为 ACTIVE，worker startup 只幂等退休该 queue projection，再晋升后继请求。

@@ -14,6 +14,13 @@ from contracts import (
     derive_run_identity,
     new_state_snapshot,
 )
+from contracts.verification import (
+    AcceptancePredicate,
+    VerificationPlan,
+    VerificationPlanEntryV2,
+    VerificationRecord,
+    derive_verification_record_id,
+)
 from total_gateway import store as store_module
 from total_gateway.completion_gate import CompletionDecision
 from total_gateway.continuity import (
@@ -27,6 +34,8 @@ from total_gateway.store import (
     GatewayStateStore,
     StoreConflictError,
 )
+from total_gateway.verification_readiness import build_readiness
+from total_gateway.verification_registry import VerifierRegistry
 
 
 HASH_A = "a" * 64
@@ -200,6 +209,128 @@ class GatewayLifeContinuityTests(unittest.TestCase):
                 )
             )
         self.assertTrue(self.store.health_check(now_ms=2_500, full=True).healthy)
+
+    def test_fenced_completion_atomically_rejects_superseded_readiness(self) -> None:
+        snapshot = VerifierRegistry.with_defaults().snapshot(captured_at_ms=1_400)
+        self.store.put_registry_snapshot(snapshot, recorded_at_ms=1_500)
+        predicate = AcceptancePredicate.create(
+            predicate_type="artifact.nonempty",
+            subject_kind="artifact",
+        )
+        entry = VerificationPlanEntryV2(
+            plan_entry_id="vpe_" + "0" * 64,
+            verifier_id="verifier.artifact_content",
+            verifier_version="3",
+            predicate=predicate,
+            subject_identity="arv_" + "a" * 64,
+            evaluation_phase="POST_EXECUTION",
+            required=True,
+            entry_sha256="0" * 64,
+        ).with_computed_sha256()
+        plan = VerificationPlan(
+            verification_plan_id="vpl_" + "0" * 64,
+            request_id=self.request_id,
+            run_id=self.run_id,
+            generation=1,
+            registry_snapshot_sha256=snapshot.snapshot_sha256,
+            entries=(entry,),
+            plan_sha256="0" * 64,
+        ).with_computed_sha256()
+        self.store.put_verification_plan(plan, recorded_at_ms=1_600)
+        self.store.activate_verification_plan(
+            request_id=self.request_id,
+            run_id=self.run_id,
+            generation=1,
+            verification_plan_id=plan.verification_plan_id,
+            verification_plan_sha256=plan.plan_sha256,
+            registry_snapshot_sha256=snapshot.snapshot_sha256,
+            activated_at_ms=1_700,
+        )
+
+        def pass_record(evaluated_at_ms: int) -> VerificationRecord:
+            partial = VerificationRecord(
+                verification_record_id="vrs_" + "0" * 64,
+                request_id=self.request_id,
+                run_id=self.run_id,
+                generation=1,
+                verifier_id=entry.verifier_id,
+                verifier_version=entry.verifier_version,
+                registry_snapshot_sha256=snapshot.snapshot_sha256,
+                predicate_id=predicate.predicate_id,
+                predicate_type=predicate.predicate_type,
+                subject_kind=predicate.subject_kind,
+                subject_identity=entry.subject_identity,
+                evaluation_phase=entry.evaluation_phase,
+                status="PASS",
+                enforcement="RECORD",
+                reason_codes=(),
+                evidence_refs=(
+                    f"predicate_sha256:{predicate.predicate_sha256}",
+                ),
+                evidence_sha256=predicate.predicate_sha256,
+                producer_component_id="tiangong-gateway",
+                model_generated=False,
+                evaluated_at_ms=evaluated_at_ms,
+                result_sha256="0" * 64,
+            ).with_computed_sha256()
+            return partial.model_copy(
+                update={
+                    "verification_record_id": derive_verification_record_id(
+                        result_sha256=partial.result_sha256
+                    )
+                }
+            )
+
+        self.store.put_verification_record(
+            pass_record(2_000), recorded_at_ms=2_000
+        )
+        old = build_readiness(
+            plan=plan,
+            snapshot=snapshot,
+            store=self.store,
+            evaluated_at_ms=2_000,
+        )
+        self.store.put_verification_readiness(old, recorded_at_ms=2_010)
+        self.store.put_verification_record(
+            pass_record(2_100), recorded_at_ms=2_100
+        )
+        current = build_readiness(
+            plan=plan,
+            snapshot=snapshot,
+            store=self.store,
+            evaluated_at_ms=2_100,
+        )
+        self.store.put_verification_readiness(current, recorded_at_ms=2_110)
+
+        stale_decision = completion(self.request_id, self.run_id).model_copy(
+            update={
+                "verification_mode": "PLAN_BOUND",
+                "verification_plan_sha256": plan.plan_sha256,
+                "verification_readiness_id": old.verification_readiness_id,
+                "verification_readiness_sha256": old.readiness_sha256,
+                "decision_sha256": HASH_A,
+            }
+        ).with_computed_sha256()
+        with self.assertRaisesRegex(
+            StoreConflictError,
+            "completion decision readiness is no longer current",
+        ):
+            self.store.record_completion_decision(
+                stale_decision, recorded_at_ms=2_200
+            )
+
+        current_decision = stale_decision.model_copy(
+            update={
+                "verification_readiness_id": current.verification_readiness_id,
+                "verification_readiness_sha256": current.readiness_sha256,
+                "decision_sha256": HASH_A,
+            }
+        ).with_computed_sha256()
+        persisted = self.store.record_completion_decision(
+            current_decision, recorded_at_ms=2_200
+        )
+        self.assertTrue(persisted.created_by_this_call)
+        self.assertTrue(self.store.health_check(now_ms=2_300, full=True).healthy)
 
     def test_capsule_insert_fault_keeps_previous_checkpoint_active(self) -> None:
         first = checkpoint(

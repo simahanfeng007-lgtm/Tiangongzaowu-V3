@@ -21,6 +21,33 @@ class ActionRegistryError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedValueSchema:
+    """Immutable value authority addressable by a catalog-owned digest."""
+
+    action_id: str
+    canonical_action_id: str
+    action_version: str
+    value_schema_id: str
+    source_kind: str
+    json_pointer: str | None
+    kind: str
+    value_schema_sha256: str
+    validator_source_sha256: str
+    source_manifest_sha256: str
+    _body_json: bytes = field(repr=False)
+
+    def body(self) -> dict[str, Any]:
+        value = json.loads(
+            self._body_json.decode("utf-8", errors="strict"),
+            object_pairs_hook=_strict_pairs,
+            parse_constant=_raise_constant,
+        )
+        if not isinstance(value, dict):
+            raise ActionRegistryError("value schema body is corrupt")
+        return value
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedActionSchema:
     """Immutable schema authority for one executable manifest action."""
 
@@ -30,8 +57,15 @@ class ResolvedActionSchema:
     kind: str
     argument_schema_sha256: str
     validator_source_sha256: str
+    result_schema_kind: str
+    result_schema_sha256: str
+    result_validator_source_sha256: str
+    value_schema_kind: str
+    value_validator_source_sha256: str
+    value_schemas: tuple[ResolvedValueSchema, ...]
     source_manifest_sha256: str
     _body_json: bytes = field(repr=False)
+    _result_body_json: bytes = field(repr=False)
 
     def body(self) -> dict[str, Any]:
         """Return a detached body so callers cannot mutate the catalog."""
@@ -43,6 +77,18 @@ class ResolvedActionSchema:
         )
         if not isinstance(value, dict):  # constructor enforces this invariant
             raise ActionRegistryError("action schema body is corrupt")
+        return value
+
+    def result_body(self) -> dict[str, Any]:
+        """Return a detached result body so callers cannot mutate authority."""
+
+        value = json.loads(
+            self._result_body_json.decode("utf-8", errors="strict"),
+            object_pairs_hook=_strict_pairs,
+            parse_constant=_raise_constant,
+        )
+        if not isinstance(value, dict):
+            raise ActionRegistryError("action result schema body is corrupt")
         return value
 
     def validate_exact(
@@ -99,7 +145,9 @@ class ActionSchemaCatalog:
         action_version: str,
         *,
         expected_sha256: str | None = None,
+        expected_result_sha256: str | None = None,
         require_explicit: bool = False,
+        require_result_explicit: bool = False,
     ) -> ResolvedActionSchema:
         if not self.has_valid_sha256():
             raise ActionRegistryError("action schema catalog hash is invalid")
@@ -111,9 +159,122 @@ class ActionSchemaCatalog:
             raise ActionRegistryError("action schema version mismatch")
         if expected_sha256 is not None and entry.argument_schema_sha256 != expected_sha256:
             raise ActionRegistryError("action schema hash mismatch")
+        if (
+            expected_result_sha256 is not None
+            and entry.result_schema_sha256 != expected_result_sha256
+        ):
+            raise ActionRegistryError("action result schema hash mismatch")
         if require_explicit and entry.kind != "EXPLICIT":
             raise ActionRegistryError("action schema is not explicit")
+        if require_result_explicit and entry.result_schema_kind != "EXPLICIT":
+            raise ActionRegistryError("action result schema is not explicit")
         return entry
+
+    def resolve_value_schema(
+        self,
+        action_id: str,
+        action_version: str,
+        value_schema_sha256: str,
+        *,
+        require_explicit: bool = True,
+    ) -> ResolvedValueSchema:
+        """Resolve a value digest only inside its sealed action authority."""
+
+        entry = self.resolve(action_id, action_version)
+        matches = tuple(
+            item
+            for item in entry.value_schemas
+            if item.value_schema_sha256 == value_schema_sha256
+        )
+        if len(matches) != 1:
+            raise ActionRegistryError("value schema identity is absent or ambiguous")
+        resolved = matches[0]
+        if require_explicit and resolved.kind != "EXPLICIT":
+            raise ActionRegistryError("value schema is not explicit")
+        return resolved
+
+    def validate_value_exact(self, value_schema_sha256: str, value: Any) -> None:
+        """Validate a value only when its digest is owned by this catalog."""
+
+        if not self.has_valid_sha256():
+            raise ActionRegistryError("action schema catalog hash is invalid")
+        matches = tuple(
+            value_schema
+            for entry in self.entries
+            for value_schema in entry.value_schemas
+            if value_schema.value_schema_sha256 == value_schema_sha256
+        )
+        if not matches:
+            raise ActionRegistryError("value schema identity is absent")
+        body_keys = {
+            (item._body_json, item.validator_source_sha256, item.kind)
+            for item in matches
+        }
+        if len(body_keys) != 1 or any(item.kind != "EXPLICIT" for item in matches):
+            raise ActionRegistryError("value schema identity is ambiguous or opaque")
+        try:
+            from omni_body_skill.tool_contracts import (
+                validate_value_exact as validate_declared_value_exact,
+                value_validator_source_sha256,
+            )
+
+            current_validator_sha256 = value_validator_source_sha256()
+            if any(
+                item.validator_source_sha256 != current_validator_sha256
+                for item in matches
+            ):
+                raise ActionRegistryError(
+                    "value schema validator source hash mismatch"
+                )
+            validate_declared_value_exact(value_schema_sha256, value)
+        except ActionRegistryError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise ActionRegistryError(str(exc)) from exc
+
+    def validate_result_exact(
+        self,
+        action_id: str,
+        action_version: str,
+        result_payload: Any,
+    ) -> None:
+        """Validate a successful Omni result against sealed explicit authority."""
+
+        entry = self.resolve(
+            action_id,
+            action_version,
+            require_result_explicit=True,
+        )
+        try:
+            from omni_body_skill.tool_contracts import (
+                action_schema_descriptor,
+                result_validator_source_sha256,
+                validate_tool_result_exact,
+            )
+
+            if result_validator_source_sha256() != entry.result_validator_source_sha256:
+                raise ActionRegistryError(
+                    "action result validator source hash mismatch"
+                )
+            current = action_schema_descriptor(
+                entry.canonical_action_id,
+                enable_explicit_result=True,
+            )
+            if (
+                current.get("result_schema_kind") != "EXPLICIT"
+                or current.get("result_schema_sha256") != entry.result_schema_sha256
+                or current.get("result_schema") != entry.result_body()
+            ):
+                raise ActionRegistryError("action result schema authority is stale")
+            validate_tool_result_exact(
+                action_id,
+                result_payload,
+                canonical_action_id=entry.canonical_action_id,
+            )
+        except ActionRegistryError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise ActionRegistryError(str(exc)) from exc
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -128,6 +289,27 @@ class ActionSchemaCatalog:
                     "argument_schema": entry.body(),
                     "argument_schema_sha256": entry.argument_schema_sha256,
                     "validator_source_sha256": entry.validator_source_sha256,
+                    "result_schema_kind": entry.result_schema_kind,
+                    "result_schema": entry.result_body(),
+                    "result_schema_sha256": entry.result_schema_sha256,
+                    "result_validator_source_sha256": entry.result_validator_source_sha256,
+                    "value_schema_kind": entry.value_schema_kind,
+                    "value_validator_source_sha256": entry.value_validator_source_sha256,
+                    "value_schemas": [
+                        {
+                            "value_schema_id": item.value_schema_id,
+                            "source_kind": item.source_kind,
+                            **(
+                                {"json_pointer": item.json_pointer}
+                                if item.json_pointer is not None
+                                else {}
+                            ),
+                            "kind": item.kind,
+                            "value_schema": item.body(),
+                            "value_schema_sha256": item.value_schema_sha256,
+                        }
+                        for item in entry.value_schemas
+                    ],
                 }
                 for entry in self.entries
             ],
@@ -354,29 +536,194 @@ def compile_action_registry(
     ).with_computed_sha256()
 
 
-def _schema_tuple(raw: Mapping[str, Any], *, action_id: str) -> tuple[bytes, str, str, str]:
+@dataclass(frozen=True, slots=True)
+class _ParsedValueSchema:
+    value_schema_id: str
+    source_kind: str
+    json_pointer: str | None
+    kind: str
+    digest: str
+    body_json: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedSchemaDescriptor:
+    argument_body_json: bytes
+    argument_digest: str
+    argument_kind: str
+    argument_validator_digest: str
+    result_body_json: bytes
+    result_digest: str
+    result_kind: str
+    result_validator_digest: str
+    value_schemas: tuple[_ParsedValueSchema, ...]
+    value_kind: str
+    value_validator_digest: str
+
+
+def _require_schema_digest(value: Any, *, message: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ActionRegistryError(message)
+    return value
+
+
+def _schema_tuple(raw: Mapping[str, Any], *, action_id: str) -> _ParsedSchemaDescriptor:
+    expected_keys = {
+        "argument_schema",
+        "argument_schema_sha256",
+        "argument_schema_kind",
+        "argument_validator_source_sha256",
+        "result_schema",
+        "result_schema_sha256",
+        "result_schema_kind",
+        "result_validator_source_sha256",
+        "value_schemas",
+        "value_schema_kind",
+        "value_validator_source_sha256",
+    }
+    if not expected_keys.issubset(raw):
+        raise ActionRegistryError(f"action schema descriptor is incomplete: {action_id}")
+
     body = raw.get("argument_schema")
-    digest = raw.get("argument_schema_sha256")
+    digest = _require_schema_digest(
+        raw.get("argument_schema_sha256"),
+        message=f"action schema hash is invalid: {action_id}",
+    )
     kind = raw.get("argument_schema_kind")
-    validator_digest = raw.get("argument_validator_source_sha256")
+    validator_digest = _require_schema_digest(
+        raw.get("argument_validator_source_sha256"),
+        message=f"action schema validator source hash is invalid: {action_id}",
+    )
     if not isinstance(body, Mapping):
         raise ActionRegistryError(f"action schema body is invalid: {action_id}")
     if kind not in {"EXPLICIT", "OPAQUE"}:
         raise ActionRegistryError(f"action schema kind is invalid: {action_id}")
-    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-        raise ActionRegistryError(f"action schema hash is invalid: {action_id}")
-    if (
-        not isinstance(validator_digest, str)
-        or re.fullmatch(r"[0-9a-f]{64}", validator_digest) is None
-    ):
-        raise ActionRegistryError(f"action schema validator source hash is invalid: {action_id}")
     try:
         body_json = canonical_json_bytes(dict(body))
     except (TypeError, ValueError) as exc:
         raise ActionRegistryError(f"action schema body is not canonical JSON: {action_id}") from exc
     if canonical_sha256(dict(body)) != digest:
         raise ActionRegistryError(f"action schema hash mismatch: {action_id}")
-    return body_json, digest, str(kind), validator_digest
+
+    result_body = raw.get("result_schema")
+    result_digest = _require_schema_digest(
+        raw.get("result_schema_sha256"),
+        message=f"action result schema hash is invalid: {action_id}",
+    )
+    result_kind = raw.get("result_schema_kind")
+    result_validator_digest = _require_schema_digest(
+        raw.get("result_validator_source_sha256"),
+        message=f"action result validator source hash is invalid: {action_id}",
+    )
+    if not isinstance(result_body, Mapping) or result_kind not in {"EXPLICIT", "OPAQUE"}:
+        raise ActionRegistryError(f"action result schema body is invalid: {action_id}")
+    expected_result_keys = {"schema", "action", "kind"}
+    if result_kind == "EXPLICIT":
+        expected_result_keys.add("root")
+    if (
+        set(result_body) != expected_result_keys
+        or result_body.get("schema") != "tiangong.omni-action-result-schema.v1"
+        or result_body.get("kind") != result_kind
+        or not isinstance(result_body.get("action"), str)
+        or (result_kind == "EXPLICIT" and not isinstance(result_body.get("root"), Mapping))
+    ):
+        raise ActionRegistryError(f"action result schema kind is invalid: {action_id}")
+    try:
+        result_body_json = canonical_json_bytes(dict(result_body))
+    except (TypeError, ValueError) as exc:
+        raise ActionRegistryError(
+            f"action result schema body is not canonical JSON: {action_id}"
+        ) from exc
+    if canonical_sha256(dict(result_body)) != result_digest:
+        raise ActionRegistryError(f"action result schema hash mismatch: {action_id}")
+
+    raw_values = raw.get("value_schemas")
+    value_kind = raw.get("value_schema_kind")
+    value_validator_digest = _require_schema_digest(
+        raw.get("value_validator_source_sha256"),
+        message=f"action value validator source hash is invalid: {action_id}",
+    )
+    if not isinstance(raw_values, Mapping) or value_kind not in {"EXPLICIT", "OPAQUE"}:
+        raise ActionRegistryError(f"action value schema authority is invalid: {action_id}")
+    parsed_values: list[_ParsedValueSchema] = []
+    for value_schema_id in sorted(raw_values):
+        value_raw = raw_values[value_schema_id]
+        if not isinstance(value_schema_id, str) or not re.fullmatch(
+            r"[a-z][a-z0-9._-]{0,127}", value_schema_id
+        ):
+            raise ActionRegistryError(f"value schema identity is invalid: {action_id}")
+        if not isinstance(value_raw, Mapping):
+            raise ActionRegistryError(f"value schema descriptor is invalid: {action_id}")
+        source_kind = value_raw.get("source_kind")
+        expected_value_keys = {
+            "value_schema_id",
+            "source_kind",
+            "value_schema",
+            "value_schema_sha256",
+            "value_schema_kind",
+        }
+        if source_kind == "RESULT_PAYLOAD":
+            expected_value_keys.add("json_pointer")
+        if (
+            set(value_raw) != expected_value_keys
+            or value_raw.get("value_schema_id") != value_schema_id
+            or value_raw.get("value_schema_kind") != "EXPLICIT"
+            or source_kind not in {"RESULT_PAYLOAD", "FACT_ID", "OUTPUT_OBJECT_REF"}
+        ):
+            raise ActionRegistryError(f"value schema descriptor is invalid: {action_id}")
+        pointer = value_raw.get("json_pointer")
+        if source_kind == "RESULT_PAYLOAD" and (
+            not isinstance(pointer, str) or not pointer.startswith("/") or "//" in pointer
+        ):
+            raise ActionRegistryError(f"value schema selector is invalid: {action_id}")
+        value_body = value_raw.get("value_schema")
+        value_digest = _require_schema_digest(
+            value_raw.get("value_schema_sha256"),
+            message=f"value schema hash is invalid: {action_id}",
+        )
+        if not isinstance(value_body, Mapping) or (
+            set(value_body) != {"schema", "value_schema_id", "kind", "root"}
+            or value_body.get("schema") != "tiangong.omni-action-value-schema.v1"
+            or value_body.get("value_schema_id") != value_schema_id
+            or value_body.get("kind") != "EXPLICIT"
+            or not isinstance(value_body.get("root"), Mapping)
+        ):
+            raise ActionRegistryError(f"value schema body is invalid: {action_id}")
+        try:
+            value_body_json = canonical_json_bytes(dict(value_body))
+        except (TypeError, ValueError) as exc:
+            raise ActionRegistryError(
+                f"value schema body is not canonical JSON: {action_id}"
+            ) from exc
+        if canonical_sha256(dict(value_body)) != value_digest:
+            raise ActionRegistryError(f"value schema hash mismatch: {action_id}")
+        parsed_values.append(
+            _ParsedValueSchema(
+                value_schema_id=value_schema_id,
+                source_kind=str(source_kind),
+                json_pointer=str(pointer) if pointer is not None else None,
+                kind="EXPLICIT",
+                digest=value_digest,
+                body_json=value_body_json,
+            )
+        )
+    if (value_kind == "EXPLICIT") != bool(parsed_values):
+        raise ActionRegistryError(f"action value schema coverage is invalid: {action_id}")
+    if result_kind != value_kind:
+        raise ActionRegistryError(f"action result/value schema authority differs: {action_id}")
+    return _ParsedSchemaDescriptor(
+        argument_body_json=body_json,
+        argument_digest=digest,
+        argument_kind=str(kind),
+        argument_validator_digest=validator_digest,
+        result_body_json=result_body_json,
+        result_digest=result_digest,
+        result_kind=str(result_kind),
+        result_validator_digest=result_validator_digest,
+        value_schemas=tuple(parsed_values),
+        value_kind=str(value_kind),
+        value_validator_digest=value_validator_digest,
+    )
 
 
 def _compile_action_schema_catalog(
@@ -387,7 +734,9 @@ def _compile_action_schema_catalog(
     if not isinstance(capabilities, Mapping):
         raise ActionRegistryError("action registry capabilities are missing")
     entries: list[ResolvedActionSchema] = []
-    validator_hashes: set[str] = set()
+    argument_validator_hashes: set[str] = set()
+    result_validator_hashes: set[str] = set()
+    value_validator_hashes: set[str] = set()
     for permission in registry.permissions:
         action_id = permission.action_id
         raw = capabilities.get(action_id)
@@ -397,30 +746,70 @@ def _compile_action_schema_catalog(
         canonical_raw = capabilities.get(canonical_id)
         if not isinstance(canonical_raw, Mapping):
             raise ActionRegistryError(f"action schema alias target is missing: {action_id}")
-        body_json, digest, kind, validator_digest = _schema_tuple(
-            raw, action_id=action_id
-        )
+        descriptor = _schema_tuple(raw, action_id=action_id)
         canonical_tuple = _schema_tuple(canonical_raw, action_id=canonical_id)
-        if (body_json, digest, kind, validator_digest) != canonical_tuple:
+        if descriptor != canonical_tuple:
             raise ActionRegistryError(f"action alias schema mismatch: {action_id}")
-        body = json.loads(body_json.decode("utf-8", errors="strict"))
+        body = json.loads(
+            descriptor.argument_body_json.decode("utf-8", errors="strict")
+        )
         if body.get("action") != canonical_id:
             raise ActionRegistryError(f"action schema canonical identity mismatch: {action_id}")
-        validator_hashes.add(validator_digest)
+        result_body = json.loads(
+            descriptor.result_body_json.decode("utf-8", errors="strict")
+        )
+        if result_body.get("action") != canonical_id:
+            raise ActionRegistryError(
+                f"action result schema canonical identity mismatch: {action_id}"
+            )
+        argument_validator_hashes.add(descriptor.argument_validator_digest)
+        result_validator_hashes.add(descriptor.result_validator_digest)
+        value_validator_hashes.add(descriptor.value_validator_digest)
+        value_schemas = tuple(
+            ResolvedValueSchema(
+                action_id=action_id,
+                canonical_action_id=canonical_id,
+                action_version=permission.action_version,
+                value_schema_id=item.value_schema_id,
+                source_kind=item.source_kind,
+                json_pointer=item.json_pointer,
+                kind=item.kind,
+                value_schema_sha256=item.digest,
+                validator_source_sha256=descriptor.value_validator_digest,
+                source_manifest_sha256=registry.source_manifest_sha256,
+                _body_json=item.body_json,
+            )
+            for item in descriptor.value_schemas
+        )
         entries.append(
             ResolvedActionSchema(
                 action_id=action_id,
                 canonical_action_id=canonical_id,
                 action_version=permission.action_version,
-                kind=kind,
-                argument_schema_sha256=digest,
-                validator_source_sha256=validator_digest,
+                kind=descriptor.argument_kind,
+                argument_schema_sha256=descriptor.argument_digest,
+                validator_source_sha256=descriptor.argument_validator_digest,
+                result_schema_kind=descriptor.result_kind,
+                result_schema_sha256=descriptor.result_digest,
+                result_validator_source_sha256=descriptor.result_validator_digest,
+                value_schema_kind=descriptor.value_kind,
+                value_validator_source_sha256=descriptor.value_validator_digest,
+                value_schemas=value_schemas,
                 source_manifest_sha256=registry.source_manifest_sha256,
-                _body_json=body_json,
+                _body_json=descriptor.argument_body_json,
+                _result_body_json=descriptor.result_body_json,
             )
         )
-    if len(validator_hashes) != 1:
+    if len(argument_validator_hashes) != 1:
         raise ActionRegistryError("action schema validator source hash is inconsistent")
+    if len(result_validator_hashes) != 1:
+        raise ActionRegistryError(
+            "action result schema validator source hash is inconsistent"
+        )
+    if len(value_validator_hashes) != 1:
+        raise ActionRegistryError(
+            "action value schema validator source hash is inconsistent"
+        )
     draft = ActionSchemaCatalog(
         source_manifest_sha256=registry.source_manifest_sha256,
         entries=tuple(entries),
@@ -506,6 +895,7 @@ __all__ = [
     "ActionSchemaCatalog",
     "LoadedActionAuthority",
     "ResolvedActionSchema",
+    "ResolvedValueSchema",
     "action_alias_map",
     "compile_action_authority",
     "compile_action_registry",

@@ -220,6 +220,55 @@ class ActiveRequestActivationTests(unittest.TestCase):
             [second.entry.request_id],
         )
 
+    def test_terminal_request_crash_window_is_listed_and_promotes_next(self) -> None:
+        first = self.register("message_terminal")
+        second = self.register("message_after_terminal", created_at_ms=1_200)
+        self.activator.claim(
+            first.entry.request_id,
+            first.entry.session_scope_hash,
+            now_ms=1_300,
+        )
+        worker = object.__new__(GatewayOrchestrationWorker)
+        worker._store = self.store
+        worker._advance(
+            "request",
+            first.entry.request_id,
+            "PLANNING",
+            now_ms=1_400,
+        )
+        worker._advance(
+            "request",
+            first.entry.request_id,
+            "DELIVERING",
+            now_ms=1_410,
+        )
+        worker._advance(
+            "request",
+            first.entry.request_id,
+            "COMPLETED",
+            now_ms=1_420,
+            fact_id="fact-terminal-crash-window",
+            evidence_sha256=HASH_A,
+        )
+
+        self.assertEqual(
+            self.store.list_terminal_active_session_request_ids(),
+            (first.entry.request_id,),
+        )
+        promoted = self.store.complete_session_request(
+            first.entry.session_scope_hash,
+            first.entry.request_id,
+            completed_at_ms=1_500,
+            release_generation=False,
+        )
+        self.assertIsNotNone(promoted)
+        self.assertEqual(promoted.request_id, second.entry.request_id)
+        self.assertEqual(promoted.state, "ACTIVE")
+        self.assertEqual(
+            self.store.list_terminal_active_session_request_ids(),
+            (),
+        )
+
     def test_late_finalization_after_cancel_is_idempotent(self) -> None:
         """A late release after a user cancel must not wedge the request.
 

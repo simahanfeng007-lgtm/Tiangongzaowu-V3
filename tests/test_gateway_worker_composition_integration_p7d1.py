@@ -144,13 +144,32 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
         filename=str(ORCHESTRATION_SOURCE),
     )
     process = _method(tree, "GatewayOrchestrationWorker", "process")
+    continuation = _method(
+        tree,
+        "GatewayOrchestrationWorker",
+        "_continue_after_parent_success",
+    )
+    durable_adapter = _method(
+        tree,
+        "GatewayOrchestrationWorker",
+        "_continue_durable_composition_parent",
+    )
     run_loop = _method(tree, "GatewayOrchestrationWorker", "_run")
 
     # There is exactly one composition scheduling entry point, scoped to the
     # activation currently owned by process(); the idle loop is not a second
     # scheduler over globally recoverable receipts.
-    dispatches = _calls(process, "self._dispatch_next_composition_step")
+    dispatches = _calls(
+        continuation,
+        "self._dispatch_next_composition_step",
+    )
     assert len(dispatches) == 1
+    success_tail_calls = _calls(process, "self._continue_after_parent_success")
+    assert len(success_tail_calls) == 1
+    assert len(
+        _calls(durable_adapter, "self._continue_after_parent_success")
+    ) == 1
+    assert _calls(process, "self._dispatch_next_composition_step") == []
     assert _calls(run_loop, "self._dispatch_next_composition_step") == []
     dispatch = dispatches[0]
     assert {item.arg for item in dispatch.keywords} >= {
@@ -175,7 +194,7 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
 
     aggregate_successes = [
         call
-        for call in _calls(process, "self._advance")
+        for call in _calls(continuation, "advance_tail")
         if _constant_argument(call, 0, "execution")
         and len(call.args) > 1
         and isinstance(call.args[1], ast.Name)
@@ -186,7 +205,7 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
 
     result_payload_assignments = [
         node
-        for node in ast.walk(process)
+        for node in ast.walk(continuation)
         if isinstance(node, ast.Assign)
         and any(
             isinstance(target, ast.Name) and target.id == "result_payload"
@@ -196,7 +215,7 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
     assert len(result_payload_assignments) == 1
     reply_assignments = [
         node
-        for node in ast.walk(process)
+        for node in ast.walk(continuation)
         if isinstance(node, ast.Assign)
         and any(
             isinstance(target, ast.Name) and target.id == "reply"
@@ -205,8 +224,8 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
     ]
     assert reply_assignments
     first_reply_assignment = min(reply_assignments, key=lambda node: node.lineno)
-    life_commits = _calls(process, "self._commit_life_execution")
-    delivery_builds = _calls(process, "build_delivery_outbox_payload")
+    life_commits = _calls(continuation, "self._commit_life_execution")
+    delivery_builds = _calls(continuation, "build_delivery_outbox_payload")
     assert len(life_commits) == 1
     assert len(delivery_builds) == 1
 
@@ -214,7 +233,10 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
         parent_unregisters[0].lineno
         < parent_facts[0].lineno
         < parent_effect_commits[0].lineno
-        < dispatch.lineno
+        < success_tail_calls[0].lineno
+    )
+    assert (
+        dispatch.lineno
         < aggregate_successes[0].lineno
         < result_payload_assignments[0].lineno
         < first_reply_assignment.lineno

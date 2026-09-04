@@ -395,10 +395,10 @@ def load_model_capability_manifest(
             raise SkillSelectionError("model capability risk class is invalid")
         effect = str(raw.get("effect") or "execute")
         try:
-            argument_schema_sha256 = action_authority.schema_catalog.resolve(
+            resolved_schema = action_authority.schema_catalog.resolve(
                 action_id,
                 "omni-registry-v1",
-            ).argument_schema_sha256
+            )
         except (TypeError, ValueError) as exc:
             raise SkillSelectionError(
                 "model capability schema binding is invalid"
@@ -408,14 +408,8 @@ def load_model_capability_manifest(
                 action_id=action_id,
                 version="runtime-capability-v1",
                 provider_component_id="tiangong-backend",
-                argument_schema_sha256=argument_schema_sha256,
-                result_schema_sha256=canonical_sha256(
-                    {
-                        "domain": "tiangong.model-capability.result.v1",
-                        "action_id": action_id,
-                        "source_hash": payload["source_hash"],
-                    }
-                ),
+                argument_schema_sha256=resolved_schema.argument_schema_sha256,
+                result_schema_sha256=resolved_schema.result_schema_sha256,
                 risk_class=risk,
                 allowed_side_effects=_routing_side_effects(effect),
                 idempotency_mode="effect_id_required",
@@ -573,6 +567,8 @@ def compile_composition_execution_manifest(
             or entry.source_manifest_sha256
             != schema_catalog.source_manifest_sha256
             or entry.kind not in {"EXPLICIT", "OPAQUE"}
+            or entry.result_schema_kind not in {"EXPLICIT", "OPAQUE"}
+            or entry.value_schema_kind not in {"EXPLICIT", "OPAQUE"}
             or not isinstance(entry.argument_schema_sha256, str)
             or not re.fullmatch(
                 r"[0-9a-f]{64}", entry.argument_schema_sha256
@@ -581,12 +577,25 @@ def compile_composition_execution_manifest(
             or not re.fullmatch(
                 r"[0-9a-f]{64}", entry.validator_source_sha256
             )
+            or not isinstance(entry.result_schema_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", entry.result_schema_sha256)
+            or not isinstance(entry.result_validator_source_sha256, str)
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", entry.result_validator_source_sha256
+            )
+            or not isinstance(entry.value_validator_source_sha256, str)
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", entry.value_validator_source_sha256
+            )
+            or (entry.value_schema_kind == "EXPLICIT") != bool(entry.value_schemas)
+            or entry.result_schema_kind != entry.value_schema_kind
         ):
             raise SkillSelectionError(
                 "composition execution permission and schema binding mismatch"
             )
         try:
             schema_body = entry.body()
+            result_schema_body = entry.result_body()
         except (AttributeError, TypeError, ValueError) as exc:
             raise SkillSelectionError(
                 "composition execution action schema entry is invalid"
@@ -594,13 +603,63 @@ def compile_composition_execution_manifest(
         if (
             canonical_sha256(schema_body) != entry.argument_schema_sha256
             or schema_body.get("action") != entry.canonical_action_id
+            or canonical_sha256(result_schema_body) != entry.result_schema_sha256
+            or result_schema_body.get("action") != entry.canonical_action_id
+            or result_schema_body.get("kind") != entry.result_schema_kind
         ):
             raise SkillSelectionError(
                 "composition execution action schema body is invalid"
             )
 
+        value_schema_ids = tuple(item.value_schema_id for item in entry.value_schemas)
+        if value_schema_ids != tuple(sorted(set(value_schema_ids))):
+            raise SkillSelectionError(
+                "composition execution value schema coverage is invalid"
+            )
+        for value_schema in entry.value_schemas:
+            try:
+                value_body = value_schema.body()
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise SkillSelectionError(
+                    "composition execution value schema entry is invalid"
+                ) from exc
+            if (
+                value_schema.action_id != entry.action_id
+                or value_schema.canonical_action_id != entry.canonical_action_id
+                or value_schema.action_version != entry.action_version
+                or value_schema.source_manifest_sha256
+                != entry.source_manifest_sha256
+                or value_schema.validator_source_sha256
+                != entry.value_validator_source_sha256
+                or value_schema.kind != "EXPLICIT"
+                or canonical_sha256(value_body)
+                != value_schema.value_schema_sha256
+                or value_body.get("value_schema_id")
+                != value_schema.value_schema_id
+                or value_body.get("kind") != "EXPLICIT"
+                or value_schema.source_kind
+                not in {"RESULT_PAYLOAD", "FACT_ID", "OUTPUT_OBJECT_REF"}
+                or (
+                    value_schema.source_kind == "RESULT_PAYLOAD"
+                    and (
+                        not isinstance(value_schema.json_pointer, str)
+                        or not value_schema.json_pointer.startswith("/")
+                    )
+                )
+                or (
+                    value_schema.source_kind != "RESULT_PAYLOAD"
+                    and value_schema.json_pointer is not None
+                )
+            ):
+                raise SkillSelectionError(
+                    "composition execution value schema entry is invalid"
+                )
+
         model_action = model_actions[permission.action_id]
-        if model_action.argument_schema_sha256 != entry.argument_schema_sha256:
+        if (
+            model_action.argument_schema_sha256 != entry.argument_schema_sha256
+            or model_action.result_schema_sha256 != entry.result_schema_sha256
+        ):
             raise SkillSelectionError(
                 "composition execution model and current schema mismatch"
             )
@@ -610,7 +669,7 @@ def compile_composition_execution_manifest(
                 version=permission.action_version,
                 provider_component_id=model_action.provider_component_id,
                 argument_schema_sha256=entry.argument_schema_sha256,
-                result_schema_sha256=model_action.result_schema_sha256,
+                result_schema_sha256=entry.result_schema_sha256,
                 risk_class=permission.effective_risk,
                 allowed_side_effects=permission.allowed_side_effects,
                 idempotency_mode=model_action.idempotency_mode,

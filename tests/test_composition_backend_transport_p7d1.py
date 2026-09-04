@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from unittest import mock
 
 import pytest
@@ -32,6 +32,7 @@ from contracts import (
     canonical_sha256,
 )
 from tests.test_backend_client import backend_response
+from total_gateway.action_registry import ActionSchemaCatalog
 from total_gateway.backend_client import BackendClient, BackendClientError
 from total_gateway.composition_backend_transport import (
     COMPOSITION_BACKEND_PATH,
@@ -60,6 +61,8 @@ class AuthorizedComposition:
     binding: CompositionExecutionBindingV1
     runtime: dict[str, Any]
     signer: Any
+    schema_catalog: ActionSchemaCatalog
+    expected_result_schema_sha256: str
 
 
 def _canonical_legacy_json(value: Any) -> bytes:
@@ -72,6 +75,38 @@ def _canonical_legacy_json(value: Any) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def _valid_skill_get_result(
+    material: AuthorizedComposition,
+    *,
+    elapsed_seconds: float = 0.125,
+) -> dict[str, Any]:
+    activation: dict[str, Any] = {}
+    return {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": True,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": material.ticket.payload.action_id,
+        "target": material.invocation["target"],
+        "result": {
+            "success": True,
+            "op_id": "skill-get-p7d2",
+            "action": material.ticket.payload.action_id,
+            "risk_level": "A0",
+            "elapsed_seconds": elapsed_seconds,
+            "result": {
+                "markdown": "# word_delivery",
+                "selection": {},
+                "activation": activation,
+            },
+            "activation": activation,
+            "evidence": {},
+        },
+        "llm_brief": "skill loaded",
+        "evidence": {},
+    }
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +133,11 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
         )
         original_binding = ticket.payload.composition_execution_binding
         assert original_binding is not None
+        result_schema = harness.loaded.schema_catalog.resolve(
+            ticket.payload.action_id,
+            ticket.payload.action_version,
+            require_result_explicit=True,
+        )
 
         # The non-empty target is probed by the real P7C authority, so all four
         # runtime hash inputs include a genuine non-null optimistic snapshot.
@@ -109,7 +149,7 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
             version=ticket.payload.action_version,
             provider_component_id="tiangong-backend",
             argument_schema_sha256=ticket.payload.argument_schema_sha256,
-            result_schema_sha256="e" * 64,
+            result_schema_sha256=result_schema.result_schema_sha256,
             risk_class=ticket.payload.risk_class,
             allowed_side_effects=ticket.payload.allowed_side_effects,
             idempotency_mode="pure",
@@ -184,8 +224,35 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
             binding=binding,
             runtime=runtime,
             signer=harness.signer,
+            schema_catalog=harness.loaded.schema_catalog,
+            expected_result_schema_sha256=result_schema.result_schema_sha256,
         )
     return material
+
+
+def _composition_transport(
+    material: AuthorizedComposition,
+    client: Any,
+    *,
+    signed_grant: Mapping[str, Any] | None = None,
+    runtime_meta: Mapping[str, Any] | None = None,
+    expected_result_schema_sha256: str | None = None,
+) -> CompositionBackendExecutionTransport:
+    return CompositionBackendExecutionTransport(
+        client,
+        signed_grant=(
+            material.grant.model_dump(mode="json")
+            if signed_grant is None
+            else signed_grant
+        ),
+        runtime_meta=material.runtime if runtime_meta is None else runtime_meta,
+        schema_catalog=material.schema_catalog,
+        expected_result_schema_sha256=(
+            material.expected_result_schema_sha256
+            if expected_result_schema_sha256 is None
+            else expected_result_schema_sha256
+        ),
+    )
 
 
 class RecordingTransport:
@@ -384,6 +451,52 @@ def _alternate_signed_authority(
         {
             "execution_ticket_id": ticket.payload.ticket_id,
             "effect_id": effect_id,
+            "composition_binding_sha256": binding.binding_sha256,
+            "composition_execution_binding": binding.model_dump(mode="json"),
+        }
+    )
+    return ticket, grant, runtime
+
+
+def _continuation_signed_authority(
+    material: AuthorizedComposition,
+    *,
+    attempt: int,
+) -> tuple[ExecutionTicket, OmniCapabilityGrant, dict[str, Any]]:
+    binding_updates: dict[str, Any] = {
+        "attempt": attempt,
+        "continuation_delegation_id": "ccd_" + "a" * 64,
+        "continuation_delegation_sha256": "b" * 64,
+        "dependency_evidence_sha256": "c" * 64,
+        "binding_sha256": ZERO_SHA256,
+    }
+    if attempt > 1:
+        binding_updates.update(
+            {
+                "supersedes_authorization_id": "authorization-p7d2-predecessor",
+                "supersedes_effect_id": "eff_" + "d" * 64,
+                "supersedes_claim_sha256": "e" * 64,
+            }
+        )
+    binding = material.binding.model_copy(
+        update=binding_updates
+    ).with_computed_sha256()
+    ticket_payload = material.ticket.payload.model_copy(
+        update={"composition_execution_binding": binding}
+    )
+    ticket = material.signer.sign_execution(ticket_payload)
+    grant_payload = material.grant.payload.model_copy(
+        update={
+            "ticket_sha256": canonical_sha256(
+                ticket.payload.model_dump(mode="json")
+            ),
+            "composition_execution_binding": binding,
+        }
+    )
+    grant = material.signer.sign_omni_capability(grant_payload)
+    runtime = deepcopy(material.runtime)
+    runtime.update(
+        {
             "composition_binding_sha256": binding.binding_sha256,
             "composition_execution_binding": binding.model_dump(mode="json"),
         }
@@ -704,16 +817,13 @@ def test_composition_transport_uses_only_exact_private_route_and_body_and_wraps_
     authorized_composition: AuthorizedComposition,
 ) -> None:
     material = authorized_composition
-    raw_omni = {
-        "ok": True,
-        "action": material.ticket.payload.action_id,
-        "elapsed_seconds": 0.125,
-        "metrics": {"ratio": 0.75},
-    }
+    raw_omni = _valid_skill_get_result(material)
+    raw_omni["metrics"] = {"ratio": 0.75}
     client = FakeCompatibilityClient(status=200, payload=raw_omni)
     grant_value = material.grant.model_dump(mode="json")
     runtime_value = deepcopy(material.runtime)
-    transport = CompositionBackendExecutionTransport(
+    transport = _composition_transport(
+        material,
         client,
         signed_grant=grant_value,
         runtime_meta=runtime_value,
@@ -744,6 +854,8 @@ def test_composition_transport_uses_only_exact_private_route_and_body_and_wraps_
     payload = envelope["result_payload"]
     raw_bytes = _canonical_legacy_json(raw_omni)
     assert result["status"] == "SUCCEEDED"
+    assert result["attempt"] == 1
+    assert result["output_object_refs"] == []
     assert payload == {
         "schema": COMPOSITION_RESULT_PAYLOAD_SCHEMA,
         "backend_http_status": 200,
@@ -754,8 +866,88 @@ def test_composition_transport_uses_only_exact_private_route_and_body_and_wraps_
         "omni_result_sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "omni_result_size_bytes": len(raw_bytes),
     }
-    assert json.loads(payload["omni_result_json"])["elapsed_seconds"] == 0.125
+    assert json.loads(payload["omni_result_json"])["result"]["elapsed_seconds"] == 0.125
     assert canonical_sha256(payload) == result["result_payload_sha256"]
+
+
+def test_composition_transport_uses_continuation_binding_attempt(
+    authorized_composition: AuthorizedComposition,
+) -> None:
+    material = authorized_composition
+    ticket, grant, runtime = _continuation_signed_authority(material, attempt=2)
+    client = FakeCompatibilityClient(
+        status=200,
+        payload=_valid_skill_get_result(material),
+    )
+    transport = _composition_transport(
+        material,
+        client,
+        signed_grant=grant.model_dump(mode="json"),
+        runtime_meta=runtime,
+    )
+
+    envelope = transport.execute(
+        _wire(material, ticket=ticket),
+        timeout_seconds=30.0,
+    )
+
+    assert envelope["execution_result"]["attempt"] == 2
+
+
+def test_composition_transport_rejects_mismatched_expected_result_schema_before_route(
+    authorized_composition: AuthorizedComposition,
+) -> None:
+    material = authorized_composition
+    client = FakeCompatibilityClient(
+        status=200,
+        payload=_valid_skill_get_result(material),
+    )
+    transport = _composition_transport(
+        material,
+        client,
+        expected_result_schema_sha256="f" * 64,
+    )
+
+    with pytest.raises(BackendClientError) as caught:
+        transport.execute(_wire(material), timeout_seconds=30.0)
+
+    assert caught.value.code == "backend.composition.result_schema_authority_invalid"
+    assert caught.value.ambiguous is False
+    assert client.calls == []
+
+
+def test_composition_transport_rejects_success_result_outside_explicit_schema(
+    authorized_composition: AuthorizedComposition,
+) -> None:
+    material = authorized_composition
+    raw_omni = _valid_skill_get_result(material)
+    raw_omni["result"]["action"] = "skill.read"
+    client = FakeCompatibilityClient(status=200, payload=raw_omni)
+    transport = _composition_transport(material, client)
+
+    with pytest.raises(BackendClientError) as caught:
+        transport.execute(_wire(material), timeout_seconds=30.0)
+
+    assert caught.value.code == "backend.composition.result_schema_rejected"
+    assert caught.value.ambiguous is True
+    assert len(client.calls) == 1
+
+
+def test_composition_transport_rejects_untrusted_backend_output_object_refs(
+    authorized_composition: AuthorizedComposition,
+) -> None:
+    material = authorized_composition
+    raw_omni = _valid_skill_get_result(material)
+    raw_omni["output_object_refs"] = ["obj_" + "a" * 64]
+    client = FakeCompatibilityClient(status=200, payload=raw_omni)
+    transport = _composition_transport(material, client)
+
+    with pytest.raises(BackendClientError) as caught:
+        transport.execute(_wire(material), timeout_seconds=30.0)
+
+    assert caught.value.code == "backend.composition.output_object_refs_untrusted"
+    assert caught.value.ambiguous is True
+    assert len(client.calls) == 1
 
 
 def test_composition_transport_returns_final_failure_for_non_5xx_omni_failure(
@@ -764,11 +956,7 @@ def test_composition_transport_returns_final_failure_for_non_5xx_omni_failure(
     material = authorized_composition
     raw_omni = {"ok": False, "cuowu": "action rejected", "progress": 0.5}
     client = FakeCompatibilityClient(status=400, payload=raw_omni)
-    transport = CompositionBackendExecutionTransport(
-        client,
-        signed_grant=material.grant.model_dump(mode="json"),
-        runtime_meta=material.runtime,
-    )
+    transport = _composition_transport(material, client)
 
     envelope = transport.execute(_wire(material), timeout_seconds=30.0)
 
@@ -788,11 +976,7 @@ def test_composition_transport_treats_5xx_as_unknown_after_started(
         status=503,
         payload={"ok": False, "error": "backend unavailable"},
     )
-    transport = CompositionBackendExecutionTransport(
-        client,
-        signed_grant=material.grant.model_dump(mode="json"),
-        runtime_meta=material.runtime,
-    )
+    transport = _composition_transport(material, client)
 
     with pytest.raises(BackendClientError) as caught:
         transport.execute(_wire(material), timeout_seconds=30.0)
@@ -834,7 +1018,8 @@ def test_composition_transport_rejects_authority_or_binding_replacement_before_r
             runtime["fact_kernel_enabled"] = True
 
     client = FakeCompatibilityClient(status=200, payload={"ok": True})
-    transport = CompositionBackendExecutionTransport(
+    transport = _composition_transport(
+        material,
         client,
         signed_grant=grant,
         runtime_meta=runtime,
@@ -857,7 +1042,8 @@ def test_composition_transport_bounds_oversized_output_and_rejects_impossible_en
     bounded_ticket, bounded_grant = _ticket_and_grant_for_output_limit(
         material, 256
     )
-    transport = CompositionBackendExecutionTransport(
+    transport = _composition_transport(
+        material,
         client,
         signed_grant=bounded_grant.model_dump(mode="json"),
         runtime_meta=material.runtime,
@@ -876,7 +1062,8 @@ def test_composition_transport_bounds_oversized_output_and_rejects_impossible_en
     impossible_ticket, impossible_grant = _ticket_and_grant_for_output_limit(
         material, 8
     )
-    impossible_transport = CompositionBackendExecutionTransport(
+    impossible_transport = _composition_transport(
+        material,
         client,
         signed_grant=impossible_grant.model_dump(mode="json"),
         runtime_meta=material.runtime,
@@ -956,7 +1143,7 @@ def test_transport_and_real_embedded_request_contract_execute_end_to_end(
 
     def runner(payload: dict[str, Any]) -> dict[str, Any]:
         runner_calls.append(deepcopy(payload))
-        return {"ok": True, "elapsed_seconds": 0.125}
+        return _valid_skill_get_result(material)
 
     backend = EmbeddedBackendRuntime.__new__(EmbeddedBackendRuntime)
     backend._lock = threading.RLock()
@@ -969,11 +1156,7 @@ def test_transport_and_real_embedded_request_contract_execute_end_to_end(
     client.set_composition_dispatch_authorizer(
         lambda **kwargs: authorization_calls.append(kwargs)
     )
-    transport = CompositionBackendExecutionTransport(
-        client,
-        signed_grant=material.grant.model_dump(mode="json"),
-        runtime_meta=material.runtime,
-    )
+    transport = _composition_transport(material, client)
 
     def import_module(name: str):
         assert name == "v3.jineng.jirou_ceng"

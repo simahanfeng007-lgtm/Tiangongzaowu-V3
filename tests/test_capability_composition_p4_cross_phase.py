@@ -15,14 +15,11 @@ from world_understanding.tool_capability_world import (
     compile_tool_capability_world,
 )
 
-from tests.test_capability_composition_p4 import (
-    H,
-    _context,
-    _proposal_document,
-)
+from tests.test_capability_composition_p4 import _context, _proposal_document
 from tests.test_skill_method_world_p3_production import _production_inputs
 from tests.test_tool_capability_world_p2 import (
     _argument_schema_hashes,
+    _result_schema_hashes,
     manifest,
     source_ref,
 )
@@ -41,7 +38,7 @@ def test_p2_p3_outputs_form_a_p4_plan_without_new_authority() -> None:
             for action_id in action_ids
         },
         argument_schema_hashes=_argument_schema_hashes(capability_manifest),
-        result_schema_hashes={action_id: H for action_id in action_ids},
+        result_schema_hashes=_result_schema_hashes(capability_manifest),
     )
 
     index, index_sha256, source_hashes = _production_inputs()

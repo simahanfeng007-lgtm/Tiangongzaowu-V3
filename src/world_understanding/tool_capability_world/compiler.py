@@ -213,20 +213,128 @@ def _manifest_argument_schema_sha256(
         )
     if alias_to:
         target = capabilities.get(alias_to)
-        if not isinstance(target, Mapping) or (
-            body != target.get("argument_schema")
-            or digest != target.get("argument_schema_sha256")
-            or kind != target.get("argument_schema_kind")
-            or validator_digest != target.get("argument_validator_source_sha256")
+        authority_fields = (
+            "argument_schema",
+            "argument_schema_sha256",
+            "argument_schema_kind",
+            "argument_validator_source_sha256",
+            "result_schema",
+            "result_schema_sha256",
+            "result_schema_kind",
+            "result_validator_source_sha256",
+            "value_schemas",
+            "value_schema_kind",
+            "value_validator_source_sha256",
+        )
+        if not isinstance(target, Mapping) or any(
+            raw.get(field) != target.get(field) for field in authority_fields
         ):
             raise ToolCapabilityWorldError(
-                f"manifest argument schema alias mismatch: {action_id}"
+                f"manifest action schema alias mismatch: {action_id}"
             )
         # ``canonical_id`` is the recursively validated target digest.
         if canonical_id != digest:
             raise ToolCapabilityWorldError(
                 f"manifest argument schema alias digest mismatch: {action_id}"
             )
+    return digest
+
+
+def _manifest_result_schema_sha256(
+    capabilities: Mapping[str, Any],
+    action_id: str,
+    *,
+    trail: tuple[str, ...] = (),
+) -> str:
+    """Read result/value authority from the manifest, never infer it."""
+
+    if action_id in trail:
+        raise ToolCapabilityWorldError("capability manifest schema alias cycle")
+    raw = capabilities.get(action_id)
+    if not isinstance(raw, Mapping):
+        raise ToolCapabilityWorldError(
+            f"capability manifest schema row is missing: {action_id}"
+        )
+    alias_to = str(raw.get("alias_to") or "").strip()
+    canonical_digest = (
+        _manifest_result_schema_sha256(
+            capabilities,
+            alias_to,
+            trail=(*trail, action_id),
+        )
+        if alias_to
+        else None
+    )
+    body = raw.get("result_schema")
+    digest = _require_sha256(
+        raw.get("result_schema_sha256"),
+        field="manifest result schema",
+        action_id=action_id,
+    )
+    kind = raw.get("result_schema_kind")
+    validator_digest = _require_sha256(
+        raw.get("result_validator_source_sha256"),
+        field="result validator source",
+        action_id=action_id,
+    )
+    value_schemas = raw.get("value_schemas")
+    value_kind = raw.get("value_schema_kind")
+    _require_sha256(
+        raw.get("value_validator_source_sha256"),
+        field="value validator source",
+        action_id=action_id,
+    )
+    if (
+        not isinstance(body, Mapping)
+        or kind not in {"EXPLICIT", "OPAQUE"}
+        or body.get("kind") != kind
+        or not isinstance(value_schemas, Mapping)
+        or value_kind not in {"EXPLICIT", "OPAQUE"}
+        or kind != value_kind
+        or (value_kind == "EXPLICIT") != bool(value_schemas)
+    ):
+        raise ToolCapabilityWorldError(
+            f"invalid manifest result/value schema authority: {action_id}"
+        )
+    if canonical_sha256(dict(body)) != digest:
+        raise ToolCapabilityWorldError(
+            f"manifest result schema hash mismatch: {action_id}"
+        )
+    for value_schema_id in sorted(value_schemas):
+        value_raw = value_schemas[value_schema_id]
+        if not isinstance(value_schema_id, str) or not isinstance(value_raw, Mapping):
+            raise ToolCapabilityWorldError(
+                f"invalid manifest value schema authority: {action_id}"
+            )
+        value_body = value_raw.get("value_schema")
+        value_digest = _require_sha256(
+            value_raw.get("value_schema_sha256"),
+            field="manifest value schema",
+            action_id=action_id,
+        )
+        source_kind = value_raw.get("source_kind")
+        if (
+            value_raw.get("value_schema_id") != value_schema_id
+            or value_raw.get("value_schema_kind") != "EXPLICIT"
+            or not isinstance(value_body, Mapping)
+            or canonical_sha256(dict(value_body)) != value_digest
+            or source_kind not in {"RESULT_PAYLOAD", "FACT_ID", "OUTPUT_OBJECT_REF"}
+            or (
+                source_kind == "RESULT_PAYLOAD"
+                and (
+                    not isinstance(value_raw.get("json_pointer"), str)
+                    or not str(value_raw["json_pointer"]).startswith("/")
+                )
+            )
+            or (source_kind != "RESULT_PAYLOAD" and "json_pointer" in value_raw)
+        ):
+            raise ToolCapabilityWorldError(
+                f"invalid manifest value schema authority: {action_id}"
+            )
+    if alias_to and canonical_digest != digest:
+        raise ToolCapabilityWorldError(
+            f"manifest result schema alias digest mismatch: {action_id}"
+        )
     return digest
 
 
@@ -335,21 +443,23 @@ def compile_tool_capability_world(
         raw = capabilities[action_id]
         permission = permissions[action_id]
         source = source_revisions.get(action_id)
-        result_hash = (
-            result_schema_hashes.get(action_id)
-            if result_schema_hashes is not None
-            else None
-        )
-        if source is None or result_hash is None:
+        if source is None:
             raise ToolCapabilityWorldError(
                 f"missing deterministic source/schema binding: {action_id}"
             )
         arg_hash = _manifest_argument_schema_sha256(capabilities, action_id)
+        result_hash = _manifest_result_schema_sha256(capabilities, action_id)
         if argument_schema_hashes is not None:
             supplied_arg_hash = argument_schema_hashes.get(action_id)
             if supplied_arg_hash != arg_hash:
                 raise ToolCapabilityWorldError(
                     f"caller argument schema differs from manifest authority: {action_id}"
+                )
+        if result_schema_hashes is not None:
+            supplied_result_hash = result_schema_hashes.get(action_id)
+            if supplied_result_hash != result_hash:
+                raise ToolCapabilityWorldError(
+                    f"caller result schema differs from manifest authority: {action_id}"
                 )
         if action_schema_catalog is not None:
             try:
@@ -357,6 +467,7 @@ def compile_tool_capability_world(
                     action_id,
                     str(permission.action_version),
                     expected_sha256=arg_hash,
+                    expected_result_sha256=result_hash,
                 )
             except Exception as exc:
                 raise ToolCapabilityWorldError(

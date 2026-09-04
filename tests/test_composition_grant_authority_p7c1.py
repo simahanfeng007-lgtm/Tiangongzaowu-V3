@@ -33,6 +33,7 @@ from contracts import (
     TrustScope,
     canonical_json_bytes,
     canonical_sha256,
+    derive_effect_identity,
 )
 from tests.test_execution_contracts import execution_ticket
 from total_gateway.action_registry import (
@@ -55,6 +56,9 @@ from total_gateway.composition_executable_plan import (
 from total_gateway.composition_executable_plan_store import (
     ExecutableCompositionPlanStoreRecord,
 )
+from total_gateway.composition_execution_binding import derive_run_sequence
+from total_gateway.effects import EffectClaim, EffectResult
+from total_gateway.fact_ledger import FactLedger
 from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.omni_grant_authority import (
     OmniGrantAuthority,
@@ -75,10 +79,16 @@ COMPONENT_MANIFEST_SHA256 = "c" * 64
 SKILL_CATALOG_SHA256 = "d" * 64
 
 
-def _rehash_primitive(primitive, *, argument_schema_sha256: str):
+def _rehash_primitive(
+    primitive,
+    *,
+    argument_schema_sha256: str,
+    result_schema_sha256: str,
+):
     draft = primitive.model_copy(
         update={
             "argument_schema_sha256": argument_schema_sha256,
+            "result_schema_sha256": result_schema_sha256,
             "descriptor_sha256": ZERO,
         }
     )
@@ -101,6 +111,8 @@ def _production_material(
     target: str = "",
     arguments: dict[str, Any] | None = None,
     with_object_grant: bool = False,
+    multi_step: bool = False,
+    plan_expires_at_ms: int = 2_500,
 ) -> tuple[dict[str, Any], Any, ObjectGrant | None]:
     """Build a P7C.0 bundle using the current production registry/schema.
 
@@ -124,28 +136,62 @@ def _production_material(
         permission.action_version,
         require_explicit=True,
     )
-    specs = (
+    multi_step = multi_step or with_object_grant
+    selected_action_ids = (action_id,)
+    if multi_step:
+        selected_action_ids = (action_id, "skill.get")
+    selected_permissions = {
+        selected_action_id: next(
+            item
+            for item in loaded.registry.permissions
+            if item.action_id == selected_action_id
+        )
+        for selected_action_id in selected_action_ids
+    }
+    selected_schemas = {
+        selected_action_id: loaded.schema_catalog.resolve(
+            selected_action_id,
+            selected_permissions[selected_action_id].action_version,
+            require_explicit=True,
+            require_result_explicit=multi_step,
+        )
+        for selected_action_id in selected_action_ids
+    }
+    specs = tuple(
         {
-            "action_id": action_id,
-            "risk": permission.registry_risk,
-            "effect": permission.effect,
-            "side_effects": permission.allowed_side_effects,
+            "action_id": selected_action_id,
+            "risk": selected_permissions[selected_action_id].registry_risk,
+            "effect": selected_permissions[selected_action_id].effect,
+            "side_effects": (
+                selected_permissions[selected_action_id].allowed_side_effects
+            ),
             "read_set": ("resource:life",),
-            "resource_scope": (permission.path_policy,),
-        },
+            "resource_scope": (
+                selected_permissions[selected_action_id].path_policy,
+            ),
+        }
+        for selected_action_id in selected_action_ids
     )
     _fixture_registry, tool_world, method_world = p4._worlds(
         specs,
         manifest_sha256=loaded.registry.source_manifest_sha256,
     )
-    primitive = _rehash_primitive(
-        tool_world.primitives[0],
-        argument_schema_sha256=schema.argument_schema_sha256,
+    primitives = tuple(
+        _rehash_primitive(
+            primitive,
+            argument_schema_sha256=(
+                selected_schemas[primitive.action_id].argument_schema_sha256
+            ),
+            result_schema_sha256=(
+                selected_schemas[primitive.action_id].result_schema_sha256
+            ),
+        )
+        for primitive in tool_world.primitives
     )
     draft_world = replace(
         tool_world,
         action_registry_sha256=loaded.registry.registry_sha256,
-        primitives=(primitive,),
+        primitives=primitives,
         snapshot_sha256=ZERO,
     )
     tool_world = replace(
@@ -156,7 +202,7 @@ def _production_material(
         tool_world,
         method_world,
         method_ids=("generate_then_verify",),
-        action_ids=(action_id,),
+        action_ids=selected_action_ids,
     )
     context = replace(
         p4._context(
@@ -172,15 +218,15 @@ def _production_material(
     ).with_computed_sha256()
 
     steps = (("step.01", "A01", ()),)
-    if with_object_grant:
+    if multi_step:
         steps = (
             ("step.01", "A01", ()),
-            ("step.02", "A01", ("step.01",)),
+            ("step.02", "A02", ("step.01",)),
         )
     document = p4._proposal_document(
         goal_ref="goal.p7c1-authorize-a0",
         methods=("M01",),
-        actions=("A01",),
+        actions=("A01", "A02") if multi_step else ("A01",),
         steps=steps,
     )
     proposal = p7c0.parse_composition_proposal(document, candidates)
@@ -226,16 +272,32 @@ def _production_material(
         current_world_state_sha256=legacy_plan.world_state_sha256,
         expected_principal_scope_hash=legacy_plan.principal_scope_hash,
         issued_at_ms=1_500,
-        expires_at_ms=2_500,
+        expires_at_ms=plan_expires_at_ms,
     )
 
     candidate = candidates.action_by_candidate()[proposal.steps[0].candidate_id]
+    state_sha256_schema = next(
+        (
+            item
+            for item in schema.value_schemas
+            if item.value_schema_id == "state_sha256"
+        ),
+        None,
+    )
     first_output = p7c0._hashed(
         OutputDeclarationV1(
             output_binding_id=proposal.steps[0].output_bindings[0],
             source_kind="RESULT_PAYLOAD",
-            json_pointer="/recent_limit",
-            value_schema_sha256=p7c0.H,
+            json_pointer=(
+                state_sha256_schema.json_pointer
+                if state_sha256_schema is not None
+                else "/result"
+            ),
+            value_schema_sha256=(
+                state_sha256_schema.value_schema_sha256
+                if state_sha256_schema is not None
+                else p7c0.H
+            ),
             sha256=ZERO,
         )
     )
@@ -265,6 +327,8 @@ def _production_material(
     step_bindings = (first_step,)
     final_producer = first_step
     final_output = first_output
+    attachment = None
+    object_input = None
     if with_object_grant:
         body = b"sealed P7C.1 object input"
         stored = objects.put_bytes(
@@ -308,14 +372,7 @@ def _production_material(
                 sha256=ZERO,
             )
         )
-        object_ref = p7c0._hashed(
-            PlanInputValueBindingV1(
-                input_id=object_input.input_id,
-                input_sha256=object_input.sha256,
-                json_pointer="",
-                sha256=ZERO,
-            )
-        )
+    if multi_step:
         upstream_ref = p7c0._hashed(
             StepOutputValueBindingV1(
                 producer_step_id=first_step.step_id,
@@ -324,64 +381,84 @@ def _production_material(
                 sha256=ZERO,
             )
         )
+        second_candidate = candidates.action_by_candidate()[
+            proposal.steps[1].candidate_id
+        ]
+        second_permission = selected_permissions[second_candidate.primitive.action_id]
+        second_schema = selected_schemas[second_candidate.primitive.action_id]
+        markdown_schema = next(
+            item
+            for item in second_schema.value_schemas
+            if item.value_schema_id == "markdown"
+        )
         second_output = p7c0._hashed(
             OutputDeclarationV1(
                 output_binding_id=proposal.steps[1].output_bindings[0],
                 source_kind="RESULT_PAYLOAD",
-                json_pointer="/summary",
-                value_schema_sha256=p7c0.H,
+                json_pointer=markdown_schema.json_pointer,
+                value_schema_sha256=markdown_schema.value_schema_sha256,
                 sha256=ZERO,
             )
         )
+        second_args = {"skill_id": None}
+        second_slots = [
+            p7c0._hashed(
+                ArgumentSlotV1(
+                    destination_json_pointer="/skill_id",
+                    value_binding=upstream_ref,
+                    sha256=ZERO,
+                )
+            )
+        ]
+        if object_input is not None:
+            object_ref = p7c0._hashed(
+                PlanInputValueBindingV1(
+                    input_id=object_input.input_id,
+                    input_sha256=object_input.sha256,
+                    json_pointer="",
+                    sha256=ZERO,
+                )
+            )
+            second_args["unused_object"] = None
+            second_slots.append(
+                p7c0._hashed(
+                    ArgumentSlotV1(
+                        destination_json_pointer="/unused_object",
+                        value_binding=object_ref,
+                        sha256=ZERO,
+                    )
+                )
+            )
         second_step = p7c0._hashed(
             StepExecutionBindingV1(
                 step_id=legacy_plan.steps[1].step_id,
                 candidate_id=proposal.steps[1].candidate_id,
-                candidate_binding_sha256=candidate.binding_sha256,
-                action_id=action_id,
-                action_version=permission.action_version,
-                source_revision=candidate.source_revision,
-                argument_schema_sha256=schema.argument_schema_sha256,
-                result_schema_sha256=candidate.primitive.result_schema_sha256,
-                permission=permission,
-                permission_sha256=permission.permission_sha256,
+                candidate_binding_sha256=second_candidate.binding_sha256,
+                action_id=second_candidate.primitive.action_id,
+                action_version=second_permission.action_version,
+                source_revision=second_candidate.source_revision,
+                argument_schema_sha256=second_schema.argument_schema_sha256,
+                result_schema_sha256=second_schema.result_schema_sha256,
+                permission=second_permission,
+                permission_sha256=second_permission.permission_sha256,
                 depends_on=(first_step.step_id,),
                 target_skeleton="",
-                args_skeleton={"recent_limit": None, "sections": None},
-                argument_slots=tuple(
-                    sorted(
-                        (
-                            p7c0._hashed(
-                                ArgumentSlotV1(
-                                    destination_json_pointer="/recent_limit",
-                                    value_binding=upstream_ref,
-                                    sha256=ZERO,
-                                )
-                            ),
-                            p7c0._hashed(
-                                ArgumentSlotV1(
-                                    destination_json_pointer="/sections",
-                                    value_binding=object_ref,
-                                    sha256=ZERO,
-                                )
-                            ),
-                        ),
-                        key=lambda item: item.destination_json_pointer,
-                    )
-                ),
+                args_skeleton=second_args,
+                argument_slots=tuple(second_slots),
                 output_declarations=(second_output,),
                 sha256=ZERO,
             )
         )
-        plan_inputs = (object_input,)
+        plan_inputs = () if object_input is None else (object_input,)
         step_bindings = (first_step, second_step)
         final_producer = second_step
         final_output = second_output
-        p7c0._replace_inbound_attachments(
-            store,
-            {"legacy_plan": legacy_plan},
-            (attachment,),
-        )
+        if attachment is not None:
+            p7c0._replace_inbound_attachments(
+                store,
+                {"legacy_plan": legacy_plan},
+                (attachment,),
+            )
 
     final_reference = p7c0._hashed(
         StepOutputValueBindingV1(
@@ -457,6 +534,7 @@ class _Harness:
     database_path: Path
     store: GatewayStateStore
     objects: ContentAddressedObjectStore
+    facts: FactLedger
     loaded: Any
     capability_file_sha256: str
     private: Ed25519PrivateKey
@@ -467,8 +545,10 @@ class _Harness:
     plan: Any
     outer: Any
     object_grant: ObjectGrant | None
+    parent_claim: EffectClaim | None
 
     def close(self) -> None:
+        self.facts.close()
         self.objects.close()
         self.store.close()
 
@@ -511,6 +591,7 @@ def _authority(
         ),
         effect_store=harness.store if store is None else store,
         object_store=harness.objects if objects is None else objects,
+        fact_ledger=harness.facts,
     )
     authority.register(
         harness.outer if outer is None else outer,
@@ -530,12 +611,18 @@ def _open_harness(
     target: str = "",
     arguments: dict[str, Any] | None = None,
     with_object_grant: bool = False,
+    multi_step: bool = False,
+    coherent_parent_effect: bool = False,
     outer_expires_at_ms: int = 2_450,
+    authority_expires_at_ms: int = 2_490,
+    complete_parent_effect: bool = True,
+    plan_expires_at_ms: int = 2_500,
 ) -> _Harness:
     root = root.resolve()
     database_path = root / "gateway.sqlite3"
     store = GatewayStateStore.open(database_path, now_ms=1_000)
     objects = ContentAddressedObjectStore.open(root / "objects", now_ms=1_000)
+    facts = FactLedger.open(root / "facts.sqlite3", objects, now_ms=1_000)
     loaded = load_action_authority(CAPABILITY_MANIFEST, generated_at_ms=1_250)
     capability_file_sha256 = hashlib.sha256(
         CAPABILITY_MANIFEST.read_bytes()
@@ -549,6 +636,8 @@ def _open_harness(
         target=target,
         arguments=arguments,
         with_object_grant=with_object_grant,
+        multi_step=multi_step,
+        plan_expires_at_ms=plan_expires_at_ms,
     )
     private = Ed25519PrivateKey.generate()
     signer = TicketSigner("p7c1_execution_key", private)
@@ -588,12 +677,75 @@ def _open_harness(
         max_runtime_ms=30_000,
         max_tool_calls=10,
     )
+    parent_claim: EffectClaim | None = None
+    if multi_step or with_object_grant or coherent_parent_effect:
+        parent_intent_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.test.composition-parent.v1",
+                "executable_plan_id": plan.executable_plan_id,
+            }
+        )
+        run_sequence = derive_run_sequence(plan.request_id, plan.run_id)
+        parent_effect_id = derive_effect_identity(
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            run_sequence=run_sequence,
+            generation=plan.generation,
+            effect_kind="execution",
+            ordinal=0,
+            intent_sha256=parent_intent_sha256,
+        ).effect_id
+        parent_claim = EffectClaim(
+            effect_id=parent_effect_id,
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            run_sequence=run_sequence,
+            generation=plan.generation,
+            effect_kind="execution",
+            ordinal=0,
+            intent_sha256=parent_intent_sha256,
+            pipeline_version="tiangong.test.composition-parent.v1",
+            attempt=1,
+            claim_revision=1,
+            lease_epoch=1,
+            supersedes_claim_sha256=None,
+            owner_component_id="tiangong-total-gateway",
+            claimed_at_ms=1_600,
+            claim_sha256=ZERO,
+        ).with_computed_sha256()
+        outer = outer.model_copy(
+            update={
+                "payload": outer.payload.model_copy(
+                    update={
+                        "effect_id": parent_effect_id,
+                        "claim_sha256": parent_claim.claim_sha256,
+                        "claim_revision": parent_claim.claim_revision,
+                        "claim_lease_epoch": parent_claim.lease_epoch,
+                    }
+                )
+            }
+        )
+        store.claim_effect(parent_claim)
+        if complete_parent_effect:
+            store.mark_effect_started(parent_effect_id, started_at_ms=1_601)
+            store.complete_effect(
+                EffectResult(
+                    result_id="parent-result-p7c1",
+                    effect_id=parent_effect_id,
+                    status="SUCCEEDED",
+                    fact_id="parent-fact-p7c1",
+                    evidence_sha256="9" * 64,
+                    observed_at_ms=1_602,
+                    result_sha256=ZERO,
+                ).with_computed_sha256()
+            )
     outer = signer.sign_execution(outer.payload)
     shell = _Harness(
         root=root,
         database_path=database_path,
         store=store,
         objects=objects,
+        facts=facts,
         loaded=loaded,
         capability_file_sha256=capability_file_sha256,
         private=private,
@@ -604,8 +756,12 @@ def _open_harness(
         plan=plan,
         outer=outer,
         object_grant=object_grant,
+        parent_claim=parent_claim,
     )
-    shell.authority = _authority(shell)
+    shell.authority = _authority(
+        shell,
+        authority_expires_at_ms=authority_expires_at_ms,
+    )
     return shell
 
 

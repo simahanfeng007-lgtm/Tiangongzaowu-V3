@@ -25,6 +25,10 @@ class _FakeStore:
     def list_stale_non_terminal_effect_ids(self, *, stale_before_ms: int):
         return list(self.effects)
 
+    def list_effects_for_pipeline(self, _pipeline_version: str, *, states):
+        assert states == ("CLAIMED", "SIDE_EFFECT_STARTED")
+        return ()
+
     def get_effect(self, effect_id: str):
         return self.effects.get(effect_id)
 

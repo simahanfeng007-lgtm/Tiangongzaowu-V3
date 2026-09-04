@@ -55,11 +55,69 @@ from total_gateway.skill_selection import (
 from total_gateway.store import GatewayStateStore, StoreConflictError
 
 
+def _successful_omni_value(action_id: str, *, target: str = "") -> dict[str, Any]:
+    runtime: dict[str, Any] = {
+        "success": True,
+        "op_id": "p7d1-test",
+        "action": action_id,
+        "risk_level": "A0",
+        "elapsed_seconds": 0,
+    }
+    if action_id == "life.body.state.query":
+        runtime.update(
+            {
+                "ok": True,
+                "read_only": True,
+                "schema": "tiangong.gateway.self-body-state.v1",
+                "selected_sections": ["summary"],
+                "authority": {},
+                "life": {},
+                "runtime_body": {},
+                "state_sha256": "a" * 64,
+            }
+        )
+    elif action_id == "skill.get":
+        runtime.update(
+            {
+                "result": {
+                    "markdown": "# P7D.1 test",
+                    "selection": {},
+                    "activation": {},
+                },
+                "activation": {},
+                "evidence": {},
+            }
+        )
+    else:  # pragma: no cover - fixture only admits explicit actions above
+        raise AssertionError(f"no successful fixture result for {action_id}")
+    return {
+        "schema": "tiangong.v3.omni_body.v1",
+        "ok": True,
+        "zhuangtai": "wancheng",
+        "gongju": "omni_body",
+        "action": action_id,
+        "target": target,
+        "result": runtime,
+        "llm_brief": "P7D.1 fixture success",
+        "evidence": {},
+    }
+
+
 class _BackendProbe:
-    def __init__(self, store, facts, effect_id: str) -> None:
+    def __init__(
+        self,
+        store,
+        facts,
+        effect_id: str,
+        *,
+        action_id: str = "life.body.state.query",
+        target: str = "",
+    ) -> None:
         self._store = store
         self._facts = facts
         self._effect_id = effect_id
+        self._action_id = action_id
+        self._target = target
         self.calls = 0
         self.states_at_call: list[tuple[str, bool]] = []
 
@@ -78,7 +136,10 @@ class _BackendProbe:
         effect = self._store.get_effect(self._effect_id)
         batch = self._facts.get_batch_for_effect(self._effect_id)
         self.states_at_call.append((effect.state, batch is not None))
-        value = {"ok": True, "result": {"source": "p7d1-test"}}
+        value = _successful_omni_value(
+            self._action_id,
+            target=self._target,
+        )
         raw = json.dumps(
             value,
             ensure_ascii=False,
@@ -339,7 +400,11 @@ def _runtime_fixture(root: Path, **harness_kwargs: Any) -> Iterator[_RuntimeFixt
         baseline_nonce_count = _nonce_count(harness.store)
 
         backend = _BackendProbe(
-            harness.store, facts, record.request.prebound_effect_id
+            harness.store,
+            facts,
+            record.request.prebound_effect_id,
+            action_id=record.request.action_id,
+            target=record.request.target,
         )
         events: list[tuple[str, str, bool]] = []
 
@@ -423,7 +488,11 @@ def _reopen_runtime(
         harness.root / "facts.sqlite3", objects, now_ms=now_ms
     )
     backend = _BackendProbe(
-        store, facts, fixture.record.request.prebound_effect_id
+        store,
+        facts,
+        fixture.record.request.prebound_effect_id,
+        action_id=fixture.record.request.action_id,
+        target=fixture.record.request.target,
     )
     events: list[tuple[str, str, bool]] = []
 
@@ -734,7 +803,10 @@ def test_real_bound_embedded_route_runs_only_through_gateway_permit(
 
         def runner(payload: dict[str, Any]) -> dict[str, Any]:
             runner_calls.append(payload)
-            return {"ok": True, "result": {"source": "real-embedded-route"}}
+            return _successful_omni_value(
+                fixture.record.request.action_id,
+                target=fixture.record.request.target,
+            )
 
         backend = EmbeddedBackendRuntime.__new__(EmbeddedBackendRuntime)
         backend._lock = threading.RLock()
@@ -854,14 +926,18 @@ def test_exact_scope_plan_with_missing_or_expired_receipt_fails_closed(
             def __getattr__(self, name: str):
                 return getattr(store, name)
 
-            def get_composition_step_authorization(self, *args, **kwargs):
+            def list_composition_authorizations_for_plan(self, *args, **kwargs):
+                del args, kwargs
+                return ()
+
+            def get_current_composition_step_authorization(self, *args, **kwargs):
                 del args, kwargs
                 return None
 
         fixture.coordinator._store = _MissingReceiptStore()  # noqa: SLF001
         with pytest.raises(
             CompositionStepExecutionError,
-            match="composition.execution.authorization_missing",
+            match="composition.execution.continuation_authority_unavailable",
         ):
             fixture.coordinator.dispatch_next(
                 now_ms=1_700, **_exact_scope(fixture)
@@ -870,7 +946,7 @@ def test_exact_scope_plan_with_missing_or_expired_receipt_fails_closed(
         fixture.coordinator._store = store  # noqa: SLF001
         with pytest.raises(
             CompositionStepExecutionError,
-            match="composition.execution.authorization_not_live",
+            match="composition.execution.continuation_authority_unavailable",
         ):
             fixture.coordinator.dispatch_next(
                 now_ms=fixture.record.request.expires_at_ms + 1,
@@ -895,16 +971,15 @@ def test_exact_succeeded_effect_and_fact_survive_receipt_expiry(
         )
 
         assert first.status == "SUCCEEDED"
-        assert replay is not None
-        assert replay.status == "SUCCEEDED"
-        assert replay.effect_id == first.effect_id
-        assert replay.fact_ids == first.fact_ids
-        assert replay.recovered is True
+        # ``dispatch_next`` is a frontier operation.  Once the sole step is
+        # durably complete, the unified DAG projection reports no remaining
+        # work instead of replaying the old attempt as a synthetic outcome.
+        assert replay is None
         assert fixture.backend.calls == 1
 
 
 @pytest.mark.parametrize("status", ("FAILED_FINAL", "AMBIGUOUS"))
-def test_exact_terminal_failure_is_returned_and_never_hidden(
+def test_terminal_effect_without_exact_fact_requires_reconciliation(
     tmp_path: Path, status: str
 ) -> None:
     with _runtime_fixture(tmp_path / f"terminal-{status}") as fixture:
@@ -931,16 +1006,19 @@ def test_exact_terminal_failure_is_returned_and_never_hidden(
         ).with_computed_sha256()
         fixture.p7c.store.complete_effect(result)
 
-        outcome = fixture.coordinator.dispatch_next(
-            now_ms=fixture.record.request.expires_at_ms + 1,
-            **_exact_scope(fixture),
-        )
+        with pytest.raises(
+            CompositionStepExecutionError,
+            match="composition.execution.reconciliation_required",
+        ):
+            fixture.coordinator.dispatch_next(
+                now_ms=fixture.record.request.expires_at_ms + 1,
+                **_exact_scope(fixture),
+            )
 
-        assert outcome is not None
-        assert outcome.status == status
-        assert outcome.effect_id == claim.effect_id
-        assert outcome.fact_ids == (result.fact_id,)
-        assert outcome.recovered is True
+        current = fixture.p7c.store.get_effect(claim.effect_id)
+        assert current is not None
+        assert current.state == status
+        assert current.result == result
         assert fixture.backend.calls == 0
 
 
@@ -994,7 +1072,7 @@ def test_current_trust_rejection_is_handler_zero_effect_zero_nonce_zero(
         assert _nonce_count(fixture.p7c.store) == fixture.baseline_nonce_count
 
 
-def test_claimed_epoch_one_receipt_fails_closed_after_real_epoch_two_restart(
+def test_old_epoch_receipt_never_dispatches_without_continuation_authority(
     tmp_path: Path,
 ) -> None:
     with _runtime_fixture(tmp_path / "gateway-epoch-restart") as fixture:
@@ -1014,19 +1092,17 @@ def test_claimed_epoch_one_receipt_fails_closed_after_real_epoch_two_restart(
             gateway_epoch=2,
             trust_bundle=epoch_two_trust,
         )
-        outcome = fixture.coordinator.dispatch_next(
-            now_ms=1_800, **_exact_scope(fixture)
-        )
+        with pytest.raises(
+            CompositionStepExecutionError,
+            match="composition.execution.continuation_authority_unavailable",
+        ):
+            fixture.coordinator.dispatch_next(
+                now_ms=1_800, **_exact_scope(fixture)
+            )
 
-        assert outcome is not None
-        assert outcome.status == "FAILED_FINAL"
         effect = fixture.p7c.store.get_effect(claim.effect_id)
-        assert effect.state == "FAILED_FINAL"
-        assert effect.result is not None
-        assert (
-            effect.result.error_code
-            == "composition.execution.current_authority_mismatch"
-        )
+        assert effect.state == "CLAIMED"
+        assert effect.result is None
         assert pre_restart_backend.calls == 0
         assert fixture.backend.calls == 0
         assert _nonce_count(fixture.p7c.store) == fixture.baseline_nonce_count
@@ -1213,6 +1289,114 @@ def test_restart_never_replays_started_effect_and_recovers_only_exact_fact(
         assert fixture.p7c.store.get_effect(effect_id).state == outcomes[0].status
         assert fixture.coordinator.dispatch_next(now_ms=2_001) is None
         assert fixture.backend.calls == 0
+
+
+def test_scoped_dispatch_recovers_single_started_exact_fact_without_replay(
+    tmp_path: Path,
+) -> None:
+    with _runtime_fixture(tmp_path / "single-scoped-fact-recovery") as fixture:
+        pre_restart_backend = fixture.backend
+        fixture.coordinator._facts = _FactCrashProxy(  # noqa: SLF001
+            fixture.facts,
+            commit_first=True,
+        )
+        with pytest.raises(
+            CompositionStepExecutionError,
+            match="composition.execution.fact_commit_unknown",
+        ):
+            fixture.coordinator.dispatch_record(fixture.record, now_ms=1_700)
+
+        effect_id = fixture.record.request.prebound_effect_id
+        assert pre_restart_backend.calls == 1
+        assert fixture.p7c.store.get_effect(effect_id).state == (
+            "SIDE_EFFECT_STARTED"
+        )
+        assert fixture.facts.get_batch_for_effect(effect_id) is not None
+
+        _reopen_runtime(fixture, now_ms=2_000)
+        assert fixture.coordinator.dispatch_next(
+            now_ms=2_000,
+            **_exact_scope(fixture),
+        ) is None
+
+        recovered = fixture.p7c.store.get_effect(effect_id)
+        assert recovered is not None
+        assert recovered.state == "SUCCEEDED"
+        assert recovered.result is not None
+        assert recovered.result.fact_id in {
+            item.fact_id
+            for item in fixture.facts.get_batch_for_effect(effect_id).facts
+        }
+        assert pre_restart_backend.calls == 1
+        assert fixture.backend.calls == 0
+
+
+def test_live_scoped_recovery_does_not_touch_another_running_effect(
+    tmp_path: Path,
+) -> None:
+    with _runtime_fixture(tmp_path / "scoped-live-recovery") as fixture:
+        fixture.coordinator._facts = _FactCrashProxy(  # noqa: SLF001
+            fixture.facts, commit_first=True
+        )
+        with pytest.raises(
+            CompositionStepExecutionError,
+            match="composition.execution.fact_commit_unknown",
+        ):
+            fixture.coordinator.dispatch_record(fixture.record, now_ms=1_700)
+
+        target_effect_id = fixture.record.request.prebound_effect_id
+        target = fixture.p7c.store.get_effect(target_effect_id)
+        assert target is not None and target.state == "SIDE_EFFECT_STARTED"
+        assert fixture.facts.get_batch_for_effect(target_effect_id) is not None
+
+        unrelated_intent = canonical_sha256(
+            {"domain": "test.p7d2.concurrent-live-handler.v1"}
+        )
+        unrelated_identity = derive_effect_identity(
+            request_id=fixture.p7c.plan.request_id,
+            run_id=fixture.p7c.plan.run_id,
+            run_sequence=1,
+            generation=fixture.p7c.plan.generation,
+            effect_kind="execution",
+            ordinal=99,
+            intent_sha256=unrelated_intent,
+        )
+        unrelated_claim = EffectClaim(
+            effect_id=unrelated_identity.effect_id,
+            request_id=fixture.p7c.plan.request_id,
+            run_id=fixture.p7c.plan.run_id,
+            run_sequence=1,
+            generation=fixture.p7c.plan.generation,
+            effect_kind="execution",
+            ordinal=99,
+            intent_sha256=unrelated_intent,
+            pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
+            attempt=1,
+            claim_revision=1,
+            lease_epoch=1,
+            supersedes_claim_sha256=None,
+            owner_component_id="tiangong-backend",
+            claimed_at_ms=1_701,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        fixture.p7c.store.claim_effect(unrelated_claim)
+        fixture.p7c.store.mark_effect_started(
+            unrelated_claim.effect_id,
+            started_at_ms=1_702,
+        )
+
+        outcomes = fixture.coordinator.recover_started(
+            now_ms=1_800,
+            effect_ids=(target_effect_id,),
+        )
+
+        assert len(outcomes) == 1
+        assert outcomes[0].effect_id == target_effect_id
+        assert outcomes[0].status == "SUCCEEDED"
+        unrelated = fixture.p7c.store.get_effect(unrelated_claim.effect_id)
+        assert unrelated is not None
+        assert unrelated.state == "SIDE_EFFECT_STARTED"
+        assert unrelated.result is None
 
 
 @pytest.mark.parametrize(

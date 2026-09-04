@@ -16,29 +16,69 @@ class _FakeFact:
     fact_id: str
     fact_type: str
     effect_id: str
+    request_id: str
+    run_id: str
+    generation: int
+    ticket_id: str = "ticket_x"
+    action_id: str = "test.read"
+    action_version: str = "1"
+    payload_sha256: str = "b" * 64
+
+    def has_valid_sha256(self) -> bool:
+        return True
 
 
 @dataclass
 class _FakeResult:
     effect_id: str
     status: str
+    request_id: str
+    run_id: str
+    generation: int
+    ticket_id: str = "ticket_x"
+    action_id: str = "test.read"
+    action_version: str = "1"
+    result_payload_sha256: str = "b" * 64
+    fact_ids: tuple[str, ...] = ("fact_x",)
 
 
 @dataclass
 class _FakeBatch:
     result: _FakeResult
+    facts: tuple[_FakeFact, ...]
 
 
 class _FakeFactLedger:
     def __init__(self, effect_id: str, status: str) -> None:
-        self._fact = _FakeFact(fact_id="fact_x", fact_type="execution.succeeded", effect_id=effect_id)
-        self._batch = _FakeBatch(_FakeResult(effect_id=effect_id, status=status))
+        self._fact = _FakeFact(
+            fact_id="fact_x",
+            fact_type="execution.succeeded",
+            effect_id=effect_id,
+            request_id="req_" + "1" * 64,
+            run_id="run_" + "2" * 64,
+            generation=1,
+        )
+        self._batch = _FakeBatch(
+            _FakeResult(
+                effect_id=effect_id,
+                status=status,
+                request_id=self._fact.request_id,
+                run_id=self._fact.run_id,
+                generation=self._fact.generation,
+            ),
+            (self._fact,),
+        )
 
     def list_request_facts(self, request_id, *, run_id, generation):
         return (self._fact,)
 
     def get_batch_for_fact(self, fact_id: str):
         assert fact_id == self._fact.fact_id
+        return self._batch
+
+    def get_batch_for_effect(self, effect_id: str, *, verify_payload: bool = True):
+        assert effect_id == self._fact.effect_id
+        assert verify_payload is True
         return self._batch
 
 
