@@ -58,12 +58,13 @@ async function drainGateFully(gate, { isSettled = null, timeoutMs = 2_000 } = {}
 
 // 等待 gate 积累至少 count 条消息（宿主的 open/stat/read 是异步 I/O，
 // 全量运行时事件轮时序不可假设，禁止用固定 flush 轮数赌时序）。
-async function waitForGate(gate, count, rounds = 200) {
-  for (let i = 0; i < rounds; i += 1) {
+async function waitForGate(gate, count, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (gate.pending >= count) return;
     await new Promise((resolve) => setImmediate(resolve));
   }
-  throw new Error(`gate 未在预期内积累 ${count} 条消息（当前 ${gate.pending}）`);
+  throw new Error(`gate 未在 ${timeoutMs}ms 内积累 ${count} 条消息（当前 ${gate.pending}）`);
 }
 
 // 错误一律按 code 断言（message 是诊断文本，不是契约）。
