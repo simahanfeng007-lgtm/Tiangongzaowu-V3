@@ -23,7 +23,12 @@ from contracts import (
     derive_request_identity,
     derive_run_identity,
 )
-from total_gateway.store import GatewayStateStore, StoreConflictError, StoreNotFoundError
+from total_gateway.store import (
+    STORE_SCHEMA_VERSION,
+    GatewayStateStore,
+    StoreConflictError,
+    StoreNotFoundError,
+)
 
 HASH_B = "b" * 64
 
@@ -303,7 +308,10 @@ class WriteEvidenceV2StoreTests(unittest.TestCase):
     def test_schema_v24_and_zero_state_impact(self) -> None:
         v2 = self._v2()
         self.store.put_write_evidence_v2(v2, recorded_at_ms=2_000)
-        self.assertEqual(self.store.health_check(now_ms=2_100).schema_version, 30)
+        self.assertEqual(
+            self.store.health_check(now_ms=2_100).schema_version,
+            STORE_SCHEMA_VERSION,
+        )
         connection = sqlite3.connect(self.store.path)
         try:
             decisions = connection.execute(

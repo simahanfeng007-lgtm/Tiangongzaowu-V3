@@ -198,8 +198,36 @@ src/total_gateway/store.py migration v30
 
 上述新增面只负责把 P7A/P7B.1 的 A0-only eligibility registration 与既有
 RegistrySnapshot、VerificationPlan、VerificationPlanActivation 在同一个
-GatewayStateStore UoW 中原子持久化，并负责重启恢复、过期回收和完整性扫描。
+GatewayStateStore UoW 中原子持久化，并负责重启恢复、将到期注册原地标为
+EXPIRED 并排除活动恢复、保留历史行和完整性扫描。
 
 它不改变 verifier PASS 语义、VerificationReadiness、Repair Policy 或
 CompletionGate；不签发 PolicyDecision、ExecutionTicket、CapabilityGrant；
 不调用 Runtime。
+
+P7C.0｜Executable Composition Plan Persistence（Verification Plane 1.2）
+----------------------------------------------------------------------
+
+src/total_gateway/composition_executable_plan.py
+src/total_gateway/composition_executable_plan_store.py
+src/total_gateway/store.py migration v31
+
+上述新增面以 companion artifact 完整持久化 A0-only executable plan：每步 action、
+target、args skeleton、typed STEP_OUTPUT binding、declared output，以及 Registry、
+Manifest、P19、lineage 锚点。它与 P7B.2 registration 及既有 P19 bundle 在同一个
+GatewayStateStore UoW 中原子落盘，并负责重启恢复、过期排除、历史留存与完整性扫描。
+
+parent marker=0 的 v30/独立 P7B registration 没有 companion 时保持 audit-only /
+non-executable；schema trigger 禁止 marker 从 1 回退为 0，marker=1 缺 companion
+是 Store corruption。companion 本身是 append-only authority：schema-fingerprinted
+identity/UPDATE/DELETE guards 禁止 INSERT OR REPLACE、seal 后改写或删除，即使全部
+内容 hash 已重新计算。ObjectGrant 必须精确
+绑定 AVAILABLE inbound attachment，并在既有 object_owners 中建立 request-wide
+REQUEST owner；owner 留存期不得短于引用它的历史 companion，不能仅因请求终态
+而删除；Store-wide object identity 与 owner identity 亦由 insert/replace/update/delete
+guards 保持不可重绑。物理 ObjectStore 字节仍须 P7C.1 派发前验证。
+
+P7C.0 只冻结 schema/path-policy digest 与显式数据流，不证明 schema-body
+兼容，也不把 permission.path_policy 当成现有已执行的路径授权。禁止通过摘要猜测
+或反推执行参数。P7C.0 不签发 PolicyDecision、ExecutionTicket、CapabilityGrant，
+不调用 Runtime，不改变 P19 或 CompletionGate 的唯一权威。

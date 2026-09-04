@@ -90,13 +90,20 @@ from .composition_activation_store import (
     computed_limited_activation_lifecycle_sha256,
     limited_activation_record_from_row,
 )
+from .composition_executable_plan_store import (
+    MAX_STORED_EXECUTABLE_PLAN_JSON_BYTES,
+    ExecutableCompositionBundleRegistration,
+    ExecutableCompositionPlanStoreRecord,
+    canonical_executable_plan_json,
+    executable_plan_record_from_row,
+)
 
 if TYPE_CHECKING:
     from .completion_gate import CompletionDecision
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 30
+STORE_SCHEMA_VERSION = 31
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN = object()
 _MIGRATION_V1_ID = "gateway-store-v1"
@@ -1966,6 +1973,235 @@ _MIGRATION_V30_STATEMENTS = (
     """,
 )
 
+
+_MIGRATION_V31_ID = "gateway-composition-executable-plan-v31"
+_MIGRATION_V31_STATEMENTS = (
+    """
+    ALTER TABLE composition_activation_registration
+    ADD COLUMN executable_plan_required INTEGER NOT NULL DEFAULT 0
+        CHECK (executable_plan_required IN (0, 1))
+    """,
+    f"""
+    CREATE TABLE composition_executable_plan (
+        executable_plan_id TEXT NOT NULL PRIMARY KEY
+            CHECK (
+                length(executable_plan_id) = 68
+                AND substr(executable_plan_id, 1, 4) = 'ecp_'
+                AND substr(executable_plan_id, 5) NOT GLOB '*[^0-9a-f]*'
+            ),
+        registration_id TEXT NOT NULL UNIQUE,
+        registration_sha256 TEXT NOT NULL
+            CHECK (length(registration_sha256) = 64
+                   AND registration_sha256 NOT GLOB '*[^0-9a-f]*'),
+        composition_activation_id TEXT NOT NULL UNIQUE,
+        composition_activation_sha256 TEXT NOT NULL
+            CHECK (length(composition_activation_sha256) = 64
+                   AND composition_activation_sha256 NOT GLOB '*[^0-9a-f]*'),
+        composition_plan_id TEXT NOT NULL UNIQUE,
+        composition_plan_sha256 TEXT NOT NULL
+            CHECK (length(composition_plan_sha256) = 64
+                   AND composition_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        execution_bindings_sha256 TEXT NOT NULL
+            CHECK (length(execution_bindings_sha256) = 64
+                   AND execution_bindings_sha256 NOT GLOB '*[^0-9a-f]*'),
+        action_registry_sha256 TEXT NOT NULL
+            CHECK (length(action_registry_sha256) = 64
+                   AND action_registry_sha256 NOT GLOB '*[^0-9a-f]*'),
+        verification_registry_sha256 TEXT NOT NULL
+            CHECK (length(verification_registry_sha256) = 64
+                   AND verification_registry_sha256 NOT GLOB '*[^0-9a-f]*'),
+        verification_plan_id TEXT NOT NULL,
+        verification_plan_sha256 TEXT NOT NULL
+            CHECK (length(verification_plan_sha256) = 64
+                   AND verification_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        principal_scope_hash TEXT NOT NULL
+            CHECK (length(principal_scope_hash) = 64
+                   AND principal_scope_hash NOT GLOB '*[^0-9a-f]*'),
+        world_state_sha256 TEXT NOT NULL
+            CHECK (length(world_state_sha256) = 64
+                   AND world_state_sha256 NOT GLOB '*[^0-9a-f]*'),
+        source_manifest_sha256 TEXT NOT NULL
+            CHECK (length(source_manifest_sha256) = 64
+                   AND source_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+        capability_manifest_sha256 TEXT NOT NULL
+            CHECK (length(capability_manifest_sha256) = 64
+                   AND capability_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+        workspace_id TEXT NOT NULL,
+        workspace_scope_hash TEXT NOT NULL
+            CHECK (length(workspace_scope_hash) = 64
+                   AND workspace_scope_hash NOT GLOB '*[^0-9a-f]*'),
+        sealed_at_ms INTEGER NOT NULL CHECK (sealed_at_ms >= 0),
+        expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms > sealed_at_ms),
+        step_count INTEGER NOT NULL CHECK (step_count >= 1),
+        executable_plan_json TEXT NOT NULL
+            CHECK (
+                json_valid(executable_plan_json)
+                AND length(CAST(executable_plan_json AS BLOB))
+                    <= {MAX_STORED_EXECUTABLE_PLAN_JSON_BYTES}
+            ),
+        executable_plan_sha256 TEXT NOT NULL UNIQUE
+            CHECK (length(executable_plan_sha256) = 64
+                   AND executable_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        FOREIGN KEY (registration_id)
+            REFERENCES composition_activation_registration(registration_id),
+        FOREIGN KEY (verification_plan_id)
+            REFERENCES verification_plan(verification_plan_id)
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX composition_executable_plan_lineage_idx
+        ON composition_executable_plan (request_id, run_id, generation)
+    """,
+    """
+    CREATE INDEX composition_executable_plan_expiry_idx
+        ON composition_executable_plan (expires_at_ms, executable_plan_id)
+    """,
+    """
+    CREATE TRIGGER composition_executable_plan_identity_insert_guard
+    BEFORE INSERT ON composition_executable_plan
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM composition_executable_plan
+        WHERE executable_plan_id = NEW.executable_plan_id
+           OR registration_id = NEW.registration_id
+           OR composition_activation_id = NEW.composition_activation_id
+           OR composition_plan_id = NEW.composition_plan_id
+           OR executable_plan_sha256 = NEW.executable_plan_sha256
+           OR (
+               request_id = NEW.request_id
+               AND run_id = NEW.run_id
+               AND generation = NEW.generation
+           )
+    )
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition executable plan is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER composition_executable_plan_immutable_update_guard
+    BEFORE UPDATE ON composition_executable_plan
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition executable plan is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER composition_executable_plan_immutable_delete_guard
+    BEFORE DELETE ON composition_executable_plan
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition executable plan is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER composition_activation_executable_plan_required_monotonic
+    BEFORE UPDATE OF executable_plan_required
+    ON composition_activation_registration
+    FOR EACH ROW
+    WHEN OLD.executable_plan_required = 1
+         AND NEW.executable_plan_required != 1
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition executable-plan requirement cannot be cleared'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER object_owners_object_sha256_insert_guard
+    BEFORE INSERT ON object_owners
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM object_owners
+        WHERE object_id = NEW.object_id
+          AND object_sha256 != NEW.object_sha256
+    )
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'object identity cannot be rebound to different content'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER object_owners_identity_insert_guard
+    BEFORE INSERT ON object_owners
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM object_owners
+        WHERE object_id = NEW.object_id
+          AND owner_kind = NEW.owner_kind
+          AND owner_id = NEW.owner_id
+          AND object_sha256 = NEW.object_sha256
+    ) OR EXISTS (
+        SELECT 1 FROM object_owners
+        WHERE ownership_sha256 = NEW.ownership_sha256
+    )
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'object ownership identity is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER object_owners_immutable_update_guard
+    BEFORE UPDATE ON object_owners
+    FOR EACH ROW
+    WHEN NEW.object_id != OLD.object_id
+         OR NEW.object_sha256 != OLD.object_sha256
+         OR NEW.owner_kind != OLD.owner_kind
+         OR NEW.owner_id != OLD.owner_id
+         OR NEW.request_id != OLD.request_id
+         OR NEW.run_id != OLD.run_id
+         OR NEW.generation != OLD.generation
+         OR NEW.created_at_ms != OLD.created_at_ms
+         OR NEW.ownership_sha256 != OLD.ownership_sha256
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'object ownership identity is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER object_owners_immutable_delete_guard
+    BEFORE DELETE ON object_owners
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'object ownership identity is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER object_owners_request_owner_insert_guard
+    BEFORE INSERT ON object_owners
+    FOR EACH ROW
+    WHEN NEW.owner_kind = 'REQUEST'
+         AND NEW.owner_id != NEW.request_id
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'request object ownership must use the request identity'
+        );
+    END
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -1997,6 +2233,7 @@ _MIGRATIONS = (
     (28, _MIGRATION_V28_ID, _MIGRATION_V28_STATEMENTS),
     (29, _MIGRATION_V29_ID, _MIGRATION_V29_STATEMENTS),
     (30, _MIGRATION_V30_ID, _MIGRATION_V30_STATEMENTS),
+    (31, _MIGRATION_V31_ID, _MIGRATION_V31_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -2329,20 +2566,24 @@ def _validate_metadata(connection: sqlite3.Connection) -> None:
 def _migrate(connection: sqlite3.Connection, *, applied_at_ms: int) -> None:
     if applied_at_ms < 0:
         raise ValueError("migration time is invalid")
-    application_id = connection.execute("PRAGMA application_id").fetchone()[0]
-    user_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    objects = connection.execute(
-        "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
-    ).fetchall()
-    if application_id not in {0, APPLICATION_ID}:
-        raise StoreMigrationError("database belongs to another application")
-    if user_version > STORE_SCHEMA_VERSION:
-        raise StoreMigrationError("gateway store is newer than this binary")
-    if user_version == 0:
-        if objects:
-            raise StoreMigrationError("unversioned gateway store is not empty")
-        connection.execute("BEGIN EXCLUSIVE")
-        try:
+    # Serialize the inspection as well as the writes. If two processes open an
+    # older database together, reading user_version before taking the lock lets
+    # both select the same migration tail and the second process then attempts
+    # to replay DDL that the first process already committed.
+    connection.execute("BEGIN EXCLUSIVE")
+    try:
+        application_id = connection.execute("PRAGMA application_id").fetchone()[0]
+        user_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        objects = connection.execute(
+            "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        if application_id not in {0, APPLICATION_ID}:
+            raise StoreMigrationError("database belongs to another application")
+        if user_version > STORE_SCHEMA_VERSION:
+            raise StoreMigrationError("gateway store is newer than this binary")
+        if user_version == 0:
+            if objects:
+                raise StoreMigrationError("unversioned gateway store is not empty")
             for version, migration_id, statements in _MIGRATIONS:
                 for statement in statements:
                     connection.execute(statement)
@@ -2356,38 +2597,41 @@ def _migrate(connection: sqlite3.Connection, *, applied_at_ms: int) -> None:
                 )
             connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
             connection.execute(f"PRAGMA user_version = {STORE_SCHEMA_VERSION}")
-            connection.execute("COMMIT")
-        except Exception:
-            connection.execute("ROLLBACK")
-            raise
-    elif user_version < STORE_SCHEMA_VERSION:
-        existing = connection.execute(
-            "SELECT version, migration_id, migration_sha256 FROM schema_migrations ORDER BY version"
-        ).fetchall()
-        if len(existing) != user_version:
-            raise StoreMigrationError("gateway store prior migration history is incomplete")
-        for row, (version, migration_id, _) in zip(
-            existing,
-            _MIGRATIONS[:user_version],
-            strict=True,
-        ):
-            if (
-                row["version"] != version
-                or row["migration_id"] != migration_id
-                or row["migration_sha256"] != _MIGRATION_DIGESTS[version]
+        elif user_version < STORE_SCHEMA_VERSION:
+            existing = connection.execute(
+                "SELECT version, migration_id, migration_sha256 "
+                "FROM schema_migrations ORDER BY version"
+            ).fetchall()
+            if len(existing) != user_version:
+                raise StoreMigrationError(
+                    "gateway store prior migration history is incomplete"
+                )
+            for row, (version, migration_id, _) in zip(
+                existing,
+                _MIGRATIONS[:user_version],
+                strict=True,
             ):
-                raise StoreMigrationError("gateway store prior migration record is invalid")
-        expected_prior = sqlite3.connect(":memory:", isolation_level=None)
-        try:
-            for _, _, statements in _MIGRATIONS[:user_version]:
-                for statement in statements:
-                    expected_prior.execute(statement)
-            if _schema_fingerprint(connection) != _schema_fingerprint(expected_prior):
-                raise StoreMigrationError("gateway store prior schema fingerprint is invalid")
-        finally:
-            expected_prior.close()
-        connection.execute("BEGIN EXCLUSIVE")
-        try:
+                if (
+                    row["version"] != version
+                    or row["migration_id"] != migration_id
+                    or row["migration_sha256"] != _MIGRATION_DIGESTS[version]
+                ):
+                    raise StoreMigrationError(
+                        "gateway store prior migration record is invalid"
+                    )
+            expected_prior = sqlite3.connect(":memory:", isolation_level=None)
+            try:
+                for _, _, statements in _MIGRATIONS[:user_version]:
+                    for statement in statements:
+                        expected_prior.execute(statement)
+                if _schema_fingerprint(connection) != _schema_fingerprint(
+                    expected_prior
+                ):
+                    raise StoreMigrationError(
+                        "gateway store prior schema fingerprint is invalid"
+                    )
+            finally:
+                expected_prior.close()
             for version, migration_id, statements in _MIGRATIONS[user_version:]:
                 for statement in statements:
                     connection.execute(statement)
@@ -2400,11 +2644,11 @@ def _migrate(connection: sqlite3.Connection, *, applied_at_ms: int) -> None:
                     (version, migration_id, _MIGRATION_DIGESTS[version], applied_at_ms),
                 )
                 connection.execute(f"PRAGMA user_version = {version}")
-            connection.execute("COMMIT")
-        except Exception:
-            connection.execute("ROLLBACK")
-            raise
-    _validate_metadata(connection)
+        _validate_metadata(connection)
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
 
 
 def _snapshot_payload(snapshot: StateSnapshot) -> tuple[str, str]:
@@ -2726,6 +2970,28 @@ def _object_ownership_sha256(
     )
 
 
+def _assert_object_content_identity_locked(
+    connection: sqlite3.Connection,
+    *,
+    object_id: str,
+    object_sha256: str,
+    mismatch_error: type[StoreError],
+) -> None:
+    """Enforce the Store-wide immutable object_id -> content hash binding."""
+
+    rows = connection.execute(
+        "SELECT DISTINCT object_sha256 FROM object_owners WHERE object_id = ? "
+        "ORDER BY object_sha256",
+        (object_id,),
+    ).fetchall()
+    if len(rows) > 1:
+        raise StoreCorruptionError(
+            "object ownership identity has multiple content hashes"
+        )
+    if rows and rows[0]["object_sha256"] != object_sha256:
+        raise mismatch_error("object identity is already bound to different content")
+
+
 def _object_owner_from_row(
     row: sqlite3.Row, *, created_by_this_call: bool = False, duplicate: bool = False
 ) -> ObjectOwnerRecord:
@@ -2760,6 +3026,12 @@ def _ensure_outbox_object_owner_locked(
     connection: sqlite3.Connection,
     intent: OutboxIntent,
 ) -> None:
+    _assert_object_content_identity_locked(
+        connection,
+        object_id=intent.payload_object_id,
+        object_sha256=intent.payload_sha256,
+        mismatch_error=StoreConflictError,
+    )
     digest = _object_ownership_sha256(
         object_id=intent.payload_object_id,
         object_sha256=intent.payload_sha256,
@@ -3436,10 +3708,22 @@ def _verify_life_continuity_rows(connection: sqlite3.Connection) -> None:
     for capsule_id, (row, _) in capsules.items():
         if (row["status"] == "SUPERSEDED") != (capsule_id in referenced):
             raise StoreCorruptionError("continuity capsule status is not chain-derived")
+    divergent_object = connection.execute(
+        "SELECT object_id FROM object_owners GROUP BY object_id "
+        "HAVING count(DISTINCT object_sha256) > 1 LIMIT 1"
+    ).fetchone()
+    if divergent_object is not None:
+        raise StoreCorruptionError(
+            "object ownership identity has multiple content hashes"
+        )
     for row in connection.execute(
         "SELECT * FROM object_owners ORDER BY object_id, owner_kind, owner_id"
     ).fetchall():
         owner = _object_owner_from_row(row)
+        if owner.owner_kind == "REQUEST" and owner.owner_id != owner.request_id:
+            raise StoreCorruptionError(
+                "request object owner does not use the request identity"
+            )
         journal = connection.execute(
             "SELECT request_id FROM request_journal WHERE request_id = ?",
             (owner.request_id,),
@@ -3939,6 +4223,443 @@ def _verify_limited_activation_registration_rows(
             raise StoreCorruptionError(
                 "limited activation P19 activation binding is invalid"
             )
+
+
+def _verify_executable_composition_plan_input_authorities(
+    connection: sqlite3.Connection,
+    executable,
+    *,
+    create_missing_request_owners: bool,
+) -> None:
+    """Bind every object input to the accepted envelope and GC owner ledger."""
+
+    grants = tuple(
+        item.object_grant
+        for item in executable.plan_inputs
+        if item.input_kind == "OBJECT_GRANT"
+    )
+    if not grants:
+        return
+    if any(grant is None for grant in grants):
+        raise StoreCorruptionError(
+            "executable composition plan contains an empty object grant"
+        )
+    failure = (
+        StoreConflictError
+        if create_missing_request_owners
+        else StoreCorruptionError
+    )
+    inbound_row = connection.execute(
+        "SELECT * FROM request_inbound_payload WHERE request_id = ?",
+        (executable.request_id,),
+    ).fetchone()
+    if inbound_row is None or inbound_row["availability"] != "AVAILABLE":
+        raise failure(
+            "executable object inputs require an available inbound envelope"
+        )
+    envelope = _parse_inbound_envelope(
+        inbound_row["envelope_json"], inbound_row["envelope_sha256"]
+    )
+    if executable.principal_scope_hash != envelope.principal_scope_hash:
+        raise failure(
+            "executable object inputs crossed the inbound principal scope"
+        )
+    attachments = {
+        (item.object_id, item.revision): item for item in envelope.attachments
+    }
+    if len(attachments) != len(envelope.attachments):
+        raise StoreCorruptionError("inbound attachment revisions are duplicated")
+    for optional_grant in grants:
+        if optional_grant is None:  # pragma: no cover - defended above
+            raise StoreCorruptionError(
+                "executable composition plan contains an empty object grant"
+            )
+        grant = optional_grant
+        attachment = attachments.get((grant.object_id, grant.revision))
+        if attachment is None or (
+            grant.object_id,
+            grant.revision,
+            grant.sha256,
+            grant.size_bytes,
+            grant.mime,
+            grant.tenant_id,
+            grant.link_account_id,
+            grant.conversation_scope_hash,
+        ) != (
+            attachment.object_id,
+            attachment.revision,
+            attachment.sha256,
+            attachment.size_bytes,
+            attachment.mime,
+            attachment.tenant_id,
+            attachment.link_account_id,
+            attachment.conversation_scope_hash,
+        ):
+            raise failure(
+                "executable object input is not an exact accepted attachment"
+            )
+
+        _assert_object_content_identity_locked(
+            connection,
+            object_id=grant.object_id,
+            object_sha256=grant.sha256,
+            mismatch_error=failure,
+        )
+        owner_rows = connection.execute(
+            "SELECT * FROM object_owners "
+            "WHERE object_id = ? AND owner_kind = 'REQUEST' "
+            "AND request_id = ? ORDER BY owner_id",
+            (grant.object_id, executable.request_id),
+        ).fetchall()
+        owners = tuple(_object_owner_from_row(row) for row in owner_rows)
+        if any(candidate.object_sha256 != grant.sha256 for candidate in owners):
+            raise failure("executable object input request owner is incompatible")
+        if len(owners) > 1 or any(
+            candidate.owner_id != executable.request_id for candidate in owners
+        ):
+            raise failure("executable object input request owner is not canonical")
+        owner = owners[0] if owners else None
+        if owner is None and create_missing_request_owners:
+            owner_id = executable.request_id
+            ownership_sha256 = _object_ownership_sha256(
+                object_id=grant.object_id,
+                object_sha256=grant.sha256,
+                owner_kind="REQUEST",
+                owner_id=owner_id,
+                request_id=executable.request_id,
+                run_id=executable.run_id,
+                generation=executable.generation,
+                created_at_ms=executable.sealed_at_ms,
+            )
+            connection.execute(
+                """
+                INSERT INTO object_owners(
+                    object_id, object_sha256, owner_kind, owner_id,
+                    request_id, run_id, generation, created_at_ms,
+                    ownership_sha256
+                ) VALUES (?, ?, 'REQUEST', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    grant.object_id,
+                    grant.sha256,
+                    owner_id,
+                    executable.request_id,
+                    executable.run_id,
+                    executable.generation,
+                    executable.sealed_at_ms,
+                    ownership_sha256,
+                ),
+            )
+            owner_row = connection.execute(
+                "SELECT * FROM object_owners "
+                "WHERE object_id = ? AND owner_kind = 'REQUEST' AND owner_id = ?",
+                (grant.object_id, owner_id),
+            ).fetchone()
+            owner = _object_owner_from_row(owner_row)
+        if owner is None:
+            raise failure("executable object input is missing its request owner")
+        if (
+            owner.object_sha256,
+            owner.request_id,
+        ) != (
+            grant.sha256,
+            executable.request_id,
+        ):
+            raise failure("executable object input request owner is incompatible")
+
+
+def _verify_executable_composition_plan_authorities(
+    connection: sqlite3.Connection,
+    record: ExecutableCompositionPlanStoreRecord,
+) -> LimitedActivationStoreRecord:
+    """Cross-check one v31 companion against its existing Store authorities."""
+
+    from contracts.verification import VerificationPlan
+
+    executable = record.executable_plan
+    registration_row = connection.execute(
+        "SELECT * FROM composition_activation_registration "
+        "WHERE registration_id = ?",
+        (executable.registration_id,),
+    ).fetchone()
+    if registration_row is None:
+        raise StoreCorruptionError(
+            "executable composition plan references a missing registration"
+        )
+    if registration_row["executable_plan_required"] != 1:
+        raise StoreCorruptionError(
+            "executable composition plan parent does not require its companion"
+        )
+    try:
+        registration_record = limited_activation_record_from_row(
+            registration_row
+        )
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "executable composition plan registration is invalid"
+        ) from exc
+    registration = registration_record.registration
+
+    executable_projection = (
+        executable.registration_id,
+        executable.registration_sha256,
+        executable.composition_activation_id,
+        executable.composition_activation_sha256,
+        executable.composition_plan_id,
+        executable.composition_plan_sha256,
+        executable.action_registry_sha256,
+        executable.verification_registry_sha256,
+        executable.verification_plan_id,
+        executable.verification_plan_sha256,
+        executable.verification_plan_activation_id,
+        executable.request_id,
+        executable.run_id,
+        executable.generation,
+        executable.principal_scope_hash,
+        executable.world_state_sha256,
+        executable.source_manifest_sha256,
+        executable.capability_manifest_sha256,
+        executable.sealed_at_ms,
+        executable.expires_at_ms,
+    )
+    registration_projection = (
+        registration.registration_id,
+        registration.registration_sha256,
+        registration.composition_activation_id,
+        registration.composition_activation_sha256,
+        registration.composition_plan_id,
+        registration.composition_plan_sha256,
+        registration.action_registry_sha256,
+        registration.verification_registry_sha256,
+        registration.verification_plan_id,
+        registration.verification_plan_sha256,
+        registration_record.verification_plan_activation_id,
+        registration.request_id,
+        registration.run_id,
+        registration.generation,
+        registration.principal_scope_hash,
+        registration.world_state_sha256,
+        registration.source_manifest_sha256,
+        registration.capability_manifest_sha256,
+        registration.registered_at_ms,
+        registration.expires_at_ms,
+    )
+    registered_actions = tuple(
+        zip(
+            registration.allowed_action_ids,
+            registration.allowed_action_versions,
+            strict=True,
+        )
+    )
+    executable_actions = tuple(
+        sorted(
+            {
+                (binding.action_id, binding.action_version)
+                for binding in executable.step_bindings
+            }
+        )
+    )
+    if (
+        executable_projection != registration_projection
+        or executable_actions != registered_actions
+    ):
+        raise StoreCorruptionError(
+            "executable composition plan crossed its registration authority"
+        )
+
+    _verify_executable_composition_plan_input_authorities(
+        connection,
+        executable,
+        create_missing_request_owners=False,
+    )
+
+    registry_row = connection.execute(
+        "SELECT * FROM verification_registry_snapshot "
+        "WHERE snapshot_sha256 = ?",
+        (executable.verification_registry_sha256,),
+    ).fetchone()
+    if registry_row is None:
+        raise StoreCorruptionError(
+            "executable composition plan references a missing P19 registry"
+        )
+    try:
+        registry = RegistrySnapshot.model_validate_json(
+            registry_row["snapshot_json"], strict=True
+        )
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "executable composition plan P19 registry is invalid"
+        ) from exc
+    if (
+        not registry.has_valid_identity()
+        or registry.snapshot_sha256
+        != executable.verification_registry_sha256
+        or registry_row["registry_snapshot_id"]
+        != registry.registry_snapshot_id
+    ):
+        raise StoreCorruptionError(
+            "executable composition plan P19 registry binding is invalid"
+        )
+
+    verification_plan_row = connection.execute(
+        "SELECT * FROM verification_plan WHERE verification_plan_id = ?",
+        (executable.verification_plan_id,),
+    ).fetchone()
+    if verification_plan_row is None:
+        raise StoreCorruptionError(
+            "executable composition plan references a missing P19 plan"
+        )
+    try:
+        verification_plan = VerificationPlan.model_validate_json(
+            verification_plan_row["plan_json"], strict=True
+        )
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "executable composition plan P19 plan is invalid"
+        ) from exc
+    if (
+        not verification_plan.has_valid_identity()
+        or verification_plan.verification_plan_id
+        != executable.verification_plan_id
+        or verification_plan.plan_sha256
+        != executable.verification_plan_sha256
+        or verification_plan.request_id != executable.request_id
+        or verification_plan.run_id != executable.run_id
+        or verification_plan.generation != executable.generation
+        or verification_plan.registry_snapshot_sha256
+        != executable.verification_registry_sha256
+        or verification_plan_row["plan_sha256"]
+        != executable.verification_plan_sha256
+    ):
+        raise StoreCorruptionError(
+            "executable composition plan P19 plan binding is invalid"
+        )
+
+    activation_row = connection.execute(
+        "SELECT * FROM verification_plan_activation WHERE activation_id = ?",
+        (executable.verification_plan_activation_id,),
+    ).fetchone()
+    if activation_row is None:
+        raise StoreCorruptionError(
+            "executable composition plan references a missing P19 activation"
+        )
+    expected_activation_sha256 = canonical_sha256(
+        {
+            "domain": "tiangong.verification-plan-activation.v1",
+            "request_id": activation_row["request_id"],
+            "run_id": activation_row["run_id"],
+            "generation": activation_row["generation"],
+            "verification_plan_id": activation_row["verification_plan_id"],
+            "verification_plan_sha256": activation_row[
+                "verification_plan_sha256"
+            ],
+            "registry_snapshot_sha256": activation_row[
+                "registry_snapshot_sha256"
+            ],
+        }
+    )
+    expected_activation_id = "vpa_" + canonical_sha256(
+        {
+            "domain": "tiangong.verification-plan-activation.v1.id",
+            "activation_sha256": expected_activation_sha256,
+        }
+    )
+    if (
+        activation_row["activation_id"] != expected_activation_id
+        or executable.verification_plan_activation_id
+        != expected_activation_id
+        or activation_row["request_id"] != executable.request_id
+        or activation_row["run_id"] != executable.run_id
+        or activation_row["generation"] != executable.generation
+        or activation_row["verification_plan_id"]
+        != executable.verification_plan_id
+        or activation_row["verification_plan_sha256"]
+        != executable.verification_plan_sha256
+        or activation_row["registry_snapshot_sha256"]
+        != executable.verification_registry_sha256
+        or activation_row["activation_sha256"]
+        != expected_activation_sha256
+    ):
+        raise StoreCorruptionError(
+            "executable composition plan P19 activation binding is invalid"
+        )
+    return registration_record
+
+
+def _verify_required_executable_plan_for_registration_row(
+    connection: sqlite3.Connection,
+    registration_row: sqlite3.Row,
+) -> None:
+    """Verify the executable companion required by one registration row."""
+
+    marker = registration_row["executable_plan_required"]
+    executable_row = connection.execute(
+        "SELECT * FROM composition_executable_plan WHERE registration_id = ?",
+        (registration_row["registration_id"],),
+    ).fetchone()
+    if marker == 0:
+        if executable_row is not None:
+            raise StoreCorruptionError(
+                "audit-only registration has an executable companion"
+            )
+        return
+    if marker != 1:
+        raise StoreCorruptionError(
+            "limited activation companion marker is invalid"
+        )
+    if executable_row is None:
+        raise StoreCorruptionError(
+            "required executable composition plan companion is missing"
+        )
+    try:
+        record = executable_plan_record_from_row(executable_row)
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "stored executable composition plan is invalid"
+        ) from exc
+    _verify_executable_composition_plan_authorities(connection, record)
+
+
+def _assert_no_required_executable_plan_missing(
+    connection: sqlite3.Connection,
+) -> None:
+    missing = connection.execute(
+        """
+        SELECT c.registration_id
+        FROM composition_activation_registration AS c
+        LEFT JOIN composition_executable_plan AS e
+          ON e.registration_id = c.registration_id
+        WHERE c.executable_plan_required = 1
+          AND e.executable_plan_id IS NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if missing is not None:
+        raise StoreCorruptionError(
+            "required executable composition plan companion is missing"
+        )
+
+
+def _verify_executable_composition_plan_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    """Verify v31 companions and every parent explicitly marked as requiring one."""
+
+    _assert_no_required_executable_plan_missing(connection)
+
+    rows = connection.execute(
+        "SELECT * FROM composition_executable_plan ORDER BY executable_plan_id"
+    ).fetchall()
+    for row in rows:
+        try:
+            record = executable_plan_record_from_row(row)
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "stored executable composition plan is invalid"
+            ) from exc
+        _verify_executable_composition_plan_authorities(
+            connection, record
+        )
 
 
 def _verify_full_event_chain(connection: sqlite3.Connection) -> None:
@@ -13105,6 +13826,15 @@ class GatewayStateStore:
             or len(owner_id) > 160
             or len(object_sha256) != 64
             or any(char not in "0123456789abcdef" for char in object_sha256)
+            or owner_kind not in (
+                "REQUEST",
+                "OUTBOX",
+                "COMPLETION",
+                "CAPSULE",
+                "ARTIFACT",
+                "LIFE_EVENT",
+            )
+            or (owner_kind == "REQUEST" and owner_id != request_id)
             or created_at_ms < 0
         ):
             raise ValueError("object ownership fact is invalid")
@@ -13124,6 +13854,12 @@ class GatewayStateStore:
                 run_id=run_id,
                 generation=generation,
                 recorded_at_ms=created_at_ms,
+            )
+            _assert_object_content_identity_locked(
+                self._connection,
+                object_id=object_id,
+                object_sha256=object_sha256,
+                mismatch_error=StoreConflictError,
             )
             existing = self._connection.execute(
                 """
@@ -13240,11 +13976,15 @@ class GatewayStateStore:
             if row is None:
                 return None
             try:
-                return limited_activation_record_from_row(row)
+                record = limited_activation_record_from_row(row)
             except ValueError as exc:
                 raise StoreCorruptionError(
                     "stored limited activation registration is invalid"
                 ) from exc
+            _verify_required_executable_plan_for_registration_row(
+                self._connection, row
+            )
+            return record
 
     def get_limited_activation_registration(self, registration_id: str):
         record = self.get_limited_activation_registration_record(registration_id)
@@ -13491,6 +14231,9 @@ class GatewayStateStore:
                     raise StoreCorruptionError(
                         "stored limited activation registration is invalid"
                     ) from exc
+                _verify_required_executable_plan_for_registration_row(
+                    self._connection, row
+                )
                 registration = record.registration
                 lifecycle_sha256 = (
                     computed_limited_activation_lifecycle_sha256(
@@ -13547,21 +14290,26 @@ class GatewayStateStore:
             recovered: list[LimitedActivationStoreRecord] = []
             for row in rows:
                 try:
-                    recovered.append(
-                        limited_activation_record_from_row(
-                            row, recovered_after_restart=True
-                        )
+                    record = limited_activation_record_from_row(
+                        row, recovered_after_restart=True
                     )
                 except ValueError as exc:
                     raise StoreCorruptionError(
                         "stored limited activation registration is invalid"
                     ) from exc
+                _verify_required_executable_plan_for_registration_row(
+                    self._connection, row
+                )
+                recovered.append(record)
             return tuple(recovered)
 
     def get_active_limited_activation_registration(
         self, registration_id: str, *, now_ms: int
     ) -> LimitedActivationStoreRecord | None:
         self.expire_limited_activation_registrations(now_ms=now_ms)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
         record = self.get_limited_activation_registration_record(registration_id)
         if record is None or record.state == "EXPIRED":
             return None
@@ -13729,6 +14477,453 @@ class GatewayStateStore:
                 duplicate=not created,
             )
 
+    def get_executable_composition_plan_record(
+        self, executable_plan_id: str
+    ) -> ExecutableCompositionPlanStoreRecord | None:
+        """Read and cross-check one immutable v31 executable-plan companion."""
+
+        if not executable_plan_id:
+            raise ValueError("executable composition plan identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE executable_plan_id = ?",
+                (executable_plan_id,),
+            ).fetchone()
+            if row is None:
+                _assert_no_required_executable_plan_missing(self._connection)
+                return None
+            try:
+                record = executable_plan_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored executable composition plan is invalid"
+                ) from exc
+            _verify_executable_composition_plan_authorities(
+                self._connection, record
+            )
+            return record
+
+    def get_executable_composition_plan_for_registration(
+        self, registration_id: str
+    ) -> ExecutableCompositionPlanStoreRecord | None:
+        """Return the companion, or None for a marker-0 audit-only P7B row."""
+
+        if not registration_id:
+            raise ValueError("limited activation registration identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE registration_id = ?",
+                (registration_id,),
+            ).fetchone()
+            if row is None:
+                parent = self._connection.execute(
+                    "SELECT executable_plan_required "
+                    "FROM composition_activation_registration "
+                    "WHERE registration_id = ?",
+                    (registration_id,),
+                ).fetchone()
+                if parent is not None and parent["executable_plan_required"] == 1:
+                    raise StoreCorruptionError(
+                        "required executable composition plan companion is missing"
+                    )
+                return None
+            try:
+                record = executable_plan_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored executable composition plan is invalid"
+                ) from exc
+            _verify_executable_composition_plan_authorities(
+                self._connection, record
+            )
+            return record
+
+    def get_active_executable_composition_plan(
+        self, registration_id: str, *, now_ms: int
+    ) -> ExecutableCompositionPlanStoreRecord | None:
+        """Return only a live companion on the current request generation."""
+
+        if not registration_id:
+            raise ValueError("limited activation registration identity is invalid")
+        self.expire_limited_activation_registrations(now_ms=now_ms)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE registration_id = ?",
+                (registration_id,),
+            ).fetchone()
+            if row is None:
+                parent = self._connection.execute(
+                    "SELECT executable_plan_required "
+                    "FROM composition_activation_registration "
+                    "WHERE registration_id = ?",
+                    (registration_id,),
+                ).fetchone()
+                if parent is not None and parent["executable_plan_required"] == 1:
+                    raise StoreCorruptionError(
+                        "required executable composition plan companion is missing"
+                    )
+                # A migrated or independently-created P7B row is audit-only.
+                return None
+            try:
+                record = executable_plan_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored executable composition plan is invalid"
+                ) from exc
+            registration_record = (
+                _verify_executable_composition_plan_authorities(
+                    self._connection, record
+                )
+            )
+            if not record.active_at(now_ms, registration_record):
+                return None
+            executable = record.executable_plan
+            current = self._connection.execute(
+                "SELECT run_id, current_generation, status "
+                "FROM request_generation WHERE request_id = ?",
+                (executable.request_id,),
+            ).fetchone()
+            if (
+                current is None
+                or current["run_id"] != executable.run_id
+                or current["current_generation"] != executable.generation
+                or current["status"] != "ACTIVE"
+            ):
+                raise StoreConflictError(
+                    "executable composition plan is not bound to current generation"
+                )
+            return record
+
+    def recover_active_executable_composition_plans(
+        self, *, now_ms: int
+    ) -> tuple[ExecutableCompositionPlanStoreRecord, ...]:
+        """Recover live companions only; never synthesize marker-0 bodies."""
+
+        self.expire_limited_activation_registrations(now_ms=now_ms)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            _assert_no_required_executable_plan_missing(self._connection)
+            rows = self._connection.execute(
+                """
+                SELECT e.*
+                FROM composition_executable_plan AS e
+                JOIN composition_activation_registration AS c
+                  ON c.registration_id = e.registration_id
+                JOIN request_generation AS g ON g.request_id = e.request_id
+                WHERE c.state = 'ACTIVE'
+                  AND e.sealed_at_ms <= ? AND e.expires_at_ms > ?
+                  AND c.registered_at_ms <= ? AND c.expires_at_ms > ?
+                  AND g.run_id = e.run_id
+                  AND g.current_generation = e.generation
+                  AND g.status = 'ACTIVE'
+                ORDER BY e.sealed_at_ms, e.executable_plan_id
+                """,
+                (now_ms, now_ms, now_ms, now_ms),
+            ).fetchall()
+            recovered: list[ExecutableCompositionPlanStoreRecord] = []
+            for row in rows:
+                try:
+                    record = executable_plan_record_from_row(
+                        row, recovered_after_restart=True
+                    )
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored executable composition plan is invalid"
+                    ) from exc
+                registration_record = (
+                    _verify_executable_composition_plan_authorities(
+                        self._connection, record
+                    )
+                )
+                if not record.active_at(now_ms, registration_record):
+                    raise StoreCorruptionError(
+                        "recoverable executable composition plan is not active"
+                    )
+                recovered.append(record)
+            return tuple(recovered)
+
+    def register_executable_composition_plan_bundle(
+        self,
+        proposal,
+        *,
+        plan,
+        validation,
+        action_registry,
+        verification_registry,
+        verification_bindings,
+        current_world_state_sha256: str,
+        expected_principal_scope_hash: str,
+        composition_proposal,
+        candidates,
+        compile_context,
+        plan_inputs,
+        step_bindings,
+        final_output_aliases,
+        workspace,
+        recorded_at_ms: int,
+    ) -> ExecutableCompositionBundleRegistration:
+        """Atomically persist P19, P7B registration, and its full v31 body."""
+
+        from .composition_executable_plan import (
+            ExecutableCompositionPlanV1,
+            compile_executable_composition_plan,
+        )
+
+        with self._lock, self._write_transaction():
+            activation_bundle = (
+                self.register_limited_composition_activation_bundle(
+                    proposal,
+                    plan=plan,
+                    validation=validation,
+                    action_registry=action_registry,
+                    verification_registry=verification_registry,
+                    verification_bindings=verification_bindings,
+                    current_world_state_sha256=current_world_state_sha256,
+                    expected_principal_scope_hash=(
+                        expected_principal_scope_hash
+                    ),
+                    recorded_at_ms=recorded_at_ms,
+                )
+            )
+            registration_record = activation_bundle.record
+            if not registration_record.active_at(recorded_at_ms):
+                raise StoreConflictError(
+                    "executable composition plan registration is not active"
+                )
+
+            existing_row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE registration_id = ?",
+                (registration_record.registration.registration_id,),
+            ).fetchone()
+            if activation_bundle.duplicate and existing_row is None:
+                parent_marker = self._connection.execute(
+                    "SELECT executable_plan_required "
+                    "FROM composition_activation_registration "
+                    "WHERE registration_id = ?",
+                    (registration_record.registration.registration_id,),
+                ).fetchone()
+                if (
+                    parent_marker is not None
+                    and parent_marker["executable_plan_required"] == 1
+                ):
+                    raise StoreCorruptionError(
+                        "required executable composition plan companion is missing"
+                    )
+                raise StoreConflictError(
+                    "audit-only registration cannot be backfilled as executable"
+                )
+            if activation_bundle.created_by_this_call and existing_row is not None:
+                raise StoreCorruptionError(
+                    "new registration already has an executable companion"
+                )
+
+            executable = compile_executable_composition_plan(
+                composition_proposal,
+                candidates,
+                compile_context,
+                action_registry,
+                legacy_plan=plan,
+                plan_inputs=plan_inputs,
+                step_bindings=step_bindings,
+                final_output_aliases=final_output_aliases,
+                workspace=workspace,
+                registration_record=registration_record,
+            )
+            # The executable body has exactly one write path: authoritative
+            # compilation and insertion are inseparable inside this UoW.  Do
+            # not expose a raw-plan sink guarded only by a module-level token;
+            # normal in-process callers can read such a token and would then
+            # bypass candidate/source/schema reconstruction.
+            try:
+                executable_json = canonical_executable_plan_json(executable)
+                executable = ExecutableCompositionPlanV1.model_validate_json(
+                    executable_json, strict=True
+                )
+            except Exception as exc:
+                raise ValueError(
+                    "executable composition plan contract is invalid"
+                ) from exc
+            if not executable.has_valid_identity():
+                raise ValueError("executable composition plan identity is invalid")
+            if not (
+                executable.sealed_at_ms
+                <= recorded_at_ms
+                < executable.expires_at_ms
+            ):
+                raise ValueError("executable composition plan is not live")
+
+            rows = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE executable_plan_id = ? OR registration_id = ? "
+                "OR composition_activation_id = ? OR composition_plan_id = ? "
+                "OR executable_plan_sha256 = ?",
+                (
+                    executable.executable_plan_id,
+                    executable.registration_id,
+                    executable.composition_activation_id,
+                    executable.composition_plan_id,
+                    executable.executable_plan_sha256,
+                ),
+            ).fetchall()
+            if rows:
+                if len(rows) != 1:
+                    raise StoreCorruptionError(
+                        "executable composition plan identities diverged"
+                    )
+                try:
+                    existing = executable_plan_record_from_row(rows[0])
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored executable composition plan is invalid"
+                    ) from exc
+                if canonical_executable_plan_json(
+                    existing.executable_plan
+                ) != executable_json:
+                    raise StoreConflictError(
+                        "executable composition plan identity was reused"
+                    )
+                existing_registration = (
+                    _verify_executable_composition_plan_authorities(
+                        self._connection, existing
+                    )
+                )
+                if not existing_registration.active_at(recorded_at_ms):
+                    raise StoreConflictError(
+                        "executable composition plan registration is not active"
+                    )
+                created = False
+            else:
+                if recorded_at_ms != executable.sealed_at_ms:
+                    raise ValueError(
+                        "new executable composition plan time differs from its seal"
+                    )
+                current = self._assert_request_binding_locked(
+                    request_id=executable.request_id,
+                    run_id=executable.run_id,
+                    generation=executable.generation,
+                    recorded_at_ms=recorded_at_ms,
+                )
+                if current["status"] != "ACTIVE":
+                    raise StoreConflictError(
+                        "executable composition plan generation is not active"
+                    )
+                candidate_record = ExecutableCompositionPlanStoreRecord(
+                    executable_plan=executable
+                )
+                marked = self._connection.execute(
+                    "UPDATE composition_activation_registration "
+                    "SET executable_plan_required = 1 "
+                    "WHERE registration_id = ? AND executable_plan_required = 0",
+                    (executable.registration_id,),
+                )
+                if marked.rowcount != 1:
+                    raise StoreCorruptionError(
+                        "new executable composition plan parent marker diverged"
+                    )
+                _verify_executable_composition_plan_input_authorities(
+                    self._connection,
+                    executable,
+                    create_missing_request_owners=True,
+                )
+                new_registration = (
+                    _verify_executable_composition_plan_authorities(
+                        self._connection, candidate_record
+                    )
+                )
+                if not new_registration.active_at(recorded_at_ms):
+                    raise StoreConflictError(
+                        "executable composition plan registration is not active"
+                    )
+                self._connection.execute(
+                    """
+                    INSERT INTO composition_executable_plan(
+                        executable_plan_id, registration_id, registration_sha256,
+                        composition_activation_id, composition_activation_sha256,
+                        composition_plan_id, composition_plan_sha256,
+                        execution_bindings_sha256, action_registry_sha256,
+                        verification_registry_sha256, verification_plan_id,
+                        verification_plan_sha256, request_id, run_id, generation,
+                        principal_scope_hash, world_state_sha256,
+                        source_manifest_sha256, capability_manifest_sha256,
+                        workspace_id, workspace_scope_hash, sealed_at_ms,
+                        expires_at_ms, step_count, executable_plan_json,
+                        executable_plan_sha256
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        executable.executable_plan_id,
+                        executable.registration_id,
+                        executable.registration_sha256,
+                        executable.composition_activation_id,
+                        executable.composition_activation_sha256,
+                        executable.composition_plan_id,
+                        executable.composition_plan_sha256,
+                        executable.execution_bindings_sha256,
+                        executable.action_registry_sha256,
+                        executable.verification_registry_sha256,
+                        executable.verification_plan_id,
+                        executable.verification_plan_sha256,
+                        executable.request_id,
+                        executable.run_id,
+                        executable.generation,
+                        executable.principal_scope_hash,
+                        executable.world_state_sha256,
+                        executable.source_manifest_sha256,
+                        executable.capability_manifest_sha256,
+                        executable.workspace.workspace_id,
+                        executable.workspace.workspace_scope_sha256,
+                        executable.sealed_at_ms,
+                        executable.expires_at_ms,
+                        len(executable.step_bindings),
+                        executable_json,
+                        executable.executable_plan_sha256,
+                    ),
+                )
+                created = True
+            if created != activation_bundle.created_by_this_call:
+                raise StoreCorruptionError(
+                    "executable plan and activation parent creation diverged"
+                )
+            row = self._connection.execute(
+                "SELECT * FROM composition_executable_plan "
+                "WHERE executable_plan_id = ?",
+                (executable.executable_plan_id,),
+            ).fetchone()
+            if row is None:
+                raise StoreCorruptionError(
+                    "executable composition plan write disappeared"
+                )
+            try:
+                record = executable_plan_record_from_row(
+                    row,
+                    created_by_this_call=created,
+                    duplicate=not created,
+                )
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored executable composition plan is invalid"
+                ) from exc
+            _verify_executable_composition_plan_authorities(
+                self._connection, record
+            )
+            return ExecutableCompositionBundleRegistration(
+                activation_bundle=activation_bundle,
+                record=record,
+                created_by_this_call=created,
+                duplicate=not created,
+            )
+
     def count_journal_entries(self) -> int:
         with self._lock:
             if self._closed:
@@ -13791,6 +14986,7 @@ class GatewayStateStore:
                 _verify_shadow_rows(self._connection)
                 _verify_channel_cutover_rows(self._connection)
                 _verify_limited_activation_registration_rows(self._connection)
+                _verify_executable_composition_plan_rows(self._connection)
                 if full:
                     _verify_full_event_chain(self._connection)
                 schema_sha256 = _schema_fingerprint(self._connection)
@@ -13869,6 +15065,8 @@ __all__ = [
     "ChannelOwnershipRegistration",
     "CompletionDecisionRecord",
     "CoordinationRecord",
+    "ExecutableCompositionBundleRegistration",
+    "ExecutableCompositionPlanStoreRecord",
     "GatewayStateStore",
     "EffectLedgerRecord",
     "FencedResultDecision",

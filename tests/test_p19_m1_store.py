@@ -32,6 +32,7 @@ from total_gateway.verification_recording import (
 )
 from total_gateway.store import (
     GatewayStateStore,
+    STORE_SCHEMA_VERSION,
     StoreConflictError,
     StoreMigrationError,
     StoreNotFoundError,
@@ -152,6 +153,41 @@ class MigrationTests(unittest.TestCase):
         GatewayStateStore.open(self.path, now_ms=900).close()
         connection = sqlite3.connect(self.path)
         connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_immutable_delete_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_immutable_update_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_identity_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_request_owner_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_immutable_delete_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_immutable_update_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_identity_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_object_sha256_insert_guard"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_executable_plan_expiry_idx"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_executable_plan_lineage_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS composition_executable_plan")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 31")
+        connection.execute(
             "DROP INDEX IF EXISTS composition_activation_registration_expiry_idx"
         )
         connection.execute(
@@ -198,18 +234,21 @@ class MigrationTests(unittest.TestCase):
     def test_fresh_db_opens_at_v23(self) -> None:  # checklist 2
         store = GatewayStateStore.open(self.path, now_ms=900)
         try:
-            self.assertEqual(store.health_check(full=True, now_ms=950).schema_version, 30)
+            self.assertEqual(
+                store.health_check(full=True, now_ms=950).schema_version,
+                STORE_SCHEMA_VERSION,
+            )
         finally:
             store.close()
 
     def test_v22_upgrade_lossless_and_reopen_idempotent(self) -> None:  # 1/3/5
         self._strip_to_v22()
-        # Upgrade path: opening with the current binary migrates 22 -> 30.
+        # Upgrade path: opening with the current binary migrates to latest.
         upgraded = GatewayStateStore.open(self.path, now_ms=950)
         try:
             health = upgraded.health_check(full=True, now_ms=960)
             self.assertTrue(health.healthy)
-            self.assertEqual(health.schema_version, 30)
+            self.assertEqual(health.schema_version, STORE_SCHEMA_VERSION)
         finally:
             upgraded.close()
         reopened = GatewayStateStore.open(self.path, now_ms=1_000)

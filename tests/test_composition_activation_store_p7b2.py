@@ -177,18 +177,20 @@ def _persist(store: GatewayStateStore, fixture: dict, *, recorded_at_ms: int):
 
 
 def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
-    assert STORE_SCHEMA_VERSION == 30
-    assert VERIFICATION_PLANE_VERSION == "1.1"
+    # P7B.2 remains the v30 registration layer; P7C.0 adds the current v31
+    # executable-Plan companion without changing P7B eligibility semantics.
+    assert STORE_SCHEMA_VERSION == 31
+    assert VERIFICATION_PLANE_VERSION == "1.2"
 
 
-def test_v29_store_migrates_additively_to_v30() -> None:
+def test_v29_store_migrates_additively_through_v30_to_current() -> None:
     import total_gateway.store as store_module
 
     with tempfile.TemporaryDirectory() as temporary:
         path = Path(temporary) / "gateway-v29.sqlite3"
         connection = sqlite3.connect(path, isolation_level=None)
         try:
-            for version, migration_id, statements in store_module._MIGRATIONS[:-1]:
+            for version, migration_id, statements in store_module._MIGRATIONS[:29]:
                 for statement in statements:
                     connection.execute(statement)
                 connection.execute(
@@ -211,7 +213,7 @@ def test_v29_store_migrates_additively_to_v30() -> None:
             assert store.health_check(now_ms=1_500, full=True).healthy
             assert store._connection.execute(
                 "PRAGMA user_version"
-            ).fetchone()[0] == 30
+            ).fetchone()[0] == 31
             assert store._connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' "
                 "AND name='composition_activation_registration'"

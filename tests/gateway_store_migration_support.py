@@ -19,6 +19,53 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 31:
+        # v31 additive: P7C.0 executable composition Plan/binding companion.
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_immutable_delete_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_immutable_update_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_executable_plan_identity_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_request_owner_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_immutable_delete_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_immutable_update_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_identity_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS object_owners_object_sha256_insert_guard"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "composition_activation_executable_plan_required_monotonic"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_executable_plan_expiry_idx"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS composition_executable_plan_lineage_idx"
+        )
+        connection.execute("DROP TABLE IF EXISTS composition_executable_plan")
+        connection.execute(
+            "ALTER TABLE composition_activation_registration "
+            "DROP COLUMN executable_plan_required"
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE version = 31")
+        connection.execute("PRAGMA user_version = 30")
+        version = 30
     if version == 30:
         # v30 additive: P7B.2 limited composition activation registration.
         # Remove its indexes and row table before removing the P19 plan and
