@@ -169,7 +169,7 @@ def _recovery_worker(
     return worker
 
 
-def test_exact_parent_fact_recovers_success_without_handler_replay(
+def test_startup_discovery_leaves_noncomposition_parent_to_generic_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -180,23 +180,33 @@ def test_exact_parent_fact_recovers_success_without_handler_replay(
         pool = _ForbiddenExecutionPool()
         monkeypatch.setattr(orchestration_module, "_EXECUTION_WATCHDOG_POOL", pool)
 
-        recovered = _recovery_worker(store, facts)._recover_parent_started_effects(
-            now_ms=1_300
+        protected = (
+            _recovery_worker(store, facts)
+            ._composition_parent_started_effect_ids()
         )
 
         head = store.get_effect(claim.effect_id)
-        assert recovered == 1
+        assert protected == ()
         assert head is not None
-        assert head.state == "SUCCEEDED"
-        assert head.result is not None
-        assert head.result.fact_id == "fact_parent_recovery_p7d1"
-        assert facts.lookups == [(claim.effect_id, True)]
+        assert head.state == "SIDE_EFFECT_STARTED"
+        assert head.result is None
+        assert facts.lookups == []
         assert pool.submit_calls == 0
+
+        recovered = store.recover_started_effects(
+            now_ms=1_300,
+            exclude_effect_ids=protected,
+        )
+        assert len(recovered) == 1
+        head = store.get_effect(claim.effect_id)
+        assert head is not None and head.state == "FAILED_FINAL"
+        assert head.result is not None
+        assert head.result.error_code == "effect.execution_interrupted_by_restart"
     finally:
         store.close()
 
 
-def test_started_parent_without_fact_closes_ambiguous_without_replay(
+def test_started_noncomposition_parent_without_fact_keeps_generic_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -207,18 +217,21 @@ def test_started_parent_without_fact_closes_ambiguous_without_replay(
         pool = _ForbiddenExecutionPool()
         monkeypatch.setattr(orchestration_module, "_EXECUTION_WATCHDOG_POOL", pool)
 
-        recovered = _recovery_worker(store, facts)._recover_parent_started_effects(
-            now_ms=1_050
+        worker = _recovery_worker(store, facts)
+        protected = worker._composition_parent_started_effect_ids()
+        recovered = store.recover_started_effects(
+            now_ms=1_050,
+            exclude_effect_ids=protected,
         )
 
         head = store.get_effect(claim.effect_id)
-        assert recovered == 1
+        assert len(recovered) == 1
         assert head is not None
-        assert head.state == "AMBIGUOUS"
+        assert head.state == "FAILED_FINAL"
         assert head.result is not None
-        assert head.result.error_code == "effect.result_missing_after_restart"
+        assert head.result.error_code == "effect.execution_interrupted_by_restart"
         assert head.result.observed_at_ms == 1_100
-        assert facts.lookups == [(claim.effect_id, True)]
+        assert facts.lookups == []
         assert pool.submit_calls == 0
     finally:
         store.close()
@@ -254,7 +267,10 @@ def test_parent_fact_must_match_full_execution_identity(
                 result=exact.result.model_copy(update=updates),
             )
             with pytest.raises(OrchestrationError) as caught:
-                worker._recover_parent_started_effects(now_ms=1_300)
+                worker._parent_effect_result_from_batch(
+                    store.get_effect(claim.effect_id),
+                    facts.batch,
+                )
             assert caught.value.code == "orchestration.parent.recovery_fact_mismatch", label
             assert caught.value.ambiguous is True, label
             assert store.get_effect(claim.effect_id).state == "SIDE_EFFECT_STARTED", label
@@ -264,7 +280,7 @@ def test_parent_fact_must_match_full_execution_identity(
         store.close()
 
 
-def test_parent_recovery_is_limited_to_the_unspecified_pipeline(
+def test_composition_parent_discovery_is_limited_to_unspecified_pipeline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -275,11 +291,12 @@ def test_parent_recovery_is_limited_to_the_unspecified_pipeline(
         pool = _ForbiddenExecutionPool()
         monkeypatch.setattr(orchestration_module, "_EXECUTION_WATCHDOG_POOL", pool)
 
-        recovered = _recovery_worker(store, facts)._recover_parent_started_effects(
-            now_ms=1_300
+        protected = (
+            _recovery_worker(store, facts)
+            ._composition_parent_started_effect_ids()
         )
 
-        assert recovered == 0
+        assert protected == ()
         assert store.get_effect(claim.effect_id).state == "SIDE_EFFECT_STARTED"
         assert facts.lookups == []
         assert pool.submit_calls == 0

@@ -123,17 +123,26 @@ def build_readiness(
     plan: VerificationPlan,
     snapshot: RegistrySnapshot,
     store,
-    evaluated_at_ms: int,) -> VerificationReadiness:
+    evaluated_at_ms: int,
+    exact_evaluated_at_ms: bool = False,
+) -> VerificationReadiness:
     """Materialize a VerificationReadiness from plan + authoritative records.
 
     M4.1 §6: the readiness is COMPUTED, never self-signed. Every field
     derives from the plan and the store's actual records.
 
-    M4.1 Final §8 supersession: the LATEST authoritative record (by
-    evaluated_at_ms) for an entry is the current verdict. If multiple
+    M4.1 Final §8 supersession: the LATEST authoritative record at or
+    before ``evaluated_at_ms`` for an entry is the current verdict. Records
+    from a later logical time never leak into an earlier readiness. If
+    ``exact_evaluated_at_ms`` is true, only records produced at that exact
+    stable clock are eligible (the durable composition path). If multiple
     records share the same max evaluated_at_ms with conflicting verdicts,
     the entry becomes RECORD_MISMATCH (never an arbitrary pick).
     """
+    if type(evaluated_at_ms) is not int or evaluated_at_ms < 0:
+        raise ReadinessBuilderError("readiness evaluation time is invalid")
+    if type(exact_evaluated_at_ms) is not bool:
+        raise ReadinessBuilderError("readiness record-time mode is invalid")
     if not plan.has_valid_identity():
         raise ReadinessBuilderError("plan identity is invalid")
     if not snapshot.has_valid_identity():
@@ -166,6 +175,18 @@ def build_readiness(
         run_id=plan.run_id,
         generation=plan.generation,
     )
+    if exact_evaluated_at_ms:
+        all_records = tuple(
+            record
+            for record in all_records
+            if record.evaluated_at_ms == evaluated_at_ms
+        )
+    else:
+        all_records = tuple(
+            record
+            for record in all_records
+            if record.evaluated_at_ms <= evaluated_at_ms
+        )
     assessments: list[EntryAssessment] = []
     supporting_record_ids: list[str] = []
     required_count = 0

@@ -163,7 +163,65 @@ class CompositionExecutionBindingV1(ContractModel):
     )
     workspace_id: OpaqueId
     workspace_scope_hash: Sha256
+    attempt: int | None = Field(
+        default=None,
+        ge=1,
+        exclude_if=lambda value: value is None,
+    )
+    continuation_delegation_id: OpaqueId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    continuation_delegation_sha256: Sha256 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    dependency_evidence_sha256: Sha256 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    supersedes_authorization_id: OpaqueId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    supersedes_effect_id: EffectId | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    supersedes_claim_sha256: Sha256 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     binding_sha256: Sha256
+
+    @model_validator(mode="after")
+    def validate_continuation_shape(self) -> Self:
+        continuation = (
+            self.attempt,
+            self.continuation_delegation_id,
+            self.continuation_delegation_sha256,
+            self.dependency_evidence_sha256,
+        )
+        predecessor = (
+            self.supersedes_authorization_id,
+            self.supersedes_effect_id,
+            self.supersedes_claim_sha256,
+        )
+        continuation_present = any(value is not None for value in continuation)
+        if not continuation_present:
+            if any(value is not None for value in predecessor):
+                raise ValueError(
+                    "composition binding predecessor requires continuation evidence"
+                )
+            return self
+        if any(value is None for value in continuation):
+            raise ValueError("composition binding continuation evidence is incomplete")
+        if self.attempt == 1:
+            if any(value is not None for value in predecessor):
+                raise ValueError("first composition attempt cannot supersede another claim")
+        elif any(value is None for value in predecessor):
+            raise ValueError("later composition attempt requires a complete predecessor")
+        return self
 
     def computed_sha256(self) -> str:
         return canonical_sha256(

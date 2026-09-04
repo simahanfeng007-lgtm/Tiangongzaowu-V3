@@ -7,10 +7,72 @@ import sqlite3
 from total_gateway import store as store_module
 
 
+def downgrade_v33_to_v32(connection: sqlite3.Connection) -> None:
+    """Remove the P7D.2 continuation layer while preserving v1 receipts."""
+
+    version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version != 33:
+        raise AssertionError(f"expected a v33 fixture, got v{version}")
+    unsupported = int(
+        connection.execute(
+            "SELECT count(*) FROM composition_step_authorization "
+            "WHERE attempt != 1 OR continuation_delegation_id IS NOT NULL"
+        ).fetchone()[0]
+    )
+    continuations = int(
+        connection.execute(
+            "SELECT count(*) FROM composition_continuation_delegation"
+        ).fetchone()[0]
+    )
+    if unsupported or continuations:
+        raise AssertionError("v33 continuation data cannot be represented by v32")
+    for trigger in (
+        "composition_step_authorization_identity_insert_guard",
+        "composition_step_authorization_immutable_update_guard",
+        "composition_step_authorization_immutable_delete_guard",
+        "composition_continuation_delegation_identity_insert_guard",
+        "composition_continuation_delegation_immutable_update_guard",
+        "composition_continuation_delegation_immutable_delete_guard",
+    ):
+        connection.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+    for index in (
+        "composition_step_authorization_request_idx",
+        "composition_step_authorization_effect_idx",
+        "composition_step_authorization_supersedes_idx",
+    ):
+        connection.execute(f"DROP INDEX IF EXISTS {index}")
+    connection.execute(
+        "ALTER TABLE composition_step_authorization "
+        "RENAME TO composition_step_authorization_v33_old"
+    )
+    connection.execute(store_module._MIGRATION_V32_STATEMENTS[0])  # noqa: SLF001
+    columns = tuple(
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(composition_step_authorization)"
+        ).fetchall()
+    )
+    projection = ", ".join(f'"{column}"' for column in columns)
+    connection.execute(
+        "INSERT INTO composition_step_authorization "
+        f"({projection}) SELECT {projection} "
+        "FROM composition_step_authorization_v33_old"
+    )
+    connection.execute("DROP TABLE composition_step_authorization_v33_old")
+    for statement in store_module._MIGRATION_V32_STATEMENTS[1:]:  # noqa: SLF001
+        connection.execute(statement)
+    connection.execute("DROP TABLE composition_continuation_delegation")
+    connection.execute("DELETE FROM schema_migrations WHERE version = 33")
+    connection.execute("PRAGMA user_version = 32")
+
+
 def downgrade_v32_to_v31(connection: sqlite3.Connection) -> None:
     """Remove only the additive P7C.1 authorization-receipt layer."""
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 33:
+        downgrade_v33_to_v32(connection)
+        version = 32
     if version != 32:
         raise AssertionError(f"expected a v32 fixture, got v{version}")
     for trigger in (
@@ -39,6 +101,9 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 33:
+        downgrade_v33_to_v32(connection)
+        version = 32
     if version == 32:
         downgrade_v32_to_v31(connection)
         version = 31
@@ -295,4 +360,8 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 11")
 
 
-__all__ = ["downgrade_v12_to_v11", "downgrade_v32_to_v31"]
+__all__ = [
+    "downgrade_v12_to_v11",
+    "downgrade_v32_to_v31",
+    "downgrade_v33_to_v32",
+]

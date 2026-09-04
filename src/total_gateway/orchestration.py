@@ -8,6 +8,7 @@ import base64
 import concurrent.futures
 import contextvars
 import hashlib
+import json
 from contextlib import contextmanager
 import os
 import queue
@@ -17,7 +18,7 @@ import uuid
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from contracts import (
     ActionIntent,
@@ -35,6 +36,7 @@ from contracts import (
     TransitionEvent,
     canonical_json_bytes,
     canonical_sha256,
+    derive_artifact_revision_identity,
     derive_delivery_identity,
     derive_effect_identity,
     derive_outbound_scope_keys,
@@ -59,7 +61,12 @@ from .omni_grant_authority import OmniGrantAuthority
 from .policy_engine import PolicyEngine, SourceRef
 from .policy_evidence import PolicyEvidenceLedger
 from .artifact_gate import ArtifactCandidate, ArtifactGate, ArtifactGateError
-from .artifact_qc import ArtifactIntegrityQcError, ArtifactIntegrityQcService
+from .artifact_qc import (
+    ARTIFACT_INTEGRITY_QC_CHECK_ID,
+    ARTIFACT_INTEGRITY_QC_CHECK_VERSION,
+    ArtifactIntegrityQcError,
+    ArtifactIntegrityQcService,
+)
 from .backend_client import BackendClient, BackendClientError
 
 
@@ -68,6 +75,21 @@ _EXECUTION_WATCHDOG_POOL = concurrent.futures.ThreadPoolExecutor(
     thread_name_prefix="execution-watchdog",
 )
 _COMPOSITION_WATCHDOG_SLOT = threading.BoundedSemaphore(value=1)
+
+
+@dataclass(frozen=True, slots=True)
+class _DurableParentExecution:
+    """Verified parent response reconstructed only from durable authorities."""
+
+    result: Any
+    result_payload: Any
+    response_sha256: str
+    observed_at_ms: int
+    parent_effect_id: str
+    life_id: str
+    life_evidence_ref: str
+    output_root_id: str
+    artifact_intent_id: str
 
 
 def _run_backend_transport_with_watchdog(
@@ -188,7 +210,13 @@ from .continuity import (
 )
 from .delivery_outbox import GatewayDeliveryOutboxWorker, build_delivery_outbox_payload
 from .desktop_completion import evaluate_desktop_completion
-from .docx_qc import DocxQcError, DocxQcPolicy, DocxQcService
+from .docx_qc import (
+    DOCX_QC_CHECK_ID,
+    DOCX_QC_CHECK_VERSION,
+    DocxQcError,
+    DocxQcPolicy,
+    DocxQcService,
+)
 from .effects import EffectClaim, EffectResult
 from .fact_ledger import FactLedger
 from .frozen_backend_compat import FrozenBackendCompatibilityTransport
@@ -261,6 +289,9 @@ class OrchestrationError(RuntimeError):
         super().__init__(code)
         self.code = code
         self.ambiguous = ambiguous
+
+
+_LIFE_TAIL_RETRY_REQUIRED = "orchestration.life.tail_retry_required"
 
 
 def _model_safe_knowledge_reference(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -479,6 +510,11 @@ class GatewayOrchestrationWorker:
             effect_store=store,
             action_schema_catalog=omni_schema_catalog,
             object_store=objects,
+            fact_ledger=(
+                facts
+                if callable(getattr(facts, "get_batch_for_effect", None))
+                else None
+            ),
             capability_source_manifest_hash=omni_registry.source_manifest_sha256,
             parent_capability_manifest_hash=parent_capabilities.sha256,
             composition_capability_manifest_hash=(
@@ -523,6 +559,9 @@ class GatewayOrchestrationWorker:
                 gateway_epoch=self._epoch,
                 gateway_instance_id=self._instance_id,
                 append_effect_event=_append_orchestration_effect_event,
+                continuation_authorizer=(
+                    self._composition_activation_adapter.authorize_continuation_step
+                ),
                 transport_runner=_run_backend_transport_with_watchdog,
             )
         )
@@ -752,17 +791,12 @@ class GatewayOrchestrationWorker:
                     ambiguous=True,
                 )
         try:
-            recovered_parent = self._recover_parent_started_effects(
-                now_ms=now_ms
+            protected_parent_effect_ids = (
+                self._composition_parent_started_effect_ids()
             )
-            if recovered_parent:
-                diagnostic_log(
-                    "[ORCHESTRATION] recovered "
-                    f"{recovered_parent} parent effects from exact Facts"
-                )
         except Exception as exc:  # noqa: BLE001 - corrupt recovery must block start
             diagnostic_log(
-                "[ORCHESTRATION] parent-effect recovery failed: "
+                "[ORCHESTRATION] composition parent-effect discovery failed: "
                 f"{type(exc).__name__}: {exc}"
             )
             raise OrchestrationError(
@@ -777,6 +811,7 @@ class GatewayOrchestrationWorker:
             recovered = self._store.recover_started_effects(
                 now_ms=now_ms,
                 exclude_pipeline_versions=(COMPOSITION_STEP_PIPELINE_VERSION,),
+                exclude_effect_ids=protected_parent_effect_ids,
             )
             if recovered:
                 diagnostic_log(
@@ -945,22 +980,606 @@ class GatewayOrchestrationWorker:
         )
         return outcome
 
-    def _recover_parent_started_effects(self, *, now_ms: int) -> int:
-        """Close the parent Fact-before-Effect crash window without replay.
+    @staticmethod
+    def _parent_effect_result_from_batch(effect, batch) -> EffectResult:
+        """Project one exact parent Fact batch into its canonical Effect result."""
 
-        The generic Store recovery cannot inspect the separate FactLedger and
-        therefore must not be allowed to overwrite an exact backend Fact with
-        an interruption failure.  This worker owns both authorities and first
-        promotes only an exact immutable parent batch.  A STARTED parent with
-        no batch is outcome-unknown (the handler may have returned before the
-        Fact commit), so this owner-aware layer closes it AMBIGUOUS instead of
-        letting the Store's legacy wrapper rule mislabel it FAILED_FINAL.
+        claim = effect.claim
+        result = batch.result
+        if (
+            not claim.has_valid_sha256()
+            or not batch.facts
+            or tuple(item.fact_id for item in batch.facts) != result.fact_ids
+            or result.effect_id != claim.effect_id
+            or result.request_id != claim.request_id
+            or result.run_id != claim.run_id
+            or result.generation != claim.generation
+            or result.attempt != claim.attempt
+            or result.action_id != "gateway.model.run"
+            or result.action_version != "1.0.0"
+            or not result.side_effect_started
+            or result.started_at_ms < claim.claimed_at_ms
+        ):
+            raise OrchestrationError(
+                "orchestration.parent.recovery_fact_mismatch",
+                ambiguous=True,
+            )
+        status = (
+            "SUCCEEDED"
+            if result.status == "SUCCEEDED"
+            else "AMBIGUOUS"
+            if result.status == "AMBIGUOUS"
+            else "FAILED_FINAL"
+        )
+        return EffectResult(
+            result_id="effect-result-" + result.result_id[:120],
+            effect_id=claim.effect_id,
+            status=status,
+            fact_id=result.fact_ids[0],
+            result_object_id=batch.result_payload_object_id,
+            result_object_sha256=batch.result_payload_sha256,
+            evidence_sha256=batch.response_sha256,
+            error_code=(
+                None
+                if status == "SUCCEEDED"
+                else result.error_code or "execution.failed"
+            ),
+            observed_at_ms=max(
+                batch.observed_at_ms,
+                effect.side_effect_started_at_ms or claim.claimed_at_ms,
+            ),
+            result_sha256="0" * 64,
+        ).with_computed_sha256()
+
+    def _validate_durable_parent_bundle(
+        self,
+        *,
+        effect,
+        batch,
+        continuation,
+    ) -> tuple[EffectResult, dict[str, Any]]:
+        """Validate the complete immutable parent authority before mutation."""
+
+        expected_result = self._parent_effect_result_from_batch(effect, batch)
+        context = continuation.issuance_context
+        result = batch.result
+        reference = self._objects.get_reference(batch.result_payload_object_id)
+        try:
+            payload_bytes = self._objects.read_bytes(
+                batch.result_payload_object_id
+            )
+            result_payload = json.loads(
+                payload_bytes.decode("utf-8", errors="strict")
+            )
+            canonical_payload = canonical_json_bytes(result_payload)
+        except Exception as exc:
+            raise OrchestrationError(
+                "orchestration.composition.resume_payload_invalid",
+                ambiguous=True,
+            ) from exc
+        if (
+            not isinstance(result_payload, dict)
+            or reference is None
+            or not reference.has_valid_sha256()
+            or reference.object_id != batch.result_payload_object_id
+            or reference.kind != "payload"
+            or reference.sha256 != batch.result_payload_sha256
+            or reference.size_bytes != len(payload_bytes)
+            or reference.tenant_id != context["tenant_id"]
+            or reference.link_account_id != context["link_account_id"]
+            or reference.conversation_scope_hash
+            != context["conversation_scope_hash"]
+            or batch.tenant_id != context["tenant_id"]
+            or batch.link_account_id != context["link_account_id"]
+            or batch.conversation_scope_hash
+            != context["conversation_scope_hash"]
+            or batch.workspace_id != continuation.workspace_id
+            or batch.max_output_bytes != context["max_output_bytes"]
+            or result.ticket_id != continuation.parent_ticket_id
+            or result.result_payload_sha256 != batch.result_payload_sha256
+            or len(payload_bytes) > batch.max_output_bytes
+            or canonical_payload != payload_bytes
+        ):
+            raise OrchestrationError(
+                "orchestration.composition.resume_payload_mismatch",
+                ambiguous=True,
+            )
+        return expected_result, result_payload
+
+    def _append_parent_recovery_terminal_event(
+        self,
+        effect,
+        effect_result: EffectResult,
+    ) -> None:
+        status = effect_result.status
+        _append_orchestration_effect_event(
+            self._store,
+            event_key=(
+                "step.committed:"
+                if status == "SUCCEEDED"
+                else "step.ambiguous:"
+                if status == "AMBIGUOUS"
+                else "step.failed:"
+            )
+            + effect.claim.effect_id,
+            event_type=(
+                "step.committed"
+                if status == "SUCCEEDED"
+                else "step.ambiguous"
+                if status == "AMBIGUOUS"
+                else "step.failed"
+            ),
+            payload={
+                "effect_state": status,
+                "source": "gateway_orchestration_parent_recovery",
+            },
+            request_id=effect.claim.request_id,
+            run_id=effect.claim.run_id,
+            generation=effect.claim.generation,
+            effect_id=effect.claim.effect_id,
+            created_at_ms=effect_result.observed_at_ms,
+        )
+
+    def _promote_parent_fact(
+        self,
+        effect,
+        batch,
+    ):
+        effect_result = self._parent_effect_result_from_batch(effect, batch)
+        self._store.complete_effect(
+            effect_result,
+            expected_state="SIDE_EFFECT_STARTED",
+        )
+        self._append_parent_recovery_terminal_event(effect, effect_result)
+        promoted = self._store.get_effect(effect.claim.effect_id)
+        if (
+            promoted is None
+            or promoted.state != effect_result.status
+            or promoted.result != effect_result
+        ):
+            raise OrchestrationError(
+                "orchestration.parent.recovery_effect_mismatch",
+                ambiguous=True,
+            )
+        return promoted
+
+    def _close_parent_without_fact(
+        self,
+        effect,
+        *,
+        now_ms: int,
+        proven_not_applied: bool,
+    ):
+        claim = effect.claim
+        status = "FAILED_FINAL" if proven_not_applied else "AMBIGUOUS"
+        code = (
+            "composition.execution.parent_proven_not_applied_after_restart"
+            if proven_not_applied
+            else "effect.result_missing_after_restart"
+        )
+        observed_at_ms = max(
+            now_ms,
+            effect.side_effect_started_at_ms or claim.claimed_at_ms,
+        )
+        evidence_sha256 = canonical_sha256(
+            {
+                "domain": "tiangong.gateway.parent-effect-recovery.v1",
+                "effect_id": claim.effect_id,
+                "reason": (
+                    "proven_not_applied_after_restart"
+                    if proven_not_applied
+                    else "result_missing_after_restart"
+                ),
+            }
+        )
+        effect_result = EffectResult(
+            result_id=(
+                "effect-result-parent-not-applied-"
+                if proven_not_applied
+                else "effect-result-parent-ambiguous-"
+            )
+            + claim.effect_id[4:20],
+            effect_id=claim.effect_id,
+            status=status,
+            fact_id="fact-parent-recovery-" + claim.effect_id[4:20],
+            evidence_sha256=evidence_sha256,
+            error_code=code,
+            observed_at_ms=observed_at_ms,
+            result_sha256="0" * 64,
+        ).with_computed_sha256()
+        self._store.complete_effect(
+            effect_result,
+            expected_state=(
+                "CLAIMED" if proven_not_applied else "SIDE_EFFECT_STARTED"
+            ),
+        )
+        self._append_parent_recovery_terminal_event(effect, effect_result)
+        closed = self._store.get_effect(claim.effect_id)
+        if closed is None or closed.result != effect_result:
+            raise OrchestrationError(
+                "orchestration.parent.recovery_effect_mismatch",
+                ambiguous=True,
+            )
+        return closed
+
+    def _durable_composition_parent_resume(
+        self,
+        activation: ActiveRequestActivation,
+        plan_record,
+        *,
+        now_ms: int,
+    ) -> _DurableParentExecution | None:
+        """Recover one sealed parent without ever minting or replaying it."""
+
+        plan = plan_record.executable_plan
+        parent_effects = tuple(
+            item
+            for item in self._store.list_effects_for_request(
+                activation.entry.request_id,
+                run_id=activation.generation.run_id,
+                generation=activation.generation.generation,
+            )
+            if item.claim.effect_kind == "execution"
+            and item.claim.ordinal == 0
+            and item.claim.pipeline_version == "unspecified"
+            and item.claim.owner_component_id == "tiangong-backend"
+        )
+        continuation = self._store.get_composition_continuation_for_plan(
+            plan.executable_plan_id
+        )
+        if continuation is None:
+            # No parent means this is the one genuinely fresh entry.  Once a
+            # parent claim exists, however, falling through would mint/replay a
+            # second parent across the pre-seal crash window.  Close CLAIMED
+            # only when Fact absence proves dispatch never happened; every
+            # applied/terminal shape without the sealed continuation is
+            # reconciliation-required and is never replayed.
+            if not parent_effects:
+                return None
+            if len(parent_effects) != 1:
+                code = "orchestration.composition.parent_effect_not_unique"
+                self._terminalize_composition_failure(
+                    activation,
+                    execution_entity="execution-" + activation.generation.run_id,
+                    delivery_entity="delivery-" + activation.generation.run_id,
+                    code=code,
+                    ambiguous=True,
+                    observed_at_ms=now_ms,
+                )
+                raise OrchestrationError(code, ambiguous=True)
+            effect = parent_effects[0]
+            if not effect.claim.has_valid_sha256():
+                code = "orchestration.composition.resume_authority_mismatch"
+                self._terminalize_composition_failure(
+                    activation,
+                    execution_entity="execution-" + activation.generation.run_id,
+                    delivery_entity="delivery-" + activation.generation.run_id,
+                    code=code,
+                    ambiguous=True,
+                    observed_at_ms=now_ms,
+                )
+                raise OrchestrationError(code, ambiguous=True)
+            batch = self._facts.get_batch_for_effect(
+                effect.claim.effect_id,
+                verify_payload=True,
+            )
+            if batch is None:
+                if effect.state == "CLAIMED":
+                    effect = self._close_parent_without_fact(
+                        effect,
+                        now_ms=now_ms,
+                        proven_not_applied=True,
+                    )
+                elif effect.state == "SIDE_EFFECT_STARTED":
+                    effect = self._close_parent_without_fact(
+                        effect,
+                        now_ms=now_ms,
+                        proven_not_applied=False,
+                    )
+            else:
+                expected_result = self._parent_effect_result_from_batch(
+                    effect,
+                    batch,
+                )
+                # Without the sealed continuation there is no authority to
+                # validate ticket/scope/Object binding.  Never turn this partial
+                # evidence into a canonical SUCCEEDED Effect; preserve the head
+                # for reconciliation and close only the owning request.
+                if (
+                    effect.state not in {"CLAIMED", "SIDE_EFFECT_STARTED"}
+                    and effect.result != expected_result
+                ):
+                    raise OrchestrationError(
+                        "orchestration.composition.resume_effect_mismatch",
+                        ambiguous=True,
+                    )
+            result = effect.result
+            ambiguous = effect.state != "FAILED_FINAL"
+            code = (
+                None if result is None else result.error_code
+            ) or (
+                "orchestration.composition.continuation_missing_after_parent"
+                if ambiguous
+                else "orchestration.composition.parent_proven_not_applied_after_restart"
+            )
+            observed_at_ms = max(
+                now_ms,
+                0 if result is None else result.observed_at_ms,
+            )
+            self._terminalize_composition_failure(
+                activation,
+                execution_entity="execution-" + activation.generation.run_id,
+                delivery_entity="delivery-" + activation.generation.run_id,
+                code=code,
+                ambiguous=ambiguous,
+                observed_at_ms=observed_at_ms,
+                fact_id=None if result is None else result.fact_id,
+                evidence_sha256=(
+                    None if result is None else result.evidence_sha256
+                ),
+            )
+            raise OrchestrationError(code, ambiguous=ambiguous)
+        if len(parent_effects) != 1:
+            raise OrchestrationError(
+                "orchestration.composition.parent_effect_not_unique",
+                ambiguous=True,
+            )
+        envelope = activation.envelope
+        generation = activation.generation
+        context = continuation.issuance_context
+        exact_context = (
+            continuation.registration_id == plan.registration_id
+            and continuation.executable_plan_id == plan.executable_plan_id
+            and continuation.executable_plan_sha256
+            == plan.executable_plan_sha256
+            and continuation.request_id == activation.entry.request_id
+            and continuation.run_id == generation.run_id
+            and continuation.generation == generation.generation
+            and continuation.principal_scope_hash
+            == envelope.principal_scope_hash
+            and continuation.workspace_id == plan.workspace.workspace_id
+            and continuation.workspace_scope_sha256
+            == plan.workspace.workspace_scope_sha256
+            and context["channel"] == envelope.channel
+            and context["tenant_id"] == envelope.tenant_id
+            and context["link_account_id"] == envelope.link_account_id
+            and context["conversation_scope_hash"]
+            == envelope.conversation_scope_hash
+            and context["session_id"] == envelope.conversation_ref
+            and isinstance(context["artifact_intent_id"], str)
+            and bool(context["artifact_intent_id"])
+        )
+        effect = parent_effects[0]
+        if (
+            not exact_context
+            or effect is None
+            or not effect.claim.has_valid_sha256()
+            or effect.claim.claim_sha256
+            != continuation.parent_effect_claim_sha256
+            or effect.claim.effect_id != continuation.parent_effect_id
+            or effect.claim.request_id != continuation.request_id
+            or effect.claim.run_id != continuation.run_id
+            or effect.claim.generation != continuation.generation
+            or effect.claim.effect_kind != "execution"
+            or effect.claim.ordinal != 0
+            or effect.claim.pipeline_version != "unspecified"
+            or effect.claim.owner_component_id != "tiangong-backend"
+        ):
+            raise OrchestrationError(
+                "orchestration.composition.resume_authority_mismatch",
+                ambiguous=True,
+            )
+
+        batch = self._facts.get_batch_for_effect(
+            effect.claim.effect_id,
+            verify_payload=True,
+        )
+        execution_entity = "execution-" + generation.run_id
+        delivery_entity = "delivery-" + generation.run_id
+        if batch is None:
+            if effect.state == "CLAIMED":
+                effect = self._close_parent_without_fact(
+                    effect,
+                    now_ms=now_ms,
+                    proven_not_applied=True,
+                )
+            elif effect.state == "SIDE_EFFECT_STARTED":
+                effect = self._close_parent_without_fact(
+                    effect,
+                    now_ms=now_ms,
+                    proven_not_applied=False,
+                )
+            if effect.state in {"FAILED_FINAL", "AMBIGUOUS"}:
+                result = effect.result
+                if result is None:
+                    raise OrchestrationError(
+                        "orchestration.composition.resume_effect_mismatch",
+                        ambiguous=True,
+                    )
+                self._terminalize_composition_failure(
+                    activation,
+                    execution_entity=execution_entity,
+                    delivery_entity=delivery_entity,
+                    code=(
+                        result.error_code
+                        or "orchestration.composition.parent_resume_failed"
+                    ),
+                    ambiguous=effect.state == "AMBIGUOUS",
+                    observed_at_ms=result.observed_at_ms,
+                    fact_id=result.fact_id,
+                    evidence_sha256=result.evidence_sha256,
+                )
+                raise OrchestrationError(
+                    result.error_code
+                    or "orchestration.composition.parent_resume_failed",
+                    ambiguous=effect.state == "AMBIGUOUS",
+                )
+            raise OrchestrationError(
+                "orchestration.composition.resume_fact_missing",
+                ambiguous=True,
+            )
+
+        # Validate the complete immutable bundle before making a CLAIMED head
+        # look STARTED.  This includes ticket, tenant/account/conversation,
+        # workspace and ObjectStore authority, not merely the Fact's Effect ID.
+        # No handler is invoked on this path.
+        expected_result, result_payload = self._validate_durable_parent_bundle(
+            effect=effect,
+            batch=batch,
+            continuation=continuation,
+        )
+        if expected_result.status != "SUCCEEDED":
+            raise OrchestrationError(
+                "orchestration.composition.resume_parent_not_successful",
+                ambiguous=expected_result.status == "AMBIGUOUS",
+            )
+
+        executor = getattr(self, "_composition_steps", None)
+        pure_finalization = False
+        if executor is not None:
+            projection = executor.project_plan(plan)
+            pure_finalization = (
+                projection.all_steps_succeeded
+                and projection.next_step_id is None
+                and not projection.failed_step_ids
+                and not projection.reconcile_step_ids
+                and not projection.recoverable_step_ids
+            )
+        if not pure_finalization:
+            # Expiry may never authorize another child.  Check the current plan
+            # and inert continuation before changing the parent Effect head;
+            # the parent-success requirement is rechecked after promotion.
+            active_plan = self._store.get_active_executable_composition_plan(
+                plan.registration_id,
+                now_ms=now_ms,
+            )
+            live_continuation = (
+                self._store.get_composition_continuation_for_plan(
+                    plan.executable_plan_id,
+                    now_ms=now_ms,
+                    require_parent_success=False,
+                )
+            )
+            if (
+                active_plan is None
+                or active_plan.executable_plan.executable_plan_id
+                != plan.executable_plan_id
+                or active_plan.executable_plan.executable_plan_sha256
+                != plan.executable_plan_sha256
+                or live_continuation != continuation
+            ):
+                raise OrchestrationError(
+                    "orchestration.composition.resume_authority_not_current",
+                    ambiguous=True,
+                )
+        if effect.state == "CLAIMED":
+            self._store.mark_effect_started(
+                effect.claim.effect_id,
+                started_at_ms=batch.result.started_at_ms,
+            )
+            effect = self._store.get_effect(effect.claim.effect_id)
+            if effect is None or effect.state != "SIDE_EFFECT_STARTED":
+                raise OrchestrationError(
+                    "orchestration.parent.recovery_effect_mismatch",
+                    ambiguous=True,
+                )
+        if effect.state == "SIDE_EFFECT_STARTED":
+            effect = self._promote_parent_fact(effect, batch)
+        elif effect.state == "SUCCEEDED":
+            expected_result = self._parent_effect_result_from_batch(effect, batch)
+            if effect.result != expected_result:
+                raise OrchestrationError(
+                    "orchestration.composition.resume_effect_mismatch",
+                    ambiguous=True,
+                )
+        else:
+            raise OrchestrationError(
+                "orchestration.composition.resume_effect_mismatch",
+                ambiguous=True,
+            )
+        if not pure_finalization:
+            live_continuation = (
+                self._store.get_composition_continuation_for_plan(
+                    plan.executable_plan_id,
+                    now_ms=now_ms,
+                    require_parent_success=True,
+                )
+            )
+            if live_continuation != continuation:
+                raise OrchestrationError(
+                    "orchestration.composition.resume_authority_not_current",
+                    ambiguous=True,
+                )
+
+        result = batch.result
+        return _DurableParentExecution(
+            result=result,
+            result_payload=result_payload,
+            response_sha256=batch.response_sha256,
+            observed_at_ms=max(batch.observed_at_ms, result.finished_at_ms),
+            parent_effect_id=effect.claim.effect_id,
+            life_id=context["life_id"],
+            life_evidence_ref=context["life_evidence_ref"],
+            output_root_id=context["output_root_id"],
+            artifact_intent_id=context["artifact_intent_id"],
+        )
+
+    def _continue_durable_composition_parent(
+        self,
+        activation: ActiveRequestActivation,
+        plan_record,
+        parent: _DurableParentExecution,
+    ) -> None:
+        """Adapt reconstructed parent authority to the sole success tail."""
+
+        generation = activation.generation
+        request_id = activation.entry.request_id
+        run_id = generation.run_id
+        return self._continue_after_parent_success(
+            activation=activation,
+            envelope=activation.envelope,
+            generation=generation,
+            request_id=request_id,
+            run_id=run_id,
+            run_sequence=generation.run_sequence,
+            composition_plan_record=plan_record,
+            execution_entity="execution-" + run_id,
+            delivery_entity="delivery-" + run_id,
+            parent_effect_id=parent.parent_effect_id,
+            observed_at=parent.observed_at_ms,
+            response=parent,
+            artifact_intent_id=parent.artifact_intent_id,
+            workspace_id=plan_record.executable_plan.workspace.workspace_id,
+            manifest=None,
+            action=None,
+            permission=None,
+            outer_registry=None,
+            transport=None,
+            arguments={},
+            grants=(),
+            resources=None,
+            life=None,
+            life_id=parent.life_id,
+            life_evidence_ref=parent.life_evidence_ref,
+            output_root_id=parent.output_root_id,
+            durable_resume=True,
+        )
+
+    def _composition_parent_started_effect_ids(self) -> tuple[str, ...]:
+        """Identify parent Effects that only the composition resume path owns.
+
+        Startup recovery has neither the activation envelope nor the sealed
+        continuation/Object bundle needed to validate a composition parent.
+        It therefore performs no Effect mutation.  These exact IDs are merely
+        excluded from the generic wrapper recovery and are later resolved by
+        ``_durable_composition_parent_resume`` with the complete authority set.
+        Non-composition parents continue through the established generic path.
         """
 
-        recovered = 0
+        protected: list[str] = []
         for effect in self._store.list_effects_for_pipeline(
             "unspecified",
-            states=("SIDE_EFFECT_STARTED",),
+            states=("CLAIMED", "SIDE_EFFECT_STARTED"),
         ):
             claim = effect.claim
             if (
@@ -969,116 +1588,27 @@ class GatewayOrchestrationWorker:
                 or claim.ordinal != 0
             ):
                 continue
-            batch = self._facts.get_batch_for_effect(
-                claim.effect_id,
-                verify_payload=True,
+            plan_record = (
+                self._store.get_executable_composition_plan_for_request(
+                    claim.request_id,
+                    run_id=claim.run_id,
+                    generation=claim.generation,
+                )
             )
-            if batch is None:
-                status = "AMBIGUOUS"
-                observed_at_ms = max(
-                    now_ms,
-                    effect.side_effect_started_at_ms
-                    or claim.claimed_at_ms,
+            if plan_record is None:
+                continue
+            plan = plan_record.executable_plan
+            if (
+                plan.request_id != claim.request_id
+                or plan.run_id != claim.run_id
+                or plan.generation != claim.generation
+            ):
+                raise OrchestrationError(
+                    "orchestration.composition.resume_authority_mismatch",
+                    ambiguous=True,
                 )
-                evidence_sha256 = canonical_sha256(
-                    {
-                        "domain": "tiangong.gateway.parent-effect-recovery.v1",
-                        "effect_id": claim.effect_id,
-                        "reason": "result_missing_after_restart",
-                    }
-                )
-                effect_result = EffectResult(
-                    result_id=(
-                        "effect-result-parent-ambiguous-"
-                        + claim.effect_id[4:20]
-                    ),
-                    effect_id=claim.effect_id,
-                    status=status,
-                    fact_id="fact-parent-recovery-" + claim.effect_id[4:20],
-                    evidence_sha256=evidence_sha256,
-                    error_code="effect.result_missing_after_restart",
-                    observed_at_ms=observed_at_ms,
-                    result_sha256="0" * 64,
-                ).with_computed_sha256()
-            else:
-                result = batch.result
-                if (
-                    not batch.facts
-                    or tuple(item.fact_id for item in batch.facts)
-                    != result.fact_ids
-                    or result.effect_id != claim.effect_id
-                    or result.request_id != claim.request_id
-                    or result.run_id != claim.run_id
-                    or result.generation != claim.generation
-                    or result.attempt != claim.attempt
-                    or result.action_id != "gateway.model.run"
-                    or result.action_version != "1.0.0"
-                    or not result.side_effect_started
-                ):
-                    raise OrchestrationError(
-                        "orchestration.parent.recovery_fact_mismatch",
-                        ambiguous=True,
-                    )
-                status = (
-                    "SUCCEEDED"
-                    if result.status == "SUCCEEDED"
-                    else "AMBIGUOUS"
-                    if result.status == "AMBIGUOUS"
-                    else "FAILED_FINAL"
-                )
-                effect_result = EffectResult(
-                    result_id="effect-result-" + result.result_id[:120],
-                    effect_id=claim.effect_id,
-                    status=status,
-                    fact_id=result.fact_ids[0],
-                    result_object_id=batch.result_payload_object_id,
-                    result_object_sha256=batch.result_payload_sha256,
-                    evidence_sha256=batch.response_sha256,
-                    error_code=(
-                        None
-                        if status == "SUCCEEDED"
-                        else result.error_code or "execution.failed"
-                    ),
-                    observed_at_ms=max(
-                        batch.observed_at_ms,
-                        effect.side_effect_started_at_ms
-                        or claim.claimed_at_ms,
-                    ),
-                    result_sha256="0" * 64,
-                ).with_computed_sha256()
-            self._store.complete_effect(
-                effect_result,
-                expected_state="SIDE_EFFECT_STARTED",
-            )
-            _append_orchestration_effect_event(
-                self._store,
-                event_key=(
-                    "step.committed:"
-                    if status == "SUCCEEDED"
-                    else "step.ambiguous:"
-                    if status == "AMBIGUOUS"
-                    else "step.failed:"
-                )
-                + claim.effect_id,
-                event_type=(
-                    "step.committed"
-                    if status == "SUCCEEDED"
-                    else "step.ambiguous"
-                    if status == "AMBIGUOUS"
-                    else "step.failed"
-                ),
-                payload={
-                    "effect_state": status,
-                    "source": "gateway_orchestration_parent_recovery",
-                },
-                request_id=claim.request_id,
-                run_id=claim.run_id,
-                generation=claim.generation,
-                effect_id=claim.effect_id,
-                created_at_ms=effect_result.observed_at_ms,
-            )
-            recovered += 1
-        return recovered
+            protected.append(claim.effect_id)
+        return tuple(sorted(protected))
 
     def _terminalize_composition_failure(
         self,
@@ -1753,12 +2283,92 @@ class GatewayOrchestrationWorker:
         )
         return safe[:160]
 
+    def _has_sealed_composition_tail(
+        self,
+        activation: ActiveRequestActivation,
+    ) -> bool:
+        """Return whether recovery is past the bounded execution retry phase.
+
+        A stored COMPLETED decision is sealed before Life and fences further
+        verification writes.  When it belongs to an executable composition
+        plan, re-entering ``process`` only recovers the idempotent shared tail;
+        it must not be converted to FAILED by the generic revision cap.
+        """
+
+        request_id = activation.entry.request_id
+        run_id = activation.generation.run_id
+        generation = activation.generation.generation
+        plan = self._store.get_executable_composition_plan_for_request(
+            request_id,
+            run_id=run_id,
+            generation=generation,
+        )
+        if plan is None:
+            return False
+        decisions = self._store.list_completion_decisions(
+            request_id,
+            run_id=run_id,
+            generation=generation,
+        )
+        if len(decisions) != 1:
+            return False
+        decision = decisions[0].decision
+        return bool(
+            decision.has_valid_sha256()
+            and decision.request_id == request_id
+            and decision.run_id == run_id
+            and decision.generation == generation
+            and decision.outcome == "COMPLETED"
+            and decision.can_transition_request_completed
+        )
+
+    def _should_reexecute_without_outbox(
+        self,
+        activation: ActiveRequestActivation,
+    ) -> bool:
+        if self._has_sealed_composition_tail(activation):
+            return True
+        return bool(
+            os.environ.get(
+                "TIANGONG_REQUEST_REEXECUTION", "1"
+            ).strip().lower()
+            not in {"0", "false", "off"}
+            and activation.generation.revision <= 3
+        )
+
+    def _retire_one_stranded_terminal_session(self, *, now_ms: int) -> bool:
+        stranded = self._store.list_terminal_active_session_request_ids(
+            limit=1
+        )
+        if not stranded:
+            return False
+        request_id = stranded[0]
+        entry = self._store.get_request_entry(request_id)
+        if entry is None:
+            raise OrchestrationError(
+                "orchestration.terminal_request.journal_missing"
+            )
+        # A crash after the request aggregate became terminal but before the
+        # ACTIVE session head was retired must not wedge the queue.  The
+        # request outcome is already authoritative; this is an idempotent
+        # queue projection repair only.
+        self._store.complete_session_request(
+            entry.session_scope_hash,
+            request_id,
+            completed_at_ms=now_ms,
+            release_generation=False,
+        )
+        return True
+
     def _run(self) -> None:
         while not self._closed.is_set():
             activation: ActiveRequestActivation | None = None
             try:
                 now_ms = time.time_ns() // 1_000_000
                 self._reconcile_stale_effects(now_ms=now_ms)
+                if self._retire_one_stranded_terminal_session(now_ms=now_ms):
+                    self._set_error(None)
+                    continue
                 stranded_cancelled = self._store.list_cancelled_active_session_request_ids(limit=1)
                 if stranded_cancelled:
                     cancelled_request_id = stranded_cancelled[0]
@@ -1781,15 +2391,16 @@ class GatewayOrchestrationWorker:
                         generation=recovered.generation.generation,
                     )
                     if not outboxes and (
-                        os.environ.get("TIANGONG_REQUEST_REEXECUTION", "1").strip().lower()
-                        not in {"0", "false", "off"}
-                        and recovered.generation.revision <= 3
+                        self._should_reexecute_without_outbox(recovered)
                     ):
                         # 崩溃于执行中（无 outbox）：重新执行而非直接判死。
                         # backend 的 simple_chain 按 request_id 恢复
                         #（checkpoint/frontier），effect 层幂等挡住重复
                         # 副作用；recover 每次 revision+1，超过 3 次按
                         # 循环防护判死。P18 regenerative 机器由此被真正消费。
+                        # 已 seal 的 composition CompletionDecision 已越过
+                        # execution/P19，故不受该通用次数上限影响；它只会
+                        # 恢复 Life/desktop shared tail，不会重放 handler。
                         reexec_stop = threading.Event()
 
                         def reexec_heartbeat() -> None:
@@ -1904,6 +2515,14 @@ class GatewayOrchestrationWorker:
         """
         reconciled = 0
         stale_before_ms = now_ms - stale_after_ms
+        # Parent Effects that are bound to an executable composition plan are
+        # resolved only by the durable parent adapter.  Discover the complete
+        # protected set before inspecting stale heads so a Store/read failure
+        # fails closed instead of letting the generic watchdog overwrite a
+        # provable parent Fact with AMBIGUOUS.
+        protected_parent_effect_ids = frozenset(
+            self._composition_parent_started_effect_ids()
+        )
         for effect_id in self._store.list_stale_non_terminal_effect_ids(
             stale_before_ms=stale_before_ms
         ):
@@ -1916,6 +2535,7 @@ class GatewayOrchestrationWorker:
             if (
                 getattr(getattr(effect, "claim", None), "pipeline_version", None)
                 == COMPOSITION_STEP_PIPELINE_VERSION
+                or effect_id in protected_parent_effect_ids
             ):
                 continue
             result = EffectResult(
@@ -2033,13 +2653,170 @@ class GatewayOrchestrationWorker:
         final_result: str,
         fact_ids: tuple[str, ...],
         completed_at_ms: int,
+        recover_existing: bool = False,
+        require_authority: bool = False,
     ) -> Mapping[str, Any] | None:
+        strict_tail = require_authority or recover_existing
         commit = self._life_execution_commit
         if commit is None:
+            if strict_tail:
+                raise OrchestrationError(
+                    _LIFE_TAIL_RETRY_REQUIRED,
+                    ambiguous=True,
+                )
             return None
+        stable_payload = {
+            "schema": "tiangong.life.execution-terminal.v1",
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "life_id": life_id,
+            "session_scope_hash": session_scope_hash,
+            "status": "completed",
+            "user_goal_sha256": canonical_sha256(user_goal),
+            "final_result_sha256": canonical_sha256(final_result),
+            "fact_ids": list(sorted(set(fact_ids))),
+            "completed_at_ms": completed_at_ms,
+        }
+
+        def validate_result(
+            result: object,
+            *,
+            repository_evidence: Mapping[str, Any] | None,
+        ) -> Mapping[str, Any]:
+            if (
+                not isinstance(result, Mapping)
+                or result.get("ok") is not True
+                or type(result.get("duplicate")) is not bool
+            ):
+                raise OrchestrationError(
+                    "orchestration.life.response_mismatch",
+                    ambiguous=True,
+                )
+            execution = result.get("execution")
+            if not isinstance(execution, Mapping):
+                raise OrchestrationError(
+                    "orchestration.life.response_mismatch",
+                    ambiguous=True,
+                )
+            expected_payload = dict(stable_payload)
+            if repository_evidence is not None:
+                expected_payload["repository_evidence"] = dict(
+                    repository_evidence
+                )
+            execution_keys = set(execution)
+            expected_keys = set(expected_payload)
+            if (
+                not expected_keys.issubset(execution_keys)
+                or bool(
+                    (execution_keys - expected_keys)
+                    - {"commit_sha256", "committed_at"}
+                )
+            ):
+                raise OrchestrationError(
+                    "orchestration.life.response_mismatch",
+                    ambiguous=True,
+                )
+            actual_payload = {
+                key: execution[key] for key in expected_payload
+            }
+            try:
+                exact_payload = (
+                    canonical_json_bytes(actual_payload)
+                    == canonical_json_bytes(expected_payload)
+                )
+                expected_commit_sha256 = canonical_sha256(
+                    {
+                        "domain": "tiangong.life.execution-commit.v1",
+                        "payload": actual_payload,
+                    }
+                )
+            except (TypeError, ValueError):
+                exact_payload = False
+                expected_commit_sha256 = None
+            if (
+                not exact_payload
+                or execution.get("commit_sha256")
+                != expected_commit_sha256
+            ):
+                raise OrchestrationError(
+                    "orchestration.life.response_mismatch",
+                    ambiguous=True,
+                )
+            return result
+
+        def recover() -> Mapping[str, Any] | None:
+            client = getattr(self, "_life_compat_client", None)
+            request = getattr(client, "request", None)
+            if not callable(request):
+                raise OrchestrationError(
+                    "orchestration.life.recovery_unavailable",
+                    ambiguous=True,
+                )
+            try:
+                status, recovered, _response_sha256 = request(
+                    "POST",
+                    "/api/v1/v3/life/execution/recover",
+                    {"request_id": request_id},
+                    timeout_seconds=10.0,
+                )
+            except Exception as exc:
+                raise OrchestrationError(
+                    "orchestration.life.recovery_failed",
+                    ambiguous=True,
+                ) from exc
+            if (
+                status >= 400
+                or not isinstance(recovered, Mapping)
+                or recovered.get("ok") is not True
+                or type(recovered.get("found")) is not bool
+            ):
+                raise OrchestrationError(
+                    "orchestration.life.recovery_failed",
+                    ambiguous=True,
+                )
+            if recovered["found"]:
+                execution = recovered.get("execution")
+                if not isinstance(execution, Mapping):
+                    raise OrchestrationError(
+                        "orchestration.life.recovery_mismatch",
+                        ambiguous=True,
+                    )
+                try:
+                    return validate_result(
+                        {
+                            "ok": True,
+                            "duplicate": True,
+                            "execution": execution,
+                        },
+                        repository_evidence=None,
+                    )
+                except OrchestrationError as exc:
+                    raise OrchestrationError(
+                        "orchestration.life.recovery_mismatch",
+                        ambiguous=True,
+                    ) from exc
+            return None
+
+        if strict_tail:
+            # Composition completion is an authority boundary, not optional
+            # enrichment.  Probe the sole Life writer before committing so a
+            # retry after an unknown response can reuse the exact record.  Its
+            # payload deliberately excludes the live repository enrichment:
+            # P19 already owns that evidence, while a re-sampled enrichment
+            # would make an otherwise idempotent terminal commit drift.
+            try:
+                recovered_result = recover()
+            except Exception as exc:
+                raise OrchestrationError(
+                    _LIFE_TAIL_RETRY_REQUIRED,
+                    ambiguous=True,
+                ) from exc
+            if recovered_result is not None:
+                return recovered_result
         repository_evidence = None
         provider = self._repository_evidence_provider
-        if callable(provider):
+        if not strict_tail and callable(provider):
             try:
                 candidate = provider({
                     "life_id": life_id,
@@ -2056,20 +2833,9 @@ class GatewayOrchestrationWorker:
                 # Repository evidence enriches the terminal experience but may
                 # never block the authoritative Life outcome commit.
                 repository_evidence = None
-        payload = {
-            "schema": "tiangong.life.execution-terminal.v1",
-            "request_id": request_id,
-            "run_id": run_id,
-            "generation": generation,
-            "life_id": life_id,
-            "session_scope_hash": session_scope_hash,
-            "status": "completed",
-            "user_goal_sha256": canonical_sha256(user_goal),
-            "final_result_sha256": canonical_sha256(final_result),
-            "fact_ids": list(sorted(set(fact_ids))),
-            "repository_evidence": repository_evidence,
-            "completed_at_ms": completed_at_ms,
-        }
+        payload = dict(stable_payload)
+        if repository_evidence is not None:
+            payload["repository_evidence"] = repository_evidence
         try:
             result = commit(payload)
         except Exception as exc:
@@ -2078,7 +2844,41 @@ class GatewayOrchestrationWorker:
                 f"request_id={request_id} run_id={run_id} "
                 f"type={type(exc).__name__} message={str(exc)[:500]}"
             )
+            if strict_tail:
+                try:
+                    recovered_result = recover()
+                except Exception as recovery_exc:
+                    raise OrchestrationError(
+                        _LIFE_TAIL_RETRY_REQUIRED,
+                        ambiguous=True,
+                    ) from recovery_exc
+                if recovered_result is not None:
+                    return recovered_result
+                raise OrchestrationError(
+                    _LIFE_TAIL_RETRY_REQUIRED,
+                    ambiguous=True,
+                ) from exc
             raise OrchestrationError("orchestration.life.commit_failed") from exc
+        if strict_tail:
+            try:
+                return validate_result(
+                    result,
+                    repository_evidence=None,
+                )
+            except OrchestrationError as exc:
+                try:
+                    recovered_result = recover()
+                except Exception as recovery_exc:
+                    raise OrchestrationError(
+                        _LIFE_TAIL_RETRY_REQUIRED,
+                        ambiguous=True,
+                    ) from recovery_exc
+                if recovered_result is not None:
+                    return recovered_result
+                raise OrchestrationError(
+                    _LIFE_TAIL_RETRY_REQUIRED,
+                    ambiguous=True,
+                ) from exc
         if not isinstance(result, Mapping) or result.get("ok") is not True:
             raise OrchestrationError("orchestration.life.commit_failed")
         return result
@@ -2127,6 +2927,13 @@ class GatewayOrchestrationWorker:
         generation = activation.generation.generation
         request = self._store.get_snapshot("request", request_id)
         if request is None:
+            return
+        if getattr(error, "code", None) == _LIFE_TAIL_RETRY_REQUIRED:
+            # Runtime execution and P19/Completion authority have already
+            # succeeded, while the Life commit outcome is still unknown.  Do
+            # not manufacture a contradictory FAILED request or release the
+            # generation: lease expiry/startup recovery must re-enter the
+            # durable shared tail and recover the sole Life record first.
             return
         if self._store.list_outbox_for_request(
             request_id,
@@ -3071,8 +3878,69 @@ class GatewayOrchestrationWorker:
         request_id = activation.entry.request_id
         run_id = generation.run_id
         run_sequence = generation.run_sequence
+        composition_plan_record = (
+            self._store.get_executable_composition_plan_for_request(
+                request_id,
+                run_id=run_id,
+                generation=generation.generation,
+            )
+        )
+        if composition_plan_record is not None and envelope.channel != "desktop":
+            # P7D.2 is a local A0 read/verify loop.  It may feed the authenticated
+            # desktop pull result, but it must never cross an external delivery
+            # or send boundary.
+            raise OrchestrationError(
+                "orchestration.composition.desktop_only"
+            )
+        if composition_plan_record is not None and self._composition_steps is None:
+            raise OrchestrationError(
+                "orchestration.composition.executor_unavailable"
+            )
         execution_entity = "execution-" + run_id
         delivery_entity = "delivery-" + run_id
+        if composition_plan_record is not None:
+            try:
+                resumed_parent = self._durable_composition_parent_resume(
+                    activation,
+                    composition_plan_record,
+                    now_ms=now_ms,
+                )
+            except Exception as exc:
+                # recover_next() is held in a local variable by _run(), so its
+                # generic exception arm cannot terminalize this activation.
+                # Every failed early-authority check must therefore close the
+                # persisted request here (unless the helper already did so).
+                request_snapshot = self._store.get_snapshot(
+                    "request",
+                    request_id,
+                )
+                if request_snapshot is not None and not request_snapshot.is_terminal:
+                    code = str(
+                        getattr(exc, "code", None)
+                        or "orchestration.composition.resume_failed"
+                    )[:160]
+                    self._terminalize_composition_failure(
+                        activation,
+                        execution_entity=execution_entity,
+                        delivery_entity=delivery_entity,
+                        code=code,
+                        ambiguous=bool(getattr(exc, "ambiguous", True)),
+                        observed_at_ms=max(
+                            now_ms,
+                            time.time_ns() // 1_000_000,
+                        ),
+                    )
+                raise
+            if resumed_parent is not None:
+                # A durable continuation plus an exact parent Fact is the only
+                # early-entry authority.  Do not re-enter PLANNING, mint a new
+                # parent Ticket, or call the parent handler; resume the one
+                # existing post-success path from its Store/Fact projection.
+                return self._continue_durable_composition_parent(
+                    activation,
+                    composition_plan_record,
+                    resumed_parent,
+                )
         self._initialize("execution", execution_entity, activation, now_ms)
         self._initialize("delivery", delivery_entity, activation, now_ms)
         self._advance("request", request_id, "PLANNING", now_ms=now_ms)
@@ -3199,6 +4067,63 @@ class GatewayOrchestrationWorker:
         existing_effect, created = self._store.claim_effect(claim)
         if not created and existing_effect.result is not None:
             raise OrchestrationError("orchestration.execution.already_terminal")
+        try:
+            latest_composition_plan_record = (
+                self._store.get_executable_composition_plan_for_request(
+                    request_id,
+                    run_id=run_id,
+                    generation=generation.generation,
+                )
+            )
+            if composition_plan_record is None:
+                composition_plan_record = latest_composition_plan_record
+            elif (
+                latest_composition_plan_record is None
+                or latest_composition_plan_record.executable_plan.executable_plan_id
+                != composition_plan_record.executable_plan.executable_plan_id
+                or latest_composition_plan_record.executable_plan.executable_plan_sha256
+                != composition_plan_record.executable_plan.executable_plan_sha256
+            ):
+                raise OrchestrationError(
+                    "orchestration.composition.obligation_changed"
+                )
+            if (
+                composition_plan_record is not None
+                and envelope.channel != "desktop"
+            ):
+                raise OrchestrationError(
+                    "orchestration.composition.desktop_only"
+                )
+            if (
+                composition_plan_record is not None
+                and self._composition_steps is None
+            ):
+                raise OrchestrationError(
+                    "orchestration.composition.executor_unavailable"
+                )
+        except Exception as exc:
+            # The parent claim is durable but the backend boundary has not been
+            # crossed.  Close it synchronously as proven-not-applied instead of
+            # leaving a CLAIMED orphan for the generic ambiguity watchdog.
+            code = str(
+                getattr(exc, "code", None)
+                or "orchestration.composition.obligation_recheck_failed"
+            )[:160]
+            rejected_at_ms = max(time.time_ns() // 1_000_000, now_ms)
+            rejected = EffectResult(
+                result_id="effect-result-" + effect.effect_id[4:20],
+                effect_id=effect.effect_id,
+                status="FAILED_FINAL",
+                fact_id="fact-effect-" + effect.effect_id[4:20],
+                evidence_sha256=canonical_sha256(
+                    {"code": code, "status": "FAILED_FINAL"}
+                ),
+                error_code=code,
+                observed_at_ms=rejected_at_ms,
+                result_sha256="0" * 64,
+            ).with_computed_sha256()
+            self._store.complete_effect(rejected, expected_state="CLAIMED")
+            raise OrchestrationError(code) from exc
         _append_orchestration_effect_event(
             self._store,
             event_key=f"step.prepared:{effect.effect_id}",
@@ -3558,6 +4483,20 @@ class GatewayOrchestrationWorker:
         except Exception:
             watchdog_ms = 720_000
         try:
+            if composition_plan_record is not None:
+                continuation_id = (
+                    self._omni_grants.seal_composition_continuation(
+                        parent_ticket_id=ticket.payload.ticket_id,
+                        registration_id=(
+                            composition_plan_record.executable_plan.registration_id
+                        ),
+                        now_ms=issued_at,
+                    )
+                )
+                if continuation_id is None:
+                    raise OrchestrationError(
+                        "orchestration.composition.continuation_missing"
+                    )
             # The frozen backend executes in the gateway's watchdog pool.  The
             # v3 simple chain sets per-request ContextVars (e.g.
             # learning_intent_verified) on the caller's context; without an
@@ -3601,16 +4540,28 @@ class GatewayOrchestrationWorker:
                         or effect_record.state in {"CLAIMED", "SIDE_EFFECT_STARTED"}
                     ),
                 ) from None
-        except BackendClientError as exc:
+        except Exception as exc:
             effect_record = self._store.get_effect(effect.effect_id)
-            status = "AMBIGUOUS" if exc.ambiguous or (effect_record and effect_record.state == "SIDE_EFFECT_STARTED") else "FAILED_FINAL"
+            code = str(
+                getattr(exc, "code", None)
+                or "orchestration.execution.failed"
+            )[:160]
+            status = (
+                "AMBIGUOUS"
+                if bool(getattr(exc, "ambiguous", False))
+                or (
+                    effect_record is not None
+                    and effect_record.state == "SIDE_EFFECT_STARTED"
+                )
+                else "FAILED_FINAL"
+            )
             result = EffectResult(
                 result_id="effect-result-" + effect.effect_id[4:20],
                 effect_id=effect.effect_id,
                 status=status,
                 fact_id="fact-effect-" + effect.effect_id[4:20],
-                evidence_sha256=canonical_sha256({"code": exc.code, "status": status}),
-                error_code=exc.code,
+                evidence_sha256=canonical_sha256({"code": code, "status": status}),
+                error_code=code,
                 observed_at_ms=time.time_ns() // 1_000_000,
                 result_sha256="0" * 64,
             ).with_computed_sha256()
@@ -3654,7 +4605,7 @@ class GatewayOrchestrationWorker:
             )
             self._persist_interruption(
                 activation,
-                reason_code=exc.code,
+                reason_code=code,
                 observed_at_ms=result.observed_at_ms,
                 fact_id=result.fact_id,
             )
@@ -3663,7 +4614,9 @@ class GatewayOrchestrationWorker:
                 request_id,
                 completed_at_ms=result.observed_at_ms,
             )
-            raise OrchestrationError(exc.code, ambiguous=status == "AMBIGUOUS") from exc
+            raise OrchestrationError(
+                code, ambiguous=status == "AMBIGUOUS"
+            ) from exc
         finally:
             self._omni_grants.unregister(ticket.payload.ticket_id)
 
@@ -3746,50 +4699,271 @@ class GatewayOrchestrationWorker:
             )
             raise OrchestrationError(response.result.error_code or "orchestration.execution.failed")
 
-        # P7D.1 executes only a persisted, single A0 root authorization and
-        # does so after the parent response has both an immutable Gateway Fact
-        # and a successful Effect head.  This point is also after parent Omni
-        # authority unregister/core-lock release, but before aggregate success,
-        # artifact/Life commits or any delivery intent.
+        return self._continue_after_parent_success(
+            activation=activation,
+            envelope=envelope,
+            generation=generation,
+            request_id=request_id,
+            run_id=run_id,
+            run_sequence=run_sequence,
+            composition_plan_record=composition_plan_record,
+            execution_entity=execution_entity,
+            delivery_entity=delivery_entity,
+            parent_effect_id=effect.effect_id,
+            observed_at=observed_at,
+            response=response,
+            artifact_intent_id=artifact_intent_id,
+            workspace_id=workspace_id,
+            manifest=manifest,
+            action=action,
+            permission=permission,
+            outer_registry=outer_registry,
+            transport=transport,
+            arguments=arguments,
+            grants=grants,
+            resources=resources,
+            life=life,
+            life_id=life.snapshot.identity_ref,
+            life_evidence_ref=life_evidence_ref,
+            output_root_id=output_root_id,
+        )
+
+    def _continue_after_parent_success(
+        self,
+        *,
+        activation: ActiveRequestActivation,
+        envelope,
+        generation,
+        request_id: str,
+        run_id: str,
+        run_sequence: int,
+        composition_plan_record,
+        execution_entity: str,
+        delivery_entity: str,
+        parent_effect_id: str,
+        observed_at: int,
+        response,
+        artifact_intent_id: str,
+        workspace_id: str,
+        manifest,
+        action,
+        permission,
+        outer_registry,
+        transport,
+        arguments,
+        grants,
+        resources,
+        life,
+        life_id: str,
+        life_evidence_ref: str,
+        output_root_id: str,
+        durable_resume: bool = False,
+    ) -> None:
+        # P7D.2 advances a persisted A0 DAG only after the parent response has
+        # both an immutable Gateway Fact and a successful Effect head.  The
+        # frontier is always rebuilt from Store/Fact authority; no scheduler or
+        # mutable checkpoint is introduced here.
+        if type(durable_resume) is not bool:
+            raise ValueError("durable resume marker is invalid")
+        durable_request_snapshot = (
+            self._store.get_snapshot("request", request_id)
+            if durable_resume
+            else None
+        )
+        durable_delivery_snapshot = (
+            self._store.get_snapshot("delivery", delivery_entity)
+            if durable_resume
+            else None
+        )
+        durable_execution_snapshot = (
+            self._store.get_snapshot("execution", execution_entity)
+            if durable_resume
+            else None
+        )
+        if durable_resume and (
+            durable_request_snapshot is None
+            or durable_delivery_snapshot is None
+            or durable_execution_snapshot is None
+        ):
+            raise OrchestrationError("orchestration.state.missing")
+        if durable_resume:
+            expected_snapshot_bindings = (
+                (
+                    durable_request_snapshot,
+                    "request",
+                    request_id,
+                ),
+                (
+                    durable_execution_snapshot,
+                    "execution",
+                    execution_entity,
+                ),
+                (
+                    durable_delivery_snapshot,
+                    "delivery",
+                    delivery_entity,
+                ),
+            )
+            if any(
+                snapshot.machine != machine
+                or snapshot.entity_id != entity_id
+                or snapshot.request_id != request_id
+                or snapshot.run_id != run_id
+                or snapshot.generation != generation.generation
+                for snapshot, machine, entity_id in expected_snapshot_bindings
+            ):
+                raise OrchestrationError(
+                    "orchestration.resume.state_identity_mismatch",
+                    ambiguous=True,
+                )
+            request_state = durable_request_snapshot.state
+            execution_state = durable_execution_snapshot.state
+            delivery_state = durable_delivery_snapshot.state
+            if (
+                request_state
+                not in {
+                    "EXECUTING",
+                    "VALIDATING_ARTIFACTS",
+                    "DELIVERING",
+                    "COMPLETED",
+                }
+                or execution_state not in {"RUNNING", "SUCCEEDED"}
+                or delivery_state
+                not in {
+                    "NOT_PLANNED",
+                    "PLANNED",
+                    "TICKET_ISSUED",
+                    "FETCHING",
+                    "UPLOADING",
+                    "SENDING",
+                    "CHANNEL_ACCEPTED",
+                    "DELIVERED",
+                }
+            ):
+                raise OrchestrationError(
+                    "orchestration.resume.terminal_state_conflict",
+                    ambiguous=True,
+                )
+            if (
+                execution_state == "RUNNING"
+                and (
+                    request_state != "EXECUTING"
+                    or delivery_state != "NOT_PLANNED"
+                )
+            ) or (
+                request_state
+                in {"VALIDATING_ARTIFACTS", "DELIVERING", "COMPLETED"}
+                and execution_state != "SUCCEEDED"
+            ) or (
+                request_state == "DELIVERING"
+                and delivery_state == "NOT_PLANNED"
+            ) or (
+                request_state == "COMPLETED"
+                and delivery_state not in {"CHANNEL_ACCEPTED", "DELIVERED"}
+            ):
+                raise OrchestrationError(
+                    "orchestration.resume.state_matrix_conflict",
+                    ambiguous=True,
+                )
+
+        def advance_tail(
+            machine: str,
+            entity_id: str,
+            to_state: str,
+            *,
+            now_ms: int,
+            already_reached: frozenset[str] = frozenset(),
+            fact_id: str | None = None,
+            evidence_sha256: str | None = None,
+            outbox: tuple[OutboxIntent, ...] = (),
+        ):
+            if not durable_resume:
+                return self._advance(
+                    machine,
+                    entity_id,
+                    to_state,
+                    now_ms=now_ms,
+                    fact_id=fact_id,
+                    evidence_sha256=evidence_sha256,
+                    outbox=outbox,
+                )
+            snapshot = self._store.get_snapshot(machine, entity_id)
+            if snapshot is None:
+                raise OrchestrationError("orchestration.state.missing")
+            if snapshot.state == to_state or snapshot.state in already_reached:
+                return snapshot
+            if snapshot.is_terminal:
+                raise OrchestrationError(
+                    "orchestration.resume.terminal_state_conflict"
+                )
+            return self._advance(
+                machine,
+                entity_id,
+                to_state,
+                now_ms=now_ms,
+                fact_id=fact_id,
+                evidence_sha256=evidence_sha256,
+                outbox=outbox,
+            )
+
         composition_outcome = None
+        composition_finalization = None
         try:
             if self._composition_steps is None:
-                required_plan = (
-                    self._store.get_executable_composition_plan_for_request(
-                        request_id,
-                        run_id=run_id,
-                        generation=generation.generation,
-                    )
-                )
-                if required_plan is not None:
+                if composition_plan_record is not None:
                     raise CompositionStepExecutionError(
                         "composition.execution.executor_unavailable"
                     )
-            else:
-                composition_outcome = self._dispatch_next_composition_step(
-                    now_ms=observed_at,
-                    request_id=request_id,
-                    run_id=run_id,
-                    generation=generation.generation,
+            elif composition_plan_record is not None:
+                plan = composition_plan_record.executable_plan
+                projection = self._composition_steps.project_plan(plan)
+                if not projection.all_steps_succeeded:
+                    dispatch_limit = len(plan.step_bindings) * 2 + 1
+                    for _dispatch_ordinal in range(dispatch_limit):
+                        outcome = self._dispatch_next_composition_step(
+                            now_ms=max(
+                                observed_at,
+                                time.time_ns() // 1_000_000,
+                            ),
+                            request_id=request_id,
+                            run_id=run_id,
+                            generation=generation.generation,
+                        )
+                        if outcome is None:
+                            break
+                        composition_outcome = outcome
+                        if outcome.status != "SUCCEEDED":
+                            child = self._store.get_effect(outcome.effect_id)
+                            child_result = None if child is None else child.result
+                            raise CompositionStepExecutionError(
+                                (
+                                    "composition.execution.failed"
+                                    if child_result is None
+                                    or child_result.error_code is None
+                                    else child_result.error_code
+                                ),
+                                ambiguous=outcome.status == "AMBIGUOUS",
+                            )
+                    else:
+                        raise CompositionStepExecutionError(
+                            "composition.execution.dispatch_bound_exceeded",
+                            ambiguous=True,
+                        )
+                # P7D.2 closes every persisted composition obligation, not
+                # only a multi-step DAG.  A one-step plan has one required leaf
+                # too; omitting finalization here would exclude that child
+                # Effect/Fact from Completion and would let its failing P19
+                # path enter the legacy repair loop.
+                composition_finalization = (
+                    self._composition_steps.finalize_plan(plan)
                 )
                 if (
-                    composition_outcome is not None
-                    and composition_outcome.status != "SUCCEEDED"
+                    composition_finalization.parent_effect_id
+                    != parent_effect_id
                 ):
-                    child = self._store.get_effect(
-                        composition_outcome.effect_id
-                    )
-                    child_result = None if child is None else child.result
                     raise CompositionStepExecutionError(
-                        (
-                            "composition.execution.failed"
-                            if child_result is None
-                            or child_result.error_code is None
-                            else child_result.error_code
-                        ),
-                        ambiguous=(
-                            composition_outcome.status == "AMBIGUOUS"
-                        ),
+                        "composition.execution.parent_effect_mismatch",
+                        ambiguous=True,
                     )
         except Exception as exc:
             composition_effects = tuple(
@@ -3842,20 +5016,45 @@ class GatewayOrchestrationWorker:
             )
             raise OrchestrationError(code, ambiguous=ambiguous) from exc
 
-        self._advance(
+        execution_success_snapshot = advance_tail(
             "execution",
             execution_entity,
             "SUCCEEDED",
             now_ms=max(
                 observed_at,
                 (
-                    0
-                    if composition_outcome is None
-                    else time.time_ns() // 1_000_000
+                    composition_finalization.completed_at_ms
+                    if composition_finalization is not None
+                    else (
+                        0
+                        if composition_outcome is None
+                        else time.time_ns() // 1_000_000
+                    )
                 ),
             ),
             fact_id=response.result.fact_ids[0],
             evidence_sha256=response.response_sha256,
+        )
+        # A durable composition retry must reconstruct byte-identical P19,
+        # Life, and desktop completion evidence.  The execution SUCCEEDED
+        # transition is the first durable checkpoint after every DAG leaf has
+        # completed, so its persisted timestamp is the stable completion clock
+        # for both the first pass and every recovery pass.  Wall-clock time here
+        # would make a retry after the Life commit hash a different payload.
+        composition_completion_at_ms = (
+            max(
+                observed_at,
+                composition_finalization.completed_at_ms,
+                int(
+                    getattr(
+                        execution_success_snapshot,
+                        "updated_at_ms",
+                        observed_at,
+                    )
+                ),
+            )
+            if composition_finalization is not None
+            else None
         )
 
         result_payload = response.result_payload if isinstance(response.result_payload, dict) else {}
@@ -3875,54 +5074,53 @@ class GatewayOrchestrationWorker:
             reply = f"已完成，生成{len(names)}个交付文件：{listed}。" if names else "已完成指定交付。"
         if not reply:
             raise OrchestrationError("orchestration.reply.empty")
+        if (
+            composition_finalization is not None
+            and composition_finalization.final_output_aliases
+        ):
+            # Bind the resolved DAG outputs into the same authoritative text
+            # consumed by Completion, Life, and desktop delivery.  The parent
+            # prose remains available, but can no longer stand in for (or hide)
+            # the persisted final aliases.
+            reply = canonical_json_bytes(
+                {
+                    "composition_final_output_aliases": (
+                        composition_finalization.final_output_aliases
+                    ),
+                    "parent_reply": reply,
+                }
+            ).decode("utf-8")
         if raw_artifacts:
-            self._advance("request", request_id, "VALIDATING_ARTIFACTS", now_ms=observed_at)
+            advance_tail(
+                "request",
+                request_id,
+                "VALIDATING_ARTIFACTS",
+                now_ms=observed_at,
+                already_reached=frozenset({"DELIVERING", "COMPLETED"}),
+            )
         gate = ArtifactGate(self._objects, self._facts)
         docx_qc = DocxQcService(self._objects, self._facts)
         integrity_qc = ArtifactIntegrityQcService(self._objects, self._facts)
-        artifact_failures: list[str] = []
-        for index, item in enumerate(raw_artifacts):
-            if not isinstance(item, dict):
-                code = "orchestration.artifact.invalid_descriptor"
-                evidence = canonical_sha256({"code": code, "index": index})
-                entity = "artifact-rejected-" + canonical_sha256(
-                    {"request_id": request_id, "run_id": run_id, "index": index}
-                )
-                self._initialize("artifact", entity, activation, observed_at)
-                self._advance(
-                    "artifact",
-                    entity,
-                    "REJECTED",
-                    now_ms=observed_at,
-                    fact_id="fact-artifact-" + evidence[:32],
-                    evidence_sha256=evidence,
-                )
-                artifact_failures.append(code)
-                continue
-            try:
-                accepted = gate.accept(
-                    ArtifactCandidate(
-                        producer_fact_id=response.result.fact_ids[0],
-                        object_id=str(item["object_id"]),
-                        expected_sha256=str(item["sha256"]),
-                        expected_size_bytes=int(item["size_bytes"]),
-                        run_sequence=run_sequence,
-                        artifact_intent_id=f"{artifact_intent_id}-{index + 1}",
-                        revision=1,
-                        workspace_id=workspace_id,
-                        filename=str(item["filename"]),
-                        declared_mime=str(item["mime"]),
-                        format_id=str(item["format_id"]),
-                        created_at_ms=observed_at,
-                    )
-                )
+
+        def evaluate_artifact_candidate(candidate, artifact_snapshot):
+            if (
+                not durable_resume
+                or artifact_snapshot is None
+                or artifact_snapshot.state in {"PENDING", "CREATED", "QC_PENDING"}
+            ):
+                accepted = gate.accept(candidate)
                 if accepted.manifest.format_id == "docx":
                     # 内容兜底：docx 质检的最小字数按请求推导。固定 1 词的
                     # 下限曾放过"只有标题的空壳文档"（真机 2026-08-29 复现）。
                     docx_minimum_words = 30
-                    docx_items_hint = re.search(r"各?(\d+)\s*[条点项]", envelope.text or "")
+                    docx_items_hint = re.search(
+                        r"各?(\d+)\s*[条点项]", envelope.text or ""
+                    )
                     if docx_items_hint:
-                        docx_minimum_words = max(30, int(docx_items_hint.group(1)) * 12)
+                        docx_minimum_words = max(
+                            30,
+                            int(docx_items_hint.group(1)) * 12,
+                        )
                     outcome = docx_qc.evaluate(
                         accepted,
                         run_sequence=run_sequence,
@@ -3938,24 +5136,163 @@ class GatewayOrchestrationWorker:
                         run_sequence=run_sequence,
                         checked_at_ms=observed_at,
                     )
+                return accepted, outcome
+            raise OrchestrationError(
+                "orchestration.artifact.resume_state_invalid"
+            )
+
+        artifact_failures: list[str] = []
+        for index, item in enumerate(raw_artifacts):
+            if not isinstance(item, dict):
+                code = "orchestration.artifact.invalid_descriptor"
+                evidence = canonical_sha256({"code": code, "index": index})
+                entity = "artifact-rejected-" + canonical_sha256(
+                    {"request_id": request_id, "run_id": run_id, "index": index}
+                )
+                self._initialize("artifact", entity, activation, observed_at)
+                advance_tail(
+                    "artifact",
+                    entity,
+                    "REJECTED",
+                    now_ms=observed_at,
+                    fact_id="fact-artifact-" + evidence[:32],
+                    evidence_sha256=evidence,
+                )
+                artifact_failures.append(code)
+                continue
+            try:
+                candidate = ArtifactCandidate(
+                    producer_fact_id=response.result.fact_ids[0],
+                    object_id=str(item["object_id"]),
+                    expected_sha256=str(item["sha256"]),
+                    expected_size_bytes=int(item["size_bytes"]),
+                    run_sequence=run_sequence,
+                    artifact_intent_id=f"{artifact_intent_id}-{index + 1}",
+                    revision=1,
+                    workspace_id=workspace_id,
+                    filename=str(item["filename"]),
+                    declared_mime=str(item["mime"]),
+                    format_id=str(item["format_id"]),
+                    created_at_ms=observed_at,
+                )
+                artifact_identity = derive_artifact_revision_identity(
+                    request_id=request_id,
+                    run_id=run_id,
+                    run_sequence=run_sequence,
+                    generation=generation.generation,
+                    artifact_intent_id=candidate.artifact_intent_id,
+                    revision=candidate.revision,
+                    content_sha256=candidate.expected_sha256,
+                )
+                durable_artifact_snapshot = (
+                    self._store.get_snapshot(
+                        "artifact",
+                        artifact_identity.artifact_revision_id,
+                    )
+                    if durable_resume
+                    else None
+                )
+                if (
+                    durable_resume
+                    and durable_artifact_snapshot is not None
+                    and durable_artifact_snapshot.state
+                    in {"QC_PASSED", "QC_FAILED", "REJECTED"}
+                ):
+                    if durable_artifact_snapshot.state == "REJECTED":
+                        artifact_failures.append(
+                            "orchestration.artifact.validation_failed"
+                        )
+                        continue
+                    check_id, check_version = (
+                        (DOCX_QC_CHECK_ID, DOCX_QC_CHECK_VERSION)
+                        if candidate.format_id == "docx"
+                        else (
+                            ARTIFACT_INTEGRITY_QC_CHECK_ID,
+                            ARTIFACT_INTEGRITY_QC_CHECK_VERSION,
+                        )
+                    )
+                    qc_record = self._facts.get_artifact_qc(
+                        artifact_identity.artifact_revision_id,
+                        check_id=check_id,
+                        check_version=check_version,
+                        verify_payload=True,
+                    )
+                    expected_status = (
+                        "PASSED"
+                        if durable_artifact_snapshot.state == "QC_PASSED"
+                        else "FAILED"
+                    )
+                    if (
+                        qc_record is None
+                        or qc_record.result.status != expected_status
+                        or qc_record.manifest.artifact_revision_id
+                        != artifact_identity.artifact_revision_id
+                        or qc_record.manifest.request_id != request_id
+                        or qc_record.manifest.run_id != run_id
+                        or qc_record.manifest.generation
+                        != generation.generation
+                        or qc_record.manifest.source_effect_id
+                        != parent_effect_id
+                        or qc_record.manifest.producer_fact_id
+                        != candidate.producer_fact_id
+                        or qc_record.manifest.workspace_id != workspace_id
+                        or qc_record.manifest.content_object_id
+                        != candidate.object_id
+                        or qc_record.manifest.sha256
+                        != candidate.expected_sha256
+                        or qc_record.manifest.size_bytes
+                        != candidate.expected_size_bytes
+                        or qc_record.manifest.filename != candidate.filename
+                        or qc_record.manifest.mime != candidate.declared_mime
+                        or qc_record.manifest.format_id != candidate.format_id
+                    ):
+                        raise OrchestrationError(
+                            "orchestration.artifact.resume_authority_mismatch"
+                        )
+                    if expected_status == "FAILED":
+                        artifact_failures.append(
+                            "orchestration.artifact.qc_failed"
+                        )
+                        continue
+                    artifacts.append(qc_record.manifest)
+                    self._store.register_artifact_subject(
+                        artifact_revision_id=(
+                            qc_record.manifest.artifact_revision_id
+                        ),
+                        object_id=qc_record.manifest.content_object_id,
+                        artifact_sha256=qc_record.manifest.sha256,
+                        request_id=request_id,
+                        run_id=run_id,
+                        generation=generation.generation,
+                        registered_at_ms=observed_at,
+                    )
+                    continue
+                accepted, outcome = evaluate_artifact_candidate(
+                    candidate,
+                    durable_artifact_snapshot,
+                )
                 artifact_entity = outcome.registration.record.manifest.artifact_revision_id
                 self._initialize("artifact", artifact_entity, activation, observed_at)
-                self._advance(
+                advance_tail(
                     "artifact",
                     artifact_entity,
                     "CREATED",
                     now_ms=observed_at,
                     evidence_sha256=accepted.evidence.evidence_sha256,
+                    already_reached=frozenset(
+                        {"QC_PENDING", "QC_PASSED", "QC_FAILED"}
+                    ),
                 )
-                self._advance(
+                advance_tail(
                     "artifact",
                     artifact_entity,
                     "QC_PENDING",
                     now_ms=observed_at,
+                    already_reached=frozenset({"QC_PASSED", "QC_FAILED"}),
                 )
                 qc_record = outcome.registration.record
                 if outcome.passed:
-                    self._advance(
+                    advance_tail(
                         "artifact",
                         artifact_entity,
                         "QC_PASSED",
@@ -3978,7 +5315,7 @@ class GatewayOrchestrationWorker:
                         registered_at_ms=observed_at,
                     )
                 else:
-                    self._advance(
+                    advance_tail(
                         "artifact",
                         artifact_entity,
                         "QC_FAILED",
@@ -3994,7 +5331,7 @@ class GatewayOrchestrationWorker:
                     {"request_id": request_id, "run_id": run_id, "index": index}
                 )
                 self._initialize("artifact", entity, activation, observed_at)
-                self._advance(
+                advance_tail(
                     "artifact",
                     entity,
                     "REJECTED",
@@ -4035,17 +5372,55 @@ class GatewayOrchestrationWorker:
             # The desktop renderer pulls this already-persisted result back
             # through the authenticated 7184 status route.  It must never be
             # handed to 7176 or interpreted as a WeChat/Feishu delivery.
-            # M4.1 Final §10: production verification wiring — if an
-            # active plan exists, the Executor MUST run (records +
-            # readiness are persisted before the gate reads them).
+            # P7D.2: a completed composition is one execution lineage, not a
+            # replacement for the parent model Effect.  Required completion
+            # evidence is the parent plus every successful DAG leaf; every
+            # authorized attempt remains in the explicit lineage so the Gate
+            # can reject orphan or substituted execution facts.
+            composition_required_effect_ids = None
+            composition_lineage_effect_ids: tuple[str, ...] = ()
+            if composition_finalization is not None:
+                composition_required_effect_ids = tuple(
+                    dict.fromkeys(
+                        (
+                            composition_finalization.parent_effect_id,
+                            *composition_finalization.leaf_effect_ids,
+                        )
+                    )
+                )
+                composition_lineage_effect_ids = tuple(
+                    dict.fromkeys(
+                        (
+                            composition_finalization.parent_effect_id,
+                            *composition_finalization.lineage_effect_ids,
+                        )
+                    )
+                )
+
+            # M4.1 Final §10: production verification wiring — an active plan
+            # must have authoritative records and readiness before the gate
+            # reads them.  A durable composition resume reuses an exact,
+            # stable-clock readiness (or the already-persisted record prefix)
+            # instead of re-sampling live verification authority.
             active_plan = self._store.get_active_verification_plan(
                 request_id=request_id,
                 run_id=run_id,
                 generation=generation.generation,
             )
+            verification_readiness = None
             verification_disposition = None
             verification_failure_evidence = None
+            verification_dispositions = None
+            verification_failure_evidences = None
             if active_plan is not None:
+                if composition_finalization is not None:
+                    # P7D.2 always selects the plural P19 authority path,
+                    # including an all-PASS plan whose exact disposition and
+                    # failure-evidence sets are both empty.  Leaving these as
+                    # ``None`` would silently fall back to the legacy singular
+                    # path and skip the current-readiness recheck.
+                    verification_dispositions = ()
+                    verification_failure_evidences = ()
                 from total_gateway.verification_plan_executor import (
                     VerificationPlanExecutor,
                 )
@@ -4057,15 +5432,50 @@ class GatewayOrchestrationWorker:
                     object_store=self._objects,
                     fact_ledger=self._facts,
                     plan=active_plan,
+                    resume_evaluated_at_ms=(
+                        composition_completion_at_ms
+                        if composition_finalization is not None
+                        else None
+                    ),
                 )
-                readiness = executor.execute(
-                    evaluated_at_ms=time.time_ns() // 1_000_000,
-                    artifact_manifests=tuple(artifacts),
-                )
-                # M5 Final #2: FAIL → the FULL repair loop — directive →
-                # EXISTING runtime dispatch → successor → SAME-predicate
-                # re-verification. Never stop at the disposition.
-                if not readiness.verification_ready:
+                if durable_resume and composition_finalization is not None:
+                    verification_readiness = (
+                        self._store.get_latest_verification_readiness(
+                            request_id=request_id,
+                            run_id=run_id,
+                            generation=generation.generation,
+                        )
+                    )
+                    if verification_readiness is not None and (
+                        not verification_readiness.has_valid_identity()
+                        or verification_readiness.verification_plan_id
+                        != active_plan.verification_plan_id
+                        or verification_readiness.verification_plan_sha256
+                        != active_plan.plan_sha256
+                        or verification_readiness.request_id != request_id
+                        or verification_readiness.run_id != run_id
+                        or verification_readiness.generation
+                        != generation.generation
+                        or verification_readiness.registry_snapshot_sha256
+                        != active_plan.registry_snapshot_sha256
+                        or verification_readiness.evaluated_at_ms
+                        != composition_completion_at_ms
+                    ):
+                        raise OrchestrationError(
+                            "orchestration.verification."
+                            "persisted_readiness_mismatch",
+                            ambiguous=True,
+                        )
+                if verification_readiness is None:
+                    verification_readiness = executor.execute(
+                        evaluated_at_ms=(
+                            composition_completion_at_ms
+                            if composition_completion_at_ms is not None
+                            else time.time_ns() // 1_000_000
+                        ),
+                        artifact_manifests=tuple(artifacts),
+                    )
+                if not verification_readiness.verification_ready:
                     from total_gateway.verification_repair_coordinator import (
                         RepairDispatchResult,
                         VerificationRepairCoordinator,
@@ -4074,94 +5484,155 @@ class GatewayOrchestrationWorker:
                         store=self._store,
                     )
 
-                    def _repair_dispatch(directive):
-                        # Bridge to the EXISTING runtime: the same
-                        # PolicyEngine → ExecutionTicket → BackendClient →
-                        # ArtifactGate/QC authorities as the primary
-                        # execution. No second runtime.
-                        return self._dispatch_repair_directive(
-                            directive=directive,
-                            activation=activation,
-                            envelope=envelope,
-                            manifest=manifest,
-                            action=action,
-                            permission=permission,
-                            outer_registry=outer_registry,
-                            transport=transport,
-                            arguments=arguments,
-                            grants=grants,
-                            resources=resources,
-                            life=life,
-                            life_evidence_ref=life_evidence_ref,
-                            workspace_id=workspace_id,
-                            output_root_id=output_root_id,
-                            artifact_intent_id=artifact_intent_id,
-                            request_id=request_id,
-                            run_id=run_id,
-                            run_sequence=run_sequence,
-                            generation=generation,
-                            artifact_manifests=artifacts,
+                    if composition_finalization is not None:
+                        # P7D.2 limited production is read/verify only.  Derive
+                        # the complete non-PASS disposition set, but never
+                        # dispatch a repair from the composition boundary.
+                        verification_dispositions = tuple(
+                            sorted(
+                                coordinator.process_readiness(
+                                    plan=active_plan,
+                                    readiness=verification_readiness,
+                                    now_ms=(
+                                        composition_completion_at_ms
+                                        if composition_completion_at_ms is not None
+                                        else time.time_ns() // 1_000_000
+                                    ),
+                                    reuse_persisted_prefix=True,
+                                ),
+                                key=lambda item: item.plan_entry_id,
+                            )
                         )
+                        failure_evidences = []
+                        for disposition in verification_dispositions:
+                            failure_evidence = (
+                                self._store.get_verification_failure_evidence_by_id(
+                                    disposition.failure_evidence_id
+                                )
+                            )
+                            if failure_evidence is None:
+                                raise OrchestrationError(
+                                    "orchestration.verification."
+                                    "failure_evidence_missing"
+                                )
+                            failure_evidences.append(failure_evidence)
+                        verification_failure_evidences = tuple(
+                            sorted(
+                                failure_evidences,
+                                key=lambda item: item.failure_evidence_id,
+                            )
+                        )
+                    else:
+                        # Preserve the established non-composition M5 path:
+                        # FAIL may dispatch repair only through the one existing
+                        # Policy/Ticket/Grant/Runtime chain, then re-verify the
+                        # same predicate before Completion.
+                        def _repair_dispatch(directive):
+                            return self._dispatch_repair_directive(
+                                directive=directive,
+                                activation=activation,
+                                envelope=envelope,
+                                manifest=manifest,
+                                action=action,
+                                permission=permission,
+                                outer_registry=outer_registry,
+                                transport=transport,
+                                arguments=arguments,
+                                grants=grants,
+                                resources=resources,
+                                life=life,
+                                life_evidence_ref=life_evidence_ref,
+                                workspace_id=workspace_id,
+                                output_root_id=output_root_id,
+                                artifact_intent_id=artifact_intent_id,
+                                request_id=request_id,
+                                run_id=run_id,
+                                run_sequence=run_sequence,
+                                generation=generation,
+                                artifact_manifests=artifacts,
+                            )
 
-                    def _repair_reverify():
-                        reverify_executor = VerificationPlanExecutor(
-                            snapshot=_verification_snapshot(
-                                self._store,
-                                active_plan.registry_snapshot_sha256,
-                            ),
-                            store=self._store,
-                            object_store=self._objects,
-                            fact_ledger=self._facts,
-                            plan=active_plan,
-                        )
-                        return reverify_executor.execute(
-                            evaluated_at_ms=time.time_ns() // 1_000_000,
-                            artifact_manifests=tuple(artifacts),
-                        )
+                        def _repair_reverify():
+                            reverify_executor = VerificationPlanExecutor(
+                                snapshot=_verification_snapshot(
+                                    self._store,
+                                    active_plan.registry_snapshot_sha256,
+                                ),
+                                store=self._store,
+                                object_store=self._objects,
+                                fact_ledger=self._facts,
+                                plan=active_plan,
+                            )
+                            return reverify_executor.execute(
+                                evaluated_at_ms=time.time_ns() // 1_000_000,
+                                artifact_manifests=tuple(artifacts),
+                            )
 
-                    readiness, _ = coordinator.execute_repair_loop(
-                        plan=active_plan,
-                        readiness=readiness,
-                        dispatch=_repair_dispatch,
-                        reverify=_repair_reverify,
-                    )
-                    # M5 Final #7 + P1-9: read CURRENT disposition and its
-                    # FailureEvidence from Store (authoritative source);
-                    # the Gate validates the full binding.
-                    verification_disposition = self._store.get_current_verification_disposition(
-                        request_id=request_id,
-                        run_id=run_id,
-                        generation=generation.generation,
-                        verification_plan_id=active_plan.verification_plan_id,
-                        readiness_sha256=readiness.readiness_sha256,
-                    )
-                    if verification_disposition is not None:
-                        verification_failure_evidence = self._store.get_verification_failure_evidence_by_id(
-                            verification_disposition.failure_evidence_id
+                        verification_readiness, _ = (
+                            coordinator.execute_repair_loop(
+                                plan=active_plan,
+                                readiness=verification_readiness,
+                                dispatch=_repair_dispatch,
+                                reverify=_repair_reverify,
+                            )
                         )
+                        verification_disposition = (
+                            self._store.get_current_verification_disposition(
+                                request_id=request_id,
+                                run_id=run_id,
+                                generation=generation.generation,
+                                verification_plan_id=(
+                                    active_plan.verification_plan_id
+                                ),
+                                readiness_sha256=(
+                                    verification_readiness.readiness_sha256
+                                ),
+                            )
+                        )
+                        if verification_disposition is not None:
+                            verification_failure_evidence = (
+                                self._store.get_verification_failure_evidence_by_id(
+                                    verification_disposition.failure_evidence_id
+                                )
+                            )
             decision = evaluate_desktop_completion(
                 objects=self._objects,
                 facts=self._facts,
                 request_id=request_id,
                 run_id=run_id,
                 generation=generation.generation,
-                execution_effect_id=effect.effect_id,
+                execution_effect_id=(
+                    parent_effect_id
+                    if composition_required_effect_ids is None
+                    else None
+                ),
+                execution_effect_ids=composition_required_effect_ids,
+                execution_lineage_effect_ids=composition_lineage_effect_ids,
                 candidate_text=reply,
                 artifacts=tuple(artifacts),
                 head_state_reader=self._store.get_effect_head_state,
-                verification_readiness=self._store.get_latest_verification_readiness(
-                    request_id=request_id,
-                    run_id=run_id,
-                    generation=generation.generation,
-                ),
+                verification_readiness=verification_readiness,
                 active_plan=active_plan,
                 verification_disposition=verification_disposition,
                 verification_failure_evidence=verification_failure_evidence,
+                verification_dispositions=verification_dispositions,
+                verification_failure_evidences=(
+                    verification_failure_evidences
+                ),
                 disposition_authority_reader=(
                     self._store.get_verification_disposition_by_id
                 ),
+                readiness_authority_reader=(
+                    self._store.get_latest_verification_readiness
+                    if active_plan is not None
+                    else None
+                ),
             )
-            desktop_now = time.time_ns() // 1_000_000
+            desktop_now = (
+                composition_completion_at_ms
+                if composition_completion_at_ms is not None
+                else time.time_ns() // 1_000_000
+            )
             desktop_evidence = canonical_sha256(
                 {
                     "artifact_manifests": [item.manifest_sha256 for item in artifacts],
@@ -4173,16 +5644,27 @@ class GatewayOrchestrationWorker:
                 }
             )
             desktop_fact_id = "fact-desktop-result-" + desktop_evidence[:32]
+            # Seal the verified decision in the Store before crossing Life.
+            # The Store transaction re-derives its P19 readiness and fences
+            # later verification writes, so a concurrent late record cannot
+            # make Life completed while Gateway subsequently rejects the
+            # once-valid decision.  The terminal continuity capsule remains
+            # after Life, preserving that authority ordering.
+            self._store.record_completion_decision(
+                decision,
+                recorded_at_ms=desktop_now,
+            )
             # Life is the sole authority for the completed interaction.  Commit
             # before crossing the desktop delivery boundary so a failed Life
             # write cannot leave a CHANNEL_ACCEPTED result that is absent from
             # the authoritative life journal.  The commit is idempotent by
-            # request_id, so retry/recovery remains safe.
+            # request_id.  Durable composition recovery reads and validates
+            # that exact record before any provider is sampled again.
             self._commit_life_execution(
                 request_id=request_id,
                 run_id=run_id,
                 generation=generation.generation,
-                life_id=life.snapshot.identity_ref,
+                life_id=life_id,
                 session_scope_hash=activation.entry.session_scope_hash,
                 principal_scope_hash=envelope.principal_scope_hash,
                 workspace_id=workspace_id,
@@ -4190,23 +5672,71 @@ class GatewayOrchestrationWorker:
                 final_result=reply,
                 fact_ids=(desktop_fact_id, *tuple(response.result.fact_ids)),
                 completed_at_ms=desktop_now,
+                recover_existing=(
+                    durable_resume and composition_finalization is not None
+                ),
+                require_authority=composition_finalization is not None,
             )
-            self._advance("delivery", delivery_entity, "PLANNED", now_ms=desktop_now)
-            self._advance("delivery", delivery_entity, "TICKET_ISSUED", now_ms=desktop_now)
-            self._advance("delivery", delivery_entity, "SENDING", now_ms=desktop_now)
-            self._advance(
+            advance_tail(
+                "delivery",
+                delivery_entity,
+                "PLANNED",
+                now_ms=desktop_now,
+                already_reached=frozenset(
+                    {
+                        "TICKET_ISSUED",
+                        "FETCHING",
+                        "UPLOADING",
+                        "SENDING",
+                        "CHANNEL_ACCEPTED",
+                        "DELIVERED",
+                    }
+                ),
+            )
+            advance_tail(
+                "delivery",
+                delivery_entity,
+                "TICKET_ISSUED",
+                now_ms=desktop_now,
+                already_reached=frozenset(
+                    {
+                        "FETCHING",
+                        "UPLOADING",
+                        "SENDING",
+                        "CHANNEL_ACCEPTED",
+                        "DELIVERED",
+                    }
+                ),
+            )
+            advance_tail(
+                "delivery",
+                delivery_entity,
+                "SENDING",
+                now_ms=desktop_now,
+                already_reached=frozenset(
+                    {"CHANNEL_ACCEPTED", "DELIVERED"}
+                ),
+            )
+            advance_tail(
                 "delivery",
                 delivery_entity,
                 "CHANNEL_ACCEPTED",
                 now_ms=desktop_now,
                 fact_id=desktop_fact_id,
                 evidence_sha256=desktop_evidence,
+                already_reached=frozenset({"DELIVERED"}),
             )
-            self._advance("request", request_id, "DELIVERING", now_ms=desktop_now)
+            advance_tail(
+                "request",
+                request_id,
+                "DELIVERING",
+                now_ms=desktop_now,
+                already_reached=frozenset({"COMPLETED"}),
+            )
             persist_terminal_completion(
                 self._store,
                 decision,
-                life_id=life.snapshot.identity_ref,
+                life_id=life_id,
                 user_goal=envelope.text,
                 final_result=reply,
                 created_at_ms=desktop_now,
@@ -4215,7 +5745,7 @@ class GatewayOrchestrationWorker:
                     sorted(item.artifact_revision_id for item in artifacts)
                 ),
             )
-            self._advance(
+            advance_tail(
                 "request",
                 request_id,
                 "COMPLETED",
@@ -4347,9 +5877,9 @@ class GatewayOrchestrationWorker:
         ).with_computed_plan_sha256()
         delivery_assembly = build_delivery_outbox_payload(
             plan,
-            life_id=life.snapshot.identity_ref,
+            life_id=life_id,
             session_scope_hash=activation.entry.session_scope_hash,
-            execution_effect_id=effect.effect_id,
+            execution_effect_id=parent_effect_id,
         )
         payload_bytes = canonical_json_bytes(delivery_assembly.model_dump(mode="json"))
         payload_object = self._objects.put_bytes(
@@ -4377,14 +5907,20 @@ class GatewayOrchestrationWorker:
             created_at_ms=delivery_now,
             intent_sha256="0" * 64,
         ).with_computed_sha256()
-        self._advance(
+        advance_tail(
             "delivery",
             delivery_entity,
             "PLANNED",
             now_ms=delivery_now,
             outbox=(outbox,),
         )
-        self._advance("request", request_id, "DELIVERING", now_ms=delivery_now)
+        advance_tail(
+            "request",
+            request_id,
+            "DELIVERING",
+            now_ms=delivery_now,
+            already_reached=frozenset({"COMPLETED"}),
+        )
 
     def close(self) -> None:
         self._closed.set()

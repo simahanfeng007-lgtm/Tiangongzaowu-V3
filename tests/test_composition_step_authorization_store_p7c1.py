@@ -46,6 +46,7 @@ from total_gateway.store import (
     GatewayStateStore,
     StoreConflictError,
 )
+from tests.gateway_store_migration_support import downgrade_v33_to_v32
 
 from tests.test_composition_executable_plan_p7c0 import (
     _compile_material,
@@ -266,6 +267,31 @@ def _composition_binding(
     }
     if request.target_snapshot_sha256 is not None:
         binding["target_snapshot_sha256"] = request.target_snapshot_sha256
+    if request.schema_version == "tiangong.composition-step-authorization.v2":
+        binding.update(
+            {
+                "attempt": request.attempt,
+                "continuation_delegation_id": (
+                    request.continuation_delegation_id
+                ),
+                "continuation_delegation_sha256": (
+                    request.continuation_delegation_sha256
+                ),
+                "dependency_evidence_sha256": (
+                    request.dependency_evidence_sha256
+                ),
+            }
+        )
+        if request.supersedes_authorization_id is not None:
+            binding.update(
+                {
+                    "supersedes_authorization_id": (
+                        request.supersedes_authorization_id
+                    ),
+                    "supersedes_effect_id": request.supersedes_effect_id,
+                    "supersedes_claim_sha256": request.supersedes_claim_sha256,
+                }
+            )
     return _hashed_record(binding, "binding_sha256")
 
 
@@ -1098,10 +1124,10 @@ def test_health_and_recovery_detect_payload_tampering(tmp_path: Path) -> None:
         assert not store.health_check(now_ms=1_702, full=True).healthy
 
 
-def test_v31_to_v32_is_additive_and_fresh_health_is_v32(tmp_path: Path) -> None:
+def test_v31_to_current_is_additive_and_fresh_health_is_current(tmp_path: Path) -> None:
     path = tmp_path / "gateway.sqlite3"
     with GatewayStateStore.open(path, now_ms=1_000) as fresh:
-        assert STORE_SCHEMA_VERSION == 32
+        assert STORE_SCHEMA_VERSION == 33
         assert fresh.health_check(now_ms=1_001, full=True).healthy
         before = {
             row[0]
@@ -1111,6 +1137,7 @@ def test_v31_to_v32_is_additive_and_fresh_health_is_v32(tmp_path: Path) -> None:
         }
     connection = sqlite3.connect(path, isolation_level=None)
     try:
+        downgrade_v33_to_v32(connection)
         for trigger in (
             "composition_step_authorization_identity_insert_guard",
             "composition_step_authorization_immutable_update_guard",

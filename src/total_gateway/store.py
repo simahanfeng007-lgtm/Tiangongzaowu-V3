@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,7 +70,7 @@ from contracts.verification import (
     derive_registry_snapshot_id,
     derive_verification_record_id,
 )
-from contracts.state_machine import ATTEMPT_RECONCILIATION_VERDICTS
+from contracts.state_machine import ATTEMPT_RECONCILIATION_VERDICTS, TERMINAL_STATES
 from .coordination import FencedResultDecision, GenerationLeaseView
 from .coordination_events import CoordinationEvent, CoordinationRecord, CoordinationResolution
 from .outbox import OutboxIntent
@@ -99,12 +99,21 @@ from .composition_executable_plan_store import (
     executable_plan_record_from_row,
 )
 from .composition_step_authorization import (
+    COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+    COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2,
     MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES,
+    CompositionContinuationDelegation,
     CompositionStepAuthorizationArtifacts,
     CompositionStepAuthorizationRequest,
     CompositionStepAuthorizationStoreRecord,
     authorization_record_from_row,
+    continuation_delegation_from_row,
     derive_composition_step_authorization_id,
+)
+from .composition_execution_binding import (
+    CompositionExecutionBindingError,
+    derive_run_sequence as derive_composition_run_sequence,
+    rebuild_composition_effect_claim,
 )
 
 if TYPE_CHECKING:
@@ -112,7 +121,7 @@ if TYPE_CHECKING:
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 32
+STORE_SCHEMA_VERSION = 33
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN = object()
 _MIGRATION_V1_ID = "gateway-store-v1"
@@ -2447,6 +2456,198 @@ _MIGRATION_V32_STATEMENTS = (
     """,
 )
 
+
+_MIGRATION_V33_ID = "gateway-composition-continuation-attempt-chain-v33"
+_MIGRATION_V33_AUTHORIZATION_TABLE = (
+    _MIGRATION_V32_STATEMENTS[0]
+    .replace(
+        "attempt INTEGER NOT NULL CHECK (attempt = 1),",
+        "attempt INTEGER NOT NULL CHECK (attempt >= 1),",
+    )
+    .replace(
+        "        PRIMARY KEY (executable_plan_id, step_id, attempt),",
+        f"""        continuation_delegation_id TEXT
+            CHECK (continuation_delegation_id IS NULL OR (
+                length(continuation_delegation_id) = 68
+                AND substr(continuation_delegation_id, 1, 4) = 'ccd_'
+                AND substr(continuation_delegation_id, 5) NOT GLOB '*[^0-9a-f]*'
+            )),
+        continuation_delegation_sha256 TEXT
+            CHECK (continuation_delegation_sha256 IS NULL OR (
+                length(continuation_delegation_sha256) = 64
+                AND continuation_delegation_sha256 NOT GLOB '*[^0-9a-f]*'
+            )),
+        dependency_evidence_json TEXT
+            CHECK (dependency_evidence_json IS NULL OR (
+                json_valid(dependency_evidence_json)
+                AND json_type(dependency_evidence_json) = 'array'
+                AND length(CAST(dependency_evidence_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            )),
+        dependency_evidence_sha256 TEXT
+            CHECK (dependency_evidence_sha256 IS NULL OR (
+                length(dependency_evidence_sha256) = 64
+                AND dependency_evidence_sha256 NOT GLOB '*[^0-9a-f]*'
+            )),
+        supersedes_authorization_id TEXT
+            CHECK (supersedes_authorization_id IS NULL OR (
+                length(supersedes_authorization_id) = 68
+                AND substr(supersedes_authorization_id, 1, 4) = 'csa_'
+                AND substr(supersedes_authorization_id, 5) NOT GLOB '*[^0-9a-f]*'
+            )),
+        supersedes_effect_id TEXT
+            CHECK (supersedes_effect_id IS NULL OR (
+                length(supersedes_effect_id) = 68
+                AND substr(supersedes_effect_id, 1, 4) = 'eff_'
+                AND substr(supersedes_effect_id, 5) NOT GLOB '*[^0-9a-f]*'
+            )),
+        supersedes_claim_sha256 TEXT
+            CHECK (supersedes_claim_sha256 IS NULL OR (
+                length(supersedes_claim_sha256) = 64
+                AND supersedes_claim_sha256 NOT GLOB '*[^0-9a-f]*'
+            )),
+        CHECK (
+            (
+                attempt = 1
+                AND continuation_delegation_id IS NULL
+                AND continuation_delegation_sha256 IS NULL
+                AND dependency_evidence_json IS NULL
+                AND dependency_evidence_sha256 IS NULL
+                AND supersedes_authorization_id IS NULL
+                AND supersedes_effect_id IS NULL
+                AND supersedes_claim_sha256 IS NULL
+            ) OR (
+                continuation_delegation_id IS NOT NULL
+                AND continuation_delegation_sha256 IS NOT NULL
+                AND dependency_evidence_json IS NOT NULL
+                AND dependency_evidence_sha256 IS NOT NULL
+                AND (
+                    (attempt = 1
+                     AND supersedes_authorization_id IS NULL
+                     AND supersedes_effect_id IS NULL
+                     AND supersedes_claim_sha256 IS NULL)
+                    OR
+                    (attempt > 1
+                     AND supersedes_authorization_id IS NOT NULL
+                     AND supersedes_effect_id IS NOT NULL
+                     AND supersedes_claim_sha256 IS NOT NULL)
+                )
+            )
+        ),
+        PRIMARY KEY (executable_plan_id, step_id, attempt),""",
+    )
+    .replace(
+        "        FOREIGN KEY (registration_id)\n"
+        "            REFERENCES composition_activation_registration(registration_id)\n",
+        "        FOREIGN KEY (registration_id)\n"
+        "            REFERENCES composition_activation_registration(registration_id),\n"
+        "        FOREIGN KEY (continuation_delegation_id)\n"
+        "            REFERENCES composition_continuation_delegation(delegation_id),\n"
+        "        FOREIGN KEY (supersedes_authorization_id)\n"
+        "            REFERENCES composition_step_authorization(authorization_id)\n",
+    )
+)
+_MIGRATION_V33_STATEMENTS = (
+    f"""
+    CREATE TABLE composition_continuation_delegation (
+        delegation_id TEXT NOT NULL PRIMARY KEY
+            CHECK (
+                length(delegation_id) = 68
+                AND substr(delegation_id, 1, 4) = 'ccd_'
+                AND substr(delegation_id, 5) NOT GLOB '*[^0-9a-f]*'
+            ),
+        record_type TEXT NOT NULL
+            CHECK (record_type = 'NON_EXECUTABLE_CONTINUATION'),
+        executable INTEGER NOT NULL CHECK (executable = 0),
+        registration_id TEXT NOT NULL,
+        executable_plan_id TEXT NOT NULL UNIQUE,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        parent_effect_id TEXT NOT NULL
+            CHECK (
+                length(parent_effect_id) = 68
+                AND substr(parent_effect_id, 1, 4) = 'eff_'
+                AND substr(parent_effect_id, 5) NOT GLOB '*[^0-9a-f]*'
+            ),
+        delegation_json TEXT NOT NULL
+            CHECK (
+                json_valid(delegation_json)
+                AND json_type(delegation_json) = 'object'
+                AND length(CAST(delegation_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        delegation_sha256 TEXT NOT NULL UNIQUE
+            CHECK (length(delegation_sha256) = 64
+                   AND delegation_sha256 NOT GLOB '*[^0-9a-f]*'),
+        issued_at_ms INTEGER NOT NULL CHECK (issued_at_ms >= 0),
+        expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms > issued_at_ms),
+        FOREIGN KEY (registration_id)
+            REFERENCES composition_activation_registration(registration_id),
+        FOREIGN KEY (executable_plan_id)
+            REFERENCES composition_executable_plan(executable_plan_id),
+        FOREIGN KEY (parent_effect_id)
+            REFERENCES effect_ledger(effect_id)
+    ) STRICT
+    """,
+    "DROP TRIGGER composition_step_authorization_identity_insert_guard",
+    "DROP TRIGGER composition_step_authorization_immutable_update_guard",
+    "DROP TRIGGER composition_step_authorization_immutable_delete_guard",
+    "DROP INDEX composition_step_authorization_request_idx",
+    "ALTER TABLE composition_step_authorization RENAME TO composition_step_authorization_v32",
+    _MIGRATION_V33_AUTHORIZATION_TABLE,
+    """
+    INSERT INTO composition_step_authorization
+    SELECT old.*, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+    FROM composition_step_authorization_v32 AS old
+    """,
+    "DROP TABLE composition_step_authorization_v32",
+    _MIGRATION_V32_STATEMENTS[1],
+    """
+    CREATE UNIQUE INDEX composition_step_authorization_effect_idx
+        ON composition_step_authorization (prebound_effect_id)
+    """,
+    """
+    CREATE UNIQUE INDEX composition_step_authorization_supersedes_idx
+        ON composition_step_authorization (supersedes_authorization_id)
+        WHERE supersedes_authorization_id IS NOT NULL
+    """,
+    _MIGRATION_V32_STATEMENTS[2],
+    _MIGRATION_V32_STATEMENTS[3],
+    _MIGRATION_V32_STATEMENTS[4],
+    """
+    CREATE TRIGGER composition_continuation_delegation_identity_insert_guard
+    BEFORE INSERT ON composition_continuation_delegation
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM composition_continuation_delegation
+        WHERE delegation_id = NEW.delegation_id
+           OR executable_plan_id = NEW.executable_plan_id
+           OR delegation_sha256 = NEW.delegation_sha256
+    )
+    BEGIN
+        SELECT RAISE(ABORT, 'composition continuation delegation is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER composition_continuation_delegation_immutable_update_guard
+    BEFORE UPDATE ON composition_continuation_delegation
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'composition continuation delegation is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER composition_continuation_delegation_immutable_delete_guard
+    BEFORE DELETE ON composition_continuation_delegation
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'composition continuation delegation is immutable');
+    END
+    """,
+)
+
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -2480,6 +2681,7 @@ _MIGRATIONS = (
     (30, _MIGRATION_V30_ID, _MIGRATION_V30_STATEMENTS),
     (31, _MIGRATION_V31_ID, _MIGRATION_V31_STATEMENTS),
     (32, _MIGRATION_V32_ID, _MIGRATION_V32_STATEMENTS),
+    (33, _MIGRATION_V33_ID, _MIGRATION_V33_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -3084,7 +3286,25 @@ def _outbox_record_from_row(row: sqlite3.Row) -> OutboxRecord:
 
 
 def _completion_decision_payload(decision: CompletionDecision) -> str:
-    return canonical_json_bytes(decision.model_dump(mode="json")).decode("utf-8")
+    payload = decision.model_dump(mode="json")
+    # Preserve byte-for-byte parsing of pre-P7D.2 decisions, whose canonical
+    # JSON predates the optional readiness identity fence.
+    if decision.verification_readiness_id is None:
+        payload.pop("verification_readiness_id", None)
+    return canonical_json_bytes(payload).decode("utf-8")
+
+
+def _verification_readiness_basis(readiness) -> dict:
+    """The authoritative record/plan basis, excluding materialization time/id."""
+
+    return readiness.model_dump(
+        mode="json",
+        exclude={
+            "verification_readiness_id",
+            "readiness_sha256",
+            "evaluated_at_ms",
+        },
+    )
 
 
 def _parse_completion_decision(payload: str, claimed_sha256: str) -> CompletionDecision:
@@ -4916,6 +5136,289 @@ def _composition_plan_object_grants(executable) -> list[dict]:
     ]
 
 
+def _composition_continuation_action_versions(executable) -> list[dict]:
+    """Return the exact sealed step/action surface carried by a continuation.
+
+    The name deliberately follows the limited-activation vocabulary, but the
+    value is stronger than a bare ``(action_id, version)`` pair: every schema,
+    permission, source revision and step binding is pinned.  A continuation is
+    therefore incapable of widening a later Policy request when two steps use
+    the same Action version with different bindings.
+    """
+
+    return [
+        {
+            "step_id": step.step_id,
+            "step_binding_sha256": step.sha256,
+            "action_id": step.action_id,
+            "action_version": step.action_version,
+            "source_revision_sha256": canonical_sha256(
+                step.source_revision.model_dump(mode="json")
+            ),
+            "action_permission_sha256": step.permission_sha256,
+            "argument_schema_sha256": step.argument_schema_sha256,
+            "result_schema_sha256": step.result_schema_sha256,
+        }
+        for step in executable.step_bindings
+    ]
+
+
+def _continuation_delegation_locked(
+    connection: sqlite3.Connection,
+    delegation_id: str,
+) -> CompositionContinuationDelegation:
+    row = connection.execute(
+        "SELECT * FROM composition_continuation_delegation "
+        "WHERE delegation_id = ?",
+        (delegation_id,),
+    ).fetchone()
+    if row is None:
+        raise StoreCorruptionError(
+            "composition authorization continuation is missing"
+        )
+    try:
+        return continuation_delegation_from_row(row)
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "stored composition continuation is invalid"
+        ) from exc
+
+
+def _verify_composition_continuation_delegation_authorities(
+    connection: sqlite3.Connection,
+    delegation: CompositionContinuationDelegation,
+    *,
+    parent_ticket: ExecutionTicket | None = None,
+) -> tuple[ExecutableCompositionPlanStoreRecord, LimitedActivationStoreRecord]:
+    """Re-bind inert continuation evidence to Store-owned immutable parents."""
+
+    if not isinstance(delegation, CompositionContinuationDelegation):
+        raise StoreCorruptionError("composition continuation type is invalid")
+    if not delegation.has_valid_sha256():
+        raise StoreCorruptionError("composition continuation digest is invalid")
+    plan_row = connection.execute(
+        "SELECT * FROM composition_executable_plan "
+        "WHERE executable_plan_id = ?",
+        (delegation.executable_plan_id,),
+    ).fetchone()
+    if plan_row is None:
+        raise StoreCorruptionError(
+            "composition continuation references a missing executable plan"
+        )
+    try:
+        plan_record = executable_plan_record_from_row(plan_row)
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "composition continuation executable plan is invalid"
+        ) from exc
+    registration_record = _verify_executable_composition_plan_authorities(
+        connection, plan_record
+    )
+    executable = plan_record.executable_plan
+    expected_projection = (
+        executable.registration_id,
+        executable.registration_sha256,
+        executable.executable_plan_id,
+        executable.executable_plan_sha256,
+        executable.request_id,
+        executable.run_id,
+        executable.generation,
+        executable.principal_scope_hash,
+        executable.source_manifest_sha256,
+        executable.capability_manifest_sha256,
+        executable.action_registry_sha256,
+        executable.verification_plan_id,
+        executable.verification_plan_sha256,
+        executable.verification_plan_activation_id,
+        executable.workspace.workspace_id,
+        executable.workspace.workspace_scope_sha256,
+        canonical_sha256(_composition_plan_object_grants(executable)),
+        _composition_continuation_action_versions(executable),
+    )
+    actual_projection = (
+        delegation.registration_id,
+        delegation.registration_sha256,
+        delegation.executable_plan_id,
+        delegation.executable_plan_sha256,
+        delegation.request_id,
+        delegation.run_id,
+        delegation.generation,
+        delegation.principal_scope_hash,
+        delegation.source_manifest_sha256,
+        delegation.capability_manifest_sha256,
+        delegation.action_registry_sha256,
+        delegation.verification_plan_id,
+        delegation.verification_plan_sha256,
+        delegation.verification_plan_activation_id,
+        delegation.workspace_id,
+        delegation.workspace_scope_sha256,
+        delegation.object_grants_sha256,
+        delegation.allowed_action_versions,
+    )
+    if actual_projection != expected_projection:
+        raise StoreCorruptionError(
+            "composition continuation crossed its executable-plan authority"
+        )
+    if not (
+        executable.sealed_at_ms
+        <= delegation.issued_at_ms
+        < delegation.parent_ticket_expires_at_ms
+        and delegation.issued_at_ms
+        < delegation.expires_at_ms
+        <= executable.expires_at_ms
+    ):
+        raise StoreCorruptionError(
+            "composition continuation exceeded its executable-plan lifetime"
+        )
+
+    effect_row = connection.execute(
+        "SELECT * FROM effect_ledger WHERE effect_id = ?",
+        (delegation.parent_effect_id,),
+    ).fetchone()
+    if effect_row is None:
+        raise StoreCorruptionError(
+            "composition continuation parent Effect is missing"
+        )
+    parent_effect = _effect_record_from_row(effect_row)
+    if (
+        not parent_effect.claim.has_valid_sha256()
+        or parent_effect.claim.claim_sha256
+        != delegation.parent_effect_claim_sha256
+        or parent_effect.claim.request_id != delegation.request_id
+        or parent_effect.claim.run_id != delegation.run_id
+        or parent_effect.claim.generation != delegation.generation
+        or parent_effect.claim.effect_kind != "execution"
+    ):
+        raise StoreCorruptionError(
+            "composition continuation parent Effect binding is invalid"
+        )
+
+    if parent_ticket is not None:
+        if not isinstance(parent_ticket, ExecutionTicket):
+            raise StoreCorruptionError(
+                "composition continuation parent ticket is invalid"
+            )
+        payload = parent_ticket.payload
+        ticket_sha256 = canonical_sha256(parent_ticket.model_dump(mode="json"))
+        ticket_payload_sha256 = canonical_sha256(payload.model_dump(mode="json"))
+        context = delegation.issuance_context
+        parent_objects = [
+            item.model_dump(mode="json") for item in payload.input_objects
+        ]
+        if (
+            payload.ticket_id != delegation.parent_ticket_id
+            or ticket_sha256 != delegation.parent_ticket_sha256
+            or payload.expires_at_ms != delegation.parent_ticket_expires_at_ms
+            or payload.effect_id != delegation.parent_effect_id
+            or payload.claim_sha256 != delegation.parent_effect_claim_sha256
+            or payload.request_id != delegation.request_id
+            or payload.run_id != delegation.run_id
+            or payload.generation != delegation.generation
+            or payload.principal_scope_hash != delegation.principal_scope_hash
+            or payload.workspace_id != delegation.workspace_id
+            # The parent compatibility ticket is signed against the raw
+            # release capability manifest, while the executable DAG is sealed
+            # against the semantic action-source manifest.  Those authorities
+            # are intentionally distinct.  The exact parent value is already
+            # bound by both parent_ticket_sha256 and the canonical payload
+            # digest in issuance_context; never equate it to the plan manifest.
+            or payload.component_manifest_hash
+            != delegation.component_manifest_sha256
+            or context["channel"] != payload.channel
+            or context["tenant_id"] != payload.tenant_id
+            or context["link_account_id"] != payload.link_account_id
+            or context["conversation_scope_hash"]
+            != payload.conversation_scope_hash
+            or context["life_snapshot_revision"]
+            != payload.life_snapshot_revision
+            or context["life_snapshot_hash"] != payload.life_snapshot_hash
+            or context["output_root_id"] != payload.output_root_id
+            or context["artifact_intent_id"] != payload.artifact_intent_id
+            or context["parent_ticket_payload_sha256"]
+            != ticket_payload_sha256
+            or context["max_output_bytes"] != payload.max_output_bytes
+            or context["max_runtime_ms"] != payload.max_runtime_ms
+            or context["max_tool_calls"] != payload.max_tool_calls
+            or context["resource_envelope_sha256"]
+            != payload.resource_envelope_sha256
+            or context["allowed_side_effects"]
+            != list(payload.allowed_side_effects)
+            or context["side_effect_envelope_sha256"]
+            != payload.side_effect_envelope_sha256
+            or any(
+                item not in parent_objects
+                for item in _composition_plan_object_grants(executable)
+            )
+        ):
+            raise StoreCorruptionError(
+                "composition continuation parent ticket binding is invalid"
+            )
+    return plan_record, registration_record
+
+
+def _assert_live_composition_continuation_locked(
+    connection: sqlite3.Connection,
+    delegation: CompositionContinuationDelegation,
+    *,
+    now_ms: int,
+    require_parent_success: bool,
+) -> tuple[ExecutableCompositionPlanStoreRecord, LimitedActivationStoreRecord]:
+    if not isinstance(now_ms, int) or isinstance(now_ms, bool) or now_ms < 0:
+        raise ValueError("composition continuation read time is invalid")
+    plan_record, registration_record = (
+        _verify_composition_continuation_delegation_authorities(
+            connection, delegation
+        )
+    )
+    if not delegation.issued_at_ms <= now_ms < delegation.expires_at_ms:
+        raise StoreConflictError("composition continuation is not live")
+    if not plan_record.active_at(now_ms, registration_record):
+        raise StoreConflictError("composition continuation plan is not active")
+    current = connection.execute(
+        "SELECT run_id, current_generation, status "
+        "FROM request_generation WHERE request_id = ?",
+        (delegation.request_id,),
+    ).fetchone()
+    if (
+        current is None
+        or current["run_id"] != delegation.run_id
+        or current["current_generation"] != delegation.generation
+        or current["status"] != "ACTIVE"
+    ):
+        raise StoreConflictError(
+            "composition continuation is not on the current generation"
+        )
+    fence = connection.execute(
+        "SELECT action_fence_epoch, draining FROM action_fence "
+        "WHERE fence_id = 1"
+    ).fetchone()
+    if (
+        fence is None
+        or int(fence["action_fence_epoch"]) != 0
+        or bool(fence["draining"])
+    ):
+        raise StoreConflictError("composition continuation action fence is not open")
+    if require_parent_success:
+        effect_row = connection.execute(
+            "SELECT * FROM effect_ledger WHERE effect_id = ?",
+            (delegation.parent_effect_id,),
+        ).fetchone()
+        if effect_row is None:
+            raise StoreCorruptionError(
+                "composition continuation parent Effect is missing"
+            )
+        parent_effect = _effect_record_from_row(effect_row)
+        if (
+            parent_effect.state != "SUCCEEDED"
+            or parent_effect.result is None
+            or parent_effect.result.status != "SUCCEEDED"
+        ):
+            raise StoreConflictError(
+                "composition continuation parent Effect is not successful"
+            )
+    return plan_record, registration_record
+
+
 def _verify_composition_step_authorization_authorities(
     connection: sqlite3.Connection,
     record: CompositionStepAuthorizationStoreRecord,
@@ -5006,13 +5509,54 @@ def _verify_composition_step_authorization_authorities(
         raise StoreCorruptionError(
             "composition authorization target crossed its step binding"
         )
+    ceiling_ms = min(executable.expires_at_ms, request.parent_ticket_expires_at_ms)
+    if request.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+        if request.continuation_delegation_id is None:
+            raise StoreCorruptionError(
+                "composition authorization continuation identity is missing"
+            )
+        continuation = _continuation_delegation_locked(
+            connection, request.continuation_delegation_id
+        )
+        _verify_composition_continuation_delegation_authorities(
+            connection, continuation
+        )
+        if (
+            request.continuation_delegation_sha256
+            != continuation.delegation_sha256
+            or request.registration_id != continuation.registration_id
+            or request.executable_plan_id != continuation.executable_plan_id
+            or request.executable_plan_sha256
+            != continuation.executable_plan_sha256
+            or request.request_id != continuation.request_id
+            or request.run_id != continuation.run_id
+            or request.generation != continuation.generation
+            or request.principal_scope_hash
+            != continuation.principal_scope_hash
+            or request.parent_ticket_id != continuation.parent_ticket_id
+            or request.parent_ticket_sha256
+            != continuation.parent_ticket_sha256
+            or request.parent_ticket_expires_at_ms
+            != continuation.parent_ticket_expires_at_ms
+            or request.action_registry_sha256
+            != continuation.action_registry_sha256
+            or request.workspace_id != continuation.workspace_id
+            or request.workspace_scope_sha256
+            != continuation.workspace_scope_sha256
+            or request.object_grants_sha256
+            != continuation.object_grants_sha256
+        ):
+            raise StoreCorruptionError(
+                "composition authorization crossed its continuation authority"
+            )
+        ceiling_ms = min(executable.expires_at_ms, continuation.expires_at_ms)
     if not (
         executable.sealed_at_ms
         <= request.issued_at_ms
         <= record.committed_at_ms
         < request.expires_at_ms
         <= request.authorization_ceiling_ms
-        <= min(executable.expires_at_ms, request.parent_ticket_expires_at_ms)
+        <= ceiling_ms
     ):
         raise StoreCorruptionError(
             "composition authorization exceeded its expiry ceiling"
@@ -5059,6 +5603,71 @@ def _verify_composition_parent_ticket(
         raise StoreConflictError("composition parent ticket objects are invalid")
 
 
+def _verify_current_epoch_composition_artifacts_locked(
+    connection: sqlite3.Connection,
+    record: CompositionStepAuthorizationStoreRecord,
+) -> None:
+    """Require a V2 receipt to carry a freshly issued current-epoch chain."""
+
+    request = record.request
+    if request.schema_version != COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+        return
+    generation_row = connection.execute(
+        "SELECT * FROM request_generation WHERE request_id = ?",
+        (request.request_id,),
+    ).fetchone()
+    if generation_row is None:
+        raise StoreConflictError(
+            "composition continuation request generation is missing"
+        )
+    generation = _generation_view(connection, generation_row)
+    try:
+        _, _, _, ticket, grant = record.artifacts.restore_contracts()
+        plan_row = connection.execute(
+            "SELECT * FROM composition_executable_plan "
+            "WHERE executable_plan_id = ?",
+            (request.executable_plan_id,),
+        ).fetchone()
+        if plan_row is None:
+            raise ValueError("executable plan is missing")
+        executable = executable_plan_record_from_row(plan_row).executable_plan
+        ordinal = next(
+            index + 1
+            for index, step in enumerate(executable.step_bindings)
+            if step.step_id == request.step_id
+        )
+        claim = rebuild_composition_effect_claim(
+            request,
+            run_sequence=derive_composition_run_sequence(
+                request.request_id, request.run_id
+            ),
+            ordinal=ordinal,
+            lease_epoch=generation.gateway_epoch,
+        )
+    except (
+        CompositionExecutionBindingError,
+        StopIteration,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise StoreConflictError(
+            "composition continuation current-epoch claim is invalid"
+        ) from exc
+    if (
+        generation.run_id != request.run_id
+        or generation.generation != request.generation
+        or generation.status != "ACTIVE"
+        or ticket.payload.gateway_epoch != generation.gateway_epoch
+        or ticket.payload.claim_lease_epoch != generation.gateway_epoch
+        or ticket.payload.claim_revision != request.attempt
+        or ticket.payload.claim_sha256 != claim.claim_sha256
+        or grant.payload.gateway_epoch != generation.gateway_epoch
+    ):
+        raise StoreConflictError(
+            "composition continuation authorization is not current-epoch"
+        )
+
+
 def _assert_live_composition_step_authorization_locked(
     connection: sqlite3.Connection,
     record: CompositionStepAuthorizationStoreRecord,
@@ -5079,6 +5688,20 @@ def _assert_live_composition_step_authorization_locked(
         )
     if now_ms >= request.expires_at_ms:
         raise StoreConflictError("composition step authorization is expired")
+    if request.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2:
+        if request.continuation_delegation_id is None:
+            raise StoreCorruptionError(
+                "composition authorization continuation identity is missing"
+            )
+        continuation = _continuation_delegation_locked(
+            connection, request.continuation_delegation_id
+        )
+        _assert_live_composition_continuation_locked(
+            connection,
+            continuation,
+            now_ms=now_ms,
+            require_parent_success=True,
+        )
     if not plan_record.active_at(now_ms, registration_record):
         raise StoreConflictError(
             "composition step authorization plan is not active"
@@ -5113,13 +5736,18 @@ def _assert_live_composition_step_authorization_locked(
         )
 
 
-def _verify_composition_step_authorization_rows(
+def _composition_authorization_chain_locked(
     connection: sqlite3.Connection,
-) -> None:
+    *,
+    executable_plan_id: str,
+    step_id: str,
+) -> tuple[CompositionStepAuthorizationStoreRecord, ...]:
     rows = connection.execute(
         "SELECT * FROM composition_step_authorization "
-        "ORDER BY executable_plan_id, step_id, attempt"
+        "WHERE executable_plan_id = ? AND step_id = ? ORDER BY attempt",
+        (executable_plan_id, step_id),
     ).fetchall()
+    records: list[CompositionStepAuthorizationStoreRecord] = []
     for row in rows:
         try:
             record = authorization_record_from_row(row)
@@ -5128,6 +5756,204 @@ def _verify_composition_step_authorization_rows(
                 "stored composition step authorization is invalid"
             ) from exc
         _verify_composition_step_authorization_authorities(connection, record)
+        records.append(record)
+    if not records:
+        return ()
+    if tuple(record.request.attempt for record in records) != tuple(
+        range(1, len(records) + 1)
+    ):
+        raise StoreCorruptionError(
+            "composition authorization attempt chain is not contiguous"
+        )
+    if len(records) > 2:
+        raise StoreCorruptionError(
+            "composition authorization attempt ceiling was exceeded"
+        )
+    root = records[0].request
+    for previous, successor in zip(records, records[1:], strict=False):
+        predecessor = previous.request
+        request = successor.request
+        if (
+            request.schema_version
+            != COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2
+            or (
+                root.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2
+                and request.continuation_delegation_id
+                != root.continuation_delegation_id
+            )
+            or request.supersedes_authorization_id
+            != previous.authorization_id
+            or request.supersedes_effect_id != predecessor.prebound_effect_id
+            or request.prebound_effect_id == predecessor.prebound_effect_id
+            or previous.committed_at_ms > request.issued_at_ms
+        ):
+            raise StoreCorruptionError(
+                "composition authorization predecessor chain is invalid"
+            )
+        effect_row = connection.execute(
+            "SELECT * FROM effect_ledger WHERE effect_id = ?",
+            (predecessor.prebound_effect_id,),
+        ).fetchone()
+        if effect_row is None:
+            raise StoreCorruptionError(
+                "superseded composition authorization Effect is missing"
+            )
+        effect = _effect_record_from_row(effect_row)
+        if (
+            request.supersedes_claim_sha256 != effect.claim.claim_sha256
+            or effect.claim.attempt != predecessor.attempt
+            or effect.state != "FAILED_FINAL"
+            or effect.side_effect_started_at_ms is not None
+            or effect.result is None
+            or effect.result.status != "FAILED_FINAL"
+            or effect.result.error_code
+            != "composition.authorization.prestart_superseded"
+        ):
+            raise StoreCorruptionError(
+                "superseded composition authorization disposition is invalid"
+            )
+    return tuple(records)
+
+
+def _verify_composition_step_authorization_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    for row in connection.execute(
+        "SELECT * FROM composition_continuation_delegation "
+        "ORDER BY delegation_id"
+    ).fetchall():
+        try:
+            delegation = continuation_delegation_from_row(row)
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "stored composition continuation is invalid"
+            ) from exc
+        _verify_composition_continuation_delegation_authorities(
+            connection, delegation
+        )
+    keys = connection.execute(
+        "SELECT DISTINCT executable_plan_id, step_id "
+        "FROM composition_step_authorization "
+        "ORDER BY executable_plan_id, step_id"
+    ).fetchall()
+    for key in keys:
+        _composition_authorization_chain_locked(
+            connection,
+            executable_plan_id=key["executable_plan_id"],
+            step_id=key["step_id"],
+        )
+
+
+def _new_composition_authorization_record(
+    request: CompositionStepAuthorizationRequest,
+    artifacts: CompositionStepAuthorizationArtifacts,
+    *,
+    committed_at_ms: int,
+) -> tuple[CompositionStepAuthorizationStoreRecord, dict[str, Any]]:
+    projections = artifacts.validate_for_request(request)
+    draft = CompositionStepAuthorizationStoreRecord(
+        authorization_id=derive_composition_step_authorization_id(request),
+        request=request,
+        artifacts=artifacts,
+        committed_at_ms=committed_at_ms,
+        authorization_record_sha256="0" * 64,
+    )
+    return (
+        CompositionStepAuthorizationStoreRecord(
+            authorization_id=draft.authorization_id,
+            request=draft.request,
+            artifacts=draft.artifacts,
+            committed_at_ms=draft.committed_at_ms,
+            authorization_record_sha256=draft.computed_record_sha256(),
+        ),
+        projections,
+    )
+
+
+def _insert_composition_authorization_locked(
+    connection: sqlite3.Connection,
+    record: CompositionStepAuthorizationStoreRecord,
+    projections: dict[str, Any],
+) -> None:
+    request = record.request
+    artifacts = record.artifacts
+    columns = (
+        "authorization_id", "state", "executable_plan_id",
+        "executable_plan_sha256", "registration_id", "composition_plan_id",
+        "request_id", "run_id", "generation", "principal_scope_hash",
+        "parent_ticket_id", "parent_ticket_sha256", "step_id",
+        "step_binding_sha256", "attempt", "action_id", "action_version",
+        "source_revision_sha256", "action_registry_sha256",
+        "action_permission_sha256", "argument_schema_sha256",
+        "result_schema_sha256", "composition_binding_sha256",
+        "arguments_sha256", "target_snapshot_sha256", "workspace_id",
+        "workspace_scope_sha256", "object_grants_sha256",
+        "prebound_effect_id", "prebound_effect_intent_sha256",
+        "action_fence_epoch", "action_fence_sha256",
+        "authorization_request_json", "authorization_request_sha256",
+        "intent_id", "intent_sha256", "intent_json", "intent_json_sha256",
+        "impact_id", "impact_sha256", "impact_json", "impact_json_sha256",
+        "decision_id", "decision_sha256", "decision_json",
+        "decision_json_sha256", "ticket_id", "ticket_nonce",
+        "ticket_payload_sha256", "signed_ticket_json",
+        "signed_ticket_sha256", "grant_id", "grant_nonce",
+        "grant_payload_sha256", "signed_grant_json", "signed_grant_sha256",
+        "runtime_response_json", "runtime_response_sha256", "issued_at_ms",
+        "expires_at_ms", "authorization_ceiling_ms", "committed_at_ms",
+        "authorization_record_sha256", "continuation_delegation_id",
+        "continuation_delegation_sha256", "dependency_evidence_json",
+        "dependency_evidence_sha256", "supersedes_authorization_id",
+        "supersedes_effect_id", "supersedes_claim_sha256",
+    )
+    values = (
+        record.authorization_id, "ISSUED", request.executable_plan_id,
+        request.executable_plan_sha256, request.registration_id,
+        request.composition_plan_id, request.request_id, request.run_id,
+        request.generation, request.principal_scope_hash,
+        request.parent_ticket_id, request.parent_ticket_sha256,
+        request.step_id, request.step_binding_sha256, request.attempt,
+        request.action_id, request.action_version,
+        request.source_revision_sha256, request.action_registry_sha256,
+        request.action_permission_sha256, request.argument_schema_sha256,
+        request.result_schema_sha256, request.composition_binding_sha256,
+        request.arguments_sha256, request.target_snapshot_sha256,
+        request.workspace_id, request.workspace_scope_sha256,
+        request.object_grants_sha256, request.prebound_effect_id,
+        request.prebound_effect_intent_sha256, request.action_fence_epoch,
+        request.action_fence_sha256, request.canonical_json,
+        request.authorization_request_sha256, projections["intent_id"],
+        projections["intent_sha256"], artifacts.intent_json,
+        projections["intent_json_sha256"], projections["impact_id"],
+        projections["impact_sha256"], artifacts.impact_json,
+        projections["impact_json_sha256"], projections["decision_id"],
+        projections["decision_sha256"], artifacts.decision_json,
+        projections["decision_json_sha256"], projections["ticket_id"],
+        projections["ticket_nonce"], projections["ticket_payload_sha256"],
+        artifacts.signed_ticket_json, projections["signed_ticket_sha256"],
+        projections["grant_id"], projections["grant_nonce"],
+        projections["grant_payload_sha256"], artifacts.signed_grant_json,
+        projections["signed_grant_sha256"], artifacts.runtime_response_json,
+        projections["runtime_response_sha256"], request.issued_at_ms,
+        request.expires_at_ms, request.authorization_ceiling_ms,
+        record.committed_at_ms, record.authorization_record_sha256,
+        request.continuation_delegation_id,
+        request.continuation_delegation_sha256,
+        request.dependency_evidence_json, request.dependency_evidence_sha256,
+        request.supersedes_authorization_id, request.supersedes_effect_id,
+        request.supersedes_claim_sha256,
+    )
+    if len(columns) != len(values):
+        raise StoreCorruptionError(
+            "composition authorization SQL projection is invalid"
+        )
+    connection.execute(
+        "INSERT INTO composition_step_authorization ("
+        + ",".join(columns)
+        + ") VALUES ("
+        + ",".join("?" for _ in values)
+        + ")",
+        values,
+    )
 
 
 def _verify_full_event_chain(connection: sqlite3.Connection) -> None:
@@ -6419,10 +7245,10 @@ class GatewayStateStore:
             claim_fact = self._connection.execute(
                 """
                 SELECT payload_json FROM effect_facts
-                WHERE effect_id = ? AND attempt = 1 AND fact_kind = 'CLAIM'
+                WHERE effect_id = ? AND attempt = ? AND fact_kind = 'CLAIM'
                 ORDER BY seq DESC LIMIT 1
                 """,
-                (effect_id,),
+                (effect_id, record.claim.attempt),
             ).fetchone()
             if claim_fact is None:
                 raise StoreCorruptionError(
@@ -6466,12 +7292,15 @@ class GatewayStateStore:
             self._connection.execute(
                 """
                 UPDATE effect_attempts SET state = 'SIDE_EFFECT_STARTED', side_effect_started_at_ms = ?
-                WHERE effect_id = ? AND attempt = 1 AND state = 'CLAIMED'
+                WHERE effect_id = ? AND attempt = ? AND state = 'CLAIMED'
                 """,
-                (started_at_ms, effect_id),
+                (started_at_ms, effect_id, record.claim.attempt),
             )
             self._append_effect_fact_locked(
-                effect_id=effect_id, attempt=1, fact_kind="STARTED", verdict=None,
+                effect_id=effect_id,
+                attempt=record.claim.attempt,
+                fact_kind="STARTED",
+                verdict=None,
                 payload={
                     "domain": "tiangong.gateway.side-effect-started.v1",
                     "side_effect_started_at_ms": started_at_ms,
@@ -6541,12 +7370,21 @@ class GatewayStateStore:
             self._connection.execute(
                 """
                 UPDATE effect_attempts SET state = ?, terminal_at_ms = ?, terminal_kind = ?
-                WHERE effect_id = ? AND attempt = 1 AND terminal_at_ms IS NULL
+                WHERE effect_id = ? AND attempt = ? AND terminal_at_ms IS NULL
                 """,
-                (attempt_terminal_state, result.observed_at_ms, attempt_terminal_state, result.effect_id),
+                (
+                    attempt_terminal_state,
+                    result.observed_at_ms,
+                    attempt_terminal_state,
+                    result.effect_id,
+                    record.claim.attempt,
+                ),
             )
             self._append_effect_fact_locked(
-                effect_id=result.effect_id, attempt=1, fact_kind="RECEIPT", verdict=None,
+                effect_id=result.effect_id,
+                attempt=record.claim.attempt,
+                fact_kind="RECEIPT",
+                verdict=None,
                 payload=json.loads(result_json), created_at_ms=result.observed_at_ms,
             )
             # inflight 只能归还"确实持有未释放 dispatch permit"的 effect：
@@ -6593,12 +7431,25 @@ class GatewayStateStore:
         *,
         now_ms: int,
         exclude_pipeline_versions: tuple[str, ...] = (),
+        exclude_effect_ids: tuple[str, ...] = (),
     ) -> tuple[EffectLedgerRecord, ...]:
         # V14：先把 attempt 层 STARTED 标记为 RECONCILE_REQUIRED + INCONCLUSIVE
         self.recover_started_attempts(
             now_ms=now_ms,
             exclude_pipeline_versions=exclude_pipeline_versions,
+            exclude_effect_ids=exclude_effect_ids,
         )
+        if (
+            not isinstance(exclude_effect_ids, tuple)
+            or tuple(dict.fromkeys(exclude_effect_ids)) != exclude_effect_ids
+            or any(
+                not isinstance(effect_id, str)
+                or re.fullmatch(r"eff_[0-9a-f]{64}", effect_id) is None
+                for effect_id in exclude_effect_ids
+            )
+        ):
+            raise ValueError("effect recovery exclusion is invalid")
+        excluded_effects = frozenset(exclude_effect_ids)
         with self._lock:
             rows = self._connection.execute(
                 "SELECT * FROM effect_ledger WHERE state = 'SIDE_EFFECT_STARTED' ORDER BY effect_id"
@@ -6607,7 +7458,10 @@ class GatewayStateStore:
         for row in rows:
             record = _effect_record_from_row(row)
             claim = record.claim
-            if claim.pipeline_version in exclude_pipeline_versions:
+            if (
+                claim.pipeline_version in exclude_pipeline_versions
+                or claim.effect_id in excluded_effects
+            ):
                 continue
             recovered_at_ms = max(
                 now_ms,
@@ -8242,8 +9096,18 @@ class GatewayStateStore:
             )
             if updated.rowcount != 1:
                 raise StoreCasConflict("dispatch permit lost the race")
-            if attempt == 1:
-                # head 投影同步越过边界（receipt 判定以 head 为准）
+            head_row = self._connection.execute(
+                "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                (effect_id,),
+            ).fetchone()
+            if head_row is None:
+                raise StoreCorruptionError("dispatch Effect head is missing")
+            head_record = _effect_record_from_row(head_row)
+            if head_record.claim.attempt == attempt:
+                # A P7D.2 successor uses a new Effect ID whose immutable head
+                # claim itself is attempt 2.  Keep the head projection in sync
+                # with that actual claim, while preserving the older same-ID
+                # generic retry path whose head remains revision 1.
                 head = self._connection.execute(
                     """
                     UPDATE effect_ledger
@@ -8598,12 +9462,24 @@ class GatewayStateStore:
         *,
         now_ms: int,
         exclude_pipeline_versions: tuple[str, ...] = (),
+        exclude_effect_ids: tuple[str, ...] = (),
     ) -> tuple[dict, ...]:
         """启动恢复：SIDE_EFFECT_STARTED 的 attempt 标记 RECONCILE_REQUIRED 并落 INCONCLUSIVE。
 
         只读对账由协调方随后用 record_effect_reconciliation 推进；
         未对账清零前不得宣称副作用流量为零（fenced/draining）。
         """
+        if (
+            not isinstance(exclude_effect_ids, tuple)
+            or tuple(dict.fromkeys(exclude_effect_ids)) != exclude_effect_ids
+            or any(
+                not isinstance(effect_id, str)
+                or re.fullmatch(r"eff_[0-9a-f]{64}", effect_id) is None
+                for effect_id in exclude_effect_ids
+            )
+        ):
+            raise ValueError("effect recovery exclusion is invalid")
+        excluded_effects = frozenset(exclude_effect_ids)
         with self._lock:
             rows = self._connection.execute(
                 "SELECT effect_id, attempt, pipeline_version, claimed_at_ms, "
@@ -8612,7 +9488,10 @@ class GatewayStateStore:
             ).fetchall()
         recovered = []
         for row in rows:
-            if row["pipeline_version"] in exclude_pipeline_versions:
+            if (
+                row["pipeline_version"] in exclude_pipeline_versions
+                or row["effect_id"] in excluded_effects
+            ):
                 continue
             recovered_at_ms = max(
                 now_ms,
@@ -10856,6 +11735,45 @@ class GatewayStateStore:
             ).fetchall()
             return tuple(str(row["request_id"]) for row in rows)
 
+    def list_terminal_active_session_request_ids(
+        self,
+        *,
+        limit: int = 64,
+    ) -> tuple[str, ...]:
+        """Return terminal request aggregates whose session head is still ACTIVE.
+
+        This is the durable crash seam between the terminal request transition
+        and ``complete_session_request``.  It is read-only: startup owns the
+        idempotent queue projection repair and promotion of the next request.
+        """
+
+        if type(limit) is not int or not 1 <= limit <= 256:
+            raise ValueError("terminal session request limit is invalid")
+        terminal_states = tuple(sorted(TERMINAL_STATES["request"]))
+        placeholders = ",".join("?" for _state in terminal_states)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            rows = self._connection.execute(
+                f"""
+                SELECT q.request_id
+                FROM session_queue AS q
+                JOIN request_generation AS g ON g.request_id = q.request_id
+                JOIN aggregate_state AS s
+                  ON s.machine = 'request'
+                 AND s.entity_id = q.request_id
+                 AND s.request_id = q.request_id
+                 AND s.run_id = g.run_id
+                 AND s.generation = g.current_generation
+                WHERE q.state = 'ACTIVE'
+                  AND s.state IN ({placeholders})
+                ORDER BY q.activated_at_ms, q.session_scope_hash, q.sequence
+                LIMIT ?
+                """,
+                (*terminal_states, limit),
+            ).fetchall()
+            return tuple(str(row["request_id"]) for row in rows)
+
     def activate_request_run(
         self,
         request_id: str,
@@ -11416,6 +12334,71 @@ class GatewayStateStore:
                     False,
                     True,
                 )
+            if decision.verification_readiness_id is not None:
+                from contracts.verification import VerificationReadiness
+
+                current_row = self._connection.execute(
+                    "SELECT verification_readiness_id, readiness_sha256,"
+                    " readiness_json FROM verification_readiness"
+                    " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                    " ORDER BY evaluated_at_ms DESC, recorded_at_ms DESC,"
+                    " verification_readiness_id DESC LIMIT 1",
+                    (
+                        decision.request_id,
+                        decision.run_id,
+                        decision.generation,
+                    ),
+                ).fetchone()
+                if current_row is None:
+                    raise StoreConflictError(
+                        "completion decision readiness is no longer current"
+                    )
+                try:
+                    current_readiness = VerificationReadiness.model_validate_json(
+                        current_row["readiness_json"], strict=True
+                    )
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored verification readiness is invalid"
+                    ) from exc
+                if (
+                    not current_readiness.has_valid_identity()
+                    or current_row["verification_readiness_id"]
+                    != current_readiness.verification_readiness_id
+                    or current_row["readiness_sha256"]
+                    != current_readiness.readiness_sha256
+                ):
+                    raise StoreCorruptionError(
+                        "stored verification readiness identity is invalid"
+                    )
+                if (
+                    current_readiness.verification_readiness_id
+                    != decision.verification_readiness_id
+                    or current_readiness.readiness_sha256
+                    != decision.verification_readiness_sha256
+                ):
+                    raise StoreConflictError(
+                        "completion decision readiness is no longer current"
+                    )
+                if (
+                    decision.verification_plan_sha256
+                    != current_readiness.verification_plan_sha256
+                    or decision.verification_ready
+                    != current_readiness.verification_ready
+                ):
+                    raise StoreConflictError(
+                        "completion decision disagrees with its readiness"
+                    )
+                if decision.outcome in {"COMPLETED", "PARTIAL", "FAILED"}:
+                    # Final linearization fence: a verification record writer
+                    # on this or another connection must commit wholly before
+                    # this BEGIN IMMEDIATE snapshot (and be re-derived here),
+                    # or wholly after the durable terminal decision.
+                    self._assert_verification_readiness_authoritative_locked(
+                        current_readiness,
+                        require_exact_evaluated_at_ms=False,
+                        error_type=StoreConflictError,
+                    )
             self._connection.execute(
                 """
                 INSERT INTO completion_decisions(
@@ -11494,6 +12477,31 @@ class GatewayStateStore:
                     created_by_this_call=False,
                     duplicate=True,
                 )
+            composition_plan = self._connection.execute(
+                "SELECT verification_plan_id FROM composition_executable_plan"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?",
+                (record.request_id, record.run_id, record.generation),
+            ).fetchone()
+            if composition_plan is not None:
+                sealed = self._connection.execute(
+                    "SELECT 1 FROM verification_readiness"
+                    " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                    " AND verification_plan_id = ? LIMIT 1",
+                    (
+                        record.request_id,
+                        record.run_id,
+                        record.generation,
+                        composition_plan["verification_plan_id"],
+                    ),
+                ).fetchone()
+                if sealed is not None:
+                    # P7D.2 composition uses one exact completion clock.  Once
+                    # its authoritative readiness is durable, later records
+                    # cannot reopen that stable evidence set.  Duplicate
+                    # writes returned above remain idempotent.
+                    raise StoreConflictError(
+                        "composition verification readiness already sealed"
+                    )
             self._connection.execute(
                 """
                 INSERT INTO verification_record (
@@ -12235,91 +13243,152 @@ class GatewayStateStore:
                 row["plan_json"], strict=True
             )
 
-    def put_verification_readiness(
+    def _assert_verification_readiness_authoritative_locked(
         self,
         readiness,
         *,
-        recorded_at_ms: int,
-    ) -> bool:
-        """Persist a VerificationReadiness; True when newly created.
+        require_exact_evaluated_at_ms: bool,
+        error_type: type[Exception],
+    ) -> None:
+        """Rebuild one readiness from this transaction's authority snapshot.
 
-        M4.1 Final §5/§7 (option B): the write re-derives the expected
-        readiness from the ACTIVE plan + THIS store's records using the
-        SAME authoritative derivation, then compares it FIELD BY FIELD
-        against the submitted object. A hand-computed-hash readiness
-        with fake record ids or wrong verification_ready is rejected.
+        The first derivation proves the submitted readiness is an exact causal
+        materialization at its declared clock.  The second derivation, when a
+        newer matching record exists, proves that no later record has changed
+        that basis.  Callers hold ``_lock`` and (for writes) a SQLite IMMEDIATE
+        transaction, so a concurrent verification writer linearizes entirely
+        before or after this check.
         """
-        from contracts.verification import VerificationReadiness
+
+        from contracts.verification import RegistrySnapshot
         from total_gateway.verification_readiness import build_readiness
 
-        if not isinstance(readiness, VerificationReadiness):
-            raise ValueError("verification readiness payload has the wrong type")
-        if not readiness.has_valid_identity():
-            raise ValueError("verification readiness identity is invalid")
         active_plan = self.get_active_verification_plan(
             request_id=readiness.request_id,
             run_id=readiness.run_id,
             generation=readiness.generation,
         )
         if active_plan is None:
-            raise ValueError(
-                "no active verification plan; readiness cannot be persisted"
+            raise error_type(
+                "no active verification plan; readiness is not authoritative"
             )
-        if active_plan.verification_plan_id != readiness.verification_plan_id:
-            raise ValueError(
-                "readiness does not correspond to the active plan"
+        if (
+            active_plan.verification_plan_id
+            != readiness.verification_plan_id
+            or active_plan.plan_sha256
+            != readiness.verification_plan_sha256
+        ):
+            raise error_type(
+                "readiness does not correspond to the active verification plan"
             )
-        if active_plan.plan_sha256 != readiness.verification_plan_sha256:
-            raise ValueError(
-                "readiness plan hash does not match the active plan"
-            )
-        # §7 option B: re-derive expected readiness and compare fields
+
         snapshot_row = self._connection.execute(
             "SELECT snapshot_json FROM verification_registry_snapshot"
             " WHERE snapshot_sha256 = ?",
             (active_plan.registry_snapshot_sha256,),
         ).fetchone()
         if snapshot_row is None:
-            raise ValueError(
+            raise error_type(
                 "active plan registry snapshot does not exist in the store"
             )
-        from contracts.verification import RegistrySnapshot
+        try:
+            snapshot = RegistrySnapshot.model_validate_json(
+                snapshot_row["snapshot_json"], strict=True
+            )
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "stored verification registry snapshot is invalid"
+            ) from exc
+        if (
+            not snapshot.has_valid_identity()
+            or snapshot.snapshot_sha256
+            != active_plan.registry_snapshot_sha256
+        ):
+            raise StoreCorruptionError(
+                "stored verification registry snapshot identity is invalid"
+            )
 
-        snapshot = RegistrySnapshot.model_validate_json(
-            snapshot_row["snapshot_json"], strict=True
-        )
+        composition_row = self._connection.execute(
+            "SELECT verification_plan_id, verification_plan_sha256"
+            " FROM composition_executable_plan"
+            " WHERE request_id = ? AND run_id = ? AND generation = ?",
+            (
+                readiness.request_id,
+                readiness.run_id,
+                readiness.generation,
+            ),
+        ).fetchone()
+        composition_exact = composition_row is not None
+        if composition_row is not None and (
+            composition_row["verification_plan_id"]
+            != active_plan.verification_plan_id
+            or composition_row["verification_plan_sha256"]
+            != active_plan.plan_sha256
+        ):
+            raise StoreCorruptionError(
+                "composition and active verification plans disagree"
+            )
+
         expected = build_readiness(
             plan=active_plan,
             snapshot=snapshot,
             store=self,
             evaluated_at_ms=readiness.evaluated_at_ms,
+            exact_evaluated_at_ms=(
+                require_exact_evaluated_at_ms or composition_exact
+            ),
         )
-        # field-by-field comparison (ids differ only by derivation time)
-        for field in (
-            "verification_plan_id", "verification_plan_sha256",
-            "request_id", "run_id", "generation",
-            "registry_snapshot_sha256", "required_entry_count",
-            "satisfied_entry_count", "verification_ready", "failure_class",
-            "supporting_verification_record_ids",
-        ):
-            if getattr(expected, field) != getattr(readiness, field):
-                raise ValueError(
-                    f"readiness field {field!r} does not match the"
-                    f" authoritative derivation"
-                )
-        expected_assessments = {
-            a.plan_entry_id: (a.status, a.verification_record_id)
-            for a in expected.entry_assessments
-        }
-        actual_assessments = {
-            a.plan_entry_id: (a.status, a.verification_record_id)
-            for a in readiness.entry_assessments
-        }
-        if expected_assessments != actual_assessments:
-            raise ValueError(
-                "readiness entry assessments do not match the"
-                " authoritative derivation"
+        if expected != readiness:
+            raise error_type(
+                "verification readiness does not match its authoritative derivation"
             )
+
+        records = self.list_verification_records(
+            request_id=readiness.request_id,
+            run_id=readiness.run_id,
+            generation=readiness.generation,
+        )
+        latest_evaluated_at_ms = max(
+            (record.evaluated_at_ms for record in records),
+            default=readiness.evaluated_at_ms,
+        )
+        if latest_evaluated_at_ms <= readiness.evaluated_at_ms:
+            return
+        latest = build_readiness(
+            plan=active_plan,
+            snapshot=snapshot,
+            store=self,
+            evaluated_at_ms=latest_evaluated_at_ms,
+        )
+        if _verification_readiness_basis(latest) != (
+            _verification_readiness_basis(readiness)
+        ):
+            raise error_type(
+                "verification readiness was superseded by a later record"
+            )
+
+    def put_verification_readiness(
+        self,
+        readiness,
+        *,
+        recorded_at_ms: int,
+        require_exact_evaluated_at_ms: bool = False,
+    ) -> bool:
+        """Persist a VerificationReadiness; True when newly created.
+
+        M4.1 Final §5/§7 (option B): the write re-derives the expected
+        readiness from the ACTIVE plan + THIS store's records using the
+        SAME authoritative derivation, then compares the complete object
+        against the submitted object. A hand-computed-hash readiness
+        with fake record ids or wrong verification_ready is rejected.
+        """
+        from contracts.verification import VerificationReadiness
+        if not isinstance(readiness, VerificationReadiness):
+            raise ValueError("verification readiness payload has the wrong type")
+        if not readiness.has_valid_identity():
+            raise ValueError("verification readiness identity is invalid")
+        if type(require_exact_evaluated_at_ms) is not bool:
+            raise ValueError("verification readiness record-time mode is invalid")
         payload_json = json.dumps(
             readiness.model_dump(mode="json"), ensure_ascii=False,
             allow_nan=False, sort_keys=True, separators=(",", ":"),
@@ -12343,6 +13412,38 @@ class GatewayStateStore:
                         " for different content"
                     )
                 return False
+            terminal = self._connection.execute(
+                "SELECT decision_json, decision_sha256"
+                " FROM completion_decisions"
+                " WHERE request_id = ? AND run_id = ? AND generation = ?"
+                " AND outcome IN ('COMPLETED', 'PARTIAL', 'FAILED')"
+                " ORDER BY recorded_at_ms DESC, decision_sha256 DESC LIMIT 1",
+                (
+                    readiness.request_id,
+                    readiness.run_id,
+                    readiness.generation,
+                ),
+            ).fetchone()
+            if terminal is not None:
+                # The terminal CompletionDecision is the linearization point
+                # for this generation's verification evidence.  BEGIN
+                # IMMEDIATE serializes this fence against decision writers on
+                # other connections: readiness commits wholly before that
+                # decision (and is rechecked there), or is rejected here.
+                _parse_completion_decision(
+                    terminal["decision_json"], terminal["decision_sha256"]
+                )
+                raise StoreConflictError(
+                    "verification readiness is sealed by terminal completion"
+                )
+            # Recompute and insert under one Store lock + BEGIN IMMEDIATE.
+            # This removes the former gap where a record could land after the
+            # derivation but before the readiness row became durable.
+            self._assert_verification_readiness_authoritative_locked(
+                readiness,
+                require_exact_evaluated_at_ms=require_exact_evaluated_at_ms,
+                error_type=ValueError,
+            )
             self._connection.execute(
                 """INSERT INTO verification_readiness (
                     verification_readiness_id, verification_plan_id,
@@ -12363,7 +13464,12 @@ class GatewayStateStore:
             return True
 
     def get_latest_verification_readiness(
-        self, *, request_id: str, run_id: str, generation: int,
+        self,
+        *,
+        request_id: str,
+        run_id: str,
+        generation: int,
+        require_authoritative: bool = False,
     ):
         from contracts.verification import VerificationReadiness
 
@@ -12371,14 +13477,25 @@ class GatewayStateStore:
             row = self._connection.execute(
                 "SELECT readiness_json FROM verification_readiness"
                 " WHERE request_id = ? AND run_id = ? AND generation = ?"
-                " ORDER BY evaluated_at_ms DESC LIMIT 1",
+                " ORDER BY evaluated_at_ms DESC, recorded_at_ms DESC,"
+                " verification_readiness_id DESC LIMIT 1",
                 (request_id, run_id, generation),
             ).fetchone()
             if row is None:
                 return None
-            return VerificationReadiness.model_validate_json(
+            readiness = VerificationReadiness.model_validate_json(
                 row["readiness_json"], strict=True
             )
+            if require_authoritative:
+                try:
+                    self._assert_verification_readiness_authoritative_locked(
+                        readiness,
+                        require_exact_evaluated_at_ms=False,
+                        error_type=StoreConflictError,
+                    )
+                except StoreConflictError:
+                    return None
+            return readiness
 
     def put_write_evidence_effect_binding(
         self,
@@ -15793,6 +16910,28 @@ class GatewayStateStore:
                     raise StoreConflictError(
                         "executable composition plan generation is not active"
                     )
+                # The parent execution Effect is the atomic registration
+                # cutoff.  Without this check a worker can read "no plan",
+                # another connection can register one, and the worker can then
+                # complete the ordinary path without ever observing the new
+                # obligation.  The worker re-reads immediately after claiming
+                # that Effect; whichever write wins is therefore authoritative:
+                # plan first -> worker observes it, Effect first -> this insert
+                # fails closed.
+                execution_started = self._connection.execute(
+                    "SELECT effect_id FROM effect_ledger "
+                    "WHERE request_id = ? AND run_id = ? AND generation = ? "
+                    "AND effect_kind = 'execution' LIMIT 1",
+                    (
+                        executable.request_id,
+                        executable.run_id,
+                        executable.generation,
+                    ),
+                ).fetchone()
+                if execution_started is not None:
+                    raise StoreConflictError(
+                        "executable composition plan registration is too late"
+                    )
                 candidate_record = ExecutableCompositionPlanStoreRecord(
                     executable_plan=executable
                 )
@@ -15899,11 +17038,594 @@ class GatewayStateStore:
                 duplicate=not created,
             )
 
+    def commit_composition_continuation_delegation(
+        self,
+        delegation: CompositionContinuationDelegation,
+        *,
+        parent_ticket: ExecutionTicket,
+        now_ms: int,
+    ) -> tuple[CompositionContinuationDelegation, bool]:
+        """Seal inert continuation evidence; never issue or consume authority.
+
+        The row intentionally stores no signature, nonce or callable runtime
+        response.  Later issuance must still produce and persist a fresh V2
+        Policy/Ticket/Grant chain for the Store's current gateway epoch.
+        """
+
+        if not isinstance(delegation, CompositionContinuationDelegation):
+            raise TypeError("composition continuation type is invalid")
+        if not delegation.has_valid_sha256():
+            raise ValueError("composition continuation digest is invalid")
+        with self._lock, self._write_transaction():
+            rows = self._connection.execute(
+                "SELECT * FROM composition_continuation_delegation "
+                "WHERE delegation_id = ? OR executable_plan_id = ? "
+                "OR delegation_sha256 = ? ORDER BY delegation_id",
+                (
+                    delegation.delegation_id,
+                    delegation.executable_plan_id,
+                    delegation.delegation_sha256,
+                ),
+            ).fetchall()
+            if rows:
+                if len(rows) != 1:
+                    raise StoreCorruptionError(
+                        "composition continuation identities diverged"
+                    )
+                try:
+                    existing = continuation_delegation_from_row(rows[0])
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored composition continuation is invalid"
+                    ) from exc
+                if existing.canonical_json != delegation.canonical_json:
+                    raise StoreConflictError(
+                        "composition continuation identity was reused"
+                    )
+                _verify_composition_continuation_delegation_authorities(
+                    self._connection, existing
+                )
+                return existing, False
+            if now_ms != delegation.issued_at_ms:
+                raise ValueError(
+                    "new composition continuation time differs from its seal"
+                )
+            if not (
+                parent_ticket.payload.not_before_ms
+                <= now_ms
+                < parent_ticket.payload.expires_at_ms
+            ):
+                raise StoreConflictError(
+                    "composition continuation parent ticket is not live"
+                )
+            try:
+                plan_record, registration_record = (
+                    _verify_composition_continuation_delegation_authorities(
+                        self._connection,
+                        delegation,
+                        parent_ticket=parent_ticket,
+                    )
+                )
+            except StoreCorruptionError as exc:
+                raise StoreConflictError(
+                    "composition continuation crossed its active authority"
+                ) from exc
+            if not plan_record.active_at(now_ms, registration_record):
+                raise StoreConflictError(
+                    "composition continuation plan is not active"
+                )
+            self._connection.execute(
+                """
+                INSERT INTO composition_continuation_delegation(
+                    delegation_id, record_type, executable, registration_id,
+                    executable_plan_id, request_id, run_id, generation,
+                    parent_effect_id, delegation_json, delegation_sha256,
+                    issued_at_ms, expires_at_ms
+                ) VALUES (?, 'NON_EXECUTABLE_CONTINUATION', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    delegation.delegation_id,
+                    delegation.registration_id,
+                    delegation.executable_plan_id,
+                    delegation.request_id,
+                    delegation.run_id,
+                    delegation.generation,
+                    delegation.parent_effect_id,
+                    delegation.canonical_json,
+                    delegation.delegation_sha256,
+                    delegation.issued_at_ms,
+                    delegation.expires_at_ms,
+                ),
+            )
+            stored = _continuation_delegation_locked(
+                self._connection, delegation.delegation_id
+            )
+            _verify_composition_continuation_delegation_authorities(
+                self._connection, stored
+            )
+            return stored, True
+
+    def get_composition_continuation_delegation(
+        self,
+        delegation_id: str,
+        *,
+        now_ms: int | None = None,
+        require_parent_success: bool = False,
+    ) -> CompositionContinuationDelegation | None:
+        """Read inert evidence, optionally requiring its current live parents."""
+
+        if (
+            not isinstance(delegation_id, str)
+            or re.fullmatch(r"ccd_[0-9a-f]{64}", delegation_id) is None
+            or type(require_parent_success) is not bool
+        ):
+            raise ValueError("composition continuation identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_continuation_delegation "
+                "WHERE delegation_id = ?",
+                (delegation_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                delegation = continuation_delegation_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored composition continuation is invalid"
+                ) from exc
+            _verify_composition_continuation_delegation_authorities(
+                self._connection, delegation
+            )
+            if now_ms is not None:
+                _assert_live_composition_continuation_locked(
+                    self._connection,
+                    delegation,
+                    now_ms=now_ms,
+                    require_parent_success=require_parent_success,
+                )
+            return delegation
+
+    def get_composition_continuation_for_plan(
+        self,
+        executable_plan_id: str,
+        *,
+        now_ms: int | None = None,
+        require_parent_success: bool = False,
+    ) -> CompositionContinuationDelegation | None:
+        """Resolve the plan's unique durable continuation and signing context."""
+
+        if not isinstance(executable_plan_id, str) or not executable_plan_id:
+            raise ValueError("composition executable plan identity is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT delegation_id FROM composition_continuation_delegation "
+                "WHERE executable_plan_id = ?",
+                (executable_plan_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return self.get_composition_continuation_delegation(
+                row["delegation_id"],
+                now_ms=now_ms,
+                require_parent_success=require_parent_success,
+            )
+
+    def supersede_composition_step_authorization_prestart(
+        self,
+        request: CompositionStepAuthorizationRequest,
+        *,
+        artifacts: CompositionStepAuthorizationArtifacts,
+        expected_predecessor_authorization_id: str,
+        now_ms: int,
+    ) -> tuple[CompositionStepAuthorizationStoreRecord, bool]:
+        """CAS one stale pre-start receipt to its sole bounded successor.
+
+        This transaction proves only Gateway-Store facts: the predecessor has
+        no STARTED/dispatch-permit fact, no consumed Ticket/Grant nonce and no
+        terminal result.  It never opens or writes the separate FactLedger and
+        therefore does *not* pretend to provide cross-database atomicity.  The
+        caller must verify the exact external Fact absence before and after
+        this CAS; any disagreement is reconciliation-required, never replay.
+
+        A receipt whose Effect was never claimed is given its deterministic
+        claim and immediately disposed ``FAILED_FINAL`` in this same
+        transaction.  This makes the predecessor chain observable without
+        introducing a handler boundary.  The successor always has a distinct
+        Effect ID and a freshly signed current-epoch chain.
+        """
+
+        if not isinstance(request, CompositionStepAuthorizationRequest):
+            raise TypeError("composition authorization request type is invalid")
+        if not isinstance(artifacts, CompositionStepAuthorizationArtifacts):
+            raise TypeError("composition authorization artifacts type is invalid")
+        if (
+            request.schema_version != COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2
+            or request.attempt != 2
+            or not request.has_valid_sha256()
+            or not isinstance(expected_predecessor_authorization_id, str)
+            or re.fullmatch(
+                r"csa_[0-9a-f]{64}", expected_predecessor_authorization_id
+            )
+            is None
+        ):
+            raise ValueError("composition prestart successor is invalid")
+        authorization_id = derive_composition_step_authorization_id(request)
+        with self._lock, self._write_transaction():
+            collision_rows = self._connection.execute(
+                """
+                SELECT * FROM composition_step_authorization
+                WHERE (executable_plan_id = ? AND step_id = ? AND attempt = ?)
+                   OR authorization_id = ? OR authorization_request_sha256 = ?
+                ORDER BY authorization_id
+                """,
+                (
+                    request.executable_plan_id,
+                    request.step_id,
+                    request.attempt,
+                    authorization_id,
+                    request.authorization_request_sha256,
+                ),
+            ).fetchall()
+            if collision_rows:
+                if len(collision_rows) != 1:
+                    raise StoreCorruptionError(
+                        "composition authorization identities diverged"
+                    )
+                try:
+                    existing = authorization_record_from_row(collision_rows[0])
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored composition step authorization is invalid"
+                    ) from exc
+                if (
+                    existing.authorization_id != authorization_id
+                    or existing.request.canonical_json != request.canonical_json
+                    or existing.artifacts != artifacts
+                    or request.supersedes_authorization_id
+                    != expected_predecessor_authorization_id
+                ):
+                    raise StoreCasConflict(
+                        "composition prestart successor lost the race"
+                    )
+                chain = _composition_authorization_chain_locked(
+                    self._connection,
+                    executable_plan_id=request.executable_plan_id,
+                    step_id=request.step_id,
+                )
+                if not chain or chain[-1].authorization_id != authorization_id:
+                    raise StoreCorruptionError(
+                        "composition authorization current head is invalid"
+                    )
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, existing, now_ms=now_ms
+                )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, existing
+                )
+                return existing, False
+
+            chain = _composition_authorization_chain_locked(
+                self._connection,
+                executable_plan_id=request.executable_plan_id,
+                step_id=request.step_id,
+            )
+            if (
+                len(chain) != 1
+                or chain[-1].authorization_id
+                != expected_predecessor_authorization_id
+                or request.supersedes_authorization_id
+                != expected_predecessor_authorization_id
+                or request.attempt != chain[-1].request.attempt + 1
+                or request.supersedes_effect_id
+                != chain[-1].request.prebound_effect_id
+                or request.prebound_effect_id
+                == chain[-1].request.prebound_effect_id
+            ):
+                raise StoreCasConflict(
+                    "composition prestart predecessor is not the current head"
+                )
+            predecessor = chain[-1]
+            if request.continuation_delegation_id is None:
+                raise StoreConflictError("composition continuation is required")
+            continuation = _continuation_delegation_locked(
+                self._connection, request.continuation_delegation_id
+            )
+            _assert_live_composition_continuation_locked(
+                self._connection,
+                continuation,
+                now_ms=now_ms,
+                require_parent_success=True,
+            )
+
+            candidate, projections = _new_composition_authorization_record(
+                request, artifacts, committed_at_ms=now_ms
+            )
+            try:
+                _verify_composition_step_authorization_authorities(
+                    self._connection, candidate
+                )
+            except StoreCorruptionError as exc:
+                raise StoreConflictError(
+                    "composition successor crossed its active authority"
+                ) from exc
+            _assert_live_composition_step_authorization_locked(
+                self._connection, candidate, now_ms=now_ms
+            )
+            _verify_current_epoch_composition_artifacts_locked(
+                self._connection, candidate
+            )
+
+            try:
+                _, _, _, predecessor_ticket, predecessor_grant = (
+                    predecessor.artifacts.restore_contracts()
+                )
+                plan_row = self._connection.execute(
+                    "SELECT * FROM composition_executable_plan "
+                    "WHERE executable_plan_id = ?",
+                    (predecessor.request.executable_plan_id,),
+                ).fetchone()
+                if plan_row is None:
+                    raise ValueError("executable plan is missing")
+                executable = executable_plan_record_from_row(
+                    plan_row
+                ).executable_plan
+                ordinal = next(
+                    index + 1
+                    for index, step in enumerate(executable.step_bindings)
+                    if step.step_id == predecessor.request.step_id
+                )
+                predecessor_claim = rebuild_composition_effect_claim(
+                    predecessor.request,
+                    run_sequence=derive_composition_run_sequence(
+                        predecessor.request.request_id,
+                        predecessor.request.run_id,
+                    ),
+                    ordinal=ordinal,
+                    lease_epoch=predecessor_ticket.payload.claim_lease_epoch,
+                )
+            except (
+                CompositionExecutionBindingError,
+                StopIteration,
+                TypeError,
+                ValueError,
+            ) as exc:
+                raise StoreCorruptionError(
+                    "composition predecessor claim cannot be rebuilt"
+                ) from exc
+            if (
+                predecessor_ticket.payload.claim_sha256
+                != predecessor_claim.claim_sha256
+                or predecessor_ticket.payload.claim_revision
+                != predecessor_claim.claim_revision
+                or predecessor_ticket.payload.effect_id
+                != predecessor_claim.effect_id
+                or request.supersedes_claim_sha256
+                != predecessor_claim.claim_sha256
+            ):
+                raise StoreConflictError(
+                    "composition successor predecessor claim is invalid"
+                )
+
+            consumed = self._connection.execute(
+                "SELECT nonce FROM security_nonce_ledger "
+                "WHERE nonce IN (?, ?) LIMIT 1",
+                (
+                    predecessor_ticket.payload.nonce,
+                    predecessor_grant.payload.nonce,
+                ),
+            ).fetchone()
+            if consumed is not None:
+                raise StoreConflictError(
+                    "composition predecessor nonce was already consumed"
+                )
+            effect_row = self._connection.execute(
+                "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                (predecessor_claim.effect_id,),
+            ).fetchone()
+            if effect_row is None:
+                claim_json, claim_digest = _effect_claim_payload(
+                    predecessor_claim
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO effect_ledger(
+                        effect_id, request_id, run_id, generation, effect_kind,
+                        owner_component_id, state, claimed_at_ms,
+                        side_effect_started_at_ms, completed_at_ms,
+                        claim_json, claim_sha256, result_json, result_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'CLAIMED', ?, NULL, NULL, ?, ?, NULL, NULL)
+                    """,
+                    (
+                        predecessor_claim.effect_id,
+                        predecessor_claim.request_id,
+                        predecessor_claim.run_id,
+                        predecessor_claim.generation,
+                        predecessor_claim.effect_kind,
+                        predecessor_claim.owner_component_id,
+                        predecessor_claim.claimed_at_ms,
+                        claim_json,
+                        claim_digest,
+                    ),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO effect_attempts(
+                        effect_id, attempt, claim_revision, lease_epoch,
+                        pipeline_version, state, ticket_id, ticket_sha256,
+                        grant_sha256, nonce_sha256, claimed_at_ms,
+                        side_effect_started_at_ms, terminal_at_ms, terminal_kind
+                    ) VALUES (?, ?, ?, ?, ?, 'CLAIMED', NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL)
+                    """,
+                    (
+                        predecessor_claim.effect_id,
+                        predecessor_claim.attempt,
+                        predecessor_claim.claim_revision,
+                        predecessor_claim.lease_epoch,
+                        predecessor_claim.pipeline_version,
+                        predecessor_claim.claimed_at_ms,
+                    ),
+                )
+                claim_payload = json.loads(claim_json)
+                claim_payload["action_fence_epoch"] = (
+                    predecessor.request.action_fence_epoch
+                )
+                self._append_effect_fact_locked(
+                    effect_id=predecessor_claim.effect_id,
+                    attempt=predecessor_claim.attempt,
+                    fact_kind="CLAIM",
+                    verdict=None,
+                    payload=claim_payload,
+                    created_at_ms=predecessor_claim.claimed_at_ms,
+                )
+                effect_row = self._connection.execute(
+                    "SELECT * FROM effect_ledger WHERE effect_id = ?",
+                    (predecessor_claim.effect_id,),
+                ).fetchone()
+            if effect_row is None:
+                raise StoreCorruptionError(
+                    "composition predecessor Effect write disappeared"
+                )
+            effect = _effect_record_from_row(effect_row)
+            attempt_row = self._get_effect_attempt_locked(
+                predecessor_claim.effect_id, predecessor_claim.attempt
+            )
+            forbidden_fact = self._connection.execute(
+                "SELECT fact_kind FROM effect_facts "
+                "WHERE effect_id = ? AND attempt = ? "
+                "AND fact_kind IN ('STARTED','DISPATCH_PERMIT','RECEIPT',"
+                "'RECONCILIATION','CONTRADICTION','FENCE','AUTHORIZATION_FAILED') "
+                "LIMIT 1",
+                (predecessor_claim.effect_id, predecessor_claim.attempt),
+            ).fetchone()
+            if (
+                effect.claim != predecessor_claim
+                or effect.state != "CLAIMED"
+                or effect.side_effect_started_at_ms is not None
+                or effect.completed_at_ms is not None
+                or effect.result is not None
+                or attempt_row is None
+                or attempt_row["state"] != "CLAIMED"
+                or attempt_row["ticket_id"] is not None
+                or attempt_row["ticket_sha256"] is not None
+                or attempt_row["grant_sha256"] is not None
+                or attempt_row["nonce_sha256"] is not None
+                or attempt_row["side_effect_started_at_ms"] is not None
+                or attempt_row["terminal_at_ms"] is not None
+                or forbidden_fact is not None
+            ):
+                raise StoreConflictError(
+                    "composition predecessor crossed the prestart boundary"
+                )
+
+            evidence_sha256 = canonical_sha256(
+                {
+                    "domain": "tiangong.composition-prestart-supersession.v1",
+                    "predecessor_authorization_id": predecessor.authorization_id,
+                    "predecessor_effect_id": predecessor_claim.effect_id,
+                    "predecessor_claim_sha256": predecessor_claim.claim_sha256,
+                    "successor_authorization_id": candidate.authorization_id,
+                    "successor_effect_id": request.prebound_effect_id,
+                    "superseded_at_ms": now_ms,
+                    "handler_count": 0,
+                    "fact_ledger_atomicity_claimed": False,
+                }
+            )
+            result = EffectResult(
+                result_id=(
+                    "composition-prestart-superseded-"
+                    + predecessor.authorization_id
+                ),
+                effect_id=predecessor_claim.effect_id,
+                status="FAILED_FINAL",
+                fact_id=(
+                    "composition-prestart-disposition-"
+                    + predecessor.authorization_id
+                ),
+                evidence_sha256=evidence_sha256,
+                error_code="composition.authorization.prestart_superseded",
+                observed_at_ms=now_ms,
+                result_sha256="0" * 64,
+            ).with_computed_sha256()
+            result_json, result_digest = _effect_model_payload(result)
+            head = self._connection.execute(
+                "UPDATE effect_ledger SET state = 'FAILED_FINAL', "
+                "completed_at_ms = ?, result_json = ?, result_sha256 = ? "
+                "WHERE effect_id = ? AND state = 'CLAIMED' "
+                "AND side_effect_started_at_ms IS NULL AND result_json IS NULL",
+                (
+                    now_ms,
+                    result_json,
+                    result_digest,
+                    predecessor_claim.effect_id,
+                ),
+            )
+            attempt_update = self._connection.execute(
+                "UPDATE effect_attempts SET state = 'FAILED_FINAL', "
+                "terminal_at_ms = ?, terminal_kind = 'FAILED_FINAL' "
+                "WHERE effect_id = ? AND attempt = ? AND state = 'CLAIMED' "
+                "AND side_effect_started_at_ms IS NULL AND terminal_at_ms IS NULL",
+                (
+                    now_ms,
+                    predecessor_claim.effect_id,
+                    predecessor_claim.attempt,
+                ),
+            )
+            if head.rowcount != 1 or attempt_update.rowcount != 1:
+                raise StoreCasConflict(
+                    "composition predecessor changed before disposition"
+                )
+            self._append_effect_fact_locked(
+                effect_id=predecessor_claim.effect_id,
+                attempt=predecessor_claim.attempt,
+                fact_kind="AUTHORIZATION_FAILED",
+                verdict="PROVEN_NOT_APPLIED",
+                payload={
+                    "domain": "tiangong.composition-prestart-supersession.v1",
+                    "evidence_sha256": evidence_sha256,
+                    "successor_authorization_id": candidate.authorization_id,
+                    "handler_count": 0,
+                    "ticket_nonce_consumed": False,
+                    "grant_nonce_consumed": False,
+                    "fact_ledger_atomicity_claimed": False,
+                },
+                created_at_ms=now_ms,
+            )
+            self._append_effect_fact_locked(
+                effect_id=predecessor_claim.effect_id,
+                attempt=predecessor_claim.attempt,
+                fact_kind="RECEIPT",
+                verdict=None,
+                payload=json.loads(result_json),
+                created_at_ms=now_ms,
+            )
+            _insert_composition_authorization_locked(
+                self._connection, candidate, projections
+            )
+            committed_chain = _composition_authorization_chain_locked(
+                self._connection,
+                executable_plan_id=request.executable_plan_id,
+                step_id=request.step_id,
+            )
+            if (
+                len(committed_chain) != 2
+                or committed_chain[-1].authorization_id
+                != candidate.authorization_id
+            ):
+                raise StoreCorruptionError(
+                    "composition successor chain write disappeared"
+                )
+            return committed_chain[-1], True
+
     def commit_composition_step_authorization(
         self,
         request: CompositionStepAuthorizationRequest,
         *,
-        parent_ticket: ExecutionTicket,
+        parent_ticket: ExecutionTicket | None = None,
         artifacts: CompositionStepAuthorizationArtifacts,
         now_ms: int,
     ) -> tuple[CompositionStepAuthorizationStoreRecord, bool]:
@@ -15922,9 +17644,32 @@ class GatewayStateStore:
             raise ValueError("composition authorization request digest is invalid")
         authorization_id = derive_composition_step_authorization_id(request)
         with self._lock, self._write_transaction():
-            _verify_composition_parent_ticket(
-                request, parent_ticket, now_ms=now_ms
-            )
+            if request.schema_version == COMPOSITION_STEP_AUTHORIZATION_SCHEMA:
+                if parent_ticket is None:
+                    raise StoreConflictError(
+                        "composition parent ticket is required"
+                    )
+                _verify_composition_parent_ticket(
+                    request, parent_ticket, now_ms=now_ms
+                )
+            else:
+                if request.attempt != 1:
+                    raise StoreConflictError(
+                        "later composition attempts require the prestart CAS"
+                    )
+                if request.continuation_delegation_id is None:
+                    raise StoreConflictError(
+                        "composition continuation is required"
+                    )
+                continuation = _continuation_delegation_locked(
+                    self._connection, request.continuation_delegation_id
+                )
+                _assert_live_composition_continuation_locked(
+                    self._connection,
+                    continuation,
+                    now_ms=now_ms,
+                    require_parent_success=True,
+                )
             rows = self._connection.execute(
                 """
                 SELECT * FROM composition_step_authorization
@@ -15967,24 +17712,13 @@ class GatewayStateStore:
                 _assert_live_composition_step_authorization_locked(
                     self._connection, existing, now_ms=now_ms
                 )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, existing
+                )
                 return existing, False
 
-            projections = artifacts.validate_for_request(request)
-            candidate = CompositionStepAuthorizationStoreRecord(
-                authorization_id=authorization_id,
-                request=request,
-                artifacts=artifacts,
-                committed_at_ms=now_ms,
-                authorization_record_sha256="0" * 64,
-            )
-            candidate = CompositionStepAuthorizationStoreRecord(
-                authorization_id=candidate.authorization_id,
-                request=candidate.request,
-                artifacts=candidate.artifacts,
-                committed_at_ms=candidate.committed_at_ms,
-                authorization_record_sha256=(
-                    candidate.computed_record_sha256()
-                ),
+            candidate, projections = _new_composition_authorization_record(
+                request, artifacts, committed_at_ms=now_ms
             )
             try:
                 _verify_composition_step_authorization_authorities(
@@ -15997,109 +17731,11 @@ class GatewayStateStore:
             _assert_live_composition_step_authorization_locked(
                 self._connection, candidate, now_ms=now_ms
             )
-            self._connection.execute(
-                """
-                INSERT INTO composition_step_authorization(
-                    authorization_id, state,
-                    executable_plan_id, executable_plan_sha256,
-                    registration_id, composition_plan_id,
-                    request_id, run_id, generation, principal_scope_hash,
-                    parent_ticket_id, parent_ticket_sha256,
-                    step_id, step_binding_sha256, attempt,
-                    action_id, action_version, source_revision_sha256,
-                    action_registry_sha256, action_permission_sha256,
-                    argument_schema_sha256, result_schema_sha256,
-                    composition_binding_sha256, arguments_sha256,
-                    target_snapshot_sha256, workspace_id,
-                    workspace_scope_sha256, object_grants_sha256,
-                    prebound_effect_id, prebound_effect_intent_sha256,
-                    action_fence_epoch, action_fence_sha256,
-                    authorization_request_json,
-                    authorization_request_sha256,
-                    intent_id, intent_sha256, intent_json,
-                    intent_json_sha256,
-                    impact_id, impact_sha256, impact_json,
-                    impact_json_sha256,
-                    decision_id, decision_sha256, decision_json,
-                    decision_json_sha256,
-                    ticket_id, ticket_nonce, ticket_payload_sha256,
-                    signed_ticket_json, signed_ticket_sha256,
-                    grant_id, grant_nonce, grant_payload_sha256,
-                    signed_grant_json, signed_grant_sha256,
-                    runtime_response_json, runtime_response_sha256,
-                    issued_at_ms, expires_at_ms,
-                    authorization_ceiling_ms, committed_at_ms,
-                    authorization_record_sha256
-                ) VALUES (
-                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-                )
-                """,
-                (
-                    authorization_id,
-                    "ISSUED",
-                    request.executable_plan_id,
-                    request.executable_plan_sha256,
-                    request.registration_id,
-                    request.composition_plan_id,
-                    request.request_id,
-                    request.run_id,
-                    request.generation,
-                    request.principal_scope_hash,
-                    request.parent_ticket_id,
-                    request.parent_ticket_sha256,
-                    request.step_id,
-                    request.step_binding_sha256,
-                    request.attempt,
-                    request.action_id,
-                    request.action_version,
-                    request.source_revision_sha256,
-                    request.action_registry_sha256,
-                    request.action_permission_sha256,
-                    request.argument_schema_sha256,
-                    request.result_schema_sha256,
-                    request.composition_binding_sha256,
-                    request.arguments_sha256,
-                    request.target_snapshot_sha256,
-                    request.workspace_id,
-                    request.workspace_scope_sha256,
-                    request.object_grants_sha256,
-                    request.prebound_effect_id,
-                    request.prebound_effect_intent_sha256,
-                    request.action_fence_epoch,
-                    request.action_fence_sha256,
-                    request.canonical_json,
-                    request.authorization_request_sha256,
-                    projections["intent_id"],
-                    projections["intent_sha256"],
-                    artifacts.intent_json,
-                    projections["intent_json_sha256"],
-                    projections["impact_id"],
-                    projections["impact_sha256"],
-                    artifacts.impact_json,
-                    projections["impact_json_sha256"],
-                    projections["decision_id"],
-                    projections["decision_sha256"],
-                    artifacts.decision_json,
-                    projections["decision_json_sha256"],
-                    projections["ticket_id"],
-                    projections["ticket_nonce"],
-                    projections["ticket_payload_sha256"],
-                    artifacts.signed_ticket_json,
-                    projections["signed_ticket_sha256"],
-                    projections["grant_id"],
-                    projections["grant_nonce"],
-                    projections["grant_payload_sha256"],
-                    artifacts.signed_grant_json,
-                    projections["signed_grant_sha256"],
-                    artifacts.runtime_response_json,
-                    projections["runtime_response_sha256"],
-                    request.issued_at_ms,
-                    request.expires_at_ms,
-                    request.authorization_ceiling_ms,
-                    now_ms,
-                    candidate.authorization_record_sha256,
-                ),
+            _verify_current_epoch_composition_artifacts_locked(
+                self._connection, candidate
+            )
+            _insert_composition_authorization_locked(
+                self._connection, candidate, projections
             )
             row = self._connection.execute(
                 "SELECT * FROM composition_step_authorization "
@@ -16131,7 +17767,13 @@ class GatewayStateStore:
     ) -> CompositionStepAuthorizationStoreRecord | None:
         """Read one strict receipt, optionally requiring current live scope."""
 
-        if not executable_plan_id or not step_id or attempt != 1:
+        if (
+            not executable_plan_id
+            or not step_id
+            or not isinstance(attempt, int)
+            or isinstance(attempt, bool)
+            or attempt < 1
+        ):
             raise ValueError("composition authorization stable key is invalid")
         with self._lock:
             if self._closed:
@@ -16156,7 +17798,83 @@ class GatewayStateStore:
                 _assert_live_composition_step_authorization_locked(
                     self._connection, record, now_ms=now_ms
                 )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, record
+                )
             return record
+
+    def list_composition_step_authorizations(
+        self,
+        executable_plan_id: str,
+        step_id: str,
+        *,
+        now_ms: int | None = None,
+    ) -> tuple[CompositionStepAuthorizationStoreRecord, ...]:
+        """Return the verified contiguous attempt chain in ordinal order."""
+
+        if not executable_plan_id or not step_id:
+            raise ValueError("composition authorization stable key is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            chain = _composition_authorization_chain_locked(
+                self._connection,
+                executable_plan_id=executable_plan_id,
+                step_id=step_id,
+            )
+            if now_ms is not None and chain:
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, chain[-1], now_ms=now_ms
+                )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, chain[-1]
+                )
+            return chain
+
+    def get_current_composition_step_authorization(
+        self,
+        executable_plan_id: str,
+        step_id: str,
+        *,
+        now_ms: int | None = None,
+    ) -> CompositionStepAuthorizationStoreRecord | None:
+        """Return the single chain head; predecessor rows never become current."""
+
+        chain = self.list_composition_step_authorizations(
+            executable_plan_id, step_id, now_ms=now_ms
+        )
+        return None if not chain else chain[-1]
+
+    def list_composition_authorizations_for_plan(
+        self,
+        executable_plan_id: str,
+        *,
+        current_only: bool = False,
+    ) -> tuple[CompositionStepAuthorizationStoreRecord, ...]:
+        """Return verified plan receipts for pure DAG projection consumers."""
+
+        if not executable_plan_id or type(current_only) is not bool:
+            raise ValueError("composition authorization plan query is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            step_rows = self._connection.execute(
+                "SELECT DISTINCT step_id FROM composition_step_authorization "
+                "WHERE executable_plan_id = ? ORDER BY step_id",
+                (executable_plan_id,),
+            ).fetchall()
+            records: list[CompositionStepAuthorizationStoreRecord] = []
+            for row in step_rows:
+                chain = _composition_authorization_chain_locked(
+                    self._connection,
+                    executable_plan_id=executable_plan_id,
+                    step_id=row["step_id"],
+                )
+                if current_only and chain:
+                    records.append(chain[-1])
+                else:
+                    records.extend(chain)
+            return tuple(records)
 
     def get_composition_step_authorization_for_effect(
         self,
@@ -16194,6 +17912,9 @@ class GatewayStateStore:
                 _assert_live_composition_step_authorization_locked(
                     self._connection, record, now_ms=now_ms
                 )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, record
+                )
             return record
 
     def recover_live_composition_step_authorizations(
@@ -16225,6 +17946,10 @@ class GatewayStateStore:
                   AND g.current_generation = a.generation
                   AND g.status = 'ACTIVE'
                   AND a.action_fence_epoch = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM composition_step_authorization AS successor
+                      WHERE successor.supersedes_authorization_id = a.authorization_id
+                  )
                 ORDER BY a.committed_at_ms, a.authorization_id
                 """,
                 (now_ms, now_ms, now_ms, now_ms),
@@ -16241,6 +17966,9 @@ class GatewayStateStore:
                     ) from exc
                 _assert_live_composition_step_authorization_locked(
                     self._connection, record, now_ms=now_ms
+                )
+                _verify_current_epoch_composition_artifacts_locked(
+                    self._connection, record
                 )
                 recovered.append(record)
             return tuple(recovered)
@@ -16386,6 +18114,7 @@ __all__ = [
     "CHANNEL_LEASE_CLOCK_SKEW_MS",
     "ChannelOwnershipRegistration",
     "CompletionDecisionRecord",
+    "CompositionContinuationDelegation",
     "CompositionStepAuthorizationArtifacts",
     "CompositionStepAuthorizationRequest",
     "CompositionStepAuthorizationStoreRecord",

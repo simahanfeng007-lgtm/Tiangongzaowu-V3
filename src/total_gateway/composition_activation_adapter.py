@@ -66,6 +66,15 @@ class _CompositionGrantIssuer(Protocol):
         now_ms: int | None = None,
     ) -> dict[str, Any]: ...
 
+    def issue_composition_continuation_step(
+        self,
+        *,
+        continuation_delegation_id: str,
+        registration_id: str,
+        step_id: str,
+        now_ms: int | None = None,
+    ) -> dict[str, Any]: ...
+
 
 def _error(code: str) -> None:
     raise CompositionActivationAdapterError(code)
@@ -276,6 +285,42 @@ class CompositionActivationAdapter:
             _error("composition.authorization.time_invalid")
         return self._issuer.issue_composition_step(
             parent_ticket_id=parent_ticket_id,
+            registration_id=registration_id,
+            step_id=step_id,
+            now_ms=now_ms,
+        )
+
+    def authorize_continuation_step(
+        self,
+        *,
+        continuation_delegation_id: str,
+        registration_id: str,
+        step_id: str,
+        now_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Issue a fresh step authority from one inert durable delegation.
+
+        Invocation material, dependency evidence, Effect identity, manifests,
+        and epochs are intentionally absent from this seam.  The existing
+        authority must reconstruct every one of them from sealed Store state.
+        """
+
+        if not self._execution_available:
+            _error("composition.authorization.execution_unavailable")
+        for value in (
+            continuation_delegation_id,
+            registration_id,
+            step_id,
+        ):
+            if not isinstance(value, str) or _OPAQUE_ID.fullmatch(value) is None:
+                _error("composition.authorization.identity_invalid")
+        if now_ms is not None and (type(now_ms) is not int or now_ms < 0):
+            _error("composition.authorization.time_invalid")
+        issuer = getattr(self._issuer, "issue_composition_continuation_step", None)
+        if not callable(issuer):
+            _error("composition.authorization.continuation_unavailable")
+        return issuer(
+            continuation_delegation_id=continuation_delegation_id,
             registration_id=registration_id,
             step_id=step_id,
             now_ms=now_ms,

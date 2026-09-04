@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
@@ -93,7 +94,15 @@ def test_manifest_rows_carry_canonical_explicit_and_opaque_schema_authority() ->
     assert alias["argument_validator_source_sha256"] == explicit[
         "argument_validator_source_sha256"
     ]
+    assert explicit["result_schema_kind"] == "EXPLICIT"
+    assert explicit["result_schema_sha256"] == canonical_sha256(
+        explicit["result_schema"]
+    )
+    assert alias["result_schema"] == explicit["result_schema"]
+    assert alias["value_schemas"] == explicit["value_schemas"]
     assert opaque["argument_schema_kind"] == "OPAQUE"
+    assert opaque["result_schema_kind"] == "OPAQUE"
+    assert opaque["value_schemas"] == {}
     assert opaque["argument_schema"] == action_schema_descriptor(
         "demo.opaque"
     )["argument_schema"]
@@ -300,6 +309,9 @@ def test_live_fact_manifest_carries_the_same_schema_authority() -> None:
     assert alias["argument_validator_source_sha256"] == canonical[
         "argument_validator_source_sha256"
     ]
+    assert alias["result_schema"] == canonical["result_schema"]
+    assert alias["result_schema_sha256"] == canonical["result_schema_sha256"]
+    assert alias["value_schemas"] == canonical["value_schemas"]
 
     broken = {key: dict(value) for key, value in catalog.items()}
     broken["skill.list"]["argument_schema_sha256"] = "0" * 64
@@ -308,6 +320,20 @@ def test_live_fact_manifest_carries_the_same_schema_authority() -> None:
             actions,
             DemoRuntime,
             action_schema_catalog=broken,
+        )
+
+    broken_alias = copy.deepcopy(catalog)
+    alias_result = dict(broken_alias["demo.skill.list"]["result_schema"])
+    alias_result["action"] = "demo.skill.list"
+    broken_alias["demo.skill.list"]["result_schema"] = alias_result
+    broken_alias["demo.skill.list"]["result_schema_sha256"] = canonical_sha256(
+        alias_result
+    )
+    with pytest.raises(ValueError, match="alias schema authority differs"):
+        compile_manifest(
+            actions,
+            DemoRuntime,
+            action_schema_catalog=broken_alias,
         )
 
 
@@ -332,6 +358,13 @@ def test_manifest_generator_writes_only_src_authority(tmp_path: Path) -> None:
             "argument_schema_sha256",
             "argument_schema_kind",
             "argument_validator_source_sha256",
+            "result_schema",
+            "result_schema_sha256",
+            "result_schema_kind",
+            "result_validator_source_sha256",
+            "value_schemas",
+            "value_schema_kind",
+            "value_validator_source_sha256",
         ):
             row.pop(key)
     manifest["source_hash"] = canonical_sha256(manifest["capabilities"])
@@ -386,6 +419,9 @@ def test_model_capability_projection_uses_manifest_schema_hash() -> None:
     assert loaded.action_authority.schema_catalog.resolve(
         "skill.list", "omni-registry-v1"
     ).argument_schema_sha256 == action.argument_schema_sha256
+    assert action.result_schema_sha256 == document["capabilities"][
+        "skill.list"
+    ]["result_schema_sha256"]
     assert (
         loaded.action_authority.registry.source_manifest_sha256
         == loaded.action_authority.manifest_sha256

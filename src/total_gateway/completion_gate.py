@@ -32,6 +32,8 @@ class CompletionRequirements(BaseModel):
     generation: int = Field(ge=0)
     text_required: bool = False
     required_execution_effect_ids: tuple[str, ...] = Field(default=(), max_length=256)
+    # One parent Effect plus the bounded 256-attempt execution lineage.
+    execution_lineage_effect_ids: tuple[str, ...] = Field(default=(), max_length=257)
     required_artifact_revision_ids: tuple[str, ...] = Field(default=(), max_length=256)
     delivery_requirement: Literal["NONE", "CHANNEL_ACCEPTED", "DELIVERED"] = "NONE"
     verification_mode: Literal["NONE", "PLAN_BOUND"] = "NONE"
@@ -40,12 +42,19 @@ class CompletionRequirements(BaseModel):
     def validate_requirements(self) -> Self:
         for values, prefix in (
             (self.required_execution_effect_ids, "eff_"),
+            (self.execution_lineage_effect_ids, "eff_"),
             (self.required_artifact_revision_ids, "arv_"),
         ):
             if values != tuple(sorted(set(values))):
                 raise ValueError("completion requirement identities must be sorted and unique")
             if any(not value.startswith(prefix) or len(value) != 68 for value in values):
                 raise ValueError("completion requirement identity is invalid")
+        if self.execution_lineage_effect_ids and not set(
+            self.required_execution_effect_ids
+        ).issubset(self.execution_lineage_effect_ids):
+            raise ValueError(
+                "required execution effects must belong to the exact lineage"
+            )
         if (
             not self.text_required
             and not self.required_execution_effect_ids
@@ -114,6 +123,11 @@ class CompletionDecision(BaseModel):
     verification_mode: Literal["NONE", "PLAN_BOUND"] = "NONE"
     verification_ready: bool = True
     verification_plan_sha256: str | None = None
+    verification_readiness_id: str | None = Field(
+        default=None,
+        pattern=r"^vrd_[0-9a-f]{64}$",
+        exclude_if=lambda value: value is None,
+    )
     verification_readiness_sha256: str | None = None
     model_generated: Literal[False] = False
     decision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -132,10 +146,23 @@ class CompletionDecision(BaseModel):
             raise ValueError("platform delivery cannot be claimed for an incomplete request")
         if self.needs_reconciliation != (self.outcome == "RECONCILE_REQUIRED"):
             raise ValueError("reconciliation flag disagrees with completion outcome")
+        if self.verification_readiness_id is not None and (
+            self.verification_mode != "PLAN_BOUND"
+            or self.verification_readiness_sha256 is None
+        ):
+            raise ValueError(
+                "verification readiness identity requires a plan-bound payload hash"
+            )
         return self
 
     def computed_sha256(self) -> str:
-        return canonical_sha256(self.model_dump(mode="json", exclude={"decision_sha256"}))
+        payload = self.model_dump(mode="json", exclude={"decision_sha256"})
+        # Compatibility: decisions produced before P7D.2 did not carry the
+        # optional readiness identity.  Omitting the absent field preserves
+        # their existing digest and persisted canonical JSON.
+        if self.verification_readiness_id is None:
+            payload.pop("verification_readiness_id", None)
+        return canonical_sha256(payload)
 
     def has_valid_sha256(self) -> bool:
         return self.decision_sha256 == self.computed_sha256()
@@ -171,35 +198,82 @@ class CompletionGate:
         active_plan=None,
         verification_disposition=None,
         verification_failure_evidence=None,
+        verification_dispositions=None,
+        verification_failure_evidences=None,
         disposition_authority_reader=None,
+        readiness_authority_reader=None,
     ) -> CompletionDecision:
         if candidate_text is not None and (
             not candidate_text.strip() or "\x00" in candidate_text or len(candidate_text) > 100_000
         ):
             raise CompletionGateError("completion.text.invalid")
+        plural_dispositions = verification_dispositions is not None
+        if plural_dispositions:
+            if (
+                verification_disposition is not None
+                or verification_failure_evidence is not None
+                or not isinstance(verification_dispositions, tuple)
+                or not isinstance(verification_failure_evidences, tuple)
+            ):
+                raise CompletionGateError(
+                    "completion.verification.disposition_forms_conflict"
+                )
+            dispositions = verification_dispositions
+            failure_evidences = verification_failure_evidences
+        else:
+            if verification_failure_evidences is not None:
+                raise CompletionGateError(
+                    "completion.verification.disposition_forms_conflict"
+                )
+            dispositions = (
+                ()
+                if verification_disposition is None
+                else (verification_disposition,)
+            )
+            failure_evidences = (
+                ()
+                if verification_failure_evidence is None
+                else (verification_failure_evidence,)
+            )
+        disposition_entry_ids = tuple(
+            getattr(item, "plan_entry_id", "") for item in dispositions
+        )
+        if disposition_entry_ids != tuple(sorted(set(disposition_entry_ids))):
+            raise CompletionGateError(
+                "completion.verification.disposition_set_invalid"
+            )
+        evidence_by_id = {
+            getattr(item, "failure_evidence_id", ""): item
+            for item in failure_evidences
+        }
+        if len(evidence_by_id) != len(failure_evidences):
+            raise CompletionGateError(
+                "completion.verification.evidence_set_invalid"
+            )
         # Final certification correction #1: a disposition MUST come
         # from the one persistence authority. When a disposition is
         # provided, the Store-authority reader is REQUIRED — a caller
         # that forgets the reader fails closed instead of silently
         # skipping the authority check. The Gate never invents
         # authority; it binds to the one persistence authority.
-        if verification_disposition is not None:
+        if dispositions:
             if disposition_authority_reader is None:
                 raise CompletionGateError(
                     "completion.verification."
                     "disposition_authority_reader_required"
                 )
-            authoritative = disposition_authority_reader(
-                verification_disposition.verification_disposition_id
-            )
-            if (
-                authoritative is None
-                or authoritative.disposition_sha256
-                != verification_disposition.disposition_sha256
-            ):
-                raise CompletionGateError(
-                    "completion.verification.disposition_not_authoritative"
+            for disposition in dispositions:
+                authoritative = disposition_authority_reader(
+                    disposition.verification_disposition_id
                 )
+                if (
+                    authoritative is None
+                    or authoritative.disposition_sha256
+                    != disposition.disposition_sha256
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_not_authoritative"
+                    )
         fact_ids: set[str] = set()
         execution_states, execution_ready, execution_failed, execution_ambiguous = (
             self._execution_assessments(requirements, fact_ids)
@@ -369,6 +443,68 @@ class CompletionGate:
                 )
             verification_ready = True
             verification_failure_class = "NONE"
+        if plural_dispositions:
+            # P7D.2 completion consumes a SET of dispositions.  That new path
+            # must bind the whole set to the current Store readiness rather
+            # than merely accepting a once-valid caller snapshot.  The legacy
+            # singular path intentionally retains its historical API.
+            if readiness_authority_reader is None:
+                raise CompletionGateError(
+                    "completion.verification."
+                    "readiness_authority_reader_required"
+                )
+            if verification_readiness is None:
+                raise CompletionGateError(
+                    "completion.verification.readiness_not_current"
+                )
+            current_readiness = readiness_authority_reader(
+                request_id=requirements.request_id,
+                run_id=requirements.run_id,
+                generation=requirements.generation,
+                require_authoritative=True,
+            )
+            if (
+                current_readiness is None
+                or not hasattr(current_readiness, "has_valid_identity")
+                or not current_readiness.has_valid_identity()
+                or current_readiness.verification_readiness_id
+                != verification_readiness.verification_readiness_id
+                or current_readiness.readiness_sha256
+                != verification_readiness.readiness_sha256
+            ):
+                raise CompletionGateError(
+                    "completion.verification.readiness_not_current"
+                )
+            required_plan_entries = (
+                set()
+                if active_plan is None
+                else {
+                    item.plan_entry_id
+                    for item in active_plan.entries
+                    if item.required
+                }
+            )
+            expected_entries = (
+                set()
+                if verification_readiness is None
+                else {
+                    item.plan_entry_id
+                    for item in verification_readiness.entry_assessments
+                    if item.status != "PASS"
+                    and item.plan_entry_id in required_plan_entries
+                }
+            )
+            if set(disposition_entry_ids) != expected_entries:
+                raise CompletionGateError(
+                    "completion.verification.disposition_coverage_mismatch"
+                )
+            expected_evidence_ids = {
+                item.failure_evidence_id for item in dispositions
+            }
+            if set(evidence_by_id) != expected_evidence_ids:
+                raise CompletionGateError(
+                    "completion.verification.evidence_coverage_mismatch"
+                )
         core_ready = legacy_core_ready and verification_ready
         ambiguous = execution_ambiguous or delivery_ambiguous
         failed = execution_failed or artifacts_failed or delivery_failed
@@ -376,103 +512,91 @@ class CompletionGate:
         # M5 Final Correction #7: the Gate VALIDATES the disposition's
         # identity and lineage before consuming it — a caller-forged
         # disposition with correct-looking action is rejected.
-        if verification_disposition is not None:
-            if not hasattr(verification_disposition, "has_valid_identity"):
-                raise CompletionGateError(
-                    "completion.verification.disposition_invalid_type"
-                )
-            if not verification_disposition.has_valid_identity():
-                raise CompletionGateError(
-                    "completion.verification.disposition_identity_invalid"
-                )
-            if (
-                verification_disposition.request_id != requirements.request_id
-                or verification_disposition.run_id != requirements.run_id
-                or verification_disposition.generation != requirements.generation
-            ):
-                raise CompletionGateError(
-                    "completion.verification.disposition_lineage_mismatch"
-                )
-            # P1-9: the Gate is the FINAL completion authority — it must
-            # not rely on caller self-discipline. With active_plan +
-            # readiness present, the disposition must fully bind to the
-            # CURRENT plan and the CURRENT readiness through its
-            # FailureEvidence.
-            if active_plan is not None:
-                if (
-                    verification_disposition.verification_plan_id
-                    != active_plan.verification_plan_id
-                ):
-                    raise CompletionGateError(
-                        "completion.verification.disposition_plan_mismatch"
-                    )
-                if verification_disposition.plan_entry_id not in {
-                    e.plan_entry_id for e in active_plan.entries
-                }:
-                    raise CompletionGateError(
-                        "completion.verification.disposition_entry_not_in_plan"
-                    )
-            # P1-9: the disposition must carry the authoritative policy
-            # configuration — a decision from an unknown policy cannot
-            # drive completion.
+        if dispositions:
             from total_gateway.verification_repair_policy import (
                 DEFAULT_POLICY,
                 POLICY_VERSION,
             )
 
-            if (
-                verification_disposition.policy_version != POLICY_VERSION
-                or verification_disposition.policy_config_sha256
-                != DEFAULT_POLICY.config_sha256()
-            ):
-                raise CompletionGateError(
-                    "completion.verification.disposition_policy_mismatch"
-                )
-            if verification_failure_evidence is not None:
-                if not hasattr(
-                    verification_failure_evidence, "has_valid_identity"
-                ) or not verification_failure_evidence.has_valid_identity():
+            actions: set[str] = set()
+            for disposition in dispositions:
+                if not hasattr(disposition, "has_valid_identity"):
                     raise CompletionGateError(
-                        "completion.verification.evidence_identity_invalid"
+                        "completion.verification.disposition_invalid_type"
+                    )
+                if not disposition.has_valid_identity():
+                    raise CompletionGateError(
+                        "completion.verification.disposition_identity_invalid"
                     )
                 if (
-                    verification_failure_evidence.failure_evidence_id
-                    != verification_disposition.failure_evidence_id
-                    or verification_failure_evidence.failure_evidence_sha256
-                    != verification_disposition.failure_evidence_sha256
+                    disposition.request_id != requirements.request_id
+                    or disposition.run_id != requirements.run_id
+                    or disposition.generation != requirements.generation
                 ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_lineage_mismatch"
+                    )
+                if active_plan is not None:
+                    if (
+                        disposition.verification_plan_id
+                        != active_plan.verification_plan_id
+                    ):
+                        raise CompletionGateError(
+                            "completion.verification.disposition_plan_mismatch"
+                        )
+                    if disposition.plan_entry_id not in {
+                        entry.plan_entry_id for entry in active_plan.entries
+                    }:
+                        raise CompletionGateError(
+                            "completion.verification.disposition_entry_not_in_plan"
+                        )
+                if (
+                    disposition.policy_version != POLICY_VERSION
+                    or disposition.policy_config_sha256
+                    != DEFAULT_POLICY.config_sha256()
+                ):
+                    raise CompletionGateError(
+                        "completion.verification.disposition_policy_mismatch"
+                    )
+                evidence = evidence_by_id.get(disposition.failure_evidence_id)
+                if evidence is not None:
+                    if not hasattr(
+                        evidence, "has_valid_identity"
+                    ) or not evidence.has_valid_identity():
+                        raise CompletionGateError(
+                            "completion.verification.evidence_identity_invalid"
+                        )
+                    if (
+                        evidence.failure_evidence_sha256
+                        != disposition.failure_evidence_sha256
+                        or evidence.request_id != disposition.request_id
+                        or evidence.run_id != disposition.run_id
+                        or evidence.generation != disposition.generation
+                        or evidence.plan_entry_id != disposition.plan_entry_id
+                    ):
+                        raise CompletionGateError(
+                            "completion.verification.disposition_evidence_mismatch"
+                        )
+                    if (
+                        verification_readiness is not None
+                        and evidence.readiness_sha256
+                        != verification_readiness.readiness_sha256
+                    ):
+                        raise CompletionGateError(
+                            "completion.verification.disposition_stale_readiness"
+                        )
+                elif failure_evidences:
                     raise CompletionGateError(
                         "completion.verification.disposition_evidence_mismatch"
                     )
-                if (
-                    verification_failure_evidence.request_id
-                    != verification_disposition.request_id
-                    or verification_failure_evidence.run_id
-                    != verification_disposition.run_id
-                    or verification_failure_evidence.generation
-                    != verification_disposition.generation
-                    or verification_failure_evidence.plan_entry_id
-                    != verification_disposition.plan_entry_id
-                ):
+                elif verification_readiness is not None:
                     raise CompletionGateError(
-                        "completion.verification.evidence_lineage_mismatch"
+                        "completion.verification.disposition_without_evidence"
                     )
-                if (
-                    verification_readiness is not None
-                    and verification_failure_evidence.readiness_sha256
-                    != verification_readiness.readiness_sha256
-                ):
-                    raise CompletionGateError(
-                        "completion.verification.disposition_stale_readiness"
-                    )
-            elif verification_readiness is not None:
-                raise CompletionGateError(
-                    "completion.verification.disposition_without_evidence"
-                )
-            _da = verification_disposition.action
-            if _da == "RECONCILE":
+                actions.add(disposition.action)
+            if "RECONCILE" in actions:
                 ambiguous = True  # → RECONCILE_REQUIRED
-            elif _da == "BLOCK":
+            elif "BLOCK" in actions:
                 failed = True     # → FAILED
             # REPAIR / WAIT / REVIEW → stays IN_PROGRESS (repair pending /
             # evidence pending / review pending; not terminal FAILED)
@@ -539,6 +663,11 @@ class CompletionGate:
                 if verification_readiness is not None
                 else None
             ),
+            verification_readiness_id=(
+                verification_readiness.verification_readiness_id
+                if plural_dispositions
+                else None
+            ),
             verification_readiness_sha256=(
                 verification_readiness.readiness_sha256
                 if verification_readiness is not None
@@ -562,21 +691,65 @@ class CompletionGate:
         for fact in facts:
             if fact.fact_type.startswith("execution."):
                 by_effect.setdefault(fact.effect_id, []).append(fact)
+        lineage = (
+            requirements.execution_lineage_effect_ids
+            or requirements.required_execution_effect_ids
+        )
+        unexpected = set(by_effect).difference(lineage)
+        if requirements.execution_lineage_effect_ids and unexpected:
+            raise CompletionGateError("completion.execution.unexpected_fact")
         states: list[tuple[str, str]] = []
         failed = ambiguous = False
-        for effect_id in requirements.required_execution_effect_ids:
+        required = set(requirements.required_execution_effect_ids)
+        state_by_effect: dict[str, str] = {}
+        for effect_id in lineage:
             matching = by_effect.get(effect_id, [])
-            if not matching:
-                states.append((effect_id, "MISSING"))
+            batch = self._fact_ledger.get_batch_for_effect(
+                effect_id, verify_payload=True
+            )
+            if batch is None:
+                if matching:
+                    raise CompletionGateError("completion.execution.fact_unbound")
+                head_state = (
+                    None
+                    if self._head_state_reader is None
+                    else self._head_state_reader(effect_id)
+                )
+                state = (
+                    head_state
+                    if head_state in {"FAILED_FINAL", "AMBIGUOUS"}
+                    else "MISSING"
+                )
+                state_by_effect[effect_id] = state
                 continue
-            if len(matching) != 1:
+            result = batch.result
+            batch_facts = batch.facts
+            if (
+                result.effect_id != effect_id
+                or result.request_id != requirements.request_id
+                or result.run_id != requirements.run_id
+                or result.generation != requirements.generation
+                or not batch_facts
+                or tuple(item.fact_id for item in batch_facts)
+                != result.fact_ids
+                or tuple(item.fact_id for item in matching)
+                != result.fact_ids
+                or any(
+                    not item.has_valid_sha256()
+                    or item.effect_id != effect_id
+                    or item.request_id != requirements.request_id
+                    or item.run_id != requirements.run_id
+                    or item.generation != requirements.generation
+                    or item.ticket_id != result.ticket_id
+                    or item.action_id != result.action_id
+                    or item.action_version != result.action_version
+                    or item.payload_sha256 != result.result_payload_sha256
+                    for item in batch_facts
+                )
+            ):
                 raise CompletionGateError("completion.execution.fact_conflict")
-            fact = matching[0]
-            batch = self._fact_ledger.get_batch_for_fact(fact.fact_id)
-            if batch is None or batch.result.effect_id != effect_id:
-                raise CompletionGateError("completion.execution.fact_unbound")
-            fact_ids.add(fact.fact_id)
-            state = batch.result.status
+            fact_ids.update(result.fact_ids)
+            state = result.status
             # 草案不变量 11：证据投影（FactLedger）必须与状态权威（effect head）一致。
             # 仅投影有成功证据而 head 仍 STARTED/AMBIGUOUS（或反过来）→ 不得报成功，
             # 统一映射为 MISMATCH，fail-closed 进入对账。
@@ -588,6 +761,9 @@ class CompletionGate:
                     head_state == "RECONCILED" and state == "SUCCEEDED"
                 ):
                     state = "MISMATCH"
+            state_by_effect[effect_id] = state
+        for effect_id in requirements.required_execution_effect_ids:
+            state = state_by_effect.get(effect_id, "MISSING")
             states.append((effect_id, state))
             failed = failed or state in {"FAILED_FINAL", "CANCELLED", "FENCED"}
             ambiguous = ambiguous or state in {"AMBIGUOUS", "MISMATCH"}

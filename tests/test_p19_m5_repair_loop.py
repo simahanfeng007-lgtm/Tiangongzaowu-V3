@@ -867,8 +867,7 @@ class TestStoreRevalidationAdversarial(RepairLoopE2EBase):
 
 
 class TestDesktopProductionWiring(unittest.TestCase):
-    """#2: the Desktop branch runs the FULL loop and the dispatch
-    bridges to the EXISTING runtime authorities."""
+    """Composition stays read-only; the established desktop path still repairs."""
 
     def _desktop_branch(self) -> str:
         source = (
@@ -879,12 +878,16 @@ class TestDesktopProductionWiring(unittest.TestCase):
         ]
         return branch[: branch.index("delivery_now =")]
 
-    def test_desktop_branch_calls_the_full_repair_loop(self) -> None:
+    def test_desktop_branch_separates_composition_from_legacy_repair(self) -> None:
         branch = self._desktop_branch()
+        self.assertIn("executor.execute(", branch)
+        self.assertIn("coordinator.process_readiness(", branch)
+        self.assertIn("if composition_finalization is not None:", branch)
         self.assertIn("execute_repair_loop(", branch)
         self.assertIn("_dispatch_repair_directive(", branch)
-        self.assertIn("_repair_reverify", branch)
-        self.assertIn("get_current_verification_disposition(", branch)
+        self.assertIn("verification_dispositions=verification_dispositions", branch)
+        self.assertIn("verification_failure_evidences=(", branch)
+        self.assertIn("readiness_authority_reader=(", branch)
 
     def test_dispatch_bridges_to_existing_runtime_authorities(self) -> None:
         source = (

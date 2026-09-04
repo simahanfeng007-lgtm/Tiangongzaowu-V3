@@ -59,6 +59,13 @@ def derive_composition_execution_binding(
     workspace_id: str,
     workspace_scope_hash: str,
     target_snapshot_sha256: str | None,
+    attempt: int = 1,
+    continuation_delegation_id: str | None = None,
+    continuation_delegation_sha256: str | None = None,
+    dependency_evidence_sha256: str | None = None,
+    supersedes_authorization_id: str | None = None,
+    supersedes_effect_id: str | None = None,
+    supersedes_claim_sha256: str | None = None,
 ) -> DerivedCompositionExecutionBinding:
     """Derive the exact signed binding from a live plan and actual invocation."""
 
@@ -121,9 +128,43 @@ def derive_composition_execution_binding(
             "workspace_id": workspace_id,
         }
     )
-    effect_intent_sha256 = canonical_sha256(
-        {
-            "domain": "tiangong.composition-step-effect-intent.v1",
+    continuation_values = (
+        continuation_delegation_id,
+        continuation_delegation_sha256,
+        dependency_evidence_sha256,
+    )
+    predecessor_values = (
+        supersedes_authorization_id,
+        supersedes_effect_id,
+        supersedes_claim_sha256,
+    )
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+        raise CompositionExecutionBindingError(
+            "composition.execution.attempt_invalid"
+        )
+    continuation_bound = any(value is not None for value in continuation_values)
+    if continuation_bound and any(value is None for value in continuation_values):
+        raise CompositionExecutionBindingError(
+            "composition.execution.continuation_incomplete"
+        )
+    if attempt == 1:
+        if any(value is not None for value in predecessor_values):
+            raise CompositionExecutionBindingError(
+                "composition.execution.predecessor_unexpected"
+            )
+    elif (
+        not continuation_bound
+        or any(value is None for value in predecessor_values)
+    ):
+        raise CompositionExecutionBindingError(
+            "composition.execution.predecessor_incomplete"
+        )
+    effect_intent = {
+            "domain": (
+                "tiangong.composition-step-effect-intent.v2"
+                if continuation_bound
+                else "tiangong.composition-step-effect-intent.v1"
+            ),
             "parent_ticket_id": parent_ticket_id,
             "registration_id": plan.registration_id,
             "executable_plan_id": plan.executable_plan_id,
@@ -142,7 +183,19 @@ def derive_composition_execution_binding(
             "run_id": plan.run_id,
             "generation": plan.generation,
         }
-    )
+    if continuation_bound:
+        effect_intent.update(
+            {
+                "attempt": attempt,
+                "continuation_delegation_id": continuation_delegation_id,
+                "continuation_delegation_sha256": continuation_delegation_sha256,
+                "dependency_evidence_sha256": dependency_evidence_sha256,
+                "supersedes_authorization_id": supersedes_authorization_id,
+                "supersedes_effect_id": supersedes_effect_id,
+                "supersedes_claim_sha256": supersedes_claim_sha256,
+            }
+        )
+    effect_intent_sha256 = canonical_sha256(effect_intent)
     effect_id = derive_effect_identity(
         request_id=plan.request_id,
         run_id=plan.run_id,
@@ -153,6 +206,7 @@ def derive_composition_execution_binding(
         intent_sha256=effect_intent_sha256,
     ).effect_id
     binding = CompositionExecutionBindingV1(
+        schema_version="tiangong.composition-execution-binding.v1",
         executable_plan_id=plan.executable_plan_id,
         executable_plan_sha256=plan.executable_plan_sha256,
         step_id=materialized.step.step_id,
@@ -169,6 +223,13 @@ def derive_composition_execution_binding(
         target_snapshot_sha256=target_snapshot_sha256,
         workspace_id=workspace_id,
         workspace_scope_hash=workspace_scope_hash,
+        attempt=(attempt if continuation_bound else None),
+        continuation_delegation_id=continuation_delegation_id,
+        continuation_delegation_sha256=continuation_delegation_sha256,
+        dependency_evidence_sha256=dependency_evidence_sha256,
+        supersedes_authorization_id=supersedes_authorization_id,
+        supersedes_effect_id=supersedes_effect_id,
+        supersedes_claim_sha256=supersedes_claim_sha256,
         binding_sha256="0" * 64,
     ).with_computed_sha256()
     return DerivedCompositionExecutionBinding(
@@ -204,9 +265,9 @@ def rebuild_composition_effect_claim(
         intent_sha256=request.prebound_effect_intent_sha256,
         pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
         attempt=request.attempt,
-        claim_revision=1,
+        claim_revision=request.attempt,
         lease_epoch=lease_epoch,
-        supersedes_claim_sha256=None,
+        supersedes_claim_sha256=request.supersedes_claim_sha256,
         owner_component_id="tiangong-backend",
         claimed_at_ms=request.issued_at_ms,
         claim_sha256="0" * 64,

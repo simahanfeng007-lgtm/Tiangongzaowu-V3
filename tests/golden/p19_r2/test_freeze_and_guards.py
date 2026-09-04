@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.4"
+- the single Verification Plane version source exists and is "1.5"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.4")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.5")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.4"' in (
+            if '"1.5"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -182,7 +182,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         )
         return {
             "verification_plane_version": VERIFICATION_PLANE_VERSION,
-            "baseline_sha": "acb39a63bd267b5db1b9c0b7076110c5391704c8",
+            "baseline_sha": "f268d6ac3293ee31e6c20b7e7f706f46cfa3e040",
             "store_schema_version": STORE_SCHEMA_VERSION,
             "contract_schema_versions": {
                 "verification": sha(
@@ -204,26 +204,44 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # every M5 core authority file, content-hashed (M6
-            # correction #2): semantic drift in store/binding/
-            # coordinator/executor/readiness/fencing/successor now
-            # trips the freeze even when the schema version is unchanged
+            # Every 1.5 execution, result-schema and verification authority
+            # file is content-hashed.  Semantic drift in the runtime chain,
+            # store/binding/coordinator/executor/readiness/fencing/successor
+            # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.4.
+    #: The authority surface frozen at 1.5.
     AUTHORITY_SURFACE_FILES = (
+        "app/backend/tiangong-backend/v3/fact_kernel/__init__.py",
+        "src/contracts/execution.py",
+        "src/contracts/verification.py",
+        "src/contracts/verification_repair.py",
+        "src/omni_body_skill/registry/capability_manifest.generated.json",
+        "src/omni_body_skill/tool_contracts.py",
+        "src/total_gateway/action_registry.py",
         "src/total_gateway/store.py",
         "src/total_gateway/store_unit_of_work.py",
         "src/total_gateway/composition_activation_shadow.py",
         "src/total_gateway/composition_activation_registration.py",
         "src/total_gateway/composition_activation_store.py",
+        "src/total_gateway/composition_activation_adapter.py",
         "src/total_gateway/composition_executable_plan.py",
         "src/total_gateway/composition_executable_plan_store.py",
         "src/total_gateway/composition_step_authorization.py",
+        "src/total_gateway/composition_execution_projection.py",
+        "src/total_gateway/composition_execution_binding.py",
+        "src/total_gateway/composition_backend_transport.py",
+        "src/total_gateway/composition_step_execution.py",
+        "src/total_gateway/desktop_completion.py",
+        "src/total_gateway/fact_ledger.py",
+        "src/total_gateway/omni_grant_authority.py",
+        "src/total_gateway/orchestration.py",
+        "src/total_gateway/skill_selection.py",
         "src/total_gateway/verification_repair_coordinator.py",
         "src/total_gateway/verification_repair_policy.py",
         "src/total_gateway/verification_plan_executor.py",
+        "src/total_gateway/verification_plane.py",
         "src/total_gateway/verification_readiness.py",
         "src/total_gateway/verification_failure_evidence.py",
         "src/total_gateway/verification_registry.py",
@@ -235,9 +253,8 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/outcome_oracles/effect_state.py",
         "src/total_gateway/outcome_oracles/repository_state.py",
         "src/total_gateway/completion_gate.py",
-        "src/contracts/verification.py",
-        "src/contracts/verification_repair.py",
         "src/total_gateway/effects.py",
+        "src/world_understanding/tool_capability_world/compiler.py",
     )
 
     @classmethod

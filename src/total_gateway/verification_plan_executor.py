@@ -40,6 +40,7 @@ class VerificationPlanExecutor:
         object_store,
         fact_ledger,
         plan: VerificationPlan,
+        resume_evaluated_at_ms: int | None = None,
     ) -> None:
         if plan.registry_snapshot_sha256 != snapshot.snapshot_sha256:
             raise VerificationPlanExecutorError(
@@ -56,6 +57,15 @@ class VerificationPlanExecutor:
         self._repository_oracle = RepositoryStateOracle(
             snapshot=snapshot, store=store,
         )
+        if (
+            isinstance(resume_evaluated_at_ms, bool)
+            or (
+                resume_evaluated_at_ms is not None
+                and resume_evaluated_at_ms < 0
+            )
+        ):
+            raise ValueError("verification resume timestamp is invalid")
+        self._resume_evaluated_at_ms = resume_evaluated_at_ms
 
     def execute(
         self,
@@ -73,6 +83,11 @@ class VerificationPlanExecutor:
             m.artifact_revision_id: m for m in artifact_manifests
         }
         for entry in self._plan.entries:
+            if self._has_reusable_record(
+                entry,
+                evaluated_at_ms=evaluated_at_ms,
+            ):
+                continue
             try:
                 self._dispatch_entry(
                     entry, evaluated_at_ms=evaluated_at_ms,
@@ -89,11 +104,71 @@ class VerificationPlanExecutor:
             snapshot=self._snapshot,
             store=self._store,
             evaluated_at_ms=evaluated_at_ms,
+            exact_evaluated_at_ms=self._resume_evaluated_at_ms is not None,
         )
         self._store.put_verification_readiness(
-            readiness, recorded_at_ms=evaluated_at_ms + 1,
+            readiness,
+            recorded_at_ms=evaluated_at_ms + 1,
+            require_exact_evaluated_at_ms=(
+                self._resume_evaluated_at_ms is not None
+            ),
         )
         return readiness
+
+    def _has_reusable_record(
+        self,
+        entry: VerificationPlanEntryV2,
+        *,
+        evaluated_at_ms: int,
+    ) -> bool:
+        """Reuse the first exact terminal oracle result after a crash.
+
+        P7D.2 pins one persisted completion clock.  Once an entry result for
+        that clock reaches Store it is immutable authority; re-running a live
+        repository oracle for the same completion event could observe a later
+        workspace and create a conflicting record at the same timestamp.
+        """
+
+        if self._resume_evaluated_at_ms is None:
+            return False
+        if evaluated_at_ms != self._resume_evaluated_at_ms:
+            raise VerificationPlanExecutorError(
+                "verification resume timestamp changed"
+            )
+        effective_subject = entry.subject_identity
+        if hasattr(self._store, "resolve_verification_subject"):
+            resolution = self._store.resolve_verification_subject(
+                entry.plan_entry_id
+            )
+            if resolution.get("effective_subject_identity"):
+                effective_subject = resolution["effective_subject_identity"]
+        expected_predicate_ref = (
+            f"predicate_sha256:{entry.predicate.predicate_sha256}"
+        )
+        records = self._store.list_verification_records(
+            request_id=self._plan.request_id,
+            run_id=self._plan.run_id,
+            generation=self._plan.generation,
+        )
+        return any(
+            record.evaluated_at_ms == evaluated_at_ms
+            and record.request_id == self._plan.request_id
+            and record.run_id == self._plan.run_id
+            and record.generation == self._plan.generation
+            and record.registry_snapshot_sha256
+            == self._plan.registry_snapshot_sha256
+            and record.verifier_id == entry.verifier_id
+            and record.verifier_version == entry.verifier_version
+            and record.predicate_id == entry.predicate.predicate_id
+            and record.predicate_type == entry.predicate.predicate_type
+            and record.subject_kind == entry.predicate.subject_kind
+            and record.subject_identity == effective_subject
+            and record.evaluation_phase == entry.evaluation_phase
+            and record.enforcement == "RECORD"
+            and expected_predicate_ref in record.evidence_refs
+            and record.has_valid_identity()
+            for record in records
+        )
 
     def _dispatch_entry(
         self,

@@ -178,10 +178,10 @@ def _persist(store: GatewayStateStore, fixture: dict, *, recorded_at_ms: int):
 
 def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # P7B.2 remains v30, P7C.0 adds the v31 executable-Plan companion, and
-    # P7C.1 adds the current v32 authorization receipt.  Neither later layer
-    # changes P7B eligibility semantics.
-    assert STORE_SCHEMA_VERSION == 32
-    assert VERIFICATION_PLANE_VERSION == "1.4"
+    # P7C.1 adds v32 authorization receipts and P7D.2 adds the current v33
+    # continuation/attempt chain.  Neither later layer changes eligibility.
+    assert STORE_SCHEMA_VERSION == 33
+    assert VERIFICATION_PLANE_VERSION == "1.5"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:
@@ -214,14 +214,14 @@ def test_v29_store_migrates_additively_through_v30_to_current() -> None:
             assert store.health_check(now_ms=1_500, full=True).healthy
             assert store._connection.execute(
                 "PRAGMA user_version"
-            ).fetchone()[0] == 32
+            ).fetchone()[0] == 33
             assert tuple(
                 row[0]
                 for row in store._connection.execute(
                     "SELECT version FROM schema_migrations "
-                    "WHERE version BETWEEN 30 AND 32 ORDER BY version"
+                    "WHERE version BETWEEN 30 AND 33 ORDER BY version"
                 ).fetchall()
-            ) == (30, 31, 32)
+            ) == (30, 31, 32, 33)
             assert store._connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' "
                 "AND name='composition_activation_registration'"

@@ -1169,7 +1169,11 @@ _P7C0_FORBIDDEN_AUTHORITY_CALLS = frozenset(
 
 _P7C0_FORBIDDEN_AUTHORITY_TABLES = frozenset(
     {
-        "effect_ledger",
+        # The registration transaction may read the Effect head table only
+        # through the exact SQL surface below to enforce the atomic
+        # plan-before-parent-Effect cutoff.  It still cannot write Effect
+        # authority, and every other Effect/Fact/Completion table remains
+        # forbidden here.
         "effect_attempts",
         "effect_facts",
         "effect_outcome_head",
@@ -1514,7 +1518,7 @@ _P7C0_ROOT_CALLS = Counter(
         "ExecutableCompositionBundleRegistration": 1,
         "ExecutableCompositionPlanStoreRecord": 1,
         "ExecutableCompositionPlanV1.model_validate_json": 1,
-        "StoreConflictError": 6,
+        "StoreConflictError": 7,
         "StoreCorruptionError": 8,
         "ValueError": 4,
         "_verify_executable_composition_plan_authorities": 3,
@@ -1528,9 +1532,9 @@ _P7C0_ROOT_CALLS = Counter(
         "new_registration.active_at": 1,
         "registration_record.active_at": 1,
         "self._assert_request_binding_locked": 1,
-        "self._connection.execute": 6,
+        "self._connection.execute": 7,
         "self._connection.execute().fetchall": 1,
-        "self._connection.execute().fetchone": 3,
+        "self._connection.execute().fetchone": 4,
         "self._write_transaction": 1,
         "self.register_limited_composition_activation_bundle": 1,
     }
@@ -1557,6 +1561,14 @@ _P7C0_ROOT_IMPORTS = Counter(
 
 _P7C0_ROOT_SQL = Counter(
     {
+        (
+            _p7c0_normalize_sql(
+                "SELECT effect_id FROM effect_ledger "
+                "WHERE request_id = ? AND run_id = ? AND generation = ? "
+                "AND effect_kind = 'execution' LIMIT 1"
+            ),
+            "fetchone",
+        ): 1,
         (
             _p7c0_normalize_sql(
                 "SELECT * FROM composition_executable_plan "
@@ -3383,10 +3395,10 @@ def test_v30_audit_registration_migrates_additively_but_has_no_companion(
     _downgrade_v31_to_v30(path)
 
     with GatewayStateStore.open(path, now_ms=1_700) as migrated:
-        assert STORE_SCHEMA_VERSION == 32
+        assert STORE_SCHEMA_VERSION == 33
         assert migrated._connection.execute(
             "PRAGMA user_version"
-        ).fetchone()[0] == 32
+        ).fetchone()[0] == 33
         assert migrated._connection.execute(
             "SELECT registration_json FROM composition_activation_registration "
             "WHERE registration_id = ?",
@@ -3463,14 +3475,14 @@ def test_v31_executable_plan_store_migrates_additively_to_v32(
     with GatewayStateStore.open(path, now_ms=1_700) as migrated:
         assert migrated._connection.execute(
             "PRAGMA user_version"
-        ).fetchone()[0] == 32
+        ).fetchone()[0] == 33
         assert tuple(
             row[0]
             for row in migrated._connection.execute(
                 "SELECT version FROM schema_migrations "
-                "WHERE version IN (31, 32) ORDER BY version"
+                "WHERE version IN (31, 32, 33) ORDER BY version"
             ).fetchall()
-        ) == (31, 32)
+        ) == (31, 32, 33)
         assert migrated._connection.execute(
             "SELECT executable_plan_id FROM composition_executable_plan "
             "WHERE executable_plan_id = ?",
@@ -3594,7 +3606,7 @@ def test_v30_to_current_concurrent_open_serializes_migrations(
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = (executor.submit(reopen, 1_700), executor.submit(reopen, 1_701))
-        assert tuple(future.result(timeout=10) for future in futures) == (32, 32)
+        assert tuple(future.result(timeout=10) for future in futures) == (33, 33)
 
 
 @pytest.mark.parametrize(

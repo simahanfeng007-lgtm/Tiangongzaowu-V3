@@ -79,6 +79,7 @@ class VerificationRepairCoordinator:
         plan: VerificationPlan,
         readiness: VerificationReadiness,
         now_ms: int | None = None,
+        reuse_persisted_prefix: bool = False,
     ) -> list[VerificationDisposition]:
         """Derive failure evidence + dispositions for all failed entries.
 
@@ -87,6 +88,8 @@ class VerificationRepairCoordinator:
         """
         if now_ms is None:
             now_ms = time.time_ns() // 1_000_000
+        if type(reuse_persisted_prefix) is not bool:
+            raise ValueError("persisted disposition reuse marker is invalid")
 
         if readiness.verification_ready:
             return []  # PASS — no dispositions needed (§10)
@@ -134,6 +137,40 @@ class VerificationRepairCoordinator:
             prev_dispositions = self._store.list_verification_dispositions(
                 plan_entry_id=fe.plan_entry_id,
             )
+            # A stable completion retry may restart after persisting only a
+            # prefix of a multi-entry disposition set.  The disposition whose
+            # exact FailureEvidence identity is already in Store is the first
+            # decision for that readiness and must be reused; recomputing it
+            # after counting its own REPAIR action would consume budget twice
+            # and could change the action/identity for the same completion.
+            existing_for_failure = tuple(
+                disposition
+                for disposition in prev_dispositions
+                if disposition.failure_evidence_id == fe.failure_evidence_id
+            )
+            if reuse_persisted_prefix and existing_for_failure:
+                if len(existing_for_failure) != 1:
+                    raise RepairCoordinatorError(
+                        "multiple dispositions bind one failure evidence"
+                    )
+                existing = existing_for_failure[0]
+                if (
+                    not existing.has_valid_identity()
+                    or existing.request_id != fe.request_id
+                    or existing.run_id != fe.run_id
+                    or existing.generation != fe.generation
+                    or existing.verification_plan_id
+                    != fe.verification_plan_id
+                    or existing.plan_entry_id != fe.plan_entry_id
+                    or existing.failure_evidence_sha256
+                    != fe.failure_evidence_sha256
+                    or existing.decided_at_ms != now_ms
+                ):
+                    raise RepairCoordinatorError(
+                        "persisted disposition does not match stable failure"
+                    )
+                dispositions.append(existing)
+                continue
 
             # Count same failure signature occurrences — de-duplicated
             # by readiness: re-deriving the SAME failure after a crash

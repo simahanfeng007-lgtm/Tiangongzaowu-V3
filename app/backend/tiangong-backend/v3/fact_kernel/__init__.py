@@ -64,6 +64,13 @@ class CompiledCapability:
     argument_schema_sha256: str
     argument_schema_kind: str
     argument_validator_source_sha256: str
+    result_schema: Mapping[str, Any]
+    result_schema_sha256: str
+    result_schema_kind: str
+    result_validator_source_sha256: str
+    value_schemas: Mapping[str, Mapping[str, Any]]
+    value_schema_kind: str
+    value_validator_source_sha256: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +90,13 @@ class CompiledCapability:
             "argument_schema_sha256": self.argument_schema_sha256,
             "argument_schema_kind": self.argument_schema_kind,
             "argument_validator_source_sha256": self.argument_validator_source_sha256,
+            "result_schema": _jsonable(dict(self.result_schema)),
+            "result_schema_sha256": self.result_schema_sha256,
+            "result_schema_kind": self.result_schema_kind,
+            "result_validator_source_sha256": self.result_validator_source_sha256,
+            "value_schemas": _jsonable(dict(self.value_schemas)),
+            "value_schema_kind": self.value_schema_kind,
+            "value_validator_source_sha256": self.value_validator_source_sha256,
         }
 
 
@@ -149,18 +163,44 @@ def compile_manifest(
         else None
     )
 
-    def schema_descriptor(name: str) -> tuple[dict[str, Any], str, str, str]:
+    def schema_descriptor(
+        name: str,
+    ) -> tuple[
+        dict[str, Any],
+        str,
+        str,
+        str,
+        dict[str, Any],
+        str,
+        str,
+        str,
+        dict[str, dict[str, Any]],
+        str,
+        str,
+    ]:
         if supplied_schemas is None:
             body = {
                 "action": name,
                 "target": "action-specific target; use system.action_schema when uncertain",
                 "args": "action-specific object",
             }
+            result_body = {
+                "schema": "tiangong.omni-action-result-schema.v1",
+                "action": name,
+                "kind": "OPAQUE",
+            }
             return (
                 body,
                 _sha256(body),
                 "OPAQUE",
                 _sha256({"domain": "tiangong.opaque-argument-validator.v1"}),
+                result_body,
+                _sha256(result_body),
+                "OPAQUE",
+                _sha256({"domain": "tiangong.opaque-result-validator.v1"}),
+                {},
+                "OPAQUE",
+                _sha256({"domain": "tiangong.opaque-value-validator.v1"}),
             )
         raw = supplied_schemas.get(name)
         if raw is None:
@@ -170,8 +210,20 @@ def compile_manifest(
             "argument_schema_sha256",
             "argument_schema_kind",
             "argument_validator_source_sha256",
+            "result_schema",
+            "result_schema_sha256",
+            "result_schema_kind",
+            "result_validator_source_sha256",
+            "value_schemas",
+            "value_schema_kind",
+            "value_validator_source_sha256",
         }
-        if set(raw) != expected_keys or not isinstance(raw.get("argument_schema"), Mapping):
+        if (
+            set(raw) != expected_keys
+            or not isinstance(raw.get("argument_schema"), Mapping)
+            or not isinstance(raw.get("result_schema"), Mapping)
+            or not isinstance(raw.get("value_schemas"), Mapping)
+        ):
             raise ValueError(f"action schema descriptor is invalid: {name}")
         body = _jsonable(dict(raw["argument_schema"]))
         digest = str(raw.get("argument_schema_sha256") or "")
@@ -185,7 +237,87 @@ def compile_manifest(
             character not in "0123456789abcdef" for character in validator_digest
         ):
             raise ValueError(f"action schema validator source hash is invalid: {name}")
-        return body, digest, kind, validator_digest
+        result_body = _jsonable(dict(raw["result_schema"]))
+        result_digest = str(raw.get("result_schema_sha256") or "")
+        result_kind = str(raw.get("result_schema_kind") or "")
+        result_validator_digest = str(raw.get("result_validator_source_sha256") or "")
+        if result_digest != _sha256(result_body):
+            raise ValueError(f"action result schema descriptor hash is invalid: {name}")
+        if (
+            result_kind not in {"EXPLICIT", "OPAQUE"}
+            or result_body.get("kind") != result_kind
+            or not isinstance(result_body.get("action"), str)
+            or (result_kind == "EXPLICIT") != isinstance(result_body.get("root"), Mapping)
+        ):
+            raise ValueError(f"action result schema descriptor kind is invalid: {name}")
+        if len(result_validator_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in result_validator_digest
+        ):
+            raise ValueError(f"action result validator source hash is invalid: {name}")
+
+        value_schema_kind = str(raw.get("value_schema_kind") or "")
+        value_validator_digest = str(raw.get("value_validator_source_sha256") or "")
+        if value_schema_kind not in {"EXPLICIT", "OPAQUE"}:
+            raise ValueError(f"action value schema descriptor kind is invalid: {name}")
+        if len(value_validator_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in value_validator_digest
+        ):
+            raise ValueError(f"action value validator source hash is invalid: {name}")
+        value_schemas: dict[str, dict[str, Any]] = {}
+        for value_schema_id in sorted(raw["value_schemas"]):
+            value_raw = raw["value_schemas"][value_schema_id]
+            if not isinstance(value_schema_id, str) or not isinstance(value_raw, Mapping):
+                raise ValueError(f"action value schema descriptor is invalid: {name}")
+            source_kind = value_raw.get("source_kind")
+            expected_value_keys = {
+                "value_schema_id",
+                "source_kind",
+                "value_schema",
+                "value_schema_sha256",
+                "value_schema_kind",
+            }
+            if source_kind == "RESULT_PAYLOAD":
+                expected_value_keys.add("json_pointer")
+            if (
+                set(value_raw) != expected_value_keys
+                or value_raw.get("value_schema_id") != value_schema_id
+                or value_raw.get("value_schema_kind") != "EXPLICIT"
+                or source_kind not in {"RESULT_PAYLOAD", "FACT_ID", "OUTPUT_OBJECT_REF"}
+                or not isinstance(value_raw.get("value_schema"), Mapping)
+            ):
+                raise ValueError(f"action value schema descriptor is invalid: {name}")
+            pointer = value_raw.get("json_pointer")
+            if source_kind == "RESULT_PAYLOAD" and (
+                not isinstance(pointer, str) or not pointer.startswith("/") or "//" in pointer
+            ):
+                raise ValueError(f"action value schema selector is invalid: {name}")
+            value_body = _jsonable(dict(value_raw["value_schema"]))
+            value_digest = str(value_raw.get("value_schema_sha256") or "")
+            if (
+                value_digest != _sha256(value_body)
+                or value_body.get("value_schema_id") != value_schema_id
+                or value_body.get("kind") != "EXPLICIT"
+                or not isinstance(value_body.get("root"), Mapping)
+            ):
+                raise ValueError(f"action value schema descriptor hash is invalid: {name}")
+            value_schemas[value_schema_id] = _jsonable(dict(value_raw))
+        if (value_schema_kind == "EXPLICIT") != bool(value_schemas):
+            raise ValueError(f"action value schema coverage is invalid: {name}")
+        if result_kind != value_schema_kind:
+            raise ValueError(f"action result/value schema authority differs: {name}")
+        return (
+            body,
+            digest,
+            kind,
+            validator_digest,
+            result_body,
+            result_digest,
+            result_kind,
+            result_validator_digest,
+            value_schemas,
+            value_schema_kind,
+            value_validator_digest,
+        )
 
     def resolve_route(name: str, trail: tuple[str, ...] = ()) -> tuple[bool, str, str]:
         cached = route_state.get(name)
@@ -233,6 +365,13 @@ def compile_manifest(
             argument_schema_sha256,
             argument_schema_kind,
             argument_validator_source_sha256,
+            result_schema,
+            result_schema_sha256,
+            result_schema_kind,
+            result_validator_source_sha256,
+            value_schemas,
+            value_schema_kind,
+            value_validator_source_sha256,
         ) = schema_descriptor(name)
         implemented = bool(metadata.get("implemented", False))
         risk = str(metadata.get("risk") or "A0")
@@ -256,7 +395,50 @@ def compile_manifest(
             argument_schema_sha256=argument_schema_sha256,
             argument_schema_kind=argument_schema_kind,
             argument_validator_source_sha256=argument_validator_source_sha256,
+            result_schema=result_schema,
+            result_schema_sha256=result_schema_sha256,
+            result_schema_kind=result_schema_kind,
+            result_validator_source_sha256=result_validator_source_sha256,
+            value_schemas=value_schemas,
+            value_schema_kind=value_schema_kind,
+            value_validator_source_sha256=value_validator_source_sha256,
         )
+
+    if supplied_schemas is not None:
+        for name, capability in capabilities.items():
+            if not capability.alias_to:
+                continue
+            target = capabilities.get(capability.alias_to)
+            if target is None:
+                raise ValueError(f"action schema alias target is missing: {name}")
+            authority = (
+                _jsonable(dict(capability.argument_schema)),
+                capability.argument_schema_sha256,
+                capability.argument_schema_kind,
+                capability.argument_validator_source_sha256,
+                _jsonable(dict(capability.result_schema)),
+                capability.result_schema_sha256,
+                capability.result_schema_kind,
+                capability.result_validator_source_sha256,
+                _jsonable(dict(capability.value_schemas)),
+                capability.value_schema_kind,
+                capability.value_validator_source_sha256,
+            )
+            target_authority = (
+                _jsonable(dict(target.argument_schema)),
+                target.argument_schema_sha256,
+                target.argument_schema_kind,
+                target.argument_validator_source_sha256,
+                _jsonable(dict(target.result_schema)),
+                target.result_schema_sha256,
+                target.result_schema_kind,
+                target.result_validator_source_sha256,
+                _jsonable(dict(target.value_schemas)),
+                target.value_schema_kind,
+                target.value_validator_source_sha256,
+            )
+            if authority != target_authority:
+                raise ValueError(f"action alias schema authority differs: {name}")
 
     executable_without_route = sorted(
         name

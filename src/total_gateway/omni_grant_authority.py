@@ -30,6 +30,7 @@ from contracts import (
     PolicyDecision,
     ResourceEnvelope,
     TrustBundle,
+    canonical_json_bytes,
     canonical_sha256,
     derive_effect_identity,
     derive_run_identity,
@@ -45,9 +46,19 @@ from .composition_execution_binding import (
     CompositionExecutionBindingError,
     derive_composition_execution_binding,
 )
+from .composition_execution_projection import (
+    CompositionAttemptObservationV1,
+    CompositionExecutionProjectionError,
+    derive_composition_execution_projection,
+    materialize_ready_composition_step,
+)
 from .composition_step_authorization import (
+    COMPOSITION_STEP_AUTHORIZATION_SCHEMA,
+    COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2,
+    CompositionContinuationDelegation,
     CompositionStepAuthorizationArtifacts,
     CompositionStepAuthorizationRequest,
+    build_composition_continuation_issuance_context,
 )
 from .effects import EffectClaim, EffectResult
 from .grant_signer import issue_omni_capability_grant
@@ -125,6 +136,12 @@ _PATH_KEYS = frozenset(
 )
 _URL_SCHEMES = frozenset({"http", "https", "data"})
 _SAFE_COMPOSITION_SIDE_EFFECTS = frozenset({"none", "read"})
+# ExecutionTicket and Omni grant contracts already bound a receipt to 60s.
+# V2 also needs a reachable window for its sole pre-start successor, so every
+# fresh attempt receives at most half of the *current* durable-continuation
+# window (with a 1ms floor for the final tick).  V1's legacy 60s behavior is
+# intentionally unchanged.
+_COMPOSITION_RECEIPT_MAX_TTL_MS = 60_000
 _OPAQUE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}")
 _OBJECT_REFERENCE_RE = re.compile(r"oref_[0-9a-f]{64}")
 _COMMON_FILE_SUFFIXES = frozenset(
@@ -239,6 +256,7 @@ class OmniGrantAuthority:
         effect_store,
         action_schema_catalog: ActionSchemaCatalog | None = None,
         object_store=None,
+        fact_ledger=None,
         capability_source_manifest_hash: str | None = None,
         parent_capability_manifest_hash: str | None = None,
         composition_capability_manifest_hash: str | None = None,
@@ -316,6 +334,7 @@ class OmniGrantAuthority:
         self._effect_store = effect_store
         self._action_schema_catalog = action_schema_catalog
         self._object_store = object_store
+        self._fact_ledger = fact_ledger
         self.gateway_url = normalize_gateway_url(gateway_url)
         self._active: dict[str, ActiveExecutionAuthority] = {}
         self._issued: dict[tuple[str, str], tuple[str, int, dict[str, Any]]] = {}
@@ -639,11 +658,20 @@ class OmniGrantAuthority:
         try:
             normalized = text.replace("\\", os.sep)
             candidate = Path(normalized).expanduser()
-            resolved = (
-                candidate.resolve(strict=False)
-                if candidate.is_absolute()
-                else (self.workspace_root / candidate).resolve(strict=False)
-            )
+            lexical = candidate if candidate.is_absolute() else self.workspace_root / candidate
+            lexical = Path(os.path.abspath(str(lexical)))
+            lexical_relative = lexical.relative_to(self.workspace_root)
+            cursor = self.workspace_root
+            if cursor.is_symlink():
+                raise ValueError("workspace root became a symlink")
+            for part in lexical_relative.parts:
+                cursor = cursor / part
+                # Reject even an in-workspace link.  Composition bindings seal
+                # the lexical path; silently following a later link would make
+                # that binding name a different filesystem object.
+                if cursor.is_symlink():
+                    raise ValueError("composition path contains a symlink")
+            resolved = lexical.resolve(strict=False)
             if _is_hard_deny_path(resolved):
                 raise ValueError("hard-deny path")
             resolved.relative_to(self.workspace_root)
@@ -818,11 +846,305 @@ class OmniGrantAuthority:
             ) from exc
         return grants
 
+    @staticmethod
+    def _continuation_action_versions(plan: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "step_id": step.step_id,
+                "step_binding_sha256": step.sha256,
+                "action_id": step.action_id,
+                "action_version": step.action_version,
+                "source_revision_sha256": canonical_sha256(
+                    step.source_revision.model_dump(mode="json")
+                ),
+                "action_permission_sha256": step.permission_sha256,
+                "argument_schema_sha256": step.argument_schema_sha256,
+                "result_schema_sha256": step.result_schema_sha256,
+            }
+            for step in plan.step_bindings
+        ]
+
+    def _verify_continuation_manifest_authority(
+        self,
+        *,
+        plan: Any,
+        catalog: ActionSchemaCatalog,
+        continuation: CompositionContinuationDelegation | None = None,
+    ) -> None:
+        if (
+            plan.action_registry_sha256 != self.registry.registry_sha256
+            or plan.capability_manifest_sha256
+            != self.capability_source_manifest_hash
+            or self.capability_source_manifest_hash
+            != self.registry.source_manifest_sha256
+            or not catalog.has_valid_sha256()
+            or catalog.source_manifest_sha256
+            != self.registry.source_manifest_sha256
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.current_manifest_mismatch",
+                status=409,
+            )
+        if continuation is not None and (
+            continuation.schema_catalog_sha256 != catalog.catalog_sha256
+            or continuation.composition_execution_manifest_sha256
+            != self.composition_capability_manifest_hash
+            or continuation.component_manifest_sha256
+            != self.component_manifest_hash
+            or continuation.action_registry_sha256
+            != self.registry.registry_sha256
+            or continuation.capability_manifest_sha256
+            != self.capability_source_manifest_hash
+            or continuation.allowed_action_versions
+            != self._continuation_action_versions(plan)
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_manifest_mismatch",
+                status=409,
+            )
+        try:
+            for step in plan.step_bindings:
+                permission = next(
+                    item
+                    for item in self.registry.permissions
+                    if item.action_id == step.action_id
+                    and item.action_version == step.action_version
+                )
+                if (
+                    not permission.has_valid_sha256()
+                    or permission != step.permission
+                    or permission.permission_sha256 != step.permission_sha256
+                    or permission.registry_risk != "A0"
+                    or permission.effective_risk != "A0"
+                    or permission.effect not in {"read", "verify"}
+                    or not set(permission.allowed_side_effects).issubset(
+                        _SAFE_COMPOSITION_SIDE_EFFECTS
+                    )
+                    or permission.allow_shell
+                    or permission.allow_python
+                    or permission.requires_confirmation
+                ):
+                    raise ValueError("unsafe composition permission")
+                catalog.resolve(
+                    step.action_id,
+                    step.action_version,
+                    expected_sha256=step.argument_schema_sha256,
+                    expected_result_sha256=step.result_schema_sha256,
+                    require_explicit=True,
+                    require_result_explicit=True,
+                )
+        except (ActionRegistryError, StopIteration, ValueError) as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_manifest_mismatch",
+                status=409,
+            ) from exc
+
+    def _composition_continuation_dependencies(
+        self,
+    ) -> tuple[ActionSchemaCatalog, Any, Any, Any]:
+        catalog, store, objects = self._composition_dependencies()
+        facts = self._fact_ledger
+        required_store_methods = (
+            "commit_composition_continuation_delegation",
+            "get_composition_continuation_delegation",
+            "get_composition_continuation_for_plan",
+            "get_current_composition_step_authorization",
+            "list_composition_step_authorizations",
+            "list_composition_authorizations_for_plan",
+            "supersede_composition_step_authorization_prestart",
+        )
+        if any(not callable(getattr(store, name, None)) for name in required_store_methods):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_unavailable",
+                status=503,
+            )
+        if facts is None or not callable(
+            getattr(facts, "get_batch_for_effect", None)
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.fact_authority_unavailable",
+                status=503,
+            )
+        return catalog, store, objects, facts
+
+    def _composition_continuation_object_grants(
+        self,
+        *,
+        plan: Any,
+        continuation: CompositionContinuationDelegation,
+        objects: Any,
+    ) -> tuple[Any, ...]:
+        grants = tuple(
+            sorted(
+                (
+                    item.object_grant
+                    for item in plan.plan_inputs
+                    if item.input_kind == "OBJECT_GRANT"
+                    and item.object_grant is not None
+                ),
+                key=lambda item: (item.object_id, item.revision),
+            )
+        )
+        context = continuation.issuance_context
+        grant_values = [item.model_dump(mode="json") for item in grants]
+        if (
+            len({(item.object_id, item.revision) for item in grants})
+            != len(grants)
+            or canonical_sha256(grant_values)
+            != continuation.object_grants_sha256
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.object_grant_invalid", status=409
+            )
+        try:
+            for grant in grants:
+                reference = objects.get_reference(grant.object_id)
+                body = objects.read_bytes(grant.object_id)
+                if (
+                    grant.tenant_id != context["tenant_id"]
+                    or grant.link_account_id != context["link_account_id"]
+                    or grant.conversation_scope_hash
+                    != context["conversation_scope_hash"]
+                    or reference is None
+                    or not reference.has_valid_sha256()
+                    or reference.object_id != grant.object_id
+                    or reference.sha256 != grant.sha256
+                    or reference.size_bytes != grant.size_bytes
+                    or reference.tenant_id != grant.tenant_id
+                    or reference.link_account_id != grant.link_account_id
+                    or reference.conversation_scope_hash
+                    != grant.conversation_scope_hash
+                    or len(body) != grant.size_bytes
+                    or hashlib.sha256(body).hexdigest() != grant.sha256
+                ):
+                    raise ValueError("ObjectGrant mismatch")
+        except Exception as exc:
+            if isinstance(exc, OmniGrantAuthorityError):
+                raise
+            raise OmniGrantAuthorityError(
+                "composition.authorization.object_grant_invalid", status=409
+            ) from exc
+        return grants
+
+    @staticmethod
+    def _strict_composition_json(payload: bytes) -> Any:
+        def pairs(values: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in values:
+                if key in result:
+                    raise ValueError("duplicate JSON key")
+                result[key] = value
+            return result
+
+        def reject_constant(_value: str) -> None:
+            raise ValueError("non-finite JSON number")
+
+        decoded = payload.decode("utf-8", errors="strict")
+        value = json.loads(
+            decoded,
+            object_pairs_hook=pairs,
+            parse_constant=reject_constant,
+        )
+        if canonical_json_bytes(value) != payload:
+            raise ValueError("non-canonical JSON payload")
+        return value
+
+    def _composition_attempt_observations(
+        self,
+        *,
+        plan: Any,
+        store: Any,
+        facts: Any,
+        objects: Any,
+    ) -> tuple[CompositionAttemptObservationV1, ...]:
+        try:
+            records = store.list_composition_authorizations_for_plan(
+                plan.executable_plan_id,
+                current_only=False,
+            )
+            observations: list[CompositionAttemptObservationV1] = []
+            for record in records:
+                effect = store.get_effect(record.prebound_effect_id)
+                batch = facts.get_batch_for_effect(
+                    record.prebound_effect_id,
+                    verify_payload=True,
+                )
+                observation_values: dict[str, Any] = {
+                    "authorization_id": record.authorization_id,
+                    "step_id": record.step_id,
+                    "attempt": record.attempt,
+                    "prebound_effect_id": record.prebound_effect_id,
+                    "supersedes_authorization_id": (
+                        record.supersedes_authorization_id
+                    ),
+                    "supersedes_effect_id": record.supersedes_effect_id,
+                    "supersedes_claim_sha256": record.supersedes_claim_sha256,
+                    "effect": effect,
+                    "fact_batch": batch,
+                }
+                if batch is not None:
+                    result_reference = objects.get_reference(
+                        batch.result_payload_object_id
+                    )
+                    result_bytes = objects.read_bytes(
+                        batch.result_payload_object_id
+                    )
+                    if (
+                        result_reference is None
+                        or not result_reference.has_valid_sha256()
+                        or result_reference.sha256
+                        != batch.result_payload_sha256
+                        or result_reference.tenant_id != batch.tenant_id
+                        or result_reference.link_account_id
+                        != batch.link_account_id
+                        or result_reference.conversation_scope_hash
+                        != batch.conversation_scope_hash
+                    ):
+                        raise ValueError("result payload ObjectReference mismatch")
+                    output_references = []
+                    for object_id in batch.result.output_object_refs:
+                        reference = objects.get_reference(object_id)
+                        if reference is None or not reference.has_valid_sha256():
+                            raise ValueError("output ObjectReference missing")
+                        objects.read_bytes(object_id)
+                        output_references.append(reference)
+                    observation_values.update(
+                        {
+                            "result_payload": self._strict_composition_json(
+                                result_bytes
+                            ),
+                            "output_object_references": tuple(output_references),
+                        }
+                    )
+                observations.append(
+                    CompositionAttemptObservationV1(**observation_values)
+                )
+            return tuple(observations)
+        except Exception as exc:
+            if isinstance(exc, OmniGrantAuthorityError):
+                raise
+            raise OmniGrantAuthorityError(
+                "composition.authorization.projection_evidence_invalid",
+                status=409,
+            ) from exc
+
+    @staticmethod
+    def _current_observations(
+        observations: tuple[CompositionAttemptObservationV1, ...],
+    ) -> dict[str, CompositionAttemptObservationV1]:
+        current: dict[str, CompositionAttemptObservationV1] = {}
+        for observation in observations:
+            existing = current.get(observation.step_id)
+            if existing is None or observation.attempt > existing.attempt:
+                current[observation.step_id] = observation
+        return current
+
     def _record_composition_evidence(
         self,
         record: Any,
         permission: Any,
-        active: ActiveExecutionAuthority,
+        *,
+        session_id: str,
     ) -> None:
         try:
             intent, impact, decision, ticket, grant = (
@@ -833,7 +1155,7 @@ class OmniGrantAuthority:
                 self.signer.sign_execution(ticket.payload) != ticket
                 or self.signer.sign_omni_capability(grant.payload) != grant
                 or runtime["gateway_url"] != self.gateway_url
-                or runtime["session_id"] != active.session_id
+                or runtime["session_id"] != session_id
                 or runtime["gateway_epoch"] != self.gateway_epoch
                 or runtime["capability_manifest_hash"]
                 != self.composition_capability_manifest_hash
@@ -855,6 +1177,207 @@ class OmniGrantAuthority:
             raise OmniGrantAuthorityError(
                 "composition.authorization.evidence_invalid", status=503
             ) from exc
+
+    def _composition_receipt_is_current_issuer(
+        self,
+        record: Any,
+        *,
+        now_ms: int,
+    ) -> bool:
+        """Distinguish a replayable receipt from a pre-start successor input."""
+
+        try:
+            _, _, _, ticket, grant = record.artifacts.restore_contracts()
+            return bool(
+                record.request.issued_at_ms <= now_ms < record.request.expires_at_ms
+                and ticket.payload.gateway_epoch == self.gateway_epoch
+                and grant.payload.gateway_epoch == self.gateway_epoch
+                and self.signer.sign_execution(ticket.payload) == ticket
+                and self.signer.sign_omni_capability(grant.payload) == grant
+            )
+        except Exception as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.predecessor_invalid",
+                status=409,
+            ) from exc
+
+    def seal_composition_continuation(
+        self,
+        *,
+        parent_ticket_id: str,
+        registration_id: str,
+        now_ms: int | None = None,
+    ) -> str | None:
+        """Seal one inert composition continuation while the parent is live.
+
+        The returned identifier is not executable authority.  This method is
+        intentionally valid while the parent Effect is merely CLAIMED or
+        STARTED so orchestration can seal it before dispatch without a crash
+        gap.  Actual V2 step issuance separately requires parent success.
+        """
+
+        key = (parent_ticket_id, registration_id, "__continuation__")
+        if any(
+            not isinstance(value, str) or _OPAQUE_ID_RE.fullmatch(value) is None
+            for value in key[:2]
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.identity_invalid"
+            )
+        now = time.time_ns() // 1_000_000 if now_ms is None else now_ms
+        if type(now) is not int or now < 0:
+            raise OmniGrantAuthorityError("composition.authorization.time_invalid")
+        with self._lock:
+            call_lock = self._composition_locks.setdefault(key, threading.Lock())
+        with call_lock:
+            catalog, store, objects = self._composition_dependencies()
+            required = (
+                "commit_composition_continuation_delegation",
+                "get_composition_continuation_for_plan",
+            )
+            if any(not callable(getattr(store, name, None)) for name in required):
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.continuation_unavailable",
+                    status=503,
+                )
+            try:
+                plan_record = store.get_active_executable_composition_plan(
+                    registration_id,
+                    now_ms=now,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.plan_unavailable", status=409
+                ) from exc
+            if plan_record is None:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.plan_not_active", status=409
+                )
+            plan = plan_record.executable_plan
+            if (
+                plan.registration_id != registration_id
+                or not plan.has_valid_identity()
+                or not plan.sealed_at_ms <= now < plan.expires_at_ms
+            ):
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.plan_invalid", status=409
+                )
+            active = self._composition_parent(
+                parent_ticket_id=parent_ticket_id,
+                plan=plan,
+                now_ms=now,
+            )
+            self._verify_continuation_manifest_authority(
+                plan=plan,
+                catalog=catalog,
+            )
+            grants = self._composition_object_grants(
+                plan=plan,
+                active=active,
+                objects=objects,
+            )
+            ticket_sha256 = canonical_sha256(
+                active.ticket.model_dump(mode="json")
+            )
+            issuance_context = build_composition_continuation_issuance_context(
+                active.ticket,
+                life_id=active.life_id,
+                life_evidence_ref=active.life_evidence_ref,
+                session_id=active.session_id,
+            )
+            try:
+                existing = store.get_composition_continuation_for_plan(
+                    plan.executable_plan_id,
+                    now_ms=now,
+                    require_parent_success=False,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.continuation_invalid",
+                    status=409,
+                ) from exc
+            if existing is not None:
+                self._verify_continuation_manifest_authority(
+                    plan=plan,
+                    catalog=catalog,
+                    continuation=existing,
+                )
+                if (
+                    existing.registration_id != registration_id
+                    or existing.parent_ticket_id != parent_ticket_id
+                    or existing.parent_ticket_sha256 != ticket_sha256
+                    or existing.parent_effect_id != active.ticket.payload.effect_id
+                    or existing.parent_effect_claim_sha256
+                    != active.ticket.payload.claim_sha256
+                    or existing.issuance_context != issuance_context
+                ):
+                    raise OmniGrantAuthorityError(
+                        "composition.authorization.continuation_conflict",
+                        status=409,
+                    )
+                return existing.delegation_id
+
+            delegation = CompositionContinuationDelegation.build(
+                registration_id=registration_id,
+                registration_sha256=plan.registration_sha256,
+                executable_plan_id=plan.executable_plan_id,
+                executable_plan_sha256=plan.executable_plan_sha256,
+                request_id=plan.request_id,
+                run_id=plan.run_id,
+                generation=plan.generation,
+                principal_scope_hash=plan.principal_scope_hash,
+                parent_ticket_id=parent_ticket_id,
+                parent_ticket_sha256=ticket_sha256,
+                parent_ticket_expires_at_ms=active.ticket.payload.expires_at_ms,
+                parent_effect_id=active.ticket.payload.effect_id,
+                parent_effect_claim_sha256=active.ticket.payload.claim_sha256,
+                source_manifest_sha256=plan.source_manifest_sha256,
+                capability_manifest_sha256=plan.capability_manifest_sha256,
+                action_registry_sha256=plan.action_registry_sha256,
+                schema_catalog_sha256=catalog.catalog_sha256,
+                composition_execution_manifest_sha256=(
+                    self.composition_capability_manifest_hash
+                ),
+                component_manifest_sha256=self.component_manifest_hash,
+                verification_plan_id=plan.verification_plan_id,
+                verification_plan_sha256=plan.verification_plan_sha256,
+                verification_plan_activation_id=(
+                    plan.verification_plan_activation_id
+                ),
+                workspace_id=plan.workspace.workspace_id,
+                workspace_scope_sha256=plan.workspace.workspace_scope_sha256,
+                object_grants_sha256=canonical_sha256(
+                    [item.model_dump(mode="json") for item in grants]
+                ),
+                issuance_context=issuance_context,
+                allowed_action_versions=self._continuation_action_versions(plan),
+                issued_at_ms=now,
+                expires_at_ms=plan.expires_at_ms,
+            )
+            try:
+                persisted, _created = (
+                    store.commit_composition_continuation_delegation(
+                        delegation,
+                        parent_ticket=active.ticket,
+                        now_ms=now,
+                    )
+                )
+                reread = store.get_composition_continuation_for_plan(
+                    plan.executable_plan_id,
+                    now_ms=now,
+                    require_parent_success=False,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.continuation_commit_failed",
+                    status=409,
+                ) from exc
+            if reread != persisted or persisted != delegation:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.continuation_commit_mismatch",
+                    status=409,
+                )
+            return persisted.delegation_id
 
     def issue_composition_step(
         self,
@@ -881,6 +1404,903 @@ class OmniGrantAuthority:
                 step_id=step_id,
                 now_ms=now_ms,
             )
+
+    def issue_composition_continuation_step(
+        self,
+        *,
+        continuation_delegation_id: str,
+        registration_id: str,
+        step_id: str,
+        now_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Issue one fresh V2 step only from durable continuation evidence.
+
+        The public surface deliberately accepts identities only.  Arguments,
+        targets, dependency evidence, schemas, manifests, Effects and signing
+        context are reconstructed from Store, FactLedger and ObjectStore under
+        the current Gateway authority.
+        """
+
+        key = (continuation_delegation_id, registration_id, step_id)
+        if any(
+            not isinstance(value, str) or _OPAQUE_ID_RE.fullmatch(value) is None
+            for value in key
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.identity_invalid"
+            )
+        with self._lock:
+            call_lock = self._composition_locks.setdefault(key, threading.Lock())
+        with call_lock:
+            return self._issue_composition_continuation_step_once(
+                continuation_delegation_id=continuation_delegation_id,
+                registration_id=registration_id,
+                step_id=step_id,
+                now_ms=now_ms,
+            )
+
+    def _issue_composition_continuation_step_once(
+        self,
+        *,
+        continuation_delegation_id: str,
+        registration_id: str,
+        step_id: str,
+        now_ms: int | None,
+    ) -> dict[str, Any]:
+        now = time.time_ns() // 1_000_000 if now_ms is None else now_ms
+        if type(now) is not int or now < 0:
+            raise OmniGrantAuthorityError("composition.authorization.time_invalid")
+        catalog, store, objects, facts = self._composition_continuation_dependencies()
+
+        # This Store read is the only parent-authority gate.  In particular,
+        # continuation issuance never consults the process-local ``_active``
+        # cache and remains valid after the outer dispatch has unregistered.
+        try:
+            continuation = store.get_composition_continuation_delegation(
+                continuation_delegation_id,
+                now_ms=now,
+                require_parent_success=True,
+            )
+            plan_record = store.get_active_executable_composition_plan(
+                registration_id,
+                now_ms=now,
+            )
+        except Exception as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_not_live", status=409
+            ) from exc
+        if continuation is None:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_missing", status=409
+            )
+        if plan_record is None:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.plan_not_active", status=409
+            )
+        plan = plan_record.executable_plan
+        if (
+            plan.registration_id != registration_id
+            or continuation.registration_id != registration_id
+            or continuation.executable_plan_id != plan.executable_plan_id
+            or continuation.executable_plan_sha256
+            != plan.executable_plan_sha256
+            or not plan.has_valid_identity()
+            or not plan.sealed_at_ms <= now < plan.expires_at_ms
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.continuation_plan_mismatch",
+                status=409,
+            )
+        try:
+            workspace_path = Path(plan.workspace.workspace_root).expanduser()
+            if workspace_path.is_symlink():
+                raise ValueError("composition workspace root is a symlink")
+            workspace = workspace_path.resolve(strict=True)
+        except (OSError, TypeError, ValueError) as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.workspace_invalid", status=409
+            ) from exc
+        if (
+            workspace != self.workspace_root
+            or workspace.is_symlink()
+            or plan.workspace.workspace_id != self.workspace_id
+            or plan.workspace.workspace_scope_sha256 != self.workspace_scope_hash
+            or continuation.workspace_id != self.workspace_id
+            or continuation.workspace_scope_sha256 != self.workspace_scope_hash
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.workspace_mismatch", status=409
+            )
+        self._verify_continuation_manifest_authority(
+            plan=plan,
+            catalog=catalog,
+            continuation=continuation,
+        )
+        context = continuation.issuance_context
+        grants = self._composition_continuation_object_grants(
+            plan=plan,
+            continuation=continuation,
+            objects=objects,
+        )
+
+        def validate_result(
+            action_id: str,
+            action_version: str,
+            expected_result_sha256: str,
+            value: Any,
+        ) -> None:
+            catalog.resolve(
+                action_id,
+                action_version,
+                expected_result_sha256=expected_result_sha256,
+                require_result_explicit=True,
+            )
+            catalog.validate_result_exact(action_id, action_version, value)
+
+        try:
+            observations = self._composition_attempt_observations(
+                plan=plan,
+                store=store,
+                facts=facts,
+                objects=objects,
+            )
+            projection = derive_composition_execution_projection(
+                plan,
+                observations,
+                validate_result=validate_result,
+            )
+            projected_step = projection.by_step_id().get(step_id)
+        except (CompositionExecutionProjectionError, ActionRegistryError) as exc:
+            code = getattr(
+                exc,
+                "code",
+                "composition.authorization.projection_invalid",
+            )
+            raise OmniGrantAuthorityError(str(code), status=409) from exc
+        if projected_step is None:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.step_missing", status=409
+            )
+        if projection.next_step_id != step_id:
+            reason = projected_step.reason_code
+            raise OmniGrantAuthorityError(
+                reason or "composition.authorization.step_not_frontier",
+                status=409,
+            )
+
+        current_observations = self._current_observations(observations)
+        step = next(item for item in plan.step_bindings if item.step_id == step_id)
+        try:
+            committed = {
+                dependency_id: current_observations[dependency_id]
+                for dependency_id in step.depends_on
+            }
+            dispatch = materialize_ready_composition_step(
+                plan,
+                step_id=step_id,
+                committed=committed,
+                validate_value=catalog.validate_value_exact,
+                validate_result=validate_result,
+                resolve_value_schema=lambda action_id, action_version, digest: (
+                    catalog.resolve_value_schema(
+                        action_id,
+                        action_version,
+                        digest,
+                        require_explicit=True,
+                    )
+                ),
+            )
+        except (CompositionExecutionProjectionError, ActionRegistryError, KeyError) as exc:
+            code = getattr(
+                exc,
+                "code",
+                "composition.authorization.materialization_invalid",
+            )
+            raise OmniGrantAuthorityError(str(code), status=409) from exc
+        materialized = dispatch.step
+        dependency_evidence = [
+            item.payload() for item in dispatch.dependency_evidence
+        ]
+        if canonical_sha256(dependency_evidence) != dispatch.dependency_evidence_sha256:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.dependency_evidence_invalid",
+                status=409,
+            )
+
+        permission = next(
+            (
+                item
+                for item in self.registry.permissions
+                if item.action_id == materialized.step.action_id
+                and item.action_version == materialized.step.action_version
+            ),
+            None,
+        )
+        if (
+            permission is None
+            or not permission.has_valid_sha256()
+            or permission != materialized.step.permission
+            or permission.permission_sha256
+            != materialized.step.permission_sha256
+            or permission.registry_risk != "A0"
+            or permission.effective_risk != "A0"
+            or permission.effect not in {"read", "verify"}
+            or not set(permission.allowed_side_effects).issubset(
+                _SAFE_COMPOSITION_SIDE_EFFECTS
+            )
+            or permission.allow_shell
+            or permission.allow_python
+            or permission.requires_confirmation
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.a0_ceiling_exceeded", status=403
+            )
+        try:
+            schema = catalog.resolve(
+                permission.action_id,
+                permission.action_version,
+                expected_sha256=materialized.step.argument_schema_sha256,
+                expected_result_sha256=materialized.step.result_schema_sha256,
+                require_explicit=True,
+                require_result_explicit=True,
+            )
+        except ActionRegistryError as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.schema_invalid", status=409
+            ) from exc
+
+        self._validate_no_authority_fields(materialized.arguments)
+        if self._contains_destructive_overwrite(materialized.arguments):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.destructive_arguments_forbidden",
+                status=403,
+            )
+        object_ids = frozenset(item.object_id for item in grants)
+        self._validate_composition_path_policy(
+            target=materialized.target,
+            args=materialized.arguments,
+            path_policy=permission.path_policy,
+            object_ids=object_ids,
+        )
+        try:
+            validated = schema.validate_exact(
+                permission.action_id,
+                materialized.target,
+                materialized.arguments,
+                workspace=self.workspace_root,
+                available_actions=(
+                    item.action_id for item in self.registry.permissions
+                ),
+                user_roots=(),
+            )
+        except ActionRegistryError as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.arguments_invalid", status=409
+            ) from exc
+        if (
+            validated.get("action") != permission.action_id
+            or validated.get("target") != materialized.target
+            or validated.get("args") != materialized.arguments
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.arguments_normalized", status=409
+            )
+
+        try:
+            chain = store.list_composition_step_authorizations(
+                plan.executable_plan_id,
+                step_id,
+            )
+        except Exception as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.attempt_chain_invalid", status=409
+            ) from exc
+        current = None if not chain else chain[-1]
+        current_issuer_live = (
+            False
+            if current is None
+            else self._composition_receipt_is_current_issuer(
+                current,
+                now_ms=now,
+            )
+        )
+        replay = bool(
+            current is not None
+            and current.request.schema_version
+            == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2
+            and current_issuer_live
+        )
+        if current is not None and now < current.request.issued_at_ms:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.attempt_not_yet_valid", status=409
+            )
+        if (
+            current is not None
+            and current.request.schema_version
+            == COMPOSITION_STEP_AUTHORIZATION_SCHEMA
+            and current_issuer_live
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.legacy_predecessor_still_live",
+                status=409,
+            )
+        if current is None:
+            attempt = 1
+            predecessor_authorization_id = None
+            predecessor_effect_id = None
+            predecessor_claim_sha256 = None
+        elif replay:
+            attempt = current.request.attempt
+            predecessor_authorization_id = (
+                current.request.supersedes_authorization_id
+            )
+            predecessor_effect_id = current.request.supersedes_effect_id
+            predecessor_claim_sha256 = current.request.supersedes_claim_sha256
+        else:
+            if current.request.attempt != 1:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.attempts_exhausted", status=409
+                )
+            if projected_step.state not in {
+                "READY_AUTHORIZED",
+                "CLAIMED_PRESTART",
+            }:
+                raise OmniGrantAuthorityError(
+                    projected_step.reason_code
+                    or "composition.authorization.prestart_retry_forbidden",
+                    status=409,
+                )
+            # FactLedger is a separate database.  Its absence is checked once
+            # immediately before building the successor and again after the
+            # Store CAS; neither layer pretends this is a cross-DB transaction.
+            try:
+                predecessor_batch = facts.get_batch_for_effect(
+                    current.prebound_effect_id,
+                    verify_payload=True,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.fact_read_failed", status=503
+                ) from exc
+            if predecessor_batch is not None:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.prestart_fact_present", status=409
+                )
+            predecessor_observation = current_observations.get(step_id)
+            predecessor_effect = (
+                None
+                if predecessor_observation is None
+                else predecessor_observation.effect
+            )
+            if predecessor_effect is not None and (
+                predecessor_effect.state != "CLAIMED"
+                or predecessor_effect.side_effect_started_at_ms is not None
+                or predecessor_effect.result is not None
+            ):
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.prestart_retry_forbidden",
+                    status=409,
+                )
+            try:
+                _, _, _, predecessor_ticket, _ = (
+                    current.artifacts.restore_contracts()
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.predecessor_invalid", status=409
+                ) from exc
+            attempt = 2
+            predecessor_authorization_id = current.authorization_id
+            predecessor_effect_id = current.prebound_effect_id
+            predecessor_claim_sha256 = predecessor_ticket.payload.claim_sha256
+
+        materialized_arguments_sha256 = canonical_sha256(materialized.arguments)
+        arguments_sha256 = self._invocation_hash(
+            permission.action_id,
+            materialized.target,
+            materialized.arguments,
+        )
+        target_ref = (
+            "target-"
+            + canonical_sha256(
+                {"action": permission.action_id, "target": materialized.target}
+            )
+            if materialized.target
+            else None
+        )
+        target_state = probe_target_state(materialized.target, self.workspace_root)
+        target_snapshot_sha256 = (
+            None if target_state is None else canonical_sha256(target_state)
+        )
+        try:
+            derived_binding = derive_composition_execution_binding(
+                plan,
+                materialized,
+                parent_ticket_id=continuation.parent_ticket_id,
+                workspace_id=self.workspace_id,
+                workspace_scope_hash=self.workspace_scope_hash,
+                target_snapshot_sha256=target_snapshot_sha256,
+                attempt=attempt,
+                continuation_delegation_id=continuation.delegation_id,
+                continuation_delegation_sha256=continuation.delegation_sha256,
+                dependency_evidence_sha256=(
+                    dispatch.dependency_evidence_sha256
+                ),
+                supersedes_authorization_id=predecessor_authorization_id,
+                supersedes_effect_id=predecessor_effect_id,
+                supersedes_claim_sha256=predecessor_claim_sha256,
+            )
+        except CompositionExecutionBindingError as exc:
+            raise OmniGrantAuthorityError(exc.code, status=409) from exc
+        run_sequence = derived_binding.run_sequence
+        ordinal = derived_binding.ordinal
+        effect_intent_sha256 = derived_binding.effect_intent_sha256
+        effect_id = derived_binding.effect_id
+        binding = derived_binding.binding
+
+        fence_status = store.action_fence_status()
+        raw_fence_epoch = int(fence_status.get("action_fence_epoch", -1))
+        if (
+            raw_fence_epoch != 0
+            or bool(fence_status.get("fenced"))
+            or bool(fence_status.get("draining"))
+        ):
+            raise OmniGrantAuthorityError(
+                "composition.authorization.action_fenced", status=409
+            )
+        authorization_ceiling_ms = min(
+            plan.expires_at_ms,
+            continuation.expires_at_ms,
+        )
+        remaining_authority_ms = authorization_ceiling_ms - now
+        if not replay and attempt == 1 and remaining_authority_ms < 2:
+            # Attempt 1 may not consume the final tick: doing so would make
+            # the contractually permitted pre-start successor unreachable.
+            raise OmniGrantAuthorityError(
+                "composition.authorization.retry_window_unavailable",
+                status=409,
+            )
+        request_issued_at_ms = (
+            current.request.issued_at_ms if replay and current is not None else now
+        )
+        request_expires_at_ms = (
+            current.request.expires_at_ms
+            if replay and current is not None
+            else min(
+                now
+                + min(
+                    _COMPOSITION_RECEIPT_MAX_TTL_MS,
+                    max(1, remaining_authority_ms // 2),
+                ),
+                authorization_ceiling_ms,
+            )
+        )
+        if now >= request_expires_at_ms:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.expired", status=409
+            )
+        object_grant_values = tuple(
+            item.model_dump(mode="json") for item in grants
+        )
+        request = CompositionStepAuthorizationRequest.build(
+            schema_version=COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2,
+            registration_id=registration_id,
+            registration_sha256=plan.registration_sha256,
+            executable_plan_id=plan.executable_plan_id,
+            executable_plan_sha256=plan.executable_plan_sha256,
+            composition_plan_id=plan.composition_plan_id,
+            composition_plan_sha256=plan.composition_plan_sha256,
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            generation=plan.generation,
+            principal_scope_hash=plan.principal_scope_hash,
+            parent_ticket_id=continuation.parent_ticket_id,
+            parent_ticket_sha256=continuation.parent_ticket_sha256,
+            parent_ticket_expires_at_ms=(
+                continuation.parent_ticket_expires_at_ms
+            ),
+            step_id=step_id,
+            step_binding_sha256=materialized.step.sha256,
+            attempt=attempt,
+            action_id=permission.action_id,
+            action_version=permission.action_version,
+            source_revision_sha256=canonical_sha256(
+                materialized.step.source_revision.model_dump(mode="json")
+            ),
+            action_registry_sha256=self.registry.registry_sha256,
+            action_permission_sha256=permission.permission_sha256,
+            argument_schema_sha256=schema.argument_schema_sha256,
+            result_schema_sha256=schema.result_schema_sha256,
+            composition_binding_sha256=binding.binding_sha256,
+            materialized_arguments=materialized.arguments,
+            target=materialized.target,
+            target_ref=target_ref,
+            target_snapshot=target_state,
+            workspace_id=self.workspace_id,
+            workspace_scope_sha256=self.workspace_scope_hash,
+            object_grants=object_grant_values,
+            prebound_effect_id=effect_id,
+            prebound_effect_intent_sha256=effect_intent_sha256,
+            action_fence_epoch=raw_fence_epoch,
+            issued_at_ms=request_issued_at_ms,
+            expires_at_ms=request_expires_at_ms,
+            authorization_ceiling_ms=authorization_ceiling_ms,
+            continuation_delegation_id=continuation.delegation_id,
+            continuation_delegation_sha256=continuation.delegation_sha256,
+            dependency_evidence=dependency_evidence,
+            supersedes_authorization_id=predecessor_authorization_id,
+            supersedes_effect_id=predecessor_effect_id,
+            supersedes_claim_sha256=predecessor_claim_sha256,
+        )
+
+        try:
+            trust_bundle = self.trust_bundle_provider(now)
+        except Exception as exc:
+            raise OmniGrantAuthorityError(
+                "omni.trust_bundle.unavailable", status=503
+            ) from exc
+        if (
+            trust_bundle.production_ready is not True
+            or trust_bundle.gateway_epoch != self.gateway_epoch
+            or not trust_bundle.has_valid_sha256()
+        ):
+            raise OmniGrantAuthorityError("omni.trust_bundle.invalid", status=503)
+
+        if replay and current is not None:
+            # Replays return the immutable receipt only after reconstructing and
+            # comparing the entire V2 request from durable evidence and current
+            # authorities.  No fresh nonce is minted for the same attempt.
+            if current.request != request:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.replay_conflict", status=409
+                )
+            try:
+                persisted = store.get_current_composition_step_authorization(
+                    plan.executable_plan_id,
+                    step_id,
+                    now_ms=now,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.replay_invalid", status=409
+                ) from exc
+            if persisted != current:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.replay_conflict", status=409
+                )
+            runtime = persisted.runtime_response.get("runtime", {})
+            if (
+                runtime.get("trust_bundle_sha256")
+                != trust_bundle.bundle_sha256
+                or runtime.get("trust_bundle")
+                != trust_bundle.model_dump(mode="json")
+            ):
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.trust_bundle_changed", status=409
+                )
+            self._record_composition_evidence(
+                persisted,
+                permission,
+                session_id=context["session_id"],
+            )
+            return persisted.runtime_response
+
+        resources = ResourceEnvelope(
+            max_runtime_ms=min(context["max_runtime_ms"], 3_600_000),
+            max_output_bytes=context["max_output_bytes"],
+            max_tool_calls=1,
+        )
+        authorization_source_refs = tuple(
+            sorted(
+                (
+                    SourceRef(
+                        source_type="CURRENT_USER_INSTRUCTION",
+                        object_id=continuation.parent_ticket_id,
+                        object_revision=1,
+                        sha256=context["parent_ticket_payload_sha256"],
+                    ),
+                    SourceRef(
+                        source_type="PREAUTHORIZED_USER_FACT",
+                        object_id=context["life_evidence_ref"],
+                        object_revision=1,
+                        sha256=context["life_evidence_ref"][4:],
+                    ),
+                ),
+                key=lambda ref: ref.sort_key(),
+            )
+        )
+        intent = ActionIntent(
+            intent_id="intent-composition-" + canonical_sha256(
+                {
+                    "effect_id": effect_id,
+                    "binding_sha256": binding.binding_sha256,
+                    "created_at_ms": now,
+                }
+            ),
+            source="chat",
+            life_id=context["life_id"],
+            principal_scope_hash=plan.principal_scope_hash,
+            conversation_scope_hash=context["conversation_scope_hash"],
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            generation=plan.generation,
+            action_id=permission.action_id,
+            action_version=permission.action_version,
+            arguments_sha256=arguments_sha256,
+            workspace_id=self.workspace_id,
+            workspace_scope_hash=self.workspace_scope_hash,
+            input_object_refs=tuple(item.object_id for item in grants),
+            requested_side_effects=permission.allowed_side_effects,
+            requested_resources=resources,
+            source_refs=authorization_source_refs,
+            payload_sha256=materialized_arguments_sha256,
+            target_ref=target_ref,
+            target_snapshot_sha256=target_snapshot_sha256,
+            attachment_set_sha256=canonical_sha256(list(object_grant_values)),
+            composition_execution_binding=binding,
+            created_at_ms=now,
+            expires_at_ms=request_expires_at_ms,
+            intent_sha256="0" * 64,
+        ).with_computed_sha256()
+        knobs = derive_impact_knobs(
+            permission.action_id,
+            materialized.arguments,
+            target=materialized.target,
+            target_state=target_state,
+            workspace_root=str(self.workspace_root),
+            permission=permission,
+        )
+        uncertainty_milli = knobs["uncertainty_milli"]
+        if uncertainty_milli == 100:
+            uncertainty_milli = 0
+        impact = compute_action_impact(
+            intent,
+            permission,
+            affected_internal_nodes=("node_omni_body_runtime",),
+            external_recipient_count=knobs["external_recipient_count"],
+            credential_scope_milli=knobs["credential_scope_milli"],
+            privacy_scope_milli=knobs["privacy_scope_milli"],
+            blast_radius_milli=knobs["blast_radius_milli"],
+            irreversibility_milli=knobs["irreversibility_milli"],
+            uncertainty_milli=uncertainty_milli,
+            target_snapshot_sha256=target_snapshot_sha256,
+            created_at_ms=now,
+        )
+        policy_snapshot_sha256 = canonical_sha256(
+            {
+                "policy": "tiangong.composition-step.a0-read-only.v2",
+                "registry_sha256": self.registry.registry_sha256,
+                "schema_catalog_sha256": catalog.catalog_sha256,
+                "continuation_delegation_sha256": (
+                    continuation.delegation_sha256
+                ),
+            }
+        )
+        decision = PolicyEngine(
+            self.registry,
+            policy_snapshot_sha256=policy_snapshot_sha256,
+            skill_catalog_hash=self.skill_catalog_hash,
+            capability_manifest_hash=self.composition_capability_manifest_hash,
+            component_manifest_hash=self.component_manifest_hash,
+        ).evaluate(
+            intent,
+            impact,
+            decided_at_ms=now,
+            authorization_source_refs=authorization_source_refs,
+            expected_composition_binding=binding,
+        )
+        if decision.outcome != "ALLOW" or decision.computed_risk != "A0":
+            raise OmniGrantAuthorityError(
+                "composition.authorization.policy_rejected", status=403
+            )
+        claim = EffectClaim(
+            effect_id=effect_id,
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            run_sequence=run_sequence,
+            generation=plan.generation,
+            effect_kind="execution",
+            ordinal=ordinal,
+            intent_sha256=effect_intent_sha256,
+            pipeline_version=COMPOSITION_STEP_PIPELINE_VERSION,
+            attempt=attempt,
+            claim_revision=attempt,
+            lease_epoch=self.gateway_epoch,
+            supersedes_claim_sha256=predecessor_claim_sha256,
+            owner_component_id="tiangong-backend",
+            claimed_at_ms=now,
+            claim_sha256="0" * 64,
+        ).with_computed_sha256()
+        child_payload = ExecutionTicketPayload(
+            ticket_id="execution-ticket-" + canonical_sha256(
+                {
+                    "effect_id": effect_id,
+                    "decision_sha256": decision.decision_sha256,
+                }
+            ),
+            nonce="execution-nonce-" + canonical_sha256(
+                {
+                    "effect_id": effect_id,
+                    "issued_at_ms": now,
+                    "random": secrets.token_hex(16),
+                }
+            ),
+            issued_at_ms=now,
+            not_before_ms=now,
+            expires_at_ms=request_expires_at_ms,
+            gateway_epoch=self.gateway_epoch,
+            fence_epoch=max(1, raw_fence_epoch),
+            request_id=plan.request_id,
+            run_id=plan.run_id,
+            generation=plan.generation,
+            effect_id=effect_id,
+            channel=context["channel"],
+            tenant_id=context["tenant_id"],
+            link_account_id=context["link_account_id"],
+            conversation_scope_hash=context["conversation_scope_hash"],
+            principal_scope_hash=plan.principal_scope_hash,
+            capability_manifest_hash=self.composition_capability_manifest_hash,
+            policy_snapshot_hash=decision.policy_snapshot_sha256,
+            policy_coverage_sha256=decision.policy_coverage_sha256,
+            intent_id=intent.intent_id,
+            intent_sha256=intent.intent_sha256,
+            canonical_invocation_sha256=intent.canonical_invocation_sha256,
+            decision_id=decision.decision_id,
+            decision_sha256=decision.decision_sha256,
+            impact_id=impact.impact_id,
+            impact_sha256=impact.impact_sha256,
+            action_permission_sha256=permission.permission_sha256,
+            component_manifest_hash=self.component_manifest_hash,
+            life_snapshot_revision=context["life_snapshot_revision"],
+            life_snapshot_hash=context["life_snapshot_hash"],
+            claim_sha256=claim.claim_sha256,
+            claim_revision=claim.claim_revision,
+            claim_lease_epoch=claim.lease_epoch,
+            risk_class="A0",
+            action_id=permission.action_id,
+            action_version=permission.action_version,
+            argument_schema_sha256=schema.argument_schema_sha256,
+            arguments_hash=arguments_sha256,
+            workspace_id=self.workspace_id,
+            input_objects=grants,
+            object_grants_sha256=canonical_sha256(list(object_grant_values)),
+            output_root_id=context["output_root_id"],
+            artifact_intent_id=context["artifact_intent_id"],
+            max_output_bytes=resources.max_output_bytes,
+            max_runtime_ms=resources.max_runtime_ms,
+            max_tool_calls=resources.max_tool_calls,
+            resource_envelope_sha256=resources.sha256(),
+            allowed_side_effects=permission.allowed_side_effects,
+            side_effect_envelope_sha256=canonical_sha256(
+                {"allowed_side_effects": list(permission.allowed_side_effects)}
+            ),
+            composition_execution_binding=binding,
+        )
+        child_ticket = self.signer.sign_execution(child_payload)
+        grant = issue_omni_capability_grant(
+            signer=self.signer,
+            ticket=child_ticket,
+            intent=intent,
+            permission=permission,
+            decision=decision,
+            nonce="omni-nonce-" + canonical_sha256(
+                {
+                    "ticket_id": child_payload.ticket_id,
+                    "random": secrets.token_hex(16),
+                }
+            ),
+            issued_at_ms=now,
+            expires_at_ms=request_expires_at_ms,
+        )
+        binding_value = binding.model_dump(mode="json")
+        runtime = {
+            "execution_ticket_id": child_payload.ticket_id,
+            "request_id": plan.request_id,
+            "run_id": plan.run_id,
+            "generation": plan.generation,
+            "effect_id": effect_id,
+            "step_id": step_id,
+            "executable_plan_id": plan.executable_plan_id,
+            "composition_binding_sha256": binding.binding_sha256,
+            "composition_execution_binding": binding_value,
+            "principal_scope_hash": plan.principal_scope_hash,
+            "workspace_id": self.workspace_id,
+            "action_id": permission.action_id,
+            "action_version": permission.action_version,
+            "decision_sha256": decision.decision_sha256,
+            "impact_sha256": impact.impact_sha256,
+            "action_permission_sha256": permission.permission_sha256,
+            "action_registry_sha256": self.registry.registry_sha256,
+            "capability_manifest_hash": self.composition_capability_manifest_hash,
+            "component_manifest_hash": self.component_manifest_hash,
+            "confirmation_sha256": None,
+            "skill_id": None,
+            "skill_version": None,
+            "skill_sha256": None,
+            "skill_activation_sha256": None,
+            "gateway_url": self.gateway_url,
+            "session_id": context["session_id"],
+            "fact_kernel_enabled": True,
+            "gateway_epoch": self.gateway_epoch,
+            "trust_bundle_sha256": trust_bundle.bundle_sha256,
+            "trust_bundle": trust_bundle.model_dump(mode="json"),
+            "user_path_roots": [],
+        }
+        response = {
+            "status": "OK",
+            "grant": grant.model_dump(mode="json"),
+            "runtime": runtime,
+            "decision": {
+                "decision_id": decision.decision_id,
+                "decision_sha256": decision.decision_sha256,
+                "risk_class": decision.computed_risk,
+                "reason_codes": list(decision.reason_codes),
+            },
+        }
+        artifacts = CompositionStepAuthorizationArtifacts.build(
+            intent=intent,
+            impact=impact,
+            decision=decision,
+            signed_ticket=child_ticket,
+            signed_grant=grant,
+            runtime_response=response,
+        )
+        try:
+            if attempt == 1:
+                persisted, _created = store.commit_composition_step_authorization(
+                    request,
+                    artifacts=artifacts,
+                    now_ms=now,
+                )
+            else:
+                persisted, _created = (
+                    store.supersede_composition_step_authorization_prestart(
+                        request,
+                        artifacts=artifacts,
+                        expected_predecessor_authorization_id=(
+                            predecessor_authorization_id
+                        ),
+                        now_ms=now,
+                    )
+                )
+            reread = store.get_current_composition_step_authorization(
+                plan.executable_plan_id,
+                step_id,
+                now_ms=now,
+            )
+        except StoreCasConflict as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.prestart_retry_lost", status=409
+            ) from exc
+        except Exception as exc:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.commit_failed", status=409
+            ) from exc
+        if reread != persisted or persisted.request != request:
+            raise OmniGrantAuthorityError(
+                "composition.authorization.commit_mismatch", status=409
+            )
+        if attempt == 2:
+            try:
+                successor_race_batch = facts.get_batch_for_effect(
+                    predecessor_effect_id,
+                    verify_payload=True,
+                )
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.fact_read_failed", status=503
+                ) from exc
+            if successor_race_batch is not None:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.prestart_reconciliation_required",
+                    status=409,
+                )
+        self._record_composition_evidence(
+            persisted,
+            permission,
+            session_id=context["session_id"],
+        )
+        return persisted.runtime_response
 
     def _issue_composition_step_once(
         self,
@@ -915,6 +2335,69 @@ class OmniGrantAuthority:
             raise OmniGrantAuthorityError(
                 "composition.authorization.plan_invalid", status=409
             )
+        if len(plan.step_bindings) > 1:
+            delegation_id = self.seal_composition_continuation(
+                parent_ticket_id=parent_ticket_id,
+                registration_id=registration_id,
+                now_ms=now,
+            )
+            if delegation_id is None:  # pragma: no cover - plan was multi-step
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.continuation_unavailable",
+                    status=409,
+                )
+            return self.issue_composition_continuation_step(
+                continuation_delegation_id=delegation_id,
+                registration_id=registration_id,
+                step_id=step_id,
+                now_ms=now,
+            )
+        list_chain = getattr(store, "list_composition_step_authorizations", None)
+        get_continuation = getattr(
+            store,
+            "get_composition_continuation_for_plan",
+            None,
+        )
+        if callable(list_chain) and callable(get_continuation):
+            try:
+                chain = list_chain(plan.executable_plan_id, step_id)
+            except Exception as exc:
+                raise OmniGrantAuthorityError(
+                    "composition.authorization.attempt_chain_invalid",
+                    status=409,
+                ) from exc
+            if chain:
+                current = chain[-1]
+                should_continue = (
+                    current.request.schema_version
+                    == COMPOSITION_STEP_AUTHORIZATION_SCHEMA_V2
+                    or not self._composition_receipt_is_current_issuer(
+                        current,
+                        now_ms=now,
+                    )
+                )
+                if should_continue:
+                    try:
+                        continuation = get_continuation(
+                            plan.executable_plan_id,
+                            require_parent_success=False,
+                        )
+                    except Exception as exc:
+                        raise OmniGrantAuthorityError(
+                            "composition.authorization.continuation_invalid",
+                            status=409,
+                        ) from exc
+                    if continuation is None:
+                        raise OmniGrantAuthorityError(
+                            "composition.authorization.continuation_missing",
+                            status=409,
+                        )
+                    return self.issue_composition_continuation_step(
+                        continuation_delegation_id=continuation.delegation_id,
+                        registration_id=registration_id,
+                        step_id=step_id,
+                        now_ms=now,
+                    )
         try:
             materialized = materialize_static_root_step(plan, step_id=step_id)
         except CompositionActivationAdapterError as exc:
@@ -1140,7 +2623,11 @@ class OmniGrantAuthority:
                 raise OmniGrantAuthorityError(
                     "composition.authorization.replay_invalid", status=409
                 ) from exc
-            self._record_composition_evidence(persisted, permission, active)
+            self._record_composition_evidence(
+                persisted,
+                permission,
+                session_id=active.session_id,
+            )
             return persisted.runtime_response
 
         try:
@@ -1432,7 +2919,11 @@ class OmniGrantAuthority:
             raise OmniGrantAuthorityError(
                 "composition.authorization.commit_failed", status=409
             ) from exc
-        self._record_composition_evidence(persisted, permission, active)
+        self._record_composition_evidence(
+            persisted,
+            permission,
+            session_id=active.session_id,
+        )
         return persisted.runtime_response
 
     def issue(self, payload: Mapping[str, Any], *, now_ms: int | None = None) -> dict[str, Any]:

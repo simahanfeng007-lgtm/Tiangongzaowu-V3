@@ -23,6 +23,7 @@ from contracts import (
     canonical_sha256,
 )
 
+from .action_registry import ActionRegistryError, ActionSchemaCatalog
 from .backend_client import BACKEND_API_CONTRACT, BackendClientError
 
 
@@ -98,9 +99,25 @@ class CompositionBackendExecutionTransport:
         *,
         signed_grant: Mapping[str, Any],
         runtime_meta: Mapping[str, Any],
+        schema_catalog: ActionSchemaCatalog,
+        expected_result_schema_sha256: str,
     ) -> None:
         if not callable(getattr(client, "request", None)):
             raise ValueError("composition backend client is unavailable")
+        if (
+            not isinstance(schema_catalog, ActionSchemaCatalog)
+            or not schema_catalog.has_valid_sha256()
+        ):
+            raise ValueError("composition result schema catalog is invalid")
+        if (
+            not isinstance(expected_result_schema_sha256, str)
+            or len(expected_result_schema_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_result_schema_sha256
+            )
+        ):
+            raise ValueError("composition expected result schema hash is invalid")
         try:
             self._grant = json.loads(canonical_json_bytes(dict(signed_grant)))
             self._runtime = json.loads(canonical_json_bytes(dict(runtime_meta)))
@@ -109,6 +126,8 @@ class CompositionBackendExecutionTransport:
         if not isinstance(self._grant, dict) or not isinstance(self._runtime, dict):
             raise ValueError("composition backend authority payload is invalid")
         self._client = client
+        self._schema_catalog = schema_catalog
+        self._expected_result_schema_sha256 = expected_result_schema_sha256
 
     def execute(self, body: bytes, *, timeout_seconds: float) -> dict[str, Any]:
         if not body or len(body) > 16 * 1024 * 1024 or not 0.1 <= timeout_seconds <= 3_600:
@@ -162,6 +181,21 @@ class CompositionBackendExecutionTransport:
         ):
             raise BackendClientError("backend.composition.authority_mismatch")
 
+        # Resolve the signed request's result authority before crossing the
+        # handler boundary.  The expected digest is supplied by the persisted
+        # composition authorization, not by the raw backend response.
+        try:
+            self._schema_catalog.resolve(
+                ticket.payload.action_id,
+                ticket.payload.action_version,
+                expected_result_sha256=self._expected_result_schema_sha256,
+                require_result_explicit=True,
+            )
+        except ActionRegistryError as exc:
+            raise BackendClientError(
+                "backend.composition.result_schema_authority_invalid"
+            ) from exc
+
         request_payload = {
             "schema": COMPOSITION_BACKEND_REQUEST_SCHEMA,
             "execute_ticket": wire,
@@ -213,8 +247,30 @@ class CompositionBackendExecutionTransport:
                 "backend.composition.response_digest_mismatch", ambiguous=True
             )
 
+        # This transport has no ObjectStore authority.  A backend may omit the
+        # field or explicitly report an empty list, but it cannot manufacture
+        # object identities that the Gateway did not verify and persist.
+        claimed_output_object_refs = backend_payload.get("output_object_refs")
+        if claimed_output_object_refs not in (None, []):
+            raise BackendClientError(
+                "backend.composition.output_object_refs_untrusted",
+                ambiguous=True,
+            )
+
         succeeded = status < 400 and backend_payload.get("ok") is True
         output_too_large = len(raw_result_bytes) > ticket.payload.max_output_bytes
+        if succeeded and not output_too_large:
+            try:
+                self._schema_catalog.validate_result_exact(
+                    ticket.payload.action_id,
+                    ticket.payload.action_version,
+                    backend_payload,
+                )
+            except ActionRegistryError as exc:
+                raise BackendClientError(
+                    "backend.composition.result_schema_rejected",
+                    ambiguous=True,
+                ) from exc
         result_status = (
             "SUCCEEDED"
             if succeeded and not output_too_large
@@ -287,7 +343,7 @@ class CompositionBackendExecutionTransport:
             action_id=ticket.payload.action_id,
             action_version=ticket.payload.action_version,
             status=result_status,
-            attempt=1,
+            attempt=(1 if ticket_binding.attempt is None else ticket_binding.attempt),
             started_at_ms=started_at_ms,
             finished_at_ms=finished_at_ms,
             side_effect_started=True,
