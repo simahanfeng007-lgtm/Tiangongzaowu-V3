@@ -39,6 +39,41 @@ def issue_omni_capability_grant(
     if not intent.has_valid_sha256() or not permission.has_valid_sha256():
         raise CapabilityGrantError("capability grant evidence digest is invalid")
     payload = ticket.payload
+    composition_chain = (
+        intent.composition_execution_binding,
+        decision.composition_execution_binding,
+        payload.composition_execution_binding,
+    )
+    if sum(item is not None for item in composition_chain) not in {0, 3}:
+        raise CapabilityGrantError("composition binding chain is incomplete")
+    if composition_chain[0] is not None:
+        binding = composition_chain[0]
+        assert binding is not None
+        if (
+            any(item != binding for item in composition_chain[1:])
+            or not binding.has_valid_sha256()
+            or binding.request_id != payload.request_id
+            or binding.run_id != payload.run_id
+            or binding.generation != payload.generation
+            or binding.effect_id != payload.effect_id
+            or binding.action_id != payload.action_id
+            or binding.action_version != payload.action_version
+            or binding.canonical_invocation_sha256
+            != payload.canonical_invocation_sha256
+            or binding.workspace_id != payload.workspace_id
+            or binding.request_id != intent.request_id
+            or binding.run_id != intent.run_id
+            or binding.generation != intent.generation
+            or binding.action_id != intent.action_id
+            or binding.action_version != intent.action_version
+            or binding.materialized_arguments_sha256 != intent.payload_sha256
+            or binding.canonical_invocation_sha256
+            != intent.canonical_invocation_sha256
+            or binding.target_snapshot_sha256 != intent.target_snapshot_sha256
+            or binding.workspace_id != intent.workspace_id
+            or binding.workspace_scope_hash != intent.workspace_scope_hash
+        ):
+            raise CapabilityGrantError("composition binding chain is invalid")
     if (
         payload.decision_id != decision.decision_id
         or payload.decision_sha256 != decision.decision_sha256
@@ -113,6 +148,7 @@ def issue_omni_capability_grant(
         skill_version=intent.skill_version,
         skill_sha256=intent.skill_sha256,
         skill_activation_sha256=decision.skill_activation_sha256,
+        composition_execution_binding=intent.composition_execution_binding,
         gateway_epoch=payload.gateway_epoch,
         nonce=nonce,
         issued_at_ms=issued_at_ms,

@@ -165,6 +165,71 @@ def _require_sha256(value: object, *, field: str, action_id: str) -> str:
     return value
 
 
+def _manifest_argument_schema_sha256(
+    capabilities: Mapping[str, Any],
+    action_id: str,
+    *,
+    trail: tuple[str, ...] = (),
+) -> str:
+    """Read schema identity from the execution manifest, never the caller."""
+
+    if action_id in trail:
+        raise ToolCapabilityWorldError("capability manifest schema alias cycle")
+    raw = capabilities.get(action_id)
+    if not isinstance(raw, Mapping):
+        raise ToolCapabilityWorldError(
+            f"capability manifest schema row is missing: {action_id}"
+        )
+    alias_to = str(raw.get("alias_to") or "").strip()
+    canonical_id = (
+        _manifest_argument_schema_sha256(
+            capabilities,
+            alias_to,
+            trail=(*trail, action_id),
+        )
+        if alias_to
+        else None
+    )
+    body = raw.get("argument_schema")
+    digest = _require_sha256(
+        raw.get("argument_schema_sha256"),
+        field="manifest argument schema",
+        action_id=action_id,
+    )
+    kind = raw.get("argument_schema_kind")
+    validator_digest = raw.get("argument_validator_source_sha256")
+    if not isinstance(body, Mapping) or kind not in {"EXPLICIT", "OPAQUE"}:
+        raise ToolCapabilityWorldError(
+            f"invalid manifest argument schema authority: {action_id}"
+        )
+    _require_sha256(
+        validator_digest,
+        field="argument validator source",
+        action_id=action_id,
+    )
+    if canonical_sha256(dict(body)) != digest:
+        raise ToolCapabilityWorldError(
+            f"manifest argument schema hash mismatch: {action_id}"
+        )
+    if alias_to:
+        target = capabilities.get(alias_to)
+        if not isinstance(target, Mapping) or (
+            body != target.get("argument_schema")
+            or digest != target.get("argument_schema_sha256")
+            or kind != target.get("argument_schema_kind")
+            or validator_digest != target.get("argument_validator_source_sha256")
+        ):
+            raise ToolCapabilityWorldError(
+                f"manifest argument schema alias mismatch: {action_id}"
+            )
+        # ``canonical_id`` is the recursively validated target digest.
+        if canonical_id != digest:
+            raise ToolCapabilityWorldError(
+                f"manifest argument schema alias digest mismatch: {action_id}"
+            )
+    return digest
+
+
 def _build_primitive(
     *,
     action_id: str,
@@ -223,8 +288,9 @@ def compile_tool_capability_world(
     registry: ActionRegistrySnapshot,
     *,
     source_revisions: Mapping[str, SourceRevisionRefV1],
-    argument_schema_hashes: Mapping[str, str],
-    result_schema_hashes: Mapping[str, str],
+    argument_schema_hashes: Mapping[str, str] | None = None,
+    result_schema_hashes: Mapping[str, str] | None = None,
+    action_schema_catalog: Any | None = None,
 ) -> ToolCapabilityWorldSnapshotV1:
     """Project the existing execution authorities into deterministic semantics.
 
@@ -269,12 +335,37 @@ def compile_tool_capability_world(
         raw = capabilities[action_id]
         permission = permissions[action_id]
         source = source_revisions.get(action_id)
-        arg_hash = argument_schema_hashes.get(action_id)
-        result_hash = result_schema_hashes.get(action_id)
-        if source is None or arg_hash is None or result_hash is None:
+        result_hash = (
+            result_schema_hashes.get(action_id)
+            if result_schema_hashes is not None
+            else None
+        )
+        if source is None or result_hash is None:
             raise ToolCapabilityWorldError(
                 f"missing deterministic source/schema binding: {action_id}"
             )
+        arg_hash = _manifest_argument_schema_sha256(capabilities, action_id)
+        if argument_schema_hashes is not None:
+            supplied_arg_hash = argument_schema_hashes.get(action_id)
+            if supplied_arg_hash != arg_hash:
+                raise ToolCapabilityWorldError(
+                    f"caller argument schema differs from manifest authority: {action_id}"
+                )
+        if action_schema_catalog is not None:
+            try:
+                catalog_entry = action_schema_catalog.resolve(
+                    action_id,
+                    str(permission.action_version),
+                    expected_sha256=arg_hash,
+                )
+            except Exception as exc:
+                raise ToolCapabilityWorldError(
+                    f"action schema catalog differs from manifest authority: {action_id}"
+                ) from exc
+            if catalog_entry.source_manifest_sha256 != manifest_sha256:
+                raise ToolCapabilityWorldError(
+                    f"action schema catalog manifest mismatch: {action_id}"
+                )
         if (
             source.source_kind != "TOOL_ACTION"
             or source.semantic_id != action_id

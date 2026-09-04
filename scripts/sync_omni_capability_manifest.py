@@ -1,17 +1,16 @@
-"""Synchronize managed-novel actions into the release Skill capability view.
+"""Synchronize schemas and managed-novel actions into the src capability view.
 
-The frozen backend loads these actions dynamically from ``novel_system.py``.
-The total gateway, however, deliberately matches Skills against a pinned static
-manifest.  This script keeps that read-only compatibility view aligned without
-importing frozen Python bytecode (which may target another Python version).
+Only ``src/omni_body_skill/registry/capability_manifest.generated.json`` is
+written here.  Compatibility/runtime copies remain generated mirrors owned by
+``scripts/sync-generated-sources.py``.
 """
 from __future__ import annotations
 
 import argparse
 import ast
-import hashlib
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 
@@ -40,12 +39,39 @@ def _literal_assignment(path: Path, name: str) -> dict[str, dict[str, Any]]:
     raise ValueError(f"{name} is not a literal mapping in {path}")
 
 
-def _source_hash(capabilities: dict[str, Any]) -> str:
-    payload = json.dumps(capabilities, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+def _load_tool_contracts(workspace: Path):
+    path = workspace / "src" / "omni_body_skill" / "tool_contracts.py"
+    source_root = str((workspace / "src").resolve())
+    if source_root not in sys.path:
+        sys.path.insert(0, source_root)
+    from omni_body_skill import tool_contracts
+
+    if Path(tool_contracts.__file__).resolve() != path.resolve():
+        raise ValueError(
+            "loaded tool contracts do not come from the src authority"
+        )
+    return tool_contracts
+
+
+def _canonical_sha256(value: Any) -> str:
+    import hashlib
+
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
-def _sync_manifest(path: Path, novel_actions: dict[str, dict[str, Any]]) -> tuple[int, int, str]:
+def _synchronized_document(
+    path: Path,
+    novel_actions: dict[str, dict[str, Any]],
+    *,
+    tool_contracts: Any,
+) -> dict[str, Any]:
     document = json.loads(path.read_text(encoding="utf-8", errors="strict"))
     expected_root = {"capabilities", "executable", "schema", "source_hash", "total", "unavailable", "validation"}
     if set(document) != expected_root or document.get("schema") != "tiangong.v3.capability_manifest.v1":
@@ -69,9 +95,15 @@ def _sync_manifest(path: Path, novel_actions: dict[str, dict[str, Any]]) -> tupl
             "summary": str(metadata.get("summary") or f"Managed novel action: {action_id}"),
         }
 
+    descriptors = tool_contracts.build_action_schema_catalog(capabilities)
+    if set(descriptors) != set(capabilities):
+        raise ValueError("action schema catalog does not close over the manifest")
+    for action_id, descriptor in descriptors.items():
+        capabilities[action_id].update(descriptor)
+
     ordered = {key: capabilities[key] for key in sorted(capabilities)}
     executable = sum(1 for item in ordered.values() if isinstance(item, dict) and item.get("executable") is True)
-    source_hash = _source_hash(ordered)
+    source_hash = _canonical_sha256(ordered)
     document.update(
         capabilities=ordered,
         total=len(ordered),
@@ -80,9 +112,33 @@ def _sync_manifest(path: Path, novel_actions: dict[str, dict[str, Any]]) -> tupl
         source_hash=source_hash,
         validation={"executable_without_route": [], "ok": True, "source_hash": source_hash},
     )
-    # Keep generated release bytes stable across Windows and POSIX hosts.
-    path.write_bytes((json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8"))
-    return len(ordered), executable, source_hash
+    return document
+
+
+def _sync_manifest(
+    path: Path,
+    novel_actions: dict[str, dict[str, Any]],
+    *,
+    tool_contracts: Any,
+) -> tuple[int, int, str]:
+    document = _synchronized_document(
+        path,
+        novel_actions,
+        tool_contracts=tool_contracts,
+    )
+    # Write only the src/ authority. Mirrors are exclusively produced by the
+    # repository-wide generated-source sync.
+    path.write_bytes(
+        (
+            json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n"
+        ).encode("utf-8")
+    )
+    return (
+        int(document["total"]),
+        int(document["executable"]),
+        str(document["source_hash"]),
+    )
 
 
 def main() -> int:
@@ -91,33 +147,32 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     workspace = args.workspace.resolve()
-    roots = (
-        workspace / "app" / "backend" / "tiangong-backend" / "_internal" / "omni_body_skill",
-        workspace / "readable-python-source" / "omni_body_skill",
+    root = workspace / "src" / "omni_body_skill"
+    path = root / "registry" / "capability_manifest.generated.json"
+    novel_actions = _literal_assignment(
+        root / "tools" / "novel_system.py", "NOVEL_SYSTEM_ACTIONS"
     )
-    novel_actions = _literal_assignment(roots[0] / "tools" / "novel_system.py", "NOVEL_SYSTEM_ACTIONS")
-    if set(novel_actions) != set(_literal_assignment(roots[1] / "tools" / "novel_system.py", "NOVEL_SYSTEM_ACTIONS")):
-        raise ValueError("app and readable managed-novel action sets disagree")
-
-    results: list[tuple[int, int, str]] = []
-    for root in roots:
-        path = root / "registry" / "capability_manifest.generated.json"
-        if args.check:
-            document = json.loads(path.read_text(encoding="utf-8", errors="strict"))
-            missing = sorted(set(novel_actions) - set(document.get("capabilities") or {}))
-            unavailable = sorted(
-                action_id
-                for action_id in novel_actions
-                if not bool((document.get("capabilities") or {}).get(action_id, {}).get("executable"))
-            )
-            if missing or unavailable:
-                raise ValueError(f"managed-novel manifest mismatch at {path}: missing={missing}, unavailable={unavailable}")
-            results.append((int(document["total"]), int(document["executable"]), str(document["source_hash"])))
-        else:
-            results.append(_sync_manifest(path, novel_actions))
-    if len(set(results)) != 1:
-        raise ValueError(f"app and readable capability manifests disagree: {results}")
-    total, executable, source_hash = results[0]
+    tool_contracts = _load_tool_contracts(workspace)
+    if args.check:
+        current = json.loads(path.read_text(encoding="utf-8", errors="strict"))
+        expected = _synchronized_document(
+            path,
+            novel_actions,
+            tool_contracts=tool_contracts,
+        )
+        if current != expected:
+            raise ValueError(f"authoritative capability manifest is stale: {path}")
+        total, executable, source_hash = (
+            int(current["total"]),
+            int(current["executable"]),
+            str(current["source_hash"]),
+        )
+    else:
+        total, executable, source_hash = _sync_manifest(
+            path,
+            novel_actions,
+            tool_contracts=tool_contracts,
+        )
     print(json.dumps({"ok": True, "managed_novel_actions": len(novel_actions), "total": total, "executable": executable, "source_hash": source_hash}))
     return 0
 

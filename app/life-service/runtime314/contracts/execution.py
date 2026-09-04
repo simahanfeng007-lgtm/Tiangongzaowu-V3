@@ -121,6 +121,62 @@ class ObjectGrant(ContractModel):
     permission: Literal["read"] = "read"
 
 
+class CompositionExecutionBindingV1(ContractModel):
+    """Immutable authorization coordinates for one materialized composition step.
+
+    This object is evidence, not an authority by itself.  A trusted caller must
+    independently supply the expected binding at policy/admission time; the
+    signed copies carried by intent, decision, ticket, and grant then make any
+    later plan, step, target, argument, or run substitution detectable.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        json_schema_extra={
+            "$id": f"{SCHEMA_BASE}:CompositionExecutionBindingV1",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        },
+    )
+
+    schema_version: Literal["tiangong.composition-execution-binding.v1"] = (
+        "tiangong.composition-execution-binding.v1"
+    )
+    binding_type: Literal["COMPOSITION_STEP"] = "COMPOSITION_STEP"
+    executable_plan_id: OpaqueId
+    executable_plan_sha256: Sha256
+    step_id: OpaqueId
+    step_binding_sha256: Sha256
+    request_id: RequestId
+    run_id: RunId
+    generation: int = Field(ge=0)
+    effect_id: EffectId
+    action_id: ActionId
+    action_version: OpaqueId
+    materialized_arguments_sha256: Sha256
+    canonical_invocation_sha256: Sha256
+    target_sha256: Sha256
+    target_snapshot_sha256: Sha256 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    workspace_id: OpaqueId
+    workspace_scope_hash: Sha256
+    binding_sha256: Sha256
+
+    def computed_sha256(self) -> str:
+        return canonical_sha256(
+            self.model_dump(mode="json", exclude={"binding_sha256"})
+        )
+
+    def has_valid_sha256(self) -> bool:
+        return self.binding_sha256 == self.computed_sha256()
+
+    def with_computed_sha256(self) -> Self:
+        return self.model_copy(update={"binding_sha256": self.computed_sha256()})
+
+
 class ExecutionTicketHeader(ContractModel):
     schema_version: Literal[LEGACY_SCHEMA_VERSION, SCHEMA_VERSION] = SCHEMA_VERSION
     alg: Literal["EdDSA"] = "EdDSA"
@@ -189,6 +245,10 @@ class ExecutionTicketPayload(ContractModel):
     skill_sha256: Sha256 | None = None
     skill_activation_id: OpaqueId | None = None
     skill_activation_sha256: Sha256 | None = None
+    composition_execution_binding: CompositionExecutionBindingV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
     @field_validator("allowed_side_effects")
     @classmethod
@@ -217,6 +277,23 @@ class ExecutionTicketPayload(ContractModel):
             raise ValueError("Skill activation binding is incomplete")
         if (self.skill_id is None) != (self.skill_activation_id is None):
             raise ValueError("Skill identity and activation grant must be bound together")
+
+        binding = self.composition_execution_binding
+        if binding is not None:
+            if not binding.has_valid_sha256():
+                raise ValueError("ticket composition binding digest is invalid")
+            if (
+                binding.request_id != self.request_id
+                or binding.run_id != self.run_id
+                or binding.generation != self.generation
+                or binding.effect_id != self.effect_id
+                or binding.action_id != self.action_id
+                or binding.action_version != self.action_version
+                or binding.canonical_invocation_sha256
+                != self.canonical_invocation_sha256
+                or binding.workspace_id != self.workspace_id
+            ):
+                raise ValueError("ticket composition binding does not match ticket scope")
 
         object_keys: list[tuple[str, int]] = []
         for item in self.input_objects:
@@ -559,6 +636,7 @@ __all__ = [
     "CapabilityAction",
     "CapabilityManifest",
     "CompositeExecutionOutcome",
+    "CompositionExecutionBindingV1",
     "EffectOutcomeHead",
     "EffectReconciliationRecord",
     "ExecutionResult",

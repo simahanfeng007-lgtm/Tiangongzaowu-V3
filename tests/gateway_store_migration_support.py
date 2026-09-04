@@ -7,6 +7,26 @@ import sqlite3
 from total_gateway import store as store_module
 
 
+def downgrade_v32_to_v31(connection: sqlite3.Connection) -> None:
+    """Remove only the additive P7C.1 authorization-receipt layer."""
+
+    version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version != 32:
+        raise AssertionError(f"expected a v32 fixture, got v{version}")
+    for trigger in (
+        "composition_step_authorization_identity_insert_guard",
+        "composition_step_authorization_immutable_update_guard",
+        "composition_step_authorization_immutable_delete_guard",
+    ):
+        connection.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+    connection.execute(
+        "DROP INDEX IF EXISTS composition_step_authorization_request_idx"
+    )
+    connection.execute("DROP TABLE IF EXISTS composition_step_authorization")
+    connection.execute("DELETE FROM schema_migrations WHERE version = 32")
+    connection.execute("PRAGMA user_version = 31")
+
+
 def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """Undo current additive layers through the exact v12 fixture, then rebuild v11.
 
@@ -19,6 +39,9 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     """
 
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version == 32:
+        downgrade_v32_to_v31(connection)
+        version = 31
     if version == 31:
         # v31 additive: P7C.0 executable composition Plan/binding companion.
         connection.execute(
@@ -272,4 +295,4 @@ def downgrade_v12_to_v11(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 11")
 
 
-__all__ = ["downgrade_v12_to_v11"]
+__all__ = ["downgrade_v12_to_v11", "downgrade_v32_to_v31"]

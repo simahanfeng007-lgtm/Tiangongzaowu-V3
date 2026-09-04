@@ -8,6 +8,7 @@ from contracts import (
     ActionImpact,
     ActionIntent,
     ActionRegistrySnapshot,
+    CompositionExecutionBindingV1,
     PolicyDecision,
     SkillActivationGrant,
     SourceRef,
@@ -131,6 +132,7 @@ class PolicyEngine:
         confirmation: UserConfirmationGrant | None = None,
         skill_activation: SkillActivationGrant | None = None,
         authorization_source_refs: Iterable[SourceRef | Mapping[str, Any]] | None = None,
+        expected_composition_binding: CompositionExecutionBindingV1 | None = None,
     ) -> PolicyDecision:
         if not intent.has_valid_sha256() or not impact.has_valid_impact_sha256():
             raise PolicyEngineError("policy evidence digest is invalid")
@@ -167,6 +169,56 @@ class PolicyEngine:
         confirmation_id = None
         confirmation_sha256 = None
         outcome = None
+        composition_binding = intent.composition_execution_binding
+        if composition_binding is not None:
+            # A binding carried by a caller is evidence only.  It becomes
+            # authorization-relevant solely when the plan/store adapter passes
+            # the exact independently re-read binding as a trusted argument.
+            if expected_composition_binding is None:
+                outcome = "REJECT"
+                reasons.add("policy.composition_binding_untrusted")
+            elif (
+                not isinstance(expected_composition_binding, CompositionExecutionBindingV1)
+                or not isinstance(composition_binding, CompositionExecutionBindingV1)
+                or not composition_binding.has_valid_sha256()
+                or not expected_composition_binding.has_valid_sha256()
+                or composition_binding != expected_composition_binding
+                or composition_binding.request_id != intent.request_id
+                or composition_binding.run_id != intent.run_id
+                or composition_binding.generation != intent.generation
+                or composition_binding.action_id != intent.action_id
+                or composition_binding.action_version != intent.action_version
+                or composition_binding.materialized_arguments_sha256
+                != intent.payload_sha256
+                or composition_binding.canonical_invocation_sha256
+                != intent.canonical_invocation_sha256
+                or composition_binding.target_snapshot_sha256
+                != intent.target_snapshot_sha256
+                or composition_binding.workspace_id != intent.workspace_id
+                or composition_binding.workspace_scope_hash
+                != intent.workspace_scope_hash
+            ):
+                outcome = "REJECT"
+                reasons.add("policy.composition_binding_mismatch")
+            else:
+                reasons.add("policy.composition_binding_bound")
+        elif expected_composition_binding is not None:
+            outcome = "REJECT"
+            reasons.add("policy.composition_binding_missing")
+        if expected_composition_binding is not None and (
+            permission.registry_risk != "A0"
+            or permission.effective_risk != "A0"
+            or computed_risk != "A0"
+            or permission.effect not in {"read", "verify"}
+            or not set(permission.allowed_side_effects).issubset({"none", "read"})
+            or not set(intent.requested_side_effects).issubset({"none", "read"})
+            or permission.allow_shell
+            or permission.allow_python
+            or permission.requires_confirmation
+            or confirmation is not None
+        ):
+            outcome = "REJECT"
+            reasons.add("policy.composition_a0_ceiling_exceeded")
         if authorization_source_refs is not None:
             # D-08: the authorization provenance is bound into the decision.
             # EXTERNAL_DATA / TOOL_DATA may be carried as data, but presenting
@@ -236,6 +288,7 @@ class PolicyEngine:
             confirmation_sha256=confirmation_sha256,
             skill_activation_id=activation_id,
             skill_activation_sha256=activation_sha256,
+            composition_execution_binding=composition_binding,
             reason_codes=tuple(sorted(reasons)),
             decided_at_ms=decided_at_ms,
             decision_sha256="0" * 64,

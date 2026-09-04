@@ -4,6 +4,7 @@ import pytest
 
 from contracts import canonical_sha256
 from contracts.capability_composition import SourceRevisionRefV1, SourceSpanRefV1
+from omni_body_skill.tool_contracts import build_action_schema_catalog
 from total_gateway.action_registry import compile_action_registry
 from world_understanding.tool_capability_world import (
     ToolCapabilityRelationV1,
@@ -34,6 +35,8 @@ def manifest() -> dict:
             "executable": True,
         },
     }
+    for action_id, descriptor in build_action_schema_catalog(capabilities).items():
+        capabilities[action_id].update(descriptor)
     return {
         "schema": "tiangong.v3.capability_manifest.v1",
         "runtime_class": "demo.BodyRuntime",
@@ -48,6 +51,13 @@ def manifest() -> dict:
             "source_hash": H,
             "executable_without_route": [],
         },
+    }
+
+
+def _argument_schema_hashes(document: dict) -> dict[str, str]:
+    return {
+        action_id: raw["argument_schema_sha256"]
+        for action_id, raw in document["capabilities"].items()
     }
 
 
@@ -81,13 +91,15 @@ def compile_snapshot():
         action_id: source_ref(action_id, manifest_sha)
         for action_id in document["capabilities"]
     }
-    schemas = {action_id: H for action_id in document["capabilities"]}
+    schemas = _argument_schema_hashes(document)
     return document, registry, compile_tool_capability_world(
         document,
         registry,
         source_revisions=sources,
         argument_schema_hashes=schemas,
-        result_schema_hashes=schemas,
+        result_schema_hashes={
+            action_id: H for action_id in document["capabilities"]
+        },
     )
 
 
@@ -99,12 +111,16 @@ def compile_with_sources(
 ):
     document = manifest()
     registry = compile_action_registry(document, generated_at_ms=1)
-    schemas = {action_id: H for action_id in document["capabilities"]}
+    schemas = _argument_schema_hashes(document)
     return compile_tool_capability_world(
         document,
         registry,
         source_revisions=sources,
-        argument_schema_hashes=argument_schema_hashes or schemas,
+        argument_schema_hashes=(
+            argument_schema_hashes
+            if argument_schema_hashes is not None
+            else schemas
+        ),
         result_schema_hashes=result_schema_hashes or schemas,
     )
 
@@ -142,9 +158,7 @@ def test_projection_is_deterministic_and_bound_to_existing_registry() -> None:
             action_id: source_ref(action_id, registry.source_manifest_sha256)
             for action_id in document["capabilities"]
         },
-        argument_schema_hashes={
-            action_id: H for action_id in document["capabilities"]
-        },
+        argument_schema_hashes=_argument_schema_hashes(document),
         result_schema_hashes={
             action_id: H for action_id in document["capabilities"]
         },
@@ -217,7 +231,7 @@ def test_projection_fails_closed_on_registry_manifest_drift() -> None:
         action_id: source_ref(action_id, manifest_sha)
         for action_id in changed["capabilities"]
     }
-    schemas = {action_id: H for action_id in changed["capabilities"]}
+    schemas = _argument_schema_hashes(changed)
     with pytest.raises(ToolCapabilityWorldError, match="registry is not bound"):
         compile_tool_capability_world(
             changed,
@@ -233,7 +247,7 @@ def test_projection_fails_closed_on_stale_manifest_validation_hash() -> None:
     registry = compile_action_registry(document, generated_at_ms=1)
     document["validation"]["source_hash"] = "b" * 64
     manifest_sha = canonical_sha256(document)
-    schemas = {action_id: H for action_id in document["capabilities"]}
+    schemas = _argument_schema_hashes(document)
     with pytest.raises(ToolCapabilityWorldError, match="validation hash is stale"):
         compile_tool_capability_world(
             document,
@@ -251,7 +265,7 @@ def test_projection_fails_closed_when_source_binding_is_missing() -> None:
     document = manifest()
     registry = compile_action_registry(document, generated_at_ms=1)
     manifest_sha = canonical_sha256(document)
-    schemas = {action_id: H for action_id in document["capabilities"]}
+    schemas = _argument_schema_hashes(document)
     with pytest.raises(
         ToolCapabilityWorldError,
         match="missing deterministic source/schema binding",
@@ -363,7 +377,7 @@ def test_projection_rejects_malformed_schema_hash_binding() -> None:
         action_id: source_ref(action_id, manifest_sha)
         for action_id in document["capabilities"]
     }
-    schemas = {action_id: H for action_id in document["capabilities"]}
+    schemas = _argument_schema_hashes(document)
     schemas["file.read"] = "not-a-sha256"
     with pytest.raises(ToolCapabilityWorldError, match="argument schema"):
         compile_with_sources(
@@ -380,7 +394,8 @@ def test_projection_cannot_create_new_executable_action() -> None:
         for action_id in document["capabilities"]
     }
     sources["invented.action"] = source_ref("invented.action", manifest_sha)
-    schemas = {action_id: H for action_id in sources}
+    schemas = _argument_schema_hashes(document)
+    schemas["invented.action"] = H
     snapshot = compile_tool_capability_world(
         document,
         registry,

@@ -97,13 +97,21 @@ from .composition_executable_plan_store import (
     canonical_executable_plan_json,
     executable_plan_record_from_row,
 )
+from .composition_step_authorization import (
+    MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES,
+    CompositionStepAuthorizationArtifacts,
+    CompositionStepAuthorizationRequest,
+    CompositionStepAuthorizationStoreRecord,
+    authorization_record_from_row,
+    derive_composition_step_authorization_id,
+)
 
 if TYPE_CHECKING:
     from .completion_gate import CompletionDecision
 
 
 APPLICATION_ID = 0x54475633
-STORE_SCHEMA_VERSION = 31
+STORE_SCHEMA_VERSION = 32
 CHANNEL_LEASE_CLOCK_SKEW_MS = 5_000
 _LIMITED_ACTIVATION_BUNDLE_WRITE_TOKEN = object()
 _MIGRATION_V1_ID = "gateway-store-v1"
@@ -2202,6 +2210,242 @@ _MIGRATION_V31_STATEMENTS = (
     """,
 )
 
+
+_MIGRATION_V32_ID = "gateway-composition-step-authorization-v32"
+_MIGRATION_V32_STATEMENTS = (
+    f"""
+    CREATE TABLE composition_step_authorization (
+        authorization_id TEXT NOT NULL UNIQUE
+            CHECK (
+                length(authorization_id) = 68
+                AND substr(authorization_id, 1, 4) = 'csa_'
+                AND substr(authorization_id, 5) NOT GLOB '*[^0-9a-f]*'
+            ),
+        state TEXT NOT NULL CHECK (state = 'ISSUED'),
+        executable_plan_id TEXT NOT NULL,
+        executable_plan_sha256 TEXT NOT NULL
+            CHECK (length(executable_plan_sha256) = 64
+                   AND executable_plan_sha256 NOT GLOB '*[^0-9a-f]*'),
+        registration_id TEXT NOT NULL,
+        composition_plan_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        generation INTEGER NOT NULL CHECK (generation >= 0),
+        principal_scope_hash TEXT NOT NULL
+            CHECK (length(principal_scope_hash) = 64
+                   AND principal_scope_hash NOT GLOB '*[^0-9a-f]*'),
+        parent_ticket_id TEXT NOT NULL,
+        parent_ticket_sha256 TEXT NOT NULL
+            CHECK (length(parent_ticket_sha256) = 64
+                   AND parent_ticket_sha256 NOT GLOB '*[^0-9a-f]*'),
+        step_id TEXT NOT NULL,
+        step_binding_sha256 TEXT NOT NULL
+            CHECK (length(step_binding_sha256) = 64
+                   AND step_binding_sha256 NOT GLOB '*[^0-9a-f]*'),
+        attempt INTEGER NOT NULL CHECK (attempt = 1),
+        action_id TEXT NOT NULL,
+        action_version TEXT NOT NULL,
+        source_revision_sha256 TEXT NOT NULL
+            CHECK (length(source_revision_sha256) = 64
+                   AND source_revision_sha256 NOT GLOB '*[^0-9a-f]*'),
+        action_registry_sha256 TEXT NOT NULL
+            CHECK (length(action_registry_sha256) = 64
+                   AND action_registry_sha256 NOT GLOB '*[^0-9a-f]*'),
+        action_permission_sha256 TEXT NOT NULL
+            CHECK (length(action_permission_sha256) = 64
+                   AND action_permission_sha256 NOT GLOB '*[^0-9a-f]*'),
+        argument_schema_sha256 TEXT NOT NULL
+            CHECK (length(argument_schema_sha256) = 64
+                   AND argument_schema_sha256 NOT GLOB '*[^0-9a-f]*'),
+        result_schema_sha256 TEXT NOT NULL
+            CHECK (length(result_schema_sha256) = 64
+                   AND result_schema_sha256 NOT GLOB '*[^0-9a-f]*'),
+        composition_binding_sha256 TEXT NOT NULL
+            CHECK (length(composition_binding_sha256) = 64
+                   AND composition_binding_sha256 NOT GLOB '*[^0-9a-f]*'),
+        arguments_sha256 TEXT NOT NULL
+            CHECK (length(arguments_sha256) = 64
+                   AND arguments_sha256 NOT GLOB '*[^0-9a-f]*'),
+        target_snapshot_sha256 TEXT
+            CHECK (target_snapshot_sha256 IS NULL
+                   OR (length(target_snapshot_sha256) = 64
+                       AND target_snapshot_sha256 NOT GLOB '*[^0-9a-f]*')),
+        workspace_id TEXT NOT NULL,
+        workspace_scope_sha256 TEXT NOT NULL
+            CHECK (length(workspace_scope_sha256) = 64
+                   AND workspace_scope_sha256 NOT GLOB '*[^0-9a-f]*'),
+        object_grants_sha256 TEXT NOT NULL
+            CHECK (length(object_grants_sha256) = 64
+                   AND object_grants_sha256 NOT GLOB '*[^0-9a-f]*'),
+        prebound_effect_id TEXT NOT NULL
+            CHECK (
+                length(prebound_effect_id) = 68
+                AND substr(prebound_effect_id, 1, 4) = 'eff_'
+                AND substr(prebound_effect_id, 5) NOT GLOB '*[^0-9a-f]*'
+            ),
+        prebound_effect_intent_sha256 TEXT NOT NULL
+            CHECK (length(prebound_effect_intent_sha256) = 64
+                   AND prebound_effect_intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+        action_fence_epoch INTEGER NOT NULL CHECK (action_fence_epoch >= 0),
+        action_fence_sha256 TEXT NOT NULL
+            CHECK (length(action_fence_sha256) = 64
+                   AND action_fence_sha256 NOT GLOB '*[^0-9a-f]*'),
+        authorization_request_json TEXT NOT NULL
+            CHECK (
+                json_valid(authorization_request_json)
+                AND length(CAST(authorization_request_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        authorization_request_sha256 TEXT NOT NULL
+            CHECK (length(authorization_request_sha256) = 64
+                   AND authorization_request_sha256 NOT GLOB '*[^0-9a-f]*'),
+        intent_id TEXT NOT NULL,
+        intent_sha256 TEXT NOT NULL
+            CHECK (length(intent_sha256) = 64
+                   AND intent_sha256 NOT GLOB '*[^0-9a-f]*'),
+        intent_json TEXT NOT NULL
+            CHECK (
+                json_valid(intent_json)
+                AND length(CAST(intent_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        intent_json_sha256 TEXT NOT NULL
+            CHECK (length(intent_json_sha256) = 64
+                   AND intent_json_sha256 NOT GLOB '*[^0-9a-f]*'),
+        impact_id TEXT NOT NULL,
+        impact_sha256 TEXT NOT NULL
+            CHECK (length(impact_sha256) = 64
+                   AND impact_sha256 NOT GLOB '*[^0-9a-f]*'),
+        impact_json TEXT NOT NULL
+            CHECK (
+                json_valid(impact_json)
+                AND length(CAST(impact_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        impact_json_sha256 TEXT NOT NULL
+            CHECK (length(impact_json_sha256) = 64
+                   AND impact_json_sha256 NOT GLOB '*[^0-9a-f]*'),
+        decision_id TEXT NOT NULL,
+        decision_sha256 TEXT NOT NULL
+            CHECK (length(decision_sha256) = 64
+                   AND decision_sha256 NOT GLOB '*[^0-9a-f]*'),
+        decision_json TEXT NOT NULL
+            CHECK (
+                json_valid(decision_json)
+                AND length(CAST(decision_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        decision_json_sha256 TEXT NOT NULL
+            CHECK (length(decision_json_sha256) = 64
+                   AND decision_json_sha256 NOT GLOB '*[^0-9a-f]*'),
+        ticket_id TEXT NOT NULL UNIQUE,
+        ticket_nonce TEXT NOT NULL UNIQUE,
+        ticket_payload_sha256 TEXT NOT NULL
+            CHECK (length(ticket_payload_sha256) = 64
+                   AND ticket_payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+        signed_ticket_json TEXT NOT NULL
+            CHECK (
+                json_valid(signed_ticket_json)
+                AND length(CAST(signed_ticket_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        signed_ticket_sha256 TEXT NOT NULL
+            CHECK (length(signed_ticket_sha256) = 64
+                   AND signed_ticket_sha256 NOT GLOB '*[^0-9a-f]*'),
+        grant_id TEXT NOT NULL UNIQUE,
+        grant_nonce TEXT NOT NULL UNIQUE,
+        grant_payload_sha256 TEXT NOT NULL
+            CHECK (length(grant_payload_sha256) = 64
+                   AND grant_payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+        signed_grant_json TEXT NOT NULL
+            CHECK (
+                json_valid(signed_grant_json)
+                AND length(CAST(signed_grant_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        signed_grant_sha256 TEXT NOT NULL
+            CHECK (length(signed_grant_sha256) = 64
+                   AND signed_grant_sha256 NOT GLOB '*[^0-9a-f]*'),
+        runtime_response_json TEXT NOT NULL
+            CHECK (
+                json_valid(runtime_response_json)
+                AND length(CAST(runtime_response_json AS BLOB))
+                    <= {MAX_AUTHORIZATION_ARTIFACT_JSON_BYTES}
+            ),
+        runtime_response_sha256 TEXT NOT NULL
+            CHECK (length(runtime_response_sha256) = 64
+                   AND runtime_response_sha256 NOT GLOB '*[^0-9a-f]*'),
+        issued_at_ms INTEGER NOT NULL CHECK (issued_at_ms >= 0),
+        expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms > issued_at_ms),
+        authorization_ceiling_ms INTEGER NOT NULL
+            CHECK (authorization_ceiling_ms >= expires_at_ms),
+        committed_at_ms INTEGER NOT NULL
+            CHECK (committed_at_ms >= issued_at_ms
+                   AND committed_at_ms < expires_at_ms),
+        authorization_record_sha256 TEXT NOT NULL UNIQUE
+            CHECK (length(authorization_record_sha256) = 64
+                   AND authorization_record_sha256 NOT GLOB '*[^0-9a-f]*'),
+        PRIMARY KEY (executable_plan_id, step_id, attempt),
+        FOREIGN KEY (executable_plan_id)
+            REFERENCES composition_executable_plan(executable_plan_id),
+        FOREIGN KEY (registration_id)
+            REFERENCES composition_activation_registration(registration_id)
+    ) STRICT
+    """,
+    """
+    CREATE UNIQUE INDEX composition_step_authorization_request_idx
+        ON composition_step_authorization (authorization_request_sha256)
+    """,
+    """
+    CREATE TRIGGER composition_step_authorization_identity_insert_guard
+    BEFORE INSERT ON composition_step_authorization
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM composition_step_authorization
+        WHERE (
+            executable_plan_id = NEW.executable_plan_id
+            AND step_id = NEW.step_id
+            AND attempt = NEW.attempt
+        )
+        OR authorization_id = NEW.authorization_id
+        OR authorization_request_sha256 = NEW.authorization_request_sha256
+        OR ticket_id = NEW.ticket_id
+        OR ticket_nonce = NEW.ticket_nonce
+        OR grant_id = NEW.grant_id
+        OR grant_nonce = NEW.grant_nonce
+        OR authorization_record_sha256 = NEW.authorization_record_sha256
+    )
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition step authorization is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER composition_step_authorization_immutable_update_guard
+    BEFORE UPDATE ON composition_step_authorization
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition step authorization is immutable'
+        );
+    END
+    """,
+    """
+    CREATE TRIGGER composition_step_authorization_immutable_delete_guard
+    BEFORE DELETE ON composition_step_authorization
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(
+            ABORT,
+            'composition step authorization is immutable'
+        );
+    END
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_V1_ID, _MIGRATION_V1_STATEMENTS),
     (2, _MIGRATION_V2_ID, _MIGRATION_V2_STATEMENTS),
@@ -2234,6 +2478,7 @@ _MIGRATIONS = (
     (29, _MIGRATION_V29_ID, _MIGRATION_V29_STATEMENTS),
     (30, _MIGRATION_V30_ID, _MIGRATION_V30_STATEMENTS),
     (31, _MIGRATION_V31_ID, _MIGRATION_V31_STATEMENTS),
+    (32, _MIGRATION_V32_ID, _MIGRATION_V32_STATEMENTS),
 )
 _MIGRATION_DIGESTS = {
     version: _migration_sha256(version, migration_id, statements)
@@ -4660,6 +4905,228 @@ def _verify_executable_composition_plan_rows(
         _verify_executable_composition_plan_authorities(
             connection, record
         )
+
+
+def _composition_plan_object_grants(executable) -> list[dict]:
+    return [
+        item.object_grant.model_dump(mode="json")
+        for item in executable.plan_inputs
+        if item.object_grant is not None
+    ]
+
+
+def _verify_composition_step_authorization_authorities(
+    connection: sqlite3.Connection,
+    record: CompositionStepAuthorizationStoreRecord,
+) -> tuple[ExecutableCompositionPlanStoreRecord, LimitedActivationStoreRecord]:
+    """Cross-check one v32 ISSUED receipt against its immutable v31 parent."""
+
+    request = record.request
+    row = connection.execute(
+        "SELECT * FROM composition_executable_plan "
+        "WHERE executable_plan_id = ?",
+        (request.executable_plan_id,),
+    ).fetchone()
+    if row is None:
+        raise StoreCorruptionError(
+            "composition authorization references a missing executable plan"
+        )
+    try:
+        plan_record = executable_plan_record_from_row(row)
+    except ValueError as exc:
+        raise StoreCorruptionError(
+            "composition authorization executable plan is invalid"
+        ) from exc
+    registration_record = _verify_executable_composition_plan_authorities(
+        connection, plan_record
+    )
+    executable = plan_record.executable_plan
+    steps = tuple(
+        item for item in executable.step_bindings if item.step_id == request.step_id
+    )
+    if len(steps) != 1:
+        raise StoreCorruptionError(
+            "composition authorization step is missing or duplicated"
+        )
+    step = steps[0]
+    expected_projection = (
+        executable.registration_id,
+        executable.registration_sha256,
+        executable.executable_plan_id,
+        executable.executable_plan_sha256,
+        executable.composition_plan_id,
+        executable.composition_plan_sha256,
+        executable.request_id,
+        executable.run_id,
+        executable.generation,
+        executable.principal_scope_hash,
+        step.step_id,
+        step.sha256,
+        step.action_id,
+        step.action_version,
+        canonical_sha256(step.source_revision.model_dump(mode="json")),
+        executable.action_registry_sha256,
+        step.permission_sha256,
+        step.argument_schema_sha256,
+        step.result_schema_sha256,
+        executable.workspace.workspace_id,
+        executable.workspace.workspace_scope_sha256,
+        _composition_plan_object_grants(executable),
+    )
+    actual_projection = (
+        request.registration_id,
+        request.registration_sha256,
+        request.executable_plan_id,
+        request.executable_plan_sha256,
+        request.composition_plan_id,
+        request.composition_plan_sha256,
+        request.request_id,
+        request.run_id,
+        request.generation,
+        request.principal_scope_hash,
+        request.step_id,
+        request.step_binding_sha256,
+        request.action_id,
+        request.action_version,
+        request.source_revision_sha256,
+        request.action_registry_sha256,
+        request.action_permission_sha256,
+        request.argument_schema_sha256,
+        request.result_schema_sha256,
+        request.workspace_id,
+        request.workspace_scope_sha256,
+        request.object_grants,
+    )
+    if actual_projection != expected_projection:
+        raise StoreCorruptionError(
+            "composition authorization crossed its executable-plan authority"
+        )
+    if step.target_skeleton is not None and request.target != step.target_skeleton:
+        raise StoreCorruptionError(
+            "composition authorization target crossed its step binding"
+        )
+    if not (
+        executable.sealed_at_ms
+        <= request.issued_at_ms
+        <= record.committed_at_ms
+        < request.expires_at_ms
+        <= request.authorization_ceiling_ms
+        <= min(executable.expires_at_ms, request.parent_ticket_expires_at_ms)
+    ):
+        raise StoreCorruptionError(
+            "composition authorization exceeded its expiry ceiling"
+        )
+    return plan_record, registration_record
+
+
+def _verify_composition_parent_ticket(
+    request: CompositionStepAuthorizationRequest,
+    parent_ticket: ExecutionTicket,
+    *,
+    now_ms: int,
+) -> None:
+    """Re-bind the active signed parent inside the authorization transaction."""
+
+    if not isinstance(parent_ticket, ExecutionTicket):
+        raise StoreConflictError("composition parent ticket is invalid")
+    payload = parent_ticket.payload
+    signed_ticket_sha256 = canonical_sha256(parent_ticket.model_dump(mode="json"))
+    if (
+        request.parent_ticket_id != payload.ticket_id
+        or request.parent_ticket_sha256 != signed_ticket_sha256
+        or request.parent_ticket_expires_at_ms != payload.expires_at_ms
+    ):
+        raise StoreConflictError("composition parent ticket binding is invalid")
+    if (
+        request.request_id != payload.request_id
+        or request.run_id != payload.run_id
+        or request.generation != payload.generation
+        or request.principal_scope_hash != payload.principal_scope_hash
+        or request.workspace_id != payload.workspace_id
+    ):
+        raise StoreConflictError("composition parent ticket scope is invalid")
+    if not (
+        payload.issued_at_ms <= payload.not_before_ms <= now_ms < payload.expires_at_ms
+    ):
+        raise StoreConflictError("composition parent ticket is not live")
+    parent_objects = [item.model_dump(mode="json") for item in payload.input_objects]
+    # The step receives exactly the plan-declared grants (checked against the
+    # executable plan above), while the outer ticket may legitimately carry a
+    # wider input set.  Every narrowed child grant must be present byte-for-byte
+    # in the signed parent; no grant may be widened or invented here.
+    if any(item not in parent_objects for item in request.object_grants):
+        raise StoreConflictError("composition parent ticket objects are invalid")
+
+
+def _assert_live_composition_step_authorization_locked(
+    connection: sqlite3.Connection,
+    record: CompositionStepAuthorizationStoreRecord,
+    *,
+    now_ms: int,
+) -> None:
+    """Re-read every mutable admission boundary inside BEGIN IMMEDIATE."""
+
+    if now_ms < 0:
+        raise ValueError("composition authorization read time is invalid")
+    plan_record, registration_record = (
+        _verify_composition_step_authorization_authorities(connection, record)
+    )
+    request = record.request
+    if now_ms < request.issued_at_ms:
+        raise StoreConflictError(
+            "composition step authorization is not yet valid"
+        )
+    if now_ms >= request.expires_at_ms:
+        raise StoreConflictError("composition step authorization is expired")
+    if not plan_record.active_at(now_ms, registration_record):
+        raise StoreConflictError(
+            "composition step authorization plan is not active"
+        )
+    current = connection.execute(
+        "SELECT run_id, current_generation, status "
+        "FROM request_generation WHERE request_id = ?",
+        (request.request_id,),
+    ).fetchone()
+    if (
+        current is None
+        or current["run_id"] != request.run_id
+        or current["current_generation"] != request.generation
+        or current["status"] != "ACTIVE"
+    ):
+        raise StoreConflictError(
+            "composition step authorization is not on the current generation"
+        )
+    fence = connection.execute(
+        "SELECT action_fence_epoch, draining FROM action_fence "
+        "WHERE fence_id = 1"
+    ).fetchone()
+    if fence is None:
+        raise StoreCorruptionError("composition authorization action fence is missing")
+    if (
+        int(fence["action_fence_epoch"]) != request.action_fence_epoch
+        or bool(fence["draining"])
+        or int(fence["action_fence_epoch"]) != 0
+    ):
+        raise StoreConflictError(
+            "composition step authorization action fence is not open"
+        )
+
+
+def _verify_composition_step_authorization_rows(
+    connection: sqlite3.Connection,
+) -> None:
+    rows = connection.execute(
+        "SELECT * FROM composition_step_authorization "
+        "ORDER BY executable_plan_id, step_id, attempt"
+    ).fetchall()
+    for row in rows:
+        try:
+            record = authorization_record_from_row(row)
+        except ValueError as exc:
+            raise StoreCorruptionError(
+                "stored composition step authorization is invalid"
+            ) from exc
+        _verify_composition_step_authorization_authorities(connection, record)
 
 
 def _verify_full_event_chain(connection: sqlite3.Connection) -> None:
@@ -14924,6 +15391,314 @@ class GatewayStateStore:
                 duplicate=not created,
             )
 
+    def commit_composition_step_authorization(
+        self,
+        request: CompositionStepAuthorizationRequest,
+        *,
+        parent_ticket: ExecutionTicket,
+        artifacts: CompositionStepAuthorizationArtifacts,
+        now_ms: int,
+    ) -> tuple[CompositionStepAuthorizationStoreRecord, bool]:
+        """Commit or replay one durable ISSUED authorization receipt.
+
+        The transaction writes only ``composition_step_authorization``.  It
+        deliberately does not claim/complete an effect and does not consume a
+        Ticket or Grant nonce; those belong to the later runtime boundary.
+        """
+
+        if not isinstance(request, CompositionStepAuthorizationRequest):
+            raise TypeError("composition authorization request type is invalid")
+        if not isinstance(artifacts, CompositionStepAuthorizationArtifacts):
+            raise TypeError("composition authorization artifacts type is invalid")
+        if not request.has_valid_sha256():
+            raise ValueError("composition authorization request digest is invalid")
+        authorization_id = derive_composition_step_authorization_id(request)
+        with self._lock, self._write_transaction():
+            _verify_composition_parent_ticket(
+                request, parent_ticket, now_ms=now_ms
+            )
+            rows = self._connection.execute(
+                """
+                SELECT * FROM composition_step_authorization
+                WHERE (
+                    executable_plan_id = ? AND step_id = ? AND attempt = ?
+                ) OR authorization_id = ? OR authorization_request_sha256 = ?
+                ORDER BY authorization_id
+                """,
+                (
+                    request.executable_plan_id,
+                    request.step_id,
+                    request.attempt,
+                    authorization_id,
+                    request.authorization_request_sha256,
+                ),
+            ).fetchall()
+            if rows:
+                if len(rows) != 1:
+                    raise StoreCorruptionError(
+                        "composition authorization identities diverged"
+                    )
+                try:
+                    existing = authorization_record_from_row(rows[0])
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored composition step authorization is invalid"
+                    ) from exc
+                if (
+                    existing.request.executable_plan_id
+                    != request.executable_plan_id
+                    or existing.request.step_id != request.step_id
+                    or existing.request.attempt != request.attempt
+                    or existing.authorization_id != authorization_id
+                    or existing.request.authorization_request_sha256
+                    != request.authorization_request_sha256
+                ):
+                    raise StoreConflictError(
+                        "composition step authorization identity was reused"
+                    )
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, existing, now_ms=now_ms
+                )
+                return existing, False
+
+            projections = artifacts.validate_for_request(request)
+            candidate = CompositionStepAuthorizationStoreRecord(
+                authorization_id=authorization_id,
+                request=request,
+                artifacts=artifacts,
+                committed_at_ms=now_ms,
+                authorization_record_sha256="0" * 64,
+            )
+            candidate = CompositionStepAuthorizationStoreRecord(
+                authorization_id=candidate.authorization_id,
+                request=candidate.request,
+                artifacts=candidate.artifacts,
+                committed_at_ms=candidate.committed_at_ms,
+                authorization_record_sha256=(
+                    candidate.computed_record_sha256()
+                ),
+            )
+            try:
+                _verify_composition_step_authorization_authorities(
+                    self._connection, candidate
+                )
+            except StoreCorruptionError as exc:
+                raise StoreConflictError(
+                    "composition authorization request crossed its active plan"
+                ) from exc
+            _assert_live_composition_step_authorization_locked(
+                self._connection, candidate, now_ms=now_ms
+            )
+            self._connection.execute(
+                """
+                INSERT INTO composition_step_authorization(
+                    authorization_id, state,
+                    executable_plan_id, executable_plan_sha256,
+                    registration_id, composition_plan_id,
+                    request_id, run_id, generation, principal_scope_hash,
+                    parent_ticket_id, parent_ticket_sha256,
+                    step_id, step_binding_sha256, attempt,
+                    action_id, action_version, source_revision_sha256,
+                    action_registry_sha256, action_permission_sha256,
+                    argument_schema_sha256, result_schema_sha256,
+                    composition_binding_sha256, arguments_sha256,
+                    target_snapshot_sha256, workspace_id,
+                    workspace_scope_sha256, object_grants_sha256,
+                    prebound_effect_id, prebound_effect_intent_sha256,
+                    action_fence_epoch, action_fence_sha256,
+                    authorization_request_json,
+                    authorization_request_sha256,
+                    intent_id, intent_sha256, intent_json,
+                    intent_json_sha256,
+                    impact_id, impact_sha256, impact_json,
+                    impact_json_sha256,
+                    decision_id, decision_sha256, decision_json,
+                    decision_json_sha256,
+                    ticket_id, ticket_nonce, ticket_payload_sha256,
+                    signed_ticket_json, signed_ticket_sha256,
+                    grant_id, grant_nonce, grant_payload_sha256,
+                    signed_grant_json, signed_grant_sha256,
+                    runtime_response_json, runtime_response_sha256,
+                    issued_at_ms, expires_at_ms,
+                    authorization_ceiling_ms, committed_at_ms,
+                    authorization_record_sha256
+                ) VALUES (
+                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                )
+                """,
+                (
+                    authorization_id,
+                    "ISSUED",
+                    request.executable_plan_id,
+                    request.executable_plan_sha256,
+                    request.registration_id,
+                    request.composition_plan_id,
+                    request.request_id,
+                    request.run_id,
+                    request.generation,
+                    request.principal_scope_hash,
+                    request.parent_ticket_id,
+                    request.parent_ticket_sha256,
+                    request.step_id,
+                    request.step_binding_sha256,
+                    request.attempt,
+                    request.action_id,
+                    request.action_version,
+                    request.source_revision_sha256,
+                    request.action_registry_sha256,
+                    request.action_permission_sha256,
+                    request.argument_schema_sha256,
+                    request.result_schema_sha256,
+                    request.composition_binding_sha256,
+                    request.arguments_sha256,
+                    request.target_snapshot_sha256,
+                    request.workspace_id,
+                    request.workspace_scope_sha256,
+                    request.object_grants_sha256,
+                    request.prebound_effect_id,
+                    request.prebound_effect_intent_sha256,
+                    request.action_fence_epoch,
+                    request.action_fence_sha256,
+                    request.canonical_json,
+                    request.authorization_request_sha256,
+                    projections["intent_id"],
+                    projections["intent_sha256"],
+                    artifacts.intent_json,
+                    projections["intent_json_sha256"],
+                    projections["impact_id"],
+                    projections["impact_sha256"],
+                    artifacts.impact_json,
+                    projections["impact_json_sha256"],
+                    projections["decision_id"],
+                    projections["decision_sha256"],
+                    artifacts.decision_json,
+                    projections["decision_json_sha256"],
+                    projections["ticket_id"],
+                    projections["ticket_nonce"],
+                    projections["ticket_payload_sha256"],
+                    artifacts.signed_ticket_json,
+                    projections["signed_ticket_sha256"],
+                    projections["grant_id"],
+                    projections["grant_nonce"],
+                    projections["grant_payload_sha256"],
+                    artifacts.signed_grant_json,
+                    projections["signed_grant_sha256"],
+                    artifacts.runtime_response_json,
+                    projections["runtime_response_sha256"],
+                    request.issued_at_ms,
+                    request.expires_at_ms,
+                    request.authorization_ceiling_ms,
+                    now_ms,
+                    candidate.authorization_record_sha256,
+                ),
+            )
+            row = self._connection.execute(
+                "SELECT * FROM composition_step_authorization "
+                "WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+            if row is None:
+                raise StoreCorruptionError(
+                    "composition step authorization write disappeared"
+                )
+            try:
+                stored = authorization_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored composition step authorization is invalid"
+                ) from exc
+            _verify_composition_step_authorization_authorities(
+                self._connection, stored
+            )
+            return stored, True
+
+    def get_composition_step_authorization(
+        self,
+        executable_plan_id: str,
+        step_id: str,
+        *,
+        attempt: int = 1,
+        now_ms: int | None = None,
+    ) -> CompositionStepAuthorizationStoreRecord | None:
+        """Read one strict receipt, optionally requiring current live scope."""
+
+        if not executable_plan_id or not step_id or attempt != 1:
+            raise ValueError("composition authorization stable key is invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            row = self._connection.execute(
+                "SELECT * FROM composition_step_authorization "
+                "WHERE executable_plan_id = ? AND step_id = ? AND attempt = ?",
+                (executable_plan_id, step_id, attempt),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                record = authorization_record_from_row(row)
+            except ValueError as exc:
+                raise StoreCorruptionError(
+                    "stored composition step authorization is invalid"
+                ) from exc
+            _verify_composition_step_authorization_authorities(
+                self._connection, record
+            )
+            if now_ms is not None:
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, record, now_ms=now_ms
+                )
+            return record
+
+    def recover_live_composition_step_authorizations(
+        self, *, now_ms: int
+    ) -> tuple[CompositionStepAuthorizationStoreRecord, ...]:
+        """Recover only unexpired ISSUED receipts on the current open fence."""
+
+        if now_ms < 0:
+            raise ValueError("composition authorization recovery time is invalid")
+        self.expire_limited_activation_registrations(now_ms=now_ms)
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            fence = self._action_fence_row_locked()
+            if int(fence["action_fence_epoch"]) != 0 or bool(fence["draining"]):
+                return ()
+            rows = self._connection.execute(
+                """
+                SELECT a.*
+                FROM composition_step_authorization AS a
+                JOIN composition_activation_registration AS c
+                  ON c.registration_id = a.registration_id
+                JOIN request_generation AS g ON g.request_id = a.request_id
+                WHERE a.state = 'ISSUED'
+                  AND a.issued_at_ms <= ? AND a.expires_at_ms > ?
+                  AND c.state = 'ACTIVE'
+                  AND c.registered_at_ms <= ? AND c.expires_at_ms > ?
+                  AND g.run_id = a.run_id
+                  AND g.current_generation = a.generation
+                  AND g.status = 'ACTIVE'
+                  AND a.action_fence_epoch = 0
+                ORDER BY a.committed_at_ms, a.authorization_id
+                """,
+                (now_ms, now_ms, now_ms, now_ms),
+            ).fetchall()
+            recovered: list[CompositionStepAuthorizationStoreRecord] = []
+            for row in rows:
+                try:
+                    record = authorization_record_from_row(
+                        row, recovered_after_restart=True
+                    )
+                except ValueError as exc:
+                    raise StoreCorruptionError(
+                        "stored composition step authorization is invalid"
+                    ) from exc
+                _assert_live_composition_step_authorization_locked(
+                    self._connection, record, now_ms=now_ms
+                )
+                recovered.append(record)
+            return tuple(recovered)
+
     def count_journal_entries(self) -> int:
         with self._lock:
             if self._closed:
@@ -14987,6 +15762,7 @@ class GatewayStateStore:
                 _verify_channel_cutover_rows(self._connection)
                 _verify_limited_activation_registration_rows(self._connection)
                 _verify_executable_composition_plan_rows(self._connection)
+                _verify_composition_step_authorization_rows(self._connection)
                 if full:
                     _verify_full_event_chain(self._connection)
                 schema_sha256 = _schema_fingerprint(self._connection)
@@ -15064,6 +15840,9 @@ __all__ = [
     "CHANNEL_LEASE_CLOCK_SKEW_MS",
     "ChannelOwnershipRegistration",
     "CompletionDecisionRecord",
+    "CompositionStepAuthorizationArtifacts",
+    "CompositionStepAuthorizationRequest",
+    "CompositionStepAuthorizationStoreRecord",
     "CoordinationRecord",
     "ExecutableCompositionBundleRegistration",
     "ExecutableCompositionPlanStoreRecord",

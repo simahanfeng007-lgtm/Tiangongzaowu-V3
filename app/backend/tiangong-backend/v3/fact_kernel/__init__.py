@@ -60,6 +60,10 @@ class CompiledCapability:
     executable: bool
     reason: str
     metadata_sha256: str
+    argument_schema: Mapping[str, Any]
+    argument_schema_sha256: str
+    argument_schema_kind: str
+    argument_validator_source_sha256: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -75,6 +79,10 @@ class CompiledCapability:
             "executable": self.executable,
             "reason": self.reason,
             "metadata_sha256": self.metadata_sha256,
+            "argument_schema": _jsonable(dict(self.argument_schema)),
+            "argument_schema_sha256": self.argument_schema_sha256,
+            "argument_schema_kind": self.argument_schema_kind,
+            "argument_validator_source_sha256": self.argument_validator_source_sha256,
         }
 
 
@@ -113,6 +121,7 @@ def compile_manifest(
     runtime_class: type,
     *,
     dynamic_actions: Iterable[str] = (),
+    action_schema_catalog: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> CompiledCapabilityManifest:
     """Compile the action registry into the object contract used by BodyRuntime.
 
@@ -130,6 +139,53 @@ def compile_manifest(
     }
 
     route_state: dict[str, tuple[bool, str, str]] = {}
+    supplied_schemas = (
+        {
+            str(action_id): dict(descriptor)
+            for action_id, descriptor in action_schema_catalog.items()
+            if isinstance(action_id, str) and isinstance(descriptor, Mapping)
+        }
+        if action_schema_catalog is not None
+        else None
+    )
+
+    def schema_descriptor(name: str) -> tuple[dict[str, Any], str, str, str]:
+        if supplied_schemas is None:
+            body = {
+                "action": name,
+                "target": "action-specific target; use system.action_schema when uncertain",
+                "args": "action-specific object",
+            }
+            return (
+                body,
+                _sha256(body),
+                "OPAQUE",
+                _sha256({"domain": "tiangong.opaque-argument-validator.v1"}),
+            )
+        raw = supplied_schemas.get(name)
+        if raw is None:
+            raise ValueError(f"action schema descriptor is missing: {name}")
+        expected_keys = {
+            "argument_schema",
+            "argument_schema_sha256",
+            "argument_schema_kind",
+            "argument_validator_source_sha256",
+        }
+        if set(raw) != expected_keys or not isinstance(raw.get("argument_schema"), Mapping):
+            raise ValueError(f"action schema descriptor is invalid: {name}")
+        body = _jsonable(dict(raw["argument_schema"]))
+        digest = str(raw.get("argument_schema_sha256") or "")
+        kind = str(raw.get("argument_schema_kind") or "")
+        validator_digest = str(raw.get("argument_validator_source_sha256") or "")
+        if digest != _sha256(body):
+            raise ValueError(f"action schema descriptor hash is invalid: {name}")
+        if kind not in {"EXPLICIT", "OPAQUE"}:
+            raise ValueError(f"action schema descriptor kind is invalid: {name}")
+        if len(validator_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in validator_digest
+        ):
+            raise ValueError(f"action schema validator source hash is invalid: {name}")
+        return body, digest, kind, validator_digest
 
     def resolve_route(name: str, trail: tuple[str, ...] = ()) -> tuple[bool, str, str]:
         cached = route_state.get(name)
@@ -172,6 +228,12 @@ def compile_manifest(
     for name in sorted(normalized):
         metadata = normalized[name]
         executable, handler, reason = resolve_route(name)
+        (
+            argument_schema,
+            argument_schema_sha256,
+            argument_schema_kind,
+            argument_validator_source_sha256,
+        ) = schema_descriptor(name)
         implemented = bool(metadata.get("implemented", False))
         risk = str(metadata.get("risk") or "A0")
         declared_effect = str(metadata.get("effect") or "").strip()
@@ -190,6 +252,10 @@ def compile_manifest(
             executable=executable,
             reason=reason,
             metadata_sha256=_sha256(metadata),
+            argument_schema=argument_schema,
+            argument_schema_sha256=argument_schema_sha256,
+            argument_schema_kind=argument_schema_kind,
+            argument_validator_source_sha256=argument_validator_source_sha256,
         )
 
     executable_without_route = sorted(

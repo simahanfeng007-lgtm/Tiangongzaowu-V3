@@ -86,6 +86,7 @@ from tests.test_capability_composition_p4 import (
 from tests.test_composition_activation_store_p7b2 import (
     _register_request_lineage,
 )
+from tests.gateway_store_migration_support import downgrade_v32_to_v31
 
 
 ZERO_SHA256 = "0" * 64
@@ -762,6 +763,14 @@ def _prepare_exact_object_input(
     )
     _add_object_input(material, grant)
     return attachment, grant
+
+
+def _downgrade_v32_to_v31(path: Path) -> None:
+    connection = sqlite3.connect(path, isolation_level=None)
+    try:
+        downgrade_v32_to_v31(connection)
+    finally:
+        connection.close()
 
 
 def _downgrade_v31_to_v30(path: Path) -> None:
@@ -3370,13 +3379,14 @@ def test_v30_audit_registration_migrates_additively_but_has_no_companion(
             registration_id
         ) is None
 
+    _downgrade_v32_to_v31(path)
     _downgrade_v31_to_v30(path)
 
     with GatewayStateStore.open(path, now_ms=1_700) as migrated:
-        assert STORE_SCHEMA_VERSION == 31
+        assert STORE_SCHEMA_VERSION == 32
         assert migrated._connection.execute(
             "PRAGMA user_version"
-        ).fetchone()[0] == 31
+        ).fetchone()[0] == 32
         assert migrated._connection.execute(
             "SELECT registration_json FROM composition_activation_registration "
             "WHERE registration_id = ?",
@@ -3425,6 +3435,54 @@ def test_v30_audit_registration_migrates_additively_but_has_no_companion(
         assert migrated.health_check(now_ms=1_700, full=True).healthy
 
 
+def test_v31_executable_plan_store_migrates_additively_to_v32(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "gateway-v31.sqlite3"
+    with GatewayStateStore.open(path, now_ms=1_000) as store:
+        material = _compile_material(store, tmp_path)
+        persisted = _persist_executable(store, material)
+        executable_plan_id = persisted.record.executable_plan.executable_plan_id
+
+    _downgrade_v32_to_v31(path)
+    connection = sqlite3.connect(path, isolation_level=None)
+    try:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 31
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='composition_step_authorization'"
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT executable_plan_id FROM composition_executable_plan "
+            "WHERE executable_plan_id = ?",
+            (executable_plan_id,),
+        ).fetchone() == (executable_plan_id,)
+    finally:
+        connection.close()
+
+    with GatewayStateStore.open(path, now_ms=1_700) as migrated:
+        assert migrated._connection.execute(
+            "PRAGMA user_version"
+        ).fetchone()[0] == 32
+        assert tuple(
+            row[0]
+            for row in migrated._connection.execute(
+                "SELECT version FROM schema_migrations "
+                "WHERE version IN (31, 32) ORDER BY version"
+            ).fetchall()
+        ) == (31, 32)
+        assert migrated._connection.execute(
+            "SELECT executable_plan_id FROM composition_executable_plan "
+            "WHERE executable_plan_id = ?",
+            (executable_plan_id,),
+        ).fetchone()[0] == executable_plan_id
+        assert migrated._connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='composition_step_authorization'"
+        ).fetchone() is not None
+        assert migrated.health_check(now_ms=1_700, full=True).healthy
+
+
 @pytest.mark.parametrize("trigger_name", sorted(_CORRUPTION_TEST_TRIGGERS))
 def test_health_rejects_missing_v31_append_only_guard(
     tmp_path: Path,
@@ -3446,6 +3504,7 @@ def test_v31_health_rejects_legacy_object_identity_hash_divergence(
         material = _compile_material(store, tmp_path)
         legacy = material["legacy_plan"]
 
+    _downgrade_v32_to_v31(path)
     _downgrade_v31_to_v30(path)
     object_id = "oref_" + "c" * 64
     connection = sqlite3.connect(path, isolation_level=None)
@@ -3490,12 +3549,13 @@ def test_v31_health_rejects_legacy_object_identity_hash_divergence(
         GatewayStateStore.open(path, now_ms=1_700)
 
 
-def test_v30_to_v31_concurrent_open_serializes_migration(
+def test_v30_to_current_concurrent_open_serializes_migrations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "gateway-concurrent-v30-migration.sqlite3"
     with GatewayStateStore.open(path, now_ms=1_000):
         pass
+    _downgrade_v32_to_v31(path)
     _downgrade_v31_to_v30(path)
 
     original_fingerprint = store_module._schema_fingerprint
@@ -3534,7 +3594,7 @@ def test_v30_to_v31_concurrent_open_serializes_migration(
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = (executor.submit(reopen, 1_700), executor.submit(reopen, 1_701))
-        assert tuple(future.result(timeout=10) for future in futures) == (31, 31)
+        assert tuple(future.result(timeout=10) for future in futures) == (32, 32)
 
 
 @pytest.mark.parametrize(

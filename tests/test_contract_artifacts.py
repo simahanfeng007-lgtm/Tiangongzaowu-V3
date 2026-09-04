@@ -34,6 +34,7 @@ from contracts.compatibility import (
     P19_R2_M3_VERIFICATION_SCHEMA_BASELINE_SHA256,
     P19_R2_M4_VERIFICATION_SCHEMA_BASELINE_SHA256,
     P19_R2_M41_VERIFICATION_SCHEMA_BASELINE_SHA256,
+    P7C1_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
     REVIEWED_SCHEMA_BASELINE_SHA256,
     assert_schema_bundles_compatible,
     compare_schema_bundles,
@@ -69,7 +70,7 @@ class ContractArtifactTests(unittest.TestCase):
             written = write_contract_artifacts(output)
             verified = verify_contract_artifact_directory(output)
             self.assertEqual(written, verified)
-            self.assertEqual(written["root_contract_count"], 110)
+            self.assertEqual(written["root_contract_count"], 111)
             self.assertEqual(
                 written["schema_bundle_sha256"],
                 contract_schema_bundle_sha256(),
@@ -115,7 +116,7 @@ class ContractCompatibilityTests(unittest.TestCase):
         }
 
     def test_current_digest_preserves_p10_atomic_context_and_older_baselines(self) -> None:
-        """Schema historical chain: current → M4.1 → M4 → M3 → M2 → M1 → P18.
+        """Schema chain: current → P7C.1 predecessor M4.1 → ... → P18.
 
         M4.1 Final §14: no early return; full retained-fixture derivation.
         Each stage's baseline constant is verified by actual model removal
@@ -127,10 +128,10 @@ class ContractCompatibilityTests(unittest.TestCase):
             contract_schema_bundle_sha256(),
             REVIEWED_SCHEMA_BASELINE_SHA256,
         )
-        # Step 0: REVIEWED == M4.1 (current stage)
+        # Step 0: REVIEWED == P7C.1 (current stage).
         self.assertEqual(
             REVIEWED_SCHEMA_BASELINE_SHA256,
-            P19_R2_M41_VERIFICATION_SCHEMA_BASELINE_SHA256,
+            P7C1_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
         )
         bundle = contract_schema_bundle()
 
@@ -171,7 +172,30 @@ class ContractCompatibilityTests(unittest.TestCase):
                 for item in node:
                     _restore_v1(item)
 
-        # Step 1: M4.1 → M4 (field-level evolution: PlanEntryV2 schema_version
+        # Step 1: P7C.1 → M4.1.  Remove the new additive root and optional
+        # binding fields from each signed host, including local schema defs.
+        m41_bundle = copy.deepcopy(bundle)
+        m41_bundle.pop("CompositionExecutionBindingV1")
+        for model_name in ("ActionIntent", "PolicyDecision"):
+            schema = m41_bundle[model_name]
+            schema["properties"].pop("composition_execution_binding")
+            schema["$defs"].pop("CompositionExecutionBindingV1")
+            if not schema["$defs"]:
+                schema.pop("$defs")
+        for model_name, payload_name in (
+            ("ExecutionTicket", "ExecutionTicketPayload"),
+            ("OmniCapabilityGrant", "OmniCapabilityGrantPayload"),
+        ):
+            schema = m41_bundle[model_name]
+            schema["$defs"][payload_name]["properties"].pop(
+                "composition_execution_binding"
+            )
+            schema["$defs"].pop("CompositionExecutionBindingV1")
+        self.assertEqual(
+            _sha(m41_bundle), P19_R2_M41_VERIFICATION_SCHEMA_BASELINE_SHA256,
+        )
+
+        # Step 2: M4.1 → M4 (field-level evolution: PlanEntryV2 schema_version
         # + predicate nesting changed the JSON schema; retained fixture —
         # verify both constants exist and are distinct, M4→M3 subtraction
         # still works from the M4 baseline)
@@ -179,28 +203,28 @@ class ContractCompatibilityTests(unittest.TestCase):
             P19_R2_M41_VERIFICATION_SCHEMA_BASELINE_SHA256,
             P19_R2_M4_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
-        # Step 2: M4 → M3 (subtract M4's 5 new models)
+        # Step 3: M4 → M3 (subtract M4's 5 new models)
         m4_new = {
             "EntryAssessment", "RuntimeCloseoutEvidence",
             "VerificationPlan", "VerificationPlanEntryV2", "VerificationReadiness",
         }
-        m3_bundle = _strip(bundle, m4_new)
+        m3_bundle = _strip(m41_bundle, m4_new)
         self.assertEqual(
             _sha(m3_bundle), P19_R2_M3_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
-        # Step 3: M3 → M2 (subtract WriteEvidenceV2; AcceptancePredicate's
+        # Step 4: M3 → M2 (subtract WriteEvidenceV2; AcceptancePredicate's
         # JSON schema shape is unchanged — param rules are module-level
         # constants, not model fields)
         m2_bundle = _strip(m3_bundle, {"WriteEvidenceV2"})
         self.assertEqual(
             _sha(m2_bundle), P19_R2_M2_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
-        # Step 4: M2 → M1 (subtract AcceptancePredicate)
+        # Step 5: M2 → M1 (subtract AcceptancePredicate)
         m1_bundle = _strip(m2_bundle, {"AcceptancePredicate"})
         self.assertEqual(
             _sha(m1_bundle), P19_R2_M1_VERIFICATION_SCHEMA_BASELINE_SHA256,
         )
-        # Step 5: M1 → P18 (subtract 3 verification contracts)
+        # Step 6: M1 → P18 (subtract 3 verification contracts)
         p18_bundle = _strip(m1_bundle, {
             "RegistrySnapshot", "VerificationRecord", "VerifierDescriptor",
         })

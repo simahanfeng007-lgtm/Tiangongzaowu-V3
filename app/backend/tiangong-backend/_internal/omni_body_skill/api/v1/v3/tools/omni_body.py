@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import importlib
 import importlib.util
 import os
 import sys
@@ -101,12 +102,11 @@ def _import_runtime_unlocked() -> tuple[Any | None, Any | None, str | None]:
         module_name = f"{package_name}.tools.omni_body_tool"
         module = sys.modules.get(module_name)
         if module is None:
-            module_spec = importlib.util.spec_from_file_location(module_name, module_path)
-            if module_spec is None or module_spec.loader is None:
-                raise ImportError("cannot create exact omni_body runtime spec")
-            module = importlib.util.module_from_spec(module_spec)
-            sys.modules[module_name] = module
-            module_spec.loader.exec_module(module)
+            # Import the child through the package machinery so ``tools`` is
+            # initialized before ``omni_body_tool``.  Inserting the child into
+            # ``sys.modules`` first makes tools/__init__.py observe a partially
+            # initialized module and breaks the package's lazy root exports.
+            module = importlib.import_module(module_name)
         loaded_path = Path(str(getattr(module, "__file__", ""))).resolve(strict=False)
         if loaded_path != module_path.resolve(strict=False):
             raise ImportError(f"omni_body runtime source mismatch: {loaded_path}")

@@ -33,7 +33,20 @@ _PAYLOAD_KEYS = {
 # 旧签发体不含这些键，新签发体恒含；消费端按"必需键齐备 + 无未知键"校验。
 _VNEXT_OPTIONAL_PAYLOAD_KEYS = {
     "conversation_scope_hash", "effect_id", "generation",
-    "request_id", "run_id", "ticket_sha256",
+    "request_id", "run_id", "ticket_sha256", "composition_execution_binding",
+}
+_COMPOSITION_BINDING_REQUIRED_KEYS = {
+    "schema_version", "binding_type", "executable_plan_id",
+    "executable_plan_sha256", "step_id", "step_binding_sha256", "request_id",
+    "run_id", "generation", "effect_id", "action_id", "action_version",
+    "materialized_arguments_sha256", "canonical_invocation_sha256",
+    "target_sha256", "workspace_id", "workspace_scope_hash", "binding_sha256",
+}
+_COMPOSITION_BINDING_OPTIONAL_KEYS = {"target_snapshot_sha256"}
+_COMPOSITION_BINDING_REQUIRED_SHA_KEYS = {
+    "executable_plan_sha256", "step_binding_sha256", "materialized_arguments_sha256",
+    "canonical_invocation_sha256", "target_sha256", "workspace_scope_hash",
+    "binding_sha256",
 }
 _SHA_FIELDS = {
     "decision_sha256", "impact_sha256", "action_permission_sha256",
@@ -330,6 +343,114 @@ def verify_capability_grant(
     for runtime_key, payload_key in required_runtime.items():
         if not runtime_meta.get(runtime_key) or runtime_meta.get(runtime_key) != payload.get(payload_key):
             raise CapabilityGrantError(f"capability runtime binding is invalid: {runtime_key}")
+    payload_has_composition = "composition_execution_binding" in payload
+    composition = payload.get("composition_execution_binding")
+    runtime_has_composition = "composition_execution_binding" in runtime_meta
+    if not payload_has_composition:
+        if runtime_has_composition:
+            raise CapabilityGrantError("capability composition binding is incomplete")
+    else:
+        runtime_composition = runtime_meta.get("composition_execution_binding")
+        if (
+            not isinstance(composition, Mapping)
+            or not runtime_has_composition
+            or not isinstance(runtime_composition, Mapping)
+        ):
+            raise CapabilityGrantError("capability composition binding is incomplete")
+        composition_keys = set(composition)
+        if (
+            _COMPOSITION_BINDING_REQUIRED_KEYS - composition_keys
+            or composition_keys
+            - _COMPOSITION_BINDING_REQUIRED_KEYS
+            - _COMPOSITION_BINDING_OPTIONAL_KEYS
+        ):
+            raise CapabilityGrantError("capability composition binding fields are invalid")
+        if (
+            composition.get("schema_version")
+            != "tiangong.composition-execution-binding.v1"
+            or composition.get("binding_type") != "COMPOSITION_STEP"
+            or type(composition.get("generation")) is not int
+            or composition.get("generation", -1) < 0
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", str(composition.get(key) or ""))
+                for key in _COMPOSITION_BINDING_REQUIRED_SHA_KEYS
+            )
+            or (
+                "target_snapshot_sha256" in composition
+                and not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(composition.get("target_snapshot_sha256") or ""),
+                )
+            )
+            or not re.fullmatch(r"req_[0-9a-f]{64}", str(composition.get("request_id") or ""))
+            or not re.fullmatch(r"run_[0-9a-f]{64}", str(composition.get("run_id") or ""))
+            or not re.fullmatch(r"eff_[0-9a-f]{64}", str(composition.get("effect_id") or ""))
+            or any(
+                not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}",
+                    str(composition.get(key) or ""),
+                )
+                for key in (
+                    "executable_plan_id", "step_id", "action_version", "workspace_id"
+                )
+            )
+            or not re.fullmatch(
+                r"[a-z0-9][a-z0-9._:-]{0,159}",
+                str(composition.get("action_id") or ""),
+            )
+        ):
+            raise CapabilityGrantError("capability composition binding fields are invalid")
+        computed_binding_sha256 = _sha(
+            {
+                key: value
+                for key, value in composition.items()
+                if key != "binding_sha256"
+            }
+        )
+        if composition.get("binding_sha256") != computed_binding_sha256:
+            raise CapabilityGrantError("capability composition binding digest is invalid")
+        if dict(runtime_composition) != dict(composition):
+            raise CapabilityGrantError("capability runtime composition binding is invalid")
+        required_composition_runtime = {
+            "request_id": "request_id",
+            "run_id": "run_id",
+            "generation": "generation",
+            "effect_id": "effect_id",
+            "step_id": "step_id",
+            "executable_plan_id": "executable_plan_id",
+            "composition_binding_sha256": "binding_sha256",
+        }
+        if any(
+            runtime_key not in runtime_meta
+            or runtime_meta.get(runtime_key) != composition.get(binding_key)
+            for runtime_key, binding_key in required_composition_runtime.items()
+        ):
+            raise CapabilityGrantError("capability runtime composition scope is invalid")
+        if (
+            composition.get("request_id") != payload.get("request_id")
+            or composition.get("run_id") != payload.get("run_id")
+            or composition.get("generation") != payload.get("generation")
+            or composition.get("effect_id") != payload.get("effect_id")
+            or composition.get("action_id") != payload.get("action_id")
+            or composition.get("action_version") != payload.get("action_version")
+            or composition.get("workspace_id") != payload.get("workspace_id")
+            or composition.get("workspace_scope_hash")
+            != payload.get("workspace_scope_hash")
+        ):
+            raise CapabilityGrantError("capability composition binding scope is invalid")
+        if composition.get("target_sha256") != _sha(target):
+            raise CapabilityGrantError("capability composition target binding is invalid")
+        if composition.get("materialized_arguments_sha256") != _sha(dict(args)):
+            raise CapabilityGrantError("capability composition argument binding is invalid")
+        if (
+            payload.get("risk_class") != "A0"
+            or any(item not in {"none", "read"} for item in side_effects)
+            or payload.get("allow_shell") is not False
+            or payload.get("allow_python") is not False
+        ):
+            raise CapabilityGrantError(
+                "composition capability exceeds the A0 read-only ceiling"
+            )
     if payload.get("risk_class") not in {"A0", "A1", "A2", "A3", "A4"}:
         raise CapabilityGrantError("A5 capability is forbidden")
     # Complete-mode policy: A0-A4 are automatically executable and A5 can

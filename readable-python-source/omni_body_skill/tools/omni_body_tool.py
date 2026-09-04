@@ -79,9 +79,17 @@ except ModuleNotFoundError:
     wave = None  # type: ignore[assignment]
 
 try:
-    from ..tool_contracts import schema_for_action, validate_tool_request
+    from ..tool_contracts import (
+        build_action_schema_catalog,
+        schema_for_action,
+        validate_tool_request,
+    )
 except ImportError:  # standalone ``tools`` package used by the bundled test suite
-    from tool_contracts import schema_for_action, validate_tool_request
+    from tool_contracts import (
+        build_action_schema_catalog,
+        schema_for_action,
+        validate_tool_request,
+    )
 
 
 # D-21 用户指定路径根放行（与 tool_contracts._user_specified_allowed 同一口径；
@@ -934,7 +942,12 @@ class BodyRuntime:
                 # optional dependency discovery must never prevent startup.
                 self.ffmpeg = None
         self.ffprobe = self.config.ffprobe_path or shutil.which("ffprobe")
-        self.capability_manifest = compile_manifest(ACTIONS, self.__class__, dynamic_actions=set(DELIVERY_ACTIONS))
+        self.capability_manifest = compile_manifest(
+            ACTIONS,
+            self.__class__,
+            dynamic_actions=set(DELIVERY_ACTIONS),
+            action_schema_catalog=build_action_schema_catalog(ACTIONS),
+        )
         self.capability_integrity = _required_capability_integrity()
         run_id = str(self.config.run_id or self.config.request_id or f"body_{os.getpid()}_{uuid.uuid4().hex[:16]}")
         ledger_root = str(self.config.fact_ledger_root or (state_root / "fact_ledger" if state_root else self.workspace / ".tiangong" / "fact_ledger"))

@@ -15,6 +15,7 @@ from unittest import mock
 from contracts import ActionIntent, ResourceEnvelope, SourceRef, canonical_sha256, derive_run_identity
 from runtime_security import EphemeralTestProtector
 from total_gateway.impact_evaluator import compute_action_impact
+from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.omni_grant_authority import OmniGrantAuthorityError
 from total_gateway.orchestration import GatewayOrchestrationWorker
 from total_gateway.policy_engine import PolicyEngine
@@ -55,9 +56,13 @@ class ExtremeToolChains20(unittest.TestCase):
         # D-06 统一 admission：authority 必须接真实 effect 台账（机械适配：
         # SimpleNamespace → 真 store；合成年 run_id → 派生 run_id）。
         cls.store = GatewayStateStore.open(cls.workspace / "gateway-state" / "gateway.sqlite3", now_ms=cls.now_ms)
+        cls.objects = ContentAddressedObjectStore.open(
+            cls.workspace / "gateway-objects",
+            now_ms=cls.now_ms,
+        )
         cls.worker = GatewayOrchestrationWorker.from_runtime_config(
             config=config,
-            activator=SimpleNamespace(), store=cls.store, objects=SimpleNamespace(), facts=SimpleNamespace(),
+            activator=SimpleNamespace(), store=cls.store, objects=cls.objects, facts=SimpleNamespace(),
             gateway_epoch=71, gateway_instance_id="gateway-extreme-tools", now_ms=cls.now_ms,
         )
         cls.authority = cls.worker.omni_grant_authority
@@ -66,6 +71,7 @@ class ExtremeToolChains20(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.worker.close()
+        cls.objects.close()
         cls.store.close()
         cls.temporary.cleanup()
 

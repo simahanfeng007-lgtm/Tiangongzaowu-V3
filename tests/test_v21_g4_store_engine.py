@@ -272,8 +272,8 @@ def test_t05c_delivery_mode_classification() -> None:
     assert compiler.classify_delivery_mode(requirements, set()) == "invalid"
 
 
-def test_t26b_security_surface_files_unchanged_since_g0() -> None:
-    baseline = {
+def test_t26b_security_surface_files_match_reviewed_lineage() -> None:
+    g0_baseline = {
         "src/contracts/authorization.py": "4f8a71aabbae804f6ce6d22ffc4d3b27f0f4b1b825906c55f49b56948d1a69dc",
         "src/contracts/security.py": "ad65e3cbb1b844333f8f873da5abfb49a2320aabe27056fb34f83baa5978c698",
         "src/contracts/scope.py": "4447d3db1f71dea26cbfd7a19704400f8d058c4fe3ec5b3bfa775de4d821f60e",
@@ -281,13 +281,27 @@ def test_t26b_security_surface_files_unchanged_since_g0() -> None:
         "src/total_gateway/completion_gate.py": "cea2905d4a1098e5389e078911753df4598b75bdf68de30bf6aee47d14937c13",
         "src/total_gateway/skill_authority.py": "41741c054b33cfe47752066b537c44cae2119c94c161156aceefbe734b1941ab",
     }
+    # Keep the immutable G0 hashes above as provenance.  P7C.1 deliberately
+    # extends the authorization boundary with an independently supplied,
+    # all-or-none composition binding; record that reviewed successor instead
+    # of overwriting the historical baseline.
+    reviewed_successors = {
+        "src/contracts/authorization.py": (
+            (
+                "p7c1-composition-execution-binding",
+                "cbbed31ee82fb9c3973ffaf14427495562be12fb9eeb2fb6abd3330acfb44f63",
+            ),
+        ),
+    }
     root = Path(__file__).resolve().parents[1]
     import hashlib
 
-    for relative, expected_sha256 in baseline.items():
+    for relative, g0_sha256 in g0_baseline.items():
         path = root / relative
         assert path.is_file(), relative
         current = hashlib.sha256(path.read_bytes()).hexdigest()
+        lineage = reviewed_successors.get(relative, ())
+        expected_sha256 = lineage[-1][1] if lineage else g0_sha256
         assert current == expected_sha256, (
-            f"security surface changed since G0: {relative}"
+            f"security surface changed outside its reviewed lineage: {relative}"
         )

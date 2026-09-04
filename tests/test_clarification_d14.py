@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from contracts import canonical_sha256, derive_effect_identity, derive_run_identity
 from runtime_security import EphemeralTestProtector
 from total_gateway.effects import EffectClaim
+from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.orchestration import GatewayOrchestrationWorker
 from total_gateway.store import (
     GatewayStateStore,
@@ -39,6 +40,11 @@ class ClarificationD14Tests(unittest.TestCase):
             self.state_root / "gateway-state" / "gateway.sqlite3", now_ms=self.now_ms
         )
         self.addCleanup(self.store.close)
+        self.objects = ContentAddressedObjectStore.open(
+            self.state_root / "gateway-objects",
+            now_ms=self.now_ms,
+        )
+        self.addCleanup(self.objects.close)
         config = SimpleNamespace(
             release_manifest_path=None,
             release_source_root=ROOT,
@@ -54,7 +60,7 @@ class ClarificationD14Tests(unittest.TestCase):
             config=config,
             activator=SimpleNamespace(),
             store=self.store,
-            objects=SimpleNamespace(),
+            objects=self.objects,
             facts=SimpleNamespace(),
             gateway_epoch=11,
             gateway_instance_id="gateway-clarification-test",

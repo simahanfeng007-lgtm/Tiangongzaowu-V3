@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 
+from total_gateway.object_store import ContentAddressedObjectStore
 from total_gateway.orchestration import GatewayOrchestrationWorker, manifest_authority_scope
 from total_gateway.release_manifest import (
     RELEASE_MANIFEST_FILENAME,
@@ -26,7 +28,7 @@ class RuntimeTicketAuthorityTests(unittest.TestCase):
 
     def test_development_orchestration_uses_a_manifest_scoped_authority(self) -> None:
         source = Path(__file__).resolve().parents[1]
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as resources:
             state_root = Path(temporary).resolve()
             config = SimpleNamespace(
                 release_manifest_path=None,
@@ -41,28 +43,33 @@ class RuntimeTicketAuthorityTests(unittest.TestCase):
             )
             # D-06 统一 admission：authority 必须接真实 effect 台账（机械适配）
             store = GatewayStateStore.open(state_root / "gateway-state" / "gateway.sqlite3", now_ms=1_000)
+            resources.callback(store.close)
+            objects = ContentAddressedObjectStore.open(
+                state_root / "gateway-objects",
+                now_ms=1_000,
+            )
+            resources.callback(objects.close)
             worker = GatewayOrchestrationWorker.from_runtime_config(
                 config=config,
                 activator=SimpleNamespace(),
                 store=store,
-                objects=SimpleNamespace(),
+                objects=objects,
                 facts=SimpleNamespace(),
                 gateway_epoch=1,
                 gateway_instance_id="gateway-test",
                 now_ms=1_000,
             )
+            resources.callback(worker.close)
             records = tuple((state_root / "ta" / "m").glob("*/authority.json"))
             self.assertEqual(len(records), 1)
             self.assertEqual(
                 records[0].parent.name,
                 manifest_authority_scope(worker.component_manifest.manifest_sha256),
             )
-            worker.close()
-            store.close()
 
     def test_production_upgrade_preserves_legacy_authority_and_opens_scoped_keys(self) -> None:
         source = Path(__file__).resolve().parents[1]
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as resources:
             temporary_root = Path(temporary).resolve()
             state_root = temporary_root / "state"
             state_root.mkdir()
@@ -115,16 +122,23 @@ class RuntimeTicketAuthorityTests(unittest.TestCase):
 
             # D-06 统一 admission：authority 必须接真实 effect 台账（机械适配）
             store = GatewayStateStore.open(state_root / "gateway-state" / "gateway.sqlite3", now_ms=2_000)
+            resources.callback(store.close)
+            objects = ContentAddressedObjectStore.open(
+                state_root / "gateway-objects",
+                now_ms=2_000,
+            )
+            resources.callback(objects.close)
             worker = GatewayOrchestrationWorker.from_runtime_config(
                 config=config,
                 activator=SimpleNamespace(),
                 store=store,
-                objects=SimpleNamespace(),
+                objects=objects,
                 facts=SimpleNamespace(),
                 gateway_epoch=2,
                 gateway_instance_id="gateway-upgrade-test",
                 now_ms=2_000,
             )
+            resources.callback(worker.close)
 
             scoped_record = (
                 state_root
@@ -139,8 +153,6 @@ class RuntimeTicketAuthorityTests(unittest.TestCase):
                 worker.component_manifest.manifest_sha256,
                 release.component_manifest.manifest_sha256,
             )
-            worker.close()
-            store.close()
 
     def test_dpapi_authority_reopens_from_its_canonical_json_record(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
