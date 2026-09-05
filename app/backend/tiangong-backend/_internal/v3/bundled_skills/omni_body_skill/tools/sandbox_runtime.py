@@ -29,6 +29,24 @@ class SandboxError(RuntimeError):
     pass
 
 
+def _windows_long_path(path: Path) -> Path:
+    """Use the Windows extended namespace without resolving links or junctions.
+
+    CopyFile2 and cleanup must handle the private sandbox's deep source tree
+    even when the host has LongPathsEnabled=0. No machine setting is changed.
+    """
+    if os.name != "nt":
+        return path
+    if not path.is_absolute():
+        raise SandboxError("sandbox_long_path_requires_absolute_path")
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
+
+
 @dataclass(frozen=True)
 class SandboxLimits:
     timeout_seconds: int = 60
@@ -482,7 +500,11 @@ class SandboxRunner:
                         f"windows_appcontainer_storage_unavailable:{type(exc).__name__}:{exc}"
                     ) from exc
         if run_root.exists():
-            shutil.rmtree(run_root, ignore_errors=True)
+            shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
+        if require_os_containment:
+            # Keep every path handed to the strict source-build interpreter
+            # in the extended namespace too, including __file__/sys.path.
+            sandbox_workspace = _windows_long_path(sandbox_workspace)
         # Preparation failures (workspace copy, snapshot, shell rewrite) must
         # not leak run_root: the main try/finally below only covers execution.
         try:
@@ -506,7 +528,7 @@ class SandboxRunner:
             env = subprocess_environment(sanitized_environment(os.environ, temp_dir))
         except BaseException:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-                shutil.rmtree(run_root, ignore_errors=True)
+                shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
             raise
         started = time.monotonic()
         try:
@@ -547,4 +569,4 @@ class SandboxRunner:
             }
         finally:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-                shutil.rmtree(run_root, ignore_errors=True)
+                shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)

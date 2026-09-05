@@ -159,3 +159,23 @@ are not product evaluations.
   tests, with only the pre-existing Pydantic `schema` shadowing warning.
   Parent build guards: 8 additional tests passed. Those eight use simulated
   child results and are explicitly not isolation or product-evaluation evidence.
+- Second checkpoint: `3f9a8d8932f2adc0eefa98107cb0b560536ad97a`.
+  Full Python stopped at 33 passed / 1 failed on the expected P19 authority
+  freeze change in `v3/fact_kernel/__init__.py`; JUnit evidence is retained in
+  `out/p8-evidence/full-python-3f9a8d8.xml`. Verification Plane 1.6 is now
+  explicitly declared with the old freeze coverage retained and P8 source
+  review/build boundaries added. Generator refresh and clean guards are required.
+- Node on that checkpoint initially failed six modules because this new
+  worktree had no `app/node_modules/three`; no product code was changed for
+  that environment failure. Locked `npm ci --ignore-scripts --no-audit
+  --no-fund` installed 301 packages. Exact-head rerun: 224 passed, 2 skipped,
+  zero failed; log `out/p8-evidence/full-node-3f9a8d8.log`.
+- Second isolated-build rejection is retained in
+  `out/p8-evidence/foundation-isolated-build-2.json`. Diagnosis reached the
+  precise failing call: `SandboxRunner._copy_workspace -> shutil.copy2 ->
+  _winapi.CopyFile2`, destination length 261; source and destination parent
+  both existed and host `LongPathsEnabled` was 0. Strict source builds now
+  use the extended Windows path namespace, including worker imports and
+  private-tree cleanup. No host registry setting or permission was changed.
+  Sandbox + parent guards: 18 passed, including real deep-path AppContainer
+  copy/read and cleanup. Full source compilation still requires a clean rerun.

@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.5"
+- the single Verification Plane version source exists and is "1.6"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.5")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.6")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.5"' in (
+            if '"1.6"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -182,7 +182,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         )
         return {
             "verification_plane_version": VERIFICATION_PLANE_VERSION,
-            "baseline_sha": "f268d6ac3293ee31e6c20b7e7f706f46cfa3e040",
+            "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
             "store_schema_version": STORE_SCHEMA_VERSION,
             "contract_schema_versions": {
                 "verification": sha(
@@ -204,14 +204,14 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # Every 1.5 execution, result-schema and verification authority
+            # Every 1.6 execution, result-schema and verification authority
             # file is content-hashed.  Semantic drift in the runtime chain,
             # store/binding/coordinator/executor/readiness/fencing/successor
             # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.5.
+    #: The authority surface frozen at 1.6; 1.5 entries remain covered.
     AUTHORITY_SURFACE_FILES = (
         "app/backend/tiangong-backend/v3/fact_kernel/__init__.py",
         "src/contracts/execution.py",
@@ -255,6 +255,13 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/completion_gate.py",
         "src/total_gateway/effects.py",
         "src/world_understanding/tool_capability_world/compiler.py",
+        "src/world_understanding/tool_capability_world/source_candidate.py",
+        "src/world_understanding/tool_capability_world/manifest_evolution.py",
+        "src/source_authority/validator.py",
+        "src/omni_body_skill/tools/sandbox_runtime.py",
+        "scripts/_tool_source_build_worker.py",
+        "scripts/build-tool-source.py",
+        "scripts/review-tool-source.py",
     )
 
     @classmethod

@@ -91,3 +91,26 @@ def test_real_required_appcontainer_denies_host_source_and_parent_secret(tmp_pat
     assert result["network"] == "denied"
     assert (workspace / "isolated-result.txt").read_text(encoding="utf-8") == "isolated"
     assert outside.read_text(encoding="utf-8") == "host secret"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires the Windows AppContainer backend")
+@pytest.mark.ci_fragile
+def test_real_required_appcontainer_copies_and_reads_deep_source_without_machine_changes(tmp_path):
+    workspace = tmp_path / "workspace"
+    source = workspace / ("a" * 55) / ("b" * 55) / "module.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("immutable input", encoding="utf-8")
+    runner = sandbox.SandboxRunner(workspace, tmp_path / "state", tmp_path / "trash")
+    code = (
+        "from pathlib import Path; import sys; "
+        "assert len(sys.argv[1]) > 260; "
+        "assert sys.argv[1].startswith('\\\\\\\\?\\\\'); "
+        "assert Path(sys.argv[1]).read_text(encoding='utf-8') == 'immutable input'; "
+        "Path('result.txt').write_text('deep source read', encoding='utf-8')"
+    )
+    result = runner.run([sys.executable, "-c", code, str(source)], require_os_containment=True)
+    assert result["ok"] is True, result
+    assert result["containment"] == "windows-appcontainer"
+    assert source.read_text(encoding="utf-8") == "immutable input"
+    assert (workspace / "result.txt").read_text(encoding="utf-8") == "deep source read"
+    assert not sandbox._windows_long_path(Path(result["sandbox_root"])).exists()

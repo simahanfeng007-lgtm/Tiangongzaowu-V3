@@ -1,0 +1,59 @@
+P19-R2 VERIFICATION PLANE 1.6 — P8 SOURCE EVOLUTION BOUNDARY REVISION
+======================================================================
+
+Scope and baseline
+----------------------------------------------------------------------
+
+This is the explicit P8 revision of the existing Verification Plane, based on
+P7D.2 main 9a3344de9fe468fa845d2ff501166484439b8ec4. It is not a second plane,
+registry, runtime, store or publication authority. P8 acceptance is tracked in
+docs/capability-composition/P8_P17_PROGRESS.md and is not implied by this version.
+
+The single machine-readable version source remains:
+
+    src/total_gateway/verification_plane.py
+
+Changes covered by this revision
+----------------------------------------------------------------------
+
+1. Existing fact_kernel.compile_manifest gains an explicit Gateway-format
+   projection. Runtime and published source-hash domains remain distinct;
+   both are derived from the same compiled capability rows. The projection
+   does not replace the published Manifest or import new runtime source.
+2. Immutable Git candidate observation and native-blob materialization bind
+   source review to exact base/candidate commits. Candidate data cannot amend
+   its own source-ownership policy, execute hooks/filters, or impersonate an
+   authoritative/generated/frozen source owner.
+3. Manifest differentials reuse existing Action Registry and schema compilers.
+   Direct and inherited alias changes, risk downgrades and new A0 candidates
+   are visible review data, never permission or Source publication approvals.
+4. The existing sandbox has a stricter build-only requirement which rejects
+   unavailable OS containment before launch. Explicit compatibility fallback
+   cannot override it. Isolated build reports retain their input identities,
+   compiler bindings and observed results without claiming review, publication,
+   evidence-contract evaluation or production task completion.
+5. Strict source-build paths use the extended Windows namespace for deep
+   private inputs and cleanup without changing the host LongPathsEnabled
+   setting or weakening filesystem/OS isolation.
+
+Unchanged authority and admission
+----------------------------------------------------------------------
+
+The unique Gateway, Runtime, WorldState, Memory SSoT, Action Registry,
+Policy/Ticket/Grant, Effect/Fact, P19 and CompletionGate remain unchanged in
+ownership. Gateway Store schema remains 33. No verifier PASS/FAIL/INCONCLUSIVE
+rule, Repair Policy, completion rule, or A0-only composition admission rule is
+relaxed. A1+, writes, external sends, shell/Python actions and destructive
+runtime operations are not enabled by the offline source-build tooling.
+
+Freeze procedure
+----------------------------------------------------------------------
+
+Retain every 1.5 authority surface entry and add the source candidate/review,
+trusted source topology validator, sandbox, and installed build/review scripts.
+Refresh docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json only through the existing
+UPDATE_FREEZE=1 generator after inspecting changes. Then rerun the guard with
+UPDATE_FREEZE absent and run the full required gates against the final head.
+The Golden corpus, oracle semantics and drift fingerprint are not rewritten
+merely to obtain a passing test. No phase is closed until its real acceptance
+requirements and exact-head evidence are complete.

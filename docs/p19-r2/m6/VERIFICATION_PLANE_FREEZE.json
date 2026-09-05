@@ -1,6 +1,6 @@
 {
- "verification_plane_version": "1.5",
- "baseline_sha": "f268d6ac3293ee31e6c20b7e7f706f46cfa3e040",
+ "verification_plane_version": "1.6",
+ "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
   "verification": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
@@ -13,7 +13,7 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "556cf586812b2e738ab059292cd05f8022fffd22d947a06c68a69eed0b3cbd36",
+  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "a78013ce12172d78fe034e058974a39b8e2440d11fb1f1c23d39a2cf25c8746f",
   "src/contracts/execution.py": "4c90c63dd1e87b7e196af8d1e620dc5bed15130342a4ffe8a14916ba95a39c0d",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
@@ -41,7 +41,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "a5bce97a901daee94860e7498118e91e426e65999ef6ead9340da36df43d3d42",
+  "src/total_gateway/verification_plane.py": "5f000e1ba1c87fda31fb4ef12adcbd718b413bf3417e2aae899a09dfe17b2c7b",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",
@@ -50,6 +50,13 @@
   "src/total_gateway/outcome_oracles/repository_state.py": "0e271c69c416f1b389d15c27c4d74dea82b3e70c3b5caab42ef5e6363e0125cd",
   "src/total_gateway/completion_gate.py": "6e6b8f08b9a2eedbf9b341449189d47bda51e0f5f8d597828cf9d868e59e672f",
   "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f",
-  "src/world_understanding/tool_capability_world/compiler.py": "bfc32a2d1b86c2c9c97bea1313d69d4c5c38e498089d851a59b3ed0dc7d66ce8"
+  "src/world_understanding/tool_capability_world/compiler.py": "bfc32a2d1b86c2c9c97bea1313d69d4c5c38e498089d851a59b3ed0dc7d66ce8",
+  "src/world_understanding/tool_capability_world/source_candidate.py": "db24ec3e86fd7cd2e5e978e69fde8c396185d89e6e749490977478f0de3adc95",
+  "src/world_understanding/tool_capability_world/manifest_evolution.py": "ebfb7b8c7832a487cac9e6b2ac4e877e3e4d934d086b618702fe29385b5dfead",
+  "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
+  "src/omni_body_skill/tools/sandbox_runtime.py": "f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501",
+  "scripts/_tool_source_build_worker.py": "fba55be3ac5e61a45c8bf1b00ac846fc2ba67bc90fc3ddc46ac2ab32540e4ee5",
+  "scripts/build-tool-source.py": "bc71999908a58ea768c810bdc5cf1fcab761fc85234f3f584ff257cdb70649cc",
+  "scripts/review-tool-source.py": "cfd7079f19cc16465c145db463d81ad372b0f7e764991aee8a0a17fe9951d5b3"
  }
 }
