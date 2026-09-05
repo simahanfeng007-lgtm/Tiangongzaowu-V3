@@ -49,7 +49,7 @@
   "src/total_gateway/frozen_backend_compat.py": "5dd54b650574b11e3dc3c885e29acd038dc3d17d1754f82b6e1acd4516594f8c",
   "src/total_gateway/omni_grant_authority.py": "e4f54e23d4aa0a9809810532c389e7086f4d36e3bd48c621485c0f6855b7be38",
   "src/total_gateway/orchestration.py": "6712ee1a38550792345346d6b863dcff5c378bfa50b6ab55173a78f620930e64",
-  "src/total_gateway/release_manifest.py": "29d7552658745246ed5ef522a8ec2f36f91b851cae241694017f77788a89df52",
+  "src/total_gateway/release_manifest.py": "657693603cdde7da48f6f90d29d481952b1419030ce8d29b04156e44c42d596f",
   "src/total_gateway/readiness_collector.py": "333aa974759721f136adfefe867f080e0a96bda1f4af582c4ecfaada5d7c8c7a",
   "src/total_gateway/runtime.py": "eb37f37a0b5bc25435e082969959278fc99fff4cbb20e13ac6bd32d3b3b19486",
   "src/total_gateway/skill_selection.py": "6c18e3c36c79a1353bef482b348ba6260dd5b7c6802bb7c40bbff85cc7ce6726",
