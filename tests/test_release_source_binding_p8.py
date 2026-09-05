@@ -120,8 +120,8 @@ def owned_source(tmp_path):
     for relative in (
         "src/total_gateway/entry.py", "src/contracts/data.py", "src/runtime_security/trust.py",
         "src/omni_body_skill/tools/handler.py", "src/omni_body_skill/tools/lazy_helper.py",
-        "src/world_understanding/world.py", "backend/fact_kernel/compiler.py",
-        "backend/runtime.py", "frozen/compat.py", "pyproject.toml", "requirements-source.lock",
+        "src/world_understanding/world.py", "backend/fact_kernel/compiler.py", "backend/runtime.py",
+        "frozen/compat.py", "pyproject.toml", "requirements-source.lock",
     ):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,7 +175,101 @@ def test_invalid_ownership_topology_is_not_a_release_input(owned_source):
     path = owned_source / "source-ownership.json"
     policy = json.loads(path.read_text(encoding="utf-8"))
     policy["mappings"].append({"id": "parallel", "source": "src/contracts",
-                               "source_role": "authoritative", "targets": []})
+                             "source_role": "authoritative", "targets": []})
     path.write_text(json.dumps(policy), encoding="utf-8")
     with pytest.raises(release.ReleaseManifestError, match="topology"):
         release._gateway_source_roots(owned_source)
+
+
+@pytest.fixture
+def packaged_runtime(tmp_path, monkeypatch):
+    # Real temporary artifact bytes; reuse source metadata to isolate package
+    # path binding from unrelated repository/contract generation.
+    source = release.generate_release_manifest(ROOT)
+    root = tmp_path / "long-package-runtime-directory"
+    executable = root / "total-gateway/tiangong-total-gateway.exe"
+    archive = root / "electron/resources/app.asar"
+    for path, data in ((executable, b"packaged-runtime-fixture"), (archive, b"desktop-fixture")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    monkeypatch.setattr(release, "generate_release_manifest", lambda _: source)
+    def generate(runtime=root, desktop=archive):
+        return release.generate_production_release_manifest(
+            ROOT, runtime, platform_name="win32", architecture="x64",
+            desktop_archive_path=desktop, generated_at_ms=source.generated_at_ms + 1000,
+        )
+    return root, executable, archive, generate
+
+
+def test_production_archive_cannot_escape_runtime(packaged_runtime, tmp_path):
+    root, _, _, generate = packaged_runtime
+    external = tmp_path / "external/app.asar"
+    external.parent.mkdir(); external.write_bytes(b"outside")
+    with pytest.raises(release.ReleaseManifestError, match="unsafe"):
+        generate(root, external)
+
+
+@pytest.mark.parametrize("failed_call", [1, 2])
+def test_production_native_identity_denial_cannot_use_pathlib_fallback(packaged_runtime, monkeypatch, failed_call):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    root, _, archive, generate = packaged_runtime
+    monkeypatch.setattr(release, "os", SimpleNamespace(name="nt", path=os.path))
+    values = [root, archive]
+    values[failed_call - 1] = PermissionError("native identity denied")
+    observer = Mock(side_effect=values)
+    monkeypatch.setattr(release, "resolve_existing_path", observer, raising=False)
+    with pytest.raises(release.ReleaseManifestError, match="unsafe|missing"):
+        generate()
+    assert observer.call_count == failed_call
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual Windows package 8.3 identity")
+def test_production_archive_short_and_long_spellings_bind_identical_bytes(packaged_runtime):
+    import ctypes
+    from ctypes import wintypes
+    root, executable, archive, generate = packaged_runtime
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    api.GetShortPathNameW.restype = wintypes.DWORD
+    short = ctypes.create_unicode_buffer(32768)
+    length = api.GetShortPathNameW(str(root), short, len(short))
+    assert 0 < length < len(short), "real 8.3 fixture unavailable, not a pass"
+    alias = Path(short.value)
+    canonical = root.resolve(strict=True)
+    assert alias != canonical, "test must exercise a real alias"
+    first = generate(alias, alias / archive.relative_to(root))
+    second = generate(canonical, canonical / archive.relative_to(root))
+    assert release.release_manifest_bytes(first) == release.release_manifest_bytes(second)
+    descriptors = {item.component_id: item for item in first.component_manifest.components}
+    assert descriptors["tiangong-desktop"].sha256 == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert descriptors["tiangong-total-gateway"].sha256 == hashlib.sha256(executable.read_bytes()).hexdigest()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual Windows package native path check")
+def test_production_archive_binding_survives_dos_resolution_denial(packaged_runtime, monkeypatch):
+    _, _, _, generate = packaged_runtime
+    expected = generate()
+    def denied(*args, **kwargs):
+        raise PermissionError("controlled DOS resolution denial")
+    monkeypatch.setattr(Path, "resolve", denied)
+    assert generate() == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual Windows redirected package directory")
+@pytest.mark.parametrize("redirect", ["electron", "total-gateway"])
+def test_production_package_rejects_redirected_artifact_ancestor(packaged_runtime, tmp_path, redirect):
+    import shutil
+    import subprocess
+    root, _, _, generate = packaged_runtime
+    original = root / redirect
+    outside = tmp_path / ("outside-" + redirect)
+    shutil.move(str(original), str(outside))
+    linked = subprocess.run(["cmd", "/c", "mklink", "/J", str(original), str(outside)],
+                            capture_output=True, text=True, check=False)
+    assert linked.returncode == 0, linked.stdout + linked.stderr
+    try:
+        with pytest.raises(release.ReleaseManifestError, match="unsafe|missing"):
+            generate()
+    finally:
+        original.rmdir()

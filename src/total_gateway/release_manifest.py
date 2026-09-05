@@ -30,7 +30,7 @@ from contracts.artifacts import generate_contract_artifact_documents
 from communication_service.embedded_runtime import EMBEDDED_COMMUNICATION_BUILD_ID
 from life_service.embedded_runtime import EMBEDDED_LIFE_BUILD_ID
 from source_authority.validator import validate_source_authority
-from runtime_security.path_identity import PathIdentityError, verify_relative_path
+from runtime_security.path_identity import PathIdentityError, resolve_existing_path, verify_relative_path
 
 from . import SINGLE_PROCESS_GATEWAY_BUILD_ID
 from .embedded_backend import EMBEDDED_BACKEND_BUILD_ID
@@ -590,14 +590,21 @@ def generate_production_release_manifest(
     if not desktop_archive_path.is_absolute() or desktop_archive_path.is_symlink():
         raise ReleaseManifestError("production desktop archive is missing or unsafe")
     try:
-        desktop_archive = desktop_archive_path.resolve(strict=True)
-    except OSError as exc:
-        raise ReleaseManifestError("production desktop archive is missing") from exc
+        if os.name == "nt":
+            # Observe both names through the same existing no-reparse primitive.
+            # A proven 8.3 alias may expand; a redirected ancestor may not.
+            runtime = resolve_existing_path(runtime)
+            desktop_archive = resolve_existing_path(desktop_archive_path)
+            _verify_windows_release_path(runtime, desktop_archive)
+        else:
+            desktop_archive = desktop_archive_path.resolve(strict=True)
+    except (OSError, PathIdentityError) as exc:
+        raise ReleaseManifestError("production desktop archive is missing or unsafe") from exc
     if (
         not desktop_archive.is_file()
         or desktop_archive.is_symlink()
-        or os.path.normcase(str(desktop_archive))
-        != os.path.normcase(str(desktop_archive_path.absolute()))
+        or (os.name != "nt" and os.path.normcase(str(desktop_archive))
+            != os.path.normcase(str(desktop_archive_path.absolute())))
         or runtime not in desktop_archive.parents
         or desktop_archive.name != "app.asar"
     ):
@@ -628,7 +635,9 @@ def generate_production_release_manifest(
     # The packaged product is a modular monolith: Runtime, Life, Communication
     # and orchestration remain separately described logical components, but all
     # four are cryptographically bound to the same frozen 7184 executable.
-    single_executable = runtime / f"total-gateway/tiangong-total-gateway{suffix}"
+    single_executable = _safe_file(
+        runtime, f"total-gateway/tiangong-total-gateway{suffix}",
+    )
     executable_paths = {
         component_id: single_executable
         for component_id in (
