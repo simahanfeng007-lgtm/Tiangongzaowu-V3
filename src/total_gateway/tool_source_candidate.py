@@ -2,7 +2,9 @@
 
 No candidate Python is imported. The base commit owns the source-ownership
 policy; a candidate cannot move its own files into an authoritative root.
-These records describe source and review scope, never publication permission.
+These Gateway-owned records describe source and review scope, never
+publication permission. Git observation/materialization is offline lifecycle
+work and must not live inside the non-executing World Understanding package.
 """
 
 from __future__ import annotations

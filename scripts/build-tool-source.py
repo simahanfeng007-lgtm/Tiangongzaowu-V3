@@ -26,13 +26,13 @@ sys.path[:0] = [str(ROOT / "src"), str(ROOT / "app/backend/tiangong-backend")]
 from omni_body_skill.tools.sandbox_runtime import SandboxLimits, SandboxRunner  # noqa: E402
 from contracts import canonical_json_bytes  # noqa: E402
 from source_authority import validator as source_validator  # noqa: E402
-from world_understanding.tool_capability_world.source_candidate import (  # noqa: E402
+from total_gateway.tool_source_candidate import (  # noqa: E402
     inspect_tool_source_candidate,
     materialize_tool_source_candidate,
     read_tool_source_manifests,
 )
 from total_gateway.tool_manifest_evolution import review_manifest_evolution  # noqa: E402
-from world_understanding.tool_capability_world.source_inputs import compile_tool_source_inputs  # noqa: E402
+from total_gateway.tool_source_inputs import compile_tool_source_inputs  # noqa: E402
 
 
 WORKER_NAME = ".tiangong-source-build-worker.py"

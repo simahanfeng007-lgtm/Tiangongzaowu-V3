@@ -236,3 +236,32 @@ No source gate was changed or weakened to relocate these non-source reports.
   generated-source and Source Authority checks passed. This is component/local
   evidence only; the new committed candidate still needs isolated-build and
   full exact-head regression evidence.
+- Fifth checkpoint: `51dc3e778e84497644db8b6c9525ea1268d6d38c`.
+  Isolated build 5 observed Windows AppContainer with 677 source input files;
+  source-input digest `28d989fa6f01d911690de86ffa893e517543c06cc02d6bef28379df537e47afd`.
+  Node: 224 passed / 2 skipped / 0 failed. Full Python stopped at 3,791 passed /
+  19 skipped / 1 failed / 847 passed subtests in 936.58 seconds. Evidence:
+  `output/p8-evidence/full-python-51dc3e7.xml`. Exact remaining failure was
+  World's existing no-process import guard: P8 candidate observation imported
+  subprocess. Candidate and input-evidence modules now move into Gateway
+  lifecycle tooling; no guard or ownership-policy exception was added.
+- The new compiler projection also exposed a real loader integration failure:
+  its eighth root field was rejected by the production loader. Reproduction
+  retained in `output/p8-evidence/loader-pre-fix-51dc3e7.xml` (new test, original
+  production source; 1 passed / 1 failed). The loader now explicitly validates
+  the optional source-input digest while preserving exact release bytes,
+  strict unknown-field rejection and single-read model/registry projection.
+  New tests cover replacement, mixed source authorities, tampering and malformed
+  extensions. Their results and all affected final gates remain pending.
+- Source publication remains disabled. The 99 risk downgrades and 42 newly-A0
+  candidates from build 5 are not approved. P8 still requires real publication,
+  running-task locks, evidence-contract execution and product/model evaluation.
+- Local pre-checkpoint validation after the moves and loader integration:
+  62 loader/World ingress/architecture tests passed; the expanded P8 source,
+  sandbox, loader, P7D.1 execution-manifest and P19 Golden run passed 196 tests
+  with 2 host-denied symlink skips. Source Authority and official generated
+  mirrors passed. These are pre-checkpoint observations, not final-head gates.
+  The first loader rerun (31 passed / 1 failed) exposed a test assertion that
+  incorrectly expected source-bound permission hashes to stay unchanged. The
+  corrected test requires changed permission identity and unchanged policy
+  semantics. Both JUnit results are retained under output/p8-evidence/.

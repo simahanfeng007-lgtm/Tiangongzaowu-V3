@@ -18,7 +18,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from world_understanding.tool_capability_world.source_candidate import (  # noqa: E402
+from total_gateway.tool_source_candidate import (  # noqa: E402
     inspect_tool_source_candidate,
     read_tool_source_manifests,
 )

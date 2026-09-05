@@ -45,6 +45,17 @@ Changes covered by this revision
 7. Manifest differential review is Gateway-owned. World Understanding does
    not import the Gateway to recompile permissions. The existing layer guard
    remains unchanged; the P8 review module is moved, not re-exported by World.
+8. Git candidate observation/materialization and source-input evidence also
+   belong to the Gateway's offline source lifecycle, not World Understanding.
+   World retains its existing no-process/no-runtime-import invariant. The two
+   P8 modules move with their freeze coverage; no World forwarding module or
+   source-ownership policy exception is introduced.
+9. The existing production Manifest loader accepts the original seven-field
+   release or its explicit P8 source_inputs_sha256 extension. If present, that
+   field must be lowercase SHA-256 text. Unknown roots remain forbidden. The
+   complete file digest is verified once before both model and registry/schema
+   projections; the extension cannot bypass a release pin or approve changes.
+   Loaded-object isolation tests are not proof of running-task version locks.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

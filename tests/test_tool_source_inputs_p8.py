@@ -12,8 +12,8 @@ import pytest
 
 from total_gateway.action_registry import compile_action_authority
 from total_gateway.tool_manifest_evolution import review_manifest_evolution
-from world_understanding.tool_capability_world import source_inputs
-from world_understanding.tool_capability_world.source_candidate import SourceCandidateError
+from total_gateway import tool_source_inputs as source_inputs
+from total_gateway.tool_source_candidate import SourceCandidateError
 
 from tests.test_tool_manifest_evolution_p8 import compiled
 

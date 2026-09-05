@@ -11,7 +11,7 @@ import zlib
 import pytest
 
 from contracts import canonical_sha256
-from world_understanding.tool_capability_world.source_candidate import (
+from total_gateway.tool_source_candidate import (
     SourceCandidateError,
     inspect_tool_source_candidate,
     materialize_tool_source_candidate,

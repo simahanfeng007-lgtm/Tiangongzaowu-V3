@@ -352,7 +352,7 @@ def load_model_capability_manifest(
     }
     if (
         not isinstance(payload, dict)
-        or set(payload) != expected_root
+        or set(payload) not in (expected_root, expected_root | {"source_inputs_sha256"})
         or payload.get("schema") != "tiangong.v3.capability_manifest.v1"
         or not isinstance(payload.get("capabilities"), dict)
         or not isinstance(payload.get("validation"), dict)
@@ -360,6 +360,16 @@ def load_model_capability_manifest(
         or payload["validation"].get("source_hash") != payload.get("source_hash")
     ):
         raise SkillSelectionError("model capability manifest schema or validation is invalid")
+    # P8 extends the existing release format with a source-input identity.
+    # Its presence is not approval: the complete bytes are still release-pinned
+    # above, and both routing and execution authorities use this ONE parsed
+    # document. Legacy releases remain loadable without inventing a source pin.
+    # Reject explicit null/invalid values and all other root extensions.
+    if "source_inputs_sha256" in payload and (
+        not isinstance(payload["source_inputs_sha256"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", payload["source_inputs_sha256"]) is None
+    ):
+        raise SkillSelectionError("model capability source input revision is invalid")
     capabilities = payload["capabilities"]
     executable_count = sum(
         1 for item in capabilities.values() if isinstance(item, dict) and item.get("executable") is True

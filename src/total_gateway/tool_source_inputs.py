@@ -1,4 +1,4 @@
-"""Describe the source inputs of an already materialized Tool Source build.
+"""Gateway-owned input evidence for an already materialized Tool Source build.
 
 The caller owns Git provenance and isolation. This module only hashes bytes;
 it neither imports candidate code nor approves, publishes or executes it.
@@ -19,7 +19,7 @@ from typing import Any
 from contracts import canonical_sha256
 from source_authority.validator import validate_source_authority
 
-from .source_candidate import (
+from .tool_source_candidate import (
     SourceCandidateError,
     _invalid_constant,
     _repository_path,

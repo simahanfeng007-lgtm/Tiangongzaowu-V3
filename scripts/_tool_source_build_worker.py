@@ -37,7 +37,7 @@ def main() -> int:
     from omni_body_skill import tool_contracts
     from omni_body_skill.tools import omni_body_tool
     from v3 import fact_kernel
-    from world_understanding.tool_capability_world.source_inputs import compile_tool_source_inputs
+    from total_gateway.tool_source_inputs import compile_tool_source_inputs
     source_inputs = compile_tool_source_inputs(root)
     bindings = {}
     for name, module, relative in (
