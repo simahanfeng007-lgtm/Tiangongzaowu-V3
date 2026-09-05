@@ -22,13 +22,24 @@ jobs:
         env:
           GH_OBJECT_TOKEN: ${{ github.token }}
         run: |
-          import base64, hashlib, io, json, os, re, urllib.request, zipfile
+          import base64, hashlib, io, json, os, re, urllib.parse, urllib.request, zipfile
           api = 'https://api.github.com/repos/simahanfeng007-lgtm/Tiangongzaowu-V3'
           headers = {'Authorization': 'Bearer ' + os.environ['GH_OBJECT_TOKEN'], 'Accept': 'application/vnd.github+json'}
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, response_headers, newurl):
+                  if urllib.parse.urlsplit(newurl).scheme != 'https':
+                      raise RuntimeError('non-HTTPS artifact redirect refused')
+                  redirected = super().redirect_request(req, fp, code, msg, response_headers, newurl)
+                  if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+                      redirected.remove_header('Authorization')
+                      redirected.remove_header('Content-type')
+                      redirected.remove_header('Accept')
+                  return redirected
+          opener = urllib.request.build_opener(SafeRedirect())
           def request(path, payload=None):
               data = None if payload is None else json.dumps(payload).encode('utf-8')
               req = urllib.request.Request(api + path, data=data, headers={**headers, 'Content-Type': 'application/json'})
-              with urllib.request.urlopen(req, timeout=60) as response:
+              with opener.open(req, timeout=60) as response:
                   return response.read()
           metadata = json.loads(request('/actions/artifacts/9966110208'))
           assert metadata['workflow_run']['head_sha'] == '28847b8233ed8e808969133a58b212426c25fb82'
