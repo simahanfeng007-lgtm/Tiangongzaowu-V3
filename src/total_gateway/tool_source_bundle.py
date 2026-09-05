@@ -37,6 +37,14 @@ def _json_bytes(value: object) -> bytes:
     return canonical_json_bytes(value) + b"\n"
 
 
+def _report_bytes(value: object) -> bytes:
+    # Sandbox observations include finite elapsed_seconds values. Reports are
+    # byte-hashed evidence, not signed Gateway contracts: keep their ordinary
+    # JSON number representation without relaxing the shared contract subset.
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                       allow_nan=False) + "\n").encode("utf-8")
+
+
 def _file_rows(snapshot: Path) -> list[tuple[str, Path]]:
     rows = []
     folded = set()
@@ -121,7 +129,7 @@ def write_tool_source_bundle(
     if compile_tool_source_inputs(snapshot) != source_inputs:
         raise SourceCandidateError("source bundle generation changed compiler inputs")
     rows = _file_rows(snapshot)
-    report_raw = _json_bytes(report)
+    report_raw = _report_bytes(report)
     entries = [_entry(_REPORT, report_raw)]
     total = len(report_raw)
     with output_path.open("xb") as stream, zipfile.ZipFile(stream, "w") as archive:
@@ -215,7 +223,7 @@ def verify_tool_source_bundle(path: Path, *, expected_sha256: str) -> dict[str, 
             report_raw = archive.read(_REPORT)
             report = json.loads(report_raw, object_pairs_hook=_strict_pairs, parse_constant=_invalid_constant)
             if (not isinstance(report, dict) or report.get("status") != "ISOLATED_BUILD_OBSERVED"
-                    or report_raw != _json_bytes(report)
+                    or report_raw != _report_bytes(report)
                     or any(report.get(key) is not False for key in ("may_publish", "may_authorize", "may_execute"))):
                 raise ValueError("invalid packaged build report")
             artifact = report["build_artifact"]

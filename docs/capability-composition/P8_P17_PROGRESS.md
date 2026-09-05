@@ -413,3 +413,16 @@ No source gate was changed or weakened to relocate these non-source reports.
   focused run passed 131 tests / 23 subtests with those same 2 skips in 18.99 s
   (`source-bundle-focused-2.xml`). Real committed-candidate packaged build and
   final phase gates remain pending. No intermediate full regression launched.
+- Packager checkpoint `8dc2637380cbdc5d47d47d883be9618ac7f13476` was committed
+  locally and real isolated build 9 was attempted with `--bundle`. The process
+  exited 1 during package report serialization: SandboxRunner's finite
+  `elapsed_seconds` was rejected by the signed-contract canonical serializer.
+  The synthetic child had omitted this real report field. No report or ZIP
+  was produced; the failed commit is retained and the observed traceback is
+  recorded explicitly as a manual failure record in
+  `output/p8-evidence/foundation-isolated-build-9.failure.txt`, not PASS evidence.
+  Ordinary report JSON now preserves finite observations separately from signed
+  Gateway contracts; nonfinite values remain rejected and the shared contract
+  serializer is unchanged. Packaging failure now returns BUNDLE_FAILED while
+  retaining the actual contained-build result. Focused regression: 34 passed in
+  2.04 s (`source-bundle-float-fix.xml`). Real packaged build retry pending.

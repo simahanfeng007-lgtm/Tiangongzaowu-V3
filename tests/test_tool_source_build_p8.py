@@ -104,6 +104,7 @@ def simulated_build(builder, monkeypatch, tmp_path):
                 "returncode": 1 if mode["value"] == "failed" else 0,
                 "containment": "compat-workspace-job-sandbox" if mode["value"] == "compat" else "windows-appcontainer",
                 "network": "denied",
+                "elapsed_seconds": 9.921,
                 "changed_files": [builder.ARTIFACT_NAME] + (["src/tampered.py"] if mode["value"] == "writes" else []),
                 "deleted_files": ["src/original.py"] if mode["value"] == "deletes" else [],
             }
@@ -170,4 +171,17 @@ def test_failed_build_does_not_export_a_source_bundle(builder, simulated_build, 
                                      action_ids=("skill.list",), bundle_path=output)
     assert result["status"] == "BUILD_FAILED"
     assert not output.exists()
+    assert "source_bundle" not in result
+
+
+def test_packaging_failure_preserves_the_actual_build_observation(builder, simulated_build, tmp_path, monkeypatch):
+    monkeypatch.setattr(builder, "write_tool_source_bundle", Mock(side_effect=TypeError("packaging failed")))
+    result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40,
+                                     action_ids=("skill.list",), bundle_path=tmp_path / "bad.zip")
+    assert result["status"] == "BUNDLE_FAILED"
+    assert result["source_bundle_error"] == "packaging failed"
+    assert result["build_process"]["ok"] is True
+    assert result["build_process"]["elapsed_seconds"] == 9.921
+    assert result["build_artifact"]["gateway_manifest"]["total"] == 1
+    assert result["may_publish"] is False
     assert "source_bundle" not in result

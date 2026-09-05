@@ -47,6 +47,7 @@ def prepare(source):
     )
     report = {
         "status": "ISOLATED_BUILD_OBSERVED", "may_publish": False, "may_authorize": False, "may_execute": False,
+        "build_process": {"ok": True, "elapsed_seconds": 9.921},
         "build_artifact": {"source_inputs": asdict(inputs), "gateway_manifest": manifest},
     }
     return inputs, report
@@ -82,7 +83,10 @@ def test_package_keeps_exact_manifest_sources_and_official_mirrors(source, tmp_p
             source / "src/omni_body_skill/tools/handler.py").read_bytes()
         marker = json.loads(archive.read("source/mirror/omni_body_skill/.tiangong-generated-source.json"))
         assert marker["mapping_id"] == "body"
-        assert archive.read("build-report.json") == canonical_json_bytes(report) + b"\n"
+        assert archive.read("build-report.json") == (json.dumps(
+            report, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ) + "\n").encode("utf-8")
+        assert json.loads(archive.read("build-report.json"))["build_process"]["elapsed_seconds"] == 9.921
     assert compile_tool_source_inputs(source) == inputs
     assert index["file_count"] == result["file_count"]
 
@@ -226,3 +230,13 @@ def test_packaging_is_deterministic_for_the_same_inputs_and_build_report(source,
     second = bundle(source, tmp_path / "second.zip")
     assert first["sha256"] == second["sha256"]
     assert (tmp_path / "first.zip").read_bytes() == (tmp_path / "second.zip").read_bytes()
+
+
+@pytest.mark.parametrize("elapsed", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_build_observations_are_rejected(source, tmp_path, elapsed):
+    inputs, report = prepare(source)
+    report["build_process"]["elapsed_seconds"] = elapsed
+    with pytest.raises(ValueError):
+        write_tool_source_bundle(source, source_inputs=inputs, report=report, output_path=tmp_path / "bad.zip",
+                                 synchronize_mirrors=lambda _: None, mirror_generator_sha256="a" * 64)
+    assert not (tmp_path / "bad.zip").exists()

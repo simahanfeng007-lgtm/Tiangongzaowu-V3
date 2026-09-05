@@ -175,11 +175,17 @@ def build_candidate(
             "may_execute": False,
         }
         if bundle_path is not None:
-            synchronize, generator_sha256 = _official_mirror_generator()
-            report["source_bundle"] = write_tool_source_bundle(
-                snapshot, source_inputs=source_inputs, report=report, output_path=bundle_path,
-                synchronize_mirrors=synchronize, mirror_generator_sha256=generator_sha256,
-            )
+            try:
+                synchronize, generator_sha256 = _official_mirror_generator()
+                report["source_bundle"] = write_tool_source_bundle(
+                    snapshot, source_inputs=source_inputs, report=report, output_path=bundle_path,
+                    synchronize_mirrors=synchronize, mirror_generator_sha256=generator_sha256,
+                )
+            except (ValueError, OSError, RuntimeError, TypeError) as exc:
+                # Preserve the actual contained-build evidence even when later
+                # packaging fails. A requested but failed bundle is not success.
+                report["status"] = "BUNDLE_FAILED"
+                report["source_bundle_error"] = str(exc)
         return report
 
 
@@ -200,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = build_candidate(args.repository.absolute(), base=args.base, head=args.candidate,
                                  action_ids=tuple(sorted(args.action)), bundle_path=bundle)
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, TypeError) as exc:
         report = {"status": "BUILD_REJECTED", "error": str(exc), "may_publish": False,
                   "may_authorize": False, "may_execute": False,
                   "base_commit": args.base, "candidate_commit": args.candidate}
