@@ -117,6 +117,13 @@ def test_observed_build_is_not_review_approval_publication_or_execution(builder,
     assert result["status"] == "ISOLATED_BUILD_OBSERVED"
     assert result["trusted_static_checks"]["python_ast_files"] == 3
     assert result["committed_manifest_matches_build"] is True
+    assert result["tool_world_ingested"] is False
+    world = result["source_bound_tool_world"]
+    assert world["may_authorize"] is world["may_execute"] is False
+    assert [row["action_id"] for row in world["primitives"]] == ["skill.list"]
+    assert world["primitives"][0]["implementation_refs"] == [{
+        "path": builder.AUTHORITY_FILES["actions"], "start_line": None, "end_line": None,
+    }]
     for name in ("may_publish", "may_authorize", "may_execute", "review_approval_verified",
                  "evidence_contract_tests_verified", "running_manifest_lock_verified"):
         assert result[name] is False

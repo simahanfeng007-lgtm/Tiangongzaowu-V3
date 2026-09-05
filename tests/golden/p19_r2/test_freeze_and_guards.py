@@ -257,6 +257,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/world_understanding/tool_capability_world/compiler.py",
         "src/total_gateway/tool_source_candidate.py",
         "src/total_gateway/tool_source_inputs.py",
+        "src/total_gateway/tool_source_world.py",
         "src/total_gateway/tool_manifest_evolution.py",
         "src/source_authority/validator.py",
         "src/omni_body_skill/tools/sandbox_runtime.py",

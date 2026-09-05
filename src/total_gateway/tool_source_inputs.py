@@ -58,15 +58,50 @@ class ToolSourceInputsV1:
         return value
 
     def has_valid_sha256(self) -> bool:
-        return (
-            self.schema == _SCHEMA
-            and self.may_authorize is False
-            and self.may_execute is False
-            and bool(self.files)
-            and tuple(item.path for item in self.files)
-            == tuple(sorted({item.path for item in self.files}))
-            and self.source_inputs_sha256 == canonical_sha256(self.payload())
-        )
+        if (
+            self.schema != _SCHEMA
+            or self.may_authorize is not False
+            or self.may_execute is not False
+            or type(self.files) is not tuple
+            or not 1 <= len(self.files) <= _MAX_FILES
+        ):
+            return False
+        paths = []
+        total = 0
+        ownership = None
+        try:
+            for item in self.files:
+                if (
+                    type(item) is not ToolSourceInputFileV1
+                    or type(item.size_bytes) is not int
+                    or not 0 <= item.size_bytes <= _MAX_FILE_BYTES
+                    or not _is_sha256(item.content_sha256)
+                ):
+                    return False
+                paths.append(_repository_path(item.path))
+                total += item.size_bytes
+                if item.path == "source-ownership.json":
+                    ownership = item.content_sha256
+            return (
+                total <= _MAX_TOTAL_BYTES
+                and paths == sorted(set(paths))
+                and len({path.casefold() for path in paths}) == len(paths)
+                and _MANIFEST not in paths
+                and any(path not in _BUILD_INPUTS for path in paths)
+                and _is_sha256(self.ownership_sha256)
+                and ownership == self.ownership_sha256
+                and _is_sha256(self.source_inputs_sha256)
+                and self.source_inputs_sha256 == canonical_sha256(self.payload())
+            )
+        except (TypeError, ValueError):
+            return False
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str) and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _is_link(path: Path) -> bool:

@@ -33,6 +33,7 @@ from total_gateway.tool_source_candidate import (  # noqa: E402
 )
 from total_gateway.tool_manifest_evolution import review_manifest_evolution  # noqa: E402
 from total_gateway.tool_source_inputs import compile_tool_source_inputs  # noqa: E402
+from total_gateway.tool_source_world import compile_source_bound_tool_world  # noqa: E402
 
 
 WORKER_NAME = ".tiangong-source-build-worker.py"
@@ -121,6 +122,10 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
             raise ValueError("source build Manifest revision differs from committed inputs")
         review = review_manifest_evolution(published, artifact["gateway_manifest"],
                                            requested_action_ids=candidate.requested_action_ids)
+        tool_world = compile_source_bound_tool_world(
+            artifact["gateway_manifest"], source_inputs,
+            action_source_binding=expected_bindings["actions"],
+        )
         # A successful build is still not a reviewed publication or execution
         # grant. Keep the actual process result and full collateral diff.
         return {
@@ -137,6 +142,8 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
             },
             "build_artifact": artifact,
             "manifest_review": asdict(review),
+            "source_bound_tool_world": {**tool_world.payload(), "snapshot_sha256": tool_world.snapshot_sha256},
+            "tool_world_ingested": False,
             "committed_manifest_matches_build": committed_candidate == artifact["gateway_manifest"],
             "evidence_contract_tests_verified": False,
             "review_approval_verified": False,

@@ -56,6 +56,15 @@ Changes covered by this revision
    complete file digest is verified once before both model and registry/schema
    projections; the extension cannot bypass a release pin or approve changes.
    Loaded-object isolation tests are not proof of running-task version locks.
+10. The trusted source-build parent derives source-bound Tool World descriptors
+    from its observed input closure and verified ACTIONS entry-module binding.
+    It reuses the existing Action Registry/schema and P2 Tool World compilers;
+    models do not supply source revisions. Revision identity conservatively
+    covers transitive input bytes. Implementation references are module-level
+    entry references, not an inferred per-handler dependency graph. Input
+    records reject malformed types, paths, sizes and ownership digest drift.
+    This output is build-review data, never automatic World ingestion or Source
+    publication, and it does not alter the existing A0 admission ceiling.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

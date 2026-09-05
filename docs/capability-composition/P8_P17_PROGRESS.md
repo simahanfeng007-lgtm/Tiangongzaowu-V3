@@ -91,6 +91,13 @@ are not product evaluations.
 10. The objective closes only after all stages and all requirements above have
     current, adequate evidence, final main gates pass, and no unexplained
     pending obligations remain. Then stop.
+11. User execution-cadence clarification (2026-09-05): intermediate edits and
+    checkpoints run only relevant focused tests. Run full Python/Node and
+    Ubuntu/Windows final gates when a major stage (P8, P9, etc.) is complete,
+    not after every checkpoint. Existing live runs may finish; do not restart
+    them or push repeatedly just to trigger another full regression. If a final
+    gate reveals a failure, first diagnose and repair with focused tests, then
+    validate the final merge candidate. Exact-head final acceptance is unchanged.
 
 ## P8 initial audit findings
 
@@ -265,3 +272,33 @@ No source gate was changed or weakened to relocate these non-source reports.
   incorrectly expected source-bound permission hashes to stay unchanged. The
   corrected test requires changed permission identity and unchanged policy
   semantics. Both JUnit results are retained under output/p8-evidence/.
+- Sixth checkpoint: `9476b0af1a27a530f89da9ee402d5d5e22c43b95`, pushed as
+  [draft PR #73](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/pull/73).
+  Exact-head full Python completed: 4,210 passed, 19 skipped, 847 passed
+  subtests, zero failures; JUnit `output/p8-evidence/full-python-9476b0a.xml`,
+  SHA-256 `a9c86120170eb6c589c094c7f5ff29418aad96a25cd9e09f0bb578f9a32a9c3a`.
+  Node: 224 passed / 2 skipped / 0 failed. P14 and prior World boundary tests:
+  260 passed. Isolated build 6 observed actual AppContainer containment and
+  exact source inputs; no publication or risk downgrade was approved.
+  Remote P19 completed successfully on both platforms. Eight of nine PR checks
+  are observed successful; Architecture Windows full regression remains live
+  in `Run full repository pytest` in run `33940906572`. This is not REMOTE PASS
+  for the whole candidate, and the draft is not ready to merge.
+- Source-to-Tool-World bridge IMPLEMENTED: the trusted build parent now derives
+  Action SourceRevision records from measured input closure and the verified
+  ACTIONS entry-module binding. It reuses existing Registry/schema and P2 World
+  compilers; P4 consumes their existing SourceRevision contract. Input records
+  reject malformed types/paths/sizes, collisions, missing ownership identity
+  and self-including generated Manifest records. Conservative closure identity
+  changes on helper-only edits; implementation references are module-level,
+  not claimed leaf-handler dependency analysis.
+  Pre-checkpoint component run: 124 passed / 2 host-denied symlink skips,
+  `output/p8-evidence/source-world-first.xml`. The output remains review data:
+  `tool_world_ingested=false`, no Source approval or production publication.
+  Real build and final candidate gates remain required.
+- The source-to-World change passed the existing World ingress/P17 architecture
+  and P19 freeze/uniqueness guards: 33 passed, 16.19 seconds, with UPDATE_FREEZE
+  absent (`output/p8-evidence/source-world-boundaries.xml`). The first expanded
+  command referenced two nonexistent test filenames and collected no tests;
+  it is not PASS evidence. Corrected checks used the repository's actual files.
+  Per the user's new cadence, no intermediate full regression is started.

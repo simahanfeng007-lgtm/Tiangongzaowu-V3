@@ -52,12 +52,13 @@
   "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f",
   "src/world_understanding/tool_capability_world/compiler.py": "bfc32a2d1b86c2c9c97bea1313d69d4c5c38e498089d851a59b3ed0dc7d66ce8",
   "src/total_gateway/tool_source_candidate.py": "5241463884c0599e376cb7496396a1facff339b63559b6845e9e475d350916f1",
-  "src/total_gateway/tool_source_inputs.py": "9d24039d7fae8ac961723629345a6bc5068a9c57e9e1261f61e7b97d17377eeb",
+  "src/total_gateway/tool_source_inputs.py": "fdc0b9aaab4249ca51972c319a04c6310d04e22e33409feb947a8c7dced62d2c",
+  "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
   "src/omni_body_skill/tools/sandbox_runtime.py": "f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501",
   "scripts/_tool_source_build_worker.py": "e42b8985ca4178e9b35115a032f34df6535f2dc575f94873c5c1682add01240f",
-  "scripts/build-tool-source.py": "98157e234c0715c0c94f3bb473101e29d68382ac87934daec10fe4a9a7f3ad74",
+  "scripts/build-tool-source.py": "0d20848edf0d82af4885ce79961e5313f097352371e9a8037b055434fefafcec",
   "scripts/review-tool-source.py": "fe384be6353806fa750e3007717962507891f014382ef59d419559db02176751"
  }
 }
