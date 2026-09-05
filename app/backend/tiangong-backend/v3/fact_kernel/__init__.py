@@ -129,6 +129,43 @@ class CompiledCapabilityManifest:
             "validation": _jsonable(dict(self.validation)),
         }
 
+    def to_gateway_dict(self) -> dict[str, Any]:
+        """Project this compiler's result into the existing published format.
+
+        Runtime identity includes the runtime class and dynamic route set;
+        the published Gateway format hashes the complete capability table.
+        These are distinct, explicit projections of the SAME compilation.
+        No old manifest rows, route guesses, or permission overrides enter
+        this projection. Returning it does not publish or approve source.
+        """
+        runtime = self.to_dict()
+        source_payload = {
+            "runtime_class": runtime["runtime_class"],
+            "dynamic_actions": runtime["dynamic_actions"],
+            "capabilities": runtime["capabilities"],
+        }
+        if (
+            _sha256(source_payload) != self.source_hash
+            or runtime["validation"].get("source_hash") != self.source_hash
+            or runtime["validation"].get("ok") is not True
+            or runtime["validation"].get("executable_without_route") != []
+        ):
+            raise ValueError("compiled capability manifest changed or is unhealthy")
+        source_hash = _sha256(runtime["capabilities"])
+        return {
+            "schema": runtime["schema"],
+            "capabilities": runtime["capabilities"],
+            "total": runtime["total"],
+            "executable": runtime["executable"],
+            "unavailable": runtime["unavailable"],
+            "source_hash": source_hash,
+            "validation": {
+                "ok": True,
+                "source_hash": source_hash,
+                "executable_without_route": [],
+            },
+        }
+
 
 def compile_manifest(
     actions: Mapping[str, Mapping[str, Any]],

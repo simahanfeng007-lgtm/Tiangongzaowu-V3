@@ -1,0 +1,142 @@
+# v1.2 P8–P17 implementation and acceptance ledger
+
+Status: **ACTIVE — P8 source audit and implementation**.
+
+## Scope and baseline
+
+The accepted objective is the complete v1.2 P8–P17 continuation, including
+outstanding product evaluations from earlier stages. Closing a component or
+passing CI does not close the total objective.
+
+- Repository: `simahanfeng007-lgtm/Tiangongzaowu-V3`.
+- Master plan: `天工造物V3_世界理解驱动ToolSkillSource组合执行体系_详细工程实施计划_v1.2_全链源码审计版.txt`.
+- Master plan SHA-256: `691e857e3a7f75d9107606bbffe2919bd484c03e25f1255cebd1bb069f89f895`.
+- Starting main, fetched on 2026-09-05:
+  `9a3344de9fe468fa845d2ff501166484439b8ec4`.
+- P7D.2 candidate: `5f0601a5a1a75729362f1cb11b6a5ad9fb63186d`;
+  [PR #72](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/pull/72)
+  merged at the starting main above.
+- P7D.2 [acceptance evidence](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/pull/72#issuecomment-5543123890)
+  binds all nine successful PR checks to that candidate. The earlier
+  `P7C_P7D_PROGRESS.md` is a pre-merge snapshot, not current remote status.
+- Starting main post-merge gates: Architecture
+  [33892621500](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33892621500)
+  and P19
+  [33892621577](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33892621577)
+  both completed successfully on the starting main SHA.
+- P8 worktree: `C:\Users\77571\Documents\天工造物v3-p8`.
+- P8 branch: `codex/capability-composition-p8-source-evolution-v1`.
+
+## Stage register
+
+| Stage | Required result | Status | Closing evidence still required |
+|---|---|---|---|
+| P8 | Source candidate → build/static/sandbox/risk/evidence/review → existing manifest compiler → published source revision; running manifest lock | IN PROGRESS | Production path, adversarial and execution evaluation, local/remote gates, PR and merge |
+| P9 | Method Source add/update/remove lifecycle | NOT STARTED | Production lifecycle, invalidation, tests, PR and merge |
+| P10 | Knowledge / Source Evolution / Composition Experience learning cutover across every old publication entry | NOT STARTED | Frozen old publication, actual usage telemetry, replacement wiring, tests, PR and merge |
+| P11 | Static/dynamic formal Shadow differential with only one execution path per task | NOT STARTED | Approximately 200 cases, model/fault matrices and all cutover metrics |
+| P12 | Retire Static Skill Planner, context injection and full Skill publication | NOT STARTED | Stable new path, no lost capability, telemetry and removal evidence |
+| P13 | Retire old learning / registry / release compatibility authority | NOT STARTED | Zero production usage evidence before removal |
+| P14 | Dynamic Capability default with explicit, audited migration fallback only | NOT STARTED | Default wiring, fail-closed context, tests and cutover evidence |
+| P15 | Source Revision → World invalidation + experience staleness/revalidation | NOT STARTED | Integrated existing invalidation DAG and regression evidence |
+| P16 | 150-round long-horizon/restart/reconnect/replan/compaction/source-update/repair certification | NOT STARTED | Real execution trace and identity/authority checks at every boundary |
+| P17 | Production cleanup and full source/world/memory/authority audit | NOT STARTED | No obsolete production paths, all master requirements mapped to evidence, final main green |
+
+## Acceptance obligations carried across stages
+
+These must remain pending until actual evidence is inspected. Test counts alone
+are not product evaluations.
+
+| Obligation | Required evidence | State |
+|---|---|---|
+| P4 evaluation | 24 tasks × 3 models, parser/compiler/validator and one repair statistics per model | UNVERIFIED |
+| P6 evaluation | 50–60 tasks, retrieval/precision/context token/experience recall/cross-model variance | UNVERIFIED |
+| P7/P8 evaluation | 80–100 tasks through Gateway, Runtime, P19, source locks and resumption | PENDING |
+| Formal model matrix | Core 80 × 4 models; long-tail 120 × primary and weak model; fault 40 × models | PENDING |
+| Formal Shadow | Approximately 200 task cases, only one path executing per task | PENDING |
+| Cutover metrics | Verified success ≥ old path; false completion, A5 bypass, unauthorized action and drift misuse all zero; bounded stale reuse/parse failures; weak-model results; lower context cost; stable restart identity | PENDING |
+| Fault injection | Source drift, unavailable tools and misleading experience first; permission/provider/schema/manifest/workspace/ambiguous Effect/verifier/context/interruption next | PENDING |
+| Old-path telemetry | Actual origin, observation interval, workload coverage and zero-production-use evidence | PENDING |
+| Long horizon | 150 rounds with all specified interruption and revision transitions | PENDING |
+
+## Execution and release rules
+
+1. Fetch current main before each stage; use a separate worktree and `codex/`
+   branch. Later stages start only after the previous stage is merged and its
+   main ancestry is verified. A stage may need smaller reviewable PRs; that
+   does not remove any stage requirement.
+2. Read the full authoritative sources to be changed and inspect their callers
+   before editing. Preserve user changes. Generated copies come only from
+   official sync.
+3. Preserve the existing single Gateway, Runtime, WorldState, Memory SSoT,
+   Registry, Policy/Ticket/Grant, Effect/Fact, P19 and CompletionGate.
+4. Source proposals, embeddings, World context, experience and hypotheses
+   never authorize actions. Candidate source cannot be imported by the current
+   request. Source publication does not change a running manifest.
+5. Preserve the current A0 composition limit. If later requirements need A1+
+   admission, first produce a concrete independent risk/permission audit and
+   seek the explicit decision required by the accepted objective.
+6. Freeze old publication before removal. Remove old planners/registries only
+   after Shadow, stability and actual zero-use gates. PR #66 stays retired.
+7. Per-stage evidence includes focused contracts, adversarial/fault tests,
+   generated mirrors, Source Authority, P14, P19 Golden, Python and Node full
+   regressions, and Ubuntu/Windows CI. Inspect workflow coverage rather than
+   relying on GitHub's smaller required-check subset.
+8. Local, remote branch, PR and workflow heads must agree. Any candidate edit
+   invalidates the old gates. Record evidence in an append-only PR comment,
+   merge with a head guard, and verify main ancestry. Record subsequent main
+   results separately. Never admin-merge or weaken a test to obtain PASS.
+9. Missing models, access or telemetry stay explicitly pending; never convert
+   simulation, a skipped test or a unit-test count into production evidence.
+10. The objective closes only after all stages and all requirements above have
+    current, adequate evidence, final main gates pass, and no unexplained
+    pending obligations remain. Then stop.
+
+## P8 initial audit findings
+
+- `scripts/sync_omni_capability_manifest.py` currently refreshes a previously
+  stored manifest and schemas. It does not rebuild all routes from current
+  source.
+- Existing `v3.fact_kernel.compile_manifest` is the runtime compiler and must
+  remain the compiler. Its runtime projection and the Gateway's published
+  projection currently use different source-hash payloads.
+- Baseline diagnostic using the current source compiler found 791 actions / 291
+  executable, compared with 790 / 290 in the published manifest. Published-only
+  IDs are `browser.image_search` and `web.image_search`; source-only IDs are
+  `mcp.servers.list`, `mcp.tools.list`, `mcp.tool.call`.
+- There are also effect-class differences between source metadata and the
+  published manifest. Automatic publication must expose these differences for
+  risk review, not silently lower existing permission floors.
+- P8 must bind source bytes, compiler inputs, compiled output, validation and
+  review to the same candidate. Self-consistent hashes are not reviewer or
+  sandbox evidence. Git remains the source revision authority.
+
+## Evidence log
+
+- 2026-09-05: fresh main/remote/worktree inspection completed; no interrupted
+  Python or GitHub watch process found. P8 isolated worktree created at the
+  successful main baseline. Implementation and acceptance are still pending.
+- P8 foundation IMPLEMENTED (not phase-closed): immutable Git source candidate
+  observation, native object verification, private exact-byte materialization,
+  committed-manifest review CLI, existing `compile_manifest` Gateway projection,
+  direct and alias-inherited permission differential, and an isolated build CLI.
+  No source publication, runtime admission expansion or manifest replacement
+  has been performed.
+- LOCAL PASS, component observations before the first checkpoint: source
+  candidate suite 22 passed; manifest evolution + prior schema suite 32 passed;
+  strict sandbox suite 9 passed, including the actual Windows AppContainer
+  host-file/parent-secret isolation test. These overlap with later regressions
+  and are not product task/model evaluations.
+- LOCAL PASS: official generated-source write/check and Source Authority
+  check (16 independent authorities, 1 alias, 24 generated targets, 1
+  closed-world boundary).
+- Preserved first-checkpoint test failure: the expanded candidate suite stopped
+  at 23 passed / 1 failed. `test_corrupted_native_tree_identity_is_rejected`
+  correctly rejected the damaged Git tree, but expected the application-layer
+  `object bytes` message. This Git build rejected it earlier during `rev-parse`
+  with `Git object is absent or incompatible`. The test must accept both
+  rejection boundaries and retain independent coverage of native hash checking.
+- PENDING: isolated compilation against a committed P8 candidate, evidence
+  contract execution, source publication/review integration, production running
+  lock validation, product/model evaluation, full local and remote gates, PR
+  merge and phase closure.

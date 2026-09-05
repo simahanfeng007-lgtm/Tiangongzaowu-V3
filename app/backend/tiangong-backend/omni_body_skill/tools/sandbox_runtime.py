@@ -384,10 +384,13 @@ def _run_portable(
 # never evaluates Windows-only structures.
 def _run_windows_appcontainer(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits, sandbox_root: Path,
+    *, require_os_containment: bool = False,
 ) -> tuple[int, bytes, bytes, str]:
     if os.name != "nt":
+        if require_os_containment:
+            raise SandboxError("sandbox_os_containment_unavailable")
         return _run_portable(command, cwd, env, limits)
-    compat = os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {"1", "true", "yes", "on"}
+    compat = not require_os_containment and os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {"1", "true", "yes", "on"}
     try:
         from .windows_appcontainer import run_appcontainer
         result = run_appcontainer(command, cwd=cwd, env=env, limits=limits, sandbox_root=sandbox_root)
@@ -424,7 +427,15 @@ class SandboxRunner:
         cwd: Path | None = None,
         timeout_seconds: int | None = None,
         op_id: str = "",
+        require_os_containment: bool = False,
     ) -> dict[str, Any]:
+        # Source Candidate builds must never execute through a portable or
+        # explicit compatibility fallback. Check BEFORE preparation/launch,
+        # not after untrusted code has already run without OS containment.
+        if type(require_os_containment) is not bool:
+            raise SandboxError("sandbox_containment_requirement_invalid")
+        if require_os_containment and os.name != "nt":
+            raise SandboxError("sandbox_os_containment_unavailable")
         if not command:
             raise SandboxError("sandbox_command_empty")
         raw_run_id = str(op_id or f"run_{time.time_ns()}")
@@ -460,7 +471,7 @@ class SandboxRunner:
                 )
                 sandbox_workspace = effective_temp / "workspace"
             except Exception as exc:
-                compat = os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {
+                compat = not require_os_containment and os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {
                     "1",
                     "true",
                     "yes",
@@ -502,6 +513,7 @@ class SandboxRunner:
             if os.name == "nt":
                 code, stdout, stderr, containment = _run_windows_appcontainer(
                     rewritten, sandbox_cwd, env, limits, run_root,
+                    require_os_containment=require_os_containment,
                 )
             else:
                 code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits)
