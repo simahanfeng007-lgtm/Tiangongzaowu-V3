@@ -127,6 +127,21 @@ Changes covered by this revision
     origins already must. The wrapper joins the same freeze surface. This is
     directory selection, not byte attestation of every shared/lazy import, nor
     production evidence of an approved source change during a live Run.
+18. Gateway startup preflights P8 source-pinned installations before acquiring
+    its epoch lease, opening stores or starting services. The existing release
+    selector and release-pinned Action loader must agree with the installation;
+    there is no automatic release generation or source fallback in this check.
+    It remeasures source inputs, compares all generated mirrors to measured
+    authority bytes, rejects writable/hard-linked files and bytecode caches,
+    and checks loaded module origins and available namespace search routes.
+    The selected Skill root must be an existing Source Authority location.
+    P8 startup requires an explicit source root/release, embedded mode and -B;
+    local evidence cannot attest an independent remote service. The assembled
+    release must still match before the worker starts. Legacy startup remains
+    explicitly unbound, not retroactively source-verified. This observes startup
+    consistency only: host-owner tampering, future dynamic import-path changes,
+    publication review and live-Run evidence still require separate closure.
+    Runtime and this rejecting preflight join the existing freeze surface.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

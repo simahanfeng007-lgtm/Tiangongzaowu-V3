@@ -483,3 +483,44 @@ No source gate was changed or weakened to relocate these non-source reports.
   Launch admission, shared/lazy-module byte pins, approved live X/X+1 evidence,
   the 99/42 permission review, evidence-contract and product/model evaluations
   remain open. P8 stays IN PROGRESS; P9–P17 remain NOT STARTED.
+- P8 source-pinned startup consistency IMPLEMENTED in the existing
+  `GatewayRuntime.start`, before its epoch lease, stores and embedded services.
+  The preflight requires an explicit existing release, source root, embedded
+  mode and launcher-disabled bytecode writes (`-B`). The existing release
+  selector and release-pinned Action loader remain authoritative; the preflight
+  does not generate a release, choose a fallback or approve publication. It
+  remeasures the input closure, binds the Capability Manifest, compares generated
+  mirrors to measured authority bytes, rejects writable/hard-linked files and
+  bytecode caches, and checks selected Skill roots, loaded module origins and
+  available namespace import routes. Final orchestration assembly must retain
+  the same release before its worker starts. Legacy manifests return no source
+  observation and are not falsely upgraded to P8 source-attested status.
+- Source-startup evidence: initial source/preflight plus existing real
+  single-process startup tests passed 29 tests (`source-launch-first.xml`).
+  A fresh `-B` subprocess verified the read-only synthetic package without
+  importing its deliberately raising package initializer; this is an offline
+  consistency fixture, not a production activation. Controlled assembly drift
+  was rejected before worker start and resource/lease cleanup was verified.
+  After bytecode/read-only cases and official sync, focused source launch,
+  staging, bootstrap, embedded backend, wrapper pin, existing single-process
+  application, Source Authority, P17 architecture and P19 freeze/uniqueness
+  checks passed 104 tests / 29 subtests in 30.65 s. Evidence:
+  `output/p8-evidence/source-launch-runtime-focused.xml`, SHA-256
+  `7dc3c54a10f03ff06e635a33ee1883c1fecc7e791e6ea4c1de734f5c46f8de72`.
+- Real build-10 installation cross-directory observation: a fresh trusted
+  `-B` verifier read `output/p8-evidence/staged-c361f6d/source` against its
+  original input and Capability Manifest digests. Source/mirror checks reached
+  the import-origin phase, then the process exited 1 as expected with
+  `source_launch.path_outside_installation`: the already-loaded Gateway came
+  from this P8 checkout, not the staged c361f6d source. No candidate code was
+  imported and the staged source was unchanged. This is a negative consistency
+  observation, not a successful Gateway launch from that unapproved version.
+- This preflight is startup consistency, not proof against host-owner tampering
+  or all future dynamic imports, and it does not complete running-source locks
+  or Source publication review. The legacy mutable startup paths remain for
+  their separately gated cutover. Actual approved source-pinned startup,
+  live X/X+1/replan evidence, the 99/42 permission review, evidence-contract
+  execution and real product/model evaluation remain open. Plane entry 18 and
+  the unchanged freeze generator cover the new preflight and Runtime entry.
+  No full regression, new isolated build, push, remote workflow or merge was
+  launched for this intermediate checkpoint. P8 remains IN PROGRESS.

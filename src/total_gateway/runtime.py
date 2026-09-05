@@ -41,6 +41,7 @@ from .cutover_coordinator import ChannelCutoverCoordinator
 from .continuity import persist_working_checkpoint
 from .diagnostics import diagnostic_log
 from .store import ChannelOwnershipRegistration, GatewayStateStore, StoreHealthEvidence
+from .tool_source_launch import preflight_source_revision
 
 
 _BODY_STATE_SECTIONS = frozenset({
@@ -879,6 +880,7 @@ class GatewayRuntime:
 
     @classmethod
     def start(cls, config: GatewayConfig, *, now_ms: int | None = None) -> "GatewayRuntime":
+        source_revision = preflight_source_revision(config)
         observed_ms = int(time.time() * 1_000) if now_ms is None else now_ms
         instance_id = "gateway-" + secrets.token_hex(16)
         lease = InstanceEpochLease.acquire(config.state_root, instance_id, now_ms=observed_ms)
@@ -1532,6 +1534,11 @@ class GatewayRuntime:
                         else retrieve_knowledge
                     ),
                 )
+                if source_revision is not None and (
+                    runtime.orchestration.release_manifest.release_manifest_sha256
+                    != source_revision["release_manifest_sha256"]
+                ):
+                    raise RuntimeError("source_launch.assembled_release_changed")
                 if runtime.backend_service is not None:
                     runtime.backend_service.set_world_inquiry_dispatcher(
                         runtime.orchestration.submit_world_inquiry
