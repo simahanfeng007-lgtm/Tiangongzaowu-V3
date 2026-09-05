@@ -1,0 +1,46 @@
+name: P8 pinned source audit snapshot
+
+# Read-only audit transport for the P8-R1 repair. This is not a product build,
+# Source publication, a validation PASS, or a replacement for existing gates.
+on:
+  push:
+    branches:
+      - codex/capability-composition-p8-source-evolution-v1
+    paths:
+      - .github/workflows/p8-source-audit-snapshot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Read the exact audited P8 baseline
+        uses: actions/checkout@v4
+        with:
+          ref: b37204ee4d94e4857aaf477b810a21f19345d584
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create a native Git bundle without executing repository code
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=b37204ee4d94e4857aaf477b810a21f19345d584
+          test "$(git rev-parse HEAD)" = "$expected"
+          mkdir -p "$RUNNER_TEMP/p8-source-audit"
+          git bundle create "$RUNNER_TEMP/p8-source-audit/source.bundle" HEAD
+          git bundle verify "$RUNNER_TEMP/p8-source-audit/source.bundle"
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/p8-source-audit/IDENTITY.txt"
+          cd "$RUNNER_TEMP/p8-source-audit"
+          sha256sum source.bundle > SHA256SUMS
+      - name: Retain the source identity evidence for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-source-b37204ee4d94e4857aaf477b810a21f19345d584
+          path: ${{ runner.temp }}/p8-source-audit/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
