@@ -142,6 +142,26 @@ Changes covered by this revision
     consistency only: host-owner tampering, future dynamic import-path changes,
     publication review and live-Run evidence still require separate closure.
     Runtime and this rejecting preflight join the existing freeze surface.
+19. An installed trusted startup probe stages a pinned bundle in its own
+    private workspace and starts a fresh -I/-B interpreter through the existing
+    required OS sandbox. Candidate modules load only in that contained child.
+    The probe observes source consistency, existing release generation, actual
+    Gateway startup/readiness/shutdown and post-shutdown source consistency;
+    the parent independently rechecks the staged bytes against the original ZIP.
+    Failures retain process/child observations. Incomplete, inconsistent or
+    approval-claiming child reports cannot become startup success. All reports
+    disclaim publication/authorization/execution permission. This is an offline
+    integration probe, not a real-model task or production approval. Both probe
+    scripts join the same freeze surface.
+20. Real AppContainer evidence showed Path.resolve(strict=True) fails while
+    file handles remain readable: DOS/GUID final-name queries return WinError 5,
+    while normalized NT final-name queries succeed on the same handles. Windows
+    source-path checks now compare normalized physical NT volume/root/relative
+    identities via metadata-read handles. They do not grant more access, cache
+    path observations or fall back to non-strict resolution. Lexical traversal,
+    reparse points and physical-volume/location mismatches remain rejected;
+    unavailable native identity remains a failure. POSIX strict resolution is
+    unchanged. This fixes identity observation, not Source publication approval.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

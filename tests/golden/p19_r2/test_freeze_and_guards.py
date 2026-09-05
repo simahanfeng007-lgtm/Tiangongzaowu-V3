@@ -271,6 +271,8 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "scripts/_tool_source_build_worker.py",
         "scripts/build-tool-source.py",
         "scripts/stage-tool-source.py",
+        "scripts/_tool_source_launch_probe.py",
+        "scripts/probe-tool-source-launch.py",
         "scripts/sync-generated-sources.py",
         "scripts/review-tool-source.py",
     )

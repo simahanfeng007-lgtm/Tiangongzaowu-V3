@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PureWindowsPath
 import sys
 import subprocess
 from types import SimpleNamespace
@@ -33,6 +34,35 @@ def config(root, tmp_path):
     return GatewayConfig(environment="test", port=0, deployment_mode="embedded",
                          state_root=tmp_path / "state", release_source_root=root,
                          skill_root=root / "src/omni_body_skill")
+
+
+@pytest.mark.parametrize("actual", [r"\Device\HarddiskVolume4\source\module.py",
+                                    r"\Device\HarddiskVolume3\other\module.py",
+                                    r"\Device\HarddiskVolume3\source\redirected.py"])
+def test_physical_path_must_match_both_volume_and_relative_location(actual):
+    with pytest.raises(launch.SourceLaunchError, match="physical_path_mismatch"):
+        launch._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
+                                       PureWindowsPath(actual), Path("module.py"))
+
+
+def test_same_physical_volume_and_relative_path_is_accepted():
+    launch._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
+                                   PureWindowsPath(r"\Device\HarddiskVolume3\source\pkg\module.py"),
+                                   Path("pkg/module.py"))
+
+
+def test_dotdot_path_cannot_be_normalized_into_acceptance(tmp_path):
+    with pytest.raises(launch.SourceLaunchError, match="path_not_canonical"):
+        launch._safe_path(tmp_path, tmp_path / "unused/../module.py")
+
+
+def test_native_identity_query_failure_has_no_lexical_or_nonstrict_fallback(tmp_path, monkeypatch):
+    path = tmp_path / "module.py"
+    path.write_bytes(b"read only probe")
+    monkeypatch.setattr(launch, "os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr(launch, "_windows_final_path", Mock(side_effect=PermissionError("native identity unavailable")))
+    with pytest.raises(PermissionError, match="native identity unavailable"):
+        launch._safe_path(tmp_path, path)
 
 
 def test_generated_mirrors_are_bound_to_measured_bytes_without_candidate_import(installation):

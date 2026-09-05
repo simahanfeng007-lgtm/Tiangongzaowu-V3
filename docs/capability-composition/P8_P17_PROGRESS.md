@@ -524,3 +524,56 @@ No source gate was changed or weakened to relocate these non-source reports.
   the unchanged freeze generator cover the new preflight and Runtime entry.
   No full regression, new isolated build, push, remote workflow or merge was
   launched for this intermediate checkpoint. P8 remains IN PROGRESS.
+- Real packaged build 11 SUCCESS at candidate
+  `ea575ed6d8fd69a9b7fbd6f697aeb8236e8417f3`: Windows AppContainer, network
+  denied, 9.812 s child execution, 680 measured input files, 2,863 indexed
+  package entries and 61,319,698 indexed bytes. Build report
+  `foundation-isolated-build-11.json` SHA-256
+  `3ed67ed2bff5283fb442af2312df2de1bbd52431f3a3bcf11633eaf18cf6eab6`;
+  `source-revision-ea575ed.zip` SHA-256
+  `347f24d396d68cd48db0c0b5946107dd51f9050868384408f24840bd8e370212`;
+  input revision `45810d2e37731b488506effae45508e15b9c0d55014d816dbe06045621793b5d`;
+  Capability Manifest `a8d5bd797ae31829760ef7896a21c851d7bb71df3f862ffc84f59844e889bfbc`.
+  This remains unapproved review material, not a published release.
+- A trusted offline startup probe now stages a pinned package in a private
+  workspace and uses the existing required AppContainer runner for a fresh
+  -I/-B child. It observes source consistency, existing release generation,
+  actual Gateway boot/READY/shutdown and post-shutdown source consistency.
+  Parent verification still checks original ZIP/staged bytes and refuses
+  incomplete, not-ready, mismatched or approval-claiming observations. Child
+  code is never imported by the parent; process/child evidence survives later
+  verification or cleanup failures. All permission/publication flags stay false.
+- Real probe failures are retained, not reported as successful startup:
+  - Attempt 1 failed in the new parent's installed-module bootstrap because
+    only src, not the existing backend root, was added to sys.path. No candidate
+    process or JSON report was produced. Exact failed script hash and native
+    traceback are preserved in `foundation-isolated-startup-1.bootstrap-failure.txt`.
+    The parent now uses the same two trusted import roots as the build command.
+  - Attempts 2/3 ran in actual AppContainer with network denied and failed at
+    `source_consistency`, before Gateway service startup. Path.resolve(strict=True)
+    raised WinError 5. The retained package/staged bytes still verified afterward.
+    Reports `foundation-isolated-startup-2.json` and `-3.json` have SHA-256
+    `c9849544262932d246298c6d8247f0e676aba82fa148d0bc24471971ca76b8dc` and
+    `4ce094c3abdb22f275dd0f159954511dd1be24262af2524edab6ebb1d899cccc`.
+- A separate small native AppContainer diagnostic, containing no candidate code,
+  established the exact failing API operation: file handles open successfully;
+  DOS/GUID final-name queries return WinError 5, while normalized NT final-name
+  queries on the same handles succeed. The diagnostic script/report are retained
+  as `appcontainer-path-diagnostic.py` / `appcontainer-path-diagnostic-1.json`;
+  the report SHA-256 is `c3e92d3c0b4e5a2bdb3eed4a18109073b0c4abb7d13a7e994d7f29f167f39ed7`.
+  Windows source checks now use metadata-read handles and compare normalized
+  physical NT volume/root/relative identities, with no extra ACL grant, path
+  cache or non-strict fallback. Reparse/traversal/mismatched-volume cases and
+  unavailable identity queries remain rejected. POSIX strict checks are retained.
+- Focused source/probe/real single-process/P17/P19 tests passed 73 in 30.40 s
+  (`source-launch-probe-focused.xml`). An earlier 9-test probe run had a stderr
+  decode-thread warning in the fresh -I help test; explicit -X utf8 fixed the
+  test invocation without changing assertions. The probe uses a compact private
+  staging directory `r` instead of `revision`: measured AppContainer Skill paths
+  otherwise reach 243 characters, beyond Gateway's unchanged 240-character
+  configuration limit. The compact-path parent suite passed 12 in 3.15 s
+  (`source-launch-probe-compact.xml`). Official mirrors, Source Authority and
+  regenerated/normal freeze guards passed; plane entries 19/20 declare this
+  boundary revision. A rebuilt candidate and real startup retry are required
+  before claiming the native-path repair works through the complete boot chain.
+  No full Python/Node regression, push, remote workflow or merge was launched.

@@ -9,9 +9,11 @@ the authorities; this module only rejects inconsistent installation evidence.
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from importlib.machinery import PathFinder
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PureWindowsPath
 import sys
 
 from .tool_source_candidate import SourceCandidateError, _strict_pairs, _invalid_constant
@@ -26,18 +28,71 @@ class SourceLaunchError(RuntimeError):
     pass
 
 
+@lru_cache(maxsize=1)
+def _windows_path_api():
+    # Cache API bindings only, never a path, handle or observed file identity.
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                  wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+    kernel.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    return ctypes, wintypes, kernel
+
+
+def _windows_final_path(path: Path) -> PureWindowsPath:
+    """Read a normalized physical NT path without DOS-volume lookup rights.
+
+    AppContainer can open the file yet deny VOLUME_NAME_DOS/GUID queries used
+    by Path.resolve(strict=True). VOLUME_NAME_NT keeps kernel normalization;
+    this is not a non-strict path fallback or a permission grant.
+    """
+    ctypes, wintypes, kernel = _windows_path_api()
+    handle = kernel.CreateFileW(str(path), 0x80, 7, None, 3, 0x02200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        buffer = ctypes.create_unicode_buffer(8192)
+        size = kernel.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 2)
+        if size == 0:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if size >= len(buffer):
+            raise SourceLaunchError("source_launch.native_path_size_invalid")
+        result = PureWindowsPath(buffer.value)
+        if result.parts[:2] != ("\\", "Device") or len(result.parts) < 4:
+            raise SourceLaunchError("source_launch.native_path_invalid")
+        return result
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _verify_native_relative(root: PureWindowsPath, path: PureWindowsPath, relative: Path) -> None:
+    if path != root.joinpath(*relative.parts):
+        raise SourceLaunchError("source_launch.physical_path_mismatch")
+
+
 def _safe_path(root: Path, path: Path) -> str:
-    if not path.is_absolute() or path.resolve(strict=True) != path:
+    if (not root.is_absolute() or not path.is_absolute()
+            or os.path.normcase(os.path.normpath(str(path))) != os.path.normcase(str(path))):
         raise SourceLaunchError("source_launch.path_not_canonical")
     try:
         relative = path.relative_to(root)
     except ValueError as exc:
         raise SourceLaunchError("source_launch.path_outside_installation") from exc
     for current in (path, *path.parents):
-        if _is_link(current):
+        if _is_link(current) or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
             raise SourceLaunchError("source_launch.link_or_junction")
         if current == root:
             break
+    if os.name == "nt":
+        _verify_native_relative(_windows_final_path(root), _windows_final_path(path), relative)
+    elif path.resolve(strict=True) != path:
+        raise SourceLaunchError("source_launch.path_not_canonical")
     return relative.as_posix()
 
 
