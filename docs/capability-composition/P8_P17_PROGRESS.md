@@ -179,3 +179,19 @@ are not product evaluations.
   private-tree cleanup. No host registry setting or permission was changed.
   Sandbox + parent guards: 18 passed, including real deep-path AppContainer
   copy/read and cleanup. Full source compilation still requires a clean rerun.
+- Third checkpoint: `78c8a86d06bb5556e3858abdcb59f726ac6a1164`.
+  Real immutable-source build reached `ISOLATED_BUILD_OBSERVED` inside Windows
+  AppContainer (9.344 s child execution), with 1,279 Python files parsed by the
+  trusted parent and a healthy source topology. Compiler output: 791 actions /
+  291 executable. Artifact SHA-256:
+  `1e00cfcebfebcde62507e570aa1ce5b4fb35e7638658054c8a0c4058002d9729`;
+  local report `out/p8-evidence/foundation-isolated-build-3.json`.
+  Its published-manifest differential exposes 99 effective-risk downgrades and
+  42 newly-A0 candidates. These are NOT accepted permissions. The committed
+  Manifest does not match the new build; `may_publish` remains false.
+- Node on the third checkpoint: 224 passed / 2 skipped / 0 failed. Full Python
+  passed the new P19 freeze guard, then stopped at 372 passed / 1 failed / 73
+  passed subtests because the historical P7B.2 compatibility test still expected
+  plane 1.5. That assertion now explicitly expects declared 1.6 while retaining
+  exact Store v33 and all activation-eligibility tests. Full rerun pending;
+  failed JUnit retained in `out/p8-evidence/full-python-78c8a86.xml`.
