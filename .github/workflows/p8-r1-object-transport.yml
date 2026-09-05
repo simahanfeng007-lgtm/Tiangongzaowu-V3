@@ -1,0 +1,80 @@
+name: P8 R1 verified-byte transport
+
+# Temporary data transport only; deleted from the final R1 source tree.
+# The existing Windows/Linux verification workflow remains unchanged.
+# This job stores Git objects only. It never updates refs or publishes Source.
+on:
+  push:
+    branches:
+      - codex/capability-composition-p8-source-evolution-v1
+    paths:
+      - .github/workflows/p8-r1-object-transport.yml
+permissions:
+  contents: write
+  actions: read
+jobs:
+  transport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify the pinned evidence archive and store identical Git bytes
+        shell: python
+        env:
+          GH_OBJECT_TOKEN: ${{ github.token }}
+        run: |
+          import base64, hashlib, io, json, os, re, urllib.request, zipfile
+          api = 'https://api.github.com/repos/simahanfeng007-lgtm/Tiangongzaowu-V3'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_OBJECT_TOKEN'], 'Accept': 'application/vnd.github+json'}
+          def request(path, payload=None):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              req = urllib.request.Request(api + path, data=data, headers={**headers, 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return response.read()
+          metadata = json.loads(request('/actions/artifacts/9966110208'))
+          assert metadata['workflow_run']['head_sha'] == '28847b8233ed8e808969133a58b212426c25fb82'
+          assert metadata['name'] == 'p8-r1-objects-Linux' and not metadata['expired']
+          raw = request('/actions/artifacts/9966110208/zip')
+          assert hashlib.sha256(raw).hexdigest() == '88b8f5530404d6e0d38796ace34b5fe061afab4c7f4e666c827ed7b584854f79'
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              index = json.loads(archive.read('index.json'))
+              patch = archive.read('repair.patch')
+              objects = archive.read('objects.zip')
+          assert hashlib.sha256(patch).hexdigest() == 'ac16b6aa82d14393ec034e317b991c992c870ec1b77a492282bfd6807ffce197'
+          assert index['base'] == 'b37204ee4d94e4857aaf477b810a21f19345d584'
+          assert index['tree'] == 'bd10b3ce0647e1ab720754adaca2234f87e3eb79'
+          assert len(index['entries']) == 16
+          expected_paths = {
+              'app/life-service/runtime314/life_service/.tiangong-generated-source.json',
+              'app/life-service/runtime314/life_service/embedded_runtime.py',
+              'app/life-service/runtime314/life_service/store.py',
+              'app/life-service/runtime314/life_service/store_connection.py',
+              'docs/capability-composition/P8_R1_2026-09-05.md',
+              'docs/p19-r2/VERIFICATION_PLANE_1_6.txt',
+              'docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json',
+              'src/life_service/embedded_runtime.py',
+              'src/life_service/store.py',
+              'src/life_service/store_connection.py',
+              'src/total_gateway/omni_grant_authority.py',
+              'src/total_gateway/orchestration.py',
+              'src/total_gateway/runtime.py',
+              'tests/golden/p19_r2/test_freeze_and_guards.py',
+              'tests/test_life_store_path_injection_p8.py',
+              'tests/test_tool_source_launch_p8.py',
+          }
+          assert {entry['path'] for entry in index['entries']} == expected_paths
+          assert all(entry['mode'] == '100644' and entry['type'] == 'blob' for entry in index['entries'])
+          expected = {entry['sha'] for entry in index['entries']}
+          with zipfile.ZipFile(io.BytesIO(objects)) as archive:
+              assert set(archive.namelist()) == expected
+              for sha in sorted(expected):
+                  assert re.fullmatch('[0-9a-f]{40}', sha)
+                  assert archive.getinfo(sha).file_size < 2000000
+                  data = archive.read(sha)
+                  assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+                  stored = json.loads(request('/git/blobs', {'content': base64.b64encode(data).decode('ascii'), 'encoding': 'base64'}))
+                  assert stored['sha'] == sha
+                  print('VERIFIED_BLOB=' + sha)
+          stored = json.loads(request('/git/trees', {'base_tree': '20f886a8c98539eb3dd24fa1bcfd9a20ea530c9f', 'tree': index['entries']}))
+          assert stored['sha'] == index['tree'], stored['sha']
+          print('VERIFIED_R1_TREE=' + stored['sha'])
+          print('NO_REF_UPDATE_NO_PUBLICATION_NO_WINDOWS_PASS_CLAIM')
