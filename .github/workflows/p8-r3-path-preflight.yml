@@ -1,0 +1,120 @@
+name: P8 R3 native path design preflight
+
+# Diagnostic only. No application changes, permission changes or acceptance.
+on:
+  push:
+    branches: [codex/capability-composition-p8-source-evolution-v1]
+    paths: [.github/workflows/p8-r3-path-preflight.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      TIANGONG_CI_ENV: '0'
+      TIANGONG_SANDBOX_COMPAT: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 323a97cd321c4bc5199ff918b8e42626af64569d
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-source.lock
+      - name: Observe host and actual AppContainer without relaxing ACLs
+        shell: python
+        run: |
+          import json, os, pathlib, subprocess, sys, tempfile
+          root = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          sys.path[:0] = [str(root/'src'), str(root/'app/backend/tiangong-backend')]
+          from omni_body_skill.tools.sandbox_runtime import SandboxRunner, SandboxLimits
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP'])/'p8-r3-design'
+          evidence.mkdir()
+          worker = r'''
+          import ctypes as C, json, os, pathlib, sys
+          from ctypes import wintypes as W
+          K=C.WinDLL('kernel32', use_last_error=True); N=C.WinDLL('ntdll')
+          class US(C.Structure):
+              _fields_=[('Length',W.USHORT),('MaximumLength',W.USHORT),('Buffer',W.LPWSTR)]
+          class OA(C.Structure):
+              _fields_=[('Length',W.ULONG),('RootDirectory',W.HANDLE),('ObjectName',C.POINTER(US)),('Attributes',W.ULONG),('SecurityDescriptor',W.LPVOID),('SecurityQualityOfService',W.LPVOID)]
+          class IOS(C.Structure):
+              _fields_=[('Status',C.c_void_p),('Information',C.c_size_t)]
+          K.QueryDosDeviceW.argtypes=[W.LPCWSTR,W.LPWSTR,W.DWORD];K.QueryDosDeviceW.restype=W.DWORD
+          K.GetShortPathNameW.argtypes=[W.LPCWSTR,W.LPWSTR,W.DWORD];K.GetShortPathNameW.restype=W.DWORD
+          K.CreateFileW.argtypes=[W.LPCWSTR,W.DWORD,W.DWORD,W.LPVOID,W.DWORD,W.DWORD,W.HANDLE];K.CreateFileW.restype=W.HANDLE
+          K.GetFinalPathNameByHandleW.argtypes=[W.HANDLE,W.LPWSTR,W.DWORD,W.DWORD];K.GetFinalPathNameByHandleW.restype=W.DWORD
+          K.CloseHandle.argtypes=[W.HANDLE];K.CloseHandle.restype=W.BOOL
+          N.NtCreateFile.argtypes=[C.POINTER(W.HANDLE),W.DWORD,C.POINTER(OA),C.POINTER(IOS),W.LPVOID,W.ULONG,W.ULONG,W.ULONG,W.ULONG,W.LPVOID,W.ULONG];N.NtCreateFile.restype=W.LONG
+          def final(h):
+              result={}
+              for flag in (2,10):
+                  b=C.create_unicode_buffer(8192);n=K.GetFinalPathNameByHandleW(h,b,len(b),flag)
+                  result[str(flag)]=b.value if 0<n<len(b) else {'error':C.get_last_error(),'size':n}
+              return result
+          def native(name):
+              b=C.create_unicode_buffer(name);size=len(name.encode('utf-16-le'))
+              u=US(size,size+2,C.cast(b,W.LPWSTR));a=OA(C.sizeof(OA),None,C.pointer(u),0x1040,None,None)
+              h=W.HANDLE();ios=IOS();s=N.NtCreateFile(C.byref(h),0x80,C.byref(a),C.byref(ios),None,0,7,1,0x4000,None,0)
+              result={'ntstatus':hex(s & 0xffffffff),'object_attributes':hex(a.Attributes),'name':name}
+              if s==0:
+                  try:result['final']=final(h)
+                  finally:K.CloseHandle(h)
+              return result
+          def observe(path):
+              p=pathlib.Path(path);r={'path':str(p)}
+              b=C.create_unicode_buffer(8192);n=K.QueryDosDeviceW(p.drive,b,len(b))
+              r['mapping']=b.value if n else {'error':C.get_last_error()}
+              r['dos_no_reparse']=native('\\??\\'+str(p))
+              if n:r['mapped_no_reparse']=native(b.value+str(p)[len(p.drive):])
+              h=K.CreateFileW(p.anchor,0x80,7,None,3,0x02200000,None)
+              if h==W.HANDLE(-1).value:r['anchor_open']={'error':C.get_last_error()}
+              else:
+                  try:r['anchor_open']=final(h)
+                  finally:K.CloseHandle(h)
+              b=C.create_unicode_buffer(8192);n=K.GetShortPathNameW(str(p),b,len(b))
+              r['short']=b.value if 0<n<len(b) else {'error':C.get_last_error()}
+              if n and n<len(b):r['short_no_reparse']=native('\\??\\'+b.value)
+              return r
+          home=pathlib.Path(__file__).absolute().parent
+          target=home/'long-directory-for-native-observation';target.mkdir(exist_ok=True)
+          f=target/'payload.txt';f.write_text('fixture',encoding='utf-8')
+          rows=[observe(home),observe(target),observe(f)]
+          if len(sys.argv)>1:rows.append(observe(sys.argv[1]))
+          output={'schema':'p8.path-design-observation.v1','sandbox':os.environ.get('TIANGONG_SANDBOX'),'rows':rows,'may_publish':False,'may_authorize':False,'may_execute':False}
+          (home/'observation.json').write_text(json.dumps(output,indent=2),encoding='utf-8')
+          print(json.dumps(output))
+          '''
+          with tempfile.TemporaryDirectory(prefix='p8-r3-design-') as temp:
+              base = pathlib.Path(temp).resolve(strict=True)
+              workspace=base/'w';workspace.mkdir()
+              (workspace/'observe.py').write_text(worker,encoding='utf-8')
+              foreign=base/'foreign';foreign.mkdir();(foreign/'payload.txt').write_text('fixture',encoding='utf-8')
+              link=base/'redirect'
+              linked=subprocess.run(['cmd','/c','mklink','/J',str(link),str(foreign)],capture_output=True,text=True,check=False)
+              if linked.returncode:raise RuntimeError(linked.stdout+linked.stderr)
+              host=subprocess.run([sys.executable,'-I','-B',str(workspace/'observe.py'),str(link/'payload.txt')],capture_output=True,text=True,check=False,timeout=60)
+              (evidence/'host.log').write_text(host.stdout+'\n'+host.stderr,encoding='utf-8')
+              if host.returncode:raise RuntimeError('host observation failed')
+              (evidence/'host.json').write_bytes((workspace/'observation.json').read_bytes())
+              (workspace/'observation.json').unlink()
+              runner=SandboxRunner(workspace,base/'s',base/'trash',SandboxLimits(timeout_seconds=90,max_changed_bytes=1048576))
+              result=runner.run([sys.executable,'-I','-B',str(workspace/'observe.py')],require_os_containment=True)
+              (evidence/'contained-process.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
+              if (workspace/'observation.json').is_file():
+                  (evidence/'contained.json').write_bytes((workspace/'observation.json').read_bytes())
+              print('HOST='+host.stdout)
+              print('CONTAINED='+json.dumps(result))
+              if result.get('ok') is not True or result.get('containment')!='windows-appcontainer' or result.get('network')!='denied':
+                  raise RuntimeError('diagnostic did not execute in the required native containment')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p8-r3-path-design-${{ github.sha }}
+          path: ${{ runner.temp }}/p8-r3-design/
+          if-no-files-found: error
+          retention-days: 14
