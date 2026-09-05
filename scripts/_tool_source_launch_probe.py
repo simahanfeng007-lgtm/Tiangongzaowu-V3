@@ -20,19 +20,30 @@ def main() -> int:
     output = workspace / REPORT_NAME
     if output.exists():
         raise RuntimeError("source launch observation already exists")
-    # All mutable application roots remain inside this one private sandbox.
-    os.environ.update({
-        "APPDATA": str(workspace / "appdata"),
-        "TIANGONG_DOCUMENTS_PATH": str(workspace / "documents"),
-        "TIANGONG_LIFE_DATA_ROOT": str(workspace / "life-data"),
-        "TIANGONG_LIFE_RUNTIME_ROOT": str(workspace / "life-runtime"),
-    })
-    sys.path[:0] = [str(source / "src"), str(source / "app/backend/tiangong-backend")]
-    phase = "source_consistency"
+    phase = "private_environment"
     report = {"schema": "tiangong.tool-source-launch-observation.v1",
               "may_publish": False, "may_authorize": False, "may_execute": False}
     runtime = None
     try:
+        # Build a fresh private profile before any candidate import. The sandbox
+        # intentionally strips ambient HOME/USERPROFILE; legacy body/backup
+        # defaults must not resolve the host user's configuration or credentials.
+        roots = {
+            "HOME": workspace / "home", "USERPROFILE": workspace / "home",
+            "APPDATA": workspace / "appdata", "LOCALAPPDATA": workspace / "localdata",
+            "TEMP": workspace / "tmp", "TMP": workspace / "tmp",
+            "TIANGONG_DOCUMENTS_PATH": workspace / "documents",
+            "TIANGONG_LIFE_DATA_ROOT": workspace / "life-data",
+            "TIANGONG_LIFE_RUNTIME_ROOT": workspace / "life-runtime",
+        }
+        for directory in dict.fromkeys(roots.values()):
+            directory.mkdir(exist_ok=False)
+        os.environ.update({name: str(value) for name, value in roots.items()})
+        # USERPROFILE is explicit; discard alternate ambient home selectors.
+        os.environ.pop("HOMEDRIVE", None)
+        os.environ.pop("HOMEPATH", None)
+        sys.path[:0] = [str(source / "src"), str(source / "app/backend/tiangong-backend")]
+        phase = "source_consistency"
         from total_gateway.tool_source_launch import verify_source_revision
         report["source_consistency"] = verify_source_revision(
             source, source_inputs_sha256=sys.argv[1], capability_sha256=sys.argv[2],

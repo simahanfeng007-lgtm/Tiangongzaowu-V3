@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import ntpath
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -42,7 +44,8 @@ def worker_fixture(monkeypatch):
     monkeypatch.setattr(sys, "dont_write_bytecode", True)
     monkeypatch.setattr(sys, "argv", ["probe.py", "b" * 64, "c" * 64])
     monkeypatch.setenv("TIANGONG_SANDBOX", "1")
-    for name in ("APPDATA", "TIANGONG_DOCUMENTS_PATH", "TIANGONG_LIFE_DATA_ROOT", "TIANGONG_LIFE_RUNTIME_ROOT"):
+    for name in ("APPDATA", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "TEMP", "TMP",
+                 "TIANGONG_DOCUMENTS_PATH", "TIANGONG_LIFE_DATA_ROOT", "TIANGONG_LIFE_RUNTIME_ROOT"):
         monkeypatch.setenv(name, "test-only-restored-by-monkeypatch")
     return worker, observed, runtime, verify
 
@@ -110,3 +113,60 @@ def test_release_failure_still_prevents_config_and_runtime_assembly(worker_fixtu
     report = json.loads((tmp_path / "launch-observation.json").read_text())
     assert report["failed_phase"] == "release_generation"
     assert report["error"] == "retained release mismatch"
+
+
+@pytest.mark.parametrize("ambient", ["missing", "foreign"])
+def test_probe_binds_home_and_cache_roots_before_any_candidate_import(worker_fixture, tmp_path, monkeypatch, ambient):
+    worker, observed, _, verify = worker_fixture
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    foreign = tmp_path / "foreign-home"
+    foreign.mkdir()
+    sentinel = foreign / "api_keys.json"
+    sentinel.write_bytes(b"private host fixture, must remain untouched")
+    before = sentinel.read_bytes()
+    for name in ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"):
+        if ambient == "missing":
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, str(foreign))
+    monkeypatch.setattr(worker, "__file__", str(workspace / "probe.py"))
+    def check_environment(*args, **kwargs):
+        assert Path.home() == workspace / "home"
+        # Exercise the actual standard Windows HOME expansion on either host.
+        assert ntpath.expanduser("~") == str(workspace / "home")
+        assert "HOMEDRIVE" not in os.environ and "HOMEPATH" not in os.environ
+        for name in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP",
+                     "TIANGONG_DOCUMENTS_PATH", "TIANGONG_LIFE_DATA_ROOT", "TIANGONG_LIFE_RUNTIME_ROOT"):
+            value = Path(os.environ[name])
+            assert value.is_dir(), name
+            assert value.is_relative_to(workspace), name
+        assert sentinel.read_bytes() == before
+        return {"status": "SOURCE_CONSISTENCY_OBSERVED"}
+    verify.side_effect = check_environment
+    assert worker.main() == 0
+    assert len(observed) == 1
+    assert verify.call_count == 2
+    assert sentinel.read_bytes() == before
+    assert sorted(p.name for p in foreign.iterdir()) == ["api_keys.json"]
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_preexisting_home_is_not_reused_or_followed(worker_fixture, tmp_path, monkeypatch, kind):
+    worker, observed, runtime, verify = worker_fixture
+    home = tmp_path / "home"
+    if kind == "file":
+        home.write_bytes(b"keep")
+    else:
+        home.mkdir()
+        (home / "sentinel").write_bytes(b"keep")
+    monkeypatch.setattr(worker, "__file__", str(tmp_path / "probe.py"))
+    assert worker.main() == 1
+    assert not observed
+    verify.assert_not_called()
+    runtime.close.assert_not_called()
+    report = json.loads((tmp_path / "launch-observation.json").read_text())
+    assert report["failed_phase"] == "private_environment"
+    assert report["status"] == "STARTUP_PROBE_FAILED"
+    assert report["may_publish"] is report["may_authorize"] is report["may_execute"] is False
+    assert (home if kind == "file" else home / "sentinel").read_bytes() == b"keep"

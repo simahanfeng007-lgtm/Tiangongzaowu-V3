@@ -900,6 +900,10 @@ class GatewayRuntime:
                 objects,
                 now_ms=observed_ms,
             )
+            # Constructor setup can fail after Stores/lease have opened (for
+            # example, unavailable profile discovery). Keep it under the same
+            # existing initialization cleanup guard, before services start.
+            runtime = cls(config, lease, store, objects, facts, time.monotonic_ns())
         except Exception:
             if "facts" in locals():
                 facts.close()
@@ -909,7 +913,6 @@ class GatewayRuntime:
                 store.close()
             lease.release()
             raise
-        runtime = cls(config, lease, store, objects, facts, time.monotonic_ns())
         try:
             life_transport = None
             communication_control = None
