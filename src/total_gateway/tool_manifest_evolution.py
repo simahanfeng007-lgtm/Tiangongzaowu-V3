@@ -1,4 +1,4 @@
-"""Read-only review of a candidate manifest through the existing Gateway.
+"""Gateway-owned read-only review through the existing permission compiler.
 
 This is a differential observation, not a registry, validator implementation,
 approval, sandbox receipt or Source publication. Even a report with no visible
@@ -41,6 +41,7 @@ class ManifestEvolutionReviewV1:
     schema: str
     base_manifest_sha256: str
     candidate_manifest_sha256: str
+    manifest_changed_fields: tuple[str, ...]
     requested_action_ids: tuple[str, ...]
     deltas: tuple[ActionManifestDeltaV1, ...]
     unexpected_action_ids: tuple[str, ...]
@@ -197,6 +198,7 @@ def review_manifest_evolution(
         schema="tiangong.tool-manifest-evolution-review.v1",
         base_manifest_sha256=before.manifest_sha256,
         candidate_manifest_sha256=after.manifest_sha256,
+        manifest_changed_fields=_changed(before.manifest, after.manifest),
         requested_action_ids=requested_action_ids,
         deltas=tuple(deltas),
         unexpected_action_ids=tuple(sorted(changed_ids - requested)),

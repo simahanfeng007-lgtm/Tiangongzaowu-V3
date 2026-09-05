@@ -129,7 +129,7 @@ class CompiledCapabilityManifest:
             "validation": _jsonable(dict(self.validation)),
         }
 
-    def to_gateway_dict(self) -> dict[str, Any]:
+    def to_gateway_dict(self, *, source_inputs_sha256: str | None = None) -> dict[str, Any]:
         """Project this compiler's result into the existing published format.
 
         Runtime identity includes the runtime class and dynamic route set;
@@ -137,7 +137,17 @@ class CompiledCapabilityManifest:
         These are distinct, explicit projections of the SAME compilation.
         No old manifest rows, route guesses, or permission overrides enter
         this projection. Returning it does not publish or approve source.
+        A P8 isolated build additionally binds its observed source inputs.
+        The existing Gateway hashes the entire document, so a handler-only
+        change creates a new authority revision without changing permission
+        semantics. Legacy runtime projection and table hashes are unchanged.
         """
+        if source_inputs_sha256 is not None and (
+            not isinstance(source_inputs_sha256, str)
+            or len(source_inputs_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in source_inputs_sha256)
+        ):
+            raise ValueError("compiled source input revision is invalid")
         runtime = self.to_dict()
         source_payload = {
             "runtime_class": runtime["runtime_class"],
@@ -152,7 +162,7 @@ class CompiledCapabilityManifest:
         ):
             raise ValueError("compiled capability manifest changed or is unhealthy")
         source_hash = _sha256(runtime["capabilities"])
-        return {
+        result = {
             "schema": runtime["schema"],
             "capabilities": runtime["capabilities"],
             "total": runtime["total"],
@@ -165,6 +175,9 @@ class CompiledCapabilityManifest:
                 "executable_without_route": [],
             },
         }
+        if source_inputs_sha256 is not None:
+            result["source_inputs_sha256"] = source_inputs_sha256
+        return result
 
 
 def compile_manifest(

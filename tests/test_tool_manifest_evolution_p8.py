@@ -9,7 +9,7 @@ from contracts import canonical_sha256
 from omni_body_skill.tool_contracts import build_action_schema_catalog
 from total_gateway.action_registry import ActionRegistryError, compile_action_authority
 from v3.fact_kernel import compile_manifest
-from world_understanding.tool_capability_world.manifest_evolution import (
+from total_gateway.tool_manifest_evolution import (
     ManifestEvolutionError,
     review_manifest_evolution,
 )

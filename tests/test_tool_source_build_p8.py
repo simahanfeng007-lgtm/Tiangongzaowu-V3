@@ -46,14 +46,19 @@ def simulated_build(builder, monkeypatch, tmp_path):
         path = snapshot / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("SIMULATED = True\n", encoding="utf-8")
-    policy = {"schema": "tiangong.source-ownership.v2", "mappings": [
+    policy = {"schema": "tiangong.source-ownership.v2", "authority_policy": {
+        "editable_roots": ["src", "app/backend/tiangong-backend/v3"], "frozen_roots": [],
+    }, "mappings": [
         {"id": "body", "source": "src/omni_body_skill", "source_role": "authoritative", "targets": []},
         {"id": "fact", "source": "app/backend/tiangong-backend/v3/fact_kernel", "source_role": "authoritative", "targets": []},
     ]}
     (snapshot / "source-ownership.json").write_text(json.dumps(policy), encoding="utf-8")
     metadata = {"skill.list": {"risk": "A0", "effect": "read", "implemented": True}}
+    source_inputs = builder.compile_tool_source_inputs(snapshot)
     manifest = compile_manifest(metadata, object, dynamic_actions=("skill.list",),
-                                action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict()
+                                action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict(
+        source_inputs_sha256=source_inputs.source_inputs_sha256,
+    )
     monkeypatch.setattr(builder, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(builder, "inspect_tool_source_candidate", Mock(return_value=SimulatedCandidate()))
     monkeypatch.setattr(builder, "read_tool_source_manifests", Mock(return_value=(manifest, manifest)))
@@ -80,12 +85,19 @@ def simulated_build(builder, monkeypatch, tmp_path):
                     name: {"path": relative, "sha256": hashlib.sha256((snapshot / relative).read_bytes()).hexdigest()}
                     for name, relative in builder.AUTHORITY_FILES.items()
                 },
-                "gateway_manifest": manifest,
+                "source_inputs": builder.asdict(source_inputs),
+                "gateway_manifest": dict(manifest),
             }
             if mode["value"] == "bad_compiler":
                 artifact["compiler"] = "unrelated.compiler"
             if mode["value"] == "bad_bindings":
                 artifact["authority_bindings"]["compiler"]["sha256"] = "0" * 64
+            if mode["value"] == "bad_source_inputs":
+                artifact["source_inputs"]["may_execute"] = 0
+            if mode["value"] == "bad_revision":
+                artifact["gateway_manifest"]["source_inputs_sha256"] = "0" * 64
+            if mode["value"] == "missing_revision":
+                artifact["gateway_manifest"].pop("source_inputs_sha256")
             (snapshot / builder.ARTIFACT_NAME).write_text(json.dumps(artifact), encoding="utf-8")
             return {
                 "ok": mode["value"] != "failed",
@@ -110,10 +122,11 @@ def test_observed_build_is_not_review_approval_publication_or_execution(builder,
         assert result[name] is False
 
 
-@pytest.mark.parametrize("mode", ["bad_compiler", "bad_bindings", "writes", "deletes", "compat"])
+@pytest.mark.parametrize("mode", ["bad_compiler", "bad_bindings", "bad_source_inputs", "bad_revision",
+                                 "missing_revision", "writes", "deletes", "compat"])
 def test_parent_rejects_foreign_compilers_input_changes_and_compatibility_evidence(builder, simulated_build, tmp_path, mode):
     simulated_build["value"] = mode
-    with pytest.raises((ValueError, RuntimeError), match="bindings|immutable inputs|containment evidence"):
+    with pytest.raises((ValueError, RuntimeError), match="bindings|revision|immutable inputs|containment evidence"):
         builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40, action_ids=("skill.list",))
 
 

@@ -24,13 +24,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "app/backend/tiangong-backend")]
 
 from omni_body_skill.tools.sandbox_runtime import SandboxLimits, SandboxRunner  # noqa: E402
+from contracts import canonical_json_bytes  # noqa: E402
 from source_authority import validator as source_validator  # noqa: E402
 from world_understanding.tool_capability_world.source_candidate import (  # noqa: E402
     inspect_tool_source_candidate,
     materialize_tool_source_candidate,
     read_tool_source_manifests,
 )
-from world_understanding.tool_capability_world.manifest_evolution import review_manifest_evolution  # noqa: E402
+from total_gateway.tool_manifest_evolution import review_manifest_evolution  # noqa: E402
+from world_understanding.tool_capability_world.source_inputs import compile_tool_source_inputs  # noqa: E402
 
 
 WORKER_NAME = ".tiangong-source-build-worker.py"
@@ -74,6 +76,7 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
         )
         if failures:
             raise ValueError("source build snapshot failed trusted source topology validation")
+        source_inputs = compile_tool_source_inputs(snapshot)
         expected_bindings = {
             name: {"path": relative, "sha256": hashlib.sha256((snapshot / relative).read_bytes()).hexdigest()}
             for name, relative in AUTHORITY_FILES.items()
@@ -111,8 +114,11 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
             artifact.get("compiler") != "v3.fact_kernel.compile_manifest"
             or artifact.get("authority_bindings") != expected_bindings
             or not isinstance(artifact.get("gateway_manifest"), dict)
+            or canonical_json_bytes(artifact.get("source_inputs")) != canonical_json_bytes(asdict(source_inputs))
         ):
             raise ValueError("source build compiler bindings differ from committed bytes")
+        if artifact["gateway_manifest"].get("source_inputs_sha256") != source_inputs.source_inputs_sha256:
+            raise ValueError("source build Manifest revision differs from committed inputs")
         review = review_manifest_evolution(published, artifact["gateway_manifest"],
                                            requested_action_ids=candidate.requested_action_ids)
         # A successful build is still not a reviewed publication or execution

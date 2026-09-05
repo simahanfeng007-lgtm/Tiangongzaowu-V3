@@ -13,7 +13,7 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "a78013ce12172d78fe034e058974a39b8e2440d11fb1f1c23d39a2cf25c8746f",
+  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "d7521310589cdcb363160ad18fc13cc5b76ef5af9b17a3cd674257e77c02c277",
   "src/contracts/execution.py": "4c90c63dd1e87b7e196af8d1e620dc5bed15130342a4ffe8a14916ba95a39c0d",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
@@ -52,11 +52,12 @@
   "src/total_gateway/effects.py": "790ef154542b4e143d342201c8ba087fe763afdfc23ffc852a905cab460f819f",
   "src/world_understanding/tool_capability_world/compiler.py": "bfc32a2d1b86c2c9c97bea1313d69d4c5c38e498089d851a59b3ed0dc7d66ce8",
   "src/world_understanding/tool_capability_world/source_candidate.py": "db24ec3e86fd7cd2e5e978e69fde8c396185d89e6e749490977478f0de3adc95",
-  "src/world_understanding/tool_capability_world/manifest_evolution.py": "ebfb7b8c7832a487cac9e6b2ac4e877e3e4d934d086b618702fe29385b5dfead",
+  "src/world_understanding/tool_capability_world/source_inputs.py": "3a1cdc73e36921b12eaae8fc54a0781c7be544fbc3ccf0c50409576246bca0ae",
+  "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
   "src/omni_body_skill/tools/sandbox_runtime.py": "f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501",
-  "scripts/_tool_source_build_worker.py": "fba55be3ac5e61a45c8bf1b00ac846fc2ba67bc90fc3ddc46ac2ab32540e4ee5",
-  "scripts/build-tool-source.py": "bc71999908a58ea768c810bdc5cf1fcab761fc85234f3f584ff257cdb70649cc",
-  "scripts/review-tool-source.py": "cfd7079f19cc16465c145db463d81ad372b0f7e764991aee8a0a17fe9951d5b3"
+  "scripts/_tool_source_build_worker.py": "5d5daf10f5ed82f2900248b13a46025d48a6d38c3bb072802eb59fec0f48fe5c",
+  "scripts/build-tool-source.py": "3cf569585247acb5544ac4b452539887add06dda9373b28f5c1df905077ff0c6",
+  "scripts/review-tool-source.py": "e3273bcfce3db2067df59ec8c882b98b05eba97e377b4db6dc26b21f0218ae76"
  }
 }

@@ -113,6 +113,12 @@ are not product evaluations.
 
 ## Evidence log
 
+Local P8 artifacts are now under `output/p8-evidence/`, the repository's
+existing artifact-output location. Historical `out/p8-evidence/` references
+below identify the original location; all ten existing files were moved
+without changing a byte and each SHA-256 was checked before and after.
+No source gate was changed or weakened to relocate these non-source reports.
+
 - 2026-09-05: fresh main/remote/worktree inspection completed; no interrupted
   Python or GitHub watch process found. P8 isolated worktree created at the
   successful main baseline. Implementation and acceptance are still pending.
@@ -195,3 +201,38 @@ are not product evaluations.
   plane 1.5. That assertion now explicitly expects declared 1.6 while retaining
   exact Store v33 and all activation-eligibility tests. Full rerun pending;
   failed JUnit retained in `out/p8-evidence/full-python-78c8a86.xml`.
+- Fourth checkpoint: `add2e1f12920a836230c948f772eb50a612c816f`.
+  Isolated build 4 reached `ISOLATED_BUILD_OBSERVED`; publication remained
+  forbidden. Node: 224 passed / 2 skipped / 0 failed. Full Python first stopped
+  at 815 passed / 1 failed / 108 passed subtests because earlier JUnit reports
+  in `out/` contained Windows CRLF. These generated reports are now preserved
+  in `output/p8-evidence/`; no test assertion or source verifier was changed.
+- The same-head rerun passed that source gate, then stopped at 2,412 passed /
+  16 skipped / 1 failed / 413 passed subtests. Exact cause: P8 manifest review
+  in World Understanding imported `total_gateway.action_registry`, violating
+  the existing P17-M4 dependency direction. Evidence:
+  `output/p8-evidence/full-python-add2e1f-rerun.xml`. Review is now moved into
+  `src/total_gateway/tool_manifest_evolution.py`; there is no World re-export
+  and the architecture guard is unchanged.
+- Source input revision binding IMPLEMENTED: trusted parent observation of
+  editable/frozen source bytes and dependency inputs, exact child comparison,
+  and an optional source-input binding on the existing compiler projection.
+  Handler-only source changes now produce a different whole-document Gateway
+  authority identity without changing permission semantics. Generated Manifest
+  output and generated mirrors are excluded from their own input digest.
+  This is not proof of source publication or production running-lock behavior.
+- LOCAL component observation before the next checkpoint: 73 passed / 2
+  skipped across source-input, build-parent, manifest and architecture tests.
+  The two skips are host-denied symlink creation, not successful isolation
+  evidence. New source-input cases and all final gates still require reruns.
+- Model resource preflight: the application-defined `api_keys.json` contains
+  provider/endpoint/model configuration metadata only; no credentials were
+  printed or changed. Availability through the existing desktop credential
+  vault has not been verified. Model selection/weak-model control and batch
+  call budget have been requested before paid batch evaluation begins.
+- Expanded local pre-checkpoint run: 171 passed / 2 skipped, covering all P8
+  source/build/sandbox/review suites, the unchanged P17-M4 architecture guards,
+  and the full P19-R2 Golden directory with UPDATE_FREEZE absent. Official
+  generated-source and Source Authority checks passed. This is component/local
+  evidence only; the new committed candidate still needs isolated-build and
+  full exact-head regression evidence.

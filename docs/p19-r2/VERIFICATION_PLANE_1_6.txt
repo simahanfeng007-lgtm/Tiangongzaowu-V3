@@ -35,6 +35,16 @@ Changes covered by this revision
 5. Strict source-build paths use the extended Windows namespace for deep
    private inputs and cleanup without changing the host LongPathsEnabled
    setting or weakening filesystem/OS isolation.
+6. Isolated builds bind a conservative, byte-hashed closure of the existing
+   editable/frozen source roots and dependency inputs. Generated mirrors and
+   the generated Capability Manifest do not participate in their own input
+   revision. Parent-observed input bytes must match the child build report.
+   The existing compiler's Gateway projection includes source_inputs_sha256;
+   its whole-document authority hash changes even for handler-only edits.
+   This does not change permission semantics or approve publication.
+7. Manifest differential review is Gateway-owned. World Understanding does
+   not import the Gateway to recompile permissions. The existing layer guard
+   remains unchanged; the P8 review module is moved, not re-exported by World.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------
@@ -49,7 +59,7 @@ runtime operations are not enabled by the offline source-build tooling.
 Freeze procedure
 ----------------------------------------------------------------------
 
-Retain every 1.5 authority surface entry and add the source candidate/review,
+Retain every 1.5 authority surface entry and add the source candidate/inputs/review,
 trusted source topology validator, sandbox, and installed build/review scripts.
 Refresh docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json only through the existing
 UPDATE_FREEZE=1 generator after inspecting changes. Then rerun the guard with

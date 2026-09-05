@@ -22,7 +22,7 @@ from world_understanding.tool_capability_world.source_candidate import (  # noqa
     inspect_tool_source_candidate,
     read_tool_source_manifests,
 )
-from world_understanding.tool_capability_world.manifest_evolution import (  # noqa: E402
+from total_gateway.tool_manifest_evolution import (  # noqa: E402
     review_manifest_evolution,
 )
 

@@ -7,6 +7,7 @@ markers here are accidental-invocation guards, never proof of isolation.
 from __future__ import annotations
 
 import ast
+from dataclasses import asdict
 import hashlib
 import json
 import os
@@ -36,6 +37,8 @@ def main() -> int:
     from omni_body_skill import tool_contracts
     from omni_body_skill.tools import omni_body_tool
     from v3 import fact_kernel
+    from world_understanding.tool_capability_world.source_inputs import compile_tool_source_inputs
+    source_inputs = compile_tool_source_inputs(root)
     bindings = {}
     for name, module, relative in (
         ("compiler", fact_kernel, "app/backend/tiangong-backend/v3/fact_kernel/__init__.py"),
@@ -61,7 +64,8 @@ def main() -> int:
         "python_version": sys.version,
         "python_ast_files": parsed,
         "source_topology_valid": True,
-        "gateway_manifest": compiled.to_gateway_dict(),
+        "source_inputs": asdict(source_inputs),
+        "gateway_manifest": compiled.to_gateway_dict(source_inputs_sha256=source_inputs.source_inputs_sha256),
     }
     raw = (json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     with (root / ARTIFACT_NAME).open("xb") as output:
