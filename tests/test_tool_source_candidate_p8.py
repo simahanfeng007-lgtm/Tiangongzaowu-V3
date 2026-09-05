@@ -16,6 +16,7 @@ from world_understanding.tool_capability_world.source_candidate import (
     inspect_tool_source_candidate,
     materialize_tool_source_candidate,
     read_tool_source_manifests,
+    _verify_git_content,
     verify_tool_source_candidate,
 )
 
@@ -229,8 +230,19 @@ def test_corrupted_native_tree_identity_is_rejected(repository):
     corrupt = root / ".git/objects" / old_tree[:2] / old_tree[2:]
     corrupt.chmod(0o644)
     corrupt.write_bytes(zlib.compress(f"tree {len(raw)}\0".encode("ascii") + raw))
-    with pytest.raises(SourceCandidateError, match="object bytes"):
+    # Git versions may reject a corrupt loose object before our independent
+    # byte verifier sees it. Both boundaries must reject the candidate.
+    with pytest.raises(SourceCandidateError, match="object bytes|object is absent or incompatible"):
         inspect(root, base, head)
+
+
+@pytest.mark.parametrize("kind", ["blob", "tree", "commit"])
+def test_native_hash_verifier_independently_rejects_substituted_bytes(kind):
+    raw = b"immutable object contents"
+    oid = hashlib.sha1(f"{kind} {len(raw)}\0".encode("ascii") + raw).hexdigest()
+    _verify_git_content(oid, kind, raw)
+    with pytest.raises(SourceCandidateError, match="object bytes"):
+        _verify_git_content(oid, kind, raw + b"substituted")
 
 
 def test_materialized_source_is_exact_private_and_never_executed(repository, tmp_path):
@@ -255,9 +267,9 @@ def test_git_archive_attributes_cannot_hide_source_inputs(repository):
     base = commit(root)
     write(root, "src/body/action.py", "hidden_candidate = True\n")
     candidate = inspect(root, base, commit(root))
-    with pytest.raises(SourceCandidateError, match="omitted committed inputs"):
-        with materialize_tool_source_candidate(root, candidate):
-            pytest.fail("an incomplete source snapshot must not reach a build")
+    with materialize_tool_source_candidate(root, candidate) as snapshot:
+        assert (snapshot / "src/body/action.py").read_bytes() == b"hidden_candidate = True\n"
+        assert (snapshot / ".gitattributes").read_bytes() == b"src/body/action.py export-ignore\n"
 
 
 def test_manifest_reader_uses_committed_artifacts_not_dirty_checkout(repository):
@@ -286,7 +298,7 @@ def test_read_only_cli_never_imports_candidate_and_does_not_claim_build_or_publi
     write(root, "src/body/action.py", f"from pathlib import Path\nPath({str(marker)!r}).touch()\n")
     head = commit(root)
     script = Path(__file__).resolve().parents[1] / "scripts/review-tool-source.py"
-    result = subprocess.run([sys.executable, str(script), "--repository", str(root), "--base", base,
+    result = subprocess.run([sys.executable, "-X", "utf8", str(script), "--repository", str(root), "--base", base,
                              "--candidate", head, "--action", "file.read"],
                             capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert result.returncode == 0, result.stderr + result.stdout

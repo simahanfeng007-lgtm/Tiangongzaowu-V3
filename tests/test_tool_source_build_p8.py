@@ -1,0 +1,126 @@
+"""Parent-side build guards; simulated children are NOT isolation evidence."""
+
+from contextlib import contextmanager
+from dataclasses import dataclass
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+from omni_body_skill.tool_contracts import build_action_schema_catalog
+from v3.fact_kernel import compile_manifest
+
+
+@pytest.fixture
+def builder():
+    path = Path(__file__).resolve().parents[1] / "scripts/build-tool-source.py"
+    spec = importlib.util.spec_from_file_location("p8_build_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_build_without_os_containment_stops_before_inspection_or_export(builder, monkeypatch, tmp_path):
+    monkeypatch.setattr(builder, "os", SimpleNamespace(name="posix"))
+    inspect = Mock(side_effect=AssertionError("must not start build preparation"))
+    monkeypatch.setattr(builder, "inspect_tool_source_candidate", inspect)
+    with pytest.raises(RuntimeError, match="os_containment_unavailable"):
+        builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40, action_ids=("skill.list",))
+    inspect.assert_not_called()
+
+
+@dataclass(frozen=True)
+class SimulatedCandidate:
+    requested_action_ids: tuple[str, ...] = ("skill.list",)
+    candidate_sha256: str = "c" * 64
+
+
+@pytest.fixture
+def simulated_build(builder, monkeypatch, tmp_path):
+    snapshot = tmp_path / "immutable-source"
+    for relative in builder.AUTHORITY_FILES.values():
+        path = snapshot / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("SIMULATED = True\n", encoding="utf-8")
+    policy = {"schema": "tiangong.source-ownership.v2", "mappings": [
+        {"id": "body", "source": "src/omni_body_skill", "source_role": "authoritative", "targets": []},
+        {"id": "fact", "source": "app/backend/tiangong-backend/v3/fact_kernel", "source_role": "authoritative", "targets": []},
+    ]}
+    (snapshot / "source-ownership.json").write_text(json.dumps(policy), encoding="utf-8")
+    metadata = {"skill.list": {"risk": "A0", "effect": "read", "implemented": True}}
+    manifest = compile_manifest(metadata, object, dynamic_actions=("skill.list",),
+                                action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict()
+    monkeypatch.setattr(builder, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(builder, "inspect_tool_source_candidate", Mock(return_value=SimulatedCandidate()))
+    monkeypatch.setattr(builder, "read_tool_source_manifests", Mock(return_value=(manifest, manifest)))
+
+    @contextmanager
+    def materialize(*_):
+        yield snapshot
+
+    monkeypatch.setattr(builder, "materialize_tool_source_candidate", materialize)
+    mode = {"value": "valid"}
+
+    class SimulatedChild:
+        def __init__(self, *args):
+            pass
+
+        def run(self, command, **kwargs):
+            assert kwargs == {"require_os_containment": True}
+            assert "-I" in command and "-B" in command
+            assert Path(command[-1]).parent == snapshot
+            artifact = {
+                "schema": "tiangong.tool-source-build-artifact.v1",
+                "compiler": "v3.fact_kernel.compile_manifest",
+                "authority_bindings": {
+                    name: {"path": relative, "sha256": hashlib.sha256((snapshot / relative).read_bytes()).hexdigest()}
+                    for name, relative in builder.AUTHORITY_FILES.items()
+                },
+                "gateway_manifest": manifest,
+            }
+            if mode["value"] == "bad_compiler":
+                artifact["compiler"] = "unrelated.compiler"
+            if mode["value"] == "bad_bindings":
+                artifact["authority_bindings"]["compiler"]["sha256"] = "0" * 64
+            (snapshot / builder.ARTIFACT_NAME).write_text(json.dumps(artifact), encoding="utf-8")
+            return {
+                "ok": mode["value"] != "failed",
+                "returncode": 1 if mode["value"] == "failed" else 0,
+                "containment": "compat-workspace-job-sandbox" if mode["value"] == "compat" else "windows-appcontainer",
+                "network": "denied",
+                "changed_files": [builder.ARTIFACT_NAME] + (["src/tampered.py"] if mode["value"] == "writes" else []),
+                "deleted_files": ["src/original.py"] if mode["value"] == "deletes" else [],
+            }
+
+    monkeypatch.setattr(builder, "SandboxRunner", SimulatedChild)
+    return mode
+
+
+def test_observed_build_is_not_review_approval_publication_or_execution(builder, simulated_build, tmp_path):
+    result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40, action_ids=("skill.list",))
+    assert result["status"] == "ISOLATED_BUILD_OBSERVED"
+    assert result["trusted_static_checks"]["python_ast_files"] == 3
+    assert result["committed_manifest_matches_build"] is True
+    for name in ("may_publish", "may_authorize", "may_execute", "review_approval_verified",
+                 "evidence_contract_tests_verified", "running_manifest_lock_verified"):
+        assert result[name] is False
+
+
+@pytest.mark.parametrize("mode", ["bad_compiler", "bad_bindings", "writes", "deletes", "compat"])
+def test_parent_rejects_foreign_compilers_input_changes_and_compatibility_evidence(builder, simulated_build, tmp_path, mode):
+    simulated_build["value"] = mode
+    with pytest.raises((ValueError, RuntimeError), match="bindings|immutable inputs|containment evidence"):
+        builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40, action_ids=("skill.list",))
+
+
+def test_failed_child_process_preserves_failure_and_does_not_produce_pass(builder, simulated_build, tmp_path):
+    simulated_build["value"] = "failed"
+    result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40, action_ids=("skill.list",))
+    assert result["status"] == "BUILD_FAILED"
+    assert result["build_process"]["returncode"] == 1
+    assert result["may_publish"] is False
+    assert "manifest_review" not in result

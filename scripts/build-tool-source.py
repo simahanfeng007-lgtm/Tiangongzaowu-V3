@@ -86,12 +86,13 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
         with tempfile.TemporaryDirectory(prefix="tg-build-state-") as state:
             runner = SandboxRunner(snapshot, Path(state) / "state", Path(state) / "trash",
                                    SandboxLimits(timeout_seconds=120, max_changed_bytes=32 * 1024 * 1024))
-            outcome = runner.run([sys.executable, "-I", "-B", str(snapshot / WORKER_NAME)],
+            outcome = runner.run([sys.executable, "-X", "utf8", "-I", "-B", str(snapshot / WORKER_NAME)],
                                  require_os_containment=True)
         if not outcome["ok"]:
             return {
                 "source_candidate": asdict(candidate), "build_process": outcome,
                 "status": "BUILD_FAILED", "may_publish": False,
+                "may_authorize": False, "may_execute": False,
                 "worker_sha256": hashlib.sha256(worker).hexdigest(),
             }
         if outcome["containment"] != "windows-appcontainer" or outcome["network"] != "denied":
@@ -106,7 +107,11 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
                               parse_constant=_invalid_constant)
         if not isinstance(artifact, dict) or artifact.get("schema") != "tiangong.tool-source-build-artifact.v1":
             raise ValueError("source build artifact schema is invalid")
-        if artifact.get("compiler") != "v3.fact_kernel.compile_manifest" or artifact.get("authority_bindings") != expected_bindings:
+        if (
+            artifact.get("compiler") != "v3.fact_kernel.compile_manifest"
+            or artifact.get("authority_bindings") != expected_bindings
+            or not isinstance(artifact.get("gateway_manifest"), dict)
+        ):
             raise ValueError("source build compiler bindings differ from committed bytes")
         review = review_manifest_evolution(published, artifact["gateway_manifest"],
                                            requested_action_ids=candidate.requested_action_ids)
@@ -150,7 +155,9 @@ def main(argv: list[str] | None = None) -> int:
         report = build_candidate(args.repository.absolute(), base=args.base, head=args.candidate,
                                  action_ids=tuple(sorted(args.action)))
     except (ValueError, OSError, RuntimeError) as exc:
-        report = {"status": "BUILD_REJECTED", "error": str(exc), "may_publish": False}
+        report = {"status": "BUILD_REJECTED", "error": str(exc), "may_publish": False,
+                  "may_authorize": False, "may_execute": False,
+                  "base_commit": args.base, "candidate_commit": args.candidate}
     with args.report.open("x", encoding="utf-8", newline="\n") as output:
         json.dump(report, output, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
         output.write("\n")

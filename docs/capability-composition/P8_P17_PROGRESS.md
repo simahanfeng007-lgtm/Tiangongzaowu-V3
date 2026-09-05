@@ -140,3 +140,22 @@ are not product evaluations.
   contract execution, source publication/review integration, production running
   lock validation, product/model evaluation, full local and remote gates, PR
   merge and phase closure.
+- Failure checkpoint retained in Git:
+  `f4fd846744a9f956dcf77d9a87006645ec87cb12`. The corrupted-object test now
+  accepts Git's earlier rejection, with three additional direct native hash
+  substitution tests. Expanded local component run: 72 passed. Its CLI test
+  revealed a Windows stderr decoding-thread warning; the subprocess now
+  explicitly selects UTF-8, with clean rerun pending.
+- First real isolated-build attempt on that checkpoint was rejected before
+  candidate execution: `source build archive exceeds its size limit`, captured
+  in local `out/p8-evidence/foundation-isolated-build-1.json`. Native Git input
+  inventory is 2,461 files, 1,530 unique blobs, 52,434,364 bytes. The archive
+  route was removed: it can apply attributes, EOL and LFS/custom filters and
+  is unsuitable for exact source-object materialization. The replacement reads
+  native blobs through `cat-file --batch`, verifies each object's hash and
+  writes only the private snapshot. LFS pointers stay pointers; native-asset
+  hydration is not claimed by this source-compilation step.
+- Native-object export and UTF-8 correction LOCAL PASS: 72 component/schema
+  tests, with only the pre-existing Pydantic `schema` shadowing warning.
+  Parent build guards: 8 additional tests passed. Those eight use simulated
+  child results and are explicitly not isolation or product-evaluation evidence.

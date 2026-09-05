@@ -10,13 +10,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from contextlib import contextmanager
 import hashlib
-import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
-import tarfile
 import tempfile
 from typing import Any
 import unicodedata
@@ -439,9 +437,10 @@ def read_tool_source_manifests(
 def materialize_tool_source_candidate(repository: Path, candidate: ToolSourceCandidateV1):
     """Yield a private byte-verified copy for an isolated build, never import it.
 
-    Git archive attributes are not trusted to choose or rewrite build inputs:
-    every regular entry must exactly match the verified Git tree and native
-    blob hash. Missing, substituted, linked, extra or oversized data fails.
+    Read native blobs, not Git archive/checkout output: attributes, EOL and
+    LFS/custom filters must not rewrite inputs or run a host-side process.
+    Every entry matches the verified Git tree and native blob hash. LFS
+    pointers stay pointers; native asset hydration is a separate release step.
     Only this newly created temporary directory is ever written or removed.
     """
     verify_tool_source_candidate(repository, candidate)
@@ -463,36 +462,32 @@ def materialize_tool_source_candidate(repository: Path, candidate: ToolSourceCan
     total_bytes = sum(by_oid[entry[1]] for entry in entries.values())
     if total_bytes > 256 * 1024 * 1024:
         raise SourceCandidateError("source build snapshot exceeds its size limit")
-    archive = _git(repository, "archive", "--format=tar", candidate.candidate_commit)
-    if len(archive) > total_bytes + 16 * 1024 * 1024:
-        raise SourceCandidateError("source build archive exceeds its size limit")
+    data = _git(repository, "cat-file", "--batch", input_bytes=("\n".join(oids) + "\n").encode("ascii"))
+    if len(data) > total_bytes + len(oids) * 128:
+        raise SourceCandidateError("source build object batch exceeds its size limit")
+    paths_by_oid: dict[str, list[tuple[str, str]]] = {}
+    for name, (mode, oid) in entries.items():
+        paths_by_oid.setdefault(oid, []).append((name, mode))
     with tempfile.TemporaryDirectory(prefix="tg-source-build-") as temporary:
         root = Path(temporary).resolve()
-        observed: set[str] = set()
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as stream:
-            for member in stream:
-                path = _repository_path(member.name.rstrip("/") if member.isdir() else member.name)
-                if member.isdir():
-                    if not any(_under(name, path) for name in entries):
-                        raise SourceCandidateError("source build archive contains an extra directory")
-                    continue
-                if not member.isfile() or path not in entries or path in observed:
-                    raise SourceCandidateError("source build archive contains an unsafe or extra entry")
-                mode, oid = entries[path]
-                if member.size != by_oid[oid]:
-                    raise SourceCandidateError("source build archive blob size differs")
-                handle = stream.extractfile(member)
-                if handle is None:
-                    raise SourceCandidateError("source build archive blob is absent")
-                with handle:
-                    raw = handle.read(_MAX_FILE_BYTES + 1)
-                _verify_git_content(oid, "blob", raw)
-                target = root.joinpath(*PurePosixPath(path).parts)
+        offset = 0
+        for oid in oids:
+            boundary = data.find(b"\n", offset)
+            expected_header = f"{oid} blob {by_oid[oid]}".encode("ascii")
+            if boundary < offset or data[offset:boundary] != expected_header:
+                raise SourceCandidateError("source build object batch identity differs")
+            start, end = boundary + 1, boundary + 1 + by_oid[oid]
+            if data[end:end + 1] != b"\n":
+                raise SourceCandidateError("source build object batch is truncated")
+            raw = data[start:end]
+            _verify_git_content(oid, "blob", raw)
+            for name, mode in paths_by_oid[oid]:
+                target = root.joinpath(*PurePosixPath(name).parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("xb") as destination:
                     destination.write(raw)
                 target.chmod(0o755 if mode == "100755" else 0o644)
-                observed.add(path)
-        if observed != set(entries):
-            raise SourceCandidateError("source build archive omitted committed inputs")
+            offset = end + 1
+        if offset != len(data):
+            raise SourceCandidateError("source build object batch has trailing data")
         yield root
