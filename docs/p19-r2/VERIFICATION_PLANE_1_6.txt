@@ -110,6 +110,23 @@ Changes covered by this revision
     false. A valid bundle is not Git provenance, review approval, an activation
     pointer or proof of a running-source lock. The packager and existing official
     mirror generator join the same explicit authority freeze surface.
+16. Pinned source bundles may be staged into a new, separate version directory.
+    Extraction uses the same already-verified ZIP bytes and exclusive writes;
+    existing or partial destinations are never overwritten. Exact file and
+    directory inventories, bytes, source closure and read-only file flags are
+    rechecked against the original ZIP, not a locally editable index. Failure
+    retains the new partial directory for inspection, never an activation.
+    Read-only flags are not isolation from the host owner/admin. Staging does
+    not launch a Runtime, move a current pointer or approve Source publication.
+    The staging CLI joins the existing authority freeze surface.
+17. A loaded Omni wrapper prefers its own enclosing skill source and pins its
+    first resolved root. Standalone wrappers retain one-time host/user-root
+    discovery; subsequent environment changes cannot hot-switch their runtime
+    or capability verifier. A missing pinned source fails instead of falling
+    back. Cached verifier origins must match the selected root, as runtime
+    origins already must. The wrapper joins the same freeze surface. This is
+    directory selection, not byte attestation of every shared/lazy import, nor
+    production evidence of an approved source change during a live Run.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

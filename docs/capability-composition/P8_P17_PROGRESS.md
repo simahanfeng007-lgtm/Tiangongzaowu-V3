@@ -448,3 +448,38 @@ No source gate was changed or weakened to relocate these non-source reports.
   permission review, evidence-contract execution and product/model evaluation
   remain open. P8 stays IN PROGRESS; later stages remain NOT STARTED. No full
   regression or remote workflow was launched for this intermediate checkpoint.
+- Separate source-directory staging IMPLEMENTED: the trusted staging command
+  verifies the original ZIP pin and creates only a new destination, retaining
+  existing/partial versions unchanged. Exact file/directory inventories, bytes,
+  source-input closure and read-only file flags are verified; a changed local
+  index cannot substitute for the original bundle. No activation pointer is
+  changed and no candidate code is imported. Read-only flags do not provide
+  isolation from the host owner/admin; launch-time byte admission remains open.
+- Real retained build-10 package `source-revision-c361f6d.zip` was staged to
+  `output/p8-evidence/staged-c361f6d` and independently reverified in a separate
+  CLI process. Both exited 0 with `STAGED_VERIFIED_UNAPPROVED`, 2,857 indexed
+  entries and the same bundle/input/Capability Manifest hashes recorded above.
+  All three may_publish/may_authorize/may_execute flags remain false. The staged
+  source is the original c361f6d candidate, not this later staging implementation.
+  Neither verification launched it as an approved production installation.
+- The existing Omni API wrapper had a reproduced source-selection defect:
+  changing TIANGONG_OMNI_BODY_ROOT could move an already-loaded wrapper and its
+  verifier from X to Y. All five new offline reproductions failed before the
+  repair (`omni-source-pin-before.xml`), including a foreign cached verifier.
+  The wrapper now prefers its own enclosing skill package, pins its initial
+  root and fails if that version disappears. Standalone wrappers retain one-time
+  host-root discovery; changing the environment cannot hot-reload them. Cached
+  capability-verifier origin is checked just like the existing runtime origin.
+  These are synthetic offline loader fixtures, not approved live-Run evaluation.
+- Staging/package/loader tests first passed 36 tests. After official mirror sync,
+  the focused staging/package/loader, signed capability, real single-process
+  application, explicit backend-root and P19 architecture/freeze checks passed
+  69 tests / 13 subtests in 20.82 s (`source-staging-runtime-focused.xml`, SHA-256
+  `706d618c8d89645c18256b46cc55fc7694d3f4f380b88bf83eb528aa47292387`).
+  Generated-source and Source Authority checks passed. Plane revision entries
+  16/17 declare the staging and wrapper boundary changes; existing freeze
+  coverage and assertions remain intact. No full regression, candidate rebuild,
+  remote workflow, publication or merge was launched for this checkpoint.
+  Launch admission, shared/lazy-module byte pins, approved live X/X+1 evidence,
+  the 99/42 permission review, evidence-contract and product/model evaluations
+  remain open. P8 stays IN PROGRESS; P9–P17 remain NOT STARTED.

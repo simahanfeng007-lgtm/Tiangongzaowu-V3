@@ -12,6 +12,7 @@ from dataclasses import asdict
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 from typing import Callable
 import zipfile
@@ -167,10 +168,18 @@ def write_tool_source_bundle(
 
 def verify_tool_source_bundle(path: Path, *, expected_sha256: str) -> dict[str, object]:
     """Verify every packaged byte without extraction, imports or approval."""
+    return _read_verified_bundle(path, expected_sha256=expected_sha256)[1]
+
+
+def _read_verified_bundle(path: Path, *, expected_sha256: str) -> tuple[bytes, dict[str, object]]:
     if (not path.is_absolute() or not path.is_file() or path.is_symlink()
             or not 0 < path.stat().st_size <= _MAX_TOTAL_BYTES):
         raise SourceCandidateError("source bundle file is missing or unsafe")
     raw = path.read_bytes()
+    return raw, _verify_bundle_bytes(raw, expected_sha256=expected_sha256)
+
+
+def _verify_bundle_bytes(raw: bytes, *, expected_sha256: str) -> dict[str, object]:
     if len(raw) > _MAX_TOTAL_BYTES or hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise SourceCandidateError("source bundle digest does not match")
     try:
@@ -252,3 +261,135 @@ def verify_tool_source_bundle(path: Path, *, expected_sha256: str) -> dict[str, 
             return index
     except (OSError, KeyError, TypeError, ValueError, zipfile.BadZipFile, RuntimeError) as exc:
         raise SourceCandidateError("source bundle structure or content is invalid") from exc
+
+
+def _stage_root(path: Path) -> Path:
+    if not path.is_absolute() or path == Path(path.anchor):
+        raise SourceCandidateError("staged source root must be absolute and bounded")
+    for item in (path, *path.parents):
+        if item.is_symlink() or bool(getattr(item, "is_junction", lambda: False)()):
+            raise SourceCandidateError("staged source root contains a link or junction")
+    resolved = path.resolve(strict=False)
+    if os.path.normcase(str(path.absolute())) != os.path.normcase(str(resolved)):
+        raise SourceCandidateError("staged source root is not canonical")
+    return resolved
+
+
+def _staged_inventory(root: Path) -> tuple[dict[str, Path], set[str]]:
+    files = {}
+    directories = set()
+    folded = set()
+
+    def walk_error(error):
+        raise SourceCandidateError("staged source inventory is unreadable") from error
+
+    for current, dirs, names in os.walk(root, followlinks=False, onerror=walk_error):
+        for name in [*dirs, *names]:
+            path = Path(current) / name
+            if path.is_symlink() or bool(getattr(path, "is_junction", lambda: False)()):
+                raise SourceCandidateError("staged source contains a link or junction")
+            relative = _repository_path(path.relative_to(root).as_posix())
+            if relative.casefold() in folded:
+                raise SourceCandidateError("staged source contains a path collision")
+            folded.add(relative.casefold())
+            if path.is_dir():
+                directories.add(relative)
+            elif path.is_file() and root in path.resolve(strict=True).parents:
+                files[relative] = path
+            else:
+                raise SourceCandidateError("staged source contains an unsafe file")
+    return files, directories
+
+
+def _verify_staged_source(root: Path, index: dict[str, object], *, bundle_sha256: str) -> dict[str, object]:
+    root = _stage_root(root)
+    if not root.is_dir():
+        raise SourceCandidateError("staged source root is missing")
+    entries = {item["path"]: item for item in index["entries"]}
+    index_raw = _json_bytes(index)
+    entries[_INDEX] = _entry(_INDEX, index_raw)
+    files, directories = _staged_inventory(root)
+    expected_directories = {
+        parent.as_posix() for name in entries for parent in Path(name).parents
+        if parent != Path(".")
+    }
+    if set(files) != set(entries) or directories != expected_directories:
+        raise SourceCandidateError("staged source inventory differs from its bundle")
+    for name, path in files.items():
+        row = entries[name]
+        stat = path.stat()
+        if stat.st_mode & 0o222 or stat.st_nlink != 1:
+            raise SourceCandidateError("staged source file is writable or hard-linked")
+        if stat.st_size != row["size_bytes"]:
+            raise SourceCandidateError("staged source file size differs from its bundle")
+        with path.open("rb") as stream:
+            raw = stream.read(_MAX_FILE_BYTES + 1)
+        if len(raw) != row["size_bytes"] or hashlib.sha256(raw).hexdigest() != row["sha256"]:
+            raise SourceCandidateError("staged source bytes differ from its bundle")
+    observed = compile_tool_source_inputs(root / "source")
+    if observed.source_inputs_sha256 != index["source_inputs_sha256"]:
+        raise SourceCandidateError("staged source closure differs from the compiled revision")
+    return {
+        "status": "STAGED_VERIFIED_UNAPPROVED", "staging_root": str(root),
+        "source_root": str(root / "source"), "bundle_sha256": bundle_sha256,
+        "bundle_manifest_sha256": index["bundle_manifest_sha256"],
+        "source_inputs_sha256": index["source_inputs_sha256"],
+        "capability_manifest_sha256": index["capability_manifest_sha256"],
+        "file_count": index["file_count"], "read_only_file_flags_verified": True,
+        "may_publish": False, "may_authorize": False, "may_execute": False,
+    }
+
+
+def verify_staged_tool_source_bundle(
+    bundle_path: Path, *, expected_sha256: str, staging_root: Path,
+) -> dict[str, object]:
+    """Rehash an installation against the original bundle, not its local index.
+
+    This is data/provenance verification only. Read-only file flags discourage
+    accidental writes; they are not isolation from the host's owner/admin.
+    Runtime review/admission and the live Run pin still belong to Gateway.
+    """
+    _, index = _read_verified_bundle(bundle_path, expected_sha256=expected_sha256)
+    return _verify_staged_source(staging_root, index, bundle_sha256=expected_sha256)
+
+
+def stage_tool_source_bundle(
+    bundle_path: Path, *, expected_sha256: str, staging_root: Path,
+) -> dict[str, object]:
+    """Create one new read-only version directory without activating it.
+
+    The archive is read/verified once; extraction uses those same memory bytes.
+    Every write is exclusive. Existing/partial versions are never repaired or
+    overwritten. A failure retains only this call's partial new directory for
+    inspection; it cannot pass the complete inventory/byte verification.
+    """
+    root = _stage_root(staging_root)
+    if root.exists() or not root.parent.is_dir():
+        raise SourceCandidateError("staged source destination must be a new directory")
+    raw, index = _read_verified_bundle(bundle_path, expected_sha256=expected_sha256)
+    root.mkdir(mode=0o700, exist_ok=False)
+    directories = {root}
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        # The existing bundle index is written last, not replaced with another
+        # authority record or an activation pointer. Its presence alone is not
+        # enough: every later verification compares all bytes to the pinned ZIP.
+        names = [item["path"] for item in index["entries"]] + [_INDEX]
+        for name in names:
+            target = root / name
+            current = root
+            for part in Path(name).parts[:-1]:
+                current /= part
+                current.mkdir(mode=0o700, exist_ok=True)
+                _stage_root(current)
+                if not current.is_dir():
+                    raise SourceCandidateError("staged source destination is unsafe")
+                directories.add(current)
+            with target.open("xb") as output:
+                output.write(archive.read(name))
+                output.flush()
+                os.fsync(output.fileno())
+            info = archive.getinfo(name)
+            target.chmod(0o555 if (info.external_attr >> 16) == 0o100755 else 0o444)
+    for directory in sorted(directories, key=lambda item: len(item.parts), reverse=True):
+        directory.chmod(0o555)
+    return _verify_staged_source(root, index, bundle_sha256=expected_sha256)

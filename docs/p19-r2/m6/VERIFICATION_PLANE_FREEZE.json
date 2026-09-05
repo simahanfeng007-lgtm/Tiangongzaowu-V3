@@ -20,6 +20,7 @@
   "src/omni_body_skill/registry/capability_manifest.generated.json": "0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d",
   "src/omni_body_skill/tool_contracts.py": "22ce9537d6eb97ba5092d6b5503c3b318786256266cb08a10fbbbf3e21191452",
   "src/omni_body_skill/tools/omni_capability.py": "5c8a3da864dfe15f7c4af4075d3b4ab084a8f9a0dcfb85952a08fd33f1067a59",
+  "src/omni_body_skill/api/v1/v3/tools/omni_body.py": "8101b095409d26ed4df1ca9970a29ee6d94bdbefda3e4b3588147a9b632e74e7",
   "src/total_gateway/action_registry.py": "e8bc13f31a69f49d2e773b6549289caa1a0940001496781aa9efaefd4a77e117",
   "src/total_gateway/store.py": "11c6184f0e6797475fa1bbaec20f0c17949e680d127e075c7f992d639b7a2243",
   "src/total_gateway/store_unit_of_work.py": "fc5cf98d9377cce92a83a6003f15ac873a3c20a695aae89c2b00a42d81af29fd",
@@ -56,13 +57,14 @@
   "src/world_understanding/tool_capability_world/compiler.py": "bfc32a2d1b86c2c9c97bea1313d69d4c5c38e498089d851a59b3ed0dc7d66ce8",
   "src/total_gateway/tool_source_candidate.py": "5241463884c0599e376cb7496396a1facff339b63559b6845e9e475d350916f1",
   "src/total_gateway/tool_source_inputs.py": "fdc0b9aaab4249ca51972c319a04c6310d04e22e33409feb947a8c7dced62d2c",
-  "src/total_gateway/tool_source_bundle.py": "3c9540f814211073f0bffc92a4be189b6aa5ec1300d101653b6f8621fa0e7ce4",
+  "src/total_gateway/tool_source_bundle.py": "b38bb65ad615e461d125039e7297ac4082cecf2a236852875640761c95d20ffe",
   "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
   "src/omni_body_skill/tools/sandbox_runtime.py": "f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501",
   "scripts/_tool_source_build_worker.py": "e42b8985ca4178e9b35115a032f34df6535f2dc575f94873c5c1682add01240f",
   "scripts/build-tool-source.py": "85409d4d7626ad596603bfea10514fbf6ce5e880401b846b29f206b295220e28",
+  "scripts/stage-tool-source.py": "81f00c22d9b4e16639a19a580ee275a8ae64bd7ce4b2255294f296abec69c84c",
   "scripts/sync-generated-sources.py": "796fe5dfc9e7371935ca5f640e31cb5cc2eddcec8ba707ae3a98f8f4c7154f99",
   "scripts/review-tool-source.py": "fe384be6353806fa750e3007717962507891f014382ef59d419559db02176751"
  }

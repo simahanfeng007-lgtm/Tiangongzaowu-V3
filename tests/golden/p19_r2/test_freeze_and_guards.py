@@ -220,6 +220,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/omni_body_skill/registry/capability_manifest.generated.json",
         "src/omni_body_skill/tool_contracts.py",
         "src/omni_body_skill/tools/omni_capability.py",
+        "src/omni_body_skill/api/v1/v3/tools/omni_body.py",
         "src/total_gateway/action_registry.py",
         "src/total_gateway/store.py",
         "src/total_gateway/store_unit_of_work.py",
@@ -267,6 +268,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/omni_body_skill/tools/sandbox_runtime.py",
         "scripts/_tool_source_build_worker.py",
         "scripts/build-tool-source.py",
+        "scripts/stage-tool-source.py",
         "scripts/sync-generated-sources.py",
         "scripts/review-tool-source.py",
     )
