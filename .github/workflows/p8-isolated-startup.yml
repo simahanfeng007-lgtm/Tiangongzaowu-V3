@@ -22,9 +22,9 @@ jobs:
       PYTHONHASHSEED: '0'
       TIANGONG_CI_ENV: '0'
       TIANGONG_SANDBOX_COMPAT: '0'
-      P8_TRUSTED_PARENT: 1d23841165b2ff0de5a89ee676bce7e4d78fe287
+      P8_TRUSTED_PARENT: 93d54f8aeee1356b002a39f1c55cf335b7ca2cc8
       P8_SOURCE_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
-      P8_SOURCE_CANDIDATE: e99b4a2b1764b55dc74dbd04ce83c9473275d3dc
+      P8_SOURCE_CANDIDATE: 93d54f8aeee1356b002a39f1c55cf335b7ca2cc8
     steps:
       - name: Checkout exact reviewed parent and native source objects
         uses: actions/checkout@v4
@@ -65,6 +65,10 @@ jobs:
           junit = evidence / 'startup-regression.xml'
           command = [sys.executable, '-m', 'pytest', '-q',
               'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py',
+              'tests/test_path_identity_p8.py', 'tests/test_path_identity_r3.py',
+              'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py',
+              'tests/test_tool_source_launch_p8.py', 'tests/test_release_source_binding_p8.py',
+              'tests/test_readiness_source_root_p8.py',
               'tests/test_tool_source_launch_probe_p8.py', 'tests/test_tool_source_staging_p8.py',
               'tests/test_tool_source_bundle_p8.py', 'tests/golden/p19_r2/test_freeze_and_guards.py',
               '--junitxml=' + str(junit)]
