@@ -79,7 +79,7 @@
   "scripts/build-tool-source.py": "85409d4d7626ad596603bfea10514fbf6ce5e880401b846b29f206b295220e28",
   "scripts/stage-tool-source.py": "81f00c22d9b4e16639a19a580ee275a8ae64bd7ce4b2255294f296abec69c84c",
   "scripts/_tool_source_launch_probe.py": "956a30c2284e4afd3e7894633e08284c35441fadb23ccca60e8d8ad33de61a56",
-  "scripts/probe-tool-source-launch.py": "9d6ed914f0170d6e63d7321af08593a9953786f2611a2beb2ea051f08117ee11",
+  "scripts/probe-tool-source-launch.py": "cbfbe9e8825d0edbfe7c921787d25743a1c9820b30e6a465596ae0aed9a535c6",
   "scripts/sync-generated-sources.py": "796fe5dfc9e7371935ca5f640e31cb5cc2eddcec8ba707ae3a98f8f4c7154f99",
   "scripts/review-tool-source.py": "fe384be6353806fa750e3007717962507891f014382ef59d419559db02176751"
  }

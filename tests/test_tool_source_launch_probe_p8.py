@@ -64,7 +64,11 @@ def simulated_probe(source, tmp_path, probe_module, monkeypatch):
                                  "source_inputs_sha256": package["source_inputs_sha256"],
                                  "capability_manifest_sha256": package["capability_manifest_sha256"],
                                  "may_publish": False, "may_authorize": False, "may_execute": False}
-            if mode["value"] == "failed_child":
+            if mode["value"].startswith("contradictory_"):
+                # A success label must never erase retained startup/cleanup
+                # failure evidence, even when the failure field is empty.
+                record[mode["value"].removeprefix("contradictory_")] = ""
+            elif mode["value"] == "failed_child":
                 record.update(status="STARTUP_PROBE_FAILED", failed_phase="gateway_startup", error="fixture_failure")
             elif mode["value"] == "approval_claim":
                 record["may_publish"] = True
@@ -100,7 +104,10 @@ def test_simulated_probe_retains_identity_and_no_approval_flags(simulated_probe)
 
 
 @pytest.mark.parametrize("failure", ["failed_child", "approval_claim", "wrong_type", "missing_report", "source_drift",
-                                     "post_source_mismatch", "not_ready", "missing_proof"])
+                                     "post_source_mismatch", "not_ready", "missing_proof",
+                                     "contradictory_cleanup_error", "contradictory_error",
+                                     "contradictory_error_type", "contradictory_failed_phase",
+                                     "contradictory_traceback"])
 def test_failed_or_inconsistent_child_cannot_be_reported_as_success(simulated_probe, failure):
     module, artifact, package, mode = simulated_probe
     mode["value"] = failure
@@ -118,3 +125,26 @@ def test_cli_never_overwrites_an_existing_report(probe_module, tmp_path):
     with pytest.raises(SystemExit):
         probe_module.main(["--bundle", str(tmp_path / "none.zip"), "--sha256", "0" * 64, "--report", str(report)])
     assert report.read_bytes() == b"keep original observation"
+
+
+def test_owned_temporary_directory_is_physically_resolved_before_staging(simulated_probe, monkeypatch):
+    module, artifact, package, _ = simulated_probe
+    original = module.tempfile.TemporaryDirectory
+
+    class AliasedTemporaryDirectory:
+        def __init__(self, **kwargs):
+            self.owned = original(**kwargs)
+
+        def __enter__(self):
+            root = Path(self.owned.__enter__())
+            (root / "alias-parent").mkdir()
+            return str(root / "alias-parent" / "..")
+
+        def __exit__(self, *args):
+            return self.owned.__exit__(*args)
+
+    monkeypatch.setattr(module, "tempfile", SimpleNamespace(TemporaryDirectory=AliasedTemporaryDirectory))
+    report = module.probe(artifact, expected_sha256=package["sha256"])
+    assert report["status"] == "ISOLATED_STARTUP_OBSERVED", report
+    assert ".." not in Path(report["staged_source"]["staging_root"]).parts
+    assert report["post_probe_source"] == report["staged_source"]

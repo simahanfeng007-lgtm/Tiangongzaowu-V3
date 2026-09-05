@@ -22,6 +22,13 @@ from total_gateway.tool_source_candidate import _strict_pairs, _invalid_constant
 def _valid_observation(observation, staged) -> bool:
     if not isinstance(observation, dict):
         return False
+    # Retained failure evidence wins over an inconsistent success label.
+    # Test key presence, not truthiness: even empty failure fields contradict
+    # a successful v1 startup observation and must not become acceptance.
+    if any(key in observation for key in (
+        "cleanup_error", "error", "error_type", "failed_phase", "traceback",
+    )):
+        return False
     if not (
         observation.get("schema") == "tiangong.tool-source-launch-observation.v1"
         and observation.get("status") == "ISOLATED_STARTUP_OBSERVED"
@@ -68,7 +75,10 @@ def _probe(bundle: Path, *, expected_sha256: str, report: dict) -> dict:
     worker = (ROOT / "scripts/_tool_source_launch_probe.py").read_bytes()
     report["worker_sha256"] = hashlib.sha256(worker).hexdigest()
     with tempfile.TemporaryDirectory(prefix="tg-lp-") as temporary:
-        private = Path(temporary)
+        # Resolve only the parent-owned, already-created temporary directory.
+        # Windows TEMP may use a short-name alias. Pass its observed physical
+        # name to the unchanged strict stager; never relax candidate path checks.
+        private = Path(temporary).resolve(strict=True)
         workspace = private / "w"
         workspace.mkdir()
         # Preserve Gateway's path-length validation in the deep AppContainer
