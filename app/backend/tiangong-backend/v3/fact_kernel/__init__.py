@@ -195,12 +195,48 @@ def compile_manifest(
     """
 
     runtime_name = f"{runtime_class.__module__}.{runtime_class.__qualname__}"
-    dynamic = {str(item) for item in dynamic_actions if str(item)}
-    normalized: dict[str, dict[str, Any]] = {
-        str(name): dict(metadata or {})
-        for name, metadata in actions.items()
-        if str(name)
-    }
+    if not isinstance(actions, Mapping):
+        raise ValueError("source action table must be a mapping")
+    normalized: dict[str, dict[str, Any]] = {}
+    for name, raw in actions.items():
+        if not isinstance(name, str) or not name or name != name.strip():
+            raise ValueError("source action identity is invalid")
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"source action metadata must be a mapping: {name}")
+        metadata = dict(raw)
+        # Legacy omission defaults remain explicit below. A present malformed
+        # value is not an omission: especially never turn a misspelled execute
+        # effect into read, or the string "false" into implemented=True.
+        for field_name, allowed in (
+            ("risk", {"A0", "A1", "A2", "A3", "A4", "A5"}),
+            ("effect", {"read", "verify", "create", "write", "update", "execute"}),
+        ):
+            if field_name in metadata and (
+                not isinstance(metadata[field_name], str)
+                or metadata[field_name] not in allowed
+            ):
+                raise ValueError(f"source action metadata has invalid {field_name}: {name}")
+        if "implemented" in metadata and type(metadata["implemented"]) is not bool:
+            raise ValueError(f"source action metadata has invalid implemented: {name}")
+        if "alias_to" in metadata and (
+            not isinstance(metadata["alias_to"], str)
+            or metadata["alias_to"] != metadata["alias_to"].strip()
+        ):
+            raise ValueError(f"source action metadata has invalid alias_to: {name}")
+        normalized[name] = metadata
+    if isinstance(dynamic_actions, (str, bytes)):
+        raise ValueError("dynamic action identities must be an iterable of strings")
+    try:
+        dynamic_rows = tuple(dynamic_actions)
+    except TypeError as exc:
+        raise ValueError("dynamic action identities are invalid") from exc
+    if any(
+        not isinstance(item, str) or not item or item != item.strip()
+        or item not in normalized
+        for item in dynamic_rows
+    ):
+        raise ValueError("dynamic action identity is invalid or undeclared")
+    dynamic = set(dynamic_rows)
 
     route_state: dict[str, tuple[bool, str, str]] = {}
     supplied_schemas = (
@@ -382,7 +418,7 @@ def compile_manifest(
             result = (False, "", "alias target is absent")
             route_state[name] = result
             return result
-        if not bool(metadata.get("implemented", False)):
+        if metadata.get("implemented", False) is not True:
             result = (False, "", str(metadata.get("unavailable_reason") or "declared unavailable"))
             route_state[name] = result
             return result
@@ -423,10 +459,9 @@ def compile_manifest(
             value_schema_kind,
             value_validator_source_sha256,
         ) = schema_descriptor(name)
-        implemented = bool(metadata.get("implemented", False))
-        risk = str(metadata.get("risk") or "A0")
-        declared_effect = str(metadata.get("effect") or "").strip()
-        effect = declared_effect if declared_effect in {"read", "verify", "create", "write", "update", "execute"} else ("read" if risk == "A0" else "write")
+        implemented = metadata.get("implemented", False)
+        risk = metadata.get("risk", "A0")
+        effect = metadata.get("effect", "read" if risk == "A0" else "write")
         summary = str(metadata.get("summary") or metadata.get("description") or metadata.get("desc") or "")
         capabilities[name] = CompiledCapability(
             id=name,

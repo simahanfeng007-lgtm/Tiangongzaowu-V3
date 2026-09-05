@@ -302,3 +302,26 @@ No source gate was changed or weakened to relocate these non-source reports.
   command referenced two nonexistent test filenames and collected no tests;
   it is not PASS evidence. Corrected checks used the repository's actual files.
   Per the user's new cadence, no intermediate full regression is started.
+- Seventh checkpoint: `3cba1d7bb3cdb5f30a6428896798d5a87ad75156`, local only.
+  Actual isolated build 7 produced 291 Tool World primitives / 1,823 relations
+  from 678 measured input files. World snapshot SHA-256:
+  `80e08c955db966a7fbedcbae5d6fc2d90cadefd550d4f11f90e428157652ce82`.
+  Report `output/p8-evidence/foundation-isolated-build-7.json`, SHA-256
+  `ae1b4c5068b524ccb3ba11d4dda67b16c4d413601927f60bb9f8ec305a5bbb52`.
+  Windows AppContainer / network denied were observed. World ingestion and
+  Source publication remain false. No intermediate full gates were launched.
+- Subsequent remote observation for the older published checkpoint `9476b0a`:
+  Architecture run `33940906572` completed SUCCESS, including Windows full
+  regression. Together with P14 `33940906555` and P19 `33940906569`, all nine
+  checks now passed on that exact older head. This does not validate later
+  local commits or close P8.
+- Source metadata compiler defect reproduced on `3cba1d7`: explicit
+  `effect="exeucte"` was silently normalized to `read` instead of rejected.
+  Pre-fix failure retained in `source-metadata-pre-fix-3cba1d7.xml`.
+  The existing compiler now rejects malformed explicit risk/effect/implemented/
+  alias fields and invalid/undeclared dynamic route identities. Omitted legacy
+  defaults are unchanged; this is not a resolution of the 99 published-risk
+  differences. Focused compiler/schema/build/World checks: 151 passed, 5.74 s,
+  `output/p8-evidence/source-metadata-post-fix.xml`. Official mirrors and Source
+  Authority passed; the declared 1.6 freeze was regenerated and checked with
+  UPDATE_FREEZE absent. Real-catalog isolated validation remains required.

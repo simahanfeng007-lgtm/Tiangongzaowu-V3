@@ -65,6 +65,12 @@ Changes covered by this revision
     records reject malformed types, paths, sizes and ownership digest drift.
     This output is build-review data, never automatic World ingestion or Source
     publication, and it does not alter the existing A0 admission ceiling.
+11. The existing manifest compiler rejects explicit malformed Action risk,
+    effect, implemented, alias and dynamic-route identities instead of coercing
+    them or silently applying defaults. In particular, a misspelled execute
+    effect cannot become read, and the string "false" cannot declare an Action
+    implemented. Legacy omitted-field defaults are unchanged, not approved risk
+    classifications; the full source-versus-published risk audit remains open.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

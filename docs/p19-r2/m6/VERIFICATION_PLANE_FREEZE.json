@@ -13,7 +13,7 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "d7521310589cdcb363160ad18fc13cc5b76ef5af9b17a3cd674257e77c02c277",
+  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "c2112a16b04bc889ee7eff22f301fd69a1f976bb0e77d2b6dd57bbe67eac4940",
   "src/contracts/execution.py": "4c90c63dd1e87b7e196af8d1e620dc5bed15130342a4ffe8a14916ba95a39c0d",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
