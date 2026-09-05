@@ -25,10 +25,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-source.lock
-      - name: Observe host and actual AppContainer without relaxing ACLs
+      - name: Observe native no-reparse handles in host and actual AppContainer
         shell: python
         run: |
-          import json, os, pathlib, subprocess, sys, tempfile
+          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zipfile
           root = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
           sys.path[:0] = [str(root/'src'), str(root/'app/backend/tiangong-backend')]
           from omni_body_skill.tools.sandbox_runtime import SandboxRunner, SandboxLimits
@@ -50,6 +50,13 @@ jobs:
           K.GetFinalPathNameByHandleW.argtypes=[W.HANDLE,W.LPWSTR,W.DWORD,W.DWORD];K.GetFinalPathNameByHandleW.restype=W.DWORD
           K.CloseHandle.argtypes=[W.HANDLE];K.CloseHandle.restype=W.BOOL
           N.NtCreateFile.argtypes=[C.POINTER(W.HANDLE),W.DWORD,C.POINTER(OA),C.POINTER(IOS),W.LPVOID,W.ULONG,W.ULONG,W.ULONG,W.ULONG,W.LPVOID,W.ULONG];N.NtCreateFile.restype=W.LONG
+          def dos_path(text):
+              if text.startswith('\\\\?\\UNC\\'):return '\\\\'+text[8:]
+              if text.startswith('\\\\?\\'):return text[4:]
+              return text
+          def native_name(text):
+              text=dos_path(text)
+              return '\\??\\UNC\\'+text[2:] if text.startswith('\\\\') else '\\??\\'+text
           def final(h):
               result={}
               for flag in (2,10):
@@ -66,11 +73,11 @@ jobs:
                   finally:K.CloseHandle(h)
               return result
           def observe(path):
-              p=pathlib.Path(path);r={'path':str(p)}
-              b=C.create_unicode_buffer(8192);n=K.QueryDosDeviceW(p.drive,b,len(b))
+              p=pathlib.Path(path);plain=pathlib.PureWindowsPath(dos_path(str(p)));r={'path':str(p),'dos_path':str(plain)}
+              b=C.create_unicode_buffer(8192);n=K.QueryDosDeviceW(plain.drive,b,len(b))
               r['mapping']=b.value if n else {'error':C.get_last_error()}
-              r['dos_no_reparse']=native('\\??\\'+str(p))
-              if n:r['mapped_no_reparse']=native(b.value+str(p)[len(p.drive):])
+              r['dos_no_reparse']=native(native_name(str(p)))
+              if n:r['mapped_no_reparse']=native(b.value+str(plain)[len(plain.drive):])
               h=K.CreateFileW(p.anchor,0x80,7,None,3,0x02200000,None)
               if h==W.HANDLE(-1).value:r['anchor_open']={'error':C.get_last_error()}
               else:
@@ -78,16 +85,19 @@ jobs:
                   finally:K.CloseHandle(h)
               b=C.create_unicode_buffer(8192);n=K.GetShortPathNameW(str(p),b,len(b))
               r['short']=b.value if 0<n<len(b) else {'error':C.get_last_error()}
-              if n and n<len(b):r['short_no_reparse']=native('\\??\\'+b.value)
+              if n and n<len(b):r['short_no_reparse']=native(native_name(b.value))
               return r
           home=pathlib.Path(__file__).absolute().parent
           target=home/'long-directory-for-native-observation';target.mkdir(exist_ok=True)
           f=target/'payload.txt';f.write_text('fixture',encoding='utf-8')
           rows=[observe(home),observe(target),observe(f)]
           if len(sys.argv)>1:rows.append(observe(sys.argv[1]))
-          output={'schema':'p8.path-design-observation.v1','sandbox':os.environ.get('TIANGONG_SANDBOX'),'rows':rows,'may_publish':False,'may_authorize':False,'may_execute':False}
+          output={'schema':'p8.path-design-observation.v2','sandbox':os.environ.get('TIANGONG_SANDBOX'),'rows':rows,'may_publish':False,'may_authorize':False,'may_execute':False}
           (home/'observation.json').write_text(json.dumps(output,indent=2),encoding='utf-8')
           print(json.dumps(output))
+          assert all(row['dos_no_reparse']['ntstatus']=='0x0' for row in rows[:3]), 'native fixture observation failed'
+          assert all(isinstance(row['dos_no_reparse']['final']['2'],str) for row in rows[:3]), 'normalized native identity missing'
+          if len(rows)>3:assert rows[3]['dos_no_reparse']['ntstatus']=='0xc000050b','ancestor reparse not rejected'
           '''
           with tempfile.TemporaryDirectory(prefix='p8-r3-design-') as temp:
               base = pathlib.Path(temp).resolve(strict=True)
@@ -99,18 +109,30 @@ jobs:
               if linked.returncode:raise RuntimeError(linked.stdout+linked.stderr)
               host=subprocess.run([sys.executable,'-I','-B',str(workspace/'observe.py'),str(link/'payload.txt')],capture_output=True,text=True,check=False,timeout=60)
               (evidence/'host.log').write_text(host.stdout+'\n'+host.stderr,encoding='utf-8')
-              if host.returncode:raise RuntimeError('host observation failed')
               (evidence/'host.json').write_bytes((workspace/'observation.json').read_bytes())
               (workspace/'observation.json').unlink()
               runner=SandboxRunner(workspace,base/'s',base/'trash',SandboxLimits(timeout_seconds=90,max_changed_bytes=1048576))
               result=runner.run([sys.executable,'-I','-B',str(workspace/'observe.py')],require_os_containment=True)
               (evidence/'contained-process.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
-              if (workspace/'observation.json').is_file():
-                  (evidence/'contained.json').write_bytes((workspace/'observation.json').read_bytes())
-              print('HOST='+host.stdout)
-              print('CONTAINED='+json.dumps(result))
-              if result.get('ok') is not True or result.get('containment')!='windows-appcontainer' or result.get('network')!='denied':
-                  raise RuntimeError('diagnostic did not execute in the required native containment')
+              if (workspace/'observation.json').is_file():(evidence/'contained.json').write_bytes((workspace/'observation.json').read_bytes())
+              print('HOST='+host.stdout);print('CONTAINED='+json.dumps(result))
+              if host.returncode or result.get('ok') is not True or result.get('containment')!='windows-appcontainer' or result.get('network')!='denied':
+                  raise RuntimeError('native no-reparse diagnostic assertions failed; not product acceptance')
+          # Read native Git blobs only: no archive attributes, filters or hooks.
+          entries=subprocess.check_output(['git','ls-tree','-r','-z','HEAD'],cwd=root).split(b'\0')
+          process=subprocess.Popen(['git','cat-file','--batch'],cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE)
+          with zipfile.ZipFile(evidence/'reviewed-source.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
+              for entry in filter(None,entries):
+                  meta,path=entry.split(b'\t',1);mode,kind,sha=meta.split()
+                  assert kind==b'blob'
+                  process.stdin.write(sha+b'\n');process.stdin.flush()
+                  actual,kind,size=process.stdout.readline().split();data=process.stdout.read(int(size));assert process.stdout.read(1)==b'\n'
+                  assert actual==sha and hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()==sha.decode()
+                  item=zipfile.ZipInfo(path.decode('utf-8'));item.create_system=3;item.external_attr=int(mode,8)<<16;item.compress_type=zipfile.ZIP_DEFLATED
+                  archive.writestr(item,data)
+          process.stdin.close();assert process.wait(timeout=30)==0
+          identity={'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip()}
+          (evidence/'identity.json').write_text(json.dumps(identity),encoding='utf-8')
       - uses: actions/upload-artifact@v4
         if: always()
         with:
