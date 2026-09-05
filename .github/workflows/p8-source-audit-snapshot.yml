@@ -1,46 +1,143 @@
-name: P8 pinned source audit snapshot
+name: P8 R1 pinned candidate verification
 
-# Read-only audit transport for the P8-R1 repair. This is not a product build,
-# Source publication, a validation PASS, or a replacement for existing gates.
+# Temporary transport for a locally audited patch; removed in the final R1 tree.
+# Test jobs are read-only. The separate data-only job creates Git blobs only:
+# it never updates a branch, creates a release, or changes product permissions.
 on:
   push:
     branches:
       - codex/capability-composition-p8-source-evolution-v1
     paths:
       - .github/workflows/p8-source-audit-snapshot.yml
-  workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  source-snapshot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
-      - name: Read the exact audited P8 baseline
-        uses: actions/checkout@v4
+      - name: Preserve source bytes
+        shell: bash
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
         with:
           ref: b37204ee4d94e4857aaf477b810a21f19345d584
           fetch-depth: 0
           persist-credentials: false
-      - name: Create a native Git bundle without executing repository code
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected=b37204ee4d94e4857aaf477b810a21f19345d584
-          test "$(git rev-parse HEAD)" = "$expected"
-          mkdir -p "$RUNNER_TEMP/p8-source-audit"
-          git bundle create "$RUNNER_TEMP/p8-source-audit/source.bundle" HEAD
-          git bundle verify "$RUNNER_TEMP/p8-source-audit/source.bundle"
-          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/p8-source-audit/IDENTITY.txt"
-          cd "$RUNNER_TEMP/p8-source-audit"
-          sha256sum source.bundle > SHA256SUMS
-      - name: Retain the source identity evidence for one day
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: p8-source-b37204ee4d94e4857aaf477b810a21f19345d584
-          path: ${{ runner.temp }}/p8-source-audit/
-          retention-days: 1
+          python-version: '3.12'
+      - name: Materialize only the pinned repair and official mirrors
+        shell: python
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request, zipfile
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-r1-evidence'
+          out.mkdir()
+          base = 'b37204ee4d94e4857aaf477b810a21f19345d584'
+          expected_tree = 'bd10b3ce0647e1ab720754adaca2234f87e3eb79'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          assert git('rev-parse', 'HEAD') == base
+          url = 'https://api.github.com/repos/simahanfeng007-lgtm/Tiangongzaowu-V3/git/blobs/9874c82f03a853085cf392e5b315af5cb358f6f4'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_READ_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=30) as response:
+              obj = json.load(response)
+          compressed = base64.b64decode(obj['content'])
+          assert hashlib.sha256(compressed).hexdigest() == 'ff8d85e1c8ab2719885c4f7f949022973e07b2d09ca0108b36a73121a2840163'
+          patch = gzip.decompress(compressed)
+          assert len(patch) == 30635
+          assert hashlib.sha256(patch).hexdigest() == 'ac16b6aa82d14393ec034e317b991c992c870ec1b77a492282bfd6807ffce197'
+          patch_path = out / 'repair.patch'
+          patch_path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(patch_path)], check=True)
+          subprocess.run(['git', 'apply', str(patch_path)], check=True)
+          subprocess.run(['python', 'scripts/sync-generated-sources.py', '--write'], check=True)
+          subprocess.run(['python', 'scripts/sync-generated-sources.py', '--check-committed'], check=True)
+          subprocess.run(['python', 'scripts/check-source-authority.py'], check=True)
+          subprocess.run(['git', 'add', '-u'], check=True)
+          subprocess.run(['git', 'add', 'tests/test_life_store_path_injection_p8.py', 'docs/capability-composition/P8_R1_2026-09-05.md'], check=True)
+          actual_tree = git('write-tree')
+          assert actual_tree == expected_tree, (actual_tree, expected_tree)
+          entries = []
+          with zipfile.ZipFile(out / 'objects.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              written = set()
+              for path in git('diff', '--cached', '--name-only', base).splitlines():
+                  data = (root / path).read_bytes()
+                  sha = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+                  assert git('rev-parse', ':' + path) == sha
+                  entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': sha})
+                  if sha not in written:
+                      archive.writestr(sha, data)
+                      written.add(sha)
+          assert len(entries) == 16
+          (out / 'index.json').write_text(json.dumps({'base': base, 'tree': actual_tree, 'entries': entries}, indent=2), encoding='utf-8')
+          print('PINNED_R1_TREE=' + actual_tree)
+      - name: Install existing locked test dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Verify boundaries, startup fault injection and P19 freeze
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-r1-evidence'
+          tests = ['tests/test_life_store_p17_m3_01.py', 'tests/test_life_store_path_injection_p8.py', 'tests/test_tool_source_launch_p8.py', 'tests/test_source_startup_paths_p8.py', 'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py', 'tests/test_p17_m4_architecture_guards.py', 'tests/golden/p19_r2/test_freeze_and_guards.py']
+          with (out / 'tests.log').open('w', encoding='utf-8') as log:
+              result = subprocess.run([sys.executable, '-m', 'pytest', *tests, '-q', '--junitxml=' + str(out / 'tests.xml')], stdout=log, stderr=subprocess.STDOUT, timeout=600)
+          print((out / 'tests.log').read_text(encoding='utf-8'))
+          raise SystemExit(result.returncode)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p8-r1-objects-${{ runner.os }}
+          path: ${{ runner.temp }}/p8-r1-evidence/
+          retention-days: 3
           if-no-files-found: error
-          compression-level: 0
+  store-data-objects:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: p8-r1-objects-Linux
+          path: objects
+      - name: Store verified bytes only; do not mutate refs
+        shell: python
+        env:
+          GH_OBJECT_TOKEN: ${{ github.token }}
+        run: |
+          import base64, hashlib, json, os, pathlib, re, urllib.request, zipfile
+          root = pathlib.Path('objects')
+          index = json.loads((root / 'index.json').read_text(encoding='utf-8'))
+          assert index['base'] == 'b37204ee4d94e4857aaf477b810a21f19345d584'
+          assert index['tree'] == 'bd10b3ce0647e1ab720754adaca2234f87e3eb79'
+          assert len(index['entries']) == 16
+          expected = {entry['sha'] for entry in index['entries']}
+          with zipfile.ZipFile(root / 'objects.zip') as archive:
+              assert set(archive.namelist()) == expected
+              for sha in sorted(expected):
+                  assert re.fullmatch('[0-9a-f]{40}', sha)
+                  assert archive.getinfo(sha).file_size < 2000000
+                  data = archive.read(sha)
+                  assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+                  payload = json.dumps({'content': base64.b64encode(data).decode('ascii'), 'encoding': 'base64'}).encode('utf-8')
+                  request = urllib.request.Request('https://api.github.com/repos/simahanfeng007-lgtm/Tiangongzaowu-V3/git/blobs', data=payload, method='POST', headers={'Authorization': 'Bearer ' + os.environ['GH_OBJECT_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      uploaded = json.load(response)
+                  assert uploaded['sha'] == sha
+                  print('VERIFIED_BLOB=' + sha)
+          pathlib.Path('uploaded.json').write_text(json.dumps(index, indent=2), encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p8-r1-verified-git-objects
+          path: uploaded.json
+          retention-days: 3
+          if-no-files-found: error
