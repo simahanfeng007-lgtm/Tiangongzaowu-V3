@@ -219,6 +219,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/contracts/verification_repair.py",
         "src/omni_body_skill/registry/capability_manifest.generated.json",
         "src/omni_body_skill/tool_contracts.py",
+        "src/omni_body_skill/tools/omni_capability.py",
         "src/total_gateway/action_registry.py",
         "src/total_gateway/store.py",
         "src/total_gateway/store_unit_of_work.py",

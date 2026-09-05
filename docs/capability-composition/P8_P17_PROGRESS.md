@@ -325,3 +325,35 @@ No source gate was changed or weakened to relocate these non-source reports.
   `output/p8-evidence/source-metadata-post-fix.xml`. Official mirrors and Source
   Authority passed; the declared 1.6 freeze was regenerated and checked with
   UPDATE_FREEZE absent. Real-catalog isolated validation remains required.
+- Eighth checkpoint: `c4a0635435019f6ec972059ee879bb75b07edf2b`, local only.
+  The real 791-action catalog passed isolated build 8 after strict metadata
+  validation. It produced 291 Tool World primitives from 678 measured inputs.
+  Report `output/p8-evidence/foundation-isolated-build-8.json`, SHA-256
+  `776f3f34ee6d4c4164dbfcc489cbc7f6bba1a0712002a154c05aa5229dfb9c46`.
+  Publication remains false. No intermediate full regression was launched.
+- A real issuer/consumer seam defect was reproduced at that checkpoint:
+  Gateway's durable P7D.2 continuation issuer emitted the signed attempt,
+  delegation and dependency fields, but the Omni consumer rejected them as
+  unknown. The original single-step grant passed. Evidence:
+  `output/p8-evidence/omni-continuation-pre-fix-c4a0635.xml` (1 passed / 1 failed).
+  Consumer validation now accepts only the existing complete continuation and
+  predecessor shapes, with exact runtime JSON types, unchanged signature,
+  A0 ceiling and nonce checks. Gateway/Store still own retry eligibility/CAS.
+  The first rerun (2 passed / 1 failed) exposed a new-test expiry assumption:
+  shared runtime_security uses an inclusive expires_at_ms. The test now checks
+  rejection one millisecond after expiry; no production expiry rule changed.
+  Both reruns remain retained, and malformed bindings are cross-checked against
+  the existing CompositionExecutionBindingV1 contract rather than invented.
+  Focused real issuer/consumer + existing Omni guards/integration + durable
+  continuation tests and freeze guard: 25 passed / 13 passed subtests, 26.40 s,
+  `output/p8-evidence/omni-consumer-focused.xml`. Plan inputs/clock remain a
+  controlled test harness; this is not real model or product-task evaluation.
+  Official mirror/Source Authority checks passed. The consumer was added to
+  the explicit 1.6 authority freeze; final phase gates remain pending.
+- Running-source-lock audit remains open. The inspected runtime API resolves
+  the skill root at invocation and caches imports by path, while constructing a
+  fresh BodyRuntime per call. Signed Manifest/Registry identity comparisons do
+  not by themselves prove installed source-byte immutability, including lazy
+  helper imports. The next production task is to bind the existing release /
+  runtime source installation to the pinned run identity and prove X remains
+  X after separate publication of X+1; no claim of a completed lock is made.

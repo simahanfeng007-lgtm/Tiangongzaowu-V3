@@ -71,6 +71,14 @@ Changes covered by this revision
     effect cannot become read, and the string "false" cannot declare an Action
     implemented. Legacy omitted-field defaults are unchanged, not approved risk
     classifications; the full source-versus-published risk audit remains open.
+12. Real Gateway-to-Omni consumer tests exposed a P7D.2 compatibility gap:
+    the consumer rejected the existing signed continuation/attempt/predecessor
+    fields as unknown. It now validates their complete existing contract shape
+    before signature/nonce acceptance. Gateway/Store still own eligibility,
+    predecessor CAS and dispatch; no continuation is authorized by data alone.
+    Runtime binding comparison uses exact canonical JSON (bool is not int).
+    The unchanged A0 ceiling, signature, expiry and replay rejection remain
+    mandatory. The Omni consumer source is added to this plane's freeze surface.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

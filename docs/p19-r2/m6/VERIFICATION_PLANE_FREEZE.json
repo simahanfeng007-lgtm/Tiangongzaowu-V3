@@ -19,6 +19,7 @@
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
   "src/omni_body_skill/registry/capability_manifest.generated.json": "0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d",
   "src/omni_body_skill/tool_contracts.py": "22ce9537d6eb97ba5092d6b5503c3b318786256266cb08a10fbbbf3e21191452",
+  "src/omni_body_skill/tools/omni_capability.py": "5c8a3da864dfe15f7c4af4075d3b4ab084a8f9a0dcfb85952a08fd33f1067a59",
   "src/total_gateway/action_registry.py": "e8bc13f31a69f49d2e773b6549289caa1a0940001496781aa9efaefd4a77e117",
   "src/total_gateway/store.py": "11c6184f0e6797475fa1bbaec20f0c17949e680d127e075c7f992d639b7a2243",
   "src/total_gateway/store_unit_of_work.py": "fc5cf98d9377cce92a83a6003f15ac873a3c20a695aae89c2b00a42d81af29fd",
