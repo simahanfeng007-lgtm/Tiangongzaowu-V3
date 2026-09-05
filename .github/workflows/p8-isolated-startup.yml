@@ -22,9 +22,10 @@ jobs:
       PYTHONHASHSEED: '0'
       TIANGONG_CI_ENV: '0'
       TIANGONG_SANDBOX_COMPAT: '0'
-      P8_TRUSTED_PARENT: 93d54f8aeee1356b002a39f1c55cf335b7ca2cc8
-      P8_SOURCE_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
-      P8_SOURCE_CANDIDATE: 93d54f8aeee1356b002a39f1c55cf335b7ca2cc8
+      P8_TRUSTED_PARENT: 385e7ea766705aba082d400e536fe9a046e4c63b
+      P8_ORIGINAL_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
+      P8_SOURCE_BASE: 4bfa94ef918a18e33a939dc01d90b969ccf64a7f
+      P8_SOURCE_CANDIDATE: 385e7ea766705aba082d400e536fe9a046e4c63b
     steps:
       - name: Checkout exact reviewed parent and native source objects
         uses: actions/checkout@v4
@@ -48,6 +49,7 @@ jobs:
           identity = {
               'workflow_sha': os.environ['GITHUB_SHA'], 'trusted_parent': head,
               'candidate': os.environ['P8_SOURCE_CANDIDATE'], 'base': os.environ['P8_SOURCE_BASE'],
+              'original_base': os.environ['P8_ORIGINAL_BASE'],
               'candidate_tree': subprocess.check_output(['git', 'rev-parse', os.environ['P8_SOURCE_CANDIDATE'] + '^{tree}'], cwd=root, text=True).strip(),
               'python': sys.version, 'platform': platform.platform(),
               'dependency_lock_sha256': hashlib.sha256((root / 'requirements-source.lock').read_bytes()).hexdigest(),
@@ -57,6 +59,20 @@ jobs:
           print(json.dumps(identity))
       - name: Install pinned source dependencies
         run: python -m pip install -r requirements-source.lock
+      - name: Preflight exact core policy and every candidate change before build
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          command = [sys.executable, '-I', '-B', '-X', 'utf8', 'scripts/preflight-tool-source-candidate.py',
+              '--repository', os.environ['GITHUB_WORKSPACE'], '--original-base', os.environ['P8_ORIGINAL_BASE'],
+              '--policy-base', os.environ['P8_SOURCE_BASE'], '--candidate', os.environ['P8_SOURCE_CANDIDATE'],
+              '--report', str(evidence / 'candidate-preflight.json')]
+          with (evidence / 'candidate-preflight.log').open('w', encoding='utf-8') as log:
+              result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
+          print((evidence / 'candidate-preflight.log').read_text(encoding='utf-8'))
+          if result.returncode:
+              raise SystemExit(result.returncode)
       - name: Windows startup and evidence regressions
         shell: python
         run: |
@@ -66,6 +82,7 @@ jobs:
           command = [sys.executable, '-m', 'pytest', '-q',
               'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py',
               'tests/test_path_identity_p8.py', 'tests/test_path_identity_r3.py',
+              'tests/test_source_policy_preflight_p8.py', 'tests/test_tool_source_candidate_p8.py',
               'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py',
               'tests/test_tool_source_launch_p8.py', 'tests/test_release_source_binding_p8.py',
               'tests/test_readiness_source_root_p8.py',
@@ -80,7 +97,7 @@ jobs:
           if ET.parse(junit).findall('.//testcase/skipped'):
               raise RuntimeError('native acceptance regression cannot pass by skipping a case')
       - name: Real AppContainer source build and Gateway startup
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         shell: python
         run: |
           import hashlib, json, os, pathlib, subprocess, sys, traceback
