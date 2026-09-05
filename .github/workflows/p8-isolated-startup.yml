@@ -1,0 +1,160 @@
+name: P8 isolated source startup
+
+# Supplemental acceptance only. Required gates and Source publication remain
+# unchanged. Workflow, trusted parent and candidate identities are independent.
+on:
+  push:
+    branches:
+      - codex/capability-composition-p8-source-evolution-v1
+    paths:
+      - .github/workflows/p8-isolated-startup.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-startup:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONHASHSEED: '0'
+      TIANGONG_CI_ENV: '0'
+      TIANGONG_SANDBOX_COMPAT: '0'
+      P8_TRUSTED_PARENT: 7b73217a560b8bad7ae52d00fa12fe3a0b31efbc
+      P8_ORIGINAL_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
+      P8_SOURCE_BASE: 4bfa94ef918a18e33a939dc01d90b969ccf64a7f
+      P8_SOURCE_CANDIDATE: 7b73217a560b8bad7ae52d00fa12fe3a0b31efbc
+    steps:
+      - name: Checkout exact reviewed parent and native source objects
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.P8_TRUSTED_PARENT }}
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare evidence identity
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, platform, subprocess, sys
+          root = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          evidence.mkdir(exist_ok=False)
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+          assert head == os.environ['P8_TRUSTED_PARENT']
+          identity = {
+              'workflow_sha': os.environ['GITHUB_SHA'], 'trusted_parent': head,
+              'candidate': os.environ['P8_SOURCE_CANDIDATE'], 'base': os.environ['P8_SOURCE_BASE'],
+              'original_base': os.environ['P8_ORIGINAL_BASE'],
+              'candidate_tree': subprocess.check_output(['git', 'rev-parse', os.environ['P8_SOURCE_CANDIDATE'] + '^{tree}'], cwd=root, text=True).strip(),
+              'python': sys.version, 'platform': platform.platform(),
+              'dependency_lock_sha256': hashlib.sha256((root / 'requirements-source.lock').read_bytes()).hexdigest(),
+              'may_publish': False, 'may_authorize': False, 'may_execute': False,
+          }
+          (evidence / 'identity.json').write_text(json.dumps(identity, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(identity))
+      - name: Install pinned source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Preflight exact core policy and every candidate change before build
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          command = [sys.executable, '-I', '-B', '-X', 'utf8', 'scripts/preflight-tool-source-candidate.py',
+              '--repository', os.environ['GITHUB_WORKSPACE'], '--original-base', os.environ['P8_ORIGINAL_BASE'],
+              '--policy-base', os.environ['P8_SOURCE_BASE'], '--candidate', os.environ['P8_SOURCE_CANDIDATE'],
+              '--report', str(evidence / 'candidate-preflight.json')]
+          with (evidence / 'candidate-preflight.log').open('w', encoding='utf-8') as log:
+              result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
+          print((evidence / 'candidate-preflight.log').read_text(encoding='utf-8'))
+          if result.returncode:
+              raise SystemExit(result.returncode)
+      - name: Windows startup and evidence regressions
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys, xml.etree.ElementTree as ET
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          junit = evidence / 'startup-regression.xml'
+          command = [sys.executable, '-m', 'pytest', '-q',
+              'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py',
+              'tests/test_path_identity_p8.py', 'tests/test_path_identity_r3.py',
+              'tests/test_source_policy_preflight_p8.py', 'tests/test_tool_source_candidate_p8.py',
+              'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py',
+              'tests/test_tool_source_launch_p8.py', 'tests/test_release_source_binding_p8.py',
+              'tests/test_readiness_source_root_p8.py',
+              'tests/test_release_staging_p8.py', 'tests/test_release_manifest.py',
+              'tests/test_source_probe_layout_p8.py', 'tests/test_gateway_constructor_cleanup_p8.py',
+              'tests/test_gateway_bootstrap.py', 'tests/test_runtime_authority.py',
+              'tests/test_tool_source_launch_probe_p8.py', 'tests/test_tool_source_staging_p8.py',
+              'tests/test_tool_source_bundle_p8.py', 'tests/golden/p19_r2/test_freeze_and_guards.py',
+              '--junitxml=' + str(junit)]
+          with (evidence / 'startup-regression.log').open('w', encoding='utf-8') as log:
+              result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=300, check=False)
+          print((evidence / 'startup-regression.log').read_text(encoding='utf-8'))
+          if result.returncode:
+              raise SystemExit(result.returncode)
+          if ET.parse(junit).findall('.//testcase/skipped'):
+              raise RuntimeError('native acceptance regression cannot pass by skipping a case')
+      - name: Real AppContainer source build and Gateway startup
+        if: ${{ success() }}
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess, sys, traceback
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          evidence.mkdir(exist_ok=True)
+          outcome = {'status': 'ACCEPTANCE_FAILED', 'may_publish': False, 'may_authorize': False, 'may_execute': False}
+          def run_script(script, arguments, log_name):
+              with (evidence / log_name).open('w', encoding='utf-8') as log:
+                  result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', script, *arguments], stdout=log, stderr=subprocess.STDOUT, timeout=600, check=False)
+              print((evidence / log_name).read_text(encoding='utf-8'))
+              return result.returncode
+          def require_process(document, key):
+              process = document.get(key, {})
+              if process.get('containment') != 'windows-appcontainer' or process.get('network') != 'denied':
+                  raise RuntimeError(key + ': native containment/network evidence missing')
+              if process.get('ok') is not True:
+                  raise RuntimeError(key + ': child failed; inspect retained raw report')
+              if any(document.get(flag) is not False for flag in ('may_publish', 'may_authorize', 'may_execute')):
+                  raise RuntimeError('unexpected authority/publication claim')
+              if any(key in document for key in ('error', 'error_type', 'cleanup_error', 'failed_phase', 'traceback')):
+                  raise RuntimeError('report retains contradictory failure evidence')
+          try:
+              bundle = evidence / 'source-revision.zip'
+              build_path = evidence / 'build.json'
+              outcome['build_exit_code'] = run_script('scripts/build-tool-source.py', ['--repository', os.environ['GITHUB_WORKSPACE'], '--base', os.environ['P8_SOURCE_BASE'], '--candidate', os.environ['P8_SOURCE_CANDIDATE'], '--action', 'file.read', '--report', str(build_path), '--bundle', str(bundle)], 'build.log')
+              build = json.loads(build_path.read_text(encoding='utf-8'))
+              outcome['build_status'] = build.get('status')
+              if outcome['build_exit_code'] != 0 or build.get('status') != 'ISOLATED_BUILD_OBSERVED':
+                  print(json.dumps(build, ensure_ascii=True))
+                  raise RuntimeError('native source build did not pass; no startup fallback')
+              require_process(build, 'build_process')
+              outcome['bundle_sha256'] = hashlib.sha256(bundle.read_bytes()).hexdigest()
+              startup_path = evidence / 'startup.json'
+              outcome['startup_exit_code'] = run_script('scripts/probe-tool-source-launch.py', ['--bundle', str(bundle), '--sha256', outcome['bundle_sha256'], '--report', str(startup_path)], 'startup.log')
+              startup = json.loads(startup_path.read_text(encoding='utf-8'))
+              print('RAW_STARTUP_REPORT=' + json.dumps(startup, ensure_ascii=True))
+              outcome['startup_status'] = startup.get('status')
+              if outcome['startup_exit_code'] != 0 or startup.get('status') != 'ISOLATED_STARTUP_OBSERVED':
+                  raise RuntimeError('actual Gateway READY/shutdown/source lock not verified; inspect RAW_STARTUP_REPORT')
+              require_process(startup, 'probe_process')
+              outcome['status'] = 'ISOLATED_BUILD_AND_STARTUP_OBSERVED'
+          except Exception as exc:
+              outcome.update(error_type=type(exc).__name__, error=str(exc), traceback=traceback.format_exc())
+          finally:
+              (evidence / 'acceptance.json').write_text(json.dumps(outcome, indent=2, ensure_ascii=True) + '\n', encoding='utf-8')
+              checksums = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in evidence.iterdir() if p.is_file()}
+              (evidence / 'SHA256.json').write_text(json.dumps(checksums, indent=2) + '\n', encoding='utf-8')
+              print(json.dumps(outcome, ensure_ascii=True))
+          raise SystemExit(0 if outcome['status'] == 'ISOLATED_BUILD_AND_STARTUP_OBSERVED' else 1)
+      - name: Preserve original evidence including failed observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-native-startup-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p8-native-evidence/
+          if-no-files-found: error
+          retention-days: 14

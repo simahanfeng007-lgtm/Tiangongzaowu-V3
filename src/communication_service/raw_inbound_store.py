@@ -6,6 +6,7 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from runtime_security.path_identity import resolve_existing_path
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class RawInboundStore:
         if not 1_024 <= max_object_bytes <= 134_217_728:
             raise ValueError("raw inbound object limit is invalid")
         root.mkdir(parents=True, exist_ok=True)
-        self.root = root.resolve(strict=True)
+        self.root = resolve_existing_path(root)
         self.max_object_bytes = max_object_bytes
 
     def put(self, payload: bytes) -> RawInboundObject:

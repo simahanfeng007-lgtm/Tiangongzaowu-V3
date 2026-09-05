@@ -65,6 +65,7 @@ from contracts.world_understanding.memory_candidate import MemoryWorldCandidate
 
 from .replay import LifeReplaySummary, advance_replay_sha256, replay_life_events
 from .store_connection import open_life_shadow_sqlite
+from .store_connection import ExistingPathResolver
 from .store_contract_support import (
     LifeShadowStoreError, MemoryDeletionResult, ProtectedPayloadRecord,
     _parse_stored_contract, _revalidate_contract,
@@ -241,6 +242,7 @@ class LifeShadowStore:
         *,
         create: bool,
         now_ms: int,
+        existing_path_resolver: ExistingPathResolver | None = None,
     ) -> "LifeShadowStore":
         opened = open_life_shadow_sqlite(
             path,
@@ -249,6 +251,7 @@ class LifeShadowStore:
             error_factory=LifeShadowStoreError,
             initialize=cls._initialize,
             migrate=cls._migrate,
+            existing_path_resolver=existing_path_resolver,
         )
         try:
             store = cls(opened.path, opened.connection)

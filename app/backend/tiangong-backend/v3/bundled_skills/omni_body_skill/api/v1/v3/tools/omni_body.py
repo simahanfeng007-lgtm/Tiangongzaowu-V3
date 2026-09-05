@@ -13,6 +13,7 @@ from typing import Any
 TOOL_SCHEMA = "tiangong.v3.omni_body.v1"
 TOOL_NAME = "omni_body"
 _RUNTIME_IMPORT_LOCK = threading.RLock()
+_PINNED_SKILL_ROOT: Path | None = None
 _LIFE_ACTIVITY_QUERY_PROVIDER: Any = None
 _BODY_STATE_QUERY_PROVIDER: Any = None
 _LEARNING_INGEST_PROVIDER: Any = None
@@ -51,30 +52,34 @@ TOOL_SPEC = TOOL_DESCRIPTION
 
 
 def _find_skill_root() -> Path | None:
-    candidates: list[Path] = []
-    env_root = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-    if env_root:
-        candidates.append(Path(env_root).expanduser())
-    here = Path(__file__).resolve()
-    for parent in [here.parent, *here.parents]:
-        if (parent / "tools" / "omni_body_tool.py").exists():
-            candidates.append(parent)
-        # Typical deployed shape: <root>/api/v1/v3/tools/omni_body.py
-        maybe_root = parent.parent.parent.parent if len(parent.parents) >= 4 else parent
-        if (maybe_root / "tools" / "omni_body_tool.py").exists():
-            candidates.append(maybe_root)
-    if str(os.environ.get("TIANGONG_OMNI_BODY_ALLOW_USER_ROOT") or "").strip().lower() in {"1", "true", "yes", "on"}:
-        candidates.append(Path.home() / ".tiangong" / "v3" / "omni_body_skill")
-    seen: set[str] = set()
-    for root in candidates:
-        root = root.resolve()
-        key = str(root)
-        if key in seen:
-            continue
-        seen.add(key)
-        if (root / "tools" / "omni_body_tool.py").exists():
-            return root
-    return None
+    """Keep this loaded wrapper and its verifier on one source directory.
+
+    The host selects a new wrapper for a new source generation; changing a
+    default environment variable must not hot-switch an existing wrapper.
+    This path pin is not a source-byte attestation or publication approval.
+    """
+    global _PINNED_SKILL_ROOT
+    with _RUNTIME_IMPORT_LOCK:
+        if _PINNED_SKILL_ROOT is not None:
+            root = _PINNED_SKILL_ROOT
+            if root.resolve() == root and (root / "tools" / "omni_body_tool.py").is_file():
+                return root
+            return None  # A missing pinned version never falls back to another.
+        # A deployed wrapper belongs to its enclosing skill package even when
+        # the host's default already names the next version. Standalone legacy
+        # wrappers may use the explicit host/user-root fallback once.
+        candidates = list(Path(__file__).resolve().parents)
+        env_root = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
+        if env_root:
+            candidates.append(Path(env_root).expanduser())
+        if str(os.environ.get("TIANGONG_OMNI_BODY_ALLOW_USER_ROOT") or "").strip().lower() in {"1", "true", "yes", "on"}:
+            candidates.append(Path.home() / ".tiangong" / "v3" / "omni_body_skill")
+        for candidate in candidates:
+            root = candidate.resolve()
+            if (root / "tools" / "omni_body_tool.py").is_file():
+                _PINNED_SKILL_ROOT = root
+                return root
+        return None
 
 
 def _import_runtime_unlocked() -> tuple[Any | None, Any | None, str | None]:
@@ -182,6 +187,9 @@ def _verify_capability_unlocked(grant, *, action, target, payload, workspace, ru
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
+    loaded_path = Path(str(getattr(module, "__file__", ""))).resolve(strict=False)
+    if loaded_path != module_path.resolve(strict=False):
+        raise ImportError(f"omni_body capability verifier source mismatch: {loaded_path}")
     return module.verify_capability_grant(
         grant,
         action=action,

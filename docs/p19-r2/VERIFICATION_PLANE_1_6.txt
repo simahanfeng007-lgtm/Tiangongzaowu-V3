@@ -1,0 +1,235 @@
+P19-R2 VERIFICATION PLANE 1.6 — P8 SOURCE EVOLUTION BOUNDARY REVISION
+======================================================================
+
+Scope and baseline
+----------------------------------------------------------------------
+
+This is the explicit P8 revision of the existing Verification Plane, based on
+P7D.2 main 9a3344de9fe468fa845d2ff501166484439b8ec4. It is not a second plane,
+registry, runtime, store or publication authority. P8 acceptance is tracked in
+docs/capability-composition/P8_P17_PROGRESS.md and is not implied by this version.
+
+The single machine-readable version source remains:
+
+    src/total_gateway/verification_plane.py
+
+Changes covered by this revision
+----------------------------------------------------------------------
+
+1. Existing fact_kernel.compile_manifest gains an explicit Gateway-format
+   projection. Runtime and published source-hash domains remain distinct;
+   both are derived from the same compiled capability rows. The projection
+   does not replace the published Manifest or import new runtime source.
+2. Immutable Git candidate observation and native-blob materialization bind
+   source review to exact base/candidate commits. Candidate data cannot amend
+   its own source-ownership policy, execute hooks/filters, or impersonate an
+   authoritative/generated/frozen source owner.
+3. Manifest differentials reuse existing Action Registry and schema compilers.
+   Direct and inherited alias changes, risk downgrades and new A0 candidates
+   are visible review data, never permission or Source publication approvals.
+4. The existing sandbox has a stricter build-only requirement which rejects
+   unavailable OS containment before launch. Explicit compatibility fallback
+   cannot override it. Isolated build reports retain their input identities,
+   compiler bindings and observed results without claiming review, publication,
+   evidence-contract evaluation or production task completion.
+5. Strict source-build paths use the extended Windows namespace for deep
+   private inputs and cleanup without changing the host LongPathsEnabled
+   setting or weakening filesystem/OS isolation.
+6. Isolated builds bind a conservative, byte-hashed closure of the existing
+   editable/frozen source roots and dependency inputs. Generated mirrors and
+   the generated Capability Manifest do not participate in their own input
+   revision. Parent-observed input bytes must match the child build report.
+   The existing compiler's Gateway projection includes source_inputs_sha256;
+   its whole-document authority hash changes even for handler-only edits.
+   This does not change permission semantics or approve publication.
+7. Manifest differential review is Gateway-owned. World Understanding does
+   not import the Gateway to recompile permissions. The existing layer guard
+   remains unchanged; the P8 review module is moved, not re-exported by World.
+8. Git candidate observation/materialization and source-input evidence also
+   belong to the Gateway's offline source lifecycle, not World Understanding.
+   World retains its existing no-process/no-runtime-import invariant. The two
+   P8 modules move with their freeze coverage; no World forwarding module or
+   source-ownership policy exception is introduced.
+9. The existing production Manifest loader accepts the original seven-field
+   release or its explicit P8 source_inputs_sha256 extension. If present, that
+   field must be lowercase SHA-256 text. Unknown roots remain forbidden. The
+   complete file digest is verified once before both model and registry/schema
+   projections; the extension cannot bypass a release pin or approve changes.
+   Loaded-object isolation tests are not proof of running-task version locks.
+10. The trusted source-build parent derives source-bound Tool World descriptors
+    from its observed input closure and verified ACTIONS entry-module binding.
+    It reuses the existing Action Registry/schema and P2 Tool World compilers;
+    models do not supply source revisions. Revision identity conservatively
+    covers transitive input bytes. Implementation references are module-level
+    entry references, not an inferred per-handler dependency graph. Input
+    records reject malformed types, paths, sizes and ownership digest drift.
+    This output is build-review data, never automatic World ingestion or Source
+    publication, and it does not alter the existing A0 admission ceiling.
+11. The existing manifest compiler rejects explicit malformed Action risk,
+    effect, implemented, alias and dynamic-route identities instead of coercing
+    them or silently applying defaults. In particular, a misspelled execute
+    effect cannot become read, and the string "false" cannot declare an Action
+    implemented. Legacy omitted-field defaults are unchanged, not approved risk
+    classifications; the full source-versus-published risk audit remains open.
+12. Real Gateway-to-Omni consumer tests exposed a P7D.2 compatibility gap:
+    the consumer rejected the existing signed continuation/attempt/predecessor
+    fields as unknown. It now validates their complete existing contract shape
+    before signature/nonce acceptance. Gateway/Store still own eligibility,
+    predecessor CAS and dispatch; no continuation is authorized by data alone.
+    Runtime binding comparison uses exact canonical JSON (bool is not int).
+    The unchanged A0 ceiling, signature, expiry and replay rejection remain
+    mandatory. The Omni consumer source is added to this plane's freeze surface.
+13. Existing release generation hashes observed file bytes instead of trusting
+    persistent size/mtime digest caches. It does not read, rewrite or delete
+    legacy cache files. The existing gateway-source tree now includes all
+    editable/frozen roots from validated Source Authority, plus its policy and
+    dependency lock. The four-tree release contract and its hash domain remain
+    unchanged. Installed generated files inside these roots are also release
+    inputs; this release hash does not feed back into Capability compilation.
+    No new publication authority or running-task lock is claimed. The release
+    generator is added to the explicit authority freeze surface.
+14. An explicit embedded-backend source root selects only that installation;
+    missing/unsafe roots cannot fall back to checkout, environment or frozen
+    discovery. Foreign cached v3/tiangong_kernel origins and namespace search
+    paths fail before candidate imports or sys.path mutation. The existing
+    process-owner guard stays intact: no module deletion, hot reload or second
+    Runtime is introduced. Unspecified-root discovery is unchanged. This binds
+    backend startup selection, not every shared module or a live Run's complete
+    byte closure; immutable installation and running-source acceptance remain
+    required. The embedded-backend source joins the explicit freeze surface.
+15. The existing isolated build command can retain a content-bound source ZIP
+    after its private snapshot is removed. The compiled Gateway Manifest is
+    materialized only inside that private snapshot; installed trusted tooling
+    invokes the official mirror generator with an explicit workspace argument.
+    Compiler inputs must remain byte-identical across generation. The package
+    includes a source-file inventory, exact build report, Manifest and mirrors.
+    Verification checks the whole-file pin, portable paths, bounded sizes,
+    index/file/report/input/Manifest consistency, and rejects executable-link
+    entries without extracting or importing any candidate code. Packages never
+    overwrite prior versions and may_publish/may_authorize/may_execute remain
+    false. A valid bundle is not Git provenance, review approval, an activation
+    pointer or proof of a running-source lock. The packager and existing official
+    mirror generator join the same explicit authority freeze surface.
+16. Pinned source bundles may be staged into a new, separate version directory.
+    Extraction uses the same already-verified ZIP bytes and exclusive writes;
+    existing or partial destinations are never overwritten. Exact file and
+    directory inventories, bytes, source closure and read-only file flags are
+    rechecked against the original ZIP, not a locally editable index. Failure
+    retains the new partial directory for inspection, never an activation.
+    Read-only flags are not isolation from the host owner/admin. Staging does
+    not launch a Runtime, move a current pointer or approve Source publication.
+    The staging CLI joins the existing authority freeze surface.
+17. A loaded Omni wrapper prefers its own enclosing skill source and pins its
+    first resolved root. Standalone wrappers retain one-time host/user-root
+    discovery; subsequent environment changes cannot hot-switch their runtime
+    or capability verifier. A missing pinned source fails instead of falling
+    back. Cached verifier origins must match the selected root, as runtime
+    origins already must. The wrapper joins the same freeze surface. This is
+    directory selection, not byte attestation of every shared/lazy import, nor
+    production evidence of an approved source change during a live Run.
+18. Gateway startup preflights P8 source-pinned installations before acquiring
+    its epoch lease, opening stores or starting services. The existing release
+    selector and release-pinned Action loader must agree with the installation;
+    there is no automatic release generation or source fallback in this check.
+    It remeasures source inputs, compares all generated mirrors to measured
+    authority bytes, rejects writable/hard-linked files and bytecode caches,
+    and checks loaded module origins and available namespace search routes.
+    The selected Skill root must be an existing Source Authority location.
+    P8 startup requires an explicit source root/release, embedded mode and -B;
+    local evidence cannot attest an independent remote service. The assembled
+    release must still match before the worker starts. Legacy startup remains
+    explicitly unbound, not retroactively source-verified. This observes startup
+    consistency only: host-owner tampering, future dynamic import-path changes,
+    publication review and live-Run evidence still require separate closure.
+    Runtime and this rejecting preflight join the existing freeze surface.
+19. An installed trusted startup probe stages a pinned bundle in its own
+    private workspace and starts a fresh -I/-B interpreter through the existing
+    required OS sandbox. Candidate modules load only in that contained child.
+    The probe observes source consistency, existing release generation, actual
+    Gateway startup/readiness/shutdown and post-shutdown source consistency;
+    the parent independently rechecks the staged bytes against the original ZIP.
+    Failures retain process/child observations. Incomplete, inconsistent or
+    approval-claiming child reports cannot become startup success. All reports
+    disclaim publication/authorization/execution permission. This is an offline
+    integration probe, not a real-model task or production approval. Both probe
+    scripts join the same freeze surface.
+20. Real AppContainer evidence showed Path.resolve(strict=True) fails while
+    file handles remain readable: DOS/GUID final-name queries return WinError 5,
+    while normalized NT final-name queries succeed on the same handles. Windows
+    source-path checks now compare normalized physical NT volume/root/relative
+    identities via metadata-read handles. They do not grant more access, cache
+    path observations or fall back to non-strict resolution. Lexical traversal,
+    reparse points and physical-volume/location mismatches remain rejected;
+    unavailable native identity remains a failure. POSIX strict resolution is
+    unchanged. This fixes identity observation, not Source publication approval.
+21. Real startup found eight committed legacy .pyc artifacts under the existing
+    frozen Source Authority, unchanged from the stage baseline. Retaining those
+    measured, read-only bytes is now distinguished from creating/importing a
+    cache. Their policy and frozen roots remain immutable to source candidates;
+    no baseline files are deleted or reclassified. Ordinary/optimized bytecode
+    and __pycache__ are still rejected. Installed bytecode module origins are
+    rejected even under custom loader aliases; retained frozen artifacts do not
+    become execution or publication approval. This is a source inventory
+    correction, not a completed live-Run or future-import attestation.
+22. After real source consistency passed, release generation reached another
+    DOS-volume strict-resolution failure. The existing release generator now
+    reuses the same native path verifier for its Windows workspace, input files
+    and source-tree files. Native source-root identity is additionally compared
+    with its queried drive/share anchor plus the entire lexical suffix, so a
+    redirected ancestor cannot pass by comparing the root only with itself.
+    Real AppContainer diagnostics verify native volume access while unrelated
+    profile ancestors remain inaccessible. Missing physical evidence still
+    fails; no ACL expansion, non-strict fallback, hash cache, approval path or
+    second release compiler is introduced. POSIX strict checks are unchanged.
+23. The same native path verifier moves to runtime_security.path_identity so
+    Life and Communication do not depend on a Gateway-private implementation.
+    Source preflight retains its existing error namespace. Audited startup
+    paths in the Skill catalog, Life SQLite parent, Communication raw/staging
+    roots, embedded backend, workspace adapters and protected-key loading reuse
+    that verifier. DPAPI, SID/ACL protection, signatures, hash checks, tickets,
+    outbound policy and Effect/Fact gates are unchanged. An unavailable native
+    identity prevents key decryption; no lexical-only fallback is permitted.
+    These paths and the shared verifier join the existing freeze surface.
+24. Development-source readiness may reuse the explicitly selected source root
+    when its release manifest lives outside the immutable installation. An
+    explicit invalid root never falls back to manifest ancestors. Production
+    binary selection cannot be overridden with a source root. Required component
+    topology and exact executable hashes remain mandatory, and native identity
+    failure clears binary verification. This is not Source review/publication,
+    a production claim or completion of the isolated Gateway startup chain.
+
+25. P8-R1 corrects the Life dependency direction introduced in item 23.
+    Standalone Life persistence retains its own strict pathlib default and no
+    execution/security imports. The existing Gateway host explicitly injects
+    the native existing-path observer through EmbeddedLifeRuntime and
+    LifeShadowStore; an unavailable/invalid observation fails before SQLite
+    opens, without a lexical fallback. The existing orchestration and Omni
+    grant workspace checks reuse that same physical-path observer. Workspace
+    scope hash normalization, lease ownership, Policy/Ticket/Grant and P19
+    semantics remain unchanged. The two Life forwarding modules are added to
+    the freeze surface; no existing covered file is removed. Fresh source-probe
+    tests use isolated Python with one explicitly pinned trusted source root,
+    never candidate code or inherited PYTHONPATH. These are wiring/regression
+    corrections, not proof of real AppContainer READY or P8 completion.
+
+Unchanged authority and admission
+----------------------------------------------------------------------
+
+The unique Gateway, Runtime, WorldState, Memory SSoT, Action Registry,
+Policy/Ticket/Grant, Effect/Fact, P19 and CompletionGate remain unchanged in
+ownership. Gateway Store schema remains 33. No verifier PASS/FAIL/INCONCLUSIVE
+rule, Repair Policy, completion rule, or A0-only composition admission rule is
+relaxed. A1+, writes, external sends, shell/Python actions and destructive
+runtime operations are not enabled by the offline source-build tooling.
+
+Freeze procedure
+----------------------------------------------------------------------
+
+Retain every 1.5 authority surface entry and add the source candidate/inputs/review,
+trusted source topology validator, sandbox, and installed build/review scripts.
+Refresh docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json only through the existing
+UPDATE_FREEZE=1 generator after inspecting changes. Then rerun the guard with
+UPDATE_FREEZE absent and run the full required gates against the final head.
+The Golden corpus, oracle semantics and drift fingerprint are not rewritten
+merely to obtain a passing test. No phase is closed until its real acceptance
+requirements and exact-head evidence are complete.

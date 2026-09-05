@@ -129,6 +129,56 @@ class CompiledCapabilityManifest:
             "validation": _jsonable(dict(self.validation)),
         }
 
+    def to_gateway_dict(self, *, source_inputs_sha256: str | None = None) -> dict[str, Any]:
+        """Project this compiler's result into the existing published format.
+
+        Runtime identity includes the runtime class and dynamic route set;
+        the published Gateway format hashes the complete capability table.
+        These are distinct, explicit projections of the SAME compilation.
+        No old manifest rows, route guesses, or permission overrides enter
+        this projection. Returning it does not publish or approve source.
+        A P8 isolated build additionally binds its observed source inputs.
+        The existing Gateway hashes the entire document, so a handler-only
+        change creates a new authority revision without changing permission
+        semantics. Legacy runtime projection and table hashes are unchanged.
+        """
+        if source_inputs_sha256 is not None and (
+            not isinstance(source_inputs_sha256, str)
+            or len(source_inputs_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in source_inputs_sha256)
+        ):
+            raise ValueError("compiled source input revision is invalid")
+        runtime = self.to_dict()
+        source_payload = {
+            "runtime_class": runtime["runtime_class"],
+            "dynamic_actions": runtime["dynamic_actions"],
+            "capabilities": runtime["capabilities"],
+        }
+        if (
+            _sha256(source_payload) != self.source_hash
+            or runtime["validation"].get("source_hash") != self.source_hash
+            or runtime["validation"].get("ok") is not True
+            or runtime["validation"].get("executable_without_route") != []
+        ):
+            raise ValueError("compiled capability manifest changed or is unhealthy")
+        source_hash = _sha256(runtime["capabilities"])
+        result = {
+            "schema": runtime["schema"],
+            "capabilities": runtime["capabilities"],
+            "total": runtime["total"],
+            "executable": runtime["executable"],
+            "unavailable": runtime["unavailable"],
+            "source_hash": source_hash,
+            "validation": {
+                "ok": True,
+                "source_hash": source_hash,
+                "executable_without_route": [],
+            },
+        }
+        if source_inputs_sha256 is not None:
+            result["source_inputs_sha256"] = source_inputs_sha256
+        return result
+
 
 def compile_manifest(
     actions: Mapping[str, Mapping[str, Any]],
@@ -145,12 +195,48 @@ def compile_manifest(
     """
 
     runtime_name = f"{runtime_class.__module__}.{runtime_class.__qualname__}"
-    dynamic = {str(item) for item in dynamic_actions if str(item)}
-    normalized: dict[str, dict[str, Any]] = {
-        str(name): dict(metadata or {})
-        for name, metadata in actions.items()
-        if str(name)
-    }
+    if not isinstance(actions, Mapping):
+        raise ValueError("source action table must be a mapping")
+    normalized: dict[str, dict[str, Any]] = {}
+    for name, raw in actions.items():
+        if not isinstance(name, str) or not name or name != name.strip():
+            raise ValueError("source action identity is invalid")
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"source action metadata must be a mapping: {name}")
+        metadata = dict(raw)
+        # Legacy omission defaults remain explicit below. A present malformed
+        # value is not an omission: especially never turn a misspelled execute
+        # effect into read, or the string "false" into implemented=True.
+        for field_name, allowed in (
+            ("risk", {"A0", "A1", "A2", "A3", "A4", "A5"}),
+            ("effect", {"read", "verify", "create", "write", "update", "execute"}),
+        ):
+            if field_name in metadata and (
+                not isinstance(metadata[field_name], str)
+                or metadata[field_name] not in allowed
+            ):
+                raise ValueError(f"source action metadata has invalid {field_name}: {name}")
+        if "implemented" in metadata and type(metadata["implemented"]) is not bool:
+            raise ValueError(f"source action metadata has invalid implemented: {name}")
+        if "alias_to" in metadata and (
+            not isinstance(metadata["alias_to"], str)
+            or metadata["alias_to"] != metadata["alias_to"].strip()
+        ):
+            raise ValueError(f"source action metadata has invalid alias_to: {name}")
+        normalized[name] = metadata
+    if isinstance(dynamic_actions, (str, bytes)):
+        raise ValueError("dynamic action identities must be an iterable of strings")
+    try:
+        dynamic_rows = tuple(dynamic_actions)
+    except TypeError as exc:
+        raise ValueError("dynamic action identities are invalid") from exc
+    if any(
+        not isinstance(item, str) or not item or item != item.strip()
+        or item not in normalized
+        for item in dynamic_rows
+    ):
+        raise ValueError("dynamic action identity is invalid or undeclared")
+    dynamic = set(dynamic_rows)
 
     route_state: dict[str, tuple[bool, str, str]] = {}
     supplied_schemas = (
@@ -332,7 +418,7 @@ def compile_manifest(
             result = (False, "", "alias target is absent")
             route_state[name] = result
             return result
-        if not bool(metadata.get("implemented", False)):
+        if metadata.get("implemented", False) is not True:
             result = (False, "", str(metadata.get("unavailable_reason") or "declared unavailable"))
             route_state[name] = result
             return result
@@ -373,10 +459,9 @@ def compile_manifest(
             value_schema_kind,
             value_validator_source_sha256,
         ) = schema_descriptor(name)
-        implemented = bool(metadata.get("implemented", False))
-        risk = str(metadata.get("risk") or "A0")
-        declared_effect = str(metadata.get("effect") or "").strip()
-        effect = declared_effect if declared_effect in {"read", "verify", "create", "write", "update", "execute"} else ("read" if risk == "A0" else "write")
+        implemented = metadata.get("implemented", False)
+        risk = metadata.get("risk", "A0")
+        effect = metadata.get("effect", "read" if risk == "A0" else "write")
         summary = str(metadata.get("summary") or metadata.get("description") or metadata.get("desc") or "")
         capabilities[name] = CompiledCapability(
             id=name,

@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from runtime_security.path_identity import resolve_existing_path
+
 from contracts import (
     ComponentReadinessEvidence,
     ReleaseManifest,
@@ -69,6 +71,7 @@ class ProductionReadinessCollector:
         binary_recheck_seconds: float = 60.0,
         allow_development_release: bool = False,
         embedded_services: Mapping[str, object] | None = None,
+        release_source_root: Path | None = None,
     ) -> None:
         if not release.has_valid_release_manifest_sha256():
             raise ValueError("readiness requires a verified release manifest")
@@ -82,8 +85,10 @@ class ProductionReadinessCollector:
             raise ValueError("production readiness binary recheck interval is unsafe")
         self._release = release
         self._evidence_profile = "production" if release.production_claim else "development-source"
-        self._manifest_path = release_manifest_path.resolve(strict=True)
-        self._runtime_root = self._resolve_runtime_root(self._manifest_path, release)
+        self._manifest_path = resolve_existing_path(release_manifest_path)
+        if release_source_root is not None and release.production_claim:
+            raise ValueError("a source root cannot select production runtime binaries")
+        self._runtime_root = self._resolve_runtime_root(self._manifest_path, release, release_source_root)
         self._gateway_epoch = gateway_epoch
         self._gateway_instance_id = gateway_instance_id
         self._tokens = {
@@ -121,7 +126,9 @@ class ProductionReadinessCollector:
         return self._evidence_profile
 
     @staticmethod
-    def _resolve_runtime_root(manifest_path: Path, release: ReleaseManifest) -> Path:
+    def _resolve_runtime_root(
+        manifest_path: Path, release: ReleaseManifest, source_root: Path | None = None,
+    ) -> Path:
         required = {
             item.component_id: item
             for item in release.component_manifest.components
@@ -129,15 +136,24 @@ class ProductionReadinessCollector:
         }
         if set(required) != set(_REQUIRED_COMPONENT_IDS):
             raise ValueError("readiness release is missing a required component")
-        candidates = (manifest_path.parent.parent, manifest_path.parent.parent.parent)
+        if source_root is not None and not source_root.is_absolute():
+            raise ValueError("readiness source root must be absolute")
+        # A source-pinned launch can store its manifest outside its immutable
+        # installation. Reuse that selected root; never discover a substitute.
+        candidates = ((source_root,) if source_root is not None else
+                      (manifest_path.parent.parent, manifest_path.parent.parent.parent))
         for raw_root in candidates:
             try:
-                root = raw_root.resolve(strict=True)
-            except OSError:
+                root = resolve_existing_path(raw_root)
+            except (OSError, ValueError):
                 continue
             valid = True
             for descriptor in required.values():
-                candidate = (root / Path(descriptor.executable_relative_path)).resolve(strict=False)
+                try:
+                    candidate = resolve_existing_path(root / Path(descriptor.executable_relative_path))
+                except (OSError, ValueError):
+                    valid = False
+                    break
                 if root not in candidate.parents or not candidate.is_file() or candidate.is_symlink():
                     valid = False
                     break
@@ -146,7 +162,7 @@ class ProductionReadinessCollector:
         raise ValueError("readiness runtime root cannot be bound to the selected manifest")
 
     def _component_file(self, relative_path: str) -> Path:
-        candidate = (self._runtime_root / Path(relative_path)).resolve(strict=False)
+        candidate = resolve_existing_path(self._runtime_root / Path(relative_path))
         if self._runtime_root not in candidate.parents:
             raise ValueError("component executable escaped the runtime root")
         if not candidate.is_file() or candidate.is_symlink():

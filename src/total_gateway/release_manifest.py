@@ -12,6 +12,7 @@ import tempfile
 import time
 import tomllib
 from collections.abc import Iterable, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from contracts.artifacts import generate_contract_artifact_documents
 
 from communication_service.embedded_runtime import EMBEDDED_COMMUNICATION_BUILD_ID
 from life_service.embedded_runtime import EMBEDDED_LIFE_BUILD_ID
+from source_authority.validator import validate_source_authority
+from runtime_security.path_identity import PathIdentityError, resolve_existing_path, verify_relative_path
 
 from . import SINGLE_PROCESS_GATEWAY_BUILD_ID
 from .embedded_backend import EMBEDDED_BACKEND_BUILD_ID
@@ -109,7 +112,10 @@ def _strict_json(path: Path) -> dict[str, object]:
     return value
 
 
-def _sha256_file_uncached(path: Path) -> str:
+def _sha256_file(path: Path) -> str:
+    # Release evidence must describe observed bytes. Neither matching stat
+    # metadata nor an on-disk cache proves that content stayed unchanged.
+    # Hash afresh, including when a verification follows a prior generation.
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         while chunk := stream.read(1024 * 1024):
@@ -117,82 +123,23 @@ def _sha256_file_uncached(path: Path) -> str:
     return digest.hexdigest()
 
 
-_HASH_CACHE_FILENAME = ".tiangong-release-hash-cache.json"
-# Active {root, entries} cache context while generate_release_manifest runs.
-# Any cache failure silently degrades to full recomputation; the manifest
-# output is never affected by cache content beyond the stored digests, which
-# are only reused when size and mtime_ns both match.
-_HASH_CACHE_CONTEXT: dict[str, object] | None = None
-
-
-def _load_hash_cache(root: Path) -> dict[str, object]:
-    try:
-        raw = json.loads((root / _HASH_CACHE_FILENAME).read_text(encoding="utf-8"))
-        files = raw.get("files") if isinstance(raw, dict) else None
-        if isinstance(files, dict):
-            return {str(key): value for key, value in files.items() if isinstance(value, dict)}
-    except (OSError, ValueError):
-        pass
-    return {}
-
-
-def _write_hash_cache(root: Path, entries: dict[str, object]) -> None:
-    try:
-        payload = json.dumps(
-            {"version": 1, "files": entries},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{_HASH_CACHE_FILENAME}.",
-            suffix=".tmp",
-            dir=str(root),
-        )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, root / _HASH_CACHE_FILENAME)
-        finally:
-            temporary.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-def _sha256_file(path: Path) -> str:
-    context = _HASH_CACHE_CONTEXT
-    if context is not None:
-        try:
-            relative = path.relative_to(context["root"]).as_posix()
-            stat = path.stat()
-            entries = context["entries"]
-            cached = entries.get(relative)
-            if (
-                isinstance(cached, dict)
-                and cached.get("size") == stat.st_size
-                and cached.get("mtime_ns") == stat.st_mtime_ns
-                and isinstance(cached.get("sha256"), str)
-            ):
-                return cached["sha256"]
-            digest = _sha256_file_uncached(path)
-            entries[relative] = {
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-                "sha256": digest,
-            }
-            return digest
-        except (OSError, ValueError, AttributeError, TypeError):
-            pass
-    return _sha256_file_uncached(path)
-
-
 def _safe_workspace(workspace_root: Path) -> Path:
     if not workspace_root.is_absolute() or not workspace_root.is_dir() or workspace_root.is_symlink():
         raise ReleaseManifestError("release workspace root is missing or unsafe")
+    if os.name == "nt":
+        _verify_windows_release_path(workspace_root, workspace_root)
+        return workspace_root
     return workspace_root.resolve(strict=True)
+
+
+def _verify_windows_release_path(workspace_root: Path, path: Path) -> None:
+    # Reuse the same normalized native volume/root/relative identity check as
+    # source startup. Do not replace strict evidence with Path.resolve(False)
+    # when AppContainer denies the DOS-volume query used by pathlib.
+    try:
+        verify_relative_path(workspace_root, path)
+    except (OSError, PathIdentityError) as exc:
+        raise ReleaseManifestError("release input physical path is unsafe") from exc
 
 
 def _safe_file(workspace_root: Path, relative_path: str) -> Path:
@@ -202,9 +149,12 @@ def _safe_file(workspace_root: Path, relative_path: str) -> Path:
     path = workspace_root / relative
     if not path.is_file() or path.is_symlink():
         raise ReleaseManifestError(f"release input file is missing or unsafe: {relative_path}")
-    resolved = path.resolve(strict=True)
-    if workspace_root not in resolved.parents:
-        raise ReleaseManifestError("release input escaped the workspace")
+    if os.name == "nt":
+        _verify_windows_release_path(workspace_root, path)
+    else:
+        resolved = path.resolve(strict=True)
+        if workspace_root not in resolved.parents:
+            raise ReleaseManifestError("release input escaped the workspace")
     return path
 
 
@@ -235,9 +185,12 @@ def _tree_files(workspace_root: Path, roots: Iterable[str]) -> tuple[Path, ...]:
                 continue
             if candidate.suffix == ".pyc" or "__pycache__" in candidate.parts:
                 continue
-            resolved = candidate.resolve(strict=True)
-            if workspace_root not in resolved.parents:
-                raise ReleaseManifestError("release tree file escaped the workspace")
+            if os.name == "nt":
+                _verify_windows_release_path(workspace_root, candidate)
+            else:
+                resolved = candidate.resolve(strict=True)
+                if workspace_root not in resolved.parents:
+                    raise ReleaseManifestError("release tree file escaped the workspace")
             relative_name = candidate.relative_to(workspace_root).as_posix()
             files[relative_name] = candidate
     return tuple(files[name] for name in sorted(files))
@@ -271,6 +224,43 @@ def _source_tree(
             }
         ),
     )
+
+
+def _gateway_source_roots(workspace_root: Path) -> tuple[str, ...]:
+    """Bind the monolith's source closure using the existing ownership policy.
+
+    This is release provenance, not a new Source/Action authority. Unlike the
+    compiler input closure, release inputs also include generated files inside
+    these roots: they are installed bytes, and this digest is not fed back into
+    capability compilation. Existing source-tree hashing semantics stay intact.
+    """
+    policy = _strict_json(_safe_file(workspace_root, "source-ownership.json"))
+    authority = policy.get("authority_policy")
+    if not isinstance(authority, dict):
+        raise ReleaseManifestError("release source ownership policy is incomplete")
+    editable = authority.get("editable_roots")
+    frozen = authority.get("frozen_roots")
+    if (
+        not isinstance(editable, list) or not editable
+        or not isinstance(frozen, list)
+        or any(not isinstance(item, str) for item in [*editable, *frozen])
+        or validate_source_authority(policy, repo_root=workspace_root)
+    ):
+        raise ReleaseManifestError("release source ownership topology is invalid")
+    roots = tuple(sorted({
+        # Retain every previously bound Gateway authority even if a malformed
+        # policy attempts to omit it. Tool/backend/frozen roots come from the
+        # single Source Authority rather than a copied list of implementations.
+        "pyproject.toml", "src/contracts", "src/runtime_security", "src/total_gateway",
+        "source-ownership.json", "requirements-source.lock", *editable, *frozen,
+    }))
+    try:
+        ReleaseSourceTree.validate_roots(roots)
+    except ValueError as exc:
+        raise ReleaseManifestError("release source ownership roots are unsafe") from exc
+    if len(roots) > 64:
+        raise ReleaseManifestError("release source ownership roots exceed their limit")
+    return roots
 
 
 def _desktop_source_roots(workspace_root: Path) -> tuple[str, ...]:
@@ -361,15 +351,7 @@ def _component_from_file(
 
 def generate_release_manifest(workspace_root: Path) -> ReleaseManifest:
     root = _safe_workspace(workspace_root)
-    global _HASH_CACHE_CONTEXT
-    previous_context = _HASH_CACHE_CONTEXT
-    context: dict[str, object] = {"root": root, "entries": _load_hash_cache(root)}
-    _HASH_CACHE_CONTEXT = context
-    try:
-        return _generate_release_manifest(root)
-    finally:
-        _HASH_CACHE_CONTEXT = previous_context
-        _write_hash_cache(root, context["entries"])
+    return _generate_release_manifest(root)
 
 
 def _generate_release_manifest(root: Path) -> ReleaseManifest:
@@ -544,7 +526,7 @@ def _generate_release_manifest(root: Path) -> ReleaseManifest:
                 _source_tree(
                     root,
                     "gateway-source",
-                    ("pyproject.toml", "src/contracts", "src/runtime_security", "src/total_gateway"),
+                    _gateway_source_roots(root),
                 ),
                 _source_tree(
                     root,
@@ -608,14 +590,21 @@ def generate_production_release_manifest(
     if not desktop_archive_path.is_absolute() or desktop_archive_path.is_symlink():
         raise ReleaseManifestError("production desktop archive is missing or unsafe")
     try:
-        desktop_archive = desktop_archive_path.resolve(strict=True)
-    except OSError as exc:
-        raise ReleaseManifestError("production desktop archive is missing") from exc
+        if os.name == "nt":
+            # Observe both names through the same existing no-reparse primitive.
+            # A proven 8.3 alias may expand; a redirected ancestor may not.
+            runtime = resolve_existing_path(runtime)
+            desktop_archive = resolve_existing_path(desktop_archive_path)
+            _verify_windows_release_path(runtime, desktop_archive)
+        else:
+            desktop_archive = desktop_archive_path.resolve(strict=True)
+    except (OSError, PathIdentityError) as exc:
+        raise ReleaseManifestError("production desktop archive is missing or unsafe") from exc
     if (
         not desktop_archive.is_file()
         or desktop_archive.is_symlink()
-        or os.path.normcase(str(desktop_archive))
-        != os.path.normcase(str(desktop_archive_path.absolute()))
+        or (os.name != "nt" and os.path.normcase(str(desktop_archive))
+            != os.path.normcase(str(desktop_archive_path.absolute())))
         or runtime not in desktop_archive.parents
         or desktop_archive.name != "app.asar"
     ):
@@ -646,7 +635,9 @@ def generate_production_release_manifest(
     # The packaged product is a modular monolith: Runtime, Life, Communication
     # and orchestration remain separately described logical components, but all
     # four are cryptographically bound to the same frozen 7184 executable.
-    single_executable = runtime / f"total-gateway/tiangong-total-gateway{suffix}"
+    single_executable = _safe_file(
+        runtime, f"total-gateway/tiangong-total-gateway{suffix}",
+    )
     executable_paths = {
         component_id: single_executable
         for component_id in (
@@ -762,21 +753,167 @@ def release_manifest_bytes(manifest: ReleaseManifest) -> bytes:
     )
 
 
-def write_release_manifest(output_dir: Path, workspace_root: Path) -> ReleaseManifest:
+def _windows_appcontainer_sddl() -> str | None:
+    """Describe a NEW private stage for the effective OS token, never an ACL repair.
+
+    CPython's Windows mkdir(0700) excludes the AppContainer SID (gh-134587).
+    Ordinary host creation stays with tempfile. Only an OS-observed container
+    adds its own exact SID to its newly-created stage; no existing path ACL,
+    token, privilege, parent or sandbox permission is changed.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    security = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.GetCurrentThread.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [wintypes.LPVOID]
+    kernel.LocalFree.restype = wintypes.LPVOID
+    security.OpenThreadToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, ctypes.POINTER(wintypes.HANDLE)]
+    security.OpenThreadToken.restype = wintypes.BOOL
+    security.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    security.OpenProcessToken.restype = wintypes.BOOL
+    security.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    security.GetTokenInformation.restype = wintypes.BOOL
+    security.IsValidSid.argtypes = [wintypes.LPVOID]
+    security.IsValidSid.restype = wintypes.BOOL
+    security.ConvertSidToStringSidW.argtypes = [wintypes.LPVOID, ctypes.POINTER(wintypes.LPWSTR)]
+    security.ConvertSidToStringSidW.restype = wintypes.BOOL
+    token = wintypes.HANDLE()
+    # Respect effective impersonation. Only ERROR_NO_TOKEN permits process
+    # fallback; access-denied or unobservable identity must reject creation.
+    if not security.OpenThreadToken(kernel.GetCurrentThread(), 0x8, True, ctypes.byref(token)):
+        error = ctypes.get_last_error()
+        if error != 1008:
+            raise ctypes.WinError(error)
+        if not security.OpenProcessToken(kernel.GetCurrentProcess(), 0x8, ctypes.byref(token)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        flag, length = wintypes.DWORD(), wintypes.DWORD()
+        if not security.GetTokenInformation(token, 29, ctypes.byref(flag), ctypes.sizeof(flag), ctypes.byref(length)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if length.value != ctypes.sizeof(flag) or flag.value not in (0, 1):
+            raise ReleaseManifestError("release staging token flag is invalid")
+        if not flag.value:
+            return None
+
+        def sid_text(kind: int) -> str:
+            required = wintypes.DWORD()
+            ok = security.GetTokenInformation(token, kind, None, 0, ctypes.byref(required))
+            if ok or ctypes.get_last_error() != 122 or not ctypes.sizeof(ctypes.c_void_p) <= required.value <= 65536:
+                raise ReleaseManifestError("release staging SID evidence is unavailable")
+            data = ctypes.create_string_buffer(required.value)
+            if not security.GetTokenInformation(token, kind, data, len(data), ctypes.byref(required)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not ctypes.sizeof(ctypes.c_void_p) <= required.value <= len(data):
+                raise ReleaseManifestError("release staging SID evidence size changed")
+            # TOKEN_USER and TOKEN_APPCONTAINER_INFORMATION start with a SID*.
+            sid = ctypes.c_void_p.from_buffer(data).value
+            if not sid or not security.IsValidSid(sid):
+                raise ReleaseManifestError("release staging SID is invalid")
+            text = wintypes.LPWSTR()
+            if not security.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                value = text.value or ""
+                if re.fullmatch(r"S-1-(?:[0-9]+-)+[0-9]+", value) is None:
+                    raise ReleaseManifestError("release staging SID text is invalid")
+                return value
+            finally:
+                if kernel.LocalFree(text):
+                    raise ReleaseManifestError("release staging SID cleanup failed")
+
+        user_sid, app_sid = sid_text(1), sid_text(31)
+        if re.fullmatch(r"S-1-15-2-(?:[0-9]+-){6}[0-9]+", app_sid) is None:
+            raise ReleaseManifestError("release staging requires an exact AppContainer SID")
+        # Protected, non-inherited DACL: host owner/admin/system plus precisely
+        # this container, NOT Everyone, Users or ALL APPLICATION PACKAGES.
+        return "D:P" + "".join(f"(A;OICI;FA;;;{sid})" for sid in ("SY", "BA", user_sid, app_sid))
+    finally:
+        if not kernel.CloseHandle(token):
+            raise ReleaseManifestError("release staging token cleanup failed")
+
+
+def _windows_private_stage(target: Path, descriptor: str) -> Path:
+    import ctypes
+    from ctypes import wintypes
+    import secrets
+
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [("nLength", wintypes.DWORD), ("lpSecurityDescriptor", wintypes.LPVOID),
+                    ("bInheritHandle", wintypes.BOOL)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    security = ctypes.WinDLL("advapi32", use_last_error=True)
+    security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(wintypes.LPVOID), ctypes.POINTER(wintypes.DWORD)]
+    security.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    kernel.CreateDirectoryW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(SecurityAttributes)]
+    kernel.CreateDirectoryW.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [wintypes.LPVOID]
+    kernel.LocalFree.restype = wintypes.LPVOID
+    native = wintypes.LPVOID()
+    if not security.ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, 1, ctypes.byref(native), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not native.value:
+            raise ReleaseManifestError("release staging descriptor is missing")
+        attributes = SecurityAttributes(ctypes.sizeof(SecurityAttributes), native, False)
+        for _ in range(16):
+            stage = target.parent / f".{target.name}-{secrets.token_hex(16)}"
+            # Exclusive creation; an existing directory/link is never reused.
+            if kernel.CreateDirectoryW(str(stage), ctypes.byref(attributes)):
+                return stage
+            error = ctypes.get_last_error()
+            if error not in (80, 183):
+                raise ctypes.WinError(error)
+        raise FileExistsError("release staging name collision limit reached")
+    finally:
+        if kernel.LocalFree(native):
+            raise ReleaseManifestError("release staging descriptor cleanup failed")
+
+
+def _create_release_stage(target: Path) -> Path:
+    if os.name == "nt":
+        descriptor = _windows_appcontainer_sddl()
+        if descriptor is not None:
+            return _windows_private_stage(target, descriptor)
+    return Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
+
+
+@contextmanager
+def _release_staging(output_dir: Path):
     target = output_dir.absolute()
-    if target.exists():
+    if target.exists() or target.is_symlink():
         if target.is_symlink() or not target.is_dir() or any(target.iterdir()):
             raise FileExistsError("release manifest target must be absent or empty")
         target.rmdir()
     target.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
-    manifest = generate_release_manifest(workspace_root)
+    stage = _create_release_stage(target)
+    failure = None
     try:
+        yield stage, target
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        try:
+            if stage.exists():
+                shutil.rmtree(stage)
+        except OSError as cleanup:
+            if failure is None:
+                raise
+            failure.add_note(f"release_stage_cleanup_failed: {type(cleanup).__name__}: {cleanup}")
+
+
+def write_release_manifest(output_dir: Path, workspace_root: Path) -> ReleaseManifest:
+    with _release_staging(output_dir) as (stage, target):
+        manifest = generate_release_manifest(workspace_root)
         (stage / RELEASE_MANIFEST_FILENAME).write_bytes(release_manifest_bytes(manifest))
         os.replace(stage, target)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
     return verify_release_manifest_file(target / RELEASE_MANIFEST_FILENAME, workspace_root)
 
 
@@ -789,27 +926,16 @@ def write_production_release_manifest(
     architecture: str,
     desktop_archive_path: Path,
 ) -> ReleaseManifest:
-    target = output_dir.absolute()
-    if target.exists():
-        if target.is_symlink() or not target.is_dir() or any(target.iterdir()):
-            raise FileExistsError("release manifest target must be absent or empty")
-        target.rmdir()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
-    manifest = generate_production_release_manifest(
-        workspace_root,
-        runtime_root,
-        platform_name=platform_name,
-        architecture=architecture,
-        desktop_archive_path=desktop_archive_path,
-    )
-    try:
-        manifest_path = stage / RELEASE_MANIFEST_FILENAME
-        manifest_path.write_bytes(release_manifest_bytes(manifest))
+    with _release_staging(output_dir) as (stage, target):
+        manifest = generate_production_release_manifest(
+            workspace_root,
+            runtime_root,
+            platform_name=platform_name,
+            architecture=architecture,
+            desktop_archive_path=desktop_archive_path,
+        )
+        (stage / RELEASE_MANIFEST_FILENAME).write_bytes(release_manifest_bytes(manifest))
         os.replace(stage, target)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
     verified = verify_release_manifest_file(target / RELEASE_MANIFEST_FILENAME)
     if release_manifest_bytes(verified) != release_manifest_bytes(manifest):
         raise ReleaseManifestError("production release manifest verification drifted")
