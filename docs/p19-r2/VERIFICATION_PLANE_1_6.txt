@@ -181,6 +181,22 @@ Changes covered by this revision
     profile ancestors remain inaccessible. Missing physical evidence still
     fails; no ACL expansion, non-strict fallback, hash cache, approval path or
     second release compiler is introduced. POSIX strict checks are unchanged.
+23. The same native path verifier moves to runtime_security.path_identity so
+    Life and Communication do not depend on a Gateway-private implementation.
+    Source preflight retains its existing error namespace. Audited startup
+    paths in the Skill catalog, Life SQLite parent, Communication raw/staging
+    roots, embedded backend, workspace adapters and protected-key loading reuse
+    that verifier. DPAPI, SID/ACL protection, signatures, hash checks, tickets,
+    outbound policy and Effect/Fact gates are unchanged. An unavailable native
+    identity prevents key decryption; no lexical-only fallback is permitted.
+    These paths and the shared verifier join the existing freeze surface.
+24. Development-source readiness may reuse the explicitly selected source root
+    when its release manifest lives outside the immutable installation. An
+    explicit invalid root never falls back to manifest ancestors. Production
+    binary selection cannot be overridden with a source root. Required component
+    topology and exact executable hashes remain mandatory, and native identity
+    failure clears binary verification. This is not Source review/publication,
+    a production claim or completion of the isolated Gateway startup chain.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

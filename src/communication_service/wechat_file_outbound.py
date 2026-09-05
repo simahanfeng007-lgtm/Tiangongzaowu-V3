@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from runtime_security.path_identity import resolve_existing_path
 
 from contracts import (
     DeliveryPartGrant,
@@ -415,7 +416,7 @@ class WechatFileDeliveryService:
         self._sessions = sessions
         self._source = source
         self._transport = transport
-        self._staging_root = staging_root.resolve(strict=True)
+        self._staging_root = resolve_existing_path(staging_root)
         self._clock_ms = clock_ms
         self._sleeper = sleeper
         self._rate_gate = rate_gate or WechatRateGate(clock_ms=clock_ms, sleeper=sleeper)

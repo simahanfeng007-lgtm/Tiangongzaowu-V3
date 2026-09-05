@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlsplit
 
+from runtime_security.path_identity import resolve_existing_path
+
 
 EMBEDDED_BACKEND_BUILD_ID = "tiangong-v3.0.3-embedded-runtime-source-20260722"
 EMBEDDED_BACKEND_COMPONENT_ID = "tiangong-backend"
@@ -44,7 +46,7 @@ def _explicit_backend_roots(source: Path) -> tuple[Path, Path]:
         if (not path.is_dir() or path.is_symlink()
                 or bool(getattr(path, "is_junction", lambda: False)())):
             raise EmbeddedBackendError("embedded_backend.source_root_invalid")
-    resolved = source.resolve(strict=True)
+    resolved = resolve_existing_path(source)
     if os.path.normcase(str(resolved)) != os.path.normcase(str(source.absolute())):
         raise EmbeddedBackendError("embedded_backend.source_root_invalid")
     return resolved / "app/backend/tiangong-backend", resolved / "src"

@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from runtime_security.path_identity import resolve_existing_path
 
 from contracts import (
     ActionRegistrySnapshot,
@@ -177,13 +178,13 @@ def load_filesystem_skill_catalog(
         raise ValueError("expected Skill index digest is invalid")
     if expected_catalog_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", expected_catalog_sha256):
         raise ValueError("expected Skill catalog digest is invalid")
-    root_resolved = root.resolve(strict=True)
+    root_resolved = resolve_existing_path(root)
     index_path = root / "registry" / "skill_router_index.json"
     if (
         not index_path.is_file()
         or index_path.is_symlink()
         or index_path.parent.is_symlink()
-        or root_resolved not in index_path.resolve(strict=True).parents
+        or root_resolved not in resolve_existing_path(index_path).parents
     ):
         raise SkillSelectionError("Skill index path is missing or unsafe")
     index_bytes = index_path.read_bytes()
@@ -248,7 +249,7 @@ def load_filesystem_skill_catalog(
             not source_path.is_file()
             or source_path.is_symlink()
             or source_path.parent.is_symlink()
-            or root_resolved not in source_path.resolve(strict=True).parents
+            or root_resolved not in resolve_existing_path(source_path).parents
         ):
             raise SkillSelectionError("Skill source file is missing or unsafe")
         source_bytes = source_path.read_bytes()

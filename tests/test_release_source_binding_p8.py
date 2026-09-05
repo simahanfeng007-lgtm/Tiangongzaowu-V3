@@ -85,12 +85,12 @@ def test_release_checks_native_identity_without_dos_volume_lookup(source_tree, m
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows native path identity contract")
 def test_release_native_identity_failure_never_falls_back(source_tree, monkeypatch):
-    from total_gateway import tool_source_launch as launch
+    from runtime_security import path_identity
 
     root, _ = source_tree
     def denied(path):
         raise PermissionError("native volume identity unavailable")
-    monkeypatch.setattr(launch, "_windows_final_path", denied)
+    monkeypatch.setattr(path_identity, "_windows_final_path", denied)
     with pytest.raises(release.ReleaseManifestError, match="unsafe"):
         release.generate_release_manifest(root)
 

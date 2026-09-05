@@ -11,6 +11,7 @@ from typing import Literal
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from runtime_security.path_identity import resolve_existing_path
 from runtime_security import (
     DataProtector,
     TicketVerificationError,
@@ -261,7 +262,7 @@ class ProtectedKeyStore:
             blob_path.is_symlink()
             or blob_path.parent.is_symlink()
             or not blob_path.is_file()
-            or self.root.resolve(strict=True) not in blob_path.resolve(strict=True).parents
+            or resolve_existing_path(self.root) not in resolve_existing_path(blob_path).parents
         ):
             raise OSError("protected key blob is missing or unsafe")
         encrypted = blob_path.read_bytes()

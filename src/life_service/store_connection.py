@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from runtime_security.path_identity import resolve_existing_path
 
 
 class LifeStoreSchemaLifecycle(Protocol):
@@ -41,7 +42,7 @@ def open_life_shadow_sqlite(
         raise error_factory("shadow store timestamp is invalid")
     if path.name != path.name.strip() or not path.name.endswith(".shadow.sqlite3"):
         raise error_factory("shadow store path must end with .shadow.sqlite3")
-    parent = path.parent.resolve(strict=True)
+    parent = resolve_existing_path(path.parent)
     candidate = parent / path.name
     if candidate.exists():
         if candidate.is_symlink() or not candidate.is_file():

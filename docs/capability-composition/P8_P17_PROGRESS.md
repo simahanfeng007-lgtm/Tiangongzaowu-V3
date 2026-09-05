@@ -1,6 +1,11 @@
 # v1.2 P8–P17 implementation and acceptance ledger
 
-Status: **ACTIVE — P8 source audit and implementation**.
+Status: **USER HANDOFF — P8 IN PROGRESS; stop after online synchronization (2026-09-05)**.
+
+The user requested that this checkpoint be synchronized online and work then
+stop for a task update in chat. This is not phase completion. Do not resume
+implementation, repair CI, merge, or start P9 without the user's new direction.
+See `P8_HANDOFF_2026-09-05.md` and `P8_RESUME_PROMPT_2026-09-05.txt`.
 
 ## Scope and baseline
 
@@ -662,3 +667,57 @@ No source gate was changed or weakened to relocate these non-source reports.
   freeze guard also passed. These integration tests are existing local runtime
   evidence, not the still-pending rebuilt AppContainer startup or a full-stage
   regression. This intermediate checkpoint was not pushed or merged.
+- Real packaged build 14 SUCCESS at candidate
+  `5882fb4af7ed4337f7d508ccbce0ab2b9e075964`: actual AppContainer/network
+  denied, 9.843 s child, 2,866 indexed entries / 61,369,888 indexed bytes.
+  Report `foundation-isolated-build-14.json` SHA-256
+  `ebe4a27d0b12f3dbbfb12ff715ff6683aa9636fdb5be33919587930ad99d0c18`;
+  bundle `source-revision-5882fb4.zip` SHA-256
+  `7121e7e5946ba8b5cf5556ba386904fffb058108b32419d03e9f63d7db82391c`.
+  Source inputs `7aef424186e5f023a3f2d7433c92bb0e08312dd2a7e15cce399b1ce420e3454e`;
+  Capability Manifest `1fd89a0c3dd18e66f4aecf53f10319c403b121dcf35b7887935890cc51c2cc2c`.
+- Actual startup attempt 6 FAILED at release generation in Skill catalog root
+  strict DOS resolution (WinError 5); source consistency passed for 1,964 files
+  with eight frozen bytecode artifacts retained as data. Gateway did not start.
+  Report `foundation-isolated-startup-6.json` SHA-256
+  `2907ceac81a6c5197c836699a5ff902ee8b8328308c9fc164c83c1d5402bb5f9`.
+  AppContainer/network denial remained effective (7.875 s child); parent
+  independently reverified the staged source against the pinned original ZIP.
+- The native verifier now lives in runtime_security, reused by source/release,
+  Skill catalog, Life store setup, Communication raw/staging setup, embedded
+  backend, workspace adapters, desktop attachment setup and protected-key reads.
+  Full modified authoritative sources and callers were audited; authority/ACL/
+  DPAPI/ticket/effect policy is not replaced or relaxed. Source-pinned development
+  readiness may use its explicit source root outside the manifest directory,
+  with no wrong-root fallback and unchanged exact binary/hash checks. Plane
+  entries 23/24 and an expanded freeze surface declare these boundaries.
+- Focused local results on this checkpoint's code snapshot (not full-stage gates):
+  - Key path/cryptography/runtime authority: 14 passed, 14.00 s;
+    `startup-key-path-focused.xml`, SHA-256
+    `cedfda5797348026dfbf54d0b172d77f2baf6dc550a2872bf19ccb364a70b992`.
+  - Source-root/readiness: 9 passed, 22.14 s;
+    `readiness-source-root-focused.xml`, SHA-256
+    `92e24b93872951eb1ba560b19ce1b057541c388c51f694279ea7a0d5a85502c9`.
+  - Channel/staging/desktop: 31 passed, 4 subtests, 2.65 s;
+    `service-startup-path-focused.xml`, SHA-256
+    `af6e9565108d6b5106d520d79f1cd5f473503c337d66a623bd4d131b2594f563`.
+  - Consolidated native/source/probe/key/service/readiness/compatibility/P7D.1:
+    143 passed, 3 subtests, 146.07 s; `startup-path-checkpoint-focused.xml`,
+    SHA-256 `d37bcef8bb5fb93e88b4f4fb6a1974d57dcc26a5c8f635ba465ce43d3fdba182`.
+  - Official generated sync/check and Source Authority passed (16 authorities,
+    1 alias, 24 targets, 1 closed-world boundary). Normal freeze guard passed
+    after declared refresh; no Golden corpus or assertions were weakened.
+- The Windows controlled DOS-denial full-startup diagnostic remains FAILED:
+  `tests/test_source_startup_paths_p8.py` reaches `orchestration.py:457`, where
+  the unchanged worker constructor still calls workspace.resolve(strict=True).
+  `startup-dos-denial-3.xml` SHA-256
+  `1576dde9b97104e44e2a524d95239789db5485394aec0f590f6420915eba09f6`.
+  This is deliberately preserved, not skipped/xfail/deleted. It is local fault
+  injection, not real OS containment evidence. The later edit only restores
+  test workspace environment variables; this diagnostic must be rerun on the
+  exact handoff head. Full orchestration/Omni-authority audit and subsequent
+  isolated rebuild/startup are still pending. No build 15 or startup 7 exists.
+- User-requested handoff: synchronize the current WIP branch/PR, retain the
+  known failing startup acceptance boundary, do not merge or claim P8 complete,
+  and stop implementation. Any automatically triggered GitHub run after the
+  push is not a completed remote PASS or permission to continue repairing.

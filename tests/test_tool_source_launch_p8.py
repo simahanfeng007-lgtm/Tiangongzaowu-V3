@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from runtime_security import path_identity
 
 from total_gateway.bootstrap import GatewayConfig
 from total_gateway.runtime import GatewayRuntime
@@ -40,13 +41,13 @@ def config(root, tmp_path):
                                     r"\Device\HarddiskVolume3\other\module.py",
                                     r"\Device\HarddiskVolume3\source\redirected.py"])
 def test_physical_path_must_match_both_volume_and_relative_location(actual):
-    with pytest.raises(launch.SourceLaunchError, match="physical_path_mismatch"):
-        launch._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
+    with pytest.raises(path_identity.PathIdentityError, match="physical_path_mismatch"):
+        path_identity._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
                                        PureWindowsPath(actual), Path("module.py"))
 
 
 def test_same_physical_volume_and_relative_path_is_accepted():
-    launch._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
+    path_identity._verify_native_relative(PureWindowsPath(r"\Device\HarddiskVolume3\source"),
                                    PureWindowsPath(r"\Device\HarddiskVolume3\source\pkg\module.py"),
                                    Path("pkg/module.py"))
 
@@ -59,16 +60,16 @@ def test_dotdot_path_cannot_be_normalized_into_acceptance(tmp_path):
 def test_native_identity_query_failure_has_no_lexical_or_nonstrict_fallback(tmp_path, monkeypatch):
     path = tmp_path / "module.py"
     path.write_bytes(b"read only probe")
-    monkeypatch.setattr(launch, "os", SimpleNamespace(name="nt", path=os.path))
-    monkeypatch.setattr(launch, "_windows_final_path", Mock(side_effect=PermissionError("native identity unavailable")))
+    monkeypatch.setattr(path_identity, "os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr(path_identity, "_windows_final_path", Mock(side_effect=PermissionError("native identity unavailable")))
     with pytest.raises(PermissionError, match="native identity unavailable"):
         launch._safe_path(tmp_path, path)
 
 
 def test_physical_root_cannot_hide_a_redirected_ancestor(tmp_path, monkeypatch):
-    monkeypatch.setattr(launch, "os", SimpleNamespace(name="nt", path=os.path))
+    monkeypatch.setattr(path_identity, "os", SimpleNamespace(name="nt", path=os.path))
     anchor = Path(tmp_path.anchor)
-    monkeypatch.setattr(launch, "_windows_final_path", lambda path: (
+    monkeypatch.setattr(path_identity, "_windows_final_path", lambda path: (
         PureWindowsPath(r"\Device\Volume3") if path == anchor else PureWindowsPath(r"\Device\Volume4\foreign")))
     with pytest.raises(launch.SourceLaunchError, match="physical_path_mismatch"):
         launch._safe_path(tmp_path, tmp_path)

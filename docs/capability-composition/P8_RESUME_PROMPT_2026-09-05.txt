@@ -1,0 +1,45 @@
+请接手天工造物 V3 v1.2 母版 P8–P17 的任务交接，并先等待我更新要求。
+
+本条用于读取进度和更新计划，不代表立即编码或自动创建另一个重复目标。先只读核验现状，告诉我更新后的计划；收到我的新增要求及“继续执行”后再实施。不要启动旧任务并行跑。
+
+仓库：https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3
+分支：codex/capability-composition-p8-source-evolution-v1
+Draft PR：https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/pull/73
+本地 P8 worktree：C:/Users/77571/Documents/天工造物v3-p8
+
+请先读取最新分支中的：
+1. docs/capability-composition/P8_HANDOFF_2026-09-05.md
+2. docs/capability-composition/P8_P17_PROGRESS.md
+3. docs/p19-r2/VERIFICATION_PLANE_1_6.txt
+4. 当前 PR 的交接评论、真实 Head 和对应 CI 结论。
+
+不要把旧远端 9476b0a 的全绿或旧构建 5882fb4 的成功，当成本次交接头通过。必须重新 fetch/查询 main、工作分支和 PR；同步前已观察 main 为 9a3344de9fe468fa845d2ff501166484439b8ec4，但不能盲信旧 SHA。
+
+母版：天工造物V3_世界理解驱动ToolSkillSource组合执行体系_详细工程实施计划_v1.2_全链源码审计版.txt
+母版 SHA-256：691e857e3a7f75d9107606bbffe2919bd484c03e25f1255cebd1bb069f89f895
+如果当前云端环境无法读取母版全文，先要求我上传原件，不得把交接摘要当作完整母版。
+
+当前真实状态：
+- P0–P7D.2 为已合并基线。
+- P8 IN PROGRESS，尚未合并；P9–P17 NOT STARTED。
+- 已实现部分不可变 Source 候选、严格隔离构建、独立版本 ZIP/清单、Source/World 绑定、启动前一致性检查和原生路径检查。
+- 最近一次真实隔离构建成功属于旧候选 5882fb4；完整 AppContainer Gateway READY/关闭/源码锁定仍未通过。
+- 本次收尾专项 143 passed / 3 subtests；另有密钥 14、readiness 9、通信/附件 31 的重叠专项。它们不是产品评测或全量验收。
+- tests/test_source_startup_paths_p8.py 仍是已知失败，定位在 orchestration.py:457 的 workspace_root.resolve(strict=True)。保留失败测试，不得删、跳过、xfail 或降低断言换绿。
+- 当前共用 runtime_security.path_identity 已在相关入口复用，不能改成字符串路径兜底、全局 pathlib 猴子补丁或放宽 AppContainer ACL。
+- 源码清单与已发布权限仍有 99 项风险降级、42 项新 A0 候选差异，未获批准。
+- 证据合同执行、审查/Source 发布控制器、运行中 X/X+1 锁定、新 generation/replan、真实模型任务及 telemetry 尚未闭环。
+
+我确认继续后，先完成 P8 剩余启动链这一批：完整审计待改权威源码及调用关系，尤其 orchestration.py、omni_grant_authority.py；修复后先专项，统一提交/官方同步，再对精确候选做真实严格隔离构建与启动验证。云端没有 Windows AppContainer 时，不能把 mock 或 Linux 单测当作 Windows 隔离证据，应明确安排受支持宿主复验。
+
+测试节奏严格调整为：小改动只跑受影响专项；每个大步骤（P8、P9 等）完成再做一次完整 Python/Node、P14、P19 Golden、Ubuntu/Windows 门禁。不要每个小提交全量回归，也不要为了触发全量 CI 频繁推送。最终合并要求仍不降低：本地/远端/PR/工作流精确 Head 一致、所有必要门禁完成、证据可追溯、正常 head guard 合并。
+
+后续依次推进 P9 Skill Source、P10 Life Learning Cutover、P11 Formal Shadow、P12 Static Skill Planner 下线、P13 旧 Learning/Registry 下线、P14 动态能力默认、P15 Source Drift/Experience Revalidation、P16 150-round/restart/reconnect、P17 清理。前一阶段未合并并验证进入 main，不得进入下一阶段；每阶段独立 worktree/分支/PR。
+
+保留唯一 Gateway、Runtime、WorldState、Memory SSoT、Action Registry、Policy/Ticket/Grant、Effect/Fact、P19、Completion。只修改权威源码，镜像只用官方同步。禁止恢复 PR #66、第二权威、强推、admin merge、修改 Golden 或削弱失败规则求通过。
+
+A0 read/verify 权限上限不变。模型、Embedding、World Context、Memory Experience、Semantic Hypothesis 不得授权执行或伪装现实事实；候选源码不能导入当前请求/构建父进程。A1+、写入、外发、Shell/Python 等若需要启用，先独立风险审计、权限设计、测试证据和明确审批。
+
+旧生产路径先冻结，必须用真实零生产调用、Shadow 和稳定性证据再删除。80–100 task、约 200 case Shadow、跨模型矩阵、150-round/restart/运行中源码更新均需真实证据。模型选择、弱模型、预算或 telemetry 不可得时说明缺口，不得付费大批量盲跑，不得伪造 PASS。
+
+上一执行任务已按我的要求在同步交接后停止。本轮先回答：远端现在是什么版本；已完成/未完成分别是什么；我的更新应如何改计划；下一大步骤的验收边界和外部资源需求是什么。等我确认后再执行，不要重复创建目标、自动合并或在旧任务里继续跑。

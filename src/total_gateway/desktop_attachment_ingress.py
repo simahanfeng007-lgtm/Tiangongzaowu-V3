@@ -17,6 +17,8 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import BinaryIO
 
+from runtime_security.path_identity import resolve_existing_path
+
 from contracts import AttachmentRef, InboundScope, canonical_json_bytes, derive_inbound_scope_keys
 from contracts.models import validate_safe_filename
 
@@ -102,7 +104,7 @@ class DesktopAttachmentIngress:
         if staging_root.is_symlink() or not staging_root.is_dir():
             raise ValueError("desktop attachment staging root is unsafe")
         self._objects = objects
-        self._staging_root = staging_root.resolve(strict=True)
+        self._staging_root = resolve_existing_path(staging_root)
         self._max_bytes = max_attachment_bytes
 
     @staticmethod

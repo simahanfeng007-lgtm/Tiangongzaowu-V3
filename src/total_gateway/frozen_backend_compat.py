@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
+from runtime_security.path_identity import resolve_existing_path
+
 from contracts import (
     CausalContextPack,
     ExecutionResult,
@@ -338,7 +340,7 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         self._life = life_client or _LoopbackJsonClient(
             life_port, life_token, max_response_bytes=16 * 1024 * 1024
         )
-        self._workspace_root = workspace_root.resolve(strict=True)
+        self._workspace_root = resolve_existing_path(workspace_root)
         self._gateway_url = normalize_gateway_url(gateway_url)
         self._on_backend_start = on_backend_start
         self._on_context_compaction = on_context_compaction

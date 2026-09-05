@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from runtime_security.path_identity import resolve_existing_path
+
 from contracts import (
     ChannelCutoverSnapshot,
     ChannelDrainEvidence,
@@ -938,7 +940,7 @@ class GatewayRuntime:
                 # initialized; otherwise its grant request cannot match the
                 # outer execution ticket.
                 if config.workspace_root is not None:
-                    workspace_text = str(config.workspace_root.resolve(strict=True))
+                    workspace_text = str(resolve_existing_path(config.workspace_root))
                     os.environ["TIANGONG_DESKTOP_WORKSPACE_ROOT"] = workspace_text
                     os.environ["TIANGONG_WORKSPACE_ROOT"] = workspace_text
                 runtime.backend_service = EmbeddedBackendRuntime.start(
@@ -1564,6 +1566,11 @@ class GatewayRuntime:
                         communication_token=config.communication_api_token,
                         allow_development_release=config.environment != "production",
                         embedded_services=embedded_services,
+                        release_source_root=(
+                            config.release_source_root
+                            if not runtime.orchestration.release_manifest.production_claim
+                            else None
+                        ),
                     )
                 runtime.orchestration.start()
                 runtime.cutover = ChannelCutoverCoordinator(

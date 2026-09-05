@@ -9,15 +9,15 @@ the authorities; this module only rejects inconsistent installation evidence.
 from __future__ import annotations
 
 import hashlib
-from functools import lru_cache
 from importlib.machinery import PathFinder
 import json
-import os
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 import sys
 
+from runtime_security.path_identity import PathIdentityError, verify_relative_path
+
 from .tool_source_candidate import SourceCandidateError, _strict_pairs, _invalid_constant
-from .tool_source_inputs import compile_tool_source_inputs, _read_input, _is_link
+from .tool_source_inputs import compile_tool_source_inputs, _read_input
 
 
 _MANIFEST = "src/omni_body_skill/registry/capability_manifest.generated.json"
@@ -28,79 +28,11 @@ class SourceLaunchError(RuntimeError):
     pass
 
 
-@lru_cache(maxsize=1)
-def _windows_path_api():
-    # Cache API bindings only, never a path, handle or observed file identity.
-    import ctypes
-    from ctypes import wintypes
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                                  wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-    kernel.CreateFileW.restype = wintypes.HANDLE
-    kernel.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
-    kernel.GetFinalPathNameByHandleW.restype = wintypes.DWORD
-    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel.CloseHandle.restype = wintypes.BOOL
-    return ctypes, wintypes, kernel
-
-
-def _windows_final_path(path: Path) -> PureWindowsPath:
-    """Read a normalized physical NT path without DOS-volume lookup rights.
-
-    AppContainer can open the file yet deny VOLUME_NAME_DOS/GUID queries used
-    by Path.resolve(strict=True). VOLUME_NAME_NT keeps kernel normalization;
-    this is not a non-strict path fallback or a permission grant.
-    """
-    ctypes, wintypes, kernel = _windows_path_api()
-    handle = kernel.CreateFileW(str(path), 0x80, 7, None, 3, 0x02200000, None)
-    if handle == wintypes.HANDLE(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        buffer = ctypes.create_unicode_buffer(8192)
-        size = kernel.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 2)
-        if size == 0:
-            raise ctypes.WinError(ctypes.get_last_error())
-        if size >= len(buffer):
-            raise SourceLaunchError("source_launch.native_path_size_invalid")
-        result = PureWindowsPath(buffer.value)
-        if (result.parts[:2] != ("\\", "Device") or len(result.parts) < 3
-                or len(result.parts) == 3 and path != Path(path.anchor)):
-            raise SourceLaunchError("source_launch.native_path_invalid")
-        return result
-    finally:
-        kernel.CloseHandle(handle)
-
-
-def _verify_native_relative(root: PureWindowsPath, path: PureWindowsPath, relative: Path) -> None:
-    if path != root.joinpath(*relative.parts):
-        raise SourceLaunchError("source_launch.physical_path_mismatch")
-
-
 def _safe_path(root: Path, path: Path) -> str:
-    if (not root.is_absolute() or not path.is_absolute()
-            or os.path.normcase(os.path.normpath(str(path))) != os.path.normcase(str(path))):
-        raise SourceLaunchError("source_launch.path_not_canonical")
     try:
-        relative = path.relative_to(root)
-    except ValueError as exc:
-        raise SourceLaunchError("source_launch.path_outside_installation") from exc
-    for current in (path, *path.parents):
-        if _is_link(current) or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
-            raise SourceLaunchError("source_launch.link_or_junction")
-        if current == root:
-            break
-    if os.name == "nt":
-        physical_root = _windows_final_path(root)
-        # Bind the source root to its own drive/share, not just to itself.
-        # AppContainer can query the native volume anchor while denying
-        # metadata traversal through unrelated profile ancestors. Comparing
-        # the complete normalized suffix still rejects redirected ancestors.
-        _verify_native_relative(_windows_final_path(Path(root.anchor)), physical_root, Path(*root.parts[1:]))
-        _verify_native_relative(physical_root, _windows_final_path(path), relative)
-    elif path.resolve(strict=True) != path:
-        raise SourceLaunchError("source_launch.path_not_canonical")
-    return relative.as_posix()
+        return verify_relative_path(root, path)
+    except PathIdentityError as exc:
+        raise SourceLaunchError("source_launch." + str(exc)) from exc
 
 
 def _mirror_files(root: Path, policy: dict, inputs: dict[str, str]) -> dict[str, str]:

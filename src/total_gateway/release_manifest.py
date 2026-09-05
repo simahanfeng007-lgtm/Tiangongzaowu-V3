@@ -29,11 +29,11 @@ from contracts.artifacts import generate_contract_artifact_documents
 from communication_service.embedded_runtime import EMBEDDED_COMMUNICATION_BUILD_ID
 from life_service.embedded_runtime import EMBEDDED_LIFE_BUILD_ID
 from source_authority.validator import validate_source_authority
+from runtime_security.path_identity import PathIdentityError, verify_relative_path
 
 from . import SINGLE_PROCESS_GATEWAY_BUILD_ID
 from .embedded_backend import EMBEDDED_BACKEND_BUILD_ID
 from .skill_selection import load_filesystem_skill_catalog
-from .tool_source_launch import SourceLaunchError, _safe_path as _verify_source_path
 
 
 RELEASE_MANIFEST_FILENAME = "release-manifest.json"
@@ -136,8 +136,8 @@ def _verify_windows_release_path(workspace_root: Path, path: Path) -> None:
     # source startup. Do not replace strict evidence with Path.resolve(False)
     # when AppContainer denies the DOS-volume query used by pathlib.
     try:
-        _verify_source_path(workspace_root, path)
-    except (OSError, SourceLaunchError) as exc:
+        verify_relative_path(workspace_root, path)
+    except (OSError, PathIdentityError) as exc:
         raise ReleaseManifestError("release input physical path is unsafe") from exc
 
 
