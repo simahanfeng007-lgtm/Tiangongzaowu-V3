@@ -28,6 +28,7 @@ from contracts.artifacts import generate_contract_artifact_documents
 
 from communication_service.embedded_runtime import EMBEDDED_COMMUNICATION_BUILD_ID
 from life_service.embedded_runtime import EMBEDDED_LIFE_BUILD_ID
+from source_authority.validator import validate_source_authority
 
 from . import SINGLE_PROCESS_GATEWAY_BUILD_ID
 from .embedded_backend import EMBEDDED_BACKEND_BUILD_ID
@@ -109,84 +110,15 @@ def _strict_json(path: Path) -> dict[str, object]:
     return value
 
 
-def _sha256_file_uncached(path: Path) -> str:
+def _sha256_file(path: Path) -> str:
+    # Release evidence must describe observed bytes. Neither matching stat
+    # metadata nor an on-disk cache proves that content stayed unchanged.
+    # Hash afresh, including when a verification follows a prior generation.
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-_HASH_CACHE_FILENAME = ".tiangong-release-hash-cache.json"
-# Active {root, entries} cache context while generate_release_manifest runs.
-# Any cache failure silently degrades to full recomputation; the manifest
-# output is never affected by cache content beyond the stored digests, which
-# are only reused when size and mtime_ns both match.
-_HASH_CACHE_CONTEXT: dict[str, object] | None = None
-
-
-def _load_hash_cache(root: Path) -> dict[str, object]:
-    try:
-        raw = json.loads((root / _HASH_CACHE_FILENAME).read_text(encoding="utf-8"))
-        files = raw.get("files") if isinstance(raw, dict) else None
-        if isinstance(files, dict):
-            return {str(key): value for key, value in files.items() if isinstance(value, dict)}
-    except (OSError, ValueError):
-        pass
-    return {}
-
-
-def _write_hash_cache(root: Path, entries: dict[str, object]) -> None:
-    try:
-        payload = json.dumps(
-            {"version": 1, "files": entries},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{_HASH_CACHE_FILENAME}.",
-            suffix=".tmp",
-            dir=str(root),
-        )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, root / _HASH_CACHE_FILENAME)
-        finally:
-            temporary.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-def _sha256_file(path: Path) -> str:
-    context = _HASH_CACHE_CONTEXT
-    if context is not None:
-        try:
-            relative = path.relative_to(context["root"]).as_posix()
-            stat = path.stat()
-            entries = context["entries"]
-            cached = entries.get(relative)
-            if (
-                isinstance(cached, dict)
-                and cached.get("size") == stat.st_size
-                and cached.get("mtime_ns") == stat.st_mtime_ns
-                and isinstance(cached.get("sha256"), str)
-            ):
-                return cached["sha256"]
-            digest = _sha256_file_uncached(path)
-            entries[relative] = {
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-                "sha256": digest,
-            }
-            return digest
-        except (OSError, ValueError, AttributeError, TypeError):
-            pass
-    return _sha256_file_uncached(path)
 
 
 def _safe_workspace(workspace_root: Path) -> Path:
@@ -271,6 +203,43 @@ def _source_tree(
             }
         ),
     )
+
+
+def _gateway_source_roots(workspace_root: Path) -> tuple[str, ...]:
+    """Bind the monolith's source closure using the existing ownership policy.
+
+    This is release provenance, not a new Source/Action authority. Unlike the
+    compiler input closure, release inputs also include generated files inside
+    these roots: they are installed bytes, and this digest is not fed back into
+    capability compilation. Existing source-tree hashing semantics stay intact.
+    """
+    policy = _strict_json(_safe_file(workspace_root, "source-ownership.json"))
+    authority = policy.get("authority_policy")
+    if not isinstance(authority, dict):
+        raise ReleaseManifestError("release source ownership policy is incomplete")
+    editable = authority.get("editable_roots")
+    frozen = authority.get("frozen_roots")
+    if (
+        not isinstance(editable, list) or not editable
+        or not isinstance(frozen, list)
+        or any(not isinstance(item, str) for item in [*editable, *frozen])
+        or validate_source_authority(policy, repo_root=workspace_root)
+    ):
+        raise ReleaseManifestError("release source ownership topology is invalid")
+    roots = tuple(sorted({
+        # Retain every previously bound Gateway authority even if a malformed
+        # policy attempts to omit it. Tool/backend/frozen roots come from the
+        # single Source Authority rather than a copied list of implementations.
+        "pyproject.toml", "src/contracts", "src/runtime_security", "src/total_gateway",
+        "source-ownership.json", "requirements-source.lock", *editable, *frozen,
+    }))
+    try:
+        ReleaseSourceTree.validate_roots(roots)
+    except ValueError as exc:
+        raise ReleaseManifestError("release source ownership roots are unsafe") from exc
+    if len(roots) > 64:
+        raise ReleaseManifestError("release source ownership roots exceed their limit")
+    return roots
 
 
 def _desktop_source_roots(workspace_root: Path) -> tuple[str, ...]:
@@ -361,15 +330,7 @@ def _component_from_file(
 
 def generate_release_manifest(workspace_root: Path) -> ReleaseManifest:
     root = _safe_workspace(workspace_root)
-    global _HASH_CACHE_CONTEXT
-    previous_context = _HASH_CACHE_CONTEXT
-    context: dict[str, object] = {"root": root, "entries": _load_hash_cache(root)}
-    _HASH_CACHE_CONTEXT = context
-    try:
-        return _generate_release_manifest(root)
-    finally:
-        _HASH_CACHE_CONTEXT = previous_context
-        _write_hash_cache(root, context["entries"])
+    return _generate_release_manifest(root)
 
 
 def _generate_release_manifest(root: Path) -> ReleaseManifest:
@@ -544,7 +505,7 @@ def _generate_release_manifest(root: Path) -> ReleaseManifest:
                 _source_tree(
                     root,
                     "gateway-source",
-                    ("pyproject.toml", "src/contracts", "src/runtime_security", "src/total_gateway"),
+                    _gateway_source_roots(root),
                 ),
                 _source_tree(
                     root,

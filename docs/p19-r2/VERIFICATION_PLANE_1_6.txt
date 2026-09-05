@@ -79,6 +79,24 @@ Changes covered by this revision
     Runtime binding comparison uses exact canonical JSON (bool is not int).
     The unchanged A0 ceiling, signature, expiry and replay rejection remain
     mandatory. The Omni consumer source is added to this plane's freeze surface.
+13. Existing release generation hashes observed file bytes instead of trusting
+    persistent size/mtime digest caches. It does not read, rewrite or delete
+    legacy cache files. The existing gateway-source tree now includes all
+    editable/frozen roots from validated Source Authority, plus its policy and
+    dependency lock. The four-tree release contract and its hash domain remain
+    unchanged. Installed generated files inside these roots are also release
+    inputs; this release hash does not feed back into Capability compilation.
+    No new publication authority or running-task lock is claimed. The release
+    generator is added to the explicit authority freeze surface.
+14. An explicit embedded-backend source root selects only that installation;
+    missing/unsafe roots cannot fall back to checkout, environment or frozen
+    discovery. Foreign cached v3/tiangong_kernel origins and namespace search
+    paths fail before candidate imports or sys.path mutation. The existing
+    process-owner guard stays intact: no module deletion, hot reload or second
+    Runtime is introduced. Unspecified-root discovery is unchanged. This binds
+    backend startup selection, not every shared module or a live Run's complete
+    byte closure; immutable installation and running-source acceptance remain
+    required. The embedded-backend source joins the explicit freeze surface.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

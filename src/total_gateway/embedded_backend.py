@@ -7,6 +7,7 @@ Policy/Ticket/Life authorization has already completed.
 from __future__ import annotations
 
 import importlib
+from importlib.machinery import PathFinder
 import json
 from copy import deepcopy
 import os
@@ -33,6 +34,76 @@ _PROCESS_OWNER_LOCK = threading.Lock()
 _PROCESS_OWNER: "EmbeddedBackendRuntime | None" = None
 
 
+def _explicit_backend_roots(source: Path) -> tuple[Path, Path]:
+    """Select one explicit source installation; never discover a substitute."""
+    if not source.is_absolute():
+        raise EmbeddedBackendError("embedded_backend.source_root_invalid")
+    backend = source / "app" / "backend" / "tiangong-backend"
+    for path in (source, source / "app", source / "app/backend", backend,
+                 backend / "v3", source / "src"):
+        if (not path.is_dir() or path.is_symlink()
+                or bool(getattr(path, "is_junction", lambda: False)())):
+            raise EmbeddedBackendError("embedded_backend.source_root_invalid")
+    resolved = source.resolve(strict=True)
+    if os.path.normcase(str(resolved)) != os.path.normcase(str(source.absolute())):
+        raise EmbeddedBackendError("embedded_backend.source_root_invalid")
+    return resolved / "app/backend/tiangong-backend", resolved / "src"
+
+
+def _validate_backend_module_locations(
+    package_root: Path, origin: object, search_locations: object,
+) -> None:
+    locations = []
+    if origin is not None:
+        locations.append(origin)
+    try:
+        if search_locations is not None:
+            if isinstance(search_locations, (str, bytes)):
+                raise ValueError("invalid package search path")
+            locations.extend(search_locations)
+        if not locations:
+            raise ValueError("missing module origin")
+        for value in locations:
+            if not isinstance(value, str) or not value:
+                raise ValueError("invalid module origin")
+            path = Path(value)
+            if not path.is_absolute():
+                raise ValueError("relative module origin")
+            resolved = path.resolve(strict=False)
+            if resolved != package_root and package_root not in resolved.parents:
+                raise ValueError("foreign module origin")
+    except (OSError, TypeError, ValueError) as exc:
+        raise EmbeddedBackendError("embedded_backend.source_module_mismatch") from exc
+
+
+def _verify_backend_source_imports(backend_root: Path, src_root: Path) -> None:
+    # Changing sys.path cannot replace modules already held by a live process.
+    # Reject cross-release reuse, including namespace/lazy-import search paths;
+    # do not delete modules, hot reload, or start a second Runtime.
+    for name, module in tuple(sys.modules.items()):
+        package = name.split(".", 1)[0]
+        if package not in {"v3", "tiangong_kernel"}:
+            continue
+        _validate_backend_module_locations(
+            backend_root / package, getattr(module, "__file__", None),
+            getattr(module, "__path__", None),
+        )
+    for package in ("v3", "tiangong_kernel"):
+        if package in sys.modules:
+            continue
+        # Namespace packages can aggregate *later* sys.path entries despite
+        # putting the selected backend first. Verify before importing code or
+        # mutating sys.path, so an unrelated checkout cannot contribute helpers.
+        spec = PathFinder.find_spec(package, [str(src_root), str(backend_root), *sys.path])
+        if spec is None:
+            if package == "v3":
+                raise EmbeddedBackendError("embedded_backend.runtime_modules_missing")
+            continue
+        _validate_backend_module_locations(
+            backend_root / package, spec.origin, spec.submodule_search_locations,
+        )
+
+
 class EmbeddedBackendRuntime:
     def __init__(self, *, release_source_root: Path | None) -> None:
         global _PROCESS_OWNER
@@ -52,32 +123,33 @@ class EmbeddedBackendRuntime:
 
     def _initialize(self, *, release_source_root: Path | None) -> None:
         roots: list[Path] = []
-        source_workspace = Path(__file__).resolve().parents[2]
-        roots.extend((source_workspace / "app" / "backend" / "tiangong-backend", source_workspace / "src"))
-        # 镜像位置（site-packages/…/total_gateway）启动时 parents[2] 不再指向仓库根：
-        # 沿 __file__ 祖先链寻找同时含 app/backend/tiangong-backend 与 src 的根，
-        # 使镜像与源码两种启动形态都能找到 v3 模块（修复启动测试找不到 v3 的旧漂移）。
-        for ancestor in Path(__file__).resolve().parents:
-            candidate = ancestor / "app" / "backend" / "tiangong-backend"
-            if candidate.is_dir() and (candidate / "v3").is_dir():
-                roots.append(candidate)
-                src_candidate = ancestor / "src"
-                if src_candidate.is_dir():
-                    roots.append(src_candidate)
-                break
         if release_source_root is not None:
-            source = release_source_root.expanduser().resolve(strict=False)
-            roots.extend((source / "app" / "backend" / "tiangong-backend", source / "src"))
-        explicit = str(os.environ.get("TIANGONG_BACKEND_DIR") or "").strip()
-        if explicit:
-            roots.append(Path(explicit).expanduser().resolve(strict=False))
-        frozen_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
-        roots.extend(
-            (
-                frozen_root / "backend" / "tiangong-backend",
-                Path(sys.executable).resolve().parent / "backend" / "tiangong-backend",
+            backend_source, src_source = _explicit_backend_roots(release_source_root)
+            _verify_backend_source_imports(backend_source, src_source)
+            roots.extend((backend_source, src_source))
+        else:
+            # Discovery is only for an unspecified source installation (including
+            # the existing frozen/mirror layout), never an explicit-root fallback.
+            source_workspace = Path(__file__).resolve().parents[2]
+            roots.extend((source_workspace / "app" / "backend" / "tiangong-backend", source_workspace / "src"))
+            for ancestor in Path(__file__).resolve().parents:
+                candidate = ancestor / "app" / "backend" / "tiangong-backend"
+                if candidate.is_dir() and (candidate / "v3").is_dir():
+                    roots.append(candidate)
+                    src_candidate = ancestor / "src"
+                    if src_candidate.is_dir():
+                        roots.append(src_candidate)
+                    break
+            explicit = str(os.environ.get("TIANGONG_BACKEND_DIR") or "").strip()
+            if explicit:
+                roots.append(Path(explicit).expanduser().resolve(strict=False))
+            frozen_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+            roots.extend(
+                (
+                    frozen_root / "backend" / "tiangong-backend",
+                    Path(sys.executable).resolve().parent / "backend" / "tiangong-backend",
+                )
             )
-        )
         backend_root = next(
             (candidate for candidate in roots if candidate.is_dir() and not candidate.is_symlink() and (candidate / "v3").is_dir()),
             None,

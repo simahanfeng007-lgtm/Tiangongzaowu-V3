@@ -357,3 +357,36 @@ No source gate was changed or weakened to relocate these non-source reports.
   helper imports. The next production task is to bind the existing release /
   runtime source installation to the pinned run identity and prove X remains
   X after separate publication of X+1; no claim of a completed lock is made.
+- Release-source binding defects reproduced against `ce9da53`: a same-size
+  helper edit with restored mtime kept the old tree digest; a forged persistent
+  cache supplied accepted digests; generation wrote cache state; and the
+  existing Gateway tree omitted Tool/backend/frozen/dependency source roots.
+  Four failures retained in `release-source-pre-fix-ce9da53.xml`. Release
+  generation now hashes fresh bytes and leaves legacy cache files untouched.
+  The existing four-tree contract is preserved; gateway-source derives its
+  additional roots from validated Source Authority plus policy/dependency
+  inputs. This is release provenance, not a second compiler or Source approval.
+  Release, source-change adversarial, runtime-authority, readiness and P19
+  focused checks: 45 passed in 49.90 s (`release-source-focused.xml`, SHA-256
+  `c3ed31f01e6106aad6d7cd9e707d1ac4fccfb44634e93c94eb515d9b097cf32d`).
+- Embedded startup's explicit-root defect was also reproduced: a caller-selected
+  installation lost to the current checkout; incomplete roots fell back; cached
+  foreign backend modules were not rejected. Untouched-backend reproduction:
+  8 failed / 1 passed (`embedded-source-pre-fix-ce9da53.xml`). An explicit root
+  now selects only itself and validates backend module/namespace origins before
+  imports and sys.path mutation. Uncached namespace aggregation from another
+  checkout is rejected too. Module deletion/hot reload and a second Runtime are
+  not introduced; unspecified-root discovery remains unchanged. The initial
+  loader fixture was isolated from unrelated pytest backend search paths, with
+  an explicit adversarial test for that namespace case. Focused loader tests:
+  10 passed. Existing real single-process startup/owner lifecycle, composition
+  transport, P17 architecture and P19 guards: 74 passed in 27.47 s together with
+  the new loader tests (`embedded-source-focused.xml`). These are startup and
+  component contracts, not 80–100 product tasks or a completed live-source lock.
+  Official generated mirrors and Source Authority passed. Both edited runtime
+  authorities join the explicit 1.6 freeze; old freeze coverage is retained.
+- No full Python/Node or new remote workflow was launched for these changes.
+  Final exact-head gates remain pending until P8 is ready. Immutable source
+  installation/publication, shared-module/source-byte pinning across a live Run,
+  the unapproved 99 risk downgrades/42 newly-A0 candidates, evidence-contract
+  execution and real task/model evaluation are still open. P9 has not started.
