@@ -1,8 +1,7 @@
 name: P8 isolated source startup
 
-# Supplemental acceptance only: no publication, permissions change or merge.
-# Existing required gates remain untouched. Do not mark unsupported isolation
-# as a skip/PASS. Parent/build scripts are pinned to the reviewed R1 source.
+# Supplemental acceptance only. Required gates and Source publication remain
+# unchanged. Workflow, trusted parent and candidate identities are independent.
 on:
   push:
     branches:
@@ -23,7 +22,7 @@ jobs:
       PYTHONHASHSEED: '0'
       TIANGONG_CI_ENV: '0'
       TIANGONG_SANDBOX_COMPAT: '0'
-      P8_TRUSTED_PARENT: e99b4a2b1764b55dc74dbd04ce83c9473275d3dc
+      P8_TRUSTED_PARENT: 1d23841165b2ff0de5a89ee676bce7e4d78fe287
       P8_SOURCE_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
       P8_SOURCE_CANDIDATE: e99b4a2b1764b55dc74dbd04ce83c9473275d3dc
     steps:
@@ -58,16 +57,24 @@ jobs:
           print(json.dumps(identity))
       - name: Install pinned source dependencies
         run: python -m pip install -r requirements-source.lock
-      - name: Windows startup fault-injection regression without CI skips
+      - name: Windows startup and evidence regressions
         shell: python
         run: |
-          import os, pathlib, subprocess, sys
+          import os, pathlib, subprocess, sys, xml.etree.ElementTree as ET
           evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
-          command = [sys.executable, '-m', 'pytest', '-q', 'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py', '--junitxml=' + str(evidence / 'startup-regression.xml')]
+          junit = evidence / 'startup-regression.xml'
+          command = [sys.executable, '-m', 'pytest', '-q',
+              'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py',
+              'tests/test_tool_source_launch_probe_p8.py', 'tests/test_tool_source_staging_p8.py',
+              'tests/test_tool_source_bundle_p8.py', 'tests/golden/p19_r2/test_freeze_and_guards.py',
+              '--junitxml=' + str(junit)]
           with (evidence / 'startup-regression.log').open('w', encoding='utf-8') as log:
-              result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=240, check=False)
+              result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=300, check=False)
           print((evidence / 'startup-regression.log').read_text(encoding='utf-8'))
-          raise SystemExit(result.returncode)
+          if result.returncode:
+              raise SystemExit(result.returncode)
+          if ET.parse(junit).findall('.//testcase/skipped'):
+              raise RuntimeError('native acceptance regression cannot pass by skipping a case')
       - name: Real AppContainer source build and Gateway startup
         if: ${{ !cancelled() }}
         shell: python
@@ -81,6 +88,16 @@ jobs:
                   result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', script, *arguments], stdout=log, stderr=subprocess.STDOUT, timeout=600, check=False)
               print((evidence / log_name).read_text(encoding='utf-8'))
               return result.returncode
+          def require_process(document, key):
+              process = document.get(key, {})
+              if process.get('containment') != 'windows-appcontainer' or process.get('network') != 'denied':
+                  raise RuntimeError(key + ': native containment/network evidence missing')
+              if process.get('ok') is not True:
+                  raise RuntimeError(key + ': child failed; inspect retained raw report')
+              if any(document.get(flag) is not False for flag in ('may_publish', 'may_authorize', 'may_execute')):
+                  raise RuntimeError('unexpected authority/publication claim')
+              if any(key in document for key in ('error', 'error_type', 'cleanup_error', 'failed_phase', 'traceback')):
+                  raise RuntimeError('report retains contradictory failure evidence')
           try:
               bundle = evidence / 'source-revision.zip'
               build_path = evidence / 'build.json'
@@ -90,20 +107,16 @@ jobs:
               if outcome['build_exit_code'] != 0 or build.get('status') != 'ISOLATED_BUILD_OBSERVED':
                   print(json.dumps(build, ensure_ascii=True))
                   raise RuntimeError('native source build did not pass; no startup fallback')
+              require_process(build, 'build_process')
               outcome['bundle_sha256'] = hashlib.sha256(bundle.read_bytes()).hexdigest()
               startup_path = evidence / 'startup.json'
               outcome['startup_exit_code'] = run_script('scripts/probe-tool-source-launch.py', ['--bundle', str(bundle), '--sha256', outcome['bundle_sha256'], '--report', str(startup_path)], 'startup.log')
               startup = json.loads(startup_path.read_text(encoding='utf-8'))
+              print('RAW_STARTUP_REPORT=' + json.dumps(startup, ensure_ascii=True))
               outcome['startup_status'] = startup.get('status')
-              for document, key in ((build, 'build_process'), (startup, 'probe_process')):
-                  process = document.get(key, {})
-                  if process.get('ok') is not True or process.get('containment') != 'windows-appcontainer' or process.get('network') != 'denied':
-                      raise RuntimeError('missing native containment evidence')
-                  if any(document.get(flag) is not False for flag in ('may_publish', 'may_authorize', 'may_execute')):
-                      raise RuntimeError('unexpected authority/publication claim')
               if outcome['startup_exit_code'] != 0 or startup.get('status') != 'ISOLATED_STARTUP_OBSERVED':
-                  print(json.dumps(startup, ensure_ascii=True))
-                  raise RuntimeError('actual isolated Gateway READY/shutdown/source lock not verified')
+                  raise RuntimeError('actual Gateway READY/shutdown/source lock not verified; inspect RAW_STARTUP_REPORT')
+              require_process(startup, 'probe_process')
               outcome['status'] = 'ISOLATED_BUILD_AND_STARTUP_OBSERVED'
           except Exception as exc:
               outcome.update(error_type=type(exc).__name__, error=str(exc), traceback=traceback.format_exc())
