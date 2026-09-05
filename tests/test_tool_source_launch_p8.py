@@ -65,6 +65,15 @@ def test_native_identity_query_failure_has_no_lexical_or_nonstrict_fallback(tmp_
         launch._safe_path(tmp_path, path)
 
 
+def test_physical_root_cannot_hide_a_redirected_ancestor(tmp_path, monkeypatch):
+    monkeypatch.setattr(launch, "os", SimpleNamespace(name="nt", path=os.path))
+    anchor = Path(tmp_path.anchor)
+    monkeypatch.setattr(launch, "_windows_final_path", lambda path: (
+        PureWindowsPath(r"\Device\Volume3") if path == anchor else PureWindowsPath(r"\Device\Volume4\foreign")))
+    with pytest.raises(launch.SourceLaunchError, match="physical_path_mismatch"):
+        launch._safe_path(tmp_path, tmp_path)
+
+
 def test_generated_mirrors_are_bound_to_measured_bytes_without_candidate_import(installation):
     root, _, policy, inputs = installation
     verified = launch._mirror_files(root, policy, inputs)

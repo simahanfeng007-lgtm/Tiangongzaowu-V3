@@ -64,7 +64,8 @@ def _windows_final_path(path: Path) -> PureWindowsPath:
         if size >= len(buffer):
             raise SourceLaunchError("source_launch.native_path_size_invalid")
         result = PureWindowsPath(buffer.value)
-        if result.parts[:2] != ("\\", "Device") or len(result.parts) < 4:
+        if (result.parts[:2] != ("\\", "Device") or len(result.parts) < 3
+                or len(result.parts) == 3 and path != Path(path.anchor)):
             raise SourceLaunchError("source_launch.native_path_invalid")
         return result
     finally:
@@ -90,7 +91,13 @@ def _safe_path(root: Path, path: Path) -> str:
         if current == root:
             break
     if os.name == "nt":
-        _verify_native_relative(_windows_final_path(root), _windows_final_path(path), relative)
+        physical_root = _windows_final_path(root)
+        # Bind the source root to its own drive/share, not just to itself.
+        # AppContainer can query the native volume anchor while denying
+        # metadata traversal through unrelated profile ancestors. Comparing
+        # the complete normalized suffix still rejects redirected ancestors.
+        _verify_native_relative(_windows_final_path(Path(root.anchor)), physical_root, Path(*root.parts[1:]))
+        _verify_native_relative(physical_root, _windows_final_path(path), relative)
     elif path.resolve(strict=True) != path:
         raise SourceLaunchError("source_launch.path_not_canonical")
     return relative.as_posix()

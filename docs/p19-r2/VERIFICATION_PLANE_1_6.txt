@@ -171,6 +171,16 @@ Changes covered by this revision
     rejected even under custom loader aliases; retained frozen artifacts do not
     become execution or publication approval. This is a source inventory
     correction, not a completed live-Run or future-import attestation.
+22. After real source consistency passed, release generation reached another
+    DOS-volume strict-resolution failure. The existing release generator now
+    reuses the same native path verifier for its Windows workspace, input files
+    and source-tree files. Native source-root identity is additionally compared
+    with its queried drive/share anchor plus the entire lexical suffix, so a
+    redirected ancestor cannot pass by comparing the root only with itself.
+    Real AppContainer diagnostics verify native volume access while unrelated
+    profile ancestors remain inaccessible. Missing physical evidence still
+    fails; no ACL expansion, non-strict fallback, hash cache, approval path or
+    second release compiler is introduced. POSIX strict checks are unchanged.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

@@ -614,3 +614,51 @@ No source gate was changed or weakened to relocate these non-source reports.
   SHA-256 `7b593f38c45a30d0190a58b5d49fa831ff8a349ef31b4bd2ca232a1b028a6d12`.
   This is focused local evidence, not a successful real Gateway startup or
   product evaluation. P8 remains IN PROGRESS; P9–P17 remain NOT STARTED.
+- Real packaged build 13 SUCCESS at candidate
+  `633339988f00f50692238143aac9bdcc569c1744`: AppContainer/network denied,
+  9.83 s child, 2,866 entries / 61,361,078 indexed bytes. Build report
+  `foundation-isolated-build-13.json` SHA-256
+  `d56bfcd2f1dc8d30fcefac287ddab86500fec610b387cba12f4c6b3f3e7f3531`;
+  bundle `source-revision-6333399.zip` SHA-256
+  `f239d388642ccae174165627f4ac268a4fbbf0b3e91b8cb442c99471f1879f01`.
+  Source inputs `b6e6c84281127517357223e04972b82eba0f05c1cd84b5289248a703302329d5`;
+  Capability Manifest `658a3d88f8a7923ef539a404f28fa9a7827b2ee483d8e1653d036f28c6504ba1`.
+- Real startup attempt 5 passed source consistency for 1,964 authority/mirror
+  files and retained eight frozen bytecode artifacts as data. It then FAILED
+  at `release_generation`: the existing release_manifest._safe_workspace still
+  called Path.resolve(strict=True), which returned WinError 5. Gateway services
+  had not started. The parent independently reverified the staged package.
+  Report `foundation-isolated-startup-5.json` SHA-256
+  `23f44dcce014b410339e49d8327d84a61d01ddad32787b30884dadb304fd4954`;
+  actual AppContainer/network denied, 7.75 s child. This is a successful source
+  consistency observation inside an unsuccessful complete startup, not READY.
+- Two small trusted diagnostics ran without candidate imports. Ancestor metadata
+  checks remain denied outside the private AppContainer area; the native drive
+  anchor and complete source-root path can both be queried and their physical
+  volume/suffix comparison succeeds. Reports
+  `appcontainer-ancestor-diagnostic-1.json` SHA-256
+  `b4ba12bfd2d98aa6c1eaf0da1142bb53df740dfe79756441acaa31d02d9264ac` and
+  `appcontainer-volume-diagnostic-1.json` SHA-256
+  `8ff9a33838245308d8b0bdad729f29508d066a324daf346bbe90e5915431ea13`.
+  Original scripts and failure reports are retained; no broad ACL was granted.
+- The existing Windows release generator now reuses the source-path verifier
+  for workspaces, input files and source-tree files. The verifier also binds
+  the complete root suffix to its native drive/share anchor, rejecting ancestor
+  redirection as well as root-relative drift. Native query failures do not
+  fall back; POSIX strict behavior and release/hash/permission authorities stay
+  unchanged. Three new tests failed before the repair (`source-release-native-red.xml`).
+  Source/release/startup-probe focused tests then passed 71 in 9.85 s,
+  `source-release-native-focused.xml` SHA-256
+  `63dc411f498fc250a5271e6497d7d9bed0c1aa391bbacd0d0b9fd99219963c73`.
+  The Windows-specific native tests do not claim equivalent POSIX observations.
+  Plane entry 22 records this correction; a fresh exact-candidate build and
+  isolated release/startup retry are still required. No full regression, push,
+  remote workflow, publication or merge is implied.
+- After official mirror synchronization, the existing release-manifest and
+  single-process application suites passed 21 tests in 36.04 s:
+  `source-release-native-integration.xml` SHA-256
+  `2d3fae2b639b7518dc448ff36316412aeaa9577deab70e6084c497f4072e4102`.
+  Source Authority, committed mirror checks, regenerated freeze and the normal
+  freeze guard also passed. These integration tests are existing local runtime
+  evidence, not the still-pending rebuilt AppContainer startup or a full-stage
+  regression. This intermediate checkpoint was not pushed or merged.

@@ -67,6 +67,34 @@ def test_release_generation_is_read_only_and_deterministic(source_tree):
     assert {path.relative_to(root) for path in root.rglob("*")} == before
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows native path identity contract")
+def test_release_checks_native_identity_without_dos_volume_lookup(source_tree, monkeypatch):
+    root, path = source_tree
+    original_resolve = Path.resolve
+
+    def denied_strict(path, strict=False):
+        if strict:
+            raise PermissionError("DOS volume lookup denied in AppContainer")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", denied_strict)
+    assert release._safe_workspace(root) == root
+    assert release._safe_file(root, "src/helper.py") == path
+    assert release.generate_release_manifest(root).file_count == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native path identity contract")
+def test_release_native_identity_failure_never_falls_back(source_tree, monkeypatch):
+    from total_gateway import tool_source_launch as launch
+
+    root, _ = source_tree
+    def denied(path):
+        raise PermissionError("native volume identity unavailable")
+    monkeypatch.setattr(launch, "_windows_final_path", denied)
+    with pytest.raises(release.ReleaseManifestError, match="unsafe"):
+        release.generate_release_manifest(root)
+
+
 def test_existing_gateway_release_tree_covers_all_declared_source_roots():
     manifest = release.generate_release_manifest(ROOT)
     policy = json.loads((ROOT / "source-ownership.json").read_text(encoding="utf-8"))

@@ -33,6 +33,7 @@ from source_authority.validator import validate_source_authority
 from . import SINGLE_PROCESS_GATEWAY_BUILD_ID
 from .embedded_backend import EMBEDDED_BACKEND_BUILD_ID
 from .skill_selection import load_filesystem_skill_catalog
+from .tool_source_launch import SourceLaunchError, _safe_path as _verify_source_path
 
 
 RELEASE_MANIFEST_FILENAME = "release-manifest.json"
@@ -124,7 +125,20 @@ def _sha256_file(path: Path) -> str:
 def _safe_workspace(workspace_root: Path) -> Path:
     if not workspace_root.is_absolute() or not workspace_root.is_dir() or workspace_root.is_symlink():
         raise ReleaseManifestError("release workspace root is missing or unsafe")
+    if os.name == "nt":
+        _verify_windows_release_path(workspace_root, workspace_root)
+        return workspace_root
     return workspace_root.resolve(strict=True)
+
+
+def _verify_windows_release_path(workspace_root: Path, path: Path) -> None:
+    # Reuse the same normalized native volume/root/relative identity check as
+    # source startup. Do not replace strict evidence with Path.resolve(False)
+    # when AppContainer denies the DOS-volume query used by pathlib.
+    try:
+        _verify_source_path(workspace_root, path)
+    except (OSError, SourceLaunchError) as exc:
+        raise ReleaseManifestError("release input physical path is unsafe") from exc
 
 
 def _safe_file(workspace_root: Path, relative_path: str) -> Path:
@@ -134,9 +148,12 @@ def _safe_file(workspace_root: Path, relative_path: str) -> Path:
     path = workspace_root / relative
     if not path.is_file() or path.is_symlink():
         raise ReleaseManifestError(f"release input file is missing or unsafe: {relative_path}")
-    resolved = path.resolve(strict=True)
-    if workspace_root not in resolved.parents:
-        raise ReleaseManifestError("release input escaped the workspace")
+    if os.name == "nt":
+        _verify_windows_release_path(workspace_root, path)
+    else:
+        resolved = path.resolve(strict=True)
+        if workspace_root not in resolved.parents:
+            raise ReleaseManifestError("release input escaped the workspace")
     return path
 
 
@@ -167,9 +184,12 @@ def _tree_files(workspace_root: Path, roots: Iterable[str]) -> tuple[Path, ...]:
                 continue
             if candidate.suffix == ".pyc" or "__pycache__" in candidate.parts:
                 continue
-            resolved = candidate.resolve(strict=True)
-            if workspace_root not in resolved.parents:
-                raise ReleaseManifestError("release tree file escaped the workspace")
+            if os.name == "nt":
+                _verify_windows_release_path(workspace_root, candidate)
+            else:
+                resolved = candidate.resolve(strict=True)
+                if workspace_root not in resolved.parents:
+                    raise ReleaseManifestError("release tree file escaped the workspace")
             relative_name = candidate.relative_to(workspace_root).as_posix()
             files[relative_name] = candidate
     return tuple(files[name] for name in sorted(files))
