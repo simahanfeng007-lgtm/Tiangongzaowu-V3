@@ -426,3 +426,25 @@ No source gate was changed or weakened to relocate these non-source reports.
   serializer is unchanged. Packaging failure now returns BUNDLE_FAILED while
   retaining the actual contained-build result. Focused regression: 34 passed in
   2.04 s (`source-bundle-float-fix.xml`). Real packaged build retry pending.
+- Real packaged build 10 SUCCESS at exact source candidate
+  `c361f6dd22cfa466fd8d99831257fe8b5e1a2862`: Windows AppContainer, network
+  denied, 10.016 s child execution, 679 measured input files, 791 Actions /
+  291 executable descriptors. The retained ZIP contains 2,857 indexed file
+  entries (source files plus the build report), 61,235,408 indexed payload
+  bytes. It was independently verified again after the build process and its
+  temporary source snapshot had terminated. No candidate code was imported by
+  that verification, and publication/authorization/execution flags stay false.
+  Evidence:
+  - `output/p8-evidence/foundation-isolated-build-10.json`, SHA-256
+    `94bf5f54c2b50e15249e0ae6b920ed0c676cfbd5f694a681a02c8c9c991d2bf5`;
+  - `output/p8-evidence/source-revision-c361f6d.zip`, SHA-256
+    `2d772f2b68d5e3af34e411b1deeb97afafe41cff8d0571516868800260229eaa`;
+  - source-input closure
+    `4e8b21942233e794dbb67a9127c77311cc81c468de2c86eb3b89301e73e890c8`;
+  - packaged Capability Manifest file
+    `705ca21fe5d32438081637594088fa96f250f24d41303ad9f031a9f0c1d9842e`.
+  The package is retained review material, not an installed/approved production
+  release. Independent version-directory installation, live X/X+1 source locks,
+  permission review, evidence-contract execution and product/model evaluation
+  remain open. P8 stays IN PROGRESS; later stages remain NOT STARTED. No full
+  regression or remote workflow was launched for this intermediate checkpoint.
