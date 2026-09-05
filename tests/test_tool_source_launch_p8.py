@@ -159,6 +159,56 @@ def test_even_measured_authority_bytecode_is_not_accepted_as_source(installation
                                       capability_sha256=result["capability_manifest_sha256"])
 
 
+def test_frozen_compatibility_bytecode_is_retained_as_data_not_imported(source, tmp_path):
+    (source / "src/omni_body_skill/__init__.py").write_bytes(b"raise AssertionError('must not import candidate')\n")
+    policy_path = source / "source-ownership.json"
+    policy = json.loads(policy_path.read_bytes())
+    policy["authority_policy"]["frozen_roots"] = ["frozen"]
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    frozen = source / "frozen/old_runtime.pyc"
+    frozen.parent.mkdir()
+    frozen.write_bytes(b"retained frozen bytes; not a loadable Python cache")
+    package = bundle(source, tmp_path / "frozen.zip")
+    staged = stage_tool_source_bundle(Path(package["path"]), expected_sha256=package["sha256"],
+                                     staging_root=tmp_path / "staged-frozen")
+    root = Path(staged["source_root"])
+    code = (
+        "import json,sys; from pathlib import Path; "
+        "import ctypes.wintypes, encodings.utf_16_be; "
+        "from total_gateway.tool_source_launch import verify_source_revision; "
+        "before = dict(sys.modules); "
+        "observed = verify_source_revision(Path(sys.argv[1]), "
+        "source_inputs_sha256=sys.argv[2], capability_sha256=sys.argv[3]); "
+        "assert dict(sys.modules) == before, sorted(set(sys.modules) - set(before)); print(json.dumps(observed))"
+    )
+    completed = subprocess.run([sys.executable, "-B", "-X", "utf8", "-c", code, str(root),
+                                package["source_inputs_sha256"], package["capability_manifest_sha256"]],
+                               capture_output=True, text=True, timeout=30, check=False)
+    assert completed.returncode == 0, completed.stderr
+    observed = json.loads(completed.stdout)
+    assert observed["retained_frozen_bytecode_count"] == 1
+    assert observed["may_publish"] is observed["may_authorize"] is observed["may_execute"] is False
+    assert (root / "frozen/old_runtime.pyc").read_bytes() == frozen.read_bytes()
+
+
+@pytest.mark.parametrize("name", ["frozen/__pycache__/old.pyc", "frozen/old.pyo", "frozen-elsewhere/old.pyc"])
+def test_frozen_root_does_not_whitelist_caches_optimized_or_sibling_bytecode(name):
+    with pytest.raises(launch.SourceLaunchError, match="bytecode_cache_present"):
+        launch._verify_bytecode_inventory({"authority_policy": {"frozen_roots": ["frozen"]}}, {name: "a" * 64})
+
+
+@pytest.mark.parametrize("alias", ["omni_body_skill.cached", "unknown_private_loader_alias"])
+@pytest.mark.parametrize("origin_field", ["file", "spec"])
+def test_retaining_bytecode_never_accepts_it_as_an_import_origin(installation, alias, origin_field):
+    root, _, policy, inputs = installation
+    path = root / "src/omni_body_skill/cached.pyc"
+    path.write_bytes(b"not executable evidence")
+    module = SimpleNamespace(__file__=str(path)) if origin_field == "file" else SimpleNamespace(
+        __spec__=SimpleNamespace(origin=str(path), submodule_search_locations=None))
+    with pytest.raises(launch.SourceLaunchError, match="bytecode_import_origin"):
+        launch._verify_import_origins(root, policy, inputs, {alias: module}, [])
+
+
 def test_fresh_probe_verifies_readonly_fixture_without_importing_its_raising_package(installation, tmp_path):
     _, result, _, _ = installation
     staged = stage_tool_source_bundle(Path(result["path"]), expected_sha256=result["sha256"],

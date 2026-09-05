@@ -577,3 +577,40 @@ No source gate was changed or weakened to relocate these non-source reports.
   boundary revision. A rebuilt candidate and real startup retry are required
   before claiming the native-path repair works through the complete boot chain.
   No full Python/Node regression, push, remote workflow or merge was launched.
+- Real packaged build 12 SUCCESS at candidate
+  `1858ce9c16ebde034dc7cb04e16d07d96d34d58b`: actual AppContainer/network
+  denied, child 9.797 s, 2,866 indexed entries / 61,351,200 indexed bytes.
+  Report `foundation-isolated-build-12.json` SHA-256
+  `b6447be028f8fc143c317c6f71240a6d56293d7f12d42366ce605b8392cc0ae5`;
+  bundle `source-revision-1858ce9.zip` SHA-256
+  `2b10c2ed352385a23f4ad409d9ed9ff18c31e3d40b7cfb11001f136e99e2f1b0`;
+  source inputs `4e1ed273cc90fd56067d775eb8f9784e1ac980d16a015865d3efe524c2329f64`;
+  Capability Manifest `1981efbf4bf6d00ba5ab12517abef1ea409e4c743000c893dd521e42192c5638`.
+- Real startup attempt 4 FAILED, retained as `foundation-isolated-startup-4.json`,
+  SHA-256 `45506a5d0f8296b6eb982951d6007529c0974bb8936b6ad8d2d5c547a3148ddc`.
+  The normalized NT identity check passed far enough to measure inputs; the
+  child then rejected `source_launch.bytecode_cache_present`, before Gateway
+  startup. AppContainer/network denial remained effective (5.985 s child),
+  and the parent reverified the staged source against its original bundle.
+  The eight observed .pyc inputs are committed artifacts under the existing
+  `_internal/frozen_modules`, not caches produced by this -B build. Git diff
+  confirmed that frozen root and source-ownership.json are unchanged between
+  the stage baseline and candidate 1858ce9.
+- Startup inventory now retains measured frozen .pyc artifacts as data while
+  preserving the existing Source Authority and candidate frozen-edit rejection.
+  It still rejects ordinary bytecode, optimized .pyo and __pycache__, including
+  caches under frozen roots. Bytecode import origins inside the installation
+  fail even when a custom loader uses an unrelated alias. No frozen file,
+  generated mirror, authority policy, permission or production path is deleted
+  or enabled by this correction. Plane entry 21 records the distinction.
+- Eight new regression cases first failed (`source-launch-frozen-red.xml`).
+  The first focused correction run passed 48 and failed a new subprocess
+  assertion that demanded no imports whatsoever. Its diagnostic identified
+  only lazy stdlib ctypes/UTF-16 imports used by native identity checks. The
+  fixture now initializes those trusted stdlib bindings before taking its
+  snapshot and retains the exact no-module-change assertion; candidate/frozen
+  bytes are not imported. Source startup/probe plus immutable Git candidate
+  tests then passed 80 in 41.44 s, `source-launch-frozen-candidate-focused.xml`,
+  SHA-256 `7b593f38c45a30d0190a58b5d49fa831ff8a349ef31b4bd2ca232a1b028a6d12`.
+  This is focused local evidence, not a successful real Gateway startup or
+  product evaluation. P8 remains IN PROGRESS; P9–P17 remain NOT STARTED.

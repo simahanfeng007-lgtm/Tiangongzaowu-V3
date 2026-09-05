@@ -162,6 +162,15 @@ Changes covered by this revision
     reparse points and physical-volume/location mismatches remain rejected;
     unavailable native identity remains a failure. POSIX strict resolution is
     unchanged. This fixes identity observation, not Source publication approval.
+21. Real startup found eight committed legacy .pyc artifacts under the existing
+    frozen Source Authority, unchanged from the stage baseline. Retaining those
+    measured, read-only bytes is now distinguished from creating/importing a
+    cache. Their policy and frozen roots remain immutable to source candidates;
+    no baseline files are deleted or reclassified. Ordinary/optimized bytecode
+    and __pycache__ are still rejected. Installed bytecode module origins are
+    rejected even under custom loader aliases; retained frozen artifacts do not
+    become execution or publication approval. This is a source inventory
+    correction, not a completed live-Run or future-import attestation.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

@@ -171,10 +171,40 @@ def _package_roots(root: Path, policy: dict, files: dict[str, str]) -> dict[str,
     return packages
 
 
+def _verify_bytecode_inventory(policy: dict, inputs: dict[str, str]) -> int:
+    """Retain measured frozen compatibility artifacts, never cache authority.
+
+    The existing Source Authority freezes legacy .pyc data and candidate
+    inspection rejects changes to those roots or the ownership policy. Do not
+    delete that baseline or confuse retaining its bytes with importing it.
+    Ordinary/optimized bytecode and __pycache__ remain forbidden, even if their
+    bytes happened to be measured by the conservative source-input closure.
+    """
+    frozen = tuple(Path(name) for name in policy["authority_policy"]["frozen_roots"])
+    retained = 0
+    for name in inputs:
+        path = Path(name)
+        if any(part.casefold() == "__pycache__" for part in path.parts):
+            raise SourceLaunchError("source_launch.bytecode_cache_present")
+        if path.suffix.lower() not in {".pyc", ".pyo"}:
+            continue
+        if path.suffix.lower() != ".pyc" or not any(base in path.parents for base in frozen):
+            raise SourceLaunchError("source_launch.bytecode_cache_present")
+        retained += 1
+    return retained
+
+
 def _verify_import_origins(root: Path, policy: dict, files: dict[str, str], modules, search_path) -> None:
     packages = _package_roots(root, policy, files)
 
+    def reject_bytecode_origin(origin):
+        if isinstance(origin, str):
+            path = Path(origin)
+            if root in path.parents and path.suffix.lower() in {".pyc", ".pyo"}:
+                raise SourceLaunchError("source_launch.bytecode_import_origin")
+
     def check(bases, origin, locations):
+        reject_bytecode_origin(origin)
         if origin is None and locations is None:
             raise SourceLaunchError("source_launch.module_origin_missing")
         if isinstance(locations, (str, bytes)):
@@ -197,13 +227,17 @@ def _verify_import_origins(root: Path, policy: dict, files: dict[str, str], modu
                 raise SourceLaunchError("source_launch.module_not_measured")
 
     for name, module in modules.items():
+        spec = getattr(module, "__spec__", None)
+        # Retained frozen artifacts are data, including when a custom loader
+        # chooses an alias outside the ordinary package-name inventory.
+        reject_bytecode_origin(getattr(module, "__file__", None))
+        reject_bytecode_origin(getattr(spec, "origin", None))
         package = name.split(".", 1)[0]
         if package.startswith(("_tiangong_omni_", "_tiangong_omni_capability_")):
             package = "omni_body_skill"
         if package not in packages:
             continue
         check(packages[package], getattr(module, "__file__", None), getattr(module, "__path__", None))
-        spec = getattr(module, "__spec__", None)
         if spec is not None:
             check(packages[package], spec.origin, spec.submodule_search_locations)
     planned_path = [str(root / "src"), str(root / "app/backend/tiangong-backend"), *search_path]
@@ -224,8 +258,6 @@ def verify_source_revision(root: Path, *, source_inputs_sha256: str, capability_
     if observed.source_inputs_sha256 != source_inputs_sha256:
         raise SourceLaunchError("source_launch.source_input_drift")
     inputs = {item.path: item.content_sha256 for item in observed.files}
-    if any(Path(name).suffix.lower() in {".pyc", ".pyo"} or "__pycache__" in Path(name).parts for name in inputs):
-        raise SourceLaunchError("source_launch.bytecode_cache_present")
     manifest_raw = _read_input(root / _MANIFEST)
     if hashlib.sha256(manifest_raw).hexdigest() != capability_sha256:
         raise SourceLaunchError("source_launch.capability_manifest_drift")
@@ -234,6 +266,7 @@ def verify_source_revision(root: Path, *, source_inputs_sha256: str, capability_
     if hashlib.sha256(policy_raw).hexdigest() != observed.ownership_sha256:
         raise SourceLaunchError("source_launch.ownership_drift")
     policy = json.loads(policy_raw, object_pairs_hook=_strict_pairs, parse_constant=_invalid_constant)
+    retained_bytecode = _verify_bytecode_inventory(policy, inputs)
     if skill_root is not None:
         allowed = {root / "src/omni_body_skill"}
         for mapping in policy["mappings"]:
@@ -249,6 +282,7 @@ def verify_source_revision(root: Path, *, source_inputs_sha256: str, capability_
     _verify_import_origins(root, policy, files, dict(sys.modules), list(sys.path))
     return {"status": "SOURCE_CONSISTENCY_OBSERVED", "source_root": str(root), "source_inputs_sha256": source_inputs_sha256,
             "capability_manifest_sha256": capability_sha256,
+            "retained_frozen_bytecode_count": retained_bytecode,
             "observed_file_count": len(files), "may_publish": False, "may_authorize": False, "may_execute": False}
 
 
