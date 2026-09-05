@@ -20,6 +20,21 @@ from total_gateway.tool_source_bundle import stage_tool_source_bundle
 from tests.test_tool_source_bundle_p8 import source, bundle  # noqa: F401
 
 
+_TRUSTED_SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
+
+
+def _run_source_probe(code: str, *arguments: str, cwd: Path | None = None):
+    # pytest's in-process pythonpath is not inherited by a fresh interpreter.
+    # -I excludes ambient PYTHONPATH, user site and the caller's working directory;
+    # only this checkout's trusted observer is installed, never the candidate.
+    bootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+    return subprocess.run(
+        [sys.executable, "-I", "-B", "-X", "utf8", "-c", bootstrap + code,
+         str(_TRUSTED_SOURCE_ROOT), *arguments],
+        capture_output=True, text=True, timeout=30, check=False, cwd=cwd,
+    )
+
+
 @pytest.fixture
 def installation(source, tmp_path):
     (source / "src/omni_body_skill/__init__.py").write_bytes(b"raise AssertionError('must not import candidate')\n")
@@ -191,9 +206,9 @@ def test_frozen_compatibility_bytecode_is_retained_as_data_not_imported(source, 
         "source_inputs_sha256=sys.argv[2], capability_sha256=sys.argv[3]); "
         "assert dict(sys.modules) == before, sorted(set(sys.modules) - set(before)); print(json.dumps(observed))"
     )
-    completed = subprocess.run([sys.executable, "-B", "-X", "utf8", "-c", code, str(root),
-                                package["source_inputs_sha256"], package["capability_manifest_sha256"]],
-                               capture_output=True, text=True, timeout=30, check=False)
+    completed = _run_source_probe(
+        code, str(root), package["source_inputs_sha256"], package["capability_manifest_sha256"],
+    )
     assert completed.returncode == 0, completed.stderr
     observed = json.loads(completed.stdout)
     assert observed["retained_frozen_bytecode_count"] == 1
@@ -229,9 +244,9 @@ def test_fresh_probe_verifies_readonly_fixture_without_importing_its_raising_pac
         "print(json.dumps(verify_source_revision(Path(sys.argv[1]), "
         "source_inputs_sha256=sys.argv[2], capability_sha256=sys.argv[3])))"
     )
-    probe = subprocess.run([sys.executable, "-B", "-c", code, staged["source_root"],
-                            result["source_inputs_sha256"], result["capability_manifest_sha256"]],
-                           capture_output=True, text=True, timeout=30, check=False)
+    probe = _run_source_probe(
+        code, staged["source_root"], result["source_inputs_sha256"], result["capability_manifest_sha256"],
+    )
     assert probe.returncode == 0, probe.stderr
     observed = json.loads(probe.stdout)
     assert observed["status"] == "SOURCE_CONSISTENCY_OBSERVED"
@@ -305,3 +320,20 @@ def test_assembled_release_change_stops_before_worker_start_and_closes_resources
     from total_gateway.bootstrap import InstanceEpochLease
     lease = InstanceEpochLease.acquire(settings.state_root, "after-rejected-start", now_ms=999999)
     lease.release()
+
+
+def test_fresh_probe_ignores_hostile_pythonpath_and_working_directory(tmp_path, monkeypatch):
+    hostile = tmp_path / "total_gateway"
+    hostile.mkdir()
+    (hostile / "__init__.py").write_text("raise AssertionError('untrusted cwd/PYTHONPATH')\n", encoding="utf-8")
+    (tmp_path / "sitecustomize.py").write_text("raise AssertionError('untrusted startup hook')\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    result = _run_source_probe(
+        "from pathlib import Path; import total_gateway; "
+        "assert Path(total_gateway.__file__).resolve().parent.parent == Path(sys.argv[1]); "
+        "assert sys.flags.isolated and sys.dont_write_bytecode; print('trusted-observer')",
+        str(_TRUSTED_SOURCE_ROOT), cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "trusted-observer"
+    assert not list(tmp_path.rglob("__pycache__"))

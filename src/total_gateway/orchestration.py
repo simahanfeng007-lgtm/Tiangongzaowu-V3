@@ -43,6 +43,7 @@ from contracts import (
     new_state_snapshot,
     text_sha256,
 )
+from runtime_security.path_identity import resolve_existing_path
 from runtime_security import (
     verify_execution_ticket,
     verify_omni_capability_grant,
@@ -454,7 +455,7 @@ class GatewayOrchestrationWorker:
         self._release_manifest = release_manifest
         self._release_manifest_path = release_manifest_path
         self._components = component_manifest
-        self._workspace_root = workspace_root.resolve(strict=True)
+        self._workspace_root = resolve_existing_path(workspace_root)
         self._backend_token = backend_token
         self._life_token = life_token
         self._life_transport = life_transport

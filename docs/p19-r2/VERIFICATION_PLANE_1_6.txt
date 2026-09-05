@@ -198,6 +198,20 @@ Changes covered by this revision
     failure clears binary verification. This is not Source review/publication,
     a production claim or completion of the isolated Gateway startup chain.
 
+25. P8-R1 corrects the Life dependency direction introduced in item 23.
+    Standalone Life persistence retains its own strict pathlib default and no
+    execution/security imports. The existing Gateway host explicitly injects
+    the native existing-path observer through EmbeddedLifeRuntime and
+    LifeShadowStore; an unavailable/invalid observation fails before SQLite
+    opens, without a lexical fallback. The existing orchestration and Omni
+    grant workspace checks reuse that same physical-path observer. Workspace
+    scope hash normalization, lease ownership, Policy/Ticket/Grant and P19
+    semantics remain unchanged. The two Life forwarding modules are added to
+    the freeze surface; no existing covered file is removed. Fresh source-probe
+    tests use isolated Python with one explicitly pinned trusted source root,
+    never candidate code or inherited PYTHONPATH. These are wiring/regression
+    corrections, not proof of real AppContainer READY or P8 completion.
+
 Unchanged authority and admission
 ----------------------------------------------------------------------
 

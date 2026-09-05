@@ -926,6 +926,7 @@ class GatewayRuntime:
                     gateway_state_root=config.state_root,
                     mode="embedded",
                     gateway_environment=config.environment,
+                    existing_path_resolver=resolve_existing_path,
                 )
                 runtime.communication_service = EmbeddedCommunicationService.start(
                     gateway_state_root=config.state_root,

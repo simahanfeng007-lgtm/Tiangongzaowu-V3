@@ -219,6 +219,8 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/contracts/verification_repair.py",
         "src/runtime_security/path_identity.py",
         "src/life_service/store_connection.py",
+        "src/life_service/store.py",
+        "src/life_service/embedded_runtime.py",
         "src/communication_service/raw_inbound_store.py",
         "src/communication_service/wechat_file_outbound.py",
         "src/communication_service/feishu_outbound.py",
