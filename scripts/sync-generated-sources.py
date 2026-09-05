@@ -107,7 +107,7 @@ def tree_hash(rows: list[tuple[Path, Path]]) -> str:
     return h.hexdigest()
 
 
-def target_is_build_only_in_source_checkout(target: Path) -> bool:
+def target_is_build_only_in_source_checkout(target: Path, *, workspace_root: Path | None = None) -> bool:
     """Return True when an absent generated target is intentionally git-ignored.
 
     Source closeout must verify every committed mirror without requiring build-time
@@ -116,11 +116,12 @@ def target_is_build_only_in_source_checkout(target: Path) -> bool:
     """
     if target.exists():
         return False
+    root = ROOT if workspace_root is None else workspace_root
     try:
-        relative = target.relative_to(ROOT).as_posix()
+        relative = target.relative_to(root).as_posix()
         completed = subprocess.run(
             ["git", "check-ignore", "-q", "--", relative],
-            cwd=ROOT,
+            cwd=root,
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -130,20 +131,29 @@ def target_is_build_only_in_source_checkout(target: Path) -> bool:
     return completed.returncode == 0
 
 
-def process(write: bool, *, committed_only: bool = False) -> list[str]:
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+def process(
+    write: bool, *, committed_only: bool = False, workspace_root: Path | None = None,
+) -> list[str]:
+    # Offline source builds use this same official generator on their verified
+    # private snapshot. Do not mutate module-global ROOT/CONFIG or run a script
+    # supplied by the candidate. Normal checkout/CLI behavior stays unchanged.
+    root = ROOT if workspace_root is None else workspace_root
+    if not root.is_absolute() or not root.is_dir() or root.is_symlink():
+        raise ValueError("generated-source workspace is missing or unsafe")
+    config_path = CONFIG if workspace_root is None else root / "source-ownership.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
     failures: list[str] = []
     for mapping in config["mappings"]:
         source_rel = str(mapping["source"])
-        source = ROOT / source_rel
+        source = root / source_rel
         if not source.exists():
             failures.append(f"{mapping['id']}:source_missing:{source_rel}")
             continue
         rows = mapping_files(source)
         digest = tree_hash(rows)
         for target_rel in mapping["targets"]:
-            target = ROOT / str(target_rel)
-            if committed_only and target_is_build_only_in_source_checkout(target):
+            target = root / str(target_rel)
+            if committed_only and target_is_build_only_in_source_checkout(target, workspace_root=root):
                 continue
             target_is_file = source.is_file()
             if target_is_file:
@@ -159,7 +169,7 @@ def process(write: bool, *, committed_only: bool = False) -> list[str]:
                         _prune_empty_parents(extra_path.parent, target)
                     else:
                         failures.append(
-                            f"{mapping['id']}:extra:{extra_path.relative_to(ROOT).as_posix()}"
+                            f"{mapping['id']}:extra:{extra_path.relative_to(root).as_posix()}"
                         )
             for rel, source_file in rel_rows:
                 target_file = target if target_is_file else target / rel
@@ -168,13 +178,13 @@ def process(write: bool, *, committed_only: bool = False) -> list[str]:
                         atomic_copy(source_file, target_file)
                     else:
                         state = "missing" if not target_file.exists() else "drift"
-                        failures.append(f"{mapping['id']}:{state}:{target_file.relative_to(ROOT).as_posix()}")
+                        failures.append(f"{mapping['id']}:{state}:{target_file.relative_to(root).as_posix()}")
             if not target_is_file:
                 marker = target / MARKER
                 if write:
                     write_marker(target, str(mapping["id"]), source_rel, len(rows), digest)
                 elif not marker.is_file():
-                    failures.append(f"{mapping['id']}:marker_missing:{target.relative_to(ROOT).as_posix()}")
+                    failures.append(f"{mapping['id']}:marker_missing:{target.relative_to(root).as_posix()}")
                 else:
                     try:
                         payload = json.loads(marker.read_text(encoding="utf-8"))
@@ -183,11 +193,11 @@ def process(write: bool, *, committed_only: bool = False) -> list[str]:
                             or payload.get("tree_sha256") != digest
                         ):
                             failures.append(
-                                f"{mapping['id']}:marker_drift:{target.relative_to(ROOT).as_posix()}"
+                                f"{mapping['id']}:marker_drift:{target.relative_to(root).as_posix()}"
                             )
                     except Exception:
                         failures.append(
-                            f"{mapping['id']}:marker_invalid:{target.relative_to(ROOT).as_posix()}"
+                            f"{mapping['id']}:marker_invalid:{target.relative_to(root).as_posix()}"
                         )
     return failures
 

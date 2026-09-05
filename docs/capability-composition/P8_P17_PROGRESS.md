@@ -390,3 +390,26 @@ No source gate was changed or weakened to relocate these non-source reports.
   installation/publication, shared-module/source-byte pinning across a live Run,
   the unapproved 99 risk downgrades/42 newly-A0 candidates, evidence-contract
   execution and real task/model evaluation are still open. P9 has not started.
+- Source revision packaging IMPLEMENTED in the existing isolated build command
+  (`--bundle`): retain the exact private-source revision, compiled Gateway
+  Manifest, official generated mirrors and build report in one content-bound
+  ZIP. The official mirror generator now accepts an explicit private workspace
+  without retargeting module globals or running candidate-supplied scripts.
+  Input closure is checked before and after generation; the package verifier
+  binds every entry to its inventory and source/Manifest to the compiler report.
+  Whole-file pins, portable paths, size limits, duplicate/link rejection and
+  no-overwrite behavior are enforced. New versions leave old package bytes
+  unchanged. No Runtime imports, publication approval or activation is implied.
+  This is the artifact prerequisite for immutable installation, not proof that
+  a live Run continues X after production publication of X+1.
+- Package test evidence: the initial run had 22 passed / 1 failed because a new
+  assertion compared an in-memory dataclass tuple to its JSON array. It now
+  compares exact canonical report bytes; `source-bundle-first.xml` is retained.
+  The first expanded run reached 109 passed / 2 host-denied symlink skips / 22
+  passed subtests and one failed mirror subtest: the new Gateway module was not
+  yet in the local generated marker (101 versus 100 files). Official sync fixed
+  the mirror; no source or mirror assertion was weakened. After sync, the P8
+  package/build/inputs/World, official-source, P17 architecture and P19 guard
+  focused run passed 131 tests / 23 subtests with those same 2 skips in 18.99 s
+  (`source-bundle-focused-2.xml`). Real committed-candidate packaged build and
+  final phase gates remain pending. No intermediate full regression launched.

@@ -97,6 +97,19 @@ Changes covered by this revision
     backend startup selection, not every shared module or a live Run's complete
     byte closure; immutable installation and running-source acceptance remain
     required. The embedded-backend source joins the explicit freeze surface.
+15. The existing isolated build command can retain a content-bound source ZIP
+    after its private snapshot is removed. The compiled Gateway Manifest is
+    materialized only inside that private snapshot; installed trusted tooling
+    invokes the official mirror generator with an explicit workspace argument.
+    Compiler inputs must remain byte-identical across generation. The package
+    includes a source-file inventory, exact build report, Manifest and mirrors.
+    Verification checks the whole-file pin, portable paths, bounded sizes,
+    index/file/report/input/Manifest consistency, and rejects executable-link
+    entries without extracting or importing any candidate code. Packages never
+    overwrite prior versions and may_publish/may_authorize/may_execute remain
+    false. A valid bundle is not Git provenance, review approval, an activation
+    pointer or proof of a running-source lock. The packager and existing official
+    mirror generator join the same explicit authority freeze surface.
 
 Unchanged authority and admission
 ----------------------------------------------------------------------

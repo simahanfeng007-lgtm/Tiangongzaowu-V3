@@ -13,6 +13,7 @@ import argparse
 import ast
 from dataclasses import asdict
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,7 @@ from total_gateway.tool_source_candidate import (  # noqa: E402
 from total_gateway.tool_manifest_evolution import review_manifest_evolution  # noqa: E402
 from total_gateway.tool_source_inputs import compile_tool_source_inputs  # noqa: E402
 from total_gateway.tool_source_world import compile_source_bound_tool_world  # noqa: E402
+from total_gateway.tool_source_bundle import write_tool_source_bundle  # noqa: E402
 
 
 WORKER_NAME = ".tiangong-source-build-worker.py"
@@ -58,7 +60,27 @@ def _invalid_constant(_):
     raise ValueError("build artifact contains a non-finite value")
 
 
-def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple[str, ...]):
+def _official_mirror_generator():
+    path = ROOT / "scripts/sync-generated-sources.py"
+    spec = importlib.util.spec_from_file_location("tiangong_installed_source_bundle_sync", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("installed source mirror generator is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def synchronize(snapshot: Path) -> None:
+        if module.process(write=True, workspace_root=snapshot):
+            raise ValueError("source bundle official mirror generation failed")
+        if module.process(write=False, workspace_root=snapshot):
+            raise ValueError("source bundle official mirror verification failed")
+
+    return synchronize, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def build_candidate(
+    repository: Path, *, base: str, head: str, action_ids: tuple[str, ...],
+    bundle_path: Path | None = None,
+):
     if os.name != "nt":
         raise RuntimeError("source_build_os_containment_unavailable: Windows AppContainer is required")
     candidate = inspect_tool_source_candidate(repository, base_commit=base, candidate_commit=head,
@@ -128,7 +150,7 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
         )
         # A successful build is still not a reviewed publication or execution
         # grant. Keep the actual process result and full collateral diff.
-        return {
+        report = {
             "schema": "tiangong.tool-source-isolated-build-report.v1",
             "status": "ISOLATED_BUILD_OBSERVED",
             "source_candidate": asdict(candidate),
@@ -152,6 +174,13 @@ def build_candidate(repository: Path, *, base: str, head: str, action_ids: tuple
             "may_authorize": False,
             "may_execute": False,
         }
+        if bundle_path is not None:
+            synchronize, generator_sha256 = _official_mirror_generator()
+            report["source_bundle"] = write_tool_source_bundle(
+                snapshot, source_inputs=source_inputs, report=report, output_path=bundle_path,
+                synchronize_mirrors=synchronize, mirror_generator_sha256=generator_sha256,
+            )
+        return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,12 +190,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--action", required=True, action="append")
     parser.add_argument("--report", type=Path, required=True, help="new report file; existing files are never overwritten")
+    parser.add_argument("--bundle", type=Path, help="optional new source revision ZIP; review material, not publication")
     args = parser.parse_args(argv)
     if args.report.exists() or args.report.is_symlink():
         parser.error("report must be a new file")
+    bundle = args.bundle.absolute() if args.bundle is not None else None
+    if bundle is not None and (bundle.exists() or bundle.is_symlink() or bundle == args.report.absolute()):
+        parser.error("bundle must be a distinct new file")
     try:
         report = build_candidate(args.repository.absolute(), base=args.base, head=args.candidate,
-                                 action_ids=tuple(sorted(args.action)))
+                                 action_ids=tuple(sorted(args.action)), bundle_path=bundle)
     except (ValueError, OSError, RuntimeError) as exc:
         report = {"status": "BUILD_REJECTED", "error": str(exc), "may_publish": False,
                   "may_authorize": False, "may_execute": False,

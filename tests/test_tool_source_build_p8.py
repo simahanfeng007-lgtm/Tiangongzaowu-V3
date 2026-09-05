@@ -144,3 +144,30 @@ def test_failed_child_process_preserves_failure_and_does_not_produce_pass(builde
     assert result["build_process"]["returncode"] == 1
     assert result["may_publish"] is False
     assert "manifest_review" not in result
+
+
+def test_successful_build_can_keep_a_verified_unapproved_source_revision_bundle(builder, simulated_build, tmp_path):
+    from total_gateway.tool_source_bundle import verify_tool_source_bundle
+
+    manifest_path = tmp_path / "immutable-source/src/omni_body_skill/registry/capability_manifest.generated.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_bytes(b"{}\n")
+    output = tmp_path / "source-revision.zip"
+    result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40,
+                                     action_ids=("skill.list",), bundle_path=output)
+    artifact = result["source_bundle"]
+    assert result["status"] == "ISOLATED_BUILD_OBSERVED"
+    assert artifact["path"] == str(output)
+    assert artifact["may_publish"] is result["may_publish"] is False
+    index = verify_tool_source_bundle(output, expected_sha256=artifact["sha256"])
+    assert index["source_inputs_sha256"] == result["build_artifact"]["source_inputs"]["source_inputs_sha256"]
+
+
+def test_failed_build_does_not_export_a_source_bundle(builder, simulated_build, tmp_path):
+    simulated_build["value"] = "failed"
+    output = tmp_path / "must-not-exist.zip"
+    result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40,
+                                     action_ids=("skill.list",), bundle_path=output)
+    assert result["status"] == "BUILD_FAILED"
+    assert not output.exists()
+    assert "source_bundle" not in result
