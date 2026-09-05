@@ -52,7 +52,10 @@ def main() -> int:
             min_free_bytes=1_048_576, backend_internal_token="p8-offline-probe-" + "0" * 48,
             release_source_root=source,
             release_manifest_path=workspace / "release" / RELEASE_MANIFEST_FILENAME,
-            skill_root=source / "app/backend/tiangong-backend/_internal/omni_body_skill",
+            # Use the existing authoritative skill root, not its deep generated
+            # mirror. Both are source-verified, but the mirror can exceed the
+            # unchanged GatewayConfig path budget inside an AppContainer.
+            skill_root=source / "src/omni_body_skill",
         )
         runtime = GatewayRuntime.start(config)
         report["gateway_health"] = runtime.health_payload()
