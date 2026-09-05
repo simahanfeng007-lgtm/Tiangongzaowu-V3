@@ -51,9 +51,11 @@ def test_service_constructor_observes_native_path_under_dos_denial(component, tm
         raise PermissionError("controlled DOS lookup denial")
 
     root = tmp_path / component
+    root.mkdir()
+    expected = root.resolve(strict=True)
     with monkeypatch.context() as fault:
         fault.setattr(Path, "resolve", denied)
-        assert construct(component, root) == root
+        assert construct(component, root) == expected
     assert not tuple(root.iterdir())
 
 

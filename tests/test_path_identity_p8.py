@@ -37,10 +37,11 @@ def test_posix_keeps_strict_resolution_without_using_windows_backend(tmp_path, m
 
 @pytest.mark.skipif(os.name != "nt", reason="actual Windows path API contract")
 def test_windows_native_resolution_does_not_call_pathlib_resolution(tmp_path, monkeypatch):
+    expected = tmp_path.resolve(strict=True)
     def forbidden(*args, **kwargs):
         raise AssertionError("pathlib resolution is not native identity evidence")
     monkeypatch.setattr(Path, "resolve", forbidden)
-    assert identity.resolve_existing_path(tmp_path) == tmp_path
+    assert identity.resolve_existing_path(tmp_path) == expected
 
 
 @pytest.mark.skipif(os.name != "nt", reason="actual Windows path API contract")

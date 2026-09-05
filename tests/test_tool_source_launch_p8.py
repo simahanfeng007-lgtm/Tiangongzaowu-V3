@@ -83,11 +83,14 @@ def test_native_identity_query_failure_has_no_lexical_or_nonstrict_fallback(tmp_
 
 def test_physical_root_cannot_hide_a_redirected_ancestor(tmp_path, monkeypatch):
     monkeypatch.setattr(path_identity, "os", SimpleNamespace(name="nt", path=os.path))
-    anchor = Path(tmp_path.anchor)
-    monkeypatch.setattr(path_identity, "_windows_final_path", lambda path: (
-        PureWindowsPath(r"\Device\Volume3") if path == anchor else PureWindowsPath(r"\Device\Volume4\foreign")))
-    with pytest.raises(launch.SourceLaunchError, match="physical_path_mismatch"):
+    # The OS now rejects an ancestor reparse during the complete-path open,
+    # not by granting/opening a drive root. Native ABI and real junction cases
+    # in test_path_identity_r3.py test that rejecting boundary independently.
+    denied = Mock(side_effect=path_identity.PathIdentityError("link_or_junction"))
+    monkeypatch.setattr(path_identity, "_windows_final_path", denied)
+    with pytest.raises(launch.SourceLaunchError, match="link_or_junction"):
         launch._safe_path(tmp_path, tmp_path)
+    denied.assert_called_once_with(tmp_path)
 
 
 def test_generated_mirrors_are_bound_to_measured_bytes_without_candidate_import(installation):
@@ -199,7 +202,7 @@ def test_frozen_compatibility_bytecode_is_retained_as_data_not_imported(source, 
     root = Path(staged["source_root"])
     code = (
         "import json,sys; from pathlib import Path; "
-        "import ctypes.wintypes, encodings.utf_16_be; "
+        "import ctypes.wintypes, encodings.utf_16_be, encodings.utf_16_le; "
         "from total_gateway.tool_source_launch import verify_source_revision; "
         "before = dict(sys.modules); "
         "observed = verify_source_revision(Path(sys.argv[1]), "
