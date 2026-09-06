@@ -177,3 +177,36 @@ Engineering-stage merge progress remains **8/18 = 44.4%**. Current position:
 P8, stage 9/18, remaining execution package 1/6. Later P9 work starts after
 P8's accepted exit and verified merge; no pending obligation is silently
 converted into a completed stage.
+
+## Live write acceptance: request-boundary correction
+
+Product `6cf7dc3bb2fcd49d380bf3f4503a259beee8dcde` binds the durable parent
+Claim. Workflow `a28b2be1f3fd3d1ab7e68baa6f8b83528e2c4288` pins that product;
+its native, P14 and P19 workflows completed SUCCESS. Architecture Ubuntu
+passed; Windows full regression was still running at this observation.
+
+Real M3 composition attempts 07–09 remain failed observations. Attempt 07
+included invalid model packaging calls. Attempt 08 exposed a negated packaging
+phrase being interpreted as a ZIP delivery requirement; that legacy suffix
+heuristic remains uncorrected. Attempt 09 removed that ambiguity and exposed
+two precise request-parser defects. Its raw tool dispatch proves file.write
+succeeded with authoritative observed write evidence and a real attachment;
+file.read succeeded with the same 14-byte content. However, the effect target
+was parsed as `proof.txt，args.content`, and the noun in “创建一个交付文件”
+created an extra delivery obligation. No missing write evidence was found.
+
+The current correction bounds unquoted paths at prose punctuation, preserves
+quoted literal paths, excludes unqualified tool-argument field references,
+and keeps the deliverable noun separate from a later explicit delivery verb.
+It changes only the existing V3 request derivation; matching, ToolResult,
+Life/Completion authority and all rejection requirements remain unchanged.
+No mirror or existing freeze entry covers this already-declared V3 source;
+source ownership and generated-source checks both pass unchanged.
+
+The pre-fix regression reproduced 12 failures (4 existing negative cases
+passed). After correction, the related execution-chain/P19 suite passed 239,
+with 52 passing subtests, no skips, exit 0 and unchanged recorded source
+hashes (`evidence/request-boundary-regression-02`). These checks preserve
+rejection of wrong-path, absent, failed and unobserved writes, and require
+delivery evidence for actual delivery commands. They are regression evidence;
+a fresh immutable candidate and real M3 DAG/resumption are still required.

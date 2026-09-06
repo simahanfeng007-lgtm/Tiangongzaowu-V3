@@ -97,7 +97,12 @@ _COMPLETION_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
-_LOCAL_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/][^\s]+|(?:^|\s)(?:\.{0,2}[\\/])[^\s]+)")
+_LOCAL_PATH_RE = re.compile(
+    r'''(?:[A-Za-z]:[\\/]|(?:^|\s)(?:\.{0,2}[\\/]))[^\s`"'，。；,;！？!?]+'''
+)
+_QUOTED_LOCAL_PATH_RE = re.compile(
+    r'''(?P<quote>[`"'])(?P<path>(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])[^\n]+?)(?P=quote)'''
+)
 _RELATIVE_FILE_PATH_RE = re.compile(
     r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])"
 )
@@ -708,6 +713,14 @@ def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     ), key=len, reverse=True))
     for match in re.finditer(re.escape(verb), compact):
         left = compact[max(0, match.start() - 14):match.start()]
+        if (
+            verb == "交付"
+            and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
+            and compact[match.end():].startswith(("文件", "文档", "报告", "产物"))
+        ):
+            # The object of "create a deliverable file" is a noun, not a
+            # second delivery command. A later explicit delivery still counts.
+            continue
         clause_left = re.split(r"[，。；：,.;:！!？?]", left)[-1]
         if any(left.endswith(prefix) for prefix in _NEGATION_PREFIXES):
             continue
@@ -975,8 +988,15 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
     declared_actions = declared_action_metadata()
     candidates: list[tuple[int, str]] = []
     path_spans: list[tuple[int, int]] = []
+    # Quoting preserves literal spaces/punctuation within a filename. Outside
+    # quotes, prose punctuation terminates a path rather than becoming its tail.
+    for match in _QUOTED_LOCAL_PATH_RE.finditer(text):
+        candidates.append((match.start("path"), match.group("path")))
+        path_spans.append(match.span())
     for match in _LOCAL_PATH_RE.finditer(text):
-        value = match.group(0).strip()
+        if any(start <= match.start() < end for start, end in path_spans):
+            continue
+        value = match.group(0).strip().rstrip(".")
         if value:
             candidates.append((match.start(), value))
             path_spans.append(match.span())
@@ -992,6 +1012,10 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
             continue
         candidate = match.group(1).strip()
         stem, suffix = candidate.rsplit(".", 1)
+        if stem == "args" and suffix.lower() not in _COMMON_FILE_SUFFIXES:
+            # Structured tool argument references (args.content, args.limit)
+            # are not unqualified filenames. Explicit paths were handled above.
+            continue
         if suffix.lower() not in _COMMON_FILE_SUFFIXES and any(char.isupper() for char in stem):
             # Dotted code symbols such as WorldModel.summary are semantic
             # subjects, not filesystem paths. Slash-qualified paths are
