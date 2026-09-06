@@ -87,7 +87,15 @@ def test_probe_uses_short_authoritative_skill_path_within_existing_limits(worker
 def test_probe_does_not_relax_config_limit_when_own_workspace_is_too_long(worker_fixture, tmp_path, monkeypatch):
     worker, observed, runtime, _ = worker_fixture
     workspace = at_length(tmp_path, 222)
-    (workspace / "r/source/src/omni_body_skill").mkdir(parents=True)
+    skill_root = workspace / "r/source/src/omni_body_skill"
+    fixture_root = skill_root
+    # Only fixture creation bypasses Windows' legacy directory-length limit;
+    # the worker still receives the original path and the 240-character policy.
+    if os.name == "nt" and not str(fixture_root).startswith("\\\\?\\"):
+        raw = str(fixture_root)
+        fixture_root = Path("\\\\?\\UNC\\" + raw[2:] if raw.startswith("\\\\") else "\\\\?\\" + raw)
+    fixture_root.mkdir(parents=True)
+    assert len(str(skill_root)) > 240
     monkeypatch.setattr(worker, "__file__", str(workspace / "probe.py"))
     assert worker.main() == 1
     assert not observed

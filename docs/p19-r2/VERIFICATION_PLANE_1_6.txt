@@ -212,6 +212,19 @@ Changes covered by this revision
     never candidate code or inherited PYTHONPATH. These are wiring/regression
     corrections, not proof of real AppContainer READY or P8 completion.
 
+26. P8-R3 continues the existing protected-key file authority with explicit
+    current-user and exact-container ACLs on newly created encrypted files.
+    The shared Windows principal observer is frozen alongside its existing
+    ticket and release consumers. A non-container identification-level thread
+    token is rejected before ordinary-host handling, as required by Windows;
+    unavailable identity never selects a permissive fallback. The imported
+    key-file repair and this observation correction preserve DPAPI, envelope
+    integrity, Policy/Ticket/Grant and Completion semantics. The declaration
+    remains within the existing 1.6 source-evolution plane; its implementation
+    digests are regenerated through the existing freeze procedure. Independent
+    fixture preparation and real host/container lifecycle tests are acceptance
+    evidence, not new product authority or a production approval.
+
 Unchanged authority and admission
 ----------------------------------------------------------------------
 

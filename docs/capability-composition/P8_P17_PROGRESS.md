@@ -1,11 +1,12 @@
 # v1.2 P8–P17 implementation and acceptance ledger
 
-Status: **USER HANDOFF — P8 IN PROGRESS; stop after online synchronization (2026-09-05)**.
+Status: **P8 IN PROGRESS — P8-R3 native acceptance resumed (2026-09-06)**.
 
-The user requested that this checkpoint be synchronized online and work then
-stop for a task update in chat. This is not phase completion. Do not resume
-implementation, repair CI, merge, or start P9 without the user's new direction.
-See `P8_HANDOFF_2026-09-05.md` and `P8_RESUME_PROMPT_2026-09-05.txt`.
+The user authorized the discussed P8-R3 candidate review, necessary repairs
+and native lifecycle/startup acceptance on 2026-09-06. The earlier checkpoint
+and its stop instruction remain historical in `P8_HANDOFF_2026-09-05.md` and
+`P8_RESUME_PROMPT_2026-09-05.txt`. Current work is recorded in
+`P8_R3_NATIVE_ACCEPTANCE_2026-09-06.md`; P8 is not closed and P9 is not started.
 
 ## Scope and baseline
 
@@ -29,8 +30,10 @@ passing CI does not close the total objective.
   and P19
   [33892621577](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/33892621577)
   both completed successfully on the starting main SHA.
-- P8 worktree: `C:\Users\77571\Documents\天工造物v3-p8`.
+- Preserved P8 worktree: `C:\Users\77571\Documents\天工造物v3-p8`.
 - P8 branch: `codex/capability-composition-p8-source-evolution-v1`.
+- Active R3 isolation: `C:\Users\77571\Documents\天工造物v3-p8-r3`,
+  branch `codex/p8-r3-native-acceptance-20260906`, based on remote `50feb168`.
 
 ## Stage register
 

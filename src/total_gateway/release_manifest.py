@@ -754,87 +754,16 @@ def release_manifest_bytes(manifest: ReleaseManifest) -> bytes:
 
 
 def _windows_appcontainer_sddl() -> str | None:
-    """Describe a NEW private stage for the effective OS token, never an ACL repair.
-
-    CPython's Windows mkdir(0700) excludes the AppContainer SID (gh-134587).
-    Ordinary host creation stays with tempfile. Only an OS-observed container
-    adds its own exact SID to its newly-created stage; no existing path ACL,
-    token, privilege, parent or sandbox permission is changed.
-    """
-    import ctypes
-    from ctypes import wintypes
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    security = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel.GetCurrentProcess.restype = wintypes.HANDLE
-    kernel.GetCurrentThread.restype = wintypes.HANDLE
-    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel.CloseHandle.restype = wintypes.BOOL
-    kernel.LocalFree.argtypes = [wintypes.LPVOID]
-    kernel.LocalFree.restype = wintypes.LPVOID
-    security.OpenThreadToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, ctypes.POINTER(wintypes.HANDLE)]
-    security.OpenThreadToken.restype = wintypes.BOOL
-    security.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
-    security.OpenProcessToken.restype = wintypes.BOOL
-    security.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
-    security.GetTokenInformation.restype = wintypes.BOOL
-    security.IsValidSid.argtypes = [wintypes.LPVOID]
-    security.IsValidSid.restype = wintypes.BOOL
-    security.ConvertSidToStringSidW.argtypes = [wintypes.LPVOID, ctypes.POINTER(wintypes.LPWSTR)]
-    security.ConvertSidToStringSidW.restype = wintypes.BOOL
-    token = wintypes.HANDLE()
-    # Respect effective impersonation. Only ERROR_NO_TOKEN permits process
-    # fallback; access-denied or unobservable identity must reject creation.
-    if not security.OpenThreadToken(kernel.GetCurrentThread(), 0x8, True, ctypes.byref(token)):
-        error = ctypes.get_last_error()
-        if error != 1008:
-            raise ctypes.WinError(error)
-        if not security.OpenProcessToken(kernel.GetCurrentProcess(), 0x8, ctypes.byref(token)):
-            raise ctypes.WinError(ctypes.get_last_error())
+    """Preserve the existing release-stage DACL using the shared OS observer."""
+    from .windows_private_files import current_appcontainer_principal, WindowsPrivateFileError
     try:
-        flag, length = wintypes.DWORD(), wintypes.DWORD()
-        if not security.GetTokenInformation(token, 29, ctypes.byref(flag), ctypes.sizeof(flag), ctypes.byref(length)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        if length.value != ctypes.sizeof(flag) or flag.value not in (0, 1):
-            raise ReleaseManifestError("release staging token flag is invalid")
-        if not flag.value:
-            return None
-
-        def sid_text(kind: int) -> str:
-            required = wintypes.DWORD()
-            ok = security.GetTokenInformation(token, kind, None, 0, ctypes.byref(required))
-            if ok or ctypes.get_last_error() != 122 or not ctypes.sizeof(ctypes.c_void_p) <= required.value <= 65536:
-                raise ReleaseManifestError("release staging SID evidence is unavailable")
-            data = ctypes.create_string_buffer(required.value)
-            if not security.GetTokenInformation(token, kind, data, len(data), ctypes.byref(required)):
-                raise ctypes.WinError(ctypes.get_last_error())
-            if not ctypes.sizeof(ctypes.c_void_p) <= required.value <= len(data):
-                raise ReleaseManifestError("release staging SID evidence size changed")
-            # TOKEN_USER and TOKEN_APPCONTAINER_INFORMATION start with a SID*.
-            sid = ctypes.c_void_p.from_buffer(data).value
-            if not sid or not security.IsValidSid(sid):
-                raise ReleaseManifestError("release staging SID is invalid")
-            text = wintypes.LPWSTR()
-            if not security.ConvertSidToStringSidW(sid, ctypes.byref(text)):
-                raise ctypes.WinError(ctypes.get_last_error())
-            try:
-                value = text.value or ""
-                if re.fullmatch(r"S-1-(?:[0-9]+-)+[0-9]+", value) is None:
-                    raise ReleaseManifestError("release staging SID text is invalid")
-                return value
-            finally:
-                if kernel.LocalFree(text):
-                    raise ReleaseManifestError("release staging SID cleanup failed")
-
-        user_sid, app_sid = sid_text(1), sid_text(31)
-        if re.fullmatch(r"S-1-15-2-(?:[0-9]+-){6}[0-9]+", app_sid) is None:
-            raise ReleaseManifestError("release staging requires an exact AppContainer SID")
-        # Protected, non-inherited DACL: host owner/admin/system plus precisely
-        # this container, NOT Everyone, Users or ALL APPLICATION PACKAGES.
-        return "D:P" + "".join(f"(A;OICI;FA;;;{sid})" for sid in ("SY", "BA", user_sid, app_sid))
-    finally:
-        if not kernel.CloseHandle(token):
-            raise ReleaseManifestError("release staging token cleanup failed")
+        principal = current_appcontainer_principal()
+    except WindowsPrivateFileError as exc:
+        raise ReleaseManifestError(str(exc)) from exc
+    if principal is None:
+        return None
+    user_sid, app_sid = principal
+    return "D:P" + "".join(f"(A;OICI;FA;;;{sid})" for sid in ("SY", "BA", user_sid, app_sid))
 
 
 def _windows_private_stage(target: Path, descriptor: str) -> Path:

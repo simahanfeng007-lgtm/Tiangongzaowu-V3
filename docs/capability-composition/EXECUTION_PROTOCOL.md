@@ -64,3 +64,16 @@ and P7/P8 real-task evidence debt must be separately disclosed and cannot be
 converted into acceptance by merged code or aggregate unit-test counts.
 If the stage list or metric is changed, declare and version the change rather
 than silently comparing incompatible percentages.
+
+## Deployment prerequisite and resource-lifecycle matrix (R3 correction)
+
+Before another shared-platform repair, define separately: immutable source
+ownership/import closure; ordinary-host behavior; actual restricted-token
+behavior; complete create/use/reload/replace/cleanup lifecycle; failed-start
+resource ownership; unchanged full readiness exit. Confirm the diagnostic's
+own isolated imports and embedded worker syntax before remote execution.
+Read original trace plus exact source, not only prior prose. Test shared
+primitives across all consumers and negative boundaries, then perform the
+full boot. No count of unit tests substitutes for a missing environment gate.
+The evidence and concrete prevention cases are documented in
+P8_R3_KEY_LIFECYCLE_REVIEW_2026-09-05.md and its portable/native regressions.

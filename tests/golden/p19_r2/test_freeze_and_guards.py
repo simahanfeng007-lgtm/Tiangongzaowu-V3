@@ -254,6 +254,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/runtime.py",
         "src/total_gateway/skill_selection.py",
         "src/total_gateway/tickets.py",
+        "src/total_gateway/windows_private_files.py",
         "src/total_gateway/verification_repair_coordinator.py",
         "src/total_gateway/verification_repair_policy.py",
         "src/total_gateway/verification_plan_executor.py",

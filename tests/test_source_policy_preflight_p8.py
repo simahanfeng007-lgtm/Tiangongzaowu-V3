@@ -137,9 +137,10 @@ def test_cli_rejection_preserves_identity_no_permission_and_does_not_overwrite(p
     assert report.read_bytes() == data
 
 
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_cli_isolated_bootstrap_has_no_candidate_import():
-    result = subprocess.run([sys.executable, "-I", "-B", str(ROOT / "scripts/preflight-tool-source-candidate.py"), "--help"],
-                            capture_output=True, text=True, timeout=30, check=False)
+    result = subprocess.run([sys.executable, "-I", "-B", "-X", "utf8", str(ROOT / "scripts/preflight-tool-source-candidate.py"), "--help"],
+                            capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     assert result.returncode == 0, result.stderr
     assert "--policy-base" in result.stdout
 

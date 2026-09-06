@@ -54,6 +54,14 @@ jobs:
               'python': sys.version, 'platform': platform.platform(),
               'dependency_lock_sha256': hashlib.sha256((root / 'requirements-source.lock').read_bytes()).hexdigest(),
               'may_publish': False, 'may_authorize': False, 'may_execute': False,
+              # Old pins without the repair/tests fail here, before installation.
+              'key_lifecycle_input_sha256': {path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+                  for path in ('src/total_gateway/windows_private_files.py',
+                      'src/total_gateway/tickets.py',
+                      'tests/test_container_private_files_p8.py',
+                      'tests/test_container_private_file_acl_p8.py',
+                      'tests/test_container_private_token_p8.py',
+                      'tests/test_container_key_native_p8.py')},
           }
           (evidence / 'identity.json').write_text(json.dumps(identity, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(identity))
@@ -82,6 +90,8 @@ jobs:
           command = [sys.executable, '-m', 'pytest', '-q',
               'tests/test_source_startup_paths_p8.py', 'tests/test_life_store_path_injection_p8.py',
               'tests/test_path_identity_p8.py', 'tests/test_path_identity_r3.py',
+              'tests/test_container_private_files_p8.py', 'tests/test_container_private_file_acl_p8.py',
+              'tests/test_container_private_token_p8.py',
               'tests/test_source_policy_preflight_p8.py', 'tests/test_tool_source_candidate_p8.py',
               'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py',
               'tests/test_tool_source_launch_p8.py', 'tests/test_release_source_binding_p8.py',
@@ -99,6 +109,23 @@ jobs:
               raise SystemExit(result.returncode)
           if ET.parse(junit).findall('.//testcase/skipped'):
               raise RuntimeError('native acceptance regression cannot pass by skipping a case')
+      - name: Actual protected-key lifecycle under host and AppContainer
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys, xml.etree.ElementTree as ET
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p8-native-evidence'
+          junit = evidence / 'key-lifecycle-regression.xml'
+          environment = dict(os.environ, TIANGONG_P8_KEY_EVIDENCE_DIR=str(evidence))
+          command = [sys.executable, '-m', 'pytest', '-q', '-s',
+              'tests/test_container_key_native_p8.py', '--junitxml=' + str(junit)]
+          with (evidence / 'key-lifecycle-regression.log').open('x', encoding='utf-8') as log:
+              result = subprocess.run(command, env=environment, stdout=log,
+                  stderr=subprocess.STDOUT, timeout=360, check=False)
+          print((evidence / 'key-lifecycle-regression.log').read_text(encoding='utf-8'))
+          if result.returncode:
+              raise SystemExit(result.returncode)
+          if ET.parse(junit).findall('.//testcase/skipped'):
+              raise RuntimeError('actual protected-key lifecycle cannot pass by skipping a case')
       - name: Real AppContainer source build and Gateway startup
         if: ${{ success() }}
         shell: python
