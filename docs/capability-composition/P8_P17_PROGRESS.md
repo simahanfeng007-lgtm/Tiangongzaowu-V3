@@ -1,6 +1,6 @@
 # v1.2 P8–P17 implementation and acceptance ledger
 
-Status: **P8 IN PROGRESS — P8-R3 native acceptance resumed (2026-09-06)**.
+Status: **P8 IN PROGRESS — P8-R3 local native lifecycle passed; remote gates pending (2026-09-06)**.
 
 The user authorized the discussed P8-R3 candidate review, necessary repairs
 and native lifecycle/startup acceptance on 2026-09-06. The earlier checkpoint
@@ -127,6 +127,20 @@ are not product evaluations.
   sandbox evidence. Git remains the source revision authority.
 
 ## Evidence log
+
+- 2026-09-06: local product candidate
+  `7b2ab2fbbe0584f6ffb3f266424c6d986a1c25b4` passed immutable candidate
+  preflight, actual AppContainer source build and actual Gateway ALIVE / READY
+  (200), successful close, and unchanged 1,967-entry child source verification
+  before/after shutdown. Independent parent re-verification also matched.
+  The final startup matrix retained all 21 original files and passed 387
+  ordinary cases plus six subtests, no skips or failures. Actual host and
+  contained ProtectedKeyStore and persisted RuntimeTicketAuthority reopen
+  observations passed. The separate workflow-binding commit pins the trusted
+  observer and candidate to this same product. These commits are local only;
+  remote exact-candidate full gates remain pending, P8 remains unmerged, and
+  no Source publication or P9 work occurred. See
+  `P8_R3_NATIVE_ACCEPTANCE_2026-09-06.md` and its original local evidence.
 
 Local P8 artifacts are now under `output/p8-evidence/`, the repository's
 existing artifact-output location. Historical `out/p8-evidence/` references
