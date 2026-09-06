@@ -109,8 +109,8 @@ python -m pytest -q \
   tests/test_capability_context_evaluation_p6.py
 ```
 
-Result: **56 passed, 0 failed, 0 skipped**; five existing Pydantic field-shadow
-warnings. The smaller P3/P9 group also passed **36/36**.
+Result after lifecycle self-consistency hardening: **58 passed, 0 failed, 0 skipped**; five existing Pydantic field-shadow
+warnings. The earlier smaller P3/P9 group also passed **36/36**. Additional R1 tests reject rehashed plans with a drifted next-source set, mismatched invalidations, malformed change shapes, and non-opaque candidate IDs.
 
 The authoritative source-to-runtime generator was run in the reconstructed
 workspace using the existing `scripts/sync-generated-sources.py --write`, then

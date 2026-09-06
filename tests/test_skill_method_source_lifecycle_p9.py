@@ -232,3 +232,36 @@ def test_remove_shape_and_simulation_evidence_are_strict():
             simulation_evidence_sha256="bad",
             candidate_sha256=H1,
         )
+
+
+def test_compiled_plan_and_change_cannot_be_rehashed_around_internal_drift():
+    snapshot = _snapshot()
+    base = snapshot.primitives[0]
+    added = _primitive_from(base, method_id="integrity_probe", version="v1", source_sha256=H2)
+    plan = compile_method_source_lifecycle(
+        snapshot,
+        (_candidate(snapshot, operation="ADD", method_id=added.method_id, primitive=added),),
+    )
+    with pytest.raises(SkillMethodWorldError, match="source set hash"):
+        replace(plan, next_method_sources_sha256=H3, plan_sha256="0" * 64)
+    with pytest.raises(SkillMethodWorldError, match="do not match changes"):
+        replace(plan, invalidation_refs=("method:integrity_probe",), plan_sha256="0" * 64)
+    with pytest.raises(SkillMethodWorldError, match="change shape"):
+        replace(plan.changes[0], next_source_sha256=None, change_sha256="0" * 64)
+
+
+def test_candidate_identifiers_are_bounded_opaque_ids():
+    snapshot = _snapshot()
+    base = snapshot.primitives[0]
+    added = _primitive_from(base, method_id="valid_method", version="v1", source_sha256=H2)
+    with pytest.raises(SkillMethodWorldError, match="identity"):
+        MethodSourceCandidateV1(
+            candidate_id="bad candidate with spaces",
+            operation="ADD",
+            base_snapshot_sha256=snapshot.snapshot_sha256,
+            method_id=added.method_id,
+            base_descriptor_sha256=None,
+            primitive=added,
+            simulation_evidence_sha256=H1,
+            candidate_sha256=H1,
+        )

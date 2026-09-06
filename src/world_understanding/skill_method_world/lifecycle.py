@@ -21,6 +21,7 @@ from .models import SkillMethodWorldError, SkillMethodWorldSnapshotV1
 
 _METHOD_SOURCE_LIFECYCLE_SCHEMA = "tiangong.skill-method-source-lifecycle.v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_OPAQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$")
 MethodSourceOperation = Literal["ADD", "UPDATE", "REMOVE"]
 
 
@@ -61,6 +62,7 @@ def _validate_method_source_primitive_structure(primitive: SkillSourcePrimitiveV
     _validate_prefixed_values(primitive)
 
 
+
 @dataclass(frozen=True, slots=True)
 class MethodSourceCandidateV1:
     candidate_id: str
@@ -77,8 +79,9 @@ class MethodSourceCandidateV1:
     def __post_init__(self) -> None:
         if self.may_authorize or self.may_execute:
             raise SkillMethodWorldError("method source candidate is non-authorizing")
-        if not self.candidate_id or not self.method_id:
-            raise SkillMethodWorldError("method source candidate identity is incomplete")
+        if (_OPAQUE_ID.fullmatch(self.candidate_id) is None
+                or _OPAQUE_ID.fullmatch(self.method_id) is None):
+            raise SkillMethodWorldError("method source candidate identity is invalid")
         if _SHA256.fullmatch(self.base_snapshot_sha256) is None:
             raise SkillMethodWorldError("method source candidate base snapshot hash is invalid")
         if _SHA256.fullmatch(self.simulation_evidence_sha256) is None:
@@ -138,6 +141,30 @@ class MethodSourceChangeV1:
     invalidation_refs: tuple[str, ...]
     change_sha256: str
 
+    def __post_init__(self) -> None:
+        if _OPAQUE_ID.fullmatch(self.method_id) is None:
+            raise SkillMethodWorldError("method source change identity is invalid")
+        hashes = (
+            self.previous_source_sha256, self.next_source_sha256,
+            self.previous_descriptor_sha256, self.next_descriptor_sha256,
+        )
+        if any(value is not None and _SHA256.fullmatch(value) is None for value in hashes):
+            raise SkillMethodWorldError("method source change contains an invalid hash")
+        previous = (self.previous_version, self.previous_source_sha256, self.previous_descriptor_sha256)
+        following = (self.next_version, self.next_source_sha256, self.next_descriptor_sha256)
+        if self.operation == "ADD":
+            valid_shape = all(value is None for value in previous) and all(value is not None for value in following)
+        elif self.operation == "UPDATE":
+            valid_shape = all(value is not None for value in previous + following)
+        elif self.operation == "REMOVE":
+            valid_shape = all(value is not None for value in previous) and all(value is None for value in following)
+        else:
+            valid_shape = False
+        if not valid_shape:
+            raise SkillMethodWorldError("method source change shape is invalid")
+        if self.invalidation_refs != _invalidation_refs(self.method_id):
+            raise SkillMethodWorldError("method source change invalidation refs are invalid")
+
     def payload(self) -> dict[str, Any]:
         return {
             "operation": self.operation,
@@ -179,8 +206,14 @@ class MethodSourceLifecyclePlanV1:
             raise SkillMethodWorldError("method source lifecycle plan has no publication or execution authority")
         if _SHA256.fullmatch(self.base_snapshot_sha256) is None:
             raise SkillMethodWorldError("method source lifecycle base hash is invalid")
-        if not self.candidate_sha256s or self.candidate_sha256s != tuple(sorted(set(self.candidate_sha256s))):
-            raise SkillMethodWorldError("method source candidate hashes must be sorted and unique")
+        if (
+            not self.candidate_sha256s
+            or self.candidate_sha256s != tuple(sorted(set(self.candidate_sha256s)))
+            or any(_SHA256.fullmatch(value) is None for value in self.candidate_sha256s)
+        ):
+            raise SkillMethodWorldError("method source candidate hashes must be sorted, unique and valid")
+        if len(self.changes) != len(self.candidate_sha256s):
+            raise SkillMethodWorldError("method source lifecycle candidate/change cardinality differs")
         if any(not item.has_valid_sha256() for item in self.changes):
             raise SkillMethodWorldError("method source change hash is invalid")
         change_ids = tuple(item.method_id for item in self.changes)
@@ -189,8 +222,18 @@ class MethodSourceLifecyclePlanV1:
         primitive_ids = tuple(item.method_id for item in self.next_primitives)
         if primitive_ids != tuple(sorted(set(primitive_ids))):
             raise SkillMethodWorldError("next method sources must be sorted and unique")
-        if self.invalidation_refs != tuple(sorted(set(self.invalidation_refs))):
-            raise SkillMethodWorldError("method source invalidation refs must be sorted and unique")
+        for primitive in self.next_primitives:
+            _validate_method_source_primitive_structure(primitive)
+        if (
+            _SHA256.fullmatch(self.next_method_sources_sha256) is None
+            or self.next_method_sources_sha256 != _method_sources_sha256(self.next_primitives)
+        ):
+            raise SkillMethodWorldError("next method source set hash is invalid")
+        expected_invalidation = tuple(sorted({
+            ref for change in self.changes for ref in change.invalidation_refs
+        }))
+        if self.invalidation_refs != expected_invalidation:
+            raise SkillMethodWorldError("method source invalidation refs do not match changes")
 
     def payload(self) -> dict[str, Any]:
         return {
