@@ -257,3 +257,37 @@ pending textual obligations. Its real file Effect, requested answer and P19
 parent verification remain evidenced, but the 80-case batch is not proof of
 the legacy textual obligation classifier's correctness. That limitation must
 not be hidden by the aggregate task pass count.
+
+## C5 actual recovery acceptance
+
+Product `36627e2cc4e0bd2ea144d6dd6ffde692b777433a` contains the routing fix.
+Its actual AppContainer build passed and 2,911 staged files were verified
+read-only. Bundle SHA:
+`94304a76dd6362b2ea1b632a4e15f615c51ccb2d717eccacddc3fc246fa6cbc4`;
+source inputs: `065ccf3a046007f0505cd4114cba0aa68b3f82617a6b77f8014a4482aa482bc0`;
+raw Capability Manifest: `bfbc43fac591d09b9fd7c2b50612c3defb1279e65ba430d4b1c7f6b767d40cc9`.
+
+`gateway-composition-resume-02` passed the same real OS-process cutpoint:
+first process exit 73, fresh process exit 0, Gateway epoch 1 to 2, both DAG
+steps succeeded, actual artifact P19 PASS and PLAN_BOUND/COMPLETED. The parent
+Claim and Fact batch stayed unchanged; M3 calls remained eight across restart
+(45,027 total tokens). Independent SQLite, raw result Object and telemetry
+auditing passed 29 checks. Source verification before and after matched.
+Original evidence is retained at
+`D:\TiangongP8R3-20260906\eval-gateway-composition-resume-02`.
+Node full regression on C5 passed 224, failed zero and skipped the same two
+restricted VRM fixture cases (`evidence/node-full-07`).
+
+All C3 workflows subsequently completed SUCCESS on `a28b2be`: Windows 4,705
+passed / 32 skipped / 839 subtests; Ubuntu 4,670 passed / 67 skipped / 842
+subtests. Original metadata/logs are archived under `evidence/remote-ci-a28b2be`.
+C4 native evidence independently passed 32 checks; C4 P14/P19 and Ubuntu full
+CI passed while Windows remained running. These earlier results are history,
+not C5 full-regression evidence.
+
+C5's 80-task primary-M3 repeat is now running in `eval-gateway-p19-batch-02`.
+Its publication proposal is `4441e0a353c12ba2f30230c1082dad8b81dedf16b6f16d78f76cce5666fc8311`
+under `evidence/publication-real-candidate-05`. Real signed review, per-Action
+contract coverage and X/X+1 publication-during-run evidence remain outstanding;
+there is no actual approved Source publication. P8 remains open at 8/18 merged
+(44.4%); P9 has not started.
