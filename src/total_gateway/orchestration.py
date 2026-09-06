@@ -4344,6 +4344,12 @@ class GatewayOrchestrationWorker:
             component_manifest_hash=self._components.manifest_sha256,
             life_snapshot_revision=life.snapshot.revision,
             life_snapshot_hash=life.snapshot.sha256,
+            # Bind the durable Claim returned by the Store, including an
+            # idempotent prior claim whose timestamp differs from this proposal.
+            # Continuation sealing must never inherit the legacy zero digest.
+            claim_sha256=existing_effect.claim.claim_sha256,
+            claim_revision=existing_effect.claim.claim_revision,
+            claim_lease_epoch=existing_effect.claim.lease_epoch,
             risk_class=decision.computed_risk,
             action_id=action.action_id,
             action_version=action.version,

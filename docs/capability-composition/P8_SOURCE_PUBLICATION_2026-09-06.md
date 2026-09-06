@@ -110,6 +110,69 @@ under validation before any phase-completion claim.
   P19 freeze guard, publication protocols, model adapter, source launch and
   private-token regressions. Official generated-source check also passed.
 
+## Subsequent exact-candidate evidence and parent-ticket correction
+
+The earlier observations above are retained as history. Product candidate
+`13f55f23301d6e2a2ce1ce0ce04cc9ac63c592ee` includes publication validation,
+the model-adapter import correction and portable DWORD test correction.
+Workflow commit `060c0c216016085bd234f11d27252ebc0beba7f5` only pins its
+native candidate and trusted observer to that product commit. Both were
+pushed normally to the existing P8 branch; PR #73 remains draft and unmerged.
+
+All four workflows completed SUCCESS on `060c0c2`: native `34016507678`,
+P19 `34016510629`, P14 `34016510641`, Architecture `34016510663`.
+Architecture's full Python results were Windows 4,703 passed / 32 skipped /
+839 passing subtests and Ubuntu 4,668 passed / 67 skipped / 842 passing
+subtests. Native evidence independently retained the actual AppContainer,
+network denial, full READY and post-shutdown source consistency. All 17
+downloaded artifact hashes matched. Local Node full regression passed 224,
+failed zero and skipped two unavailable restricted VRM fixture cases. Existing
+production dependencies were installed from the unchanged lock; AvatarSample_A
+was restored from its exact local Git LFS object, without source/asset edits.
+
+The C2 build and real-source staging are retained under
+`D:\TiangongP8R3-20260906\evidence\build-02` and `eval-source-c2`.
+Source inputs are `ffa890a6d335b94c8cff05379c3cf80d3b73743595625c3cf1aeb62a88dddd69`;
+raw Capability Manifest is
+`9c3c409b0a01b8364f3cb3a53b1500088efa83e5648be8380bc011e92c71e130`.
+Actual publication preparation still requires review of 793 Action deltas,
+99 effective-risk decreases and 42 newly-A0 candidates. No actual review
+signature, publication receipt or approved pointer exists.
+
+The real M3 batch completed 80/80 file tasks through authenticated Desktop
+ingress, the existing Gateway/Runtime, actual tool Effects and parent Effect
+P19 verification. There were 189 successful HTTP 200 calls and 1,575,516 total
+tokens. Independent read-only auditing against the actual SQLite rows and
+raw telemetry passed 1,104 checks: 80 unique requests, 294 successful Effects,
+80 real P19 PASS records and PLAN_BOUND Completion decisions, exact reply
+digests, unchanged task files and only the expected Runtime metadata files.
+Original workspace, archived harness, reports, database and audit remain at
+`D:\TiangongP8R3-20260906\eval-gateway-p19-batch-01`.
+These are primary-only file-task/parent-P19 observations; they do not prove
+P7 DAG execution, interrupted resumption or publication during a live Run.
+
+Real composition probe failures are separately retained. Harness errors
+included assuming PROVED_VALID instead of preserving the real provisional
+UNKNOWN result, exceeding the existing 60-second activation limit, making a
+second Life atomic-context acquisition, and initially compiling the Action
+Registry at time zero instead of the selected Release's timestamp. The latter
+caused a registry identity mismatch even though semantic Manifest/schema and
+permissions were identical; Runtime's Manifest checks were correct.
+
+After those driver corrections, probe 06 reached the actual continuation
+commit and exposed a production defect: the worker omitted the persisted
+parent Claim fields from ExecutionTicketPayload, leaving claim_sha256 all
+zero. The Store correctly rejected that different parent authority. The
+worker now binds digest, revision and lease epoch from the Store-returned
+Claim. It also preserves an idempotently reused claim's original timestamp.
+No continuation guard, policy, signature, expiry or A0 ceiling was relaxed.
+Two real-worker regression cases failed before the fix and passed afterward;
+the combined parent/composition/Backend/P19 suite passed 121, with no skips,
+exit zero and unchanged recorded inputs. The already-frozen orchestration
+entry was regenerated through the official procedure (plane item 29).
+This new correction needs a fresh immutable build, real DAG/resumption
+acceptance and exact-head CI; preceding C2 results do not cover it.
+
 Engineering-stage merge progress remains **8/18 = 44.4%**. Current position:
 P8, stage 9/18, remaining execution package 1/6. Later P9 work starts after
 P8's accepted exit and verified merge; no pending obligation is silently

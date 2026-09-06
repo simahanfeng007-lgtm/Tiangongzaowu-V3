@@ -244,6 +244,15 @@ Changes covered by this revision
     HTTP client is added to the freeze surface. Namespace/source verification,
     model endpoint selection and tool permission checks are not relaxed.
 
+29. Real model-backed composition admission exposed a missing parent Claim
+    binding in the existing worker's ExecutionTicket producer. The ticket now
+    copies the persisted Effect Claim digest, revision and lease epoch returned
+    by the Store, including an idempotently reused claim. Continuation sealing
+    retains its exact binding checks; no zero-digest compatibility exception is
+    introduced. The already-frozen orchestration source is refreshed through
+    the existing generator. Real worker regressions stop before model dispatch
+    and cover both new and existing claims; they are not live DAG evidence.
+
 Unchanged authority and admission
 ----------------------------------------------------------------------
 

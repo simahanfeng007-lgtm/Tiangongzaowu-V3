@@ -48,7 +48,7 @@
   "src/total_gateway/fact_ledger.py": "a88b4572c26e793f749ac6206ddc0e12e088a501950f1a68e1bbda690a78aa35",
   "src/total_gateway/frozen_backend_compat.py": "5dd54b650574b11e3dc3c885e29acd038dc3d17d1754f82b6e1acd4516594f8c",
   "src/total_gateway/omni_grant_authority.py": "e4f54e23d4aa0a9809810532c389e7086f4d36e3bd48c621485c0f6855b7be38",
-  "src/total_gateway/orchestration.py": "6712ee1a38550792345346d6b863dcff5c378bfa50b6ab55173a78f620930e64",
+  "src/total_gateway/orchestration.py": "fdad1fa89218eaa25eabc55f536759c146cf49157c0dd10315fb5fbf6cac25b3",
   "src/total_gateway/release_manifest.py": "cf9dfd3733bb47704f946f23e71fdb4bc080c55bf664a0910c8c4b8097e951ff",
   "src/total_gateway/readiness_collector.py": "333aa974759721f136adfefe867f080e0a96bda1f4af582c4ecfaada5d7c8c7a",
   "src/total_gateway/runtime.py": "057089fd5a9e5943918489af177b3fbac132deddb3f2f105f47ab3ab6a1640f2",
