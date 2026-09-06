@@ -18,6 +18,7 @@ class LifeStoreSchemaLifecycle(Protocol):
 
 
 LifeStoreErrorFactory = Callable[[str], Exception]
+ExistingPathResolver = Callable[[Path], Path]
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,13 +36,24 @@ def open_life_shadow_sqlite(
     error_factory: LifeStoreErrorFactory,
     initialize: LifeStoreSchemaLifecycle,
     migrate: LifeStoreSchemaLifecycle,
+    existing_path_resolver: ExistingPathResolver | None = None,
 ) -> OpenedLifeShadowSqlite:
     """Open one SQLite handle while preserving LifeShadowStore open semantics."""
     if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:
         raise error_factory("shadow store timestamp is invalid")
     if path.name != path.name.strip() or not path.name.endswith(".shadow.sqlite3"):
         raise error_factory("shadow store path must end with .shadow.sqlite3")
-    parent = path.parent.resolve(strict=True)
+    # The standalone Life package owns the strict default. A trusted host may
+    # supply its native existing-path observer (for example in AppContainer),
+    # without making Life import an execution/security implementation. Failure
+    # is terminal: never retry with lexical or non-strict path resolution.
+    parent = (
+        path.parent.resolve(strict=True)
+        if existing_path_resolver is None
+        else existing_path_resolver(path.parent)
+    )
+    if not isinstance(parent, Path) or not parent.is_absolute() or not parent.is_dir():
+        raise error_factory("shadow store parent identity is invalid")
     candidate = parent / path.name
     if candidate.exists():
         if candidate.is_symlink() or not candidate.is_file():
@@ -77,6 +89,7 @@ def open_life_shadow_sqlite(
 
 
 __all__ = [
+    "ExistingPathResolver",
     "LifeStoreErrorFactory",
     "LifeStoreSchemaLifecycle",
     "OpenedLifeShadowSqlite",

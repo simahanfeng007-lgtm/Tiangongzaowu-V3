@@ -42,7 +42,18 @@ _COMPOSITION_BINDING_REQUIRED_KEYS = {
     "materialized_arguments_sha256", "canonical_invocation_sha256",
     "target_sha256", "workspace_id", "workspace_scope_hash", "binding_sha256",
 }
-_COMPOSITION_BINDING_OPTIONAL_KEYS = {"target_snapshot_sha256"}
+_COMPOSITION_CONTINUATION_KEYS = {
+    "attempt", "continuation_delegation_id", "continuation_delegation_sha256",
+    "dependency_evidence_sha256",
+}
+_COMPOSITION_PREDECESSOR_KEYS = {
+    "supersedes_authorization_id", "supersedes_effect_id", "supersedes_claim_sha256",
+}
+_COMPOSITION_BINDING_OPTIONAL_KEYS = (
+    {"target_snapshot_sha256"}
+    | _COMPOSITION_CONTINUATION_KEYS
+    | _COMPOSITION_PREDECESSOR_KEYS
+)
 _COMPOSITION_BINDING_REQUIRED_SHA_KEYS = {
     "executable_plan_sha256", "step_binding_sha256", "materialized_arguments_sha256",
     "canonical_invocation_sha256", "target_sha256", "workspace_scope_hash",
@@ -263,6 +274,46 @@ def _consume_nonce(root: Path, payload: Mapping[str, Any], grant_sha256: str) ->
         os.close(descriptor)
 
 
+def _validate_composition_continuation(composition: Mapping[str, Any]) -> None:
+    """Verify the existing P7D.2 wire shape, not continuation eligibility.
+
+    The Gateway/Store still own issuance, predecessor CAS and dispatch. This
+    consumer requires the complete signed coordinates and verifies their hash
+    and signature below; it never grants a retry from these fields alone.
+    """
+    keys = set(composition)
+    continuation = keys & _COMPOSITION_CONTINUATION_KEYS
+    predecessor = keys & _COMPOSITION_PREDECESSOR_KEYS
+    if not continuation and not predecessor:
+        return  # Existing single-step P7D.1 binding.
+    if continuation != _COMPOSITION_CONTINUATION_KEYS:
+        raise CapabilityGrantError("capability composition continuation is incomplete")
+    attempt = composition["attempt"]
+    if type(attempt) is not int or attempt < 1:
+        raise CapabilityGrantError("capability composition attempt is invalid")
+    if (attempt == 1 and predecessor) or (
+        attempt > 1 and predecessor != _COMPOSITION_PREDECESSOR_KEYS
+    ):
+        raise CapabilityGrantError("capability composition predecessor is invalid")
+    patterns = {
+        "continuation_delegation_id": r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}",
+        "continuation_delegation_sha256": r"[0-9a-f]{64}",
+        "dependency_evidence_sha256": r"[0-9a-f]{64}",
+    }
+    if predecessor:
+        patterns.update({
+            "supersedes_authorization_id": r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}",
+            "supersedes_effect_id": r"eff_[0-9a-f]{64}",
+            "supersedes_claim_sha256": r"[0-9a-f]{64}",
+        })
+    if any(
+        not isinstance(composition[field], str)
+        or re.fullmatch(pattern, composition[field]) is None
+        for field, pattern in patterns.items()
+    ):
+        raise CapabilityGrantError("capability composition continuation fields are invalid")
+
+
 def verify_capability_grant(
     grant: Mapping[str, Any],
     *,
@@ -365,6 +416,7 @@ def verify_capability_grant(
             - _COMPOSITION_BINDING_OPTIONAL_KEYS
         ):
             raise CapabilityGrantError("capability composition binding fields are invalid")
+        _validate_composition_continuation(composition)
         if (
             composition.get("schema_version")
             != "tiangong.composition-execution-binding.v1"
@@ -409,7 +461,7 @@ def verify_capability_grant(
         )
         if composition.get("binding_sha256") != computed_binding_sha256:
             raise CapabilityGrantError("capability composition binding digest is invalid")
-        if dict(runtime_composition) != dict(composition):
+        if _canonical(dict(runtime_composition)) != _canonical(dict(composition)):
             raise CapabilityGrantError("capability runtime composition binding is invalid")
         required_composition_runtime = {
             "request_id": "request_id",
@@ -422,7 +474,8 @@ def verify_capability_grant(
         }
         if any(
             runtime_key not in runtime_meta
-            or runtime_meta.get(runtime_key) != composition.get(binding_key)
+            or _canonical(runtime_meta.get(runtime_key))
+            != _canonical(composition.get(binding_key))
             for runtime_key, binding_key in required_composition_runtime.items()
         ):
             raise CapabilityGrantError("capability runtime composition scope is invalid")

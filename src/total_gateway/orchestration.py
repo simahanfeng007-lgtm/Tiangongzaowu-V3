@@ -43,6 +43,7 @@ from contracts import (
     new_state_snapshot,
     text_sha256,
 )
+from runtime_security.path_identity import resolve_existing_path
 from runtime_security import (
     verify_execution_ticket,
     verify_omni_capability_grant,
@@ -454,7 +455,7 @@ class GatewayOrchestrationWorker:
         self._release_manifest = release_manifest
         self._release_manifest_path = release_manifest_path
         self._components = component_manifest
-        self._workspace_root = workspace_root.resolve(strict=True)
+        self._workspace_root = resolve_existing_path(workspace_root)
         self._backend_token = backend_token
         self._life_token = life_token
         self._life_transport = life_transport
@@ -2328,13 +2329,27 @@ class GatewayOrchestrationWorker:
     ) -> bool:
         if self._has_sealed_composition_tail(activation):
             return True
-        return bool(
-            os.environ.get(
-                "TIANGONG_REQUEST_REEXECUTION", "1"
-            ).strip().lower()
-            not in {"0", "false", "off"}
-            and activation.generation.revision <= 3
+        if os.environ.get(
+            "TIANGONG_REQUEST_REEXECUTION", "1"
+        ).strip().lower() in {"0", "false", "off"}:
+            return False
+        plan_record = self._store.get_executable_composition_plan_for_request(
+            activation.entry.request_id,
+            run_id=activation.generation.run_id,
+            generation=activation.generation.generation,
         )
+        if plan_record is not None and (
+            self._store.get_composition_continuation_for_plan(
+                plan_record.executable_plan.executable_plan_id
+            ) is not None
+        ):
+            # Heartbeats also increment generation.revision. A sealed parent
+            # must reach the existing durable resume validator even after a
+            # long healthy run. This only routes recovery: process() still
+            # verifies the full continuation/Fact/authority set, never replays
+            # the parent, and terminalizes invalid or expired continuations.
+            return True
+        return activation.generation.revision <= 3
 
     def _retire_one_stranded_terminal_session(self, *, now_ms: int) -> bool:
         stranded = self._store.list_terminal_active_session_request_ids(
@@ -4343,6 +4358,12 @@ class GatewayOrchestrationWorker:
             component_manifest_hash=self._components.manifest_sha256,
             life_snapshot_revision=life.snapshot.revision,
             life_snapshot_hash=life.snapshot.sha256,
+            # Bind the durable Claim returned by the Store, including an
+            # idempotent prior claim whose timestamp differs from this proposal.
+            # Continuation sealing must never inherit the legacy zero digest.
+            claim_sha256=existing_effect.claim.claim_sha256,
+            claim_revision=existing_effect.claim.claim_revision,
+            claim_lease_epoch=existing_effect.claim.lease_epoch,
             risk_class=decision.computed_risk,
             action_id=action.action_id,
             action_version=action.version,

@@ -143,6 +143,13 @@
       ]
     },
     {
+      "id": "existing-path-security",
+      "source": "src/runtime_security/path_identity.py",
+      "source_role": "authoritative",
+      "targets": [],
+      "note": "P8-R3 core-maintenance declaration of the existing shared path observer. Exact file only; no new runtime, registry, editable root or generated target. Tool Source candidates cannot amend this policy."
+    },
+    {
       "id": "v3-backend-main",
       "source": "app/backend/tiangong-backend/v3",
       "source_role": "authoritative",

@@ -17,6 +17,7 @@ from typing import Any, BinaryIO, Literal, Protocol, Self
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from runtime_security.path_identity import resolve_existing_path
 
 from contracts import (
     DeliveryPartGrant,
@@ -709,7 +710,7 @@ class FeishuDeliveryService:
         self._source = source
         self._transport = transport
         self._tokens = tokens
-        self._staging_root = staging_root.resolve(strict=True)
+        self._staging_root = resolve_existing_path(staging_root)
         self._clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
         self._sleeper = sleeper
         self._lock = threading.RLock()

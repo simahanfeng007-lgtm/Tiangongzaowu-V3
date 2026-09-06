@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Literal
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from runtime_security.path_identity import resolve_existing_path
 from runtime_security import (
     DataProtector,
     TicketVerificationError,
@@ -117,6 +119,31 @@ def _protect_key_file(path: Path, *, allow_portable_test_acl: bool) -> tuple[str
     )
 
 
+def _write_protected_file(path: Path, payload: bytes, *, allow_portable_test_acl: bool) -> tuple[str, str, bool]:
+    """Create a new protected file under the actual OS principal, not a flag."""
+    if os.name == "nt":
+        from .windows_private_files import write_container_private_file
+        observed = write_container_private_file(path, payload)
+        if observed is not None:
+            return *observed, True
+    # Existing ordinary-Windows/explicit-test behavior is retained. Identity
+    # discovery errors above do not become a host or portable fallback.
+    stream = path.open("xb")  # failure here does not own any existing file
+    try:
+        with stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        owner, digest = _protect_key_file(path, allow_portable_test_acl=allow_portable_test_acl)
+        return owner, digest, False
+    except BaseException as failure:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as cleanup:
+            failure.add_note(f"private_file_cleanup_failed: {type(cleanup).__name__}")
+        raise
+
+
 class ProtectedKeyStore:
     def __init__(self, root: Path, *, protector: DataProtector | None = None) -> None:
         if not root.is_absolute() or root == Path(root.anchor):
@@ -198,17 +225,16 @@ class ProtectedKeyStore:
         finally:
             for index in range(len(raw_private)):
                 raw_private[index] = 0
+        owned_temporaries: set[Path] = set()
         try:
-            with temporary_blob.open("xb") as stream:
-                stream.write(encrypted)
-                stream.flush()
-                os.fsync(stream.fileno())
-            owner_sid, acl_sha256 = _protect_key_file(
-                temporary_blob,
+            owner_sid, acl_sha256, container_bound = _write_protected_file(
+                temporary_blob, encrypted,
                 allow_portable_test_acl=self._portable_test_acl,
             )
+            owned_temporaries.add(temporary_blob)
             owner_sid_sha256 = hashlib.sha256(owner_sid.encode("utf-8")).hexdigest()
             os.replace(temporary_blob, blob_path)
+            owned_temporaries.remove(temporary_blob)
             envelope = ProtectedPrivateKeyEnvelope(
                 envelope_id="key_envelope_" + kid,
                 kid=kid,
@@ -224,17 +250,16 @@ class ProtectedKeyStore:
                 envelope_sha256="0" * 64,
             ).with_computed_sha256()
             metadata = canonical_json_bytes(envelope.model_dump(mode="json"))
-            with temporary_metadata.open("xb") as stream:
-                stream.write(metadata)
-                stream.flush()
-                os.fsync(stream.fileno())
-            metadata_owner, _ = _protect_key_file(
-                temporary_metadata,
+            metadata_owner, metadata_acl, metadata_container_bound = _write_protected_file(
+                temporary_metadata, metadata,
                 allow_portable_test_acl=self._portable_test_acl,
             )
-            if metadata_owner != owner_sid:
-                raise OSError("protected key metadata owner binding changed")
+            owned_temporaries.add(temporary_metadata)
+            if (metadata_owner != owner_sid or metadata_container_bound != container_bound
+                    or container_bound and metadata_acl != acl_sha256):
+                raise OSError("protected key metadata principal binding changed")
             os.replace(temporary_metadata, metadata_path)
+            owned_temporaries.remove(temporary_metadata)
             descriptor = PublicKeyDescriptor(
                 kid=kid,
                 issuer=issuer,
@@ -249,9 +274,14 @@ class ProtectedKeyStore:
             )
             return CreatedSigningKey(descriptor, envelope)
         finally:
-            for path in (temporary_blob, temporary_metadata):
-                if path.exists():
-                    path.unlink()
+            failure = sys.exception()
+            for path in owned_temporaries:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as cleanup:
+                    if failure is None:
+                        raise
+                    failure.add_note(f"protected_key_cleanup_failed: {type(cleanup).__name__}")
 
     def load_private_key(self, envelope: ProtectedPrivateKeyEnvelope) -> Ed25519PrivateKey:
         if not envelope.has_valid_sha256():
@@ -261,10 +291,20 @@ class ProtectedKeyStore:
             blob_path.is_symlink()
             or blob_path.parent.is_symlink()
             or not blob_path.is_file()
-            or self.root.resolve(strict=True) not in blob_path.resolve(strict=True).parents
+            or resolve_existing_path(self.root) not in resolve_existing_path(blob_path).parents
         ):
             raise OSError("protected key blob is missing or unsafe")
-        encrypted = blob_path.read_bytes()
+        observed = None
+        if os.name == "nt":
+            from .windows_private_files import read_container_private_file
+            observed = read_container_private_file(blob_path)
+        if observed is None:
+            encrypted = blob_path.read_bytes()
+        else:
+            encrypted, owner, acl_digest = observed
+            if (hashlib.sha256(owner.encode("utf-8")).hexdigest() != envelope.owner_sid_sha256
+                    or acl_digest != envelope.acl_sha256):
+                raise OSError("protected key principal or ACL binding changed")
         if (
             len(encrypted) != envelope.encrypted_blob_bytes
             or hashlib.sha256(encrypted).hexdigest() != envelope.encrypted_blob_sha256

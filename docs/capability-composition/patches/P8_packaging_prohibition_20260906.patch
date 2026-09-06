@@ -1,0 +1,178 @@
+diff --git a/app/backend/tiangong-backend/v3/simple_chain/kernel.py b/app/backend/tiangong-backend/v3/simple_chain/kernel.py
+index 064ecadd26bd7c68700bbece601727151a3862d6..db5a2ddafaad7f3bad60936ab47b609c5e0469ce 100644
+--- a/app/backend/tiangong-backend/v3/simple_chain/kernel.py
++++ b/app/backend/tiangong-backend/v3/simple_chain/kernel.py
+@@ -1727,13 +1727,54 @@
+     except Exception as exc:
+         return False, f"{suffix or 'file'} cannot be opened: {exc}"
+     return True, ""
+ 
++def _simple_chain_packaging_intent_surface(user_message: str) -> str:
++    """Exclude explicit packaging prohibitions without dropping other commands.
++
++    This narrow intent correction grants no permission and proves no completion.
++    Quoted literals and filenames remain unchanged; a later affirmative request
++    still applies. Other negation grammar is left to the existing intent path.
++    """
++    text = str(user_message or "")
++    package_atom = (
++        r"(?:zipping|zip(?:\s*(?:压缩包|文件|包|archives?|files?))?|"
++        r"压缩包|归档文件|打包|压缩|归档|packaging|package|archives?)"
++    )
++    package = (
++        package_atom
++        + r"(?:\s*(?:成|为|into\b|as\b)\s*(?:(?:a|an|the)\s+)?"
++        + package_atom + r")?"
++    )
++    operation = r"(?:(?:再|进行|生成|创建|制作|提供|输出|发送|交付|使用|做成|转换成|转成|转换为|转为|导出为|另存为)\s*)?"
++    prohibition = (
++        r"(?:不要|不得|不许|不用|无需|无须|不必|不需要|禁止|严禁|别)\s*" + operation
++        + r"|\b(?:do\s+not|don't|must\s+not|no\s+need\s+to|no|without|skip|avoid)\s+"
++        + r"(?:(?:create|make|generate|send|provide|use)\s+(?:(?:a|an|the)\s+)?)?"
++    )
++    pattern = re.compile(
++        r"(?:" + prohibition + r")" + package
++        + r"(?:\s*(?:、|和|或|以及|and\b|or\b)\s*" + operation + package + r")*",
++        re.IGNORECASE,
++    )
++    literals = re.compile(
++        r'''"[^"\n]*"|`[^`\n]*`|'[^'\n]*'|“[^”\n]*”|「[^」\n]*」'''
++        + r'''|[^\s，。；,;!?！？"'`]+\.[A-Za-z0-9]{1,8}(?![\w.])'''
++    )
++    spans = [match.span() for match in literals.finditer(text)]
++    return pattern.sub(
++        lambda match: match.group(0) if any(
++            start < match.end() and match.start() < end for start, end in spans
++        ) else " ",
++        text,
++    )
++
++
+ def _has_delivery_intent(user_text: str, reply_text: str = "") -> bool:
+     # bug-fix: 交付契约判定只扫用户原话——把 reply_text 拼进来会让模型的客套话
+     # （“已发送/见附件/打包好了”）反向污染任务契约（2026-08-26，凌霜修 logic 类）。
+     # 参数保留以兼容调用点，但不再参与判定。
+-    combined = f"{user_text or ''}"
++    combined = _simple_chain_packaging_intent_surface(user_text).lower()
+     markers = (
+         "发给我", "发我", "发送", "传给我", "传我", "给我发", "微信发", "发到微信",
+         "附件", "查收", "交付", "打包发我", "打包发送", "打包发给", "打包发到",
+         "压缩包", "zip", "下载给我", "把文件给我",
+@@ -2358,9 +2399,9 @@
+     preflight/quality/final gate from independently mistaking ``source.md`` for
+     the requested output of "source.md 转成 Word".
+     """
+ 
+-    text = str(user_message or "")
++    text = _simple_chain_packaging_intent_surface(user_message)
+     matches = list(_CONVERSION_OUTPUT_MARKER.finditer(text))
+     if not matches:
+         return None
+     return text[matches[-1].end():].strip()
+@@ -2387,9 +2428,9 @@
+     conversion_output = _simple_chain_conversion_output_clause(user_message)
+     text = (
+         conversion_output
+         if conversion_output is not None
+-        else str(user_message or "")
++        else _simple_chain_packaging_intent_surface(user_message)
+     ).lower()
+     suffixes: set[str] = set()
+     for suffix in _DELIVERABLE_SUFFIXES:
+         if suffix in text:
+@@ -3714,9 +3755,9 @@
+                 issues.append(f"preflight content {metric}_chars={count} < required {min_chars}")
+     return issues
+ 
+ def _requests_zip_delivery(user_message: str) -> bool:
+-    text = str(user_message or "")
++    text = _simple_chain_packaging_intent_surface(user_message).lower()
+     zip_markers = ("zip", ".zip", "压缩包", "打包", "压缩", "归档")
+     return _has_delivery_intent(text) and any(marker in text for marker in zip_markers)
+ 
+ def _has_generated_attachment_suffix(attachment_items: list[dict[str, str]], suffixes: set[str]) -> bool:
+diff --git a/tests/test_p8_packaging_prohibition.py b/tests/test_p8_packaging_prohibition.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ea2bccdbf28cdf9452b3cd48d2098c36cea94f2
+--- /dev/null
++++ b/tests/test_p8_packaging_prohibition.py
+@@ -0,0 +1,79 @@
++"""P8 real-task acceptance: a packaging prohibition is not a ZIP obligation."""
++from __future__ import annotations
++import pytest
++
++from v3.simple_chain.kernel import (
++    _has_delivery_intent, _requests_zip_delivery, _simple_chain_expected_suffixes,
++)
++
++@pytest.mark.parametrize('prohibition', [
++    '不要打包', '不用打包', '无需压缩', '无须压缩', '不必打包', '不需要打包',
++    '禁止打包', '不得打包', '不许生成压缩包', '不要生成ZIP文件',
++    '不要转成ZIP', '不用打包或生成压缩包', '不要打包、压缩或归档',
++    'do not zip', "don't package", 'without zipping', 'no ZIP files',
++    'do not create a ZIP archive', 'no need to zip',
++    '不要打包成ZIP', '不用压缩为ZIP文件', 'do not package as a ZIP archive',
++])
++def test_prohibition_does_not_add_format_or_delivery(prohibition):
++    request = f'请创建 proof.txt，内容为验收记录。{prohibition}。'
++    assert _simple_chain_expected_suffixes(request) == {'.txt'}
++    assert not _requests_zip_delivery(request)
++    assert not _has_delivery_intent(request)
++
++@pytest.mark.parametrize('prohibition', ['不要打包', '不用生成ZIP', 'do not zip'])
++def test_real_delivery_survives_but_does_not_require_zip(prohibition):
++    request = f'请生成 proof.txt 发给我，{prohibition}。'
++    assert _has_delivery_intent(request)
++    assert not _requests_zip_delivery(request)
++    assert _simple_chain_expected_suffixes(request) == {'.txt'}
++
++@pytest.mark.parametrize('user_text', [
++    '把 output/e2e 打包成 zip 发给我',
++    '请生成ZIP压缩包发给我',
++    '不要删除原文件，然后打包成 ZIP 发给我',
++    '不要忘记打包成zip发给我',
++    '不要只打包，请把压缩包发给我',
++    '不用打包第一份，第二份请打包成zip发给我',
++])
++def test_affirmative_packaging_is_not_globally_cancelled(user_text):
++    assert _requests_zip_delivery(user_text)
++    assert '.zip' in _simple_chain_expected_suffixes(user_text)
++
++def test_conversion_output_still_owns_format_after_prohibition():
++    request = '把 input.pdf 转成 Word 文档发给我，不用打包。'
++    assert _simple_chain_expected_suffixes(request) == {'.docx'}
++    assert _has_delivery_intent(request)
++    assert not _requests_zip_delivery(request)
++
++def test_model_reply_cannot_create_a_zip_obligation():
++    assert not _has_delivery_intent('请创建 proof.txt，不用打包。', '已打包成ZIP附件发送。')
++
++@pytest.mark.parametrize('literal', [
++    '"不要打包"', '`do not zip`', "'without zipping'", '“不用压缩”',
++    '「不需要打包」', '不要打包.zip', 'output/不要打包.zip',
++    r'D:\workspace\不要打包.zip',
++])
++def test_literal_or_filename_is_not_rewritten(literal):
++    from v3.simple_chain.kernel import _simple_chain_packaging_intent_surface
++    text = f'请保留原文或路径 {literal}。'
++    assert _simple_chain_packaging_intent_surface(text) == text
++
++
++def test_no_zip_request_does_not_make_missing_delivery_file_valid(tmp_path):
++    from v3.simple_chain.kernel import _simple_chain_paths_match_requested_formats
++    formats = _simple_chain_expected_suffixes('请创建 proof.txt 发给我，不要打包。')
++    assert formats == {'.txt'}
++    assert not _simple_chain_paths_match_requested_formats(
++        [str(tmp_path / 'missing.txt')], formats,
++    )
++
++
++def test_real_zip_request_still_rejects_plain_text_with_zip_extension(tmp_path):
++    from v3.simple_chain.kernel import _simple_chain_paths_match_requested_formats
++    request = '不要删除原文，请打包成ZIP发给我。'
++    assert _requests_zip_delivery(request)
++    path = tmp_path / 'fake.zip'
++    path.write_text('This is not a ZIP archive.', encoding='utf-8')
++    assert not _simple_chain_paths_match_requested_formats(
++        [str(path)], _simple_chain_expected_suffixes(request),
++    )

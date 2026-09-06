@@ -29,6 +29,24 @@ class SandboxError(RuntimeError):
     pass
 
 
+def _windows_long_path(path: Path) -> Path:
+    """Use the Windows extended namespace without resolving links or junctions.
+
+    CopyFile2 and cleanup must handle the private sandbox's deep source tree
+    even when the host has LongPathsEnabled=0. No machine setting is changed.
+    """
+    if os.name != "nt":
+        return path
+    if not path.is_absolute():
+        raise SandboxError("sandbox_long_path_requires_absolute_path")
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
+
+
 @dataclass(frozen=True)
 class SandboxLimits:
     timeout_seconds: int = 60
@@ -384,10 +402,13 @@ def _run_portable(
 # never evaluates Windows-only structures.
 def _run_windows_appcontainer(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits, sandbox_root: Path,
+    *, require_os_containment: bool = False,
 ) -> tuple[int, bytes, bytes, str]:
     if os.name != "nt":
+        if require_os_containment:
+            raise SandboxError("sandbox_os_containment_unavailable")
         return _run_portable(command, cwd, env, limits)
-    compat = os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {"1", "true", "yes", "on"}
+    compat = not require_os_containment and os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {"1", "true", "yes", "on"}
     try:
         from .windows_appcontainer import run_appcontainer
         result = run_appcontainer(command, cwd=cwd, env=env, limits=limits, sandbox_root=sandbox_root)
@@ -424,7 +445,15 @@ class SandboxRunner:
         cwd: Path | None = None,
         timeout_seconds: int | None = None,
         op_id: str = "",
+        require_os_containment: bool = False,
     ) -> dict[str, Any]:
+        # Source Candidate builds must never execute through a portable or
+        # explicit compatibility fallback. Check BEFORE preparation/launch,
+        # not after untrusted code has already run without OS containment.
+        if type(require_os_containment) is not bool:
+            raise SandboxError("sandbox_containment_requirement_invalid")
+        if require_os_containment and os.name != "nt":
+            raise SandboxError("sandbox_os_containment_unavailable")
         if not command:
             raise SandboxError("sandbox_command_empty")
         raw_run_id = str(op_id or f"run_{time.time_ns()}")
@@ -460,7 +489,7 @@ class SandboxRunner:
                 )
                 sandbox_workspace = effective_temp / "workspace"
             except Exception as exc:
-                compat = os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {
+                compat = not require_os_containment and os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {
                     "1",
                     "true",
                     "yes",
@@ -471,7 +500,11 @@ class SandboxRunner:
                         f"windows_appcontainer_storage_unavailable:{type(exc).__name__}:{exc}"
                     ) from exc
         if run_root.exists():
-            shutil.rmtree(run_root, ignore_errors=True)
+            shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
+        if require_os_containment:
+            # Keep every path handed to the strict source-build interpreter
+            # in the extended namespace too, including __file__/sys.path.
+            sandbox_workspace = _windows_long_path(sandbox_workspace)
         # Preparation failures (workspace copy, snapshot, shell rewrite) must
         # not leak run_root: the main try/finally below only covers execution.
         try:
@@ -495,13 +528,14 @@ class SandboxRunner:
             env = subprocess_environment(sanitized_environment(os.environ, temp_dir))
         except BaseException:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-                shutil.rmtree(run_root, ignore_errors=True)
+                shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
             raise
         started = time.monotonic()
         try:
             if os.name == "nt":
                 code, stdout, stderr, containment = _run_windows_appcontainer(
                     rewritten, sandbox_cwd, env, limits, run_root,
+                    require_os_containment=require_os_containment,
                 )
             else:
                 code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits)
@@ -535,4 +569,4 @@ class SandboxRunner:
             }
         finally:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-                shutil.rmtree(run_root, ignore_errors=True)
+                shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)

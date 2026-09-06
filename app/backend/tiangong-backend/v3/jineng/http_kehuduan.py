@@ -14,11 +14,13 @@ import base64
 import contextvars
 from contextlib import contextmanager
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import sys
+import threading
 import time
 from typing import Any, Callable, Mapping
 from urllib.parse import urlparse
@@ -70,6 +72,7 @@ if _LLM_CALL_MAX_SECONDS <= 0:
     _LLM_CALL_MAX_SECONDS = 300.0
 L4_OPTIMIZATION_TRACE_PATH = ZHUIZONG_LUJING / "l4_model_optimization.jsonl"
 _MODEL_ADAPTER_CORE: Any | None = None
+_MODEL_ADAPTER_LOCK = threading.RLock()
 
 
 # bug-fix: 多次思考路径 - 流式 think 标签状态机过滤
@@ -446,21 +449,38 @@ def _omni_body_skill_root_for_model_adapter() -> Path | None:
 
 def _model_adapter_core() -> Any | None:
     global _MODEL_ADAPTER_CORE
-    if _MODEL_ADAPTER_CORE is not None:
-        return _MODEL_ADAPTER_CORE
     root = _omni_body_skill_root_for_model_adapter()
     if root is None:
         return None
-    root_text = str(root)
-    if root_text not in sys.path:
-        sys.path.insert(0, root_text)
-    os.environ.setdefault("TIANGONG_OMNI_BODY_ROOT", root_text)
-    try:
-        from model_adapters import core as adapter_core  # type: ignore
-    except Exception:
-        return None
-    _MODEL_ADAPTER_CORE = adapter_core
-    return adapter_core
+    path = root / "model_adapters" / "core.py"
+    with _MODEL_ADAPTER_LOCK:
+        if _MODEL_ADAPTER_CORE is not None:
+            if Path(str(getattr(_MODEL_ADAPTER_CORE, "__file__", ""))) != path:
+                raise RuntimeError("model_adapter.source_changed")
+            return _MODEL_ADAPTER_CORE
+        # Adding the whole Skill root to sys.path also adds its v3 data folder
+        # to the backend's PEP 420 namespace. Load this self-contained adapter
+        # by exact path, under the existing source verifier's Omni alias scope.
+        name = "_tiangong_omni_model_adapter_" + hashlib.sha256(str(root).encode()).hexdigest()[:16]
+        existing = sys.modules.get(name)
+        if existing is not None:
+            if (Path(str(getattr(existing, "__file__", ""))) != path
+                    or Path(str(getattr(getattr(existing, "__spec__", None), "origin", ""))) != path):
+                raise RuntimeError("model_adapter.module_origin_mismatch")
+            _MODEL_ADAPTER_CORE = existing
+            return existing
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            return None
+        adapter_core = importlib.util.module_from_spec(spec)
+        sys.modules[name] = adapter_core
+        try:
+            spec.loader.exec_module(adapter_core)
+        except Exception:
+            sys.modules.pop(name, None)
+            return None
+        _MODEL_ADAPTER_CORE = adapter_core
+        return adapter_core
 
 
 def _only_omni_body_tool(gongju_yuanshi: list[dict]) -> bool:

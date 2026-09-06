@@ -52,6 +52,7 @@ from .autonomous_tasks import (
 from . import complete_core as complete_life_core
 from .complete_core import CompleteLifeSystem, LifeCoreError, atomic_json, utc_now
 from .complete_scheduler import EmbeddedLifeScheduler
+from .store_connection import ExistingPathResolver
 from .embedded_runtime_lifecycle import (
     cleanup_partial_initialization,
     recover_inflight_scheduler_flags,
@@ -410,6 +411,7 @@ class EmbeddedLifeRuntime:
         runtime_root: Path,
         mode: str = "embedded",
         device_id: str = "",
+        existing_path_resolver: ExistingPathResolver | None = None,
     ) -> None:
         raw_data_root = data_root.expanduser()
         raw_runtime_root = runtime_root.expanduser()
@@ -479,6 +481,7 @@ class EmbeddedLifeRuntime:
                 self.paths.authority_store,
                 create=True,
                 now_ms=time.time_ns() // 1_000_000,
+                existing_path_resolver=existing_path_resolver,
             )
             self._cognition_shadow = UnifiedCognitionShadow(
                 self.authority_store,
@@ -527,6 +530,7 @@ class EmbeddedLifeRuntime:
         mode: str = "embedded",
         gateway_environment: str = "development",
         environ: Mapping[str, str] | None = None,
+        existing_path_resolver: ExistingPathResolver | None = None,
     ) -> "EmbeddedLifeRuntime":
         env = dict(os.environ if environ is None else environ)
         explicit_data_root = str(env.get("TIANGONG_LIFE_DATA_ROOT") or "").strip()
@@ -575,7 +579,10 @@ class EmbeddedLifeRuntime:
         if migration_report.get("status") == "failed":
             raise EmbeddedLifeError("life.identity_migration_failed", status=503)
 
-        runtime = cls(data_root=data_root, runtime_root=runtime_root, mode=mode)
+        runtime = cls(
+            data_root=data_root, runtime_root=runtime_root, mode=mode,
+            existing_path_resolver=existing_path_resolver,
+        )
         runtime.identity_migration_report = deepcopy(migration_report)
         return runtime
 

@@ -36,6 +36,8 @@ from contracts import (
     derive_run_identity,
 )
 
+from runtime_security.path_identity import resolve_existing_path
+
 from .action_registry import ActionRegistryError, ActionSchemaCatalog
 from .composition_activation_adapter import (
     CompositionActivationAdapterError,
@@ -325,7 +327,7 @@ class OmniGrantAuthority:
         self.skill_catalog_hash = skill_catalog_hash
         self.signer = signer
         self.gateway_epoch = gateway_epoch
-        self.workspace_root = workspace_root.resolve(strict=True)
+        self.workspace_root = resolve_existing_path(workspace_root)
         self.workspace_id = "workspace-" + canonical_sha256(str(self.workspace_root))
         self.workspace_scope_hash = self._workspace_scope_hash(self.workspace_root)
         self.evidence = evidence
@@ -345,7 +347,7 @@ class OmniGrantAuthority:
     @staticmethod
     def _workspace_scope_hash(workspace: Path) -> str:
         normalized = os.path.normcase(
-            unicodedata.normalize("NFC", str(workspace.resolve(strict=True)))
+            unicodedata.normalize("NFC", str(resolve_existing_path(workspace)))
         )
         return canonical_sha256({"normalized_workspace": normalized})
 
@@ -1495,7 +1497,7 @@ class OmniGrantAuthority:
             workspace_path = Path(plan.workspace.workspace_root).expanduser()
             if workspace_path.is_symlink():
                 raise ValueError("composition workspace root is a symlink")
-            workspace = workspace_path.resolve(strict=True)
+            workspace = resolve_existing_path(workspace_path)
         except (OSError, TypeError, ValueError) as exc:
             raise OmniGrantAuthorityError(
                 "composition.authorization.workspace_invalid", status=409
@@ -2967,8 +2969,8 @@ class OmniGrantAuthority:
             raise OmniGrantAuthorityError("omni.grant_request.action_or_args_invalid")
         workspace = Path(str(payload.get("workspace") or "")).expanduser()
         try:
-            workspace = workspace.resolve(strict=True)
-        except OSError as exc:
+            workspace = resolve_existing_path(workspace)
+        except (OSError, ValueError) as exc:
             raise OmniGrantAuthorityError("omni.grant_request.workspace_invalid") from exc
         if workspace != self.workspace_root:
             raise OmniGrantAuthorityError("omni.grant_request.workspace_mismatch")

@@ -26,6 +26,7 @@ from contracts import (
     canonical_sha256,
 )
 from runtime_security import verify_omni_capability_grant
+from runtime_security.path_identity import resolve_existing_path
 
 from .action_registry import ActionRegistryError, ActionSchemaCatalog
 from .backend_client import BackendClient, BackendClientError
@@ -180,7 +181,7 @@ class CompositionStepExecutionCoordinator:
         self._manifest = capability_manifest
         self._trust_bundle_provider = trust_bundle_provider
         self._backend = backend_compat_client
-        self._workspace_root = workspace_root.resolve(strict=True)
+        self._workspace_root = resolve_existing_path(workspace_root)
         self._gateway_epoch = gateway_epoch
         self._instance_id = gateway_instance_id
         self._append_effect_event = append_effect_event
