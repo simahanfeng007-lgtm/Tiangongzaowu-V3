@@ -225,6 +225,25 @@ Changes covered by this revision
     fixture preparation and real host/container lifecycle tests are acceptance
     evidence, not new product authority or a production approval.
 
+27. P8 adds the offline Source publication review boundary and its operator
+    commands to the content freeze. Preparation reconstructs exact Git inputs
+    and the complete existing permission differential. Publication requires a
+    domain-separated review signature from an independently configured key,
+    explicit per-action risk/admission decisions and matching behavioral
+    evidence. New immutable version directories do not replace the current
+    Registry, import code into a request or change a running Manifest. The
+    separate readback path rechecks external source/publication pins, reviewer
+    signature, evidence and every staged source byte. Existing freeze entries,
+    runtime Ticket/Grant/P19 semantics and the A0 execution ceiling remain.
+
+28. The real M3/Omni read probe found that model adapter discovery added the
+    complete Skill root to sys.path, merging its v3 data directory into the
+    backend namespace. The existing HTTP client's adapter loader now imports
+    only the selected core.py under the measured Omni alias scope, with
+    serialized initialization, exact cache origins and failure cleanup. The
+    HTTP client is added to the freeze surface. Namespace/source verification,
+    model endpoint selection and tool permission checks are not relaxed.
+
 Unchanged authority and admission
 ----------------------------------------------------------------------
 

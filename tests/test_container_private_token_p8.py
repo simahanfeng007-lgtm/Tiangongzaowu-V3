@@ -17,6 +17,10 @@ APP = "S-1-15-2-1-2-3-4-5-6-7"
 
 @pytest.fixture
 def token_api(monkeypatch):
+    # ctypes.wintypes.DWORD follows host c_ulong on LP64 Linux (eight bytes).
+    # These mocked Win32 calls require the Windows ABI: DWORD is always 32-bit.
+    # Native Windows calls are not used or changed by this fixture.
+    monkeypatch.setattr(wintypes, "DWORD", ctypes.c_uint32)
     state = SimpleNamespace(
         thread_error=1008, process_error=0, query_error=None, error=0,
         flag=0, level=2, level_size=ctypes.sizeof(wintypes.DWORD),

@@ -276,6 +276,8 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/tool_source_inputs.py",
         "src/total_gateway/tool_source_bundle.py",
         "src/total_gateway/tool_source_launch.py",
+        "src/total_gateway/tool_source_publication.py",
+        "app/backend/tiangong-backend/v3/jineng/http_kehuduan.py",
         "src/total_gateway/tool_source_world.py",
         "src/total_gateway/tool_manifest_evolution.py",
         "src/source_authority/validator.py",
@@ -287,6 +289,8 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "scripts/probe-tool-source-launch.py",
         "scripts/sync-generated-sources.py",
         "scripts/review-tool-source.py",
+        "scripts/prepare-tool-source-publication.py",
+        "scripts/publish-tool-source.py",
     )
 
     @classmethod
