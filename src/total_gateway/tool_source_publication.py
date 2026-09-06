@@ -339,6 +339,9 @@ def publish_tool_source_revision(
     if (root / "publication.json").read_bytes() != receipt:
         raise SourcePublicationError("publication receipt readback differs")
     root.chmod(0o555)
+    # A receipt is not sufficient if directory sealing silently failed.
+    if root.stat().st_mode & 0o222:
+        raise SourcePublicationError("publication directory is not sealed")
     return result
 
 
@@ -353,6 +356,10 @@ def verify_published_tool_source_revision(
              *{name + ".json" for name in _EVIDENCE_KINDS}}
     if not root.is_dir() or {path.name for path in root.iterdir()} != names | {"version"}:
         raise SourcePublicationError("publication version is incomplete or has unexpected files")
+    # A previous final chmod failure can leave valid receipt bytes behind.
+    # Reopening must enforce the same sealed-directory invariant as publishing.
+    if root.stat().st_mode & 0o222:
+        raise SourcePublicationError("publication directory is not sealed")
     for name in names:
         path = root / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1
