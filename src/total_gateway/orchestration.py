@@ -2329,13 +2329,27 @@ class GatewayOrchestrationWorker:
     ) -> bool:
         if self._has_sealed_composition_tail(activation):
             return True
-        return bool(
-            os.environ.get(
-                "TIANGONG_REQUEST_REEXECUTION", "1"
-            ).strip().lower()
-            not in {"0", "false", "off"}
-            and activation.generation.revision <= 3
+        if os.environ.get(
+            "TIANGONG_REQUEST_REEXECUTION", "1"
+        ).strip().lower() in {"0", "false", "off"}:
+            return False
+        plan_record = self._store.get_executable_composition_plan_for_request(
+            activation.entry.request_id,
+            run_id=activation.generation.run_id,
+            generation=activation.generation.generation,
         )
+        if plan_record is not None and (
+            self._store.get_composition_continuation_for_plan(
+                plan_record.executable_plan.executable_plan_id
+            ) is not None
+        ):
+            # Heartbeats also increment generation.revision. A sealed parent
+            # must reach the existing durable resume validator even after a
+            # long healthy run. This only routes recovery: process() still
+            # verifies the full continuation/Fact/authority set, never replays
+            # the parent, and terminalizes invalid or expired continuations.
+            return True
+        return activation.generation.revision <= 3
 
     def _retire_one_stranded_terminal_session(self, *, now_ms: int) -> bool:
         stranded = self._store.list_terminal_active_session_request_ids(

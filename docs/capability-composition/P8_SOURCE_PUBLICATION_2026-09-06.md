@@ -210,3 +210,50 @@ hashes (`evidence/request-boundary-regression-02`). These checks preserve
 rejection of wrong-path, absent, failed and unobserved writes, and require
 delivery evidence for actual delivery commands. They are regression evidence;
 a fresh immutable candidate and real M3 DAG/resumption are still required.
+
+## C4 live DAG and real-process recovery routing
+
+Product `ec2cd981b5a68bd7aa381d367ab91151f48d2e4f` and workflow
+`06f3ea3c20fe1e0f018f7e55aa4c2608791e80d9` were committed and normally
+pushed. The C4 bundle SHA is
+`95266d502ab7f3463bbd34e57263fe958aecaeddbd1b22e5ad4720050c9200e5`;
+source inputs are `13d72f5e851d7de54e6901b5ff5ff2789df91adcaf153653b0160651c000e481`.
+Native and P19 CI completed SUCCESS; full-platform results remain pending at
+this observation. C3's downloaded native evidence separately passed 32
+independent checks, including all 17 original artifact hashes.
+
+Real C4 probe 10 passed the parent write/read task and first DAG action. The
+second action, skill.get, correctly rejected the driver's random callback
+port: the existing Skill authority requires 127.0.0.1:7184. After verifying
+that port was unused and correcting only the isolated driver, probe 11 passed:
+seven real Effects SUCCEEDED, both DAG steps ran, the artifact oracle produced
+a non-model P19 PASS, and Completion was PLAN_BOUND/COMPLETED. Startup and
+post-shutdown source hashes match. The workspace, original SQLite/ObjectStore
+and archived driver remain at `D:\TiangongP8R3-20260906\eval-gateway-composition-11`.
+This is local execution evidence, not external delivery or Source publication.
+
+`gateway-composition-resume-01` used an actual process exit (73) immediately
+after the parent Fact commit and a fresh process against the same Source and
+database. Epoch advanced 1 to 2, the six M3 calls did not repeat, and the parent
+Claim/Fact digests stayed unchanged. Recovery nevertheless failed with
+`orchestration.restart.before_outbox`: the generic reexecution cap tests
+generation.revision, which also increases on ordinary lease heartbeats.
+This failed observation remains intact and is not counted as resume success.
+
+The current worker correction routes an existing sealed continuation to its
+existing complete durable-parent validator when reexecution is enabled.
+It grants no authority itself; unchanged scope/Fact/source/expiry checks still
+reject invalid recovery. Sealed completed tails, disabled reexecution and the
+ordinary non-composition cap retain their behavior. The regression using real
+Store heartbeat/recovery operations failed twice before repair and passed
+afterward; 140 related tests passed, no skips, exit 0, unchanged recorded inputs
+(`evidence/composition-recovery-regression-01`). Only the existing orchestration
+freeze digest was regenerated, with plane declaration 30. Fresh immutable
+build and real process recovery remain required.
+
+An additional inspection of C2 case 001 found the legacy backend selected
+`chat_reply` after the successful file read while retaining incorrectly derived
+pending textual obligations. Its real file Effect, requested answer and P19
+parent verification remain evidenced, but the 80-case batch is not proof of
+the legacy textual obligation classifier's correctness. That limitation must
+not be hidden by the aggregate task pass count.

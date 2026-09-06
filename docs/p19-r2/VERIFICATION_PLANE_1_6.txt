@@ -253,6 +253,16 @@ Changes covered by this revision
     the existing generator. Real worker regressions stop before model dispatch
     and cover both new and existing claims; they are not live DAG evidence.
 
+30. Real process termination after the parent Fact commit exposed a recovery
+    routing defect: healthy lease heartbeats increment generation.revision,
+    exhausting the generic three-revision reexecution cap before any restart.
+    A sealed composition continuation now reaches the existing durable-parent
+    validator when reexecution is enabled. This read-only routing decision does
+    not validate or authorize a continuation; the existing full scope, Fact,
+    source, expiry, policy and no-parent-replay checks still decide recovery.
+    Disabled reexecution and the non-composition cap retain their behavior.
+    Only the existing orchestration freeze entry is regenerated.
+
 Unchanged authority and admission
 ----------------------------------------------------------------------
 
