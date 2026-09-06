@@ -22,10 +22,10 @@ jobs:
       PYTHONHASHSEED: '0'
       TIANGONG_CI_ENV: '0'
       TIANGONG_SANDBOX_COMPAT: '0'
-      P8_TRUSTED_PARENT: 13f55f23301d6e2a2ce1ce0ce04cc9ac63c592ee
+      P8_TRUSTED_PARENT: 6cf7dc3bb2fcd49d380bf3f4503a259beee8dcde
       P8_ORIGINAL_BASE: b37204ee4d94e4857aaf477b810a21f19345d584
       P8_SOURCE_BASE: 4bfa94ef918a18e33a939dc01d90b969ccf64a7f
-      P8_SOURCE_CANDIDATE: 13f55f23301d6e2a2ce1ce0ce04cc9ac63c592ee
+      P8_SOURCE_CANDIDATE: 6cf7dc3bb2fcd49d380bf3f4503a259beee8dcde
     steps:
       - name: Checkout exact reviewed parent and native source objects
         uses: actions/checkout@v4
