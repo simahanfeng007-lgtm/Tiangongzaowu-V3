@@ -32,6 +32,7 @@ from .software_world.git_observation import repository_observation_to_git_delta
 from .software_world.query import execute_repository_graph_query
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
+from .world_state.retention import RetainedWorldState
 from .skill_method_world.publication import (
     PUBLICATION_SCHEMA, ARCHIVE_WATERMARK, MethodRevisionResolver,
     materialize_method_update, method_marker,
@@ -311,13 +312,23 @@ class ProductionWorldUnderstandingRuntime:
                 raise ValueError("METHOD_PUBLICATION_RESOLVER_ALREADY_CONFIGURED")
             self._method_revision_resolver = resolver
 
-    def method_world_for_state(self, state_ref: WorldRecordRef, *, scope: WorldScope):
+    def method_world_for_state(
+        self, state_ref: WorldRecordRef, *, scope: WorldScope,
+        retention_owner: str | None = None, expected_method_source_refs: tuple | None = None,
+    ):
         """Read an exact current/historical source binding; no latest fallback.
 
         Callers use the WorldState ref already bound to their running plan.
         Evicted/unavailable states fail closed instead of switching that plan.
         """
-        with self._lock:
+        # Lock order is always runtime -> World store. Pin persistence must
+        # follow source verification but precede release of the pruning lock.
+        with self._lock, self.store.retention_transaction():
+            if type(state_ref) is not WorldRecordRef:
+                raise ValueError("METHOD_SOURCE_PINNED_WORLD_UNAVAILABLE")
+            import re
+            if re.fullmatch(r"wst_[0-9a-f]{64}", state_ref.record_id) is None:
+                raise ValueError("METHOD_SOURCE_PINNED_WORLD_UNAVAILABLE")
             snapshot = self.store.get(state_ref.record_id)
             if (state_ref.record_type != "world_state" or snapshot is None
                     or snapshot.state_ref != state_ref or snapshot.state.scope != scope
@@ -325,7 +336,19 @@ class ProductionWorldUnderstandingRuntime:
                 raise ValueError("METHOD_SOURCE_PINNED_WORLD_UNAVAILABLE")
             if self._method_revision_resolver is None:
                 raise ValueError("METHOD_PUBLICATION_NOT_CONFIGURED")
-            return self._method_revision_resolver.load(snapshot)
+            methods = self._method_revision_resolver.load(snapshot)
+            if expected_method_source_refs is not None:
+                refs=expected_method_source_refs
+                by_id={p.method_id:p.source_ref for p in methods.primitives}
+                if (type(refs) is not tuple or not refs
+                        or len({r.semantic_id for r in refs})!=len(refs)
+                        or any(by_id.get(r.semantic_id)!=r for r in refs)):
+                    raise ValueError("METHOD_SOURCE_PLAN_REVISION_MISMATCH")
+            if retention_owner is not None:
+                if expected_method_source_refs is None:
+                    raise ValueError("METHOD_SOURCE_RETENTION_REQUIRES_PLAN_REFS")
+                self.store.retain_state(RetainedWorldState(retention_owner, state_ref, scope))
+            return methods
 
     def _consume_method_publication(self, envelope: WorldIngressEnvelope) -> SourceMaterializationDisposition:
         payload = envelope.payload_inline

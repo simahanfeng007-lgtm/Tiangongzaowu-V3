@@ -46,6 +46,7 @@ _runtime: ProductionWorldUnderstandingRuntime | None = None
 _context_output: ContextOutputPort | None = None
 _active_dispatcher = None
 _active_coordinator: ActiveWorldCognitionCoordinator | None = None
+_method_run_resolver = None
 
 
 def set_world_inquiry_dispatcher(dispatcher) -> None:
@@ -221,7 +222,46 @@ def production_method_world_for_state(state_ref, run_context=None):
     scope = _scope(_run_identity(run_context or current_run_context()))
     if scope is None:
         raise ValueError("METHOD_SOURCE_RUN_SCOPE_UNAVAILABLE")
+    resolver = _method_run_resolver
+    if resolver is not None:
+        context = run_context or current_run_context()
+        return resolver.read(request_id=context.request_id, run_id=context.run_id,
+                             generation=context.generation, scope=scope, expected_state_ref=state_ref)
     return production_world_understanding_runtime().method_world_for_state(state_ref, scope=scope)
+
+
+def configure_production_method_run_sources(gateway_store) -> None:
+    """Bind the existing Gateway Store, without enabling a new execution route.
+
+    Installation verifies retained task references against durable Gateway state.
+    Reconfiguration to another Store/runtime is forbidden while installed.
+    """
+    from total_gateway.method_source_run_binding import MethodRunSourceResolver
+    global _method_run_resolver
+    with _runtime_lock:
+        if _runtime is None:
+            raise ValueError("METHOD_RUN_WORLD_NOT_INITIALIZED")
+        proposed = MethodRunSourceResolver(gateway_store, _runtime)
+        if _method_run_resolver is not None and _method_run_resolver != proposed:
+            raise ValueError("METHOD_RUN_RESOLVER_ALREADY_CONFIGURED")
+        proposed.reconcile()
+        _method_run_resolver = proposed
+
+
+def production_method_world_for_run(run_context=None):
+    """Use request/run/generation from the existing ContextVar, not model fields."""
+    context = run_context or current_run_context()
+    scope = _scope(_run_identity(context))
+    if scope is None or _method_run_resolver is None:
+        raise ValueError("METHOD_RUN_RESOLVER_UNAVAILABLE")
+    return _method_run_resolver.read(request_id=context.request_id, run_id=context.run_id,
+                                     generation=context.generation, scope=scope)
+
+
+def reconcile_production_method_retention():
+    if _method_run_resolver is None:
+        raise ValueError("METHOD_RUN_RESOLVER_UNAVAILABLE")
+    return _method_run_resolver.reconcile()
 
 
 def production_context_output_port() -> ContextOutputPort:
@@ -401,6 +441,9 @@ __all__ = [
     "production_context_output_port",
     "configure_production_method_publication",
     "production_method_world_for_state",
+    "configure_production_method_run_sources",
+    "production_method_world_for_run",
+    "reconcile_production_method_retention",
     "production_repository_graph_query",
     "production_repository_evidence_snapshot",
     "production_repository_previous_revision",

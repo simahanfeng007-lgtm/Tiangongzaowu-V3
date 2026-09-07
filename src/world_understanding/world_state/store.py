@@ -20,6 +20,7 @@ from contracts.world_understanding.state import WorldState
 from contracts.world_understanding.world_cut import WorldCut
 from world_understanding.common.world_cut import compare_world_cuts
 from .manifests import HeadManifest, DependencyBinding, DependencyManifest, DeltaManifest
+from .retention import RetainedWorldState
 
 @dataclass(frozen=True, slots=True)
 class MaterializedWorldSnapshot:
@@ -93,7 +94,7 @@ def _snapshot_load(payload: dict[str,Any]) -> MaterializedWorldSnapshot:
     return MaterializedWorldSnapshot(state,cut,entity,relation,cognition,hypotheses,uncertainty,dependencies,delta,str(payload["frame_id"]),entities,relations)
 
 class WorldStateStore:
-    def __init__(self, *, root: str | os.PathLike[str] | None=None, max_history_per_frame: int=64, max_active_cognition_records: int=4096) -> None:
+    def __init__(self, *, root: str | os.PathLike[str] | None=None, max_history_per_frame: int=64, max_active_cognition_records: int=4096, max_retained_states: int=4096) -> None:
         if not 2 <= max_history_per_frame <= 4096: raise ValueError("WORLD_STATE_HISTORY_LIMIT_INVALID")
         if not 8 <= max_active_cognition_records <= 65_536: raise ValueError("WORLD_ACTIVE_COGNITION_HISTORY_LIMIT_INVALID")
         self.root=None if root is None else Path(root).expanduser().resolve(strict=False)
@@ -107,6 +108,11 @@ class WorldStateStore:
         # restart-safe lineage needed to prevent one gap from spawning the
         # same autonomous observation repeatedly.
         self._active_cognition: dict[str,dict[str,Any]]={}
+        if type(max_retained_states) is not int or not 1 <= max_retained_states <= 65_536:
+            raise ValueError("WORLD_RETENTION_LIMIT_INVALID")
+        self.max_retained_states=max_retained_states
+        self._retained: dict[str, RetainedWorldState]={}
+        self._retention_schema=False
         self._lock=RLock()
         self._load_index_if_present()
     @staticmethod
@@ -122,7 +128,21 @@ class WorldStateStore:
         path=self._index_path()
         if path is None or not path.is_file(): return
         payload=json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("schema")!="tiangong.world-state-store.index.v1": raise ValueError("WORLD_STATE_INDEX_SCHEMA_INVALID")
+        schema=payload.get("schema")
+        if schema not in {"tiangong.world-state-store.index.v1", "tiangong.world-state-store.index.v2"}:
+            raise ValueError("WORLD_STATE_INDEX_SCHEMA_INVALID")
+        self._retention_schema=schema.endswith(".v2")
+        if not self._retention_schema and "retained_states" in payload:
+            raise ValueError("WORLD_RETENTION_SCHEMA_INVALID")
+        if self._retention_schema:
+            rows=payload.get("retained_states")
+            if type(rows) is not list or len(rows)>self.max_retained_states:
+                raise ValueError("WORLD_RETENTION_LIMIT_EXCEEDED")
+            for row in rows:
+                item=RetainedWorldState.from_dict(row)
+                if item.owner_id in self._retained:
+                    raise ValueError("WORLD_RETENTION_DUPLICATE_OWNER")
+                self._retained[item.owner_id]=item
         for row in payload.get("streams",[]):
             key=tuple(row["key"])
             if len(key)!=4: raise ValueError("WORLD_STATE_INDEX_KEY_INVALID")
@@ -137,12 +157,19 @@ class WorldStateStore:
             self._active_cognition[record_id]=dict(row)
         if len(self._active_cognition)>self.max_active_cognition_records:
             raise ValueError("WORLD_ACTIVE_COGNITION_HISTORY_LIMIT_EXCEEDED")
+        # A missing pinned snapshot is corruption, not permission to pick latest.
+        for item in self._retained.values():
+            self._require_retained_snapshot(item)
     def _index_payload(self, current: dict[tuple[str,str,str,str],str], history: dict[tuple[str,str,str,str],deque[str]]) -> dict[str,Any]:
         rows=[]
         for key in sorted(current):
             rows.append({"key":key,"current":current[key],"history":tuple(history.get(key,()))})
         cognition=[self._active_cognition[key] for key in sorted(self._active_cognition)]
-        return {"schema":"tiangong.world-state-store.index.v1","streams":rows,"active_cognition":cognition}
+        payload={"schema":"tiangong.world-state-store.index.v1","streams":rows,"active_cognition":cognition}
+        if self._retention_schema:
+            payload["schema"]="tiangong.world-state-store.index.v2"
+            payload["retained_states"]=[self._retained[k].to_dict() for k in sorted(self._retained)]
+        return payload
     def _persist_index(self) -> None:
         path=self._index_path()
         if path is not None:
@@ -239,6 +266,78 @@ class WorldStateStore:
         relation_refs=tuple(sorted((WorldRecordRef(record_type="world_relation",record_id=item.relation_id,revision=item.revision,sha256=item.relation_sha256) for item in snapshot.relations),key=lambda ref:ref.sort_key()))
         if entity_refs != snapshot.entity_heads.refs: raise ValueError("WORLD_STATE_ENTITY_BODY_MISMATCH")
         if relation_refs != snapshot.relation_heads.refs: raise ValueError("WORLD_STATE_RELATION_BODY_MISMATCH")
+    def _require_retained_snapshot(self, item: RetainedWorldState) -> MaterializedWorldSnapshot:
+        snapshot=self.get(item.state_ref.record_id)
+        if (snapshot is None or snapshot.state_ref!=item.state_ref
+                or snapshot.state.scope!=item.scope or not snapshot.state.has_valid_hash()):
+            raise ValueError("WORLD_RETENTION_SNAPSHOT_UNAVAILABLE")
+        return snapshot
+
+    @contextmanager
+    def retention_transaction(self):
+        """One-writer lock for verify-then-retain; not a multi-store transaction."""
+        with self._lock:
+            yield
+
+    def retained_states(self) -> tuple[RetainedWorldState, ...]:
+        with self._lock:
+            return tuple(self._retained[k] for k in sorted(self._retained))
+
+    def retain_state(self, item: RetainedWorldState) -> None:
+        """Persist a reference before returning; retention never authorizes a task."""
+        if type(item) is not RetainedWorldState:
+            raise TypeError("WORLD_RETENTION_RECORD_INVALID")
+        item.__post_init__()
+        with self._lock:
+            self._require_retained_snapshot(item)
+            prior=self._retained.get(item.owner_id)
+            if prior is not None:
+                if prior!=item:
+                    raise ValueError("WORLD_RETENTION_OWNER_REBOUND")
+                return
+            if len(self._retained)>=self.max_retained_states:
+                raise ValueError("WORLD_RETENTION_FULL")
+            old_schema=self._retention_schema
+            self._retained[item.owner_id]=item
+            self._retention_schema=True
+            try:
+                self._persist_index()
+            except Exception:
+                del self._retained[item.owner_id]
+                self._retention_schema=old_schema
+                raise
+
+    def release_retained_state(self, expected: RetainedWorldState) -> bool:
+        """Exact compare-and-release; only the external task authority decides when."""
+        if type(expected) is not RetainedWorldState:
+            raise TypeError("WORLD_RETENTION_RECORD_INVALID")
+        expected.__post_init__()
+        with self._lock:
+            prior=self._retained.get(expected.owner_id)
+            if prior is None:
+                return False
+            if prior!=expected:
+                raise ValueError("WORLD_RETENTION_RELEASE_MISMATCH")
+            del self._retained[expected.owner_id]
+            try:
+                self._persist_index()
+            except Exception:
+                self._retained[expected.owner_id]=prior
+                raise
+            self._evict_unreferenced_snapshot(expected.state_ref.record_id)
+            return True
+
+    def _evict_unreferenced_snapshot(self, state_id: str) -> None:
+        if (state_id in self._current.values()
+                or any(state_id in ids for ids in self._history.values())
+                or any(item.state_ref.record_id==state_id for item in self._retained.values())):
+            return
+        self._snapshots.pop(state_id,None)
+        path=self._snapshot_path(state_id)
+        if path is not None and path.is_file():
+            try: path.unlink()
+            except OSError: pass
+
     @contextmanager
     def publication_transaction(self, expected: MaterializedWorldSnapshot):
         """Serialize exact-head validation and materialization in this one writer.
@@ -297,11 +396,7 @@ class WorldStateStore:
         self._current=proposed_current
         self._history=defaultdict(deque,{k:deque(v) for k,v in proposed_history.items()})
         for state_id in evicted:
-            self._snapshots.pop(state_id,None)
-            path=self._snapshot_path(state_id)
-            if path is not None and path.is_file():
-                try: path.unlink()
-                except OSError: pass
+            self._evict_unreferenced_snapshot(state_id)
         return snapshot
 
 __all__=["MaterializedWorldSnapshot","WorldStateStore"]
