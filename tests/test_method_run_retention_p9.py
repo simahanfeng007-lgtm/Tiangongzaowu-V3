@@ -137,7 +137,7 @@ def test_rejected_source_selection_does_not_pin_anything(context):
 
 
 @pytest.fixture
-def bound(tmp_path, monkeypatch):
+def unregistered_bound(tmp_path, monkeypatch):
     from total_gateway.store import GatewayStateStore
     from total_gateway.method_source_run_binding import MethodRunSourceResolver
     from tests import test_composition_executable_plan_p7c0 as ec
@@ -175,10 +175,18 @@ def bound(tmp_path, monkeypatch):
                        world_state_sha256=state.state.state_sha256,context_sha256='0'*64).with_computed_sha256()
     monkeypatch.setattr(ec,'_worlds',worlds);monkeypatch.setattr(ec,'_context',ctx)
     material=ec._compile_material(gateway,root)
-    bundle=ec._persist_executable(gateway,material)
     reader=MethodRunSourceResolver(gateway,c['runtime'])
-    yield c,gateway,bundle.record.executable_plan,reader
+    yield c,gateway,material,reader
     gateway.close()
+
+
+@pytest.fixture
+def bound(unregistered_bound):
+    from tests import test_composition_executable_plan_p7c0 as ec
+    c,gateway,material,reader=unregistered_bound
+    gateway.configure_method_source_lifecycle(reader)
+    bundle=ec._persist_executable(gateway,material)
+    return c,gateway,bundle.record.executable_plan,reader
 
 
 def _read(reader,plan,**extra):
@@ -209,7 +217,8 @@ def test_terminal_generation_releases_pin_without_granting_anything(bound,status
     if status=='cancel':gateway.cancel_generation(plan.request_id,reason_code='test.done',cancelled_at_ms=2000)
     else:gateway.release_generation(plan.request_id,released_at_ms=2000)
     with pytest.raises(ValueError,match='GENERATION_NOT_ACTIVE'): _read(reader,plan)
-    assert len(reader.reconcile())==1
+    assert not c['runtime'].store.retained_states()  # Existing terminal UoW now releases after commit.
+    assert reader.reconcile()==()
     assert c['runtime'].store.get(plan.legacy_plan.world_state_ref) is None
     assert reader.reconcile()==()
 
@@ -218,7 +227,7 @@ def test_registered_reader_rejects_state_substitution(bound):
     c,gateway,plan,reader=bound
     event,_,_=_publication(c,('UPDATE',),at_ms=26);assert c['runtime'].facade.accept(event).processed
     with pytest.raises(ValueError,match='CALLER_WORLD_MISMATCH'):_read(reader,plan,expected_state_ref=_current(c).state_ref)
-    assert not c['runtime'].store.retained_states()
+    assert tuple(p.owner_id for p in c['runtime'].store.retained_states())==('method-plan:'+plan.executable_plan_id,)
 
 
 def test_registered_reader_rejects_other_generation_or_principal(bound):
@@ -228,12 +237,15 @@ def test_registered_reader_rejects_other_generation_or_principal(bound):
     with pytest.raises(ValueError,match='PLAN_SCOPE_MISMATCH'):
         reader.read(request_id=plan.request_id,run_id=plan.run_id,generation=plan.generation,
                     scope=_scope().model_copy(update={'principal_scope_hash':'b'*64}))
-    assert not c['runtime'].store.retained_states()
+    assert tuple(p.owner_id for p in c['runtime'].store.retained_states())==('method-plan:'+plan.executable_plan_id,)
 
 
-def test_world_state_missing_before_first_pin_is_not_replaced_by_latest(bound):
-    c,_,plan,reader=bound;_advance(c['runtime'],70)
-    with pytest.raises(ValueError,match='WORLD_UNAVAILABLE'):_read(reader,plan)
+def test_registration_pins_before_first_read_instead_of_leaving_an_eviction_gap(bound):
+    c,_,plan,reader=bound
+    assert tuple(p.owner_id for p in c['runtime'].store.retained_states())==('method-plan:'+plan.executable_plan_id,)
+    expected=c['resolver'].load(c['runtime'].store.get(plan.legacy_plan.world_state_ref))
+    _advance(c['runtime'],70)
+    assert _read(reader,plan)==expected
 
 
 def test_gateway_unavailable_cannot_release_all_pins(bound):
@@ -306,7 +318,8 @@ def test_replanning_generation_releases_old_pin_only_after_gateway_supersedes(bo
         lease_id='replacement.lease',owner_instance_id='replacement.worker',issued_at_ms=20000,lease_duration_ms=10000)
     assert gateway.get_generation(plan.request_id).generation>lease.generation
     with pytest.raises(ValueError,match='GENERATION_NOT_ACTIVE'):_read(reader,plan)
-    assert len(reader.reconcile())==1
+    assert not c['runtime'].store.retained_states()  # Existing terminal UoW now releases after commit.
+    assert reader.reconcile()==()
 
 
 def test_run_metadata_is_not_a_replacement_for_a_durable_plan(bound):
@@ -314,7 +327,7 @@ def test_run_metadata_is_not_a_replacement_for_a_durable_plan(bound):
     # A well-shaped but unregistered request cannot retain any state.
     with pytest.raises(ValueError,match='REGISTERED_PLAN_REQUIRED'):
         reader.read(request_id='req_'+'0'*64,run_id=plan.run_id,generation=plan.generation,scope=_scope())
-    assert not c['runtime'].store.retained_states()
+    assert tuple(p.owner_id for p in c['runtime'].store.retained_states())==('method-plan:'+plan.executable_plan_id,)
 
 
 def test_pin_to_wrong_scope_cannot_be_inserted(tmp_path):

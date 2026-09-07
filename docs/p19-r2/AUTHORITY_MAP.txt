@@ -332,3 +332,34 @@ parent 及其 child pipeline，只允许专用 durable adapter 依据 exact Fact
 重启只恢复 Life/desktop terminal tail，可绕过通用 generation revision 上限与关闭的
 request reexecution 配置，但绝不重放 handler。若 request 已终态而 session queue head
 仍为 ACTIVE，worker startup 只幂等退休该 queue projection，再晋升后继请求。
+
+
+P9 R3-C｜Method Source Retention Admission（Verification Plane 1.7）
+----------------------------------------------------------------------
+
+src/total_gateway/store.py（SQLite schema 仍为 v33）
+src/total_gateway/method_source_run_binding.py
+src/world_understanding/production.py
+src/world_understanding/world_state/store.py / retention.py
+app/backend/tiangong-backend/v3/world_understanding_production.py
+
+既有 executable registration 在 SQL 提交前核验方法源码并持久保留 exact WorldState。
+具体 wst_ 世界状态或 P9 native JSON Method 引用在未配置时拒绝注册和执行；配置后
+所有 Method plan 均须经过该路径。历史非 WorldState 的 P7 迁移兼容路线未在本轮
+退役，P12 的旧 Planner 切换不能被此补充声明替代。
+
+claim_effect、mark_effect_started、acquire_dispatch_permit 在原 Store 权威内重验
+已有 pin 和源字节；派发不能重新创建丢失的 admission pin。源审核与发布、引用保留
+只是必要条件，不签发 Policy/Ticket/Grant，不改变 Fact/P19/Completion 判决。
+Gateway -> WorldStore 为此路径的锁顺序，不再获取 World Runtime 锁；避免发布
+observer 持有 Runtime -> Gateway 时出现逆序死锁。原 WorldState index v2 继续
+保持引用元数据权威，无第二 run/generation 表，也没有新调度器或进程。
+
+取消、释放、代际推进及 Effect 结果在最外层 SQL 提交后触发引用对账；在途或
+AMBIGUOUS/RECONCILE_REQUIRED 的执行不因请求取消就回收。已知本地回滚只能清除
+本事务新建且确无已提交 plan 的 pin。进程退出后发现的未知 orphan 不等于完成，
+保持引用并报告 cleanup_error；既有提交不被 GC 异常伪报为回滚。
+
+1.7 继承全部 1.6 冻结条目，并补充 Method review/publication/compiler/retention
+链路的源码摘要。Golden baseline 字节、verifier 语义、RepairPolicy、ActionPermission
+和 CompletionGate 不变。更新源码须正常刷新冻结摘要并使用精确最终提交验收。

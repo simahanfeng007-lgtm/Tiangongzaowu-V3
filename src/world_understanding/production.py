@@ -321,9 +321,11 @@ class ProductionWorldUnderstandingRuntime:
         Callers use the WorldState ref already bound to their running plan.
         Evicted/unavailable states fail closed instead of switching that plan.
         """
-        # Lock order is always runtime -> World store. Pin persistence must
-        # follow source verification but precede release of the pruning lock.
-        with self._lock, self.store.retention_transaction():
+        # No live runtime graph is read here. Store-owned admission can hold
+        # Gateway -> WorldStore, but must never acquire the runtime lock:
+        # World publication observers may already hold Runtime -> Gateway.
+        # The resolver is install-once and cannot be replaced after publication.
+        with self.store.retention_transaction():
             if type(state_ref) is not WorldRecordRef:
                 raise ValueError("METHOD_SOURCE_PINNED_WORLD_UNAVAILABLE")
             import re

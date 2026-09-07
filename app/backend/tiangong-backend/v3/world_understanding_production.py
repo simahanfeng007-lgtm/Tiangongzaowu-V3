@@ -244,7 +244,7 @@ def configure_production_method_run_sources(gateway_store) -> None:
         proposed = MethodRunSourceResolver(gateway_store, _runtime)
         if _method_run_resolver is not None and _method_run_resolver != proposed:
             raise ValueError("METHOD_RUN_RESOLVER_ALREADY_CONFIGURED")
-        proposed.reconcile()
+        gateway_store.configure_method_source_lifecycle(proposed)
         _method_run_resolver = proposed
 
 
