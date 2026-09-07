@@ -165,7 +165,13 @@ def test_invalid_archive_or_source_never_advances_world(context, failure):
     elif failure == "signature":
         digest = stage_method_publication(archive_root=c["archive"], body=body, publication_signature=b"x" * 64)
         event = method_publication_envelope(archive_sha256=digest, frame=_frame(c, before), at_ms=25)
-    elif failure == "missing": path.unlink()
+    elif failure == "missing":
+        # Fault injection only: Windows cannot unlink the read-only fixture.
+        # Production archives stay sealed; create an actually missing file
+        # before checking that the existing ingress rejects its publication.
+        path.chmod(0o644)
+        path.unlink()
+        assert not path.exists()
     elif failure == "writable": path.chmod(0o644)
     elif failure == "source_git":
         # Remove the pinned object database; do not substitute working-tree bytes.
