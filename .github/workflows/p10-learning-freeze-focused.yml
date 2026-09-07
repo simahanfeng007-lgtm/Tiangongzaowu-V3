@@ -1,0 +1,93 @@
+name: P10 learning freeze focused gate
+
+on:
+  push:
+    branches:
+      - codex/capability-composition-p10-life-learning-cutover-v1
+    paths:
+      - src/life_service/**
+      - src/total_gateway/runtime.py
+      - src/total_gateway/verification_plane.py
+      - app/backend/tiangong-backend/v3/duihua_qiaojie.py
+      - app/backend/tiangong-backend/v3/jineng/jirou_ceng.py
+      - app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py
+      - tests/**
+      - docs/p19-r2/**
+      - .github/workflows/p10-learning-freeze-focused.yml
+      - .github/workflows/p10-r1-transfer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    name: p10-learning-freeze-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: '0'
+      # Same pre-existing platform capability policy as Architecture gate.
+      TIANGONG_CI_ENV: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked source dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Check source authority and committed mirrors
+        run: |
+          python scripts/check-source-authority.py
+          python scripts/sync-generated-sources.py --check
+      - name: Validate the fixed candidate without updating acceptance baselines
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, json, os, subprocess, sys, xml.etree.ElementTree as ET
+          out = Path('output/p10-r1'); out.mkdir(parents=True, exist_ok=True)
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert head == os.environ['GITHUB_SHA']
+          selected = set()
+          for pattern in ('test_life_*.py', 'test_learning_*.py', 'test_method_*.py', 'test_tool_source_publication*p8.py'):
+              selected.update(p.as_posix() for p in Path('tests').glob(pattern))
+          selected.update(['tests/test_capability_health.py', 'tests/test_journal_reducer_registry.py',
+              'tests/test_causal_replay.py', 'tests/test_v21_g5_gate.py',
+              'tests/test_skill_method_source_lifecycle_p9.py', 'tests/test_one_world_context_p6.py',
+              'tests/test_p18_m3_learning_poisoning.py', 'tests/golden/p19_r2/'])
+          selected = sorted(selected)
+          def inputs():
+              return {p.as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for folder in ('src', 'tests', 'app/backend/tiangong-backend/v3', 'app/life-service/runtime314/life_service')
+                  for p in sorted(Path(folder).rglob('*.py'))}
+          before = inputs()
+          env = dict(os.environ)
+          for key in ('UPDATE_FREEZE', 'UPDATE_FINGERPRINT', 'UPDATE_GOLDEN'):
+              env.pop(key, None)
+          cmd = [sys.executable, '-m', 'pytest', '-q', *selected, '--junitxml=' + str(out/'tests.xml')]
+          with (out/'tests.log').open('wb') as stream:
+              test = subprocess.run(cmd, stdout=stream, stderr=subprocess.STDOUT, env=env)
+          result = {'head': head, 'test_exit_code': test.returncode,
+              'selected': selected, 'update_variables_absent': True,
+              'inputs_unchanged': before == inputs(), 'input_hashes': before,
+              'scope': 'focused source/protocol regression; not full product or real-model acceptance'}
+          (out/'identity.json').write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding='utf-8')
+          print((out/'tests.log').read_text(encoding='utf-8', errors='replace')[-12000:])
+          assert result['inputs_unchanged'], 'test inputs changed'
+          assert test.returncode == 0, 'focused regression failed; original log retained'
+      - name: Preserve original focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p10-learning-freeze-${{ matrix.os }}-${{ github.sha }}
+          path: output/p10-r1/
+          if-no-files-found: error
+          retention-days: 14
