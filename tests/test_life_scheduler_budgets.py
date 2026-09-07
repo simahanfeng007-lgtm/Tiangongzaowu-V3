@@ -106,7 +106,7 @@ def test_self_iteration_sub_budget_exhausted_skips_decider():
             life.close()
 
 
-def test_capability_patch_entry_peek_blocks_without_side_effects():
+def test_frozen_capability_patch_entry_does_not_enter_budget_accounting():
     with tempfile.TemporaryDirectory() as temporary:
         life = runtime(Path(temporary))
         try:
@@ -123,7 +123,9 @@ def test_capability_patch_entry_peek_blocks_without_side_effects():
             # 入口只窥探不记账：真正的按次记账在 worker 内每个补丁目标前完成。
             assert scheduler.get("model_skipped", 0) == 0
             assert scheduler.get("capability_patch_model_skipped", 0) == 0
-            assert scheduler["last_capability_health_error"] == "life.capability_patch.model_budget_exhausted"
+            # The publication route is frozen before budget evaluation. It is not
+            # a transient model-budget failure and must not enter retry accounting.
+            assert "last_capability_health_error" not in scheduler
             assert scheduler.get("capability_health_inflight") is not True
         finally:
             life.close()

@@ -91,6 +91,7 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "learning.draft_created": EventClass.REPLAYABLE_PROJECTION,
     "learning.published": EventClass.REPLAYABLE_PROJECTION,
     "learning.confirmed": EventClass.REPLAYABLE_PROJECTION,
+    "learning.publication_frozen": EventClass.REPLAYABLE_PROJECTION,
     "learning.discarded": EventClass.REPLAYABLE_PROJECTION,
     "learning.decision_noop": EventClass.AUDIT_ONLY,
     # ---- 自我迭代升级卡 ----
@@ -679,6 +680,7 @@ _REDUCERS: dict[str, Callable[..., bool]] = {
     "capability.outcome": _reduce_capability_outcome,
     "learning.draft_created": _reduce_learning_card,
     "learning.confirmed": _reduce_learning_card,
+    "learning.publication_frozen": _reduce_learning_card,
     "learning.discarded": _reduce_learning_card,
     "learning.published": _reduce_learning_published,
     "upgrade.card_created": _reduce_upgrade_created,

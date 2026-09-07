@@ -214,7 +214,8 @@ def test_t4_stale_recovery_aborts_orphan_open_episode(tmp_path: Path) -> None:
 
 
 def _capability_runtime(tmp_path: Path, *, risk_level: str, invoker):
-    from life_service.artifact_executor import compile_artifact, publish_artifact
+    from life_service.artifact_executor import compile_artifact
+    from tests.legacy_learning_fixtures import historical_published_artifact
     from life_service.capability_health import attach_health
     from total_gateway.runtime import (
         life_capability_workspace_mapper,
@@ -272,7 +273,7 @@ def _capability_runtime(tmp_path: Path, *, risk_level: str, invoker):
         },
     }
     compiled = compile_artifact(learning, action_catalog=list(action_catalog))
-    artifact = publish_artifact(compiled)
+    artifact = historical_published_artifact(compiled)
     scope = life._scope_state(life_id)
     scope["capabilities"][artifact["artifact_id"]] = {**artifact, "origin": "life_learning"}
     pointer = {

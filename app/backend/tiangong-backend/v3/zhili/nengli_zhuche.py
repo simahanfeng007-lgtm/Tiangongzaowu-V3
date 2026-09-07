@@ -101,6 +101,16 @@ class NengliZhuche:
 
     def _baocun(self):
         """持久化注册表到磁盘"""
+        from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
+        raw = read_json_compat(self.zhuce_lujing, {})
+        rows = raw.get("nengli_liebiao") or raw.get("nengli_list") or []
+        existing = {r["id"]: with_l0_projection(r) for r in rows if isinstance(r, dict) and r.get("id")}
+        for key, item in self._nengli_dict.items():
+            old = existing.get(key)
+            if item == old:
+                continue
+            if old is None or item.get("zhuangtai") not in {"tingyong", "baofei"} or item != {**old, "zhuangtai": item["zhuangtai"]}:
+                raise ValueError(LEGACY_PUBLICATION_FROZEN)
         self.zhuce_lujing.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "schema": REGISTRY_SCHEMA,
@@ -125,6 +135,8 @@ class NengliZhuche:
         Returns:
             True 注册成功
         """
+        from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
+        raise ValueError(LEGACY_PUBLICATION_FROZEN)
         if isinstance(nengli_dingyi, dict) and not isinstance(nengli_dingyi, NengliDingyi):
             payload = {
                 k: v for k, v in nengli_dingyi.items()
@@ -211,6 +223,10 @@ class NengliZhuche:
 
     def jihuo_nengli(self, nengli_id: str) -> bool:
         """激活能力"""
+        from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
+        if self._nengli_dict.get(nengli_id, {}).get("zhuangtai") == "jihuo":
+            return True  # Read-only idempotence, no new active state.
+        raise ValueError(LEGACY_PUBLICATION_FROZEN)
         if nengli_id not in self._nengli_dict:
             return False
         self._nengli_dict[nengli_id]["zhuangtai"] = "jihuo"

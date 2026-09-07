@@ -65,24 +65,16 @@ def test_new_life_chain_from_conversation_to_autonomous_and_confirmed_learning(t
                 },
             },
         })["learning"]
-        assert skill["risk_level"] == "A3" and skill["status"] == "awaiting_user"
+        assert skill["risk_level"] == "A3" and skill["status"] == "migration_required"
         assert skill["learning_execution"]["status"] in {"completed", "completed_with_warnings"}
         published = _request(life, "POST", "/api/v1/v3/learning/confirm", {
             "learning_id": skill["learning_id"], "draft_sha256": skill["draft_sha256"],
         })
-        assert published["learning"]["status"] == "published"
-        assert published["learning"]["artifact_id"] in life._scope_state()["capabilities"]
-        overlay = _request(life, "GET", "/api/v1/v3/life/capabilities/overlay")
-        assert overlay["active_skill_count"] == 0
-        assert overlay["pending_activation_count"] == 1
-        assert overlay["artifacts"][0]["artifact_id"] == published["learning"]["artifact_id"]
-        assert overlay["artifacts"][0]["activation_status"] == "pending"
-        assert overlay["model_context"] == []
-        _request(life, "POST", "/api/v1/v3/life/capability/activate", {
-            "artifact_id": published["learning"]["artifact_id"],
-        })
-        overlay = _request(life, "GET", "/api/v1/v3/life/capabilities/overlay")
-        assert overlay["active_skill_count"] == 1
-        assert overlay["model_context"][0]["artifact_id"] == published["learning"]["artifact_id"]
+        assert published['learning']['status']=='migration_required'
+        assert published['artifact'] is None and not published['registered']
+        overlay=_request(life,'GET','/api/v1/v3/life/capabilities/overlay')
+        assert overlay['artifacts']==[] and overlay['model_context']==[]
+        assert life._scope_state()['capability_pointers']=={}
+        assert not list(life.paths.artifact_root.rglob('SKILL.md'))
     finally:
         life.close()

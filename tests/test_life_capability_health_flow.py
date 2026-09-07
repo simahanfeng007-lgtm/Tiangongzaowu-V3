@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import time
 
-from life_service.artifact_executor import compile_artifact, publish_artifact
+from life_service.artifact_executor import compile_artifact
+from tests.legacy_learning_fixtures import historical_published_artifact
+from copy import deepcopy
+import pytest
+from life_service.embedded_runtime import EmbeddedLifeError
 from life_service.capability_health import attach_health
 from life_service.embedded_runtime import EmbeddedLifeRuntime
 from total_gateway.runtime import (
@@ -79,13 +83,16 @@ def _setup_runtime(tmp_path):
         _learning(life_id),
         action_catalog=list(_ACTION_CATALOG),
     )
-    artifact = publish_artifact(compiled)
+    artifact = historical_published_artifact(compiled)
     scope["capabilities"][artifact["artifact_id"]] = {
         **artifact,
         "origin": "life_learning",
     }
     mapper = life_capability_workspace_mapper(workspace)
-    mapper(artifact)
+    # Pre-P10 workspace fixture, not a call to the frozen projection writer.
+    target=workspace/'skills'/'life'/(artifact['skill_spec']['skill_id']+'.md')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    target.write_text(artifact['document']['content'],encoding='utf-8')
     pointer = {
         "schema": "tiangong.life.capability-pointer.v1",
         "life_id": life_id,
@@ -199,7 +206,7 @@ def test_outcome_report_is_idempotent_and_version_isolated(tmp_path):
         life.close()
 
 
-def test_patch_requires_trigger_condition(tmp_path):
+def test_patch_freeze_precedes_trigger_evaluation(tmp_path):
     life, life_id, artifact = _setup_runtime(tmp_path)
     try:
         try:
@@ -209,163 +216,74 @@ def test_patch_requires_trigger_condition(tmp_path):
             )
             raise AssertionError("patch before trigger must be rejected")
         except Exception as exc:
-            assert "patch_not_triggered" in str(getattr(exc, "code", "") or exc)
+            assert "legacy_publication_frozen" in str(getattr(exc, "code", "") or exc)
     finally:
         life.close()
 
 
-def test_good_patch_passes_verification_gate_and_replaces_pointer(tmp_path):
-    life, life_id, artifact = _setup_runtime(tmp_path)
-    artifact_id = artifact["artifact_id"]
+def test_good_legacy_patch_is_frozen_without_pointer_change(tmp_path):
+    life,life_id,artifact=_setup_runtime(tmp_path)
     try:
-        _fail_times(life, life_id, artifact_id, 3)
-        proposed = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id, "actor": "life_health"},
-            decision=_patch_decision(life_id),
-        )
-        assert proposed["ok"] is True
-        patched_id = proposed["patch_artifact"]["artifact_id"]
-        assert patched_id != artifact_id
-        # 补丁版本保持稳定 skill_id（工作区映射路径不漂移）。
-        patched = life._scope_state(life_id)["capabilities"][patched_id]
-        assert (
-            patched["skill_spec"]["skill_id"]
-            == artifact["skill_spec"]["skill_id"]
-        )
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["health"]["patch_pending"]["to_artifact_id"] == patched_id
-        settled = life._capability_patch_settle(
-            {"life_id": life_id, "artifact_id": artifact_id, "actor": "life_health"}
-        )
-        print("VERIFY DEBUG:", settled.get("verification"))
-        assert settled["applied"] is True
-        assert settled["reason"] == "applied"
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["current_artifact_id"] == patched_id
-        assert pointer["health"]["consecutive_failures"] == 0
-        assert pointer["status"] == "active"
+        _fail_times(life,life_id,artifact['artifact_id'],3)
+        before=deepcopy(_pointer_of(life,life_id,artifact))
+        capabilities=deepcopy(life._scope_state(life_id)['capabilities'])
+        for _ in range(2):
+            with pytest.raises(EmbeddedLifeError,match='legacy_publication_frozen'):
+                life._capability_patch_propose({'life_id':life_id,'artifact_id':artifact['artifact_id']},
+                    decision=_patch_decision(life_id,broken=False))
+        # Frozen routes neither consume repair rounds nor replace/degrade the old version.
+        assert _pointer_of(life,life_id,artifact)==before
+        assert life._scope_state(life_id)['capabilities']==capabilities
     finally:
         life.close()
 
 
-def test_bad_patch_build_failure_consumes_rounds_then_degrades_and_marks_mapping(tmp_path):
-    life, life_id, artifact = _setup_runtime(tmp_path)
-    artifact_id = artifact["artifact_id"]
+def test_frozen_patch_does_not_consume_rounds_or_degrade_history(tmp_path):
+    life,life_id,artifact=_setup_runtime(tmp_path)
     try:
-        _fail_times(life, life_id, artifact_id, 3)
-        # 第一轮坏补丁：编译失败（缺验收标准）-> 计一轮，指针保持旧版。
-        result = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id, broken=True),
-        )
-        assert result["ok"] is False
-        assert result["patch_rounds"] == 1
-        assert result["degraded"] is False
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["current_artifact_id"] == artifact_id
-        assert pointer["health"]["patch_rounds"] == 1
-        # 第二轮坏补丁 -> 轮次用尽自动降级。
-        result = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id, broken=True),
-        )
-        assert result["ok"] is False
-        assert result["degraded"] is True
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["status"] == "degraded"
-        # 工作区映射被标记为降级。
-        workspace = life.paths.runtime_root.parent / "workspace"
-        target = workspace / "skills" / "life" / f"{artifact['skill_spec']['skill_id']}.md"
-        content = target.read_text(encoding="utf-8")
-        assert "tiangong-life-status: degraded" in content
-        assert "runtime_usable: false" in content
-        assert "自动降级" in content
-        # overlay 中不再 runtime_usable。
-        overlay = life._capability_overlay_payload({"life_id": life_id})
-        rows = [row for row in overlay["artifacts"] if row["artifact_id"] == artifact_id]
-        assert rows and rows[0]["runtime_usable"] is False
-        assert rows[0]["activation_status"] == "degraded"
+        _fail_times(life,life_id,artifact['artifact_id'],3)
+        before=deepcopy(_pointer_of(life,life_id,artifact))
+        capabilities=deepcopy(life._scope_state(life_id)['capabilities'])
+        for _ in range(2):
+            with pytest.raises(EmbeddedLifeError,match='legacy_publication_frozen'):
+                life._capability_patch_propose({'life_id':life_id,'artifact_id':artifact['artifact_id']},
+                    decision=_patch_decision(life_id,broken=True))
+        # Frozen routes neither consume repair rounds nor replace/degrade the old version.
+        assert _pointer_of(life,life_id,artifact)==before
+        assert life._scope_state(life_id)['capabilities']==capabilities
     finally:
         life.close()
 
 
-def test_verification_gate_rolls_back_on_tampered_digest_then_degrades(tmp_path):
-    life, life_id, artifact = _setup_runtime(tmp_path)
-    artifact_id = artifact["artifact_id"]
+def test_tampered_patch_still_fails_verification_and_cannot_settle(tmp_path):
+    life,life_id,artifact=_setup_runtime(tmp_path)
     try:
-        _fail_times(life, life_id, artifact_id, 3)
-        proposed = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id),
-        )
-        assert proposed["ok"] is True
-        patched_id = proposed["patch_artifact"]["artifact_id"]
-        # 篡改补丁摘要：验证门必须拒绝并回滚（指针保持旧版）。
-        scope = life._scope_state(life_id)
-        scope["capabilities"][patched_id]["artifact_sha256"] = "f" * 64
-        life._persist(life_id)
-        settled = life._capability_patch_settle(
-            {"life_id": life_id, "artifact_id": artifact_id}
-        )
-        assert settled["applied"] is False
-        assert settled["reason"] == "rolled_back"
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["current_artifact_id"] == artifact_id
-        assert pointer["health"]["patch_rounds"] == 1
-        # 第二轮补丁同样被验证门拒绝 -> 自动降级。
-        proposed = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id),
-        )
-        assert proposed["ok"] is True
-        scope = life._scope_state(life_id)
-        scope["capabilities"][proposed["patch_artifact"]["artifact_id"]]["artifact_sha256"] = "f" * 64
-        life._persist(life_id)
-        settled = life._capability_patch_settle(
-            {"life_id": life_id, "artifact_id": artifact_id}
-        )
-        assert settled["applied"] is False
-        assert settled["reason"] == "degraded"
-        assert _pointer_of(life, life_id, artifact)["status"] == "degraded"
+        # Retained validator continues rejecting corrupted historical material.
+        tampered={**artifact,'artifact_sha256':'f'*64}
+        assert not life._capability_verify_patch(tampered)['passed']
+        before=deepcopy(_pointer_of(life,life_id,artifact))
+        with pytest.raises(EmbeddedLifeError,match='legacy_publication_frozen'):
+            life._capability_patch_settle({'artifact_id':artifact['artifact_id']})
+        assert _pointer_of(life,life_id,artifact)==before
     finally:
         life.close()
 
 
-def test_reactivate_requires_user_and_unmarks_mapping(tmp_path):
-    life, life_id, artifact = _setup_runtime(tmp_path)
-    artifact_id = artifact["artifact_id"]
+def test_legacy_reactivation_is_frozen_for_user_and_scheduler(tmp_path):
+    life,life_id,artifact=_setup_runtime(tmp_path)
     try:
-        _fail_times(life, life_id, artifact_id, 3)
-        result = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id, broken=True),
-        )
-        assert result["ok"] is False and result["patch_rounds"] == 1
-        result = life._capability_patch_propose(
-            {"life_id": life_id, "artifact_id": artifact_id},
-            decision=_patch_decision(life_id, broken=True),
-        )
-        assert result["ok"] is False and result["degraded"] is True
-        pointer = _pointer_of(life, life_id, artifact)
-        assert pointer["status"] == "degraded"
-        # 非 user 不能重新激活。
-        try:
-            life._capability_reactivate(
-                {"life_id": life_id, "artifact_id": artifact_id, "actor": "life_scheduler"}
-            )
-            raise AssertionError("scheduler must not reactivate")
-        except Exception as exc:
-            assert "reactivate_invalid" in str(getattr(exc, "code", "") or exc)
-        # 用户重新激活：映射恢复 active 标记。
-        result = life._capability_reactivate(
-            {"life_id": life_id, "artifact_id": artifact_id, "actor": "user"}
-        )
-        assert result["pointer"]["status"] == "active"
-        workspace = life.paths.runtime_root.parent / "workspace"
-        target = workspace / "skills" / "life" / f"{artifact['skill_spec']['skill_id']}.md"
-        content = target.read_text(encoding="utf-8")
-        assert "tiangong-life-status: active" in content
-        assert "runtime_usable: true" in content
+        from life_service.capability_health import degrade_pointer
+        pointer=degrade_pointer(_pointer_of(life,life_id,artifact),reason='historical failure',now_ms=time.time_ns()//1_000_000)
+        life._scope_state(life_id)['capability_pointers'][artifact['lineage_id']]=pointer
+        life._mark_capability_workspace_status(artifact,pointer)
+        workspace=life.paths.runtime_root.parent/'workspace'
+        path=workspace/'skills'/'life'/(artifact['skill_spec']['skill_id']+'.md')
+        original=path.read_bytes()
+        assert b'runtime_usable: false' in original
+        for actor in ('life_scheduler','user'):
+            with pytest.raises(EmbeddedLifeError,match='legacy_publication_frozen'):
+                life._capability_reactivate({'artifact_id':artifact['artifact_id'],'actor':actor})
+        assert path.read_bytes()==original and _pointer_of(life,life_id,artifact)==pointer
     finally:
         life.close()
 
@@ -386,7 +304,7 @@ def test_overlay_ranks_recent_successes_above_idle_and_marks_idle(tmp_path):
         idle_learning["learning_id"] = "learn_idle_test"
         idle_learning["title"] = "AAA闲置技能"
         compiled = compile_artifact(idle_learning, action_catalog=list(_ACTION_CATALOG))
-        idle_artifact = publish_artifact(compiled)
+        idle_artifact = historical_published_artifact(compiled)
         scope["capabilities"][idle_artifact["artifact_id"]] = {
             **idle_artifact,
             "origin": "life_learning",

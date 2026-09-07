@@ -15,6 +15,7 @@ from typing import Any, Mapping
 import uuid
 
 from contracts import canonical_sha256
+from .learning_workflow import LEGACY_PUBLICATION_FROZEN, legacy_publication_blocked
 
 
 ARTIFACT_EXECUTOR_SCHEMA = "tiangong.life.artifact-executor.v1"
@@ -128,6 +129,8 @@ def persist_artifact_bundle(
     written once for a content-addressed version.  Publication is represented
     separately so status changes never rewrite the validated build payload.
     """
+    if legacy_publication_blocked(artifact):
+        raise ArtifactExecutorError(LEGACY_PUBLICATION_FROZEN)
     value = deepcopy(dict(artifact))
     if value.get("schema") != ARTIFACT_SCHEMA:
         raise ArtifactExecutorError("artifact.store.schema_invalid")
@@ -195,6 +198,20 @@ def persist_current_pointer(root: Path, *, life_id: str, lineage_id: str, pointe
         directory.resolve(strict=False).relative_to(root)
     except (OSError, ValueError) as exc:
         raise ArtifactExecutorError("artifact.store.path_unsafe") from exc
+    # Only same-artifact deactivation of an already persisted legacy pointer
+    # remains writable. This cannot create or reactivate a capability.
+    path = directory / "current.json"
+    previous = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if legacy_publication_blocked(pointer) or (previous is not None and legacy_publication_blocked(previous)):
+        stable = ("schema", "life_id", "lineage_id", "kind", "current_artifact_id", "current_artifact_sha256")
+        if (not isinstance(previous, Mapping) or directory.is_symlink() or path.is_symlink()
+                or pointer.get("status") not in {"disabled", "degraded"}
+                or any(pointer.get(k) != previous.get(k) for k in stable)
+                or previous.get("life_id") != clean_life_id or previous.get("lineage_id") != clean_lineage_id
+                or not previous.get("current_artifact_sha256")
+                or previous.get("pointer_sha256") != canonical_sha256({k: v for k, v in previous.items() if k != "pointer_sha256"})
+                or pointer.get("pointer_sha256") != canonical_sha256({k: v for k, v in pointer.items() if k != "pointer_sha256"})):
+            raise ArtifactExecutorError(LEGACY_PUBLICATION_FROZEN)
     directory.mkdir(parents=True, exist_ok=True)
     _atomic_json(directory / "current.json", deepcopy(dict(pointer)))
     return directory / "current.json"
@@ -418,6 +435,8 @@ def compile_artifact(
 
 
 def publish_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    if legacy_publication_blocked(artifact):
+        raise ArtifactExecutorError(LEGACY_PUBLICATION_FROZEN)
     value = deepcopy(dict(artifact))
     if value.get("schema") != ARTIFACT_SCHEMA or value.get("status") != "built":
         raise ArtifactExecutorError("artifact.publish.invalid_state")
@@ -431,6 +450,8 @@ def publish_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def rollback_pointer(current: Mapping[str, Any], previous: Mapping[str, Any]) -> dict[str, Any]:
+    if legacy_publication_blocked(current) or legacy_publication_blocked(previous):
+        raise ArtifactExecutorError(LEGACY_PUBLICATION_FROZEN)
     if current.get("schema") != ARTIFACT_SCHEMA or previous.get("schema") != ARTIFACT_SCHEMA:
         raise ArtifactExecutorError("artifact.rollback.schema_invalid")
     if current.get("life_id") != previous.get("life_id") or current.get("kind") != previous.get("kind"):

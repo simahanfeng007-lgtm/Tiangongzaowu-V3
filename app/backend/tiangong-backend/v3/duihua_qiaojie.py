@@ -1025,6 +1025,9 @@ class DuihuaQiaojie:
         }
 
     def create_learning_card_from_request(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1058,6 +1061,9 @@ class DuihuaQiaojie:
         return result
 
     def confirm_learning_card(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1077,6 +1083,9 @@ class DuihuaQiaojie:
         return result
 
     def process_approved_learning_card(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1096,6 +1105,9 @@ class DuihuaQiaojie:
         return result
 
     def request_learning_activation(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1115,6 +1127,9 @@ class DuihuaQiaojie:
         return result
 
     def activate_learning_card(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1134,6 +1149,9 @@ class DuihuaQiaojie:
         return result
 
     def release_learning_card(self, payload: dict | None = None) -> dict:
+        # Inactive legacy engine callbacks are not an alternative publication authority.
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1178,7 +1196,7 @@ class DuihuaQiaojie:
             "ok": False,
             "error": "direct_learning_pipeline_disabled",
             "status": "blocked",
-            "message": "Use /api/v1/v3/learning/cards/from-request, then confirm and process-approved. Direct learning pipeline is not exposed as a public dialogue bridge.",
+            "message": "Use the authoritative Life Knowledge workflow. New Skill/Tool publication requires Source Evolution review; legacy aliases cannot publish.",
         }
 
     def delete_learned_skill(self, payload: dict | None = None) -> dict:
@@ -4220,8 +4238,15 @@ def _registry_row_id_matches(item: dict, ability_id: str) -> bool:
 def _write_registry_rows(raw: dict, rows: list[dict]) -> None:
     from .peizhi import NENGLI_ZHUCE_LUJING
 
-    if not isinstance(raw, dict):
-        raw = {}
+    from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
+    disk = read_json_compat(NENGLI_ZHUCE_LUJING, {})
+    existing = registry_rows(disk)
+    if (not isinstance(rows, list) or any(row not in existing for row in rows)
+            or len({json.dumps(row, sort_keys=True, ensure_ascii=False) for row in rows}) != len(rows)):
+        raise ValueError(LEGACY_PUBLICATION_FROZEN)
+    # A caller-supplied registry root cannot smuggle a new capability list or
+    # activation metadata alongside a permitted deletion.
+    raw = dict(disk) if isinstance(disk, dict) else {}
     raw["schema"] = REGISTRY_SCHEMA
     key = "nengli_liebiao" if "nengli_liebiao" in raw or "nengli_list" not in raw else "nengli_list"
     raw[key] = rows

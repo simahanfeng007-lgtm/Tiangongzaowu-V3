@@ -88,6 +88,8 @@ from .artifact_executor import (
     rollback_pointer,
 )
 from .learning_workflow import build_draft, confirm_draft, discard_draft, publish_draft
+from .learning_workflow import (LEGACY_PUBLICATION_FROZEN, MIGRATION_REQUIRED,
+    legacy_publication_blocked, frozen_publication_result, freeze_learning_publication)
 from .learning_executor import execute_learning_preview
 from .capability_health import (
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
@@ -7437,6 +7439,8 @@ class EmbeddedLifeRuntime:
         operation: str = "publish",
         status: str = "active",
     ) -> dict[str, Any]:
+        if legacy_publication_blocked(artifact):
+            raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         lineage_id = str(artifact.get("lineage_id") or "").strip()
         artifact_id = str(artifact.get("artifact_id") or "").strip()
         if not _OPAQUE.fullmatch(lineage_id) or not _OPAQUE.fullmatch(artifact_id):
@@ -7487,6 +7491,8 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.capability.activate_not_current", status=409)
         if pointer.get("status") == "active":
             return {"ok": True, "already_active": True, "capability": deepcopy(artifact), "pointer": deepcopy(pointer)}
+        # The already-active branch above is read-only historical compatibility.
+        raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         if pointer.get("status") != "pending":
             raise EmbeddedLifeError("life.capability.activate_invalid_state", status=409)
         pointers_before = deepcopy(scope["capability_pointers"])
@@ -7530,6 +7536,7 @@ class EmbeddedLifeRuntime:
         return {"ok": True, "capability": deepcopy(artifact), "pointer": deepcopy(next_pointer), "event": event}
 
     def _capability_rollback(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
         artifact_id = str(payload.get("artifact_id") or "").strip()
         if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
@@ -7728,6 +7735,7 @@ class EmbeddedLifeRuntime:
         decision 可来自显式 API 或模型桥。补丁编译为下一版本 artifact，
         注册为候选（published 但非 current），随后 propose_patch 进入验证门。
         """
+        raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
         artifact_id = str(payload.get("artifact_id") or "").strip()
         if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
@@ -8005,6 +8013,7 @@ class EmbeddedLifeRuntime:
 
     def _capability_patch_settle(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """结算补丁验证：通过则 CAS 切换，失败则回滚，轮次用尽自动降级。"""
+        raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
         artifact_id = str(payload.get("artifact_id") or "").strip()
         if not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(artifact_id):
@@ -8074,6 +8083,7 @@ class EmbeddedLifeRuntime:
 
     def _capability_reactivate(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """用户手动重新激活已自动降级的能力（仅 user 可操作）。"""
+        raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
         artifact_id = str(payload.get("artifact_id") or "").strip()
         actor = str(payload.get("actor") or "user").strip()
@@ -8178,6 +8188,9 @@ class EmbeddedLifeRuntime:
         模型调用在后台线程执行（同学习决策模式），不阻塞心跳；编译、验证门
         与指针结算在锁内完成，失败不会留下半写状态。
         """
+        # Existing outcome accounting remains live; automated legacy patch creation
+        # is a frozen publication route, not a transient model failure to retry.
+        return
         scope_state = self._scope_state(life_id)
         scheduler = scope_state.setdefault("scheduler", {})
         now_ms = time.time_ns() // 1_000_000
@@ -8297,6 +8310,9 @@ class EmbeddedLifeRuntime:
         return [dict(item) for item in value if isinstance(item, Mapping)]
 
     def _build_learning_artifact(self, learning: Mapping[str, Any], scope: Mapping[str, Any]) -> dict[str, Any]:
+        if legacy_publication_blocked(learning):
+            return {"status": MIGRATION_REQUIRED, "artifact": None,
+                    "error_code": LEGACY_PUBLICATION_FROZEN, "retryable": False}
         update_of = str(learning.get("update_of") or "")
         capabilities = scope.get("capabilities") if isinstance(scope.get("capabilities"), Mapping) else {}
         previous = capabilities.get(update_of) if update_of else None
@@ -8462,6 +8478,9 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.learning.decision_invalid") from exc
         prior = scope["learning"].get(draft["learning_id"])
         if isinstance(prior, Mapping):
+            if legacy_publication_blocked(prior) and prior.get("status") not in {"published", "discarded"}:
+                return {**self._freeze_legacy_learning(life_id=life_id, learning_id=draft["learning_id"]),
+                        "duplicate": True, "activity_scope": activity_scope}
             if str(prior.get("status") or "") == "discarded" and source != "user_direct":
                 return {"ok": True, "suppressed": True, "reason_code": "life.learning.previously_declined", "learning": deepcopy(prior), "activity_scope": activity_scope}
             return {"ok": True, "duplicate": True, "learning": deepcopy(prior), "activity_scope": activity_scope}
@@ -8469,7 +8488,9 @@ class EmbeddedLifeRuntime:
         draft["draft_sha256"] = canonical_sha256({"domain": "tiangong.life.learning-draft.v1", "draft": draft})
         draft["execution"] = self._build_learning_artifact(draft, scope)
         built = draft["execution"].get("artifact")
-        if isinstance(built, Mapping):
+        if legacy_publication_blocked(draft):
+            draft = freeze_learning_publication(draft)
+        elif isinstance(built, Mapping):
             draft["effective_risk_level"] = built.get("risk_level")
         else:
             # A card that can never be built must never reach the user as a
@@ -8486,7 +8507,25 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["learning"].pop(draft["learning_id"], None)
             raise
-        return {"ok": True, "learning": deepcopy(draft), "activity_scope": activity_scope, "event": event}
+        return {**({"ok": True} if not draft.get("publication_frozen") else frozen_publication_result()),
+                "learning": deepcopy(draft), "activity_scope": activity_scope, "event": event}
+
+    def _freeze_legacy_learning(self, *, life_id: str, learning_id: str) -> dict[str, Any]:
+        scope = self._scope_state(life_id)
+        current = scope["learning"][learning_id]
+        frozen = freeze_learning_publication(current)
+        if frozen != current:
+            scope["learning"][learning_id] = frozen
+            try:
+                self.system.journal.append(
+                    life_id, "learning.publication_frozen", {"learning": frozen},
+                    actor="life_publication", idempotency_key=f"learning.freeze.p10:{learning_id}",
+                )
+                self._persist(life_id)
+            except Exception:
+                scope["learning"][learning_id] = current
+                raise
+        return {**frozen_publication_result(), "learning": deepcopy(frozen), "artifact": None}
 
     def _learning_publish(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         life_id = str(payload.get("life_id") or self._active().get("life_id") or "").strip()
@@ -8497,6 +8536,10 @@ class EmbeddedLifeRuntime:
         current = scope["learning"].get(learning_id)
         if not isinstance(current, Mapping):
             raise EmbeddedLifeError("life.learning.not_found", status=404)
+        if legacy_publication_blocked(current):
+            if current.get("status") in {"published", "discarded"}:
+                return {**frozen_publication_result(), "learning": deepcopy(current), "artifact": None}
+            return self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
         execution = current.get("execution") if isinstance(current.get("execution"), Mapping) else {}
         compiled = execution.get("artifact") if isinstance(execution.get("artifact"), Mapping) else None
         if str(execution.get("status") or "") != "built" or compiled is None:
@@ -8603,6 +8646,12 @@ class EmbeddedLifeRuntime:
         current = scope["learning"].get(learning_id)
         if not isinstance(current, Mapping):
             raise EmbeddedLifeError("life.learning.not_found", status=404)
+        if payload.get("draft_sha256") and str(payload["draft_sha256"]) != str(current.get("draft_sha256") or ""):
+            raise EmbeddedLifeError("life.learning.confirm_invalid", status=409)
+        if legacy_publication_blocked(current):
+            if current.get("status") in {"published", "discarded"}:
+                return {**frozen_publication_result(), "learning": deepcopy(current), "artifact": None}
+            return self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
         try:
             approved = confirm_draft(current, draft_sha256=str(payload.get("draft_sha256") or ""))
         except ValueError as exc:
@@ -8657,6 +8706,9 @@ class EmbeddedLifeRuntime:
                 risk_rank = {"A0": 0, "A1": 1, "A2": 2, "A3": 3, "A4": 4}
                 for learning_id, record in list(learning.items()):
                     if not isinstance(record, Mapping) or str(record.get("status") or "") != "approved":
+                        continue
+                    if legacy_publication_blocked(record):
+                        self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
                         continue
                     retry = record.get("publish_retry") if isinstance(record.get("publish_retry"), Mapping) else {}
                     attempts = int(retry.get("count") or 0)
@@ -8720,6 +8772,9 @@ class EmbeddedLifeRuntime:
         mirrored into the workspace automatically, and a deleted/missing
         mirror is restored from the authoritative artifact record.
         """
+        # Historical files remain untouched. Missing files are not re-created through
+        # the retired complete-capability projection path.
+        return
         try:
             mapper = self._capability_workspace_mapper
             if not callable(mapper):
@@ -9264,7 +9319,7 @@ class EmbeddedLifeRuntime:
                         result = drafted
                 elif verb == "POST" and path == "/api/v1/v3/life/learning/user-request":
                     drafted = self._learning_draft(body, source="user_direct")
-                    if drafted.get("suppressed") or drafted.get("duplicate"):
+                    if drafted.get("suppressed") or drafted.get("duplicate") or drafted.get("publication_frozen"):
                         result = drafted
                     else:
                         result = self._learning_publish({
@@ -9762,6 +9817,8 @@ class EmbeddedLifeRuntime:
                         # dynamic executable artifact.  New learned Skills and
                         # Tools must travel through the learning executor above
                         # so they retain a verified bundle and version pointer.
+                        if action != "discard":
+                            raise EmbeddedLifeError(LEGACY_PUBLICATION_FROZEN, status=409)
                         artifact_id = str(body.get("artifact_id") or (body.get("card") or {}).get("artifact_id") or "cap_" + uuid.uuid4().hex)
                         record = deepcopy(self._scope_state()["capabilities"].get(artifact_id) or {})
                         record.update({**body, "artifact_id": artifact_id, "status": action, "updated_at": utc_now()})

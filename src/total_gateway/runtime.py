@@ -44,6 +44,8 @@ from .continuity import persist_working_checkpoint
 from .diagnostics import diagnostic_log
 from .store import ChannelOwnershipRegistration, GatewayStateStore, StoreHealthEvidence
 from .tool_source_launch import preflight_source_revision
+from life_service.learning_workflow import (LEGACY_PUBLICATION_FROZEN,
+    legacy_publication_blocked, frozen_publication_result)
 
 
 _BODY_STATE_SECTIONS = frozenset({
@@ -68,6 +70,8 @@ def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object
     """
 
     def map_artifact(artifact: object) -> dict[str, object]:
+        if isinstance(artifact, Mapping) and legacy_publication_blocked(artifact):
+            return frozen_publication_result()
         if not isinstance(artifact, Mapping):
             return {}
         resolved = _life_capability_zone_target(workspace_root, artifact)
@@ -182,6 +186,8 @@ def life_capability_workspace_marker(workspace_root: object) -> Callable[[object
     """
 
     def mark_artifact(artifact: object, pointer: object) -> dict[str, object]:
+        if isinstance(pointer, Mapping) and pointer.get("status") not in {"disabled", "degraded"}:
+            return frozen_publication_result()
         if not isinstance(artifact, Mapping) or not isinstance(pointer, Mapping):
             return {}
         resolved = _life_capability_zone_target(workspace_root, artifact)
@@ -1180,17 +1186,14 @@ class GatewayRuntime:
                     ]
 
                 def publish_learning_artifact(artifact: object) -> dict[str, object]:
+                    if not isinstance(artifact, Mapping) or legacy_publication_blocked(artifact):
+                        raise ValueError(LEGACY_PUBLICATION_FROZEN)
                     if not isinstance(artifact, dict):
                         raise RuntimeError("life artifact publisher received invalid artifact")
                     if artifact.get("kind") != "knowledge":
-                        # Skill and composite-tool registration stays in the
-                        # Life overlay.  It intentionally does not touch the
-                        # release-pinned backend Skill Catalog.
-                        return {
-                            "publisher": "life_skill_overlay",
-                            "overlay_key": artifact.get("artifact_id"),
-                            "registered": True,
-                        }
+                        # Only the canonical compiled Knowledge representation
+                        # reaches this sink; aliases cannot reopen Life overlay.
+                        raise ValueError(LEGACY_PUBLICATION_FROZEN)
                     document = artifact.get("document")
                     if not isinstance(document, dict) or not isinstance(document.get("content"), str):
                         raise RuntimeError("life knowledge artifact document invalid")

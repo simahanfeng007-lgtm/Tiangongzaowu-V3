@@ -84,13 +84,13 @@ def test_t23_capability_lifecycle_pointer_cas_and_rollback(store, lifecycle) -> 
     lifecycle.run_fixtures(candidate_id=candidate, payload_sha256=payload, fixture_set={})
     lifecycle.qc_pass(candidate_id=candidate, payload_sha256=payload)
     lifecycle.stage_shadow(candidate_id=candidate, payload_sha256=payload)
-    pointer = lifecycle.promote(
+    with pytest.raises(CapabilityLifecycleError, match="legacy_publication_frozen"):
+        lifecycle.promote(
         life_id="life_1", skill_id="skill_g5", candidate_id=candidate,
         artifact_sha256=H, payload_sha256=payload, expected_pointer_sha256=None,
     )
     head = store.get_capability_pointer(life_id="life_1", skill_id="skill_g5")
-    assert head is not None and head["current_candidate_id"] == candidate
-    assert head["revision"] == 1
+    assert head is None
 
     # A failing candidate never replaces the prior CURRENT.
     bad_definition = definition().model_copy(
@@ -117,26 +117,21 @@ def test_t23_capability_lifecycle_pointer_cas_and_rollback(store, lifecycle) -> 
             candidate_id=bad_candidate, payload_sha256=bad_payload, fixture_set={}
         )
     after_failure = store.get_capability_pointer(life_id="life_1", skill_id="skill_g5")
-    assert after_failure["current_candidate_id"] == candidate
+    assert after_failure is None
 
     # Stale pointer CAS is rejected.
-    with pytest.raises(CapabilityLifecycleError, match="stale"):
+    with pytest.raises(CapabilityLifecycleError, match="legacy_publication_frozen"):
         lifecycle.promote(
             life_id="life_1", skill_id="skill_g5", candidate_id=candidate,
             artifact_sha256=H, payload_sha256=payload,
             expected_pointer_sha256="0" * 64,
         )
 
-    # Rollback preserves evidence and advances the pointer revision.
-    rolled = lifecycle.rollback_pointer(
-        life_id="life_1", skill_id="skill_g5",
-        previous_candidate_id="cap_prior", previous_artifact_sha256="b" * 64,
-        expected_pointer_sha256=pointer,
-    )
-    head_after = store.get_capability_pointer(life_id="life_1", skill_id="skill_g5")
-    assert head_after["pointer_sha256"] == rolled
-    assert head_after["revision"] == 2
-    assert store.get_capability_pointer(life_id="life_1", skill_id="skill_g5") is not None
+    # P10 cannot use rollback to activate a previously complete Skill.
+    with pytest.raises(CapabilityLifecycleError, match='legacy_publication_frozen'):
+        lifecycle.rollback_pointer(life_id='life_1',skill_id='skill_g5',previous_candidate_id='cap_prior',
+            previous_artifact_sha256='b'*64,expected_pointer_sha256='c'*64)
+    assert store.get_capability_pointer(life_id='life_1',skill_id='skill_g5') is None
 
 
 def test_t25_paired_blind_vitality_review_is_never_model_self_score() -> None:

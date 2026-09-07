@@ -946,6 +946,9 @@ class LifeShadowStore:
         expected_phase: str,
         payload_sha256: str,
     ) -> bool:
+        if to_phase == "CURRENT":
+            from .learning_workflow import LEGACY_PUBLICATION_FROZEN
+            raise LifeShadowStoreError(LEGACY_PUBLICATION_FROZEN)
         connection = self._connection
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -989,6 +992,10 @@ class LifeShadowStore:
         now_ms: int,
     ) -> bool:
         """CAS current pointer: mutation without CAS or stale expected is rejected."""
+        # P10 freezes the old complete-Skill CURRENT pointer, including direct calls.
+        # Candidate/evidence storage and read/retire paths remain available.
+        from .learning_workflow import LEGACY_PUBLICATION_FROZEN
+        raise LifeShadowStoreError(LEGACY_PUBLICATION_FROZEN)
         connection = self._connection
         try:
             connection.execute("BEGIN IMMEDIATE")

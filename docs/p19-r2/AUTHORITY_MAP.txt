@@ -363,3 +363,34 @@ AMBIGUOUS/RECONCILE_REQUIRED 的执行不因请求取消就回收。已知本地
 1.7 继承全部 1.6 冻结条目，并补充 Method review/publication/compiler/retention
 链路的源码摘要。Golden baseline 字节、verifier 语义、RepairPolicy、ActionPermission
 和 CompletionGate 不变。更新源码须正常刷新冻结摘要并使用精确最终提交验收。
+
+
+P10 R1｜Freeze new legacy full Skill/Tool publication（Verification Plane 1.8）
+----------------------------------------------------------------------
+
+src/life_service/learning_workflow.py / artifact_executor.py / embedded_runtime.py
+src/life_service/journal_replay.py / store.py / capability_lifecycle.py
+src/total_gateway/runtime.py
+app/backend/tiangong-backend/v3/duihua_qiaojie.py
+app/backend/tiangong-backend/v3/jineng/jirou_ceng.py
+app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py
+
+旧完整 Skill/Tool 的新发布、持久 bundle、CURRENT 指针、补丁结算、重新激活、
+workspace 重建和旧可选引擎回调均冻结。确认及 user_direct 不能绕过。Knowledge
+继续原有风险/确认与导入通道；文本提及 Skill/Tool 不改变其分类，但结构性
+可执行元数据或非规范产物不得冒充 Knowledge 进入旧注册分支。
+
+migration_required 为原学习记录的处置状态，不是新任务权威。保留原始预览、
+source/evidence 和失败信息；learning.publication_frozen 在同一 journal 登记并
+由原重放器恢复。已冻结记录不进行发布重试，不消耗能力修复轮次。旧 active
+能力的引用读取、受现有 Gateway 授权的调用、结果记账及停用/删除继续保留；
+不能通过反向切换、调用者伪造 registry root 或 projection 重新注册。
+
+LifeShadowStore 的旧 G5 complete-Skill CURRENT 写入也拒绝直接调用；候选、
+证据与普通 Knowledge/Memory 写入不变。P8/P9 的 Source revision 审核发布与
+WorldState/run pin 是不同既有权威，不由本旧式发布冻结授予或撤销权限。
+无第二 Runtime/Gateway/Registry/Memory，无同请求源码导入。当前 source schema
+和 SQLite schema v33、Golden corpus、verifier、Effect/Fact/Completion/RepairPolicy
+不变。1.8 继承全部冻结路径，添加上述直接及兼容发布面；原生成器同时刷新
+freeze 和 diagnostic fingerprint，正常校验时关闭更新开关。正式三类学习产出
+接线属于 P10 R2，静态 Planner 退役与兼容权威移除属于后续阶段而非本轮。

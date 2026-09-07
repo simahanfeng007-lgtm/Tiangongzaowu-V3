@@ -11,6 +11,18 @@ import pytest
 
 from life_service.embedded_runtime import EmbeddedLifeError, EmbeddedLifeRuntime
 from life_service.memory_classification import classify_memory
+from tests.legacy_learning_fixtures import seed_historical_capability
+
+
+def _historical(life,kind='skill',version=1,previous=None,omni=False):
+    action='omni_body' if omni else 'web.search'
+    arguments={'action':'web.search','target':'','args':{'query':'{{input.topic}}'}} if omni else {'query':'release check'}
+    learning={'learning_id':f'learn_historical_{version}', 'target':kind,'title':'Historical release checks',
+        'summary':'Pre-P10 fixture','risk_level':'A3','draft_artifact':{
+            'content':f'# Historical version {version}','required_actions':[action],
+            'steps':[{'step_id':'search','action_id':action,'arguments_template':arguments}]}}
+    return seed_historical_capability(life,learning,[{'action_id':action,'risk':'A4' if omni else 'A3','available':True}],previous=previous)
+
 
 
 def _runtime(root: Path) -> EmbeddedLifeRuntime:
@@ -47,162 +59,65 @@ def test_learning_skill_preview_requires_confirmation_then_publishes(tmp_path: P
             },
         })["learning"]
         assert draft["risk_level"] == "A3"
-        assert draft["status"] == "awaiting_user" and draft["registered"] is False
+        assert draft["status"] == "migration_required" and draft["registered"] is False
         assert life._scope_state()["capabilities"] == {}
         published = _request(life, "POST", "/api/v1/v3/learning/confirm", {
             "learning_id": draft["learning_id"], "draft_sha256": draft["draft_sha256"],
         })["learning"]
-        assert published["status"] == "published" and published["registered"] is True
-        assert published["artifact_id"] in life._scope_state()["capabilities"]
+        assert published["status"] == "migration_required" and published["registered"] is False
+        assert life._scope_state()["capabilities"] == {}
     finally:
         life.close()
 
 
 def test_delete_generated_tool_removes_owned_bundle_but_preserves_release_action(tmp_path: Path):
-    life = _runtime(tmp_path)
+    life=_runtime(tmp_path)
     try:
-        draft = _request(life, "POST", "/api/v1/v3/life/learning/draft", {
-            "decision": {
-                "request": "learn a generated research tool",
-                "target": "tool",
-                "risk_level": "A3",
-                "title": "Generated research tool",
-                "draft_artifact": {
-                    "content": "# Generated research tool",
-                    "required_actions": ["web.search"],
-                    "steps": [{
-                        "step_id": "search",
-                        "action_id": "web.search",
-                        "arguments_template": {"query": "generated tool ownership"},
-                    }],
-                },
-            },
-        })["learning"]
-        artifact = _request(life, "POST", "/api/v1/v3/learning/confirm", {
-            "learning_id": draft["learning_id"],
-            "draft_sha256": draft["draft_sha256"],
-        })["artifact"]
-        bundle = tmp_path / "life-data" / "artifacts" / artifact["artifact_id"]
+        artifact=_historical(life,'tool')
+        bundle=life.paths.artifact_root/artifact['artifact_id']
         assert bundle.is_dir()
-        # Compatibility: artifacts published before ownership tagging must still
-        # be recognized by their immutable learning-artifact schema.
-        life._scope_state()["capabilities"][artifact["artifact_id"]].pop("origin")
-
-        deleted = _request(life, "POST", "/api/v1/v3/life/capability/discard", {
-            "artifact_id": artifact["artifact_id"],
-            "reason": "user_deleted",
-        })
-        assert deleted["deleted_generated_tool_ids"] == [artifact["skill_spec"]["skill_id"]]
-        assert deleted["preserved_release_actions"] == ["web.search"]
-        assert deleted["bundle_deleted"] is True
-        assert not bundle.exists()
-        assert artifact["artifact_id"] not in life._scope_state()["capabilities"]
-        assert _request(life, "GET", "/api/v1/v3/life/capabilities/overlay")["artifacts"] == []
-
-        replacement = _request(life, "POST", "/api/v1/v3/life/learning/draft", {
-            "decision": {
-                "request": "reuse the original release search action",
-                "target": "skill",
-                "risk_level": "A3",
-                "title": "Replacement skill",
-                "draft_artifact": {
-                    "content": "# Replacement skill",
-                    "required_actions": ["web.search"],
-                    "steps": [{
-                        "step_id": "search",
-                        "action_id": "web.search",
-                        "arguments_template": {"query": "release action remains"},
-                    }],
-                },
-            },
-        })["learning"]
-        assert replacement["learning_execution"]["status"] in {"completed", "completed_with_warnings"}
+        life._scope_state()['capabilities'][artifact['artifact_id']].pop('origin')
+        deleted=_request(life,'POST','/api/v1/v3/life/capability/discard',{'artifact_id':artifact['artifact_id']})
+        assert deleted['deleted_generated_tool_ids']==[artifact['skill_spec']['skill_id']]
+        assert deleted['preserved_release_actions']==['web.search']
+        assert deleted['bundle_deleted'] is True and not bundle.exists()
+        assert artifact['artifact_id'] not in life._scope_state()['capabilities']
+        assert _request(life,'GET','/api/v1/v3/life/capabilities/overlay')['artifacts']==[]
+        # Release action catalog itself is not removed by the freeze or deletion.
+        assert any(row['action_id']=='web.search' for row in life._artifact_action_catalog())
     finally:
         life.close()
 
 
 def test_learned_skill_versions_persist_and_rollback_moves_only_the_current_pointer(tmp_path: Path):
-    life = _runtime(tmp_path)
+    life=_runtime(tmp_path)
     try:
-        first = _request(life, "POST", "/api/v1/v3/life/learning/draft", {
-            "decision": {
-                "request": "learn release checks version one", "target": "skill", "risk_level": "A3", "title": "Release checks",
-                "draft_artifact": {
-                    "content": "# Release checks v1", "required_actions": ["web.search"],
-                    "steps": [{"step_id": "search", "action_id": "web.search", "arguments_template": {"query": "release checks"}}],
-                },
-            },
-        })["learning"]
-        first_published = _request(life, "POST", "/api/v1/v3/learning/confirm", {
-            "learning_id": first["learning_id"], "draft_sha256": first["draft_sha256"],
-        })["artifact"]
-        second = _request(life, "POST", "/api/v1/v3/life/learning/draft", {
-            "decision": {
-                "request": "learn release checks version two", "target": "skill", "risk_level": "A3", "title": "Release checks",
-                "update_of": first_published["artifact_id"],
-                "draft_artifact": {
-                    "content": "# Release checks v2", "required_actions": ["web.search"],
-                    "steps": [{"step_id": "search", "action_id": "web.search", "arguments_template": {"query": "release checks latest"}}],
-                },
-            },
-        })["learning"]
-        second_published = _request(life, "POST", "/api/v1/v3/learning/confirm", {
-            "learning_id": second["learning_id"], "draft_sha256": second["draft_sha256"],
-        })["artifact"]
-        assert second_published["version"] == 2
-        assert second_published["lineage_id"] == first_published["lineage_id"]
-        active = _request(life, "GET", "/api/v1/v3/life/capabilities/overlay")
-        assert [item["artifact_id"] for item in active["artifacts"]] == [second_published["artifact_id"]]
-        assert active["artifacts"][0]["activation_status"] == "pending"
-        bundle = tmp_path / "life-data" / "artifacts" / second_published["artifact_id"]
-        assert (bundle / "artifact.json").is_file() and (bundle / "SKILL.md").is_file()
-        _request(life, "POST", "/api/v1/v3/life/capability/activate", {
-            "artifact_id": second_published["artifact_id"],
-        })
-        rollback = _request(life, "POST", "/api/v1/v3/life/capability/rollback", {
-            "artifact_id": second_published["artifact_id"],
-        })
-        assert rollback["pointer"]["current_artifact_id"] == first_published["artifact_id"]
-        active_after = _request(life, "GET", "/api/v1/v3/life/capabilities/overlay")
-        assert [item["artifact_id"] for item in active_after["artifacts"]] == [first_published["artifact_id"]]
+        first=_historical(life)
+        second=_historical(life,version=2,previous=first)
+        assert second['version']==2 and first['lineage_id']==second['lineage_id']
+        before=_request(life,'GET','/api/v1/v3/life/capabilities/overlay')
+        assert before['artifacts'][0]['artifact_id']==second['artifact_id']
+        result=_request(life,'POST','/api/v1/v3/life/capability/rollback',{'artifact_id':second['artifact_id']},expected=409)
+        assert result['reason_code']=='life.learning.legacy_publication_frozen'
+        after=_request(life,'GET','/api/v1/v3/life/capabilities/overlay')
+        assert after['artifacts'][0]['artifact_id']==second['artifact_id']
+        for a in (first,second):
+            bundle=life.paths.artifact_root/a['artifact_id']
+            assert (bundle/'artifact.json').is_file() and (bundle/'SKILL.md').is_file()
     finally:
         life.close()
 
 
 def test_published_composite_replays_only_bound_action_templates(tmp_path: Path):
-    life = _runtime(tmp_path)
-    calls: list[tuple[str, dict]] = []
+    life=_runtime(tmp_path); calls=[]
     try:
-        life.set_artifact_action_catalog_provider(lambda: [{"action_id": "omni_body", "risk": "A4", "available": True}])
-        life.set_artifact_invoker(
-            lambda action_id, arguments, context: calls.append((action_id, arguments, context))
-            or {"ok": True, "zhuangtai": "wancheng"}
-        )
-        draft = _request(life, "POST", "/api/v1/v3/life/learning/draft", {
-            "decision": {
-                "request": "learn a research composite", "target": "tool", "risk_level": "A3", "title": "Research composite",
-                "draft_artifact": {
-                    "content": "# Research composite", "required_actions": ["omni_body"],
-                    "steps": [{
-                        "step_id": "search", "action_id": "omni_body",
-                        "arguments_template": {"action": "web.search", "target": "", "args": {"query": "{{input.topic}}"}},
-                    }],
-                },
-            },
-        })["learning"]
-        artifact = _request(life, "POST", "/api/v1/v3/learning/confirm", {
-            "learning_id": draft["learning_id"], "draft_sha256": draft["draft_sha256"],
-        })["artifact"]
-        _request(life, "POST", "/api/v1/v3/life/capability/activate", {
-            "artifact_id": artifact["artifact_id"],
-        })
-        result = _request(life, "POST", "/api/v1/v3/life/capability/invoke", {
-            "artifact_id": artifact["artifact_id"], "artifact_sha256": artifact["artifact_sha256"], "inputs": {"topic": "memory systems"},
-        })
-        assert result["execution"]["status"] == "completed"
-        assert len(calls) == 1
-        assert calls[0][:2] == ("omni_body", {"action": "web.search", "target": "", "args": {"query": "memory systems"}})
-        assert calls[0][2]["artifact_id"] == artifact["artifact_id"]
+        life.set_artifact_invoker(lambda action,args,ctx:calls.append((action,args,ctx)) or {'ok':True})
+        artifact=_historical(life,'tool',omni=True)
+        result=_request(life,'POST','/api/v1/v3/life/capability/invoke',{
+            'artifact_id':artifact['artifact_id'],'artifact_sha256':artifact['artifact_sha256'],'inputs':{'topic':'memory systems'}})
+        assert result['execution']['status']=='completed'
+        assert len(calls)==1 and calls[0][:2]==('omni_body',{'action':'web.search','target':'','args':{'query':'memory systems'}})
+        assert calls[0][2]['artifact_id']==artifact['artifact_id']
     finally:
         life.close()
 
@@ -223,7 +138,7 @@ def test_learning_discard_suppresses_autonomous_repeat_but_not_user_direct(tmp_p
         repeat = _request(life, "POST", "/api/v1/v3/life/learning/draft", {"decision": decision})
         assert repeat["suppressed"] is True
         direct = _request(life, "POST", "/api/v1/v3/life/learning/user-request", {"decision": decision})["learning"]
-        assert direct["status"] == "published" and direct["registered"] is True
+        assert direct["status"] == "migration_required" and direct["registered"] is False
     finally:
         life.close()
 
@@ -275,7 +190,7 @@ def test_heartbeat_runs_model_decision_off_the_scheduler_thread(tmp_path: Path):
         while time.monotonic() < deadline and not life._scope_state()["learning"]:
             time.sleep(0.02)
         record = next(iter(life._scope_state()["learning"].values()))
-        assert record["status"] == "awaiting_user" and record["registered"] is False
+        assert record["status"] == "migration_required" and record["registered"] is False
     finally:
         life.close()
 
