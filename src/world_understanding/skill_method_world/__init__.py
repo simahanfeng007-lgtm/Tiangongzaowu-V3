@@ -6,6 +6,7 @@ not route Skills, execute methods, mint permissions, or own a WorldState.
 
 from .compiler import (
     compile_skill_method_world,
+    compile_native_method_source,
     computed_skill_method_descriptor_sha256,
     method_source_revision_sha256,
     observe_legacy_skill_method_corpus,
@@ -21,6 +22,7 @@ from .models import (
     LegacySkillMethodCorpusV1,
     LegacySkillMethodEvidenceV1,
     MethodMigrationBindingV1,
+    ReviewedMethodSourceBindingV1,
     SkillMethodRelationV1,
     SkillMethodWorldError,
     SkillMethodWorldSnapshotV1,
@@ -36,6 +38,7 @@ __all__ = [
     "LegacySkillMethodCorpusV1",
     "LegacySkillMethodEvidenceV1",
     "MethodMigrationBindingV1",
+    "ReviewedMethodSourceBindingV1",
     "MethodSourceCandidateV1",
     "MethodSourceChangeV1",
     "MethodSourceLifecyclePlanV1",
@@ -49,6 +52,7 @@ __all__ = [
     "compile_method_source_lifecycle",
     "compile_production_skill_method_world",
     "compile_skill_method_world",
+    "compile_native_method_source",
     "computed_skill_method_descriptor_sha256",
     "method_source_revision_sha256",
     "observe_legacy_skill_method_corpus",
