@@ -1,0 +1,58 @@
+name: P10 inventory focused gate
+
+on:
+  push:
+    branches:
+      - codex/capability-composition-p10-life-learning-cutover-v1
+    paths:
+      - scripts/audit-learning-publication.py
+      - tests/test_learning_publication_inventory_p10.py
+      - .github/workflows/p10-inventory-focused.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: p10-inventory-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout exact checkpoint
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install inventory test dependency
+        run: python -m pip install pytest==9.0.3
+      - name: Run developer inventory tests and emit exact-head inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -m pytest -q tests/test_learning_publication_inventory_p10.py --junitxml=output/p10-inventory-tests.xml
+          python scripts/audit-learning-publication.py --repository . --baseline "$GITHUB_SHA" > output/p10-inventory.json
+      - name: Archive inventory-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p10-inventory-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            output/p10-inventory-tests.xml
+            output/p10-inventory.json
+          if-no-files-found: error
+          retention-days: 14
