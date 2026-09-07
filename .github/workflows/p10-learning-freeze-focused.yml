@@ -45,9 +45,23 @@ jobs:
       - name: Install locked source dependencies
         run: python -m pip install -r requirements-source.lock
       - name: Check source authority and committed mirrors
+        shell: python
         run: |
-          python scripts/check-source-authority.py
-          python scripts/sync-generated-sources.py --check
+          from pathlib import Path
+          import json, subprocess, sys
+          out = Path('output/p10-r1'); out.mkdir(parents=True, exist_ok=True)
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          (out/'setup-identity.json').write_text(json.dumps({'head': head, 'tests_started': False}), encoding='utf-8')
+          for script, args, name in (
+              ('scripts/check-source-authority.py', [], 'source-authority'),
+              ('scripts/sync-generated-sources.py', ['--check-committed'], 'committed-mirrors'),
+          ):
+              # Same source-checkout mode as the existing Architecture gate.
+              with (out/(name+'.log')).open('wb') as stream:
+                  checked = subprocess.run([sys.executable, script, *args], stdout=stream, stderr=subprocess.STDOUT)
+              print((out/(name+'.log')).read_text(encoding='utf-8', errors='replace'))
+              if checked.returncode:
+                  raise SystemExit(checked.returncode)
       - name: Validate the fixed candidate without updating acceptance baselines
         shell: python
         run: |
