@@ -5,6 +5,7 @@ When a root is supplied, directories are created only on the first successful pu
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from contextlib import contextmanager
 from collections import defaultdict, deque
 import json
 import os
@@ -238,6 +239,21 @@ class WorldStateStore:
         relation_refs=tuple(sorted((WorldRecordRef(record_type="world_relation",record_id=item.relation_id,revision=item.revision,sha256=item.relation_sha256) for item in snapshot.relations),key=lambda ref:ref.sort_key()))
         if entity_refs != snapshot.entity_heads.refs: raise ValueError("WORLD_STATE_ENTITY_BODY_MISMATCH")
         if relation_refs != snapshot.relation_heads.refs: raise ValueError("WORLD_STATE_RELATION_BODY_MISMATCH")
+    @contextmanager
+    def publication_transaction(self, expected: MaterializedWorldSnapshot):
+        """Serialize exact-head validation and materialization in this one writer.
+
+        This is an in-process transaction using the existing store lock, not an
+        interprocess lock or a second index. The index write remains commit.
+        """
+        with self._lock:
+            key = self._stream_key(expected)
+            current = self.current(life_id=key[0], world_scope_hash=key[1],
+                                   principal_scope_hash=key[2], frame_id=key[3])
+            if current is None or current.state_ref != expected.state_ref:
+                raise ValueError("WORLD_STATE_PUBLICATION_COMPARE_FAILED")
+            yield
+
     def publish(self, snapshot: MaterializedWorldSnapshot) -> MaterializedWorldSnapshot:
         # ProductionWorldUnderstandingRuntime serializes publications.  The
         # store lock additionally excludes concurrent P13.2 outcome updates.

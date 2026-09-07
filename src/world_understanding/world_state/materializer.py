@@ -42,6 +42,9 @@ class MaterializationInput:
     dependency_bindings: tuple[DependencyBinding,...]=()
     source_transaction_id: str="worldstate.tx"
     materialized_at_ms: int=0
+    # Trusted domain transactions supply exact source keys, never model flags.
+    changed_source_keys: tuple[str,...]=()
+    preserve_previous_domains: bool=False
 
 
 def _frame_ref(frame: SoftwareWorldFrame) -> WorldRecordRef:
@@ -91,6 +94,13 @@ class WorldStateMaterializer:
         entity_manifest=HeadManifest.build("entity_heads",entity_refs,max_items=self.config.max_entities)
         relation_manifest=HeadManifest.build("relation_heads",relation_refs,max_items=self.config.max_relations)
         changed_sources=changed_watermark_keys(None if previous is None else previous.cut,data.cut)
+        if (type(data.changed_source_keys) is not tuple
+                or data.changed_source_keys != tuple(sorted(set(data.changed_source_keys)))
+                or any(type(k) is not str or not 1 <= len(k) <= 180 for k in data.changed_source_keys)
+                or len(data.changed_source_keys) > 4096
+                or type(data.preserve_previous_domains) is not bool):
+            raise ValueError("WORLD_STATE_DOMAIN_DELTA_INVALID")
+        changed_sources = tuple(sorted(set(changed_sources) | set(data.changed_source_keys)))
         dependency_by_ref={binding.ref.sort_key():binding for binding in data.dependency_bindings}
         cognition_refs=[]; revalidated=[]; cognition_stale=[]
         for view in data.stable_cognition:
@@ -109,23 +119,40 @@ class WorldStateMaterializer:
                 if decision.remains_stable: revalidated.append(ref)
                 else: cognition_stale.append(ref); continue
             cognition_refs.append(ref)
+        if data.preserve_previous_domains and previous is not None and previous.cognition_heads is not None:
+            supplied = {_identity(r) for r in cognition_refs + cognition_stale}
+            cognition_refs.extend(r for r in previous.cognition_heads.refs if _identity(r) not in supplied)
         cognition_manifest=None if not cognition_refs else HeadManifest.build("cognition_heads",tuple(cognition_refs),max_items=self.config.max_cognition)
         hyp_refs=[]
         for hyp in data.active_hypotheses:
             require_exact_scope(scope,hyp.scope)
             if not hyp.has_valid_hash(): raise ValueError("WORLD_STATE_HYPOTHESIS_HASH_INVALID")
             hyp_refs.append(_hyp_ref(hyp))
+        if data.preserve_previous_domains and previous is not None and previous.active_hypotheses is not None:
+            supplied = {_identity(r) for r in hyp_refs}
+            hyp_refs.extend(r for r in previous.active_hypotheses.refs if _identity(r) not in supplied)
         hypothesis_manifest=None if not hyp_refs else HeadManifest.build("active_hypotheses",tuple(hyp_refs),max_items=self.config.max_hypotheses)
-        uncertainty_manifest=None if not data.uncertainty_refs else HeadManifest.build("uncertainty",data.uncertainty_refs,max_items=self.config.max_uncertainty)
+        uncertainty_refs = data.uncertainty_refs
+        if data.preserve_previous_domains and previous is not None and previous.uncertainty is not None:
+            uncertainty_refs = tuple({r.sort_key(): r for r in (*previous.uncertainty.refs, *uncertainty_refs)}.values())
+        uncertainty_manifest=None if not uncertainty_refs else HeadManifest.build("uncertainty",uncertainty_refs,max_items=self.config.max_uncertainty)
         all_current_refs=tuple(sorted((*entity_refs,*relation_refs,*cognition_refs,*hyp_refs),key=lambda r:r.sort_key()))
         dependencies=DependencyManifest.build(data.dependency_bindings,max_items=self.config.max_dependencies)
         old_refs=() if previous is None else tuple(sorted((*previous.entity_heads.refs,*previous.relation_heads.refs,*(() if previous.cognition_heads is None else previous.cognition_heads.refs),*(() if previous.active_hypotheses is None else previous.active_hypotheses.refs)),key=lambda r:r.sort_key()))
         added,removed,changed,refreshed=_head_delta(old_refs,all_current_refs)
         revalidated_identities=frozenset(_identity(ref) for ref in revalidated)
         invalidated=precise_invalidations(previous_dependencies=None if previous is None else previous.dependencies,changed_source_keys=changed_sources,current_refs=all_current_refs,refreshed_identity_keys=frozenset(set(refreshed)|set(revalidated_identities)))
-        stale=tuple(sorted({r.sort_key():r for r in (*invalidated,*cognition_stale)}.values(),key=lambda r:r.sort_key()))
+        # Unchanged stale records do not become fresh merely because this
+        # transaction changed another source. Only a refreshed/revalidated ref
+        # or removal can clear the prior invalidation.
+        current_keys = {r.sort_key() for r in all_current_refs}
+        retained_stale = () if previous is None else tuple(
+            r for r in previous.state.stale_refs if r.sort_key() in current_keys
+            and _identity(r) not in revalidated_identities)
+        stale=tuple(sorted({r.sort_key():r for r in (*invalidated,*cognition_stale,*retained_stale)}.values(),key=lambda r:r.sort_key()))
         if len(stale)>self.config.max_stale: raise ValueError("WORLD_STATE_STALE_LIMIT")
-        conflicts=tuple(sorted({r.sort_key():r for r in data.conflict_refs}.values(),key=lambda r:r.sort_key()))
+        prior_conflicts = previous.state.unresolved_conflict_refs if data.preserve_previous_domains and previous is not None else ()
+        conflicts=tuple(sorted({r.sort_key():r for r in (*prior_conflicts,*data.conflict_refs)}.values(),key=lambda r:r.sort_key()))
         if len(conflicts)>self.config.max_conflicts: raise ValueError("WORLD_STATE_CONFLICT_LIMIT")
         previous_state_ref=None if previous is None else _state_ref(previous.state)
         delta=DeltaManifest.build(previous_state_ref=previous_state_ref,changed_source_keys=changed_sources,added_refs=added,removed_refs=removed,changed_refs=changed,invalidated_refs=stale,revalidated_cognition_refs=tuple(revalidated),uncertainty_manifest_ref=None if uncertainty_manifest is None else uncertainty_manifest.ref,dependency_manifest_ref=dependencies.ref)

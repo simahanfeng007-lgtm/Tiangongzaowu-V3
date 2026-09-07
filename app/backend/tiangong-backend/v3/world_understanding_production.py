@@ -204,6 +204,26 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
     return _runtime
 
 
+def configure_production_method_publication(resolver) -> None:
+    """Install explicit operator trust on the existing singleton, never a route.
+
+    No keys are generated, loaded from model output, or enabled by default.
+    This configuration must be supplied again by the operator after restart.
+    """
+    from total_gateway.method_source_publication import MethodPublicationResolver
+    if type(resolver) is not MethodPublicationResolver:
+        raise TypeError("production Method publication needs operator configuration")
+    production_world_understanding_runtime().install_method_revision_resolver(resolver)
+
+
+def production_method_world_for_state(state_ref, run_context=None):
+    """Resolve the plan's exact WorldState under the current Life/principal."""
+    scope = _scope(_run_identity(run_context or current_run_context()))
+    if scope is None:
+        raise ValueError("METHOD_SOURCE_RUN_SCOPE_UNAVAILABLE")
+    return production_world_understanding_runtime().method_world_for_state(state_ref, scope=scope)
+
+
 def production_context_output_port() -> ContextOutputPort:
     production_world_understanding_runtime()
     assert _context_output is not None
@@ -379,6 +399,8 @@ __all__ = [
     "install_world_understanding_observer",
     "observe_native_post_commit",
     "production_context_output_port",
+    "configure_production_method_publication",
+    "production_method_world_for_state",
     "production_repository_graph_query",
     "production_repository_evidence_snapshot",
     "production_repository_previous_revision",

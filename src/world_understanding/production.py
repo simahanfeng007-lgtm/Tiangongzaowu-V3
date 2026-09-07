@@ -11,6 +11,7 @@ from threading import RLock
 from typing import Callable, Protocol
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
+from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.known import DirectKnownRecord
 from contracts.world_understanding.query import WorldQuery
 from contracts.world_understanding.repository_query import (
@@ -31,6 +32,10 @@ from .software_world.git_observation import repository_observation_to_git_delta
 from .software_world.query import execute_repository_graph_query
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
+from .skill_method_world.publication import (
+    PUBLICATION_SCHEMA, ARCHIVE_WATERMARK, MethodRevisionResolver,
+    materialize_method_update, method_marker,
+)
 
 
 class FrameFactory(Protocol):
@@ -85,6 +90,7 @@ class ProductionWorldUnderstandingRuntime:
         context_request_handler: Callable[[WorldIngressEnvelope], object] | None = None,
         semantic_pipeline: SemanticPipeline | None = None,
         committed_state_observer: Callable[[WorldIngressEnvelope, MaterializedWorldSnapshot], object] | None = None,
+        method_revision_resolver: MethodRevisionResolver | None = None,
     ) -> None:
         self.store = store
         self.frame_factory = frame_factory
@@ -95,6 +101,7 @@ class ProductionWorldUnderstandingRuntime:
         self._semantic = semantic_pipeline or SemanticPipeline(model=None)
         self._materializer = WorldStateMaterializer(store)
         self._committed_state_observer = committed_state_observer
+        self._method_revision_resolver = method_revision_resolver
         self.facade = WorldUnderstandingFacade(
             enabled=True,
             context_request_handler=context_request_handler,
@@ -295,11 +302,69 @@ class ProductionWorldUnderstandingRuntime:
                 return ()
             return build_repository_context_candidates(live.graph, query)
 
+    def install_method_revision_resolver(self, resolver: MethodRevisionResolver) -> None:
+        """Operator-only composition seam; never an envelope or model field."""
+        if not callable(resolver) or not callable(getattr(resolver, "load", None)):
+            raise TypeError("METHOD_PUBLICATION_RESOLVER_INVALID")
+        with self._lock:
+            if self._method_revision_resolver is not None and self._method_revision_resolver is not resolver:
+                raise ValueError("METHOD_PUBLICATION_RESOLVER_ALREADY_CONFIGURED")
+            self._method_revision_resolver = resolver
+
+    def method_world_for_state(self, state_ref: WorldRecordRef, *, scope: WorldScope):
+        """Read an exact current/historical source binding; no latest fallback.
+
+        Callers use the WorldState ref already bound to their running plan.
+        Evicted/unavailable states fail closed instead of switching that plan.
+        """
+        with self._lock:
+            snapshot = self.store.get(state_ref.record_id)
+            if (state_ref.record_type != "world_state" or snapshot is None
+                    or snapshot.state_ref != state_ref or snapshot.state.scope != scope
+                    or not snapshot.state.has_valid_hash()):
+                raise ValueError("METHOD_SOURCE_PINNED_WORLD_UNAVAILABLE")
+            if self._method_revision_resolver is None:
+                raise ValueError("METHOD_PUBLICATION_NOT_CONFIGURED")
+            return self._method_revision_resolver.load(snapshot)
+
+    def _consume_method_publication(self, envelope: WorldIngressEnvelope) -> SourceMaterializationDisposition:
+        payload = envelope.payload_inline
+        if (envelope.source_kind != "SYSTEM_GOVERNANCE" or type(payload) is not dict
+                or set(payload) != {"schema", "archive_sha256", "frame_id"}
+                or type(payload["frame_id"]) is not str):
+            raise ValueError("METHOD_PUBLICATION_ENVELOPE_INVALID")
+        with self._lock:
+            resolver = self._method_revision_resolver
+            if resolver is None:
+                raise ValueError("METHOD_PUBLICATION_NOT_CONFIGURED")
+            scope = envelope.scope_hint
+            previous = self.store.current(life_id=scope.life_id, world_scope_hash=scope.world_scope_hash,
+                                          principal_scope_hash=scope.principal_scope_hash, frame_id=payload["frame_id"])
+            if previous is None:
+                raise ValueError("METHOD_PUBLICATION_REQUIRES_EXISTING_FRAME")
+            with self.store.publication_transaction(previous):
+                if method_marker(previous, ARCHIVE_WATERMARK) == payload["archive_sha256"]:
+                    resolver.load(previous)  # Recheck retained bytes/signatures after restart.
+                    return SourceMaterializationDisposition("METHOD_REVISION_ALREADY_MATERIALIZED", True, previous.state.world_state_id)
+                update = resolver(envelope, previous)
+                snapshot, frame, graph = materialize_method_update(
+                    self._materializer, envelope, previous, update, self._next_cut(envelope, previous))
+                live = self._streams.get(frame.frame_id)
+                self._streams[frame.frame_id] = _StreamState(frame, graph, None if live is None else live.closure)
+            if self._committed_state_observer is not None:
+                try:
+                    self._committed_state_observer(envelope, snapshot)
+                except Exception:
+                    pass
+            return SourceMaterializationDisposition("METHOD_REVISION_MATERIALIZED", True, snapshot.state.world_state_id)
+
     def consume_source(
         self,
         envelope: WorldIngressEnvelope,
         rows: tuple[DirectKnownRecord, ...],
     ) -> SourceMaterializationDisposition:
+        if isinstance(envelope.payload_inline, dict) and envelope.payload_inline.get("schema") == PUBLICATION_SCHEMA:
+            return self._consume_method_publication(envelope)
         if not rows:
             return SourceMaterializationDisposition("SOURCE_EMPTY", True, None)
         with self._lock:
@@ -360,6 +425,8 @@ class ProductionWorldUnderstandingRuntime:
                     cut=cut,
                     graph=update.graph,
                     active_hypotheses=semantic.hypotheses,
+                    dependency_bindings=() if previous is None else previous.dependencies.bindings,
+                    preserve_previous_domains=(previous is not None and method_marker(previous, ARCHIVE_WATERMARK) is not None),
                     source_transaction_id=envelope.envelope_id,
                     materialized_at_ms=envelope.source_time.recorded_at_ms,
                 )
