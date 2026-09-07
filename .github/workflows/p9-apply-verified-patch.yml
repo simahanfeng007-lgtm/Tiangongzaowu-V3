@@ -1,0 +1,111 @@
+name: P9 verified patch transfer
+
+# Temporary developer transport, NOT a product test or acceptance gate.
+on:
+  push:
+    branches:
+      - codex/capability-composition-p9-method-source-evolution-v1
+    paths:
+      - .github/workflows/p9-apply-verified-patch.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply-exact-patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+          submodules: false
+      - name: Validate exact inputs and push a normal source-only checkpoint
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, gzip, hashlib, json, os, pathlib, shutil, subprocess, urllib.request
+          repo = "simahanfeng007-lgtm/Tiangongzaowu-V3"
+          branch = "codex/capability-composition-p9-method-source-evolution-v1"
+          base = "e1774c7c9a964a2a86975d7994928fa6d4cbc31c"
+          workflow = ".github/workflows/p9-apply-verified-patch.yml"
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          os.chdir(root)
+          def git(*args, env=None):
+              return subprocess.check_output(["git", "-c", "core.hooksPath=/dev/null", *args], env=env).decode().strip()
+          assert os.environ["GITHUB_REPOSITORY"] == repo
+          assert os.environ["GITHUB_REF"] == "refs/heads/" + branch
+          head = git("rev-parse", "HEAD")
+          assert head == os.environ["GITHUB_SHA"]
+          git("merge-base", "--is-ancestor", base, head)
+          assert git("diff", "--name-only", base, head).splitlines() == [workflow]
+          assert git("ls-remote", "origin", "refs/heads/" + branch).split()[0] == head
+          assert not git("status", "--porcelain")
+          chunks = [('c4d0d1092e286e00207b9e967c3b0e14e7afafb2', 1536), ('fa8ba7913d146a0be028cc99d003e2482ba4850c', 1536), ('0af6b87d2c620df0696949d528b8b84ed550032b', 1536), ('dcb0cd0bed9023e10d6daf6de4727a33b6c88962', 1536), ('127471e36ff4f0340d8337280dd2c78427c64905', 1536), ('0871725923d3e832901e94f5c7598052cc460218', 1536), ('223608c2c844152063533e49e5b6e6442eebacb0', 1536), ('193805acfceaee566c67cb3b82b667fe1cd79123', 1536), ('be42c847420757458a8dac56eac3a6dab83f32ab', 1536), ('407b764c07ef2d1a2d14589d5f557e3b525d4fcb', 1536), ('449214f9cd0207f24bda02923d50a40f14ac3ed9', 1536), ('a2ea3f703090589a0b254d74a97b0bc45d85add2', 1536), ('d6fa75d19f55ce781ebe183de764e595819b8fde', 1536), ('90c19149a521a6b3b21dfc0199afe680fab04d39', 1536), ('e77c52add18c5f3ec56bfe465361f86fae8c0878', 1536), ('a6d7626c8193c9bfb03572a854715963c7de7edd', 971)]
+          entries = [('app/backend/tiangong-backend/v3/world_understanding_production.py', 'cc44953abb20ae710e38cae560bfc08a1e08f7b7', '3c54f6d1d33f857f31c84b8571fbfed9f54c923b'), ('docs/capability-composition/P9_R3C_ADMISSION_DISPATCH_2026-09-07.md', None, '50cad74ec3c426367c028a4ce83c6a71b8c16856'), ('docs/p19-r2/AUTHORITY_MAP.txt', '79c96ec72e46256282ed9cded6478948b9dc210d', 'c1e6ccb21162d87cb0f2f3e44ad37b16749dc84b'), ('docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json', '97f910351e309cafa11676e30d6a7a26b0e143e1', 'aa7d501965977273f34fd7f3cc814c38dad6ce02'), ('src/total_gateway/method_source_run_binding.py', '8b46a1163e90e23d9339664acacb5cb9f98b13d9', 'c6692ea207ae3e87636ae2a8e26e747446cb6ece'), ('src/total_gateway/store.py', '9152a585d570a4b50c58f89d3f7d1d6241fc757d', '4ba3939b9e9c5b89d83033c887cf875e50d4522d'), ('src/total_gateway/verification_plane.py', 'ab9d1ebe9b205093516d3a9ebb469494f74e586f', '0b9dda538594fce61e4ecbbfbed08aedfa98f743'), ('src/world_understanding/production.py', 'd1b3ba00d3fd59a50d97412ff8587a17ed812188', '40729025b7f8f9223cebe9ec2b1ff606b4e00d2d'), ('tests/golden/p19_r2/test_freeze_and_guards.py', 'ea29d5cba7c035f6192e1750dc16836649c2ce9e', '42dfec72f5f4c1c6e44f439b164ea87bc03d9008'), ('tests/test_composition_activation_store_p7b2.py', 'c0fbb1d9b1e7490f2737e2b00338ff43587c9291', '923b8c50d5410fa4cc190963eaea300dd205f0d3'), ('tests/test_composition_executable_plan_p7c0.py', 'd77faf346866b0f9246b5af8f59c24f7034b3573', '9c8c4a141c275f84e3d79dfefe3d5250608ac605'), ('tests/test_method_run_retention_p9.py', '102f106ec6cc5949a4c280245c48db6b9d3a9001', 'e17f2226cea2d4e997d84c5e9440aab8e9cfcc6c'), ('tests/test_method_source_lifecycle_wiring_p9.py', None, '115ba64dae28975edd342e9c896adb63c4cdecd4')]
+          parts = []
+          for sha, size in chunks:
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + repo + "/git/blobs/" + sha,
+                  headers={"Accept": "application/vnd.github+json", "Authorization": "Bearer " + os.environ["GH_TOKEN"]})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  item = json.load(response)
+              assert item["encoding"] == "base64" and item["sha"] == sha
+              raw = base64.b64decode(item["content"])
+              assert len(raw) == size
+              assert hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == sha
+              parts.append(raw)
+          compressed = b"".join(parts)
+          assert hashlib.sha256(compressed).hexdigest() == "9d42f4ce28d2a6c01c9a084133de798295eebdd99cff3ab6f5a01302c0a631d7"
+          patch = gzip.decompress(compressed)
+          assert len(patch) == 80585
+          assert hashlib.sha256(patch).hexdigest() == "958a76daba0933cea4d91be0e2a6f90bfc4eb79efe417951530f7e699dabd5ba"
+          for path, before, after in entries:
+              row = git("ls-tree", "HEAD", "--", path)
+              if before is None:
+                  assert not row
+              else:
+                  assert row.split()[0:3] == ["100644", "blob", before]
+          folder = pathlib.Path(os.environ["RUNNER_TEMP"]) / "p9-applied-source"
+          folder.mkdir(exist_ok=False)
+          patch_path = folder / "P9_R3C.patch"
+          patch_path.write_bytes(patch)
+          git("apply", "--check", "--index", "--whitespace=error-all", str(patch_path))
+          git("apply", "--index", "--whitespace=error-all", str(patch_path))
+          assert git("diff", "--cached", "--name-only").splitlines() == sorted(e[0] for e in entries)
+          for path, before, after in entries:
+              assert git("rev-parse", ":" + path) == after
+              assert git("hash-object", "--no-filters", path) == after
+          index = folder / "verified.index"
+          shutil.copyfile(git("rev-parse", "--git-path", "index"), index)
+          env = dict(os.environ, GIT_INDEX_FILE=str(index))
+          git("update-index", "--force-remove", workflow, env=env)
+          assert git("write-tree", env=env) == "26bc300a342ebf8d3be4ce372a742abc23ec743a"
+          index.unlink()
+          git("config", "user.name", "github-actions[bot]")
+          git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+          git("commit", "-m", "feat(p9): enforce Method retention before admission and dispatch [skip ci]", "-m",
+              "Apply the exact locally verified R3-C patch: 595 focused cases passed, 0 failures/errors/skips. "
+              "Normal SQLite admission pins before COMMIT; dispatch rechecks; terminal cleanup waits for durable outcomes. "
+              "Declare Plane 1.7 and retain all inherited freeze/authority guards. "
+              "This Actions job transfers verified source only; it does not run tests or claim final Windows/model acceptance. "
+              "No main merge, permission expansion, production deployment or P10 work.")
+          commit = git("rev-parse", "HEAD")
+          git("push", "origin", "HEAD:refs/heads/" + branch)
+          result = {"baseline": base, "workflow_commit": head, "applied_commit": commit,
+                    "tree": git("rev-parse", "HEAD^{tree}"), "patch_sha256": hashlib.sha256(patch).hexdigest(),
+                    "verified_files": [{"path": p, "blob": a} for p, b, a in entries],
+                    "tests_run_by_this_job": False, "force_push": False, "main_updated": False}
+          (folder / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+          bundle = folder / "repository.bundle"
+          git("bundle", "create", str(bundle), "HEAD")
+          git("bundle", "verify", str(bundle))
+          (folder / "SHA256SUMS.txt").write_text(hashlib.sha256(bundle.read_bytes()).hexdigest() + "  repository.bundle\n")
+          print(json.dumps(result))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p9-applied-${{ github.sha }}
+          path: ${{ runner.temp }}/p9-applied-source/
+          if-no-files-found: error
+          retention-days: 7
