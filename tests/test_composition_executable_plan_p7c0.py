@@ -1537,6 +1537,7 @@ _P7C0_ROOT_CALLS = Counter(
         "self._connection.execute().fetchone": 4,
         "self._write_transaction": 1,
         "self.register_limited_composition_activation_bundle": 1,
+        "self._retain_method_sources_before_admission": 1,  # Plane 1.7 exact persistence seam.
     }
 )
 
@@ -2049,7 +2050,33 @@ def _p7c0_module_function(tree: ast.Module, name: str) -> ast.FunctionDef:
     return matches[0]
 
 
+def _p7c0_assert_method_retention_seam(tree: ast.Module) -> None:
+    """Plane 1.7 admits only verified GC-reference persistence, never execution.
+
+    Extend, rather than disable, the existing exact call/SQL/import guard.
+    The resolver implementation is separately frozen and fault-tested in P9.
+    """
+    _p7c0_assert_scope(
+        _p7c0_store_method(tree, "_method_retention_required"),
+        expected_calls=Counter({"requires_method_retention": 1}),
+        expected_imports=Counter({("from", 1, "method_source_run_binding", "requires_method_retention", None): 1}),
+        sql_receiver="self._connection.execute", expected_sql=Counter(),
+    )
+    nodes = _p7c0_assert_scope(
+        _p7c0_store_method(tree, "_retain_method_sources_before_admission"),
+        expected_calls=Counter({"self._method_retention_required": 1, "StoreConflictError": 1,
+                                "self._method_source_resolver.retain_before_admission": 1,
+                                "self._method_source_admission_pins.append": 1}),
+        expected_imports=Counter(), sql_receiver="self._connection.execute", expected_sql=Counter(),
+    )
+    call = next(n for n in nodes if isinstance(n, ast.Call)
+                and _p7c0_call_name(n) == "self._method_source_resolver.retain_before_admission")
+    assert not call.keywords and len(call.args) == 1
+    assert isinstance(call.args[0], ast.Name) and call.args[0].id == "plan"
+
+
 def _assert_p7c0_register_bundle_is_persistence_only(tree: ast.Module) -> None:
+    _p7c0_assert_method_retention_seam(tree)
     assert _p7c0_runtime_binding_inventory(
         tree.body, frozenset(_P7C0_MODULE_BINDINGS)
     ) == _P7C0_MODULE_BINDINGS

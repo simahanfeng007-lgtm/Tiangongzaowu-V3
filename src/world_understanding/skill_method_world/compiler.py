@@ -3,23 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
+import json
 from pathlib import PurePosixPath
 import re
 from typing import Any, Mapping
 
-from contracts import canonical_sha256
-from contracts.capability_composition import SkillSourcePrimitiveV1
+from contracts import canonical_json_bytes, canonical_sha256
+from contracts.capability_composition import SkillSourcePrimitiveV1, SourceRevisionRefV1
 
 from .models import (
     _ALLOWED_PHASES,
     _LEGACY_SKILL_SCHEMA,
     _SHA256,
     _SKILL_METHOD_WORLD_SCHEMA,
+    _SKILL_METHOD_WORLD_REVIEWED_SCHEMA,
     _PHASE_FIELDS,
     _PREFIX_RULES,
     LegacySkillMethodCorpusV1,
     LegacySkillMethodEvidenceV1,
     MethodMigrationBindingV1,
+    ReviewedMethodSourceBindingV1,
+    validate_native_method_path,
     SkillMethodRelationV1,
     SkillMethodWorldError,
     SkillMethodWorldSnapshotV1,
@@ -279,6 +284,7 @@ def compile_skill_method_world(
     *,
     corpus: LegacySkillMethodCorpusV1,
     migration_bindings: tuple[MethodMigrationBindingV1, ...],
+    reviewed_source_bindings: tuple[ReviewedMethodSourceBindingV1, ...] = (),
 ) -> SkillMethodWorldSnapshotV1:
     """Compile reusable method semantics without creating execution authority."""
 
@@ -290,35 +296,56 @@ def compile_skill_method_world(
         raise SkillMethodWorldError("method primitives are empty or duplicated")
 
     ordered_bindings = tuple(sorted(migration_bindings, key=lambda item: item.method_id))
-    if tuple(item.method_id for item in ordered_bindings) != method_ids:
+    ordered_native = tuple(sorted(reviewed_source_bindings, key=lambda item: item.method_id))
+    all_binding_ids = tuple(item.method_id for item in ordered_bindings + ordered_native)
+    if (tuple(sorted(all_binding_ids)) != method_ids
+            or len(set(all_binding_ids)) != len(all_binding_ids)):
         raise SkillMethodWorldError(
-            "method primitives and migration bindings are not one-to-one"
+            "method primitives and provenance bindings are not one-to-one"
         )
     if any(not item.has_valid_sha256() for item in ordered_bindings):
         raise SkillMethodWorldError("method migration binding hash is invalid")
 
     evidence_by_id = {item.legacy_skill_id: item for item in corpus.evidence}
     binding_by_method = {item.method_id: item for item in ordered_bindings}
+    native_by_method = {item.method_id: item for item in ordered_native}
+    if ordered_native:
+        steps = tuple(step for item in ordered_primitives for step in item.method_steps)
+        if len(steps) != len(set(steps)):
+            raise SkillMethodWorldError("method step identities collide across methods")
 
     relations: set[tuple[str, str, str]] = set()
     for primitive in ordered_primitives:
-        binding = binding_by_method[primitive.method_id]
-        for skill_id in binding.legacy_skill_ids:
-            evidence = evidence_by_id.get(skill_id)
-            if evidence is None:
-                raise SkillMethodWorldError(
-                    f"method references unknown legacy Skill: {primitive.method_id}"
-                )
-            if not set(binding.required_phases).issubset(evidence.observed_phases):
-                raise SkillMethodWorldError(
-                    f"legacy Skill lacks required method phases: {primitive.method_id}"
-                )
-        _validate_primitive(
-            primitive,
-            binding=binding,
-            corpus=corpus,
-            evidence_by_id=evidence_by_id,
-        )
+        # Pydantic model_copy/model_construct intentionally skip validation.
+        # Re-enter the actual contract before admitting untrusted proposals.
+        checked = SkillSourcePrimitiveV1.model_validate_json(primitive.model_dump_json())
+        if checked != primitive:
+            raise SkillMethodWorldError("method primitive contract drifted")
+        binding = binding_by_method.get(primitive.method_id)
+        if binding is None:
+            native = native_by_method[primitive.method_id]
+            native.__post_init__()
+            if (not native.matches_primitive(primitive)
+                    or computed_skill_method_descriptor_sha256(primitive) != primitive.descriptor_sha256):
+                raise SkillMethodWorldError("native method provenance or descriptor is invalid")
+            _validate_prefixed_values(primitive)
+        else:
+            for skill_id in binding.legacy_skill_ids:
+                evidence = evidence_by_id.get(skill_id)
+                if evidence is None:
+                    raise SkillMethodWorldError(
+                        f"method references unknown legacy Skill: {primitive.method_id}"
+                    )
+                if not set(binding.required_phases).issubset(evidence.observed_phases):
+                    raise SkillMethodWorldError(
+                        f"legacy Skill lacks required method phases: {primitive.method_id}"
+                    )
+            _validate_primitive(
+                primitive,
+                binding=binding,
+                corpus=corpus,
+                evidence_by_id=evidence_by_id,
+            )
 
         method_ref = f"method:{primitive.method_id}"
         for value in primitive.goal_classes:
@@ -350,7 +377,7 @@ def compile_skill_method_world(
                 method_ref,
             )
         )
-        for skill_id in binding.legacy_skill_ids:
+        for skill_id in (() if binding is None else binding.legacy_skill_ids):
             relations.add(
                 (
                     "DERIVED_FROM_LEGACY_SKILL",
@@ -371,7 +398,8 @@ def compile_skill_method_world(
         SkillMethodRelationV1(*item) for item in sorted(relations)
     )
     snapshot = SkillMethodWorldSnapshotV1(
-        schema=_SKILL_METHOD_WORLD_SCHEMA,
+        schema=(_SKILL_METHOD_WORLD_REVIEWED_SCHEMA if ordered_native else _SKILL_METHOD_WORLD_SCHEMA),
+        reviewed_source_bindings=ordered_native,
         legacy_corpus_sha256=corpus.corpus_sha256,
         method_sources_sha256=method_sources_sha256,
         primitives=ordered_primitives,
@@ -380,3 +408,77 @@ def compile_skill_method_world(
         snapshot_sha256="0" * 64,
     )
     return replace(snapshot, snapshot_sha256=canonical_sha256(snapshot.payload()))
+
+
+NATIVE_METHOD_SOURCE_SCHEMA = "tiangong.native-method-source.v1"
+_NATIVE_FIELDS = frozenset({
+    "schema", "method_id", "version", "title", "semantic_summary", "goal_classes",
+    "preconditions", "expected_postconditions", "required_capability_classes",
+    "method_steps", "control_flow_hints", "failure_modes", "fallback_patterns",
+    "verification_intent", "composition_tags",
+})
+
+
+def read_method_json(raw: bytes) -> dict[str, Any]:
+    """Read bounded canonical data, rejecting duplicate keys and non-finite JSON."""
+    if type(raw) is not bytes or not 0 < len(raw) <= 1024 * 1024:
+        raise SkillMethodWorldError("method document bytes are missing or oversized")
+
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    def constant(value):
+        raise ValueError("non-finite JSON constant")
+
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=constant)
+        if type(value) is not dict or canonical_json_bytes(value) != raw:
+            raise ValueError("non-canonical object")
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise SkillMethodWorldError("method document is not strict canonical JSON") from exc
+    return value
+
+
+def compile_native_method_source(
+    source_path: str, source_bytes: bytes, *, expected_source_sha256: str,
+) -> SkillSourcePrimitiveV1:
+    """Compile semantic JSON data, not Python/Skill executables or approval.
+
+    The exact document hash is its source identity. The descriptor additionally
+    binds the path and all semantics. Signature checks belong to the Gateway
+    review boundary; this structural compiler never awards publication rights.
+    """
+    validate_native_method_path(source_path)
+    value = read_method_json(source_bytes)
+    if (set(value) != _NATIVE_FIELDS or value.get("schema") != NATIVE_METHOD_SOURCE_SCHEMA
+            or type(expected_source_sha256) is not str
+            or _SHA256.fullmatch(expected_source_sha256) is None
+            or hashlib.sha256(source_bytes).hexdigest() != expected_source_sha256):
+        raise SkillMethodWorldError("native method source schema or byte identity is invalid")
+    if (type(value["version"]) is not str
+            or re.fullmatch(r"v[1-9][0-9]{0,8}", value["version"]) is None):
+        raise SkillMethodWorldError("native method source version must be a positive vN")
+    semantics = {key: item for key, item in value.items() if key != "schema"}
+    try:
+        ref = SourceRevisionRefV1(
+            source_kind="SKILL_METHOD", semantic_id=value["method_id"], version=value["version"],
+            source_files=(source_path,), source_sha256=expected_source_sha256,
+            descriptor_sha256="0" * 64, manifest_sha256=None,
+        )
+        primitive = SkillSourcePrimitiveV1.model_validate_json(canonical_json_bytes({
+            **semantics, "source_ref": ref.model_dump(mode="json"),
+            "source_sha256": expected_source_sha256, "descriptor_sha256": "0" * 64,
+        }))
+    except (ValueError, TypeError) as exc:
+        raise SkillMethodWorldError("native method source contract is invalid") from exc
+    _validate_prefixed_values(primitive)
+    descriptor = computed_skill_method_descriptor_sha256(primitive)
+    return primitive.model_copy(update={
+        "source_ref": ref.model_copy(update={"descriptor_sha256": descriptor}),
+        "descriptor_sha256": descriptor,
+    })

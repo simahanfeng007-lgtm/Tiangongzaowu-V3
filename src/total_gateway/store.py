@@ -5991,6 +5991,11 @@ class GatewayStateStore:
         self._connection = connection
         self._lock = threading.RLock()
         self._closed = False
+        # Operator wiring only; durable task/generation authority stays in SQLite.
+        self._method_source_resolver = None
+        self._method_source_admission_pins = []
+        self._method_source_generation_dirty = False
+        self._method_source_cleanup_error = None
 
     @classmethod
     def open(cls, path: Path, *, now_ms: int) -> "GatewayStateStore":
@@ -6029,8 +6034,121 @@ class GatewayStateStore:
     def _write_transaction(self) -> Iterator[None]:
         if self._closed:
             raise StoreError("gateway store is closed")
-        with gateway_store_write_transaction(self._connection):
-            yield
+        outer = not self._connection.in_transaction
+        if outer:
+            self._method_source_admission_pins = []
+            self._method_source_generation_dirty = False
+        try:
+            with gateway_store_write_transaction(self._connection):
+                yield
+        except Exception:
+            if outer:
+                self._settle_method_source_retention(committed=False)
+            raise
+        else:
+            if outer:
+                self._settle_method_source_retention(committed=True)
+
+    def configure_method_source_lifecycle(self, resolver) -> None:
+        """Install one existing World/Gateway binding before admitting Method plans.
+
+        No caller-supplied success flag, second run table or new writer is used.
+        Existing active rows are recovered before this connection is enabled.
+        """
+        from .method_source_run_binding import MethodRunSourceResolver
+        if type(resolver) is not MethodRunSourceResolver or resolver.gateway is not self:
+            raise TypeError("METHOD_RETENTION_EXISTING_AUTHORITIES_REQUIRED")
+        if resolver.world.store.root is None:
+            raise ValueError("METHOD_RETENTION_PERSISTENT_WORLD_REQUIRED")
+        with self._lock:
+            if self._closed or self._connection.in_transaction:
+                raise StoreConflictError("METHOD_RETENTION_CONFIGURATION_NOT_QUIESCENT")
+            if self._method_source_resolver is not None and self._method_source_resolver != resolver:
+                raise StoreConflictError("METHOD_RETENTION_CONFIGURATION_REPLACEMENT")
+            # Records are read through the normal immutable-plan verifier.
+            rows = self._connection.execute(
+                "SELECT p.executable_plan_id FROM composition_executable_plan p "
+                "JOIN request_generation g ON g.request_id = p.request_id "
+                "AND g.run_id = p.run_id AND g.current_generation = p.generation "
+                "WHERE g.status = 'ACTIVE' ORDER BY p.executable_plan_id"
+            ).fetchall()
+            for row in rows:
+                record = self.get_executable_composition_plan_record(row["executable_plan_id"])
+                if record is None:
+                    raise StoreCorruptionError("METHOD_RETENTION_RECOVERY_PLAN_MISSING")
+                if record.executable_plan.legacy_plan.method_source_refs:
+                    resolver.retain_before_admission(record.executable_plan)
+            self._method_source_resolver = resolver
+            self._method_source_generation_dirty = True
+            self._settle_method_source_retention(committed=True)
+
+    def method_source_retention_status(self) -> dict[str, object]:
+        with self._lock:
+            return {"configured": self._method_source_resolver is not None,
+                    "cleanup_error": self._method_source_cleanup_error}
+
+    def _settle_method_source_retention(self, *, committed: bool) -> None:
+        """Post-transaction GC only. A cleanup failure cannot undo a SQL commit.
+
+        A known rollback may remove this transaction's newly created references.
+        Process-death orphans and ambiguous DB outcomes remain retained; a later
+        operator reconciliation must not infer completion from missing rows.
+        """
+        pins = tuple(self._method_source_admission_pins)
+        dirty = self._method_source_generation_dirty
+        self._method_source_admission_pins = []
+        self._method_source_generation_dirty = False
+        resolver = self._method_source_resolver
+        if resolver is None or (not pins and not dirty) or (committed and not dirty):
+            return
+        try:
+            if self._connection.in_transaction:
+                raise StoreConflictError("METHOD_RETENTION_SQL_OUTCOME_UNRESOLVED")
+            if not committed:
+                resolver.release_rolled_back_admissions(pins)
+            elif dirty:
+                resolver.reconcile()
+            self._method_source_cleanup_error = None
+        except Exception as exc:
+            # Keep the references, preserve the original authority outcome, and
+            # expose maintenance failure instead of reporting a false rollback.
+            self._method_source_cleanup_error = "METHOD_RETENTION_CLEANUP:" + type(exc).__name__
+            diagnostic_log(self._method_source_cleanup_error)
+
+    def _method_retention_required(self, plan) -> bool:
+        from .method_source_run_binding import requires_method_retention
+        return requires_method_retention(plan, configured=self._method_source_resolver is not None)
+
+    def _retain_method_sources_before_admission(self, plan) -> None:
+        if not self._method_retention_required(plan):
+            return
+        if self._method_source_resolver is None:
+            raise StoreConflictError("METHOD_RETENTION_NOT_CONFIGURED")
+        pin = self._method_source_resolver.retain_before_admission(plan)
+        if pin is not None:
+            self._method_source_admission_pins.append(pin)
+
+    def _require_method_sources_for_claim(self, claim) -> None:
+        if claim.effect_kind != "execution":
+            return
+        record = self.get_executable_composition_plan_for_request(
+            claim.request_id, run_id=claim.run_id, generation=claim.generation)
+        if record is None or not self._method_retention_required(record.executable_plan):
+            return
+        if self._method_source_resolver is None:
+            raise StoreConflictError("METHOD_RETENTION_NOT_CONFIGURED")
+        self._method_source_resolver.require_retained_plan(record.executable_plan)
+
+    def method_source_has_unresolved_execution(self, plan) -> bool:
+        """Read existing Effect attempts; cancellation is not in-flight completion."""
+        with self._lock:
+            return self._connection.execute(
+                "SELECT 1 FROM effect_ledger e JOIN effect_attempts a ON a.effect_id = e.effect_id "
+                "WHERE e.request_id = ? AND e.run_id = ? AND e.generation = ? "
+                "AND e.effect_kind = 'execution' AND a.state IN "
+                "('SIDE_EFFECT_STARTED','AMBIGUOUS','RECONCILE_REQUIRED') LIMIT 1",
+                (plan.request_id, plan.run_id, plan.generation),
+            ).fetchone() is not None
 
     def _assert_request_binding_locked(
         self,
@@ -7042,6 +7160,7 @@ class GatewayStateStore:
                 if record.claim.model_dump(exclude=stable_excludes) != claim.model_dump(exclude=stable_excludes):
                     raise StoreConflictError("effect identity was reused with different intent")
                 return record, False
+            self._require_method_sources_for_claim(claim)
             self._connection.execute(
                 """
                 INSERT INTO effect_ledger(
@@ -7240,6 +7359,7 @@ class GatewayStateStore:
                 return record
             if record.state != "CLAIMED" or started_at_ms < record.claim.claimed_at_ms:
                 raise StoreConflictError("effect cannot cross the side-effect boundary")
+            self._require_method_sources_for_claim(record.claim)
             # V14 草案 §3.1：dispatch 与全局 action_fence_epoch 同一 store 行。
             # claim 时锚定的 fence epoch 若已推进（stop 先提交），旧票据永不复活 → handler=0。
             claim_fact = self._connection.execute(
@@ -7332,6 +7452,7 @@ class GatewayStateStore:
             )
         result_json, result_digest = _effect_model_payload(result)
         with self._lock, self._write_transaction():
+            self._method_source_generation_dirty = True
             row = self._connection.execute(
                 "SELECT * FROM effect_ledger WHERE effect_id = ?", (result.effect_id,)
             ).fetchone()
@@ -9028,6 +9149,12 @@ class GatewayStateStore:
                 raise StoreNotFoundError("dispatch target attempt is missing")
             if row["state"] != "CLAIMED":
                 raise StoreConflictError("dispatch permit requires a pre-start claim")
+            method_head = self._connection.execute(
+                "SELECT * FROM effect_ledger WHERE effect_id = ?", (effect_id,)
+            ).fetchone()
+            if method_head is None:
+                raise StoreCorruptionError("dispatch Effect head is missing")
+            self._require_method_sources_for_claim(_effect_record_from_row(method_head).claim)
             if expected_request_id is not None:
                 generation_row = self._connection.execute(
                     "SELECT * FROM request_generation WHERE request_id = ?",
@@ -9608,6 +9735,7 @@ class GatewayStateStore:
             raise ValueError("generation lease arguments are invalid")
         expires_at_ms = issued_at_ms + lease_duration_ms
         with self._lock, self._write_transaction():
+            self._method_source_generation_dirty = True
             row = self._connection.execute(
                 "SELECT * FROM request_generation WHERE request_id = ?", (request_id,)
             ).fetchone()
@@ -9786,6 +9914,7 @@ class GatewayStateStore:
         if not reason_code or cancelled_at_ms < 0:
             raise ValueError("generation cancellation fact is invalid")
         with self._lock, self._write_transaction():
+            self._method_source_generation_dirty = True
             row = self._connection.execute(
                 "SELECT * FROM request_generation WHERE request_id = ?", (request_id,)
             ).fetchone()
@@ -9826,6 +9955,7 @@ class GatewayStateStore:
         expected_run_id: str | None = None,
         expected_generation: int | None = None,
     ) -> GenerationLeaseView:
+        self._method_source_generation_dirty = True
         row = self._connection.execute(
             "SELECT * FROM request_generation WHERE request_id = ?", (request_id,)
         ).fetchone()
@@ -17031,6 +17161,10 @@ class GatewayStateStore:
             _verify_executable_composition_plan_authorities(
                 self._connection, record
             )
+            # The World reference is durable before SQLite can expose this
+            # registration. Missing configuration or a failed pin rolls back
+            # the WHOLE existing registration transaction, including its parent.
+            self._retain_method_sources_before_admission(record.executable_plan)
             return ExecutableCompositionBundleRegistration(
                 activation_bundle=activation_bundle,
                 record=record,
