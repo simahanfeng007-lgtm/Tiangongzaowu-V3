@@ -423,3 +423,40 @@ are relaxed. Normal validation runs with UPDATE_* flags absent. Both freeze and
 diagnostic fingerprint are regenerated through their original generator paths.
 Older binaries need a compatible replay reader or reviewed backup restoration
 for the new audit event names; production data was not migrated by this change.
+
+
+Verification Plane 1.10 — P10 R2-B machine experience writeback (2026-09-08)
+
+The existing terminal Life callback and its strict recovery tail now invoke the
+Gateway's machine-evidence/P5/Memory adapter. The recovered terminal is rechecked
+against the existing signed Life journal; learning never recommits execution or
+dispatches tools. A failed learning/audit outcome cannot rewrite the terminal.
+
+Current canonical WorldState, per-source descriptors/dependencies, registered
+Action Manifest and native Method archives are rechecked under the existing
+World store lock. Only closed, admitted P7 A0 read/verify runs with authoritative
+P19/Fact/Object/Completion evidence may contribute positive observations here.
+Unknown or unsupported provenance defers; pure P5 negative policy is unchanged.
+Quality records machine predicate coverage, not a semantic/model quality rating.
+No raw reply, model observation/expected hash, or caller parent list is trusted.
+
+The sole MemoryCoordinator materializes L1 observation evidence and P5 L3 DATA.
+An optional exact-head guard is added INSIDE the original Memory SQLite write
+transaction, before payload/assertion/derivation/head/change/outbox writes. Full
+parent liveness is checked again there. Existing callers with no guard preserve
+their contract. No second writer, active-head table, database/schema or worker.
+
+L1 can survive an interrupted L3 attempt as factual staging, not a counter. L3
+CAS retries are bounded. Post-COMMIT exceptions report UNKNOWN rather than zero
+writes. The existing journal records learning.experience_committed idempotently
+per machine observation, not per moving aggregate head. Existing worker recovery
+resumes this sequence without re-running the task. This is not a distributed
+transaction, an autonomous historical scanner or proof of hostile-host absence.
+
+All 95 inherited freeze paths remain. Add the machine writeback adapter, existing
+Memory coordinator/repository and four unchanged P5 policy/attribution adapters
+to content freeze (102 total). Golden corpus, verifiers, CompletionGate, P5/P15
+admission thresholds, permission rules, source ownership and database versions
+are unchanged. Freeze and independent fingerprint use the original generators.
+Only source-generated Life mirrors follow the edited authorities. Old binaries
+need compatible journal replay or reviewed backup restoration on downgrade.

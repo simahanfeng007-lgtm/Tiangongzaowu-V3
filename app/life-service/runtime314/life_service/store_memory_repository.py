@@ -488,6 +488,7 @@ class LifeMemoryRepository:
             expires_at_ms: int | None = None,
             derivation: MemoryDerivationV1 | None = None,
             activate_head: bool = False,
+            head_guard: tuple[str, str, str | None] | None = None,
         ) -> tuple[MemoryAssertionV3, int, bool]:
             """Commit one live user-fact assertion with its payload atomically.
 
@@ -511,6 +512,49 @@ class LifeMemoryRepository:
             connection = self._connection
             try:
                 connection.execute("BEGIN IMMEDIATE")
+                if head_guard is not None:
+                    # P10 compare-and-swap is inside the ORIGINAL memory write
+                    # transaction, before payload/assertion/outbox writes. The
+                    # caller does not get an alternate writer or a new table.
+                    if (type(head_guard) is not tuple or len(head_guard) != 3
+                            or derivation is None or not activate_head
+                            or head_guard[:2] != (derivation.claim_key, derivation.layer)
+                            or (head_guard[2] is not None and (type(head_guard[2]) is not str
+                                or len(head_guard[2]) != 64
+                                or any(c not in "0123456789abcdef" for c in head_guard[2])))):
+                        raise LifeShadowStoreError("memory promotion head guard is invalid")
+                    current = self.get_active_memory_head(life_id=life_id,
+                        principal_ref=derivation.principal_ref,
+                        claim_key=head_guard[0], layer=head_guard[1])
+                    actual = None if current is None else current.derivation_sha256
+                    if actual != head_guard[2]:
+                        raise LifeShadowStoreError("memory promotion head changed")
+                    # Recheck the entire parent chain under SQLite writer
+                    # exclusion. A valid parent digest is not proof it is live.
+                    pending = [p.parent_derivation_id for p in derivation.parent_memory_refs]
+                    seen = set()
+                    while pending:
+                        parent_id = pending.pop()
+                        if parent_id in seen:
+                            continue
+                        seen.add(parent_id)
+                        if len(seen) > 4096:
+                            raise LifeShadowStoreError("memory parent lineage exceeds budget")
+                        parent = self.get_memory_derivation(parent_id)
+                        if parent is None or not self.is_derivation_active(parent_id):
+                            raise LifeShadowStoreError("memory promotion parent is inactive")
+                        assertion = self.get_memory_assertion(parent.memory_id, parent.memory_revision)
+                        latest = self.get_latest_memory_assertion(parent.memory_id)
+                        if (not parent.has_valid_derivation_sha256() or assertion is None
+                                or latest != assertion or not assertion.has_valid_assertion_sha256()
+                                or assertion.lifecycle_status != "active"
+                                or (parent.life_id, parent.principal_ref, parent.privacy_scope)
+                                   != (life_id, derivation.principal_ref, privacy_scope)
+                                or parent.memory_assertion_sha256 != assertion.assertion_sha256
+                                or (assertion.expires_at_ms is not None and assertion.expires_at_ms <= created_at_ms)):
+                            raise LifeShadowStoreError("memory promotion parent binding is invalid")
+                        self.read_protected_payload(assertion.protected_payload_id)
+                        pending.extend(p.parent_derivation_id for p in parent.parent_memory_refs)
                 latest_row = connection.execute(
                     """
                     SELECT a.*, c.payload

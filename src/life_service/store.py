@@ -1097,7 +1097,7 @@ class LifeShadowStore:
     def put_memory_assertion(self, assertion: MemoryAssertionV3, *, search_terms: tuple[str, ...]=()) -> bool:
         return self._memory_repository.put_memory_assertion(assertion, search_terms=search_terms)
 
-    def put_live_memory_assertion(self, plaintext: bytes, *, memory_id: str, life_id: str, assertion_kind: str, epistemic_status: str, lifecycle_status: str, privacy_scope: str, retention_class: str, source_event_ids: tuple[str, ...]=(), causal_utility_milli: int=0, user_importance_milli: int=0, verification_strength_milli: int=0, future_dependency_milli: int=0, valid_from_ms: int, created_at_ms: int, search_terms: tuple[str, ...]=(), expires_at_ms: int | None=None, derivation: MemoryDerivationV1 | None=None, activate_head: bool=False) -> tuple[MemoryAssertionV3, int, bool]:
+    def put_live_memory_assertion(self, plaintext: bytes, *, memory_id: str, life_id: str, assertion_kind: str, epistemic_status: str, lifecycle_status: str, privacy_scope: str, retention_class: str, source_event_ids: tuple[str, ...]=(), causal_utility_milli: int=0, user_importance_milli: int=0, verification_strength_milli: int=0, future_dependency_milli: int=0, valid_from_ms: int, created_at_ms: int, search_terms: tuple[str, ...]=(), expires_at_ms: int | None=None, derivation: MemoryDerivationV1 | None=None, activate_head: bool=False, head_guard: tuple[str, str, str | None] | None=None) -> tuple[MemoryAssertionV3, int, bool]:
         """Commit one live user-fact assertion with its payload atomically.
 
             The protected payload, the assertion revision, the global
@@ -1112,7 +1112,7 @@ class LifeShadowStore:
             assertion digest and its derivation digest recomputed inside the
             transaction, so the caller may pass a placeholder assertion digest.
             """
-        return self._memory_repository.put_live_memory_assertion(plaintext, memory_id=memory_id, life_id=life_id, assertion_kind=assertion_kind, epistemic_status=epistemic_status, lifecycle_status=lifecycle_status, privacy_scope=privacy_scope, retention_class=retention_class, source_event_ids=source_event_ids, causal_utility_milli=causal_utility_milli, user_importance_milli=user_importance_milli, verification_strength_milli=verification_strength_milli, future_dependency_milli=future_dependency_milli, valid_from_ms=valid_from_ms, created_at_ms=created_at_ms, search_terms=search_terms, expires_at_ms=expires_at_ms, derivation=derivation, activate_head=activate_head)
+        return self._memory_repository.put_live_memory_assertion(plaintext, memory_id=memory_id, life_id=life_id, assertion_kind=assertion_kind, epistemic_status=epistemic_status, lifecycle_status=lifecycle_status, privacy_scope=privacy_scope, retention_class=retention_class, source_event_ids=source_event_ids, causal_utility_milli=causal_utility_milli, user_importance_milli=user_importance_milli, verification_strength_milli=verification_strength_milli, future_dependency_milli=future_dependency_milli, valid_from_ms=valid_from_ms, created_at_ms=created_at_ms, search_terms=search_terms, expires_at_ms=expires_at_ms, derivation=derivation, activate_head=activate_head, head_guard=head_guard)
 
     def memory_change_head(self, life_id: str | None=None) -> int:
         """Return the greatest committed memory change seq (0 when empty)."""

@@ -1,15 +1,17 @@
-"""Existing Life/Gateway binding for P10 inputs; not an approval or Memory writer.
+"""Existing Life/Gateway binding for P10 inputs and guarded Memory coordination.
 
 Selectors come from learning cards, but identities come from the signed Life
 journal, configured World source resolver, registered plans and machine ledgers.
 Only Knowledge uses the already-existing publication path. Source proposals are
 still review material. Collected execution references still require P5/Memory
-admission: missing provenance is never replaced with reassuring model flags.
+admission: the separate original Memory transaction is the only writer.
+Missing provenance is never replaced with reassuring model flags.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict
+from copy import deepcopy
 from pathlib import Path
 import re
 from typing import Any
@@ -231,6 +233,24 @@ class LearningOutputProductionBinding:
         success or re-execute a tool. No independent recovery worker is spawned.
         """
         result = self._runtime.life_service.commit_execution(payload)
+        return self._after_execution(result)
+
+    def resume_execution_learning(self, execution: Mapping[str, Any]) -> dict[str, Any]:
+        """Existing worker recovery tail: reread the sole Life record, no recommit.
+
+        The audit below verifies the record against the signed journal again.
+        Recovery caller supplies a selector/expected record, never new evidence.
+        """
+        life = self._runtime.life_service
+        with life._lock:
+            stored = life._scope_state(str(execution.get("life_id") or ""))["executions"].get(
+                str(execution.get("request_id") or ""))
+            if not isinstance(stored, Mapping) or dict(stored) != dict(execution):
+                raise LearningOutputBindingError("learning_output.recovered_execution_mismatch")
+            result = {"ok": True, "duplicate": True, "execution": deepcopy(dict(stored))}
+        return self._after_execution(result)
+
+    def _after_execution(self, result: Mapping[str, Any]) -> dict[str, Any]:
         execution = result.get("execution") if isinstance(result, Mapping) else None
         if result.get("ok") is not True or not isinstance(execution, Mapping):
             return result
@@ -261,4 +281,18 @@ class LearningOutputProductionBinding:
             audit = {"status": "LEARNING_EVIDENCE_DEFERRED", "reason_code": (str(exc) if isinstance(exc, LearningOutputBindingError)
                     else "learning_output.machine_collection_unavailable"),
                 "error_type": type(exc).__name__, "may_write_memory": False}
-        return {**result, "learning_evidence": audit}
+        experience = {"status": "EXPERIENCE_DEFERRED", "memory_write_performed": False}
+        if audit["status"] == "MACHINE_EVIDENCE_AUDITED":
+            try:
+                from .learning_experience_writeback import commit_terminal_experience
+                experience = commit_terminal_experience(self._runtime, execution)
+            except Exception as exc:
+                from .learning_experience_writeback import ExperienceWritebackError
+                experience["reason_code"] = (str(exc) if isinstance(exc, ExperienceWritebackError)
+                    else "learning_experience.input_or_commit_unavailable")
+                experience["error_type"] = type(exc).__name__
+                # The original Memory transaction may have committed just
+                # before a transport/process error. Do not assert zero writes.
+                experience.update(memory_write_performed=None, l3_write_performed=None,
+                                  write_status="UNCONFIRMED", retryable=True)
+        return {**result, "learning_evidence": audit, "learning_experience": experience}

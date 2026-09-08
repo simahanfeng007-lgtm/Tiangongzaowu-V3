@@ -1540,6 +1540,10 @@ class GatewayRuntime:
                         if runtime.learning_output_binding is not None
                         else runtime.life_service.commit_execution
                     ),
+                    life_execution_learning_recovery=(
+                        None if runtime.learning_output_binding is None
+                        else runtime.learning_output_binding.resume_execution_learning
+                    ),
                     repository_evidence_provider=(
                         None
                         if runtime.backend_service is None
