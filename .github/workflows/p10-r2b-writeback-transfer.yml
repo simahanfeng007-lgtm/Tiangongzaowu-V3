@@ -1,0 +1,139 @@
+name: P10 R2B writeback verified transfer
+
+on:
+  push:
+    branches:
+      - codex/capability-composition-p10-life-learning-cutover-v1
+    paths:
+      - .github/workflows/p10-r2b-writeback-transfer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify immutable transfer and make one normal source commit
+        shell: python
+        env:
+          BRANCH: codex/capability-composition-p10-life-learning-cutover-v1
+        run: |
+          from pathlib import Path
+          import base64, hashlib, lzma, os, re, shutil, subprocess, tempfile, json
+
+          BASE = 'cb9cc8387367f96bc9eb76890b7e9025fdeea95f'
+          EXPECT_COMPRESSED_SIZE = 23852
+          EXPECT_COMPRESSED_SHA256 = 'af42488784d0ebe574547027ee5b175f4941413d0918b3711d85b772546bc0fb'
+          EXPECT_PATCH_SIZE = 110233
+          EXPECT_PATCH_SHA256 = 'e925aeba3d18efdba8e6a70e3081c315932b759d628f0a9bcf99a30288466f6e'
+          EXPECT_CORE_TREE = '366b3981ce661215eb8ee5acc1e222cf44681112'
+          CHUNKS = (
+              ('docs/capability-composition/.p10-r2b-transfer/chunk0.b64', 6144, '0545009f360f36130ba3c9ba843f78cb0baf5d5d'),
+              ('docs/capability-composition/.p10-r2b-transfer/chunk1.b64', 6144, '117e13755ed05a4a4ffe79130b0ded51bc990c1c'),
+              ('docs/capability-composition/.p10-r2b-transfer/chunk2.b64', 6144, '8dce24782ae4480f844873fb344806f856f8a249'),
+              ('docs/capability-composition/.p10-r2b-transfer/chunk3.b64', 5420, '2fdd810f3bd8e283108d6b8217335f06d3f212e0'),
+          )
+          WORKFLOW = '.github/workflows/p10-r2b-writeback-transfer.yml'
+
+          def git(*args, env=None):
+              return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', *args], text=True, env=env).strip()
+
+          head = git('rev-parse', 'HEAD')
+          assert head == os.environ['GITHUB_SHA']
+          subprocess.check_call(['git', 'merge-base', '--is-ancestor', BASE, head])
+          expected_temp = sorted([p for p, _, _ in CHUNKS] + [WORKFLOW])
+          assert git('diff', '--name-only', BASE, head).splitlines() == expected_temp
+          assert git('ls-remote', 'origin', 'refs/heads/' + os.environ['BRANCH']).split()[0] == head
+
+          raw_parts = []
+          for path, expected_size, expected_blob in CHUNKS:
+              text = Path(path).read_text(encoding='utf-8')
+              raw = base64.b64decode(text, validate=True)
+              assert len(raw) == expected_size, (path, len(raw), expected_size)
+              git_blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+              assert git_blob == expected_blob, (path, git_blob, expected_blob)
+              raw_parts.append(raw)
+
+          compressed = b''.join(raw_parts)
+          assert len(compressed) == EXPECT_COMPRESSED_SIZE
+          assert hashlib.sha256(compressed).hexdigest() == EXPECT_COMPRESSED_SHA256
+          patch = lzma.decompress(compressed, memlimit=128 * 1024 * 1024)
+          assert len(patch) == EXPECT_PATCH_SIZE
+          assert hashlib.sha256(patch).hexdigest() == EXPECT_PATCH_SHA256
+
+          with tempfile.TemporaryDirectory() as td:
+              patch_path = Path(td) / 'r2b-writeback.patch'
+              patch_path.write_bytes(patch)
+              text = patch.decode('utf-8')
+              entries = re.findall(r'^diff --git a/([^\s]+) b/\1\n(?:new file mode 100644\n)?index ([0-9a-f]{40})\.\.([0-9a-f]{40})(?: 100644)?\n', text, re.M)
+              assert len(entries) == 19, len(entries)
+              assert len({p for p, _, _ in entries}) == 19
+              for path, before, _after in entries:
+                  row = git('ls-tree', 'HEAD', '--', path)
+                  if before == '0' * 40:
+                      assert not row, (path, row)
+                  else:
+                      assert row.split()[0:3] == ['100644', 'blob', before], (path, row, before)
+
+              subprocess.check_call(['git', '-c', 'core.hooksPath=/dev/null', 'apply', '--check', '--index', '--whitespace=error-all', str(patch_path)])
+              subprocess.check_call(['git', '-c', 'core.hooksPath=/dev/null', 'apply', '--index', '--whitespace=error-all', str(patch_path)])
+              staged = git('diff', '--cached', '--name-only').splitlines()
+              assert staged == sorted(p for p, _, _ in entries)
+              for path, _before, after in entries:
+                  assert git('rev-parse', ':' + path) == after
+                  assert git('hash-object', '--no-filters', path) == after
+
+              index_path = Path(git('rev-parse', '--git-path', 'index')).resolve()
+              alt_index = Path(td) / 'verified.index'
+              shutil.copyfile(index_path, alt_index)
+              env = dict(os.environ, GIT_INDEX_FILE=str(alt_index))
+              for path in expected_temp:
+                  subprocess.check_call(['git', '-c', 'core.hooksPath=/dev/null', 'update-index', '--force-remove', path], env=env)
+              core_tree = git('write-tree', env=env)
+              assert core_tree == EXPECT_CORE_TREE, (core_tree, EXPECT_CORE_TREE)
+
+          git('config', 'user.name', 'github-actions[bot]')
+          git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
+          subprocess.check_call(['git', '-c', 'core.hooksPath=/dev/null', 'commit', '-m',
+              'feat(p10): close R2-B experience writeback source loop [skip ci]', '-m',
+              'Apply the exact locally verified 19-file core patch recovered after the prior session stopped before Git attachment. '
+              'Local focused evidence: 1363 passed, 10 existing skips, 11 subtests passed, zero failures/errors; 1091 Python inputs unchanged. '
+              'Complete P5 admission/current-source/Memory parent+CAS writeback and recovery-tail reuse through existing authorities. '
+              'No new Runtime/Registry/Memory DB/permission or Source publication. This transfer job itself runs no product tests.'])
+          commit = git('rev-parse', 'HEAD')
+          assert git('ls-remote', 'origin', 'refs/heads/' + os.environ['BRANCH']).split()[0] == head
+          subprocess.check_call(['git', 'push', 'origin', 'HEAD:refs/heads/' + os.environ['BRANCH']])
+          assert git('ls-remote', 'origin', 'refs/heads/' + os.environ['BRANCH']).split()[0] == commit
+
+          out = Path(os.environ['RUNNER_TEMP']) / 'p10-r2b-writeback-transfer'
+          out.mkdir(parents=True, exist_ok=False)
+          result = {
+              'baseline': BASE, 'workflow_head': head, 'source_commit': commit,
+              'source_commit_tree_with_temp_files': git('rev-parse', 'HEAD^{tree}'),
+              'verified_core_tree_without_temp_files': EXPECT_CORE_TREE,
+              'patch_sha256': EXPECT_PATCH_SHA256,
+              'compressed_sha256': EXPECT_COMPRESSED_SHA256,
+              'chunk_git_blobs': [sha for _, _, sha in CHUNKS],
+              'source_file_count': 19, 'tests_run_by_transfer': False,
+              'force_push': False, 'main_updated': False,
+          }
+          (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+          bundle = out / 'repository.bundle'
+          subprocess.check_call(['git', 'bundle', 'create', str(bundle), 'HEAD'])
+          subprocess.check_call(['git', 'bundle', 'verify', str(bundle)])
+          (out / 'SHA256SUMS.txt').write_text(hashlib.sha256(bundle.read_bytes()).hexdigest() + '  repository.bundle\n', encoding='utf-8')
+          print(json.dumps(result, indent=2))
+      - name: Preserve transfer readback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p10-r2b-writeback-transfer-${{ github.sha }}
+          path: ${{ runner.temp }}/p10-r2b-writeback-transfer/
+          if-no-files-found: warn
+          retention-days: 7
