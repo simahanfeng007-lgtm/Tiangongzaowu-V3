@@ -863,6 +863,7 @@ class GatewayRuntime:
         self.cutover = cutover
         self.readiness_collector = readiness_collector
         self.life_service = life_service
+        self.learning_output_binding = None
         self.communication_service = communication_service
         self.backend_service = backend_service
         self.artifacts = ArtifactOpenService(
@@ -1509,6 +1510,11 @@ class GatewayRuntime:
                         return {"ok": False, "cards": []}
                     return payload
 
+                from .learning_output_binding import LearningOutputProductionBinding
+                runtime.learning_output_binding = LearningOutputProductionBinding(runtime)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service, EmbeddedLifeGatewayBinding.LEARNING_OUTPUT_PREPARER,
+                    runtime.learning_output_binding.prepare_from_life)
                 life_transport = InProcessLifeJsonTransport(runtime.life_service)
                 communication_control = runtime.communication_service
                 backend_compat_client = CompatibilityJsonClient(runtime.backend_service)
@@ -1530,6 +1536,8 @@ class GatewayRuntime:
                     life_execution_commit=(
                         None
                         if runtime.life_service is None
+                        else runtime.learning_output_binding.commit_execution
+                        if runtime.learning_output_binding is not None
                         else runtime.life_service.commit_execution
                     ),
                     repository_evidence_provider=(

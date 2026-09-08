@@ -27,6 +27,7 @@ class EmbeddedLifeGatewayBinding(str, Enum):
     GREETING_WRITER = "greeting_writer"
     ARTIFACT_ACTION_CATALOG_PROVIDER = "artifact_action_catalog_provider"
     ARTIFACT_PUBLISHER = "artifact_publisher"
+    LEARNING_OUTPUT_PREPARER = "learning_output_preparer"
     WORLD_IDENTITY_PROVIDER = "world_identity_provider"
     CAPABILITY_WORKSPACE_MAPPER = "capability_workspace_mapper"
     CAPABILITY_WORKSPACE_REMOVER = "capability_workspace_remover"
@@ -48,6 +49,7 @@ class EmbeddedLifeGatewayWiringPort(Protocol):
     def set_greeting_writer(self, writer: OptionalGatewayCallback) -> None: ...
     def set_artifact_action_catalog_provider(self, provider: OptionalGatewayCallback) -> None: ...
     def set_artifact_publisher(self, publisher: OptionalGatewayCallback) -> None: ...
+    def set_learning_output_preparer(self, preparer: OptionalGatewayCallback) -> None: ...
     def set_world_identity_provider(self, provider: OptionalGatewayCallback) -> None: ...
     def set_capability_workspace_mapper(self, mapper: OptionalGatewayCallback) -> None: ...
     def set_capability_workspace_remover(self, remover: OptionalGatewayCallback) -> None: ...
@@ -97,6 +99,8 @@ def bind_embedded_life_gateway_callback(
         target.set_artifact_action_catalog_provider(callback)
     elif binding is EmbeddedLifeGatewayBinding.ARTIFACT_PUBLISHER:
         target.set_artifact_publisher(callback)
+    elif binding is EmbeddedLifeGatewayBinding.LEARNING_OUTPUT_PREPARER:
+        target.set_learning_output_preparer(callback)
     elif binding is EmbeddedLifeGatewayBinding.WORLD_IDENTITY_PROVIDER:
         target.set_world_identity_provider(callback)
     elif binding is EmbeddedLifeGatewayBinding.CAPABILITY_WORKSPACE_MAPPER:

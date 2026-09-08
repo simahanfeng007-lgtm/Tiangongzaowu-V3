@@ -394,3 +394,32 @@ WorldState/run pin 是不同既有权威，不由本旧式发布冻结授予或�
 不变。1.8 继承全部冻结路径，添加上述直接及兼容发布面；原生成器同时刷新
 freeze 和 diagnostic fingerprint，正常校验时关闭更新开关。正式三类学习产出
 接线属于 P10 R2，静态 Planner 退役与兼容权威移除属于后续阶段而非本轮。
+
+
+Verification Plane 1.9 — P10 R2-B production-input binding checkpoint (2026-09-08)
+--------------------------------------------------------------------------------
+Inherit ALL 92 Plane 1.8 frozen source paths. Add the existing typed Life wiring,
+R2-A preparation adapter and new Gateway composition hook to frozen coverage.
+Knowledge preparation now reads the signed current Life card and Gateway scope
+provider before the unchanged Knowledge consent/import path. Source selectors
+are checked against the existing configured World/Git resolver and current head;
+they do not publish a Method/Tool, change CURRENT or unfreeze legacy publication.
+The existing terminal callback first commits Life, then reads the registered plan,
+Effect/Fact/Object bytes, persisted Completion and authoritative P19 readiness.
+Reference-only evidence is audited in the SAME signed Life journal. A missing
+readiness, provenance or Memory lineage is a blocker, never inferred success.
+
+New learning.output_prepared / learning.execution_evidence events are audit-only
+in the existing replay registry. No second journal/store, schema upgrade, Runtime,
+MemoryCoordinator or completion authority is introduced. A failed audit does not
+erase the committed execution; explicit duplicate callbacks may retry. This is
+not yet an automatic restart reconciler or the P5 positive-memory CAS transaction.
+Current-source revalidation, independent provenance, parent derivations and
+MemoryCoordinator aggregation/CAS remain required before positive experience.
+
+No Golden baselines, CompletionGate/verifier PASS rules, Effect/Fact authority,
+RepairPolicy, Action permissions, P8/P9 approval or original runtime handlers
+are relaxed. Normal validation runs with UPDATE_* flags absent. Both freeze and
+diagnostic fingerprint are regenerated through their original generator paths.
+Older binaries need a compatible replay reader or reviewed backup restoration
+for the new audit event names; production data was not migrated by this change.

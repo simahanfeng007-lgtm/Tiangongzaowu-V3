@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.8"
+- the single Verification Plane version source exists and is "1.9"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.8")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.9")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.8"' in (
+            if '"1.9"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -204,14 +204,14 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # Every 1.8 execution, result-schema and verification authority
+            # Every 1.9 execution, result-schema and verification authority
             # file is content-hashed.  Semantic drift in the runtime chain,
             # store/binding/coordinator/executor/readiness/fencing/successor
             # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.8; all inherited 1.7 and earlier entries remain covered.
+    #: The authority surface frozen at 1.9; all inherited 1.8 and earlier entries remain covered.
     AUTHORITY_SURFACE_FILES = (
         "app/backend/tiangong-backend/v3/fact_kernel/__init__.py",
         "src/contracts/execution.py",
@@ -228,6 +228,9 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "app/backend/tiangong-backend/v3/jineng/jirou_ceng.py",
         "app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py",
         "src/life_service/embedded_runtime.py",
+        "src/life_service/embedded_runtime_wiring.py",
+        "src/total_gateway/learning_output_preparation.py",
+        "src/total_gateway/learning_output_binding.py",
         "src/communication_service/raw_inbound_store.py",
         "src/communication_service/wechat_file_outbound.py",
         "src/communication_service/feishu_outbound.py",

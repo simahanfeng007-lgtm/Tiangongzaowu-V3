@@ -94,6 +94,8 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "learning.publication_frozen": EventClass.REPLAYABLE_PROJECTION,
     "learning.discarded": EventClass.REPLAYABLE_PROJECTION,
     "learning.decision_noop": EventClass.AUDIT_ONLY,
+    "learning.output_prepared": EventClass.AUDIT_ONLY,
+    "learning.execution_evidence": EventClass.AUDIT_ONLY,
     # ---- 自我迭代升级卡 ----
     # noop 决策只落审计事件，投影门控键由调度器写侧维护，audit-only。
     "self_iteration.decision_noop": EventClass.AUDIT_ONLY,

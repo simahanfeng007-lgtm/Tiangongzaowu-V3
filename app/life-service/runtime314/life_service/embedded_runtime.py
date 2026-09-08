@@ -463,6 +463,7 @@ class EmbeddedLifeRuntime:
         self._cognition_shadow: UnifiedCognitionShadow | None = None
         self._artifact_action_catalog_provider: Any = None
         self._artifact_publisher: Any = None
+        self._learning_output_preparer: Any = None
         self._capability_workspace_mapper: Any = None
         self._capability_workspace_remover: Any = None
         self._capability_workspace_marker: Any = None
@@ -3527,6 +3528,99 @@ class EmbeddedLifeRuntime:
             raise ValueError("artifact publisher must be callable")
         with self._lock:
             self._artifact_publisher = publisher
+
+    def set_learning_output_preparer(self, preparer: Any) -> None:
+        """Bind the existing Gateway's ID-only preparation callback, not a route."""
+        if preparer is not None and not callable(preparer):
+            raise TypeError("learning output preparer must be callable")
+        with self._lock:
+            self._learning_output_preparer = preparer
+
+    def verified_learning_output_input(self, life_id: str, learning_id: str):
+        """Read current material under the Life writer lock and signed journal.
+
+        Recovery counters may change independently. Material, consent and source
+        identity must still match the last committed learning-card event.
+        No caller-supplied record or expected hash is accepted by this reader.
+        """
+        if (type(life_id) is not str or type(learning_id) is not str
+                or not _OPAQUE.fullmatch(life_id) or not _OPAQUE.fullmatch(learning_id)):
+            raise EmbeddedLifeError("life.learning.output_identity_invalid")
+        with self._lock:
+            if life_id != self._active().get("life_id"):
+                raise EmbeddedLifeError("life.learning.output_life_inactive", status=409)
+            record = self._scope_state(life_id)["learning"].get(learning_id)
+            if not isinstance(record, Mapping):
+                raise EmbeddedLifeError("life.learning.not_found", status=404)
+            verified = self.system.journal.verify(life_id)
+            if verified.get("valid") is not True or verified.get("journal_head_signed") is not True:
+                raise EmbeddedLifeError("life.learning.output_journal_invalid", status=409)
+            committed = None
+            kinds = {"learning.draft_created", "learning.confirmed", "learning.published",
+                     "learning.discarded", "learning.publication_frozen"}
+            for event in self.system.journal.events(life_id):
+                if event.get("event_type") not in kinds:
+                    continue
+                material = (event.get("payload") or {}).get("learning")
+                if isinstance(material, Mapping) and material.get("learning_id") == learning_id:
+                    committed = material
+            # Only the existing maintenance counters/UI discard switch may
+            # differ without a new material event. Unknown future fields are
+            # not silently treated as trusted semantic/source inputs.
+            recovery_fields = {"publish_retry", "publish_retry_at", "publish_retry_exhausted",
+                               "last_publish_error", "can_discard_learning"}
+            if (committed is None or {k:v for k,v in record.items() if k not in recovery_fields}
+                    != {k:v for k,v in committed.items() if k not in recovery_fields}):
+                raise EmbeddedLifeError("life.learning.output_journal_mismatch", status=409)
+            provider = self._world_identity_provider
+            identity = provider(life_id) if callable(provider) else None
+            if not isinstance(identity, Mapping) or identity.get("life_id") != life_id:
+                raise EmbeddedLifeError("life.learning.output_identity_unavailable", status=503)
+            return deepcopy(dict(record)), deepcopy(dict(identity))
+
+    def _prepare_current_learning_output(self, life_id: str, learning_id: str):
+        preparer = self._learning_output_preparer
+        if not callable(preparer):
+            return None  # Standalone keeps its original Knowledge-only contract.
+        try:
+            result = preparer(life_id, learning_id)
+        except Exception as exc:
+            raise EmbeddedLifeError("life.learning.output_preparation_failed", status=409) from exc
+        if not isinstance(result, Mapping):
+            raise EmbeddedLifeError("life.learning.output_preparer_invalid", status=503)
+        result = deepcopy(dict(result))
+        if result.get("status") == "LEARNING_OUTPUT_PREPARED":
+            if (result.get("may_publish") is not False or result.get("may_execute") is not False
+                    or result.get("may_authorize") is not False or result.get("may_write_store") is not False):
+                raise EmbeddedLifeError("life.learning.output_cannot_authorize", status=409)
+            self.system.journal.append(life_id, "learning.output_prepared", {"preparation": result},
+                actor="gateway_learning", idempotency_key="learning.output:" + canonical_sha256(result))
+        return result
+
+    def record_learning_execution_evidence(self, life_id: str, evidence: Mapping[str, Any]):
+        """Audit a Gateway-collected reference set; never mint a positive memory.
+
+        This has no HTTP/model entry. The original execution commit remains
+        unchanged. Missing cross-store evidence is an explicit deferred record.
+        """
+        with self._lock:
+            request_id = str(evidence.get("request_id") or "")
+            execution = self._scope_state(life_id)["executions"].get(request_id)
+            if (not isinstance(execution, Mapping) or evidence.get("run_id") != execution.get("run_id")
+                    or evidence.get("generation") != execution.get("generation")
+                    or any(evidence.get(k) is not False for k in
+                           ("may_authorize", "may_execute", "may_write_memory"))):
+                raise EmbeddedLifeError("life.learning.execution_evidence_binding", status=409)
+            verified = self.system.journal.verify(life_id)
+            if verified.get("valid") is not True or verified.get("journal_head_signed") is not True:
+                raise EmbeddedLifeError("life.learning.execution_journal_invalid", status=409)
+            original = self.system.journal.event_by_idempotency_key(life_id, "execution.commit:" + request_id)
+            if original is None or original.get("payload") != execution:
+                raise EmbeddedLifeError("life.learning.execution_journal_mismatch", status=409)
+            payload = {"execution_event_id": original["event_id"],
+                       "execution_event_sha256": original["event_sha256"], "evidence": deepcopy(dict(evidence))}
+            return self.system.journal.append(life_id, "learning.execution_evidence", payload,
+                actor="gateway_learning", idempotency_key="learning.execution_evidence:" + canonical_sha256(payload))
 
     def set_world_identity_provider(self, provider: Any) -> None:
         """Bind the Gateway-owned scope projection used by WU post-commit events."""
@@ -8507,8 +8601,10 @@ class EmbeddedLifeRuntime:
         except Exception:
             scope["learning"].pop(draft["learning_id"], None)
             raise
+        preparation = self._prepare_current_learning_output(life_id, draft["learning_id"])
         return {**({"ok": True} if not draft.get("publication_frozen") else frozen_publication_result()),
-                "learning": deepcopy(draft), "activity_scope": activity_scope, "event": event}
+                "learning": deepcopy(draft), "activity_scope": activity_scope, "event": event,
+                **({"learning_output": preparation} if preparation is not None else {})}
 
     def _freeze_legacy_learning(self, *, life_id: str, learning_id: str) -> dict[str, Any]:
         scope = self._scope_state(life_id)
@@ -8539,7 +8635,9 @@ class EmbeddedLifeRuntime:
         if legacy_publication_blocked(current):
             if current.get("status") in {"published", "discarded"}:
                 return {**frozen_publication_result(), "learning": deepcopy(current), "artifact": None}
-            return self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
+            frozen = self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
+            preparation = self._prepare_current_learning_output(life_id, learning_id)
+            return {**frozen, **({"learning_output": preparation} if preparation is not None else {})}
         execution = current.get("execution") if isinstance(current.get("execution"), Mapping) else {}
         compiled = execution.get("artifact") if isinstance(execution.get("artifact"), Mapping) else None
         if str(execution.get("status") or "") != "built" or compiled is None:
@@ -8547,6 +8645,17 @@ class EmbeddedLifeRuntime:
         materialization = current.get("learning_execution") if isinstance(current.get("learning_execution"), Mapping) else {}
         if str(materialization.get("status") or "") not in {"completed", "completed_with_warnings"}:
             raise EmbeddedLifeError("life.learning.materialization_not_complete", status=409)
+        preparation = self._prepare_current_learning_output(life_id, learning_id)
+        if preparation is not None:
+            fresh = (preparation.get("body") or {}).get("artifact")
+            # The empty catalog in the pure Knowledge compiler grants no Action
+            # permission. Every meaningful artifact field still must match.
+            excluded = {"artifact_sha256", "action_catalog_sha256"}
+            if (preparation.get("output_kind") != "KNOWLEDGE" or not isinstance(fresh, Mapping)
+                    or fresh.get("kind") != "knowledge" or fresh.get("required_actions") != []
+                    or {k:v for k,v in fresh.items() if k not in excluded}
+                    != {k:v for k,v in compiled.items() if k not in excluded}):
+                raise EmbeddedLifeError("life.learning.output_compiled_material_drift", status=409)
         try:
             published, _legacy_artifact = publish_draft(current, capabilities=scope["capabilities"])
             artifact = publish_artifact(compiled)
@@ -8651,7 +8760,9 @@ class EmbeddedLifeRuntime:
         if legacy_publication_blocked(current):
             if current.get("status") in {"published", "discarded"}:
                 return {**frozen_publication_result(), "learning": deepcopy(current), "artifact": None}
-            return self._freeze_legacy_learning(life_id=life_id, learning_id=learning_id)
+            # Confirmation remains unable to publish a legacy capability.
+            # It may retry reference-only Source preparation after provisioning.
+            return self._learning_publish({"life_id": life_id, "learning_id": learning_id})
         try:
             approved = confirm_draft(current, draft_sha256=str(payload.get("draft_sha256") or ""))
         except ValueError as exc:
