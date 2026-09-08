@@ -1,0 +1,104 @@
+name: P10 R2B writeback verified transfer
+
+# Temporary developer transport, not a product or Source-publication authority.
+on:
+  push:
+    branches: [codex/capability-composition-p10-life-learning-cutover-v1]
+    paths: [.github/workflows/p10-r2b-writeback-transfer.yml]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+          submodules: false
+      - name: Verify immutable patch and push one normal checkpoint
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, hashlib, json, lzma, os, pathlib, re, shutil, subprocess, urllib.request
+          repo = 'simahanfeng007-lgtm/Tiangongzaowu-V3'
+          branch = 'codex/capability-composition-p10-life-learning-cutover-v1'
+          base = 'cb9cc8387367f96bc9eb76890b7e9025fdeea95f'
+          workflow = '.github/workflows/p10-r2b-writeback-transfer.yml'
+          root = pathlib.Path(os.environ['GITHUB_WORKSPACE']); os.chdir(root)
+          def git(*args, env=None):
+              return subprocess.check_output(['git','-c','core.hooksPath=/dev/null',*args], env=env).decode().strip()
+          assert os.environ['GITHUB_REPOSITORY'] == repo
+          assert os.environ['GITHUB_REF'] == 'refs/heads/' + branch
+          head = git('rev-parse','HEAD')
+          assert head == os.environ['GITHUB_SHA']
+          assert git('rev-parse','HEAD^') == base
+          assert git('diff','--name-only',base,head).splitlines() == [workflow]
+          assert git('ls-remote','origin','refs/heads/'+branch).split()[0] == head
+          assert not git('status','--porcelain')
+          chunks = [('0545009f360f36130ba3c9ba843f78cb0baf5d5d',6144),('117e13755ed05a4a4ffe79130b0ded51bc990c1c',6144),('8dce24782ae4480f844873fb344806f856f8a249',6144),('2fdd810f3bd8e283108d6b8217335f06d3f212e0',5420)]
+          parts=[]
+          for sha,size in chunks:
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+'/git/blobs/'+sha,
+                  headers={'Accept':'application/vnd.github+json','Authorization':'Bearer '+os.environ['GH_TOKEN']})
+              with urllib.request.urlopen(req,timeout=30) as response: item=json.load(response)
+              assert item['encoding']=='base64' and item['sha']==sha
+              raw=base64.b64decode(item['content'])
+              assert len(raw)==size
+              assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==sha
+              parts.append(raw)
+          compressed=b''.join(parts)
+          assert len(compressed)==23852
+          assert hashlib.sha256(compressed).hexdigest()=='af42488784d0ebe574547027ee5b175f4941413d0918b3711d85b772546bc0fb'
+          patch=lzma.decompress(compressed,memlimit=128*1024*1024)
+          assert len(patch)==110233
+          assert hashlib.sha256(patch).hexdigest()=='e925aeba3d18efdba8e6a70e3081c315932b759d628f0a9bcf99a30288466f6e'
+          entries=re.findall(r'^diff --git a/([^\s]+) b/\1\n(?:new file mode 100644\n)?index ([0-9a-f]{40})\.\.([0-9a-f]{40})(?: 100644)?\n',patch.decode('utf-8'),re.M)
+          assert len(entries)==19 and len({p for p,b,a in entries})==19
+          for path,before,after in entries:
+              assert not path.startswith('.github/')
+              row=git('ls-tree','HEAD','--',path)
+              assert (not row) if before=='0'*40 else row.split()[0:3]==['100644','blob',before]
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'p10-writeback-transfer';out.mkdir(exist_ok=False)
+          patch_path=out/'source.patch';patch_path.write_bytes(patch)
+          git('apply','--check','--index','--whitespace=error-all',str(patch_path))
+          git('apply','--index','--whitespace=error-all',str(patch_path))
+          assert git('diff','--cached','--name-only').splitlines()==sorted(p for p,b,a in entries)
+          for path,before,after in entries:
+              assert git('rev-parse',':'+path)==after
+              assert git('hash-object','--no-filters',path)==after
+          index=out/'verified.index';shutil.copyfile(git('rev-parse','--git-path','index'),index)
+          env=dict(os.environ,GIT_INDEX_FILE=str(index))
+          git('update-index','--force-remove',workflow,env=env)
+          assert git('write-tree',env=env)=='366b3981ce661215eb8ee5acc1e222cf44681112'
+          index.unlink()
+          git('config','user.name','github-actions[bot]')
+          git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
+          git('commit','-m','feat(p10): commit machine experience through original Memory CAS [skip ci]','-m',
+              'Exact local source checkpoint: 1363 passed, 10 existing skips, 11 passing subtests; 1091 inputs unchanged. '
+              'Recheck machine P19/Fact/World, use unchanged P5 admission and sole MemoryCoordinator, '
+              'atomic head comparison and parent revalidation, and existing strict worker recovery tail. '
+              'Plane 1.10 preserves all 95 frozen files and adds seven. No Golden/permission/schema change. '
+              'This transfer does not run product tests or provide model/production acceptance. '
+              'R2-B scope only; no R3/R4, main merge, Source approval or deployment.')
+          commit=git('rev-parse','HEAD')
+          assert git('ls-remote','origin','refs/heads/'+branch).split()[0]==head
+          git('push','origin','HEAD:refs/heads/'+branch)
+          assert git('ls-remote','origin','refs/heads/'+branch).split()[0]==commit
+          result={'baseline':base,'transfer_commit':head,'applied_commit':commit,'tree':git('rev-parse','HEAD^{tree}'),
+              'product_tree_without_transfer':'366b3981ce661215eb8ee5acc1e222cf44681112',
+              'patch_sha256':hashlib.sha256(patch).hexdigest(),
+              'verified_files':[{'path':p,'blob':a} for p,b,a in entries],
+              'tests_run_by_this_job':False,'force_push':False,'main_updated':False}
+          (out/'result.json').write_text(json.dumps(result,indent=2)+'\n')
+          bundle=out/'repository.bundle';git('bundle','create',str(bundle),'HEAD');git('bundle','verify',str(bundle))
+          (out/'SHA256SUMS.txt').write_text(hashlib.sha256(bundle.read_bytes()).hexdigest()+'  repository.bundle\n')
+          print(json.dumps(result))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p10-writeback-applied-${{ github.sha }}
+          path: ${{ runner.temp }}/p10-writeback-transfer/
+          if-no-files-found: error
+          retention-days: 7
