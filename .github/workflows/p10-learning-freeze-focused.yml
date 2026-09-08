@@ -8,6 +8,7 @@ on:
       - src/life_service/**
       - src/total_gateway/runtime.py
       - src/total_gateway/learning_output_preparation.py
+      - src/total_gateway/learning_output_binding.py
       - src/total_gateway/verification_plane.py
       - app/backend/tiangong-backend/v3/duihua_qiaojie.py
       - app/backend/tiangong-backend/v3/jineng/jirou_ceng.py

@@ -1,30 +1,29 @@
 # 当前工程检查点导航
 
-更新：2026-09-08。此文件是进度导航，不是运行时发布、权限或产品验收权威。
+更新：2026-09-08。此文件仅为进度导航，不是发布、权限或产品验收权威。
 
 | 项目 | 当前记录 |
 |---|---|
 | main 工程基线 | `b1ea3e9d511aae9cabcc816e071ad3da645ae753` |
-| 上一检查点 | P9，PR #74 已正常合并；最终候选 `28dd2bdacf86d093ba2c7e04e23b5d967aa72ec8` |
-| 当前阶段 | P10，第 11/18 阶段；尚未合并 |
+| 上一已合并检查点 | P9，PR #74；正式任务及运维债仍保留 |
+| 当前阶段 | P10，第11/18阶段；尚未合并 |
 | 当前工作分支 | `codex/capability-composition-p10-life-learning-cutover-v1` |
-| R1 状态 | 冻结源码已提交；`3b4d0af3` 两端定向 CI 成功，原始产物已独立复核 |
-| 当前工作包 | R2-A：三类学习产出的准备与校验适配；本地 902 passed，10 skipped，11 subtests passed；不是生产接线 |
-| 下一工程步骤 | R2-B：从既有生产权威取得可信基准，接回 Life/Gateway/MemoryCoordinator；R2 整体未完成 |
-| 合并检查点比例 | 10/18 = 55.6%，不是产品验收完成率 |
+| 已确认基线 | R2-A `79a4f8ba`，两端定向 CI 与原始产物均已核验 |
+| 本轮工程检查点 | R2-B：签名 Life 输入、Knowledge 原路径、World/Git 候选准备、worker 机器证据后置审计已接入 |
+| 未完成的关键项 | P5 来源归因、当前源码再验证、Memory 父派生记录与聚合前态比较及幂等提交 |
+| 下一步 | 继续 R2-B 的经验提交闭环，不提前声明 R2 完成或进入 R3/R4 |
+| 合并检查点进度 | 10/18=55.6%，不是产品验收率 |
 
-上次聊天中“R1 未实施、仍在 R0”的描述错误，以当前源码和确切提交的证据为准。
-R1 已修改确认、直接发布、补丁、维护重试、CURRENT、旧兼容写入和 projection。
-Knowledge 与已授权历史任务未被删除，旧完整 Skill/Tool 发布冻结继续保持。
+R1 旧式完整 Skill/Tool 发布冻结继续生效。Knowledge 确认/风险处理和历史任务
+授权不取消。新机器证据审计始终 may_write_memory=false；它不是成功经验，
+不替代 sealed Completion、P19、P5 归因或 MemoryCoordinator 准入。
 
-R2-A 只准备 Knowledge、Tool/Method Source 候选及 P5 经验 intent，不直接发布、
-授权、执行或写 Memory。可信 expected pin 必须来自生产权威，不能由模型自填。
-具体边界见 `P10_R2A_LEARNING_OUTPUT_PREPARATION_2026-09-08.md`。
-远端跨平台结果按实际提交另行核对，本地结果不等于 Windows 或全阶段验收。
+详见 `P10_R2B_PRODUCTION_INPUT_BINDING_2026-09-08.md`。本轮已有调用点不是
+全负载部署证明；签审配置、上游 Source selector 生成、旧记录迁移、自动补审计
+和生产遥测仍需验收。原审计事件使用同一 journal，不新建第二存储或状态机。
 
-Verification Plane 保持 1.8，原冻结/Golden/诊断指纹/权限不变；本次未迁移数据库。
-R1 新 journal 事件与 P9 World index v2 仍要求生产升级前备份和兼容回退方案。
+Verification Plane 1.9 继承全部冻结覆盖；新增事件要求部署前备份，旧版本回退
+须兼容重放或审查后的恢复。本轮未迁移用户生产数据。
 
-P8/P9 历史报告、未应用的打包补丁、真实任务/生产签审/风险审批/版本切换及
-运维债项仍保留，不因工程合并而通过。没有增加第二套 Runtime/WorldState/
-Registry/Memory。P11 Shadow、P12 Planner 退役及 P13 兼容权威移除未开始。
+P8/P9 的真实 Source 发布/风险批准/运行锁/任务矩阵及未应用打包补丁仍单独保留。
+P11 Shadow、P12 Planner 退役、P13 兼容权威移除没有提前启动。
