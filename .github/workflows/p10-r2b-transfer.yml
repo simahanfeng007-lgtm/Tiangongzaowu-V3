@@ -1,0 +1,103 @@
+name: P10 R2B verified source transfer
+
+# Temporary developer transport, not product execution or Source publication.
+on:
+  push:
+    branches: [codex/capability-composition-p10-life-learning-cutover-v1]
+    paths: [.github/workflows/p10-r2b-transfer.yml]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+          submodules: false
+      - name: Verify exact patch inputs and normal branch update
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, hashlib, json, lzma, os, pathlib, re, subprocess, urllib.request
+          repo = 'simahanfeng007-lgtm/Tiangongzaowu-V3'
+          branch = 'codex/capability-composition-p10-life-learning-cutover-v1'
+          base = '79a4f8ba4719fbf4ebb72bce2f9b19944e203f22'
+          workflow = '.github/workflows/p10-r2b-transfer.yml'
+          os.chdir(os.environ['GITHUB_WORKSPACE'])
+          def git(*args):
+              return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', *args]).decode().strip()
+          assert os.environ['GITHUB_REPOSITORY'] == repo
+          assert os.environ['GITHUB_REF'] == 'refs/heads/' + branch
+          head = git('rev-parse', 'HEAD')
+          assert head == os.environ['GITHUB_SHA'] and git('rev-parse', 'HEAD^') == base
+          assert git('diff', '--name-only', base, head).splitlines() == [workflow]
+          assert git('ls-remote', 'origin', 'refs/heads/' + branch).split()[0] == head
+          assert not git('status', '--porcelain')
+          chunks = [('af06b83de925bc2a80b5e2c4088254d0df665fdd',4096),
+              ('e18e019544f3e33059c8140901abb0ad88192db5',4096),
+              ('a9a82bb4f1d5581c0431f240b6d95d7a895a6355',4096),
+              ('a6ab0b5f417a7a46f3baceadcf8f14d942a26a06',4096),
+              ('0fe7f6964294c278d5f1060610a40a9a03c9c8ab',1884)]
+          parts = []
+          for sha, size in chunks:
+              request = urllib.request.Request('https://api.github.com/repos/' + repo + '/git/blobs/' + sha,
+                  headers={'Accept':'application/vnd.github+json','Authorization':'Bearer ' + os.environ['GH_TOKEN']})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  value = json.load(response)
+              assert value['encoding'] == 'base64' and value['sha'] == sha
+              raw = base64.b64decode(value['content'])
+              assert len(raw) == size
+              assert hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == sha
+              parts.append(raw)
+          compressed = b''.join(parts)
+          assert len(compressed) == 18268
+          assert hashlib.sha256(compressed).hexdigest() == 'd2762b33f54add6eeb5b618d3e6ac2a7b189cf89d8c61e66c407f723148dd1d3'
+          patch = lzma.decompress(compressed, memlimit=128*1024*1024)
+          assert len(patch) == 88175
+          assert hashlib.sha256(patch).hexdigest() == '68fa2f75e63f43ce4022f985e014da1dd2aaffb60bca945f56c52e6f87617373'
+          entries = re.findall(r'^diff --git a/([^\s]+) b/\1\n(?:new file mode 100644\n)?index ([0-9a-f]{40})\.\.([0-9a-f]{40})(?: 100644)?\n', patch.decode('utf-8'), re.M)
+          assert len(entries) == 15 and len({p for p,b,a in entries}) == 15
+          for path, before, after in entries:
+              assert not path.startswith('.github/')
+              row = git('ls-tree', 'HEAD', '--', path)
+              assert (not row) if before == '0'*40 else row.split()[0:3] == ['100644','blob',before]
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p10-r2b-applied'
+          out.mkdir(exist_ok=False)
+          patch_path = out/'P10_R2B.patch'; patch_path.write_bytes(patch)
+          git('apply','--check','--index','--whitespace=error-all',str(patch_path))
+          git('apply','--index','--whitespace=error-all',str(patch_path))
+          assert git('diff','--cached','--name-only').splitlines() == sorted(p for p,b,a in entries)
+          for path, before, after in entries:
+              assert git('rev-parse', ':'+path) == after
+              assert git('hash-object','--no-filters',path) == after
+          git('config','user.name','github-actions[bot]')
+          git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
+          git('commit','-m','feat(p10): bind signed Life inputs and machine execution audits [skip ci]', '-m',
+              'Apply 15 exact hash-verified files. Local focused: 937 passed, 10 existing skips, 11 subtests passed; 1089 inputs unchanged. '
+              'Preserve Knowledge consent and R1 freeze; source preparation uses existing operator Git/World; actual terminal callbacks collect committed Effect/Fact/Completion/P19 references. '
+              'Plane 1.9 retains 92 prior freeze paths and adds 3. No Golden corpus or permission bypass. '
+              'This job transfers bytes only, not product execution. P5 provenance, current-source revalidation and Memory parent/CAS remain mandatory blockers; no positive experience writes. '
+              'R2-B checkpoint, not full R2 completion, main merge, production deployment or model acceptance.')
+          commit = git('rev-parse','HEAD')
+          assert git('ls-remote','origin','refs/heads/'+branch).split()[0] == head
+          git('push','origin','HEAD:refs/heads/'+branch)
+          assert git('ls-remote','origin','refs/heads/'+branch).split()[0] == commit
+          result = {'base':base,'transport_commit':head,'applied_commit':commit,
+              'tree':git('rev-parse','HEAD^{tree}'), 'patch_sha256':hashlib.sha256(patch).hexdigest(),
+              'files':[{'path':p,'before_blob':b,'after_blob':a} for p,b,a in entries],
+              'tests_run_by_this_job':False,'force_push':False,'main_updated':False}
+          (out/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          bundle=out/'repository.bundle'
+          git('bundle','create',str(bundle),'HEAD'); git('bundle','verify',str(bundle))
+          (out/'SHA256SUMS.txt').write_text(hashlib.sha256(bundle.read_bytes()).hexdigest()+'  repository.bundle\n')
+          print(json.dumps(result))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p10-r2b-applied-${{ github.sha }}
+          path: ${{ runner.temp }}/p10-r2b-applied/
+          if-no-files-found: error
+          retention-days: 7
