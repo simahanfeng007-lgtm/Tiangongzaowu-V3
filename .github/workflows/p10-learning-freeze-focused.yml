@@ -7,6 +7,7 @@ on:
     paths:
       - src/life_service/**
       - src/total_gateway/runtime.py
+      - src/total_gateway/learning_output_preparation.py
       - src/total_gateway/verification_plane.py
       - app/backend/tiangong-backend/v3/duihua_qiaojie.py
       - app/backend/tiangong-backend/v3/jineng/jirou_ceng.py
@@ -71,7 +72,7 @@ jobs:
           head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           assert head == os.environ['GITHUB_SHA']
           selected = set()
-          for pattern in ('test_life_*.py', 'test_learning_*.py', 'test_method_*.py', 'test_tool_source_publication*p8.py'):
+          for pattern in ('test_life_*.py', 'test_learning_*.py', 'test_method_*.py', 'test_tool_source_publication*p8.py', 'test_capability_experience*.py'):
               selected.update(p.as_posix() for p in Path('tests').glob(pattern))
           selected.update(['tests/test_capability_health.py', 'tests/test_journal_reducer_registry.py',
               'tests/test_causal_replay.py', 'tests/test_v21_g5_gate.py',
