@@ -460,3 +460,30 @@ admission thresholds, permission rules, source ownership and database versions
 are unchanged. Freeze and independent fingerprint use the original generators.
 Only source-generated Life mirrors follow the edited authorities. Old binaries
 need compatible journal replay or reviewed backup restoration on downgrade.
+
+Verification Plane 1.11 — P10 R3 legacy record migration and actual-entry telemetry (2026-09-09)
+
+R3 adds a restart-safe migration inventory inside the existing Life journal/projection.
+Pending legacy Skill/Tool cards are frozen through the existing P10 R1 event; published,
+active, degraded, pending-patch and unknown-ownership records are retained in place. The
+migration is idempotent and non-destructive: it does not delete artifacts, change CURRENT,
+replace source revisions, infer task completion, or create a second migration database.
+
+The embedded Life API records actual calls to the explicitly enumerated legacy mutation
+entrypoints in the same signed journal. The projection stores observation start, exact call
+counts and workload-class counts. Historical capability execution usage is read from the
+existing capability health/outcome projection rather than double-counted in a new log.
+Known V3 compatibility surfaces outside this Life-journal boundary are listed as uninstrumented;
+therefore zero usage is never claimed from missing coverage or AST/static counts.
+
+Startup replay and the maintenance heartbeat both rerun the same migration safely. Journal
+idempotency binds each migration fact to family/id/content hash. A persistence failure after
+journal append is repaired by normal replay; telemetry failure never changes publication or
+execution authority. Unknown ownership is retained and reported instead of deleted or mapped.
+
+All 102 inherited Verification Plane freeze paths remain. Add the pure migration/telemetry
+module to the frozen authority surface (103 total). No Golden baseline, CompletionGate,
+P5/P15 threshold, ActionPermission, Memory schema, Gateway schema, Source ownership or
+runtime permission rule is relaxed. Life generated mirrors follow only through the existing
+official source synchronizer. R3 telemetry is evidence for later compatibility retirement,
+not itself authorization to remove P11/P12/P13 legacy surfaces.

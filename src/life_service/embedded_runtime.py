@@ -90,6 +90,11 @@ from .artifact_executor import (
 from .learning_workflow import build_draft, confirm_draft, discard_draft, publish_draft
 from .learning_workflow import (LEGACY_PUBLICATION_FROZEN, MIGRATION_REQUIRED,
     legacy_publication_blocked, frozen_publication_result, freeze_learning_publication)
+from .legacy_learning_migration import (
+    LEGACY_MUTATION_ENTRYPOINTS, MIGRATION_SCHEMA, USAGE_SCHEMA, USAGE_WINDOW_SCHEMA,
+    apply_migration_record, apply_usage_observation, apply_usage_window,
+    classify_legacy_records, legacy_migration_summary,
+)
 from .learning_executor import execute_learning_preview
 from .capability_health import (
     DEFAULT_MAX_CONSECUTIVE_FAILURES,
@@ -498,6 +503,7 @@ class EmbeddedLifeRuntime:
             projection_changed = self._reconcile_authoritative_journal(active_life_id)
             classification_changed = self._ensure_memory_classification(active_life_id)
             memory_contract_changed = self._reconcile_memory_contract(active_life_id)
+            self._migrate_legacy_learning_records(life_id=active_life_id)
             resume_narrative_emitted = self._emit_scheduler_resume_narrative(active_life_id)
             if (
                 projection_changed
@@ -1951,6 +1957,7 @@ class EmbeddedLifeRuntime:
                 self._persist(life_id)
             self._schedule_autonomous_activity_decision(life_id=life_id)
             self._schedule_autonomous_learning_decision(life_id=life_id)
+            self._migrate_legacy_learning_records(life_id=life_id)
             self._recover_approved_learning_cards(life_id=life_id)
             self._sync_life_capability_workspace_zone(life_id=life_id)
             self._schedule_capability_health_decision(life_id=life_id)
@@ -5541,6 +5548,7 @@ class EmbeddedLifeRuntime:
                 "latest": learning_rows,
                 "activity_scope": activity_scope,
                 "policy": {"knowledge_auto_max": "A2", "skill_tool_min": "A3", "a3_a5_preview_confirmation": True, "user_direct_bypasses_card": True},
+                "legacy_migration": legacy_migration_summary(scope, now_ms=time.time_ns() // 1_000_000),
             },
             "capabilities": _capability_panel_projection(
                 scope,
@@ -8606,6 +8614,100 @@ class EmbeddedLifeRuntime:
                 "learning": deepcopy(draft), "activity_scope": activity_scope, "event": event,
                 **({"learning_output": preparation} if preparation is not None else {})}
 
+    def _ensure_legacy_learning_usage_window(self, *, life_id: str) -> bool:
+        """Start one durable observation window; telemetry failure never authorizes anything."""
+        scope = self._scope_state(life_id)
+        usage = scope.get("legacy_learning_usage") if isinstance(scope.get("legacy_learning_usage"), Mapping) else {}
+        if int(usage.get("observation_started_at_ms") or 0) > 0:
+            return False
+        started = time.time_ns() // 1_000_000
+        payload = {"schema": USAGE_WINDOW_SCHEMA, "started_at_ms": started,
+                   "coverage_sha256": canonical_sha256(tuple(sorted(LEGACY_MUTATION_ENTRYPOINTS)))}
+        try:
+            self.system.journal.append(
+                life_id, "learning.legacy_usage_window_started", {"window": payload},
+                actor="life_migration", idempotency_key=f"learning.legacy_usage_window:{life_id}:p10-r3",
+            )
+            changed = apply_usage_window(scope, payload)
+            if changed:
+                self._persist(life_id)
+            return changed
+        except Exception:
+            return False
+
+    def _observe_legacy_learning_entry(self, *, life_id: str, path: str) -> None:
+        """Count an actual instrumented route entry without affecting its business result."""
+        workload = LEGACY_MUTATION_ENTRYPOINTS.get(path)
+        if not workload:
+            return
+        try:
+            self._ensure_legacy_learning_usage_window(life_id=life_id)
+            scope = self._scope_state(life_id)
+            usage = scope.get("legacy_learning_usage") if isinstance(scope.get("legacy_learning_usage"), Mapping) else {}
+            sequence = int(usage.get("total_calls") or 0) + 1
+            observed = time.time_ns() // 1_000_000
+            payload = {"schema": USAGE_SCHEMA, "sequence": sequence, "entrypoint": path,
+                       "workload_class": workload, "observed_at_ms": observed,
+                       "may_authorize": False, "may_execute": False}
+            self.system.journal.append(
+                life_id, "learning.legacy_usage_observed", {"observation": payload},
+                actor="life_runtime", idempotency_key=f"learning.legacy_usage:{life_id}:{sequence}",
+            )
+            apply_usage_observation(scope, payload)
+            try:
+                self._persist(life_id)
+            except Exception:
+                # Journal is the authoritative WAL; startup replay repairs projection.
+                pass
+        except Exception:
+            # Observability must not turn a frozen compatibility route into a new authority
+            # or break an otherwise permitted historical operation.
+            return
+
+    def _migrate_legacy_learning_records(self, *, life_id: str) -> dict[str, Any]:
+        """Idempotently freeze pending old publication records and inventory retained history.
+
+        Published/active artifacts, pending patches, source pins and unknown ownership are
+        never deleted or switched. Migration facts live in the existing signed journal and
+        projection so restart recovery uses the same unique Life state.
+        """
+        with self._lock:
+            self._ensure_legacy_learning_usage_window(life_id=life_id)
+            scope = self._scope_state(life_id)
+            learning = scope.get("learning") if isinstance(scope.get("learning"), Mapping) else {}
+            freeze_errors = 0
+            for learning_id, record in list(learning.items()):
+                if (not isinstance(record, Mapping) or not legacy_publication_blocked(record)
+                        or str(record.get("status") or "") in {"published", "discarded", MIGRATION_REQUIRED}):
+                    continue
+                try:
+                    self._freeze_legacy_learning(life_id=life_id, learning_id=str(learning_id))
+                except Exception:
+                    freeze_errors += 1
+            scope = self._scope_state(life_id)
+            changed = 0
+            audit_errors = 0
+            for row in classify_legacy_records(scope):
+                key = (f"learning.legacy_migration:{row['record_family']}:{row['record_id']}:"
+                       f"{row['record_sha256']}")
+                try:
+                    self.system.journal.append(
+                        life_id, "learning.legacy_migration_recorded", {"migration": row},
+                        actor="life_migration", idempotency_key=key,
+                    )
+                    changed += int(apply_migration_record(scope, row))
+                except Exception:
+                    audit_errors += 1
+            if changed:
+                try:
+                    self._persist(life_id)
+                except Exception:
+                    pass
+            scheduler = scope.setdefault("scheduler", {})
+            scheduler["legacy_migration_freeze_errors"] = freeze_errors
+            scheduler["legacy_migration_audit_errors"] = audit_errors
+            return legacy_migration_summary(scope, now_ms=time.time_ns() // 1_000_000)
+
     def _freeze_legacy_learning(self, *, life_id: str, learning_id: str) -> dict[str, Any]:
         scope = self._scope_state(life_id)
         current = scope["learning"][learning_id]
@@ -9284,6 +9386,8 @@ class EmbeddedLifeRuntime:
                 }
                 if self._projection_dirty_reason and (verb, path) not in projection_safe_routes:
                     raise EmbeddedLifeError(self._projection_dirty_reason, status=503)
+                if verb == "POST" and path in LEGACY_MUTATION_ENTRYPOINTS:
+                    self._observe_legacy_learning_entry(life_id=str(self._active()["life_id"]), path=path)
                 if verb == "GET" and path in {"/health", "/api/v1/v3/life/health"}:
                     result = self.health_payload()
                 elif verb == "GET" and path == "/ready":
