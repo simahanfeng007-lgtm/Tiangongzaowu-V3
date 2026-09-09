@@ -1,7 +1,7 @@
 name: P10 learning freeze focused gate
 
 # R3-A note: connector-authored workflow-only touch is used after GITHUB_TOKEN
-# source transport because GitHub suppresses recursive push-workflow triggers.
+# source transport/test-fix commits because GitHub suppresses recursive push workflows.
 on:
   push:
     branches:
@@ -63,7 +63,6 @@ jobs:
               ('scripts/check-source-authority.py', [], 'source-authority'),
               ('scripts/sync-generated-sources.py', ['--check-committed'], 'committed-mirrors'),
           ):
-              # Same source-checkout mode as the existing Architecture gate.
               with (out/(name+'.log')).open('wb') as stream:
                   checked = subprocess.run([sys.executable, script, *args], stdout=stream, stderr=subprocess.STDOUT)
               print((out/(name+'.log')).read_text(encoding='utf-8', errors='replace'))
@@ -73,7 +72,7 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import hashlib, json, os, subprocess, sys, xml.etree.ElementTree as ET
+          import hashlib, json, os, subprocess, sys
           out = Path('output/p10-r1'); out.mkdir(parents=True, exist_ok=True)
           head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           assert head == os.environ['GITHUB_SHA']
