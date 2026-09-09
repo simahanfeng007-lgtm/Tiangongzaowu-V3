@@ -1,5 +1,7 @@
 name: P10 learning freeze focused gate
 
+# R3-A note: connector-authored workflow-only touch is used after GITHUB_TOKEN
+# source transport because GitHub suppresses recursive push-workflow triggers.
 on:
   push:
     branches:
