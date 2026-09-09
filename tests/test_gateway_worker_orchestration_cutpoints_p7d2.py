@@ -916,6 +916,14 @@ def test_life_journal_persist_failure_keeps_composition_tail_recoverable(
     request_id = "req_" + "7" * 64
     run_id = derive_run_identity(request_id, 1).run_id
     life_id = str(life._active()["life_id"])
+    baseline_status, baseline_journal, _ = life.request(
+        "GET",
+        "/api/v1/v3/life/journal/verify",
+        None,
+    )
+    assert baseline_status == 200
+    assert baseline_journal["valid"] is True
+    baseline_event_count = int(baseline_journal["event_count"])
     worker = object.__new__(GatewayOrchestrationWorker)
     worker._life_execution_commit = life.commit_execution
     worker._life_compat_client = life
@@ -1003,7 +1011,10 @@ def test_life_journal_persist_failure_keeps_composition_tail_recoverable(
         )
         assert status == 200
         assert journal["valid"] is True
-        assert journal["event_count"] == 1
+        # Exactly one durable execution.commit is added across the ambiguous
+        # persist failure and strict recovery. Legitimate baseline Life journal
+        # events (for example P10 migration telemetry) are not duplicate tails.
+        assert journal["event_count"] == baseline_event_count + 1
     finally:
         recovered_life.close()
 
