@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from v3 import duihua_qiaojie
 from v3 import peizhi
 from v3.context_compactor import compact_if_needed
@@ -21,18 +23,30 @@ def test_non_json_context_compaction_uses_the_active_stats_collector() -> None:
     assert report["user_compacted"] is True
 
 
-def test_learned_skill_registry_writer_uses_the_declared_registry_schema(
+def test_learned_skill_registry_writer_freezes_new_rows_and_preserves_schema(
     tmp_path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "nengli_liebiao.json"
     monkeypatch.setattr(peizhi, "NENGLI_ZHUCE_LUJING", target)
 
-    duihua_qiaojie._write_registry_rows({}, [{"id": "learned_demo"}])
+    with pytest.raises(ValueError, match="life.learning.legacy_publication_frozen"):
+        duihua_qiaojie._write_registry_rows({}, [{"id": "new_demo"}])
+    assert not target.exists()
+
+    # Pre-P10 history is data, not a new publication through the frozen writer.
+    kept = {"id": "learned_demo"}
+    target.write_text(json.dumps({"nengli_liebiao": [kept, {"id": "removed_demo"}]}), encoding="utf-8")
+    before = target.read_bytes()
+    with pytest.raises(ValueError, match="life.learning.legacy_publication_frozen"):
+        duihua_qiaojie._write_registry_rows({}, [kept, {"id": "new_demo"}])
+    assert target.read_bytes() == before
+    duihua_qiaojie._write_registry_rows({}, [kept])
 
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["schema"] == "tiangong.v3.ability_registry.v2"
     assert payload["nengli_liebiao"] == [{"id": "learned_demo"}]
+    assert payload["zongshu"] == 1
 
 
 def test_tool_dispatch_metadata_has_one_authoritative_value_per_field() -> None:

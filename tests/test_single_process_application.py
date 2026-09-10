@@ -351,19 +351,28 @@ class SingleProcessApplicationTests(unittest.TestCase):
                 "completed_at_ms": 1_000,
             }
             try:
-                first = life.commit_execution(payload)
-                second = life.commit_execution(payload)
-                self.assertFalse(first["duplicate"])
-                self.assertTrue(second["duplicate"])
-                status, journal, _ = life.request(
-                    "GET", "/api/v1/v3/life/journal/verify", None
-                )
-                self.assertEqual(status, 200, journal)
-                self.assertTrue(journal["valid"])
-                self.assertEqual(journal["event_count"], 1)
-                with self.assertRaises(EmbeddedLifeError) as caught:
-                    life.commit_execution({**payload, "status": "failed"})
-                self.assertEqual(caught.exception.code, "life.execution.commit_conflict")
+                with life._lock:
+                    # P10 starts a signed telemetry window during construction.
+                    # Measure this commit's exact delta, preserving that history.
+                    before = life.system.journal.events(payload["life_id"])
+                    first = life.commit_execution(payload)
+                    committed = life.system.journal.events(payload["life_id"])
+                    second = life.commit_execution(payload)
+                    self.assertFalse(first["duplicate"])
+                    self.assertTrue(second["duplicate"])
+                    self.assertEqual(committed[:-1], before)
+                    self.assertEqual(committed[-1]["event_type"], "execution.committed")
+                    self.assertEqual(life.system.journal.events(payload["life_id"]), committed)
+                    status, journal, _ = life.request(
+                        "GET", "/api/v1/v3/life/journal/verify", None
+                    )
+                    self.assertEqual(status, 200, journal)
+                    self.assertTrue(journal["valid"])
+                    self.assertEqual(journal["event_count"], len(before) + 1)
+                    with self.assertRaises(EmbeddedLifeError) as caught:
+                        life.commit_execution({**payload, "status": "failed"})
+                    self.assertEqual(caught.exception.code, "life.execution.commit_conflict")
+                    self.assertEqual(life.system.journal.events(payload["life_id"]), committed)
             finally:
                 life.close()
 
