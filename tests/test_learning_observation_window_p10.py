@@ -37,7 +37,12 @@ def same_life_bound(life, tmp_path, monkeypatch):
     try:
         yield retention.bound.__wrapped__(material)
     finally:
-        generator.close()
+        # Generator.close() skips statements after the imported fixture's yield.
+        # Close the owned SQLite store explicitly, including on assertion failure.
+        try:
+            material[1].close()
+        finally:
+            generator.close()
 
 
 def _snapshot(life):
