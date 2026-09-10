@@ -1,7 +1,9 @@
 """Existing-path observations, never permissions or publication grants.
 
-Windows opens the complete path with OBJ_DONT_REPARSE, rejecting a reparse
-point at any depth, including ancestors above the selected root. Normalized
+Windows queries the DOS device mapping, then opens the complete native path
+with OBJ_DONT_REPARSE, rejecting filesystem reparses at any depth, including
+ancestors above the selected root. Device mappings are checked again before
+returning and must agree with the opened handle's volume/share. Normalized
 and opened NT names are queried on that SAME metadata-only handle. No drive
 root access, ACL changes, following fallback or cached observations are used.
 A returned pathname is not a durable handle or proof against later mutation;
@@ -73,6 +75,8 @@ def _windows_path_api():
     native.NtCreateFile.restype = wintypes.LONG
     native.RtlNtStatusToDosError.argtypes = [wintypes.LONG]
     native.RtlNtStatusToDosError.restype = wintypes.ULONG
+    kernel.QueryDosDeviceW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    kernel.QueryDosDeviceW.restype = wintypes.DWORD
     kernel.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
     kernel.GetFinalPathNameByHandleW.restype = wintypes.DWORD
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -80,12 +84,39 @@ def _windows_path_api():
     return ctypes, wintypes, kernel, native, UnicodeString, ObjectAttributes, IoStatusBlock
 
 
+def _query_device_mapping(ctypes, kernel, device: str) -> str:
+    """Read the current DOS mapping without opening a drive or following a path.
+
+    QueryDosDevice's first string is current; later strings may be old mappings.
+    Only a direct device is accepted. SUBST/path redirects and alternate NT
+    namespaces cannot smuggle filesystem traversal ahead of the no-reparse open.
+    """
+    output = ctypes.create_unicode_buffer(32768)
+    length = kernel.QueryDosDeviceW(device, output, len(output))
+    if length == 0:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if length >= len(output) or length <= len(output.value):
+        raise PathIdentityError("device_mapping_invalid")
+    mapping = output.value
+    if re.fullmatch(r"\\Device\\[A-Za-z][A-Za-z0-9_-]*", mapping) is None:
+        raise PathIdentityError("device_mapping_unsupported")
+    return mapping
+
+
 def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
     """Observe the full path without reparsing any filesystem component."""
     name, suffix = _windows_name(path)
     ctypes, wintypes, kernel, native, UnicodeString, ObjectAttributes, IoStatusBlock = _windows_path_api()
+    unc = name.startswith("\\??\\UNC\\")
+    device = "UNC" if unc else name[4:6]
+    mapping = _query_device_mapping(ctypes, kernel, device)
+    name = mapping + ("\\" + name[8:] if unc else name[6:])
+    native_parts = PureWindowsPath(name).parts
+    anchor = PureWindowsPath(*native_parts[:-len(suffix)]) if suffix else PureWindowsPath(name)
     buffer = ctypes.create_unicode_buffer(name)
     size = len(name.encode("utf-16-le"))
+    if size > 65532:
+        raise PathIdentityError("native_path_size_invalid")
     string = UnicodeString(size, size + 2, ctypes.cast(buffer, wintypes.LPWSTR))
     # OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE, no root handle or privilege grants.
     attributes = ObjectAttributes(ctypes.sizeof(ObjectAttributes), None, ctypes.pointer(string), 0x1040, None, None)
@@ -113,6 +144,9 @@ def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
             result = PureWindowsPath(output.value)
             if result.parts[:2] != ("\\", "Device") or len(result.parts) < 3 + len(suffix):
                 raise PathIdentityError("native_path_invalid")
+            observed_anchor = PureWindowsPath(*result.parts[:-len(suffix)]) if suffix else result
+            if observed_anchor != anchor:
+                raise PathIdentityError("physical_path_mismatch")
             names.append(result)
         physical, opened = names
         count = len(suffix)
@@ -122,6 +156,8 @@ def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
                 raise PathIdentityError("physical_path_mismatch")
         elif physical != opened:
             raise PathIdentityError("physical_path_mismatch")
+        if _query_device_mapping(ctypes, kernel, device) != mapping:
+            raise PathIdentityError("device_mapping_changed")
         return physical
     finally:
         if not kernel.CloseHandle(handle):

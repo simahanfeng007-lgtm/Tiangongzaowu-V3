@@ -91,8 +91,8 @@ from .learning_workflow import build_draft, confirm_draft, discard_draft, publis
 from .learning_workflow import (LEGACY_PUBLICATION_FROZEN, MIGRATION_REQUIRED,
     legacy_publication_blocked, frozen_publication_result, freeze_learning_publication)
 from .legacy_learning_migration import (
-    LEGACY_MUTATION_ENTRYPOINTS, MIGRATION_SCHEMA, USAGE_SCHEMA, USAGE_WINDOW_SCHEMA,
-    apply_migration_record, apply_usage_observation, apply_usage_window,
+    EXTERNAL_COMPATIBILITY_ENTRYPOINTS, LEGACY_MUTATION_ENTRYPOINTS, R3A_LEGACY_MUTATION_ENTRYPOINTS, MIGRATION_SCHEMA, USAGE_SCHEMA, USAGE_WINDOW_SCHEMA, USAGE_COVERAGE_SCHEMA,
+    apply_migration_record, apply_usage_coverage, apply_usage_observation, apply_usage_window,
     classify_legacy_records, legacy_migration_summary,
 )
 from .learning_executor import execute_learning_preview
@@ -8622,7 +8622,7 @@ class EmbeddedLifeRuntime:
             return False
         started = time.time_ns() // 1_000_000
         payload = {"schema": USAGE_WINDOW_SCHEMA, "started_at_ms": started,
-                   "coverage_sha256": canonical_sha256(tuple(sorted(LEGACY_MUTATION_ENTRYPOINTS)))}
+                   "coverage_sha256": canonical_sha256(tuple(sorted(R3A_LEGACY_MUTATION_ENTRYPOINTS)))}
         try:
             self.system.journal.append(
                 life_id, "learning.legacy_usage_window_started", {"window": payload},
@@ -8635,6 +8635,40 @@ class EmbeddedLifeRuntime:
         except Exception:
             return False
 
+    def activate_legacy_compatibility_telemetry(self, entrypoints: tuple[str, ...] | None = None) -> dict[str, Any]:
+        """Start measured external-compat coverage only after its observer is actually wired."""
+        with self._lock:
+            life_id = str(self._active()["life_id"])
+            selected = tuple(sorted(entrypoints or tuple(EXTERNAL_COMPATIBILITY_ENTRYPOINTS)))
+            if (not selected or len(selected) != len(set(selected))
+                    or any(item not in EXTERNAL_COMPATIBILITY_ENTRYPOINTS for item in selected)):
+                raise ValueError("life.learning.legacy_usage_coverage_invalid")
+            self._ensure_legacy_learning_usage_window(life_id=life_id)
+            scope = self._scope_state(life_id)
+            current = scope.get("legacy_learning_usage") if isinstance(scope.get("legacy_learning_usage"), Mapping) else {}
+            coverage = current.get("coverage_started_at_ms") if isinstance(current.get("coverage_started_at_ms"), Mapping) else {}
+            missing = tuple(item for item in selected if item not in coverage)
+            if missing:
+                started = time.time_ns() // 1_000_000
+                payload = {"schema": USAGE_COVERAGE_SCHEMA, "started_at_ms": started, "entrypoints": list(missing)}
+                self.system.journal.append(
+                    life_id, "learning.legacy_usage_coverage_extended", {"coverage": payload},
+                    actor="life_migration",
+                    idempotency_key=("learning.legacy_usage_coverage:" + life_id + ":"
+                                     + canonical_sha256(tuple(missing))),
+                )
+                if apply_usage_coverage(scope, payload):
+                    self._persist(life_id)
+            return legacy_migration_summary(scope, now_ms=time.time_ns() // 1_000_000)
+
+    def observe_legacy_compatibility_entry(self, surface: str) -> None:
+        """Accept one in-process backend observation into the existing signed Life journal."""
+        if surface not in EXTERNAL_COMPATIBILITY_ENTRYPOINTS:
+            return
+        with self._lock:
+            self.activate_legacy_compatibility_telemetry((surface,))
+            self._observe_legacy_learning_entry(life_id=str(self._active()["life_id"]), path=surface)
+
     def _observe_legacy_learning_entry(self, *, life_id: str, path: str) -> None:
         """Count an actual instrumented route entry without affecting its business result."""
         workload = LEGACY_MUTATION_ENTRYPOINTS.get(path)
@@ -8645,7 +8679,9 @@ class EmbeddedLifeRuntime:
             scope = self._scope_state(life_id)
             usage = scope.get("legacy_learning_usage") if isinstance(scope.get("legacy_learning_usage"), Mapping) else {}
             sequence = int(usage.get("total_calls") or 0) + 1
-            observed = time.time_ns() // 1_000_000
+            coverage = usage.get("coverage_started_at_ms") if isinstance(usage.get("coverage_started_at_ms"), Mapping) else {}
+            observed = max(time.time_ns() // 1_000_000, int(usage.get("last_observed_at_ms") or 0),
+                           int(coverage.get(path) or 0))
             payload = {"schema": USAGE_SCHEMA, "sequence": sequence, "entrypoint": path,
                        "workload_class": workload, "observed_at_ms": observed,
                        "may_authorize": False, "may_execute": False}

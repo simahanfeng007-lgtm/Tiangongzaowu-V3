@@ -16,6 +16,7 @@ from runtime_security import path_identity as identity
 @pytest.fixture
 def native_api(monkeypatch):
     state = SimpleNamespace(status=0, closed=0, calls=[], query_error=False,
+                            mapping=r"\Device\HarddiskVolume4", mapping_queries=[],
                             normalized=r"\Device\HarddiskVolume4\Users\runneradmin\file.txt",
                             opened=r"\Device\HarddiskVolume4\Users\RUNNER~1\file.txt")
 
@@ -39,7 +40,13 @@ def native_api(monkeypatch):
         state.closed += 1
         return 1
 
+    def query_device(device, buffer, capacity):
+        state.mapping_queries.append(device)
+        buffer.value = state.mapping
+        return len(buffer.value) + 2
+
     kernel = SimpleNamespace(
+        QueryDosDeviceW=Mock(side_effect=query_device),
         CreateFileW=Mock(side_effect=AssertionError("no DOS anchor/following open allowed")),
         GetFinalPathNameByHandleW=Mock(side_effect=query), CloseHandle=Mock(side_effect=close),
     )
@@ -64,7 +71,8 @@ def test_short_alias_is_observed_on_one_no_reparse_handle_without_anchor_open(na
     state, kernel, _ = native_api
     path = PureWindowsPath(r"C:\Users\RUNNER~1\file.txt")
     assert identity._windows_final_path(path) == PureWindowsPath(state.normalized)
-    assert state.calls == [(r"\??\C:\Users\RUNNER~1\file.txt", 0x80, 0x1040, 7, 1, 0x4000)]
+    assert state.calls == [(r"\Device\HarddiskVolume4\Users\RUNNER~1\file.txt", 0x80, 0x1040, 7, 1, 0x4000)]
+    assert state.mapping_queries == ["C:", "C:"]
     assert state.closed == 1
     kernel.CreateFileW.assert_not_called()
 
@@ -72,7 +80,7 @@ def test_short_alias_is_observed_on_one_no_reparse_handle_without_anchor_open(na
 def test_extended_namespace_is_converted_once_not_duplicated(native_api):
     state, _, _ = native_api
     identity._windows_final_path(PureWindowsPath(r"\\?\C:\Users\RUNNER~1\file.txt"))
-    assert state.calls[0][0] == r"\??\C:\Users\RUNNER~1\file.txt"
+    assert state.calls[0][0] == r"\Device\HarddiskVolume4\Users\RUNNER~1\file.txt"
 
 
 @pytest.mark.parametrize("field,value", [
@@ -120,10 +128,67 @@ def test_ambiguous_or_nonfilesystem_input_rejected_before_native_open(native_api
 
 def test_unc_native_spelling_and_binding(native_api):
     state, _, _ = native_api
+    state.mapping = r"\Device\Mup"
     state.opened = r"\Device\Mup\server\share\SHORT~1\file.txt"
     state.normalized = r"\Device\Mup\server\share\long-directory\file.txt"
     assert identity._windows_final_path(PureWindowsPath(r"\\?\UNC\server\share\SHORT~1\file.txt")) == PureWindowsPath(state.normalized)
-    assert state.calls[0][0] == r"\??\UNC\server\share\SHORT~1\file.txt"
+    assert state.calls[0][0] == r"\Device\Mup\server\share\SHORT~1\file.txt"
+    assert state.mapping_queries == ["UNC", "UNC"]
+
+
+@pytest.mark.parametrize("mapping", [r"\??\C:\redirected", r"\Device\HarddiskVolume4\redirected",
+                                     r"\Device\..", r"\GLOBAL??\C:", ""])
+def test_redirected_or_malformed_device_mapping_is_rejected_before_open(native_api, mapping):
+    state, _, native = native_api
+    state.mapping = mapping
+    with pytest.raises(identity.PathIdentityError, match="device_mapping"):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    native.NtCreateFile.assert_not_called()
+
+
+def test_changed_drive_mapping_closes_handle_and_rejects_result(native_api):
+    state, kernel, _ = native_api
+    original = kernel.GetFinalPathNameByHandleW.side_effect
+    def remap(*args):
+        value = original(*args)
+        state.mapping = r"\Device\HarddiskVolume5"
+        return value
+    kernel.GetFinalPathNameByHandleW.side_effect = remap
+    with pytest.raises(identity.PathIdentityError, match="device_mapping_changed"):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert state.closed == 1
+
+
+def test_handle_cannot_report_a_different_volume_even_when_both_names_agree(native_api):
+    state, _, _ = native_api
+    state.normalized = state.normalized.replace("Volume4", "Volume5")
+    state.opened = state.opened.replace("Volume4", "Volume5")
+    with pytest.raises(identity.PathIdentityError, match="physical_path_mismatch"):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert state.closed == 1
+
+
+def test_device_mapping_query_failure_does_not_open_or_fall_back(native_api):
+    _, kernel, native = native_api
+    kernel.QueryDosDeviceW.side_effect = None
+    kernel.QueryDosDeviceW.return_value = 0
+    with pytest.raises(OSError):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    native.NtCreateFile.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual Windows leaf junction")
+def test_real_leaf_junction_is_rejected(tmp_path):
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    link = tmp_path / "leaf-junction"
+    result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(actual)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    try:
+        with pytest.raises(identity.PathIdentityError, match="link_or_junction"):
+            identity.resolve_existing_path(link)
+    finally:
+        link.rmdir()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="actual Windows 8.3 namespace")

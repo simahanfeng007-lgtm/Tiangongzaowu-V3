@@ -41,7 +41,7 @@ from typing import Any, Callable
 
 from .capability_health import ingest_outcome
 from .complete_core import canonical as journal_canonical
-from .legacy_learning_migration import (apply_migration_record, apply_usage_observation, apply_usage_window)
+from .legacy_learning_migration import (apply_migration_record, apply_usage_coverage, apply_usage_observation, apply_usage_window)
 
 
 class JournalReplayError(RuntimeError):
@@ -100,6 +100,7 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "learning.experience_committed": EventClass.AUDIT_ONLY,
     "learning.legacy_migration_recorded": EventClass.REPLAYABLE_PROJECTION,
     "learning.legacy_usage_window_started": EventClass.REPLAYABLE_PROJECTION,
+    "learning.legacy_usage_coverage_extended": EventClass.REPLAYABLE_PROJECTION,
     "learning.legacy_usage_observed": EventClass.REPLAYABLE_PROJECTION,
     # ---- 自我迭代升级卡 ----
     # noop 决策只落审计事件，投影门控键由调度器写侧维护，audit-only。
@@ -549,6 +550,14 @@ def _reduce_legacy_usage_window(scope: dict[str, Any], payload: Mapping[str, Any
         raise JournalReplayError(str(exc)) from exc
 
 
+def _reduce_legacy_usage_coverage(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
+    coverage = _require_mapping(payload.get("coverage"), "life.projection.legacy_usage_coverage_invalid")
+    try:
+        return apply_usage_coverage(scope, coverage)
+    except ValueError as exc:
+        raise JournalReplayError(str(exc)) from exc
+
+
 def _reduce_legacy_usage(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
     observation = _require_mapping(payload.get("observation"), "life.projection.legacy_usage_invalid")
     try:
@@ -716,6 +725,7 @@ _REDUCERS: dict[str, Callable[..., bool]] = {
     "learning.published": _reduce_learning_published,
     "learning.legacy_migration_recorded": _reduce_legacy_migration,
     "learning.legacy_usage_window_started": _reduce_legacy_usage_window,
+    "learning.legacy_usage_coverage_extended": _reduce_legacy_usage_coverage,
     "learning.legacy_usage_observed": _reduce_legacy_usage,
     "upgrade.card_created": _reduce_upgrade_created,
     "upgrade.card_cancelled": _reduce_upgrade_cancelled,

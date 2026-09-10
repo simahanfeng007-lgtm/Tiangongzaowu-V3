@@ -487,3 +487,50 @@ P5/P15 threshold, ActionPermission, Memory schema, Gateway schema, Source owners
 runtime permission rule is relaxed. Life generated mirrors follow only through the existing
 official source synchronizer. R3 telemetry is evidence for later compatibility retirement,
 not itself authorization to remove P11/P12/P13 legacy surfaces.
+
+
+Verification Plane 1.12 — P10 R3-B external compatibility telemetry coverage (2026-09-10)
+
+R3-B extends the existing signed-Life telemetry observation boundary to the four V3
+compatibility surfaces that R3-A explicitly left uninstrumented: legacy conversation
+learning callbacks, the old muscle learning pipeline, raw capability-registry
+compatibility mutations, and legacy L0 projection. A no-store in-process bridge is
+installed only by the existing single Total Gateway and forwards observations into the
+existing Embedded Life journal/projection. It owns no database, current pointer,
+permission, publication decision, task state, or execution route.
+
+Coverage timestamps begin only after the observer is actually installed. Existing R3-A
+coverage is not retroactively expanded; an external surface first becomes measured at its
+own durable coverage event. A temporary telemetry persistence failure leaves that surface
+explicitly uninstrumented and cannot block or alter the compatibility route business
+result. Journal replay restores coverage and counts after projection loss. Historical
+capability execution usage still comes from the existing health/outcome projection.
+
+The migration summary reports known versus instrumented entrypoints, per-entry coverage
+starts, full-coverage-window duration, residual/unknown record counts, observed calls, and
+explicit zero-use blockers. It never converts a zero counter into proof of zero production
+usage. Independent reviewed observation-window evidence remains a separate R3 exit gate;
+P13 compatibility removal cannot consume this telemetry as self-authorizing deletion.
+
+All 103 inherited Verification Plane freeze paths remain. Add the V3 no-store telemetry
+bridge and legacy L0 projection to the frozen authority surface (105 total). The existing
+V3 backend closed-world source authority is extended only to classify the new bridge file;
+the independent authority count remains unchanged. No Golden baseline, CompletionGate,
+P5/P15 threshold, ActionPermission, Memory/Gateway schema, Source publication rule, or
+runtime execution permission is relaxed. Generated Life mirrors still move only through
+the official source synchronizer.
+Verification Plane 1.13 — Windows DOS-device identity correction (2026-09-10)
+
+The inherited P8 path observer rejected ordinary Windows paths because a DOS
+drive letter is an object-manager link. QueryDosDeviceW now reads only that
+device's current mapping. Only direct Device names are accepted; SUBST/path
+redirects and arbitrary native namespaces remain unsupported. The full native
+filesystem path is still opened with OBJ_DONT_REPARSE, FILE_READ_ATTRIBUTES,
+FILE_OPEN and the existing sharing/options, without a drive-root handle.
+Normalized/opened names must bind to the queried device/share and the device
+mapping is re-read before returning. Mapping drift or query errors fail closed.
+No ACL, token, permission, Source grant, execution or publication rule changes.
+All 105 inherited authority surfaces and the Golden corpus remain covered.
+Native Windows normal-directory, 8.3-alias, ancestor-junction and leaf-junction
+tests accompany mapping/query/race ABI tests. Mock results are not native proof;
+live UNC/network-share and AppContainer acceptance remain separate evidence.

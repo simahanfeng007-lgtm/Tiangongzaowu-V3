@@ -1346,6 +1346,17 @@ class GatewayRuntime:
                     synthesizer=synthesize_learning_material,
                 )
 
+                def legacy_learning_usage_observer(surface: str) -> None:
+                    runtime.life_service.observe_legacy_compatibility_entry(str(surface))
+
+                runtime.backend_service.set_legacy_learning_usage_observer(legacy_learning_usage_observer)
+                try:
+                    runtime.life_service.activate_legacy_compatibility_telemetry()
+                except Exception:
+                    # Telemetry must remain fail-soft. Missing coverage stays visible in
+                    # the Life projection and can be retried on the first real call.
+                    pass
+
                 def life_skill_overlay() -> dict[str, object]:
                     status, payload, _ = runtime.life_service.request(
                         "GET", "/api/v1/v3/life/capabilities/overlay", {}, timeout_seconds=10,

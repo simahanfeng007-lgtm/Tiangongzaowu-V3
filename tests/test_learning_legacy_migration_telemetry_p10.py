@@ -9,7 +9,7 @@ from contracts import canonical_sha256
 from life_service.embedded_runtime import EmbeddedLifeRuntime
 from life_service.learning_workflow import MIGRATION_REQUIRED, build_draft
 from life_service.legacy_learning_migration import (
-    LEGACY_MUTATION_ENTRYPOINTS, UNINSTRUMENTED_COMPATIBILITY_SURFACES,
+    LEGACY_MUTATION_ENTRYPOINTS, R3A_LEGACY_MUTATION_ENTRYPOINTS, UNINSTRUMENTED_COMPATIBILITY_SURFACES,
     classify_legacy_records, legacy_migration_summary,
 )
 from tests.test_learning_publication_freeze_p10 import decision, seed_history, life
@@ -123,7 +123,8 @@ def test_actual_capability_mutation_entry_is_counted_even_when_frozen(life, path
 def test_panel_never_turns_missing_coverage_into_zero_use_claim(life):
     summary = life._panel()["learning"]["legacy_migration"]
     assert summary["zero_usage_proven"] is False
-    assert set(summary["instrumented_entrypoints"]) == set(LEGACY_MUTATION_ENTRYPOINTS)
+    assert set(summary["known_entrypoints"]) == set(LEGACY_MUTATION_ENTRYPOINTS)
+    assert set(summary["instrumented_entrypoints"]) == set(R3A_LEGACY_MUTATION_ENTRYPOINTS)
     assert tuple(summary["uninstrumented_compatibility_surfaces"]) == UNINSTRUMENTED_COMPATIBILITY_SURFACES
     assert summary["observation_started_at_ms"] > 0
     assert summary["observation_window_ms"] >= 0

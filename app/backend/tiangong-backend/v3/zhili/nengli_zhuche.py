@@ -5,6 +5,8 @@ nengli_zhuche.py: L5 注册表模式的能力注册管理
 
 from __future__ import annotations
 
+from v3.legacy_learning_telemetry import observe_legacy_learning_usage
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -135,6 +137,7 @@ class NengliZhuche:
         Returns:
             True 注册成功
         """
+        observe_legacy_learning_usage("v3.zhili.nengli_zhuche.raw_registry_compatibility")
         from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
         raise ValueError(LEGACY_PUBLICATION_FROZEN)
         if isinstance(nengli_dingyi, dict) and not isinstance(nengli_dingyi, NengliDingyi):
@@ -172,6 +175,7 @@ class NengliZhuche:
         Returns:
             True 注销成功，False 不存在
         """
+        observe_legacy_learning_usage("v3.zhili.nengli_zhuche.raw_registry_compatibility")
         if nengli_id not in self._nengli_dict:
             return False
         del self._nengli_dict[nengli_id]
@@ -223,6 +227,7 @@ class NengliZhuche:
 
     def jihuo_nengli(self, nengli_id: str) -> bool:
         """激活能力"""
+        observe_legacy_learning_usage("v3.zhili.nengli_zhuche.raw_registry_compatibility")
         from life_service.learning_workflow import LEGACY_PUBLICATION_FROZEN
         if self._nengli_dict.get(nengli_id, {}).get("zhuangtai") == "jihuo":
             return True  # Read-only idempotence, no new active state.
@@ -235,6 +240,7 @@ class NengliZhuche:
 
     def tingyong_nengli(self, nengli_id: str) -> bool:
         """停用能力"""
+        observe_legacy_learning_usage("v3.zhili.nengli_zhuche.raw_registry_compatibility")
         if nengli_id not in self._nengli_dict:
             return False
         self._nengli_dict[nengli_id]["zhuangtai"] = "tingyong"

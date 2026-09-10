@@ -5,6 +5,8 @@ HTTP 服务：7174 端口，前端 POST 聊天消息 → huanxing → 返回结�
 """
 from __future__ import annotations
 
+from .legacy_learning_telemetry import observe_legacy_learning_usage
+
 from contextlib import contextmanager
 import json
 import shutil
@@ -1025,6 +1027,7 @@ class DuihuaQiaojie:
         }
 
     def create_learning_card_from_request(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1061,6 +1064,7 @@ class DuihuaQiaojie:
         return result
 
     def confirm_learning_card(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1083,6 +1087,7 @@ class DuihuaQiaojie:
         return result
 
     def process_approved_learning_card(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1105,6 +1110,7 @@ class DuihuaQiaojie:
         return result
 
     def request_learning_activation(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1127,6 +1133,7 @@ class DuihuaQiaojie:
         return result
 
     def activate_learning_card(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1149,6 +1156,7 @@ class DuihuaQiaojie:
         return result
 
     def release_learning_card(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         # Inactive legacy engine callbacks are not an alternative publication authority.
         from life_service.learning_workflow import frozen_publication_result
         return frozen_publication_result()
@@ -1172,6 +1180,7 @@ class DuihuaQiaojie:
         return result
 
     def discard_learning_card(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         if self._zd is None:
             return {"ok": False, "error": "v3_not_ready"}
         body = payload if isinstance(payload, dict) else {}
@@ -1192,6 +1201,7 @@ class DuihuaQiaojie:
         return result
 
     def run_learning_pipeline(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         return {
             "ok": False,
             "error": "direct_learning_pipeline_disabled",
@@ -1200,6 +1210,7 @@ class DuihuaQiaojie:
         }
 
     def delete_learned_skill(self, payload: dict | None = None) -> dict:
+        observe_legacy_learning_usage("v3.duihua_qiaojie.legacy_learning_callbacks")
         body = payload if isinstance(payload, dict) else {}
         ability_id = str(body.get("ability_id") or body.get("id") or body.get("skill_id") or "").strip()
         actor = str(body.get("actor") or "user").strip() or "user"
