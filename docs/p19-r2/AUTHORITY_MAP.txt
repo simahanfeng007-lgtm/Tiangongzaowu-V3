@@ -534,3 +534,27 @@ All 105 inherited authority surfaces and the Golden corpus remain covered.
 Native Windows normal-directory, 8.3-alias, ancestor-junction and leaf-junction
 tests accompany mapping/query/race ABI tests. Mock results are not native proof;
 live UNC/network-share and AppContainer acceptance remain separate evidence.
+
+Verification Plane 1.14 — AppContainer path identity compatibility (2026-09-10)
+
+Native comparison run 34467616645 established a P10 regression: main b1ea3e9
+passed all 40 key-lifecycle tests, while d7a3247 failed the contained lifecycle
+at QueryDosDeviceW with ERROR_ACCESS_DENIED before creating the first key.
+For this exact mapping-query error only, freshly observed effective-token
+AppContainer evidence permits opening the original DOS/UNC name with the SAME
+OBJ_DONT_REPARSE, FILE_READ_ATTRIBUTES, FILE_OPEN, sharing and options. This is
+not a following open or a retry after a failed native path open. Other mapping
+errors, unobservable token identity and non-container callers still fail closed.
+Only ERROR_NO_TOKEN permits process-token lookup; identification-only tokens,
+malformed token results and handle cleanup failure cannot select this path.
+
+Both handle names must retain the exact device depth, caller's opened suffix,
+matching normalized/opened volume and, for UNC, the exact server/share. Hidden
+SUBST path prefixes are rejected. Host mapping/volume/recheck guards remain.
+Token identity is observed afresh, not cached. This observation grants no access,
+changes no ACL or token and provides no durable protection against later mutation.
+All 105 frozen authority paths, Store v33 and the Golden corpus remain unchanged
+in scope. Refresh the freeze and drift fingerprint through their existing explicit
+generators after this declared bump. Native key lifecycle, readable-target junction
+negative controls, ABI failure paths and both platforms' full gates are required.
+UNC native acceptance remains separate; portable UNC tests are not network proof.

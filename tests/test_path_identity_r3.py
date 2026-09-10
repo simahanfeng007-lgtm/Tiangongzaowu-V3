@@ -59,10 +59,15 @@ def native_api(monkeypatch):
         binding.setattr(ctypes, "WinDLL", lambda name, **kw: kernel if name == "kernel32" else native, raising=False)
         api = factory()
     factory.cache_clear()
+    def winerror(*args):
+        error = PermissionError("native operation denied")
+        error.winerror = args[0] if args else 5
+        return error
     local_ctypes = SimpleNamespace(**{key: getattr(ctypes, key) for key in (
         "create_unicode_buffer", "cast", "pointer", "sizeof", "byref",
-    )}, get_last_error=lambda: 5, WinError=lambda *args: PermissionError("native operation denied"))
+    )}, get_last_error=lambda: 5, WinError=winerror)
     monkeypatch.setattr(identity, "_windows_path_api", lambda: (local_ctypes, *api[1:]))
+    monkeypatch.setattr(identity, "_effective_appcontainer", Mock(return_value=False))
     yield state, kernel, native
     factory.cache_clear()
 
@@ -175,6 +180,161 @@ def test_device_mapping_query_failure_does_not_open_or_fall_back(native_api):
     with pytest.raises(OSError):
         identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
     native.NtCreateFile.assert_not_called()
+
+
+@pytest.fixture
+def container_namespace(native_api):
+    state, kernel, native = native_api
+    kernel.QueryDosDeviceW.side_effect = None
+    kernel.QueryDosDeviceW.return_value = 0
+    identity._effective_appcontainer.return_value = True
+    return state, kernel, native
+
+
+def test_observed_container_uses_same_no_reparse_open_when_mapping_access_denied(container_namespace):
+    state, kernel, _ = container_namespace
+    assert identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt")) == PureWindowsPath(state.normalized)
+    assert state.calls == [(r"\??\C:\Users\RUNNER~1\file.txt", 0x80, 0x1040, 7, 1, 0x4000)]
+    assert state.closed == 1
+    assert kernel.QueryDosDeviceW.call_count == 1
+    kernel.CreateFileW.assert_not_called()
+    identity._effective_appcontainer.assert_called_once_with()
+
+
+@pytest.mark.parametrize("normalized,opened", [
+    (r"\Device\HarddiskVolume5\Users\runneradmin\file.txt", r"\Device\HarddiskVolume4\Users\RUNNER~1\file.txt"),
+    (r"\Device\HarddiskVolume4\hidden\Users\runneradmin\file.txt", r"\Device\HarddiskVolume4\hidden\Users\RUNNER~1\file.txt"),
+    (r"\??\C:\Users\runneradmin\file.txt", r"\??\C:\Users\RUNNER~1\file.txt"),
+    (r"\Device\HarddiskVolume4\Users\runneradmin\file.txt", r"\Device\HarddiskVolume4\Users\OTHER~1\file.txt"),
+])
+def test_container_rejects_volume_prefix_namespace_and_location_drift(container_namespace, normalized, opened):
+    state, _, _ = container_namespace
+    state.normalized, state.opened = normalized, opened
+    with pytest.raises(identity.PathIdentityError):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert state.closed == 1
+
+
+@pytest.mark.parametrize("status", [0xC000050B, 0xC0000022, 0xC0000034, 0x103])
+def test_container_no_reparse_failure_is_not_retried(container_namespace, status):
+    state, kernel, native = container_namespace
+    state.status = status
+    with pytest.raises((OSError, identity.PathIdentityError)):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert native.NtCreateFile.call_count == 1
+    kernel.GetFinalPathNameByHandleW.assert_not_called()
+    assert state.closed == 0
+
+
+def test_container_unc_preserves_server_share(container_namespace):
+    state, _, _ = container_namespace
+    state.opened = r"\Device\Mup\server\share\SHORT~1\file.txt"
+    state.normalized = r"\Device\Mup\server\share\long-directory\file.txt"
+    path = PureWindowsPath(r"\\server\share\SHORT~1\file.txt")
+    assert identity._windows_final_path(path) == PureWindowsPath(state.normalized)
+    assert state.calls[0][0] == r"\??\UNC\server\share\SHORT~1\file.txt"
+    state.normalized = state.normalized.replace("server", "elsewhere")
+    state.opened = state.opened.replace("server", "elsewhere")
+    with pytest.raises(identity.PathIdentityError, match="physical_path_mismatch"):
+        identity._windows_final_path(path)
+    assert state.closed == 2
+
+
+def test_unobservable_container_identity_never_opens_path(container_namespace):
+    _, _, native = container_namespace
+    identity._effective_appcontainer.side_effect = PermissionError("token denied")
+    with pytest.raises(PermissionError, match="token denied"):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    native.NtCreateFile.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [2, 122, 1008])
+def test_non_access_denied_mapping_failure_does_not_select_container(native_api, error):
+    _, kernel, native = native_api
+    failure = OSError("mapping error")
+    failure.winerror = error
+    kernel.QueryDosDeviceW.side_effect = failure
+    with pytest.raises(OSError, match="mapping error"):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    identity._effective_appcontainer.assert_not_called()
+    native.NtCreateFile.assert_not_called()
+
+
+@pytest.fixture
+def token_api(monkeypatch):
+    state = SimpleNamespace(thread=False, error=1008, process=True, flag=1,
+                            level=2, valid_size=True, query=True, close=True)
+    def open_thread(thread, access, as_self, token):
+        assert access == 0x8 and as_self is True
+        token._obj.value = 456 if state.thread else None
+        return state.thread
+    def open_process(process, access, token):
+        assert access == 0x8
+        token._obj.value = 456 if state.process else None
+        return state.process
+    def query(token, kind, value, size, length):
+        assert token.value == 456
+        assert kind in (9, 29)
+        value._obj.value = state.level if kind == 9 else state.flag
+        length._obj.value = size if state.valid_size else size - 1
+        return state.query
+    kernel = SimpleNamespace(GetCurrentThread=Mock(return_value=-2),
+        GetCurrentProcess=Mock(return_value=-1), CloseHandle=Mock(side_effect=lambda _: state.close))
+    security = SimpleNamespace(OpenThreadToken=Mock(side_effect=open_thread),
+        OpenProcessToken=Mock(side_effect=open_process), GetTokenInformation=Mock(side_effect=query))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: kernel if name == "kernel32" else security, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: state.error, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda *args: PermissionError("token query denied"), raising=False)
+    return state, kernel, security
+
+
+@pytest.mark.parametrize("thread,flag", [(False, 0), (False, 1), (True, 0), (True, 1)])
+def test_namespace_selection_observes_effective_token_and_closes_it(token_api, thread, flag):
+    state, kernel, security = token_api
+    state.thread, state.flag = thread, flag
+    assert identity._effective_appcontainer() is bool(flag)
+    assert security.OpenProcessToken.call_count == (0 if thread else 1)
+    assert kernel.CloseHandle.call_count == 1
+    state.flag = 1 - flag
+    assert identity._effective_appcontainer() is bool(1 - flag), "token evidence must not be cached"
+
+
+@pytest.mark.parametrize("error", [5, 1347, 122])
+def test_thread_token_failure_never_falls_back_to_process(token_api, error):
+    state, kernel, security = token_api
+    state.error = error
+    with pytest.raises(PermissionError):
+        identity._effective_appcontainer()
+    security.OpenProcessToken.assert_not_called()
+    kernel.CloseHandle.assert_not_called()
+
+
+@pytest.mark.parametrize("field,value", [("flag", 2), ("valid_size", False), ("query", False), ("close", False)])
+def test_invalid_token_evidence_or_cleanup_rejects_namespace(token_api, field, value):
+    state, kernel, _ = token_api
+    setattr(state, field, value)
+    with pytest.raises((OSError, identity.PathIdentityError)):
+        identity._effective_appcontainer()
+    assert kernel.CloseHandle.call_count == 1
+
+
+@pytest.mark.parametrize("level", [0, 1, 4])
+def test_identification_or_invalid_impersonation_level_rejects_namespace(token_api, level):
+    state, kernel, security = token_api
+    state.thread, state.level = True, level
+    with pytest.raises((OSError, identity.PathIdentityError)):
+        identity._effective_appcontainer()
+    security.OpenProcessToken.assert_not_called()
+    assert kernel.CloseHandle.call_count == 1
+
+
+def test_process_token_failure_does_not_claim_container(token_api):
+    state, kernel, security = token_api
+    state.process = False
+    with pytest.raises(PermissionError):
+        identity._effective_appcontainer()
+    security.GetTokenInformation.assert_not_called()
+    kernel.CloseHandle.assert_not_called()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="actual Windows leaf junction")

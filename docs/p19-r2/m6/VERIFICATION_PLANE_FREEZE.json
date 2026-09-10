@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.13",
+ "verification_plane_version": "1.14",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -7,7 +7,7 @@
   "verification_repair": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb"
  },
  "registry_fingerprint": "6216982d89b5e18aac4026b063fb264ad787b1a2334e05a63a77411a28b45ec9",
- "authority_map_sha256": "837c74e7206c0145f4c508e373db3c3843b64c8ef9e433999aefc308bcd413c4",
+ "authority_map_sha256": "931d8ae31c5673c7f851abfbd5d59dc6d36ae1d40e8cdb87afc0dca45e2ba8cf",
  "completion_authority_sha256": "6e6b8f08b9a2eedbf9b341449189d47bda51e0f5f8d597828cf9d868e59e672f",
  "repair_policy_sha256": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
@@ -17,7 +17,7 @@
   "src/contracts/execution.py": "4c90c63dd1e87b7e196af8d1e620dc5bed15130342a4ffe8a14916ba95a39c0d",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
   "src/contracts/verification_repair.py": "d0d6e5c423bcf7d7084842fa4ee076ff7cd2d329a1d80817ef81488e0c7568cb",
-  "src/runtime_security/path_identity.py": "79fd3dcc713a48fb9437e8217789b79364b311f46c16b8e0a5973fe09303fb67",
+  "src/runtime_security/path_identity.py": "7f867bca6a3a870c2d6673f866895b6de866ceb333cd176e89304b18fb8523a8",
   "src/life_service/store_connection.py": "995c0f3827778a95d4c7c5aa7ae3bfe2b5f7118adb66094f74935069fe0ed533",
   "src/life_service/store.py": "cf5daf8a65a39a8b9af8dd48a9ee3dc9076fec094af05608bc7ba57cee78a4c2",
   "src/life_service/learning_workflow.py": "7fc49ef8a4b7472af0b2f9245545899c9683f23761a069174e6f537c2a9ed02b",
@@ -89,7 +89,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "6a0f57bc36b0a73810d85d10680a70bc22476603ecf36444db1135f785164879",
+  "src/total_gateway/verification_plane.py": "ea0a9a748a3d7ca978fd7e4791b38ffbd8ccc40d7d04ac7a4124ef9aafc79e4a",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

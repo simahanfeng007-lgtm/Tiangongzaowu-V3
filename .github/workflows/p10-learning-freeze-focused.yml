@@ -92,6 +92,7 @@ jobs:
               'tests/test_skill_method_source_lifecycle_p9.py', 'tests/test_one_world_context_p6.py',
               'tests/test_p18_m3_learning_poisoning.py',
               'tests/test_path_identity_p8.py', 'tests/test_path_identity_r3.py',
+              'tests/test_container_key_native_p8.py',
               'tests/test_readiness_source_root_p8.py', 'tests/test_release_source_binding_p8.py',
               'tests/test_service_startup_paths_p8.py', 'tests/test_startup_security_paths_p8.py',
               'tests/test_tool_source_launch_p8.py',
