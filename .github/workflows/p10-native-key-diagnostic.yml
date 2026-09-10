@@ -17,7 +17,7 @@ jobs:
           - label: main-baseline
             revision: b1ea3e9d511aae9cabcc816e071ad3da645ae753
           - label: p10-candidate
-            revision: d7a32470d449d6392fc6d4f549b525c34355f0c6
+            revision: 6db783d3347c172ef1b3e45465feb1897435f5c5
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
