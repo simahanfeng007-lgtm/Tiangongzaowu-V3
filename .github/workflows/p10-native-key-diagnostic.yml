@@ -1,0 +1,71 @@
+name: P10 native key baseline comparison
+on:
+  push:
+    branches: [codex/p10-r4-native-diagnostic]
+    paths: [.github/workflows/p10-native-key-diagnostic.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-key:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: main-baseline
+            revision: b1ea3e9d511aae9cabcc816e071ad3da645ae753
+          - label: p10-candidate
+            revision: d7a32470d449d6392fc6d4f549b525c34355f0c6
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      TIANGONG_CI_ENV: '0'
+      TIANGONG_SANDBOX_COMPAT: '0'
+      EXPECTED_REVISION: ${{ matrix.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Compare native key lifecycle without suppressing failures
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, json, os, platform, subprocess, sys
+          evidence = Path('output/p10-native-key-diagnostic').resolve()
+          evidence.mkdir(parents=True, exist_ok=False)
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert head == os.environ['EXPECTED_REVISION']
+          identity = {'head': head, 'workflow_head': os.environ['GITHUB_SHA'],
+              'python': sys.version, 'platform': platform.platform(),
+              'input_sha256': {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in (
+                  'requirements-source.lock', 'src/runtime_security/path_identity.py',
+                  'src/total_gateway/windows_private_files.py', 'src/total_gateway/tickets.py',
+                  'tests/test_container_key_native_p8.py')}}
+          (evidence/'identity.json').write_text(json.dumps(identity, indent=2), encoding='utf-8')
+          print(json.dumps(identity))
+          env = dict(os.environ, TIANGONG_P8_KEY_EVIDENCE_DIR=str(evidence))
+          for key in ('UPDATE_GOLDEN', 'UPDATE_FREEZE', 'UPDATE_FINGERPRINT'):
+              env.pop(key, None)
+          result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-s',
+              'tests/test_container_key_native_p8.py', '--junitxml=' + str(evidence/'tests.xml')], env=env)
+          # These existing test reports contain statuses and traceback only;
+          # key ciphertext/plaintext files are never uploaded.
+          for path in sorted(evidence.glob('key-*.json')):
+              print(path.name + '=' + path.read_text(encoding='utf-8'))
+          raise SystemExit(result.returncode)
+      - name: Preserve diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p10-native-key-${{ matrix.label }}-${{ matrix.revision }}
+          path: output/p10-native-key-diagnostic/
+          if-no-files-found: error
+          retention-days: 14
