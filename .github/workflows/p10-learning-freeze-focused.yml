@@ -86,6 +86,7 @@ jobs:
           for pattern in ('test_life_*.py', 'test_learning_*.py', 'test_method_*.py', 'test_tool_source_publication*p8.py', 'test_capability_experience*.py', 'test_memory*.py', 'test_p15*.py'):
               selected.update(p.as_posix() for p in Path('tests').glob(pattern))
           selected.update(['tests/test_capability_health.py', 'tests/test_journal_reducer_registry.py',
+              'tests/test_composition_activation_store_p7b2.py',
               'tests/test_causal_replay.py', 'tests/test_v21_g5_gate.py',
               'tests/test_skill_method_source_lifecycle_p9.py', 'tests/test_one_world_context_p6.py',
               'tests/test_p18_m3_learning_poisoning.py',

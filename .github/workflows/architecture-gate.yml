@@ -14,6 +14,50 @@ permissions:
   contents: read
 
 jobs:
+  node-regression:
+    name: node-regression-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Python 3.12 for test enumeration
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install locked renderer dependencies
+        working-directory: app
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Check desktop entry syntax
+        working-directory: app
+        run: npm run check:syntax
+
+      - name: Run full Node regression
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          tests = sorted(str(path) for pattern in ('*.mjs', 'test_*.js', '*.test.cjs')
+                         for path in Path('tests').glob(pattern))
+          assert tests, 'Node regression selection is empty'
+          subprocess.run(['node', '--test', *tests], check=True)
+
   source-authority:
     name: source-authority-${{ matrix.os }}
     runs-on: ${{ matrix.os }}

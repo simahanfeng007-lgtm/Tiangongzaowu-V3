@@ -180,9 +180,10 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # P7B.2 remains v30, P7C.0 adds the v31 executable-Plan companion, and
     # P7C.1 adds v32 authorization receipts and P7D.2 adds the current v33
     # continuation/attempt chain. P8 explicitly advances the frozen plane to
-    # 1.6; P9 source retention advances it to 1.7 without changing Store v33.
+    # 1.6; P9 source retention advances it to 1.7. P10 explicitly advances
+    # the learning/telemetry and native-path surface to 1.13; Store stays v33.
     assert STORE_SCHEMA_VERSION == 33
-    assert VERIFICATION_PLANE_VERSION == "1.7"
+    assert VERIFICATION_PLANE_VERSION == "1.13"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:
