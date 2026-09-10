@@ -45,6 +45,7 @@ jobs:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
       PYTHONHASHSEED: '0'
+      P10_OBSERVATION_ARTIFACT_DIR: output/p10-r1/r3c-representative
       # Same pre-existing platform capability policy as Architecture gate.
       TIANGONG_CI_ENV: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
     steps:
