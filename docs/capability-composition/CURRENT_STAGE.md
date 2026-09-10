@@ -21,7 +21,7 @@ Coverage 只从 observer 真正安装后开始，不能倒填 R3-A 的更早窗�
 published、pending patch、unknown ownership 和能力既有 usage 继续保守保留。
 `zero_usage_proven=false` 仍固定成立；测试/AST/短窗口为 0 不能替代生产零使用证据。
 
-Verification Plane 1.13 继承 R3-B 的 105 条冻结，包含 telemetry bridge 与 L0 projection，
+Verification Plane 1.14 继承 R3-B 的 105 条冻结，包含 telemetry bridge 与 L0 projection，
 共 105 条；独立 Source Authority 数仍为 17。Golden、权限、Memory/Gateway schema、
 P5/P15 阈值和 Source 发布规则不放松。
 
@@ -44,3 +44,6 @@ fixture 窗口不替代该部署的持续观察或独立复核。
 
 2026-09-10 用户要求开始 P10 收尾，详见 `P10_R4_CLOSEOUT_2026-09-10.md`。
 草稿 PR #75 承载全量门禁与问题修复；最终结果按 PR 的提交身份核对。
+R4 修复了三处旧合同测试与 Node LFS 门禁配置，并修复设备映射查询在
+AppContainer 内被拒绝的真实回归。新增容器中可读目标与 junction 拒绝证据；
+具体原生、定向、全量结果与待验收项以 R4 记录和 PR 最终候选为准。
