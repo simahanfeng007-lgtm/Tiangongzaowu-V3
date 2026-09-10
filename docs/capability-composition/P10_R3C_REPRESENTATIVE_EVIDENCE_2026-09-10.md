@@ -66,3 +66,7 @@ $env:P10_OBSERVATION_ARTIFACT_DIR = 'output/p10-r3c-review-001'
 仍须在实际部署或经独立复核的代表性工作负载中决定观察窗口的充分性，核对真实
 残留与归属、在途来源和错误日志。该项是部署验证待办，不能凭本次测试关账。
 在 R3 退出前，P10 不合并 main；P8/P9 的实际任务、正式签审及运维回退债仍保留。
+
+最终固定提交 `ed6094e` 的 Windows/Ubuntu 完整 P10 focused CI 均通过，包含
+本观察测试及其显式 SQLite 清理。结果、原始日志位置和 CI 链接见
+`P10_R3_CHECKPOINT_RESULTS_2026-09-10.md`；该结果仍不替代上述部署观察。
