@@ -7,6 +7,8 @@ an explicit tool release record exists.
 
 from __future__ import annotations
 
+from v3.legacy_learning_telemetry import observe_legacy_learning_usage
+
 import hashlib
 import json
 from pathlib import Path
@@ -187,6 +189,7 @@ def _legacy_auto_release_allowed(
 
 
 def build_l0_projection(ability: dict[str, Any]) -> dict[str, Any]:
+    observe_legacy_learning_usage("v3.l0_ability_projection.legacy_projection")
     ability_id = str(ability.get("id") or ability.get("ability_id") or "unknown").strip() or "unknown"
     existing = ability.get("l0") if isinstance(ability.get("l0"), dict) else {}
     status = ability_status(ability)

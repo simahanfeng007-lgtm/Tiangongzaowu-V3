@@ -44,6 +44,8 @@ from .continuity import persist_working_checkpoint
 from .diagnostics import diagnostic_log
 from .store import ChannelOwnershipRegistration, GatewayStateStore, StoreHealthEvidence
 from .tool_source_launch import preflight_source_revision
+from life_service.learning_workflow import (LEGACY_PUBLICATION_FROZEN,
+    legacy_publication_blocked, frozen_publication_result)
 
 
 _BODY_STATE_SECTIONS = frozenset({
@@ -68,6 +70,8 @@ def life_capability_workspace_mapper(workspace_root: object) -> Callable[[object
     """
 
     def map_artifact(artifact: object) -> dict[str, object]:
+        if isinstance(artifact, Mapping) and legacy_publication_blocked(artifact):
+            return frozen_publication_result()
         if not isinstance(artifact, Mapping):
             return {}
         resolved = _life_capability_zone_target(workspace_root, artifact)
@@ -182,6 +186,8 @@ def life_capability_workspace_marker(workspace_root: object) -> Callable[[object
     """
 
     def mark_artifact(artifact: object, pointer: object) -> dict[str, object]:
+        if isinstance(pointer, Mapping) and pointer.get("status") not in {"disabled", "degraded"}:
+            return frozen_publication_result()
         if not isinstance(artifact, Mapping) or not isinstance(pointer, Mapping):
             return {}
         resolved = _life_capability_zone_target(workspace_root, artifact)
@@ -857,6 +863,7 @@ class GatewayRuntime:
         self.cutover = cutover
         self.readiness_collector = readiness_collector
         self.life_service = life_service
+        self.learning_output_binding = None
         self.communication_service = communication_service
         self.backend_service = backend_service
         self.artifacts = ArtifactOpenService(
@@ -1180,17 +1187,14 @@ class GatewayRuntime:
                     ]
 
                 def publish_learning_artifact(artifact: object) -> dict[str, object]:
+                    if not isinstance(artifact, Mapping) or legacy_publication_blocked(artifact):
+                        raise ValueError(LEGACY_PUBLICATION_FROZEN)
                     if not isinstance(artifact, dict):
                         raise RuntimeError("life artifact publisher received invalid artifact")
                     if artifact.get("kind") != "knowledge":
-                        # Skill and composite-tool registration stays in the
-                        # Life overlay.  It intentionally does not touch the
-                        # release-pinned backend Skill Catalog.
-                        return {
-                            "publisher": "life_skill_overlay",
-                            "overlay_key": artifact.get("artifact_id"),
-                            "registered": True,
-                        }
+                        # Only the canonical compiled Knowledge representation
+                        # reaches this sink; aliases cannot reopen Life overlay.
+                        raise ValueError(LEGACY_PUBLICATION_FROZEN)
                     document = artifact.get("document")
                     if not isinstance(document, dict) or not isinstance(document.get("content"), str):
                         raise RuntimeError("life knowledge artifact document invalid")
@@ -1341,6 +1345,17 @@ class GatewayRuntime:
                     researcher=research_learning_material,
                     synthesizer=synthesize_learning_material,
                 )
+
+                def legacy_learning_usage_observer(surface: str) -> None:
+                    runtime.life_service.observe_legacy_compatibility_entry(str(surface))
+
+                runtime.backend_service.set_legacy_learning_usage_observer(legacy_learning_usage_observer)
+                try:
+                    runtime.life_service.activate_legacy_compatibility_telemetry()
+                except Exception:
+                    # Telemetry must remain fail-soft. Missing coverage stays visible in
+                    # the Life projection and can be retried on the first real call.
+                    pass
 
                 def life_skill_overlay() -> dict[str, object]:
                     status, payload, _ = runtime.life_service.request(
@@ -1506,6 +1521,11 @@ class GatewayRuntime:
                         return {"ok": False, "cards": []}
                     return payload
 
+                from .learning_output_binding import LearningOutputProductionBinding
+                runtime.learning_output_binding = LearningOutputProductionBinding(runtime)
+                bind_embedded_life_gateway_callback(
+                    runtime.life_service, EmbeddedLifeGatewayBinding.LEARNING_OUTPUT_PREPARER,
+                    runtime.learning_output_binding.prepare_from_life)
                 life_transport = InProcessLifeJsonTransport(runtime.life_service)
                 communication_control = runtime.communication_service
                 backend_compat_client = CompatibilityJsonClient(runtime.backend_service)
@@ -1527,7 +1547,13 @@ class GatewayRuntime:
                     life_execution_commit=(
                         None
                         if runtime.life_service is None
+                        else runtime.learning_output_binding.commit_execution
+                        if runtime.learning_output_binding is not None
                         else runtime.life_service.commit_execution
+                    ),
+                    life_execution_learning_recovery=(
+                        None if runtime.learning_output_binding is None
+                        else runtime.learning_output_binding.resume_execution_learning
                     ),
                     repository_evidence_provider=(
                         None

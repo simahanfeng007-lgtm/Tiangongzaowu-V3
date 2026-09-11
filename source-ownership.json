@@ -177,6 +177,7 @@
           "json_guards.py",
           "knowledge_store.py",
           "l0_ability_projection.py",
+          "legacy_learning_telemetry.py",
           "mianyi_daixie",
           "model_endpoint.py",
           "model_protocol_contract.py",

@@ -1,8 +1,12 @@
 """Existing-path observations, never permissions or publication grants.
 
-Windows opens the complete path with OBJ_DONT_REPARSE, rejecting a reparse
-point at any depth, including ancestors above the selected root. Normalized
-and opened NT names are queried on that SAME metadata-only handle. No drive
+Windows queries the DOS device mapping, then opens the complete native path
+with OBJ_DONT_REPARSE, rejecting filesystem reparses at any depth, including
+ancestors above the selected root. Device mappings are checked again before
+returning and must agree with the opened handle's volume/share. Normalized
+and opened NT names are queried on that SAME metadata-only handle. An observed
+AppContainer whose mapping query is denied uses its DOS namespace with the
+same no-reparse open and exact device/share depth checks. No drive
 root access, ACL changes, following fallback or cached observations are used.
 A returned pathname is not a durable handle or proof against later mutation;
 callers retain their existing scope, byte-integrity and execution checks.
@@ -73,6 +77,8 @@ def _windows_path_api():
     native.NtCreateFile.restype = wintypes.LONG
     native.RtlNtStatusToDosError.argtypes = [wintypes.LONG]
     native.RtlNtStatusToDosError.restype = wintypes.ULONG
+    kernel.QueryDosDeviceW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    kernel.QueryDosDeviceW.restype = wintypes.DWORD
     kernel.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
     kernel.GetFinalPathNameByHandleW.restype = wintypes.DWORD
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -80,12 +86,94 @@ def _windows_path_api():
     return ctypes, wintypes, kernel, native, UnicodeString, ObjectAttributes, IoStatusBlock
 
 
+def _query_device_mapping(ctypes, kernel, device: str) -> str:
+    """Read the current DOS mapping without opening a drive or following a path.
+
+    QueryDosDevice's first string is current; later strings may be old mappings.
+    Only a direct device is accepted. SUBST/path redirects and alternate NT
+    namespaces cannot smuggle filesystem traversal ahead of the no-reparse open.
+    """
+    output = ctypes.create_unicode_buffer(32768)
+    length = kernel.QueryDosDeviceW(device, output, len(output))
+    if length == 0:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if length >= len(output) or length <= len(output.value):
+        raise PathIdentityError("device_mapping_invalid")
+    mapping = output.value
+    if re.fullmatch(r"\\Device\\[A-Za-z][A-Za-z0-9_-]*", mapping) is None:
+        raise PathIdentityError("device_mapping_unsupported")
+    return mapping
+
+
+def _effective_appcontainer() -> bool:
+    """Select a namespace from fresh OS evidence, never grant file access."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    security = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel.GetCurrentThread.restype = wintypes.HANDLE
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    security.OpenThreadToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, ctypes.POINTER(wintypes.HANDLE)]
+    security.OpenThreadToken.restype = wintypes.BOOL
+    security.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    security.OpenProcessToken.restype = wintypes.BOOL
+    security.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    security.GetTokenInformation.restype = wintypes.BOOL
+    token = wintypes.HANDLE()
+    thread = bool(security.OpenThreadToken(kernel.GetCurrentThread(), 0x8, True, ctypes.byref(token)))
+    if not thread:
+        error = ctypes.get_last_error()
+        if error != 1008:  # Only ERROR_NO_TOKEN permits process-token lookup.
+            raise ctypes.WinError(error)
+        if not security.OpenProcessToken(kernel.GetCurrentProcess(), 0x8, ctypes.byref(token)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    if token.value in (None, 0, wintypes.HANDLE(-1).value):
+        raise PathIdentityError("native_token_invalid")
+    try:
+        def information(kind: int, allowed: tuple[int, ...]) -> int:
+            value, length = wintypes.DWORD(), wintypes.DWORD()
+            if not security.GetTokenInformation(token, kind, ctypes.byref(value), ctypes.sizeof(value), ctypes.byref(length)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if length.value != ctypes.sizeof(value) or value.value not in allowed:
+                raise PathIdentityError("native_token_information_invalid")
+            return value.value
+
+        if thread and information(9, (0, 1, 2, 3)) < 2:
+            raise PermissionError("identification token cannot select a filesystem namespace")
+        return bool(information(29, (0, 1)))  # TokenIsAppContainer.
+    finally:
+        if not kernel.CloseHandle(token):
+            raise PathIdentityError("native_token_close_failed")
+
+
 def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
     """Observe the full path without reparsing any filesystem component."""
     name, suffix = _windows_name(path)
     ctypes, wintypes, kernel, native, UnicodeString, ObjectAttributes, IoStatusBlock = _windows_path_api()
+    unc = name.startswith("\\??\\UNC\\")
+    device = "UNC" if unc else name[4:6]
+    try:
+        mapping = _query_device_mapping(ctypes, kernel, device)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 5 or not _effective_appcontainer():
+            raise
+        # AppContainer can deny QueryDosDevice while allowing NtCreateFile in
+        # its own namespace. Keep OBJ_DONT_REPARSE; never retry a failed open
+        # with weaker flags, a drive-root handle or a following API.
+        mapping = None
+    anchor = None
+    share = PureWindowsPath(*PureWindowsPath(name).parts[3:5]) if unc else None
+    if mapping is not None:
+        name = mapping + ("\\" + name[8:] if unc else name[6:])
+        native_parts = PureWindowsPath(name).parts
+        anchor = PureWindowsPath(*native_parts[:-len(suffix)]) if suffix else PureWindowsPath(name)
     buffer = ctypes.create_unicode_buffer(name)
     size = len(name.encode("utf-16-le"))
+    if size > 65532:
+        raise PathIdentityError("native_path_size_invalid")
     string = UnicodeString(size, size + 2, ctypes.cast(buffer, wintypes.LPWSTR))
     # OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE, no root handle or privilege grants.
     attributes = ObjectAttributes(ctypes.sizeof(ObjectAttributes), None, ctypes.pointer(string), 0x1040, None, None)
@@ -113,6 +201,17 @@ def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
             result = PureWindowsPath(output.value)
             if result.parts[:2] != ("\\", "Device") or len(result.parts) < 3 + len(suffix):
                 raise PathIdentityError("native_path_invalid")
+            observed_anchor = PureWindowsPath(*result.parts[:-len(suffix)]) if suffix else result
+            if anchor is not None and observed_anchor != anchor:
+                raise PathIdentityError("physical_path_mismatch")
+            if anchor is None:
+                # A redirected DOS drive cannot add a hidden filesystem
+                # prefix. UNC must preserve the exact caller's server/share.
+                parts = observed_anchor.parts
+                if (len(parts) != (5 if unc else 3)
+                        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", parts[2]) is None
+                        or (unc and PureWindowsPath(*parts[3:]) != share)):
+                    raise PathIdentityError("physical_path_mismatch")
             names.append(result)
         physical, opened = names
         count = len(suffix)
@@ -122,6 +221,8 @@ def _windows_final_path(path: Path | PureWindowsPath) -> PureWindowsPath:
                 raise PathIdentityError("physical_path_mismatch")
         elif physical != opened:
             raise PathIdentityError("physical_path_mismatch")
+        if mapping is not None and _query_device_mapping(ctypes, kernel, device) != mapping:
+            raise PathIdentityError("device_mapping_changed")
         return physical
     finally:
         if not kernel.CloseHandle(handle):

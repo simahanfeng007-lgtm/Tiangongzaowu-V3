@@ -1054,6 +1054,7 @@ class MemoryCoordinator:
         created_at_ms: int,
         policy_version: str,
         assertion_causal_utility_milli: int = 0,
+        head_guard: tuple[str, str, str | None] | None = None,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool]:
         parents = tuple(
             sorted(parents, key=lambda item: item.derivation_id)
@@ -1070,6 +1071,8 @@ class MemoryCoordinator:
         )
         existing = self._store.get_memory_derivation(derivation_id)
         if existing is not None:
+            if head_guard is not None:
+                raise MemoryCoordinatorError("memory promotion head changed")
             assertion = self._store.get_memory_assertion(
                 existing.memory_id, existing.memory_revision
             )
@@ -1169,6 +1172,7 @@ class MemoryCoordinator:
             created_at_ms=disposition.created_at_ms,
             derivation=derivation,
             activate_head=True,
+            head_guard=head_guard,
         )
         stored = self._store.get_memory_derivation(derivation_id)
         if stored is None:

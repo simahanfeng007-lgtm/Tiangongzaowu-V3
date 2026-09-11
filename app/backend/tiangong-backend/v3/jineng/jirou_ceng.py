@@ -3421,6 +3421,10 @@ class JirouCeng:
         actor: str = "model",
     ) -> dict:
         """Run the v3 learning pipeline and connect it into the L0-L6 closed loop."""
+        from v3.legacy_learning_telemetry import observe_legacy_learning_usage
+        observe_legacy_learning_usage("v3.jineng.jirou_ceng._xuexi_liucheng")
+        from life_service.learning_workflow import frozen_publication_result
+        return frozen_publication_result()
         try:
             from ..jingyan_xuexi.xuexi_lian import XuexiLian
 

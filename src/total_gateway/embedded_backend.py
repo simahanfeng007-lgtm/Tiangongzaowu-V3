@@ -181,6 +181,7 @@ class EmbeddedBackendRuntime:
         self._life_activity_query_provider: Any = None
         self._body_state_query_provider: Any = None
         self._learning_ingest_provider: Any = None
+        self._legacy_learning_usage_observer: Any = None
         self._p15_memory_remember_provider: Any = None
         self._p15_memory_recall_provider: Any = None
         self._composition_dispatch_authorizer: Any = None
@@ -574,6 +575,21 @@ class EmbeddedBackendRuntime:
             raise EmbeddedBackendError("continuity.checkpoint_provider_unsupported")
         setter(provider)
         self._continuity_checkpoint_provider = provider
+
+    def set_legacy_learning_usage_observer(self, provider: Any) -> None:
+        """Bind read-only compatibility telemetry to the existing Life journal."""
+        if provider is not None and not callable(provider):
+            raise TypeError("legacy learning usage observer must be callable")
+        module = importlib.import_module("v3.legacy_learning_telemetry")
+        setter = getattr(module, "set_legacy_learning_usage_observer", None)
+        if not callable(setter):
+            raise EmbeddedBackendError("legacy_learning_telemetry.observer_unsupported")
+        with self._lock:
+            existing = self._legacy_learning_usage_observer
+            if existing is not None and provider is not None and existing is not provider:
+                raise EmbeddedBackendError("legacy_learning_telemetry.observer_already_bound")
+            setter(provider)
+            self._legacy_learning_usage_observer = provider
 
     def set_learning_ingest_provider(self, provider: Any) -> None:
         if not callable(provider):
@@ -1533,6 +1549,10 @@ class EmbeddedBackendRuntime:
             raise RuntimeError("embedded backend failed to close") from errors[0]
         try:
             importlib.import_module("v3.knowledge_store").set_card_enricher(None)
+        except Exception:
+            pass
+        try:
+            self.set_legacy_learning_usage_observer(None)
         except Exception:
             pass
         with self._lock:

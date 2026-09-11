@@ -435,6 +435,7 @@ class GatewayOrchestrationWorker:
         backend_compat_client: object | None = None,
         life_compat_client: object | None = None,
         life_execution_commit: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        life_execution_learning_recovery: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
         skill_selection: SkillSelectionService | None = None,
@@ -462,6 +463,7 @@ class GatewayOrchestrationWorker:
         self._backend_compat_client = backend_compat_client
         self._life_compat_client = life_compat_client
         self._life_execution_commit = life_execution_commit
+        self._life_execution_learning_recovery = life_execution_learning_recovery
         self._repository_evidence_provider = repository_evidence_provider
         self._knowledge_retriever = knowledge_retriever
         self._communication = (
@@ -624,6 +626,7 @@ class GatewayOrchestrationWorker:
         backend_compat_client: object | None = None,
         life_compat_client: object | None = None,
         life_execution_commit: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        life_execution_learning_recovery: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
     ) -> "GatewayOrchestrationWorker":
@@ -743,6 +746,7 @@ class GatewayOrchestrationWorker:
             backend_compat_client=backend_compat_client,
             life_compat_client=life_compat_client,
             life_execution_commit=life_execution_commit,
+            life_execution_learning_recovery=life_execution_learning_recovery,
             repository_evidence_provider=repository_evidence_provider,
             knowledge_retriever=knowledge_retriever,
             skill_selection=skill_selection,
@@ -2798,7 +2802,7 @@ class GatewayOrchestrationWorker:
                         ambiguous=True,
                     )
                 try:
-                    return validate_result(
+                    validated = validate_result(
                         {
                             "ok": True,
                             "duplicate": True,
@@ -2811,6 +2815,22 @@ class GatewayOrchestrationWorker:
                         "orchestration.life.recovery_mismatch",
                         ambiguous=True,
                     ) from exc
+                # Resume learning from the recovered, already-committed Life
+                # record. Never recommit that execution or re-dispatch tools.
+                # This is the existing strict recovery tail, not a new worker.
+                resume = getattr(self, "_life_execution_learning_recovery", None)
+                if callable(resume):
+                    try:
+                        return validate_result(resume(execution), repository_evidence=None)
+                    except Exception as exc:
+                        return {**validated, "learning_experience": {
+                            "status": "EXPERIENCE_DEFERRED",
+                            "reason_code": "learning_experience.recovery_deferred",
+                            "error_type": type(exc).__name__, "retryable": True,
+                            "memory_write_performed": None, "l3_write_performed": None,
+                            "write_status": "UNCONFIRMED",
+                        }}
+                return validated
             return None
 
         if strict_tail:

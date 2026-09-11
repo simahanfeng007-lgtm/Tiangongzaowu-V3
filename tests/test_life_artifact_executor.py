@@ -28,7 +28,9 @@ def test_skill_compilation_binds_only_available_existing_actions_and_promotes_ri
     assert artifact["kind"] == "skill"
     assert artifact["risk_level"] == "A4"
     assert artifact["required_actions"] == ["web.search"]
-    assert publish_artifact(artifact)["status"] == "published"
+    # P10 keeps structural compilation, but not old complete-capability publication.
+    with pytest.raises(ArtifactExecutorError, match="legacy_publication_frozen"):
+        publish_artifact(artifact)
 
 
 def test_skill_compilation_rejects_unknown_or_unavailable_actions():

@@ -1,10 +1,8 @@
-"""Authoritative learning draft and publication state machine.
+"""Learning drafts and the P10 old-publication freeze.
 
-LLM output is treated as a proposal.  The model chooses *how* to learn from
-the supplied activity scope, while this module enforces the user's publication
-contract: A0--A2 knowledge may commit automatically; every Skill/Tool is at
-least A3 and remains an unregistered preview until user confirmation.  A
-direct user request bypasses the card but is still recorded and auditable.
+Knowledge retains its existing consent/risk path. Skill/Tool proposals retain
+source material, but user confirmation is not permission to publish a complete
+legacy capability. P8/P9 source review remains a separate authority.
 """
 from __future__ import annotations
 
@@ -18,6 +16,64 @@ from .complete_core import utc_now
 
 LEARNING_WORKFLOW_SCHEMA = "tiangong.life.learning-workflow.v1"
 _TARGETS = {"knowledge", "skill", "tool"}
+LEGACY_PUBLICATION_FROZEN = "life.learning.legacy_publication_frozen"
+MIGRATION_REQUIRED = "migration_required"
+
+
+def legacy_publication_blocked(record: Mapping[str, Any]) -> bool:
+    """Only explicit Knowledge may use the old learning publication sink.
+
+    Inspect structural artifact metadata, not natural-language content. A model
+    cannot relabel a Skill payload as Knowledge to obtain old publication rights.
+    This does not classify ordinary document/file writes or P8/P9 source data.
+    """
+    if not isinstance(record, Mapping):
+        return True
+    declared = []
+    for key in ("target", "kind", "artifact_kind"):
+        value = record.get(key)
+        if value:
+            text = str(value).strip().casefold().replace("_", "-")
+            if text.startswith("learning-"):
+                text = text[len("learning-"):]
+            try:
+                declared.append(_target(text))
+            except ValueError:
+                return True
+    if not declared or any(kind != "knowledge" for kind in declared):
+        return True
+    # Explicit executable fields remain forbidden even when kind is relabelled.
+    if record.get("skill_spec") is not None:
+        return True
+    for key in ("required_actions", "action_bindings", "registers_tool", "tool_callable"):
+        if record.get(key):
+            return True
+    execution = record.get("execution")
+    artifact = execution.get("artifact") if isinstance(execution, Mapping) else None
+    return isinstance(artifact, Mapping) and legacy_publication_blocked(artifact)
+
+
+def frozen_publication_result() -> dict[str, Any]:
+    return {"ok": False, "status": MIGRATION_REQUIRED,
+            "reason_code": LEGACY_PUBLICATION_FROZEN, "error_code": LEGACY_PUBLICATION_FROZEN,
+            "publication_frozen": True, "registered": False, "retryable": False,
+            "may_publish": False, "may_authorize": False, "may_execute": False}
+
+
+def freeze_learning_publication(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain the draft/evidence, not an approval or a new capability artifact."""
+    value = deepcopy(dict(record))
+    if not legacy_publication_blocked(value) or value.get("status") in {"published", "discarded"}:
+        return value
+    if value.get("status") == MIGRATION_REQUIRED and value.get("publication_frozen") is True:
+        return value
+    value["publication_freeze"] = {"reason_code": LEGACY_PUBLICATION_FROZEN,
+        "prior_status": value.get("status"), "policy": "p10-r1"}
+    value.update(status=MIGRATION_REQUIRED, registered=False, publication_frozen=True,
+                 retryable=False, can_confirm_learning=False, can_discard_learning=True,
+                 may_publish=False, may_authorize=False, may_execute=False,
+                 governance_note="旧式完整 Skill/Tool 发布已冻结；草稿与证据保留，等待源码演化迁移。")
+    return value
 
 
 def _risk(value: Any) -> int:
@@ -99,7 +155,7 @@ def confirm_draft(record: Mapping[str, Any], *, draft_sha256: str = "") -> dict[
         "can_discard_learning": False,
         "approved_at": utc_now(),
         "updated_at": utc_now(),
-        "governance_note": "用户已确认预览，发布流程现在可以写入产物。",
+        "governance_note": "用户已确认预览；能力发布仍受独立发布边界约束。",
     })
     return value
 
@@ -124,29 +180,9 @@ def publish_draft(record: Mapping[str, Any], *, capabilities: Mapping[str, Any])
     value = deepcopy(dict(record))
     if str(value.get("status") or "") != "approved":
         raise ValueError("learning draft is not approved")
-    target = _target(value.get("target"))
+    if legacy_publication_blocked(value):
+        return freeze_learning_publication(value), None
     artifact: dict[str, Any] | None = None
-    if target in {"skill", "tool"}:
-        artifact_id = "cap_" + canonical_sha256({
-            "domain": "tiangong.life.learning-artifact.v1",
-            "life_id": value.get("life_id"), "fingerprint": value.get("fingerprint"), "target": target,
-        })[:40]
-        previous_id = str(value.get("update_of") or "")
-        previous = capabilities.get(previous_id) if previous_id else None
-        artifact = {
-            "schema": "tiangong.life.capability.v1",
-            "artifact_id": artifact_id,
-            "kind": target,
-            "title": value.get("title"),
-            "summary": value.get("summary"),
-            "content": deepcopy(value.get("draft_artifact") or {}),
-            "status": "published",
-            "version": int((previous or {}).get("version") or 0) + 1,
-            "previous_artifact_id": previous_id,
-            "rollback_available": bool(previous_id and isinstance(previous, Mapping)),
-            "published_at": utc_now(),
-            "learning_id": value.get("learning_id"),
-        }
     value.update({
         "status": "published",
         "registered": True,

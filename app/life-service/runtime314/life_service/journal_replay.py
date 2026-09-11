@@ -41,6 +41,7 @@ from typing import Any, Callable
 
 from .capability_health import ingest_outcome
 from .complete_core import canonical as journal_canonical
+from .legacy_learning_migration import (apply_migration_record, apply_usage_coverage, apply_usage_observation, apply_usage_window)
 
 
 class JournalReplayError(RuntimeError):
@@ -91,8 +92,16 @@ EVENT_REGISTRY: dict[str, EventClass] = {
     "learning.draft_created": EventClass.REPLAYABLE_PROJECTION,
     "learning.published": EventClass.REPLAYABLE_PROJECTION,
     "learning.confirmed": EventClass.REPLAYABLE_PROJECTION,
+    "learning.publication_frozen": EventClass.REPLAYABLE_PROJECTION,
     "learning.discarded": EventClass.REPLAYABLE_PROJECTION,
     "learning.decision_noop": EventClass.AUDIT_ONLY,
+    "learning.output_prepared": EventClass.AUDIT_ONLY,
+    "learning.execution_evidence": EventClass.AUDIT_ONLY,
+    "learning.experience_committed": EventClass.AUDIT_ONLY,
+    "learning.legacy_migration_recorded": EventClass.REPLAYABLE_PROJECTION,
+    "learning.legacy_usage_window_started": EventClass.REPLAYABLE_PROJECTION,
+    "learning.legacy_usage_coverage_extended": EventClass.REPLAYABLE_PROJECTION,
+    "learning.legacy_usage_observed": EventClass.REPLAYABLE_PROJECTION,
     # ---- 自我迭代升级卡 ----
     # noop 决策只落审计事件，投影门控键由调度器写侧维护，audit-only。
     "self_iteration.decision_noop": EventClass.AUDIT_ONLY,
@@ -525,6 +534,38 @@ def _reduce_learning_published(scope: dict[str, Any], payload: Mapping[str, Any]
     return changed
 
 
+def _reduce_legacy_migration(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
+    row = _require_mapping(payload.get("migration"), "life.projection.legacy_migration_invalid")
+    try:
+        return apply_migration_record(scope, row)
+    except ValueError as exc:
+        raise JournalReplayError(str(exc)) from exc
+
+
+def _reduce_legacy_usage_window(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
+    window = _require_mapping(payload.get("window"), "life.projection.legacy_usage_window_invalid")
+    try:
+        return apply_usage_window(scope, window)
+    except ValueError as exc:
+        raise JournalReplayError(str(exc)) from exc
+
+
+def _reduce_legacy_usage_coverage(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
+    coverage = _require_mapping(payload.get("coverage"), "life.projection.legacy_usage_coverage_invalid")
+    try:
+        return apply_usage_coverage(scope, coverage)
+    except ValueError as exc:
+        raise JournalReplayError(str(exc)) from exc
+
+
+def _reduce_legacy_usage(scope: dict[str, Any], payload: Mapping[str, Any], event: Mapping[str, Any], *, event_type: str) -> bool:
+    observation = _require_mapping(payload.get("observation"), "life.projection.legacy_usage_invalid")
+    try:
+        return apply_usage_observation(scope, observation)
+    except ValueError as exc:
+        raise JournalReplayError(str(exc)) from exc
+
+
 # --------------------------------------------------------------------------
 # 新增家族：升级卡
 # --------------------------------------------------------------------------
@@ -679,8 +720,13 @@ _REDUCERS: dict[str, Callable[..., bool]] = {
     "capability.outcome": _reduce_capability_outcome,
     "learning.draft_created": _reduce_learning_card,
     "learning.confirmed": _reduce_learning_card,
+    "learning.publication_frozen": _reduce_learning_card,
     "learning.discarded": _reduce_learning_card,
     "learning.published": _reduce_learning_published,
+    "learning.legacy_migration_recorded": _reduce_legacy_migration,
+    "learning.legacy_usage_window_started": _reduce_legacy_usage_window,
+    "learning.legacy_usage_coverage_extended": _reduce_legacy_usage_coverage,
+    "learning.legacy_usage_observed": _reduce_legacy_usage,
     "upgrade.card_created": _reduce_upgrade_created,
     "upgrade.card_cancelled": _reduce_upgrade_cancelled,
     "upgrade.card_confirmed": _reduce_upgrade_confirmed,

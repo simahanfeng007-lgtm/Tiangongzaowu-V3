@@ -25,7 +25,7 @@ def _draft(decision: dict[str, object] | None = None) -> dict[str, object]:
     )
 
 
-def test_skill_draft_waits_for_user_and_confirm_publishes_same_authority():
+def test_skill_confirmation_does_not_override_p10_publication_freeze():
     draft = _draft()
     assert draft["status"] == "awaiting_user"
     assert draft["requires_confirmation"] is True
@@ -38,14 +38,14 @@ def test_skill_draft_waits_for_user_and_confirm_publishes_same_authority():
     assert approved["can_discard_learning"] is False
 
     published, artifact = publish_draft(approved, capabilities={})
-    assert published["status"] == "published"
-    assert published["registered"] is True
-    assert artifact is not None
-    assert artifact["kind"] == "skill"
+    assert published["status"] == "migration_required"
+    assert published["registered"] is False
+    assert artifact is None
+    assert published["draft_artifact"] == draft["draft_artifact"]
 
 
 def test_already_published_or_discarded_drafts_are_terminal():
-    draft = _draft()
+    draft = _draft({"target":"knowledge", "risk_level":"A3"})
     approved = confirm_draft(draft, draft_sha256=draft["draft_sha256"])
     published, _artifact = publish_draft(approved, capabilities={})
     with pytest.raises(ValueError, match="not approved"):

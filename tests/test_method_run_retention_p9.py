@@ -137,7 +137,7 @@ def test_rejected_source_selection_does_not_pin_anything(context):
 
 
 @pytest.fixture
-def unregistered_bound(tmp_path, monkeypatch):
+def unregistered_bound(tmp_path, monkeypatch, *, life_id='life.main'):
     from total_gateway.store import GatewayStateStore
     from total_gateway.method_source_run_binding import MethodRunSourceResolver
     from tests import test_composition_executable_plan_p7c0 as ec
@@ -149,7 +149,7 @@ def unregistered_bound(tmp_path, monkeypatch):
     from tests import test_method_source_publication_p9 as pub
     from world_understanding.software_world import SoftwareWorldFrame
     import sys
-    scope=production_scope(dict(life_id='life.main', principal_scope_hash=material['context'].principal_scope_hash,
+    scope=production_scope(dict(life_id=life_id, principal_scope_hash=material['context'].principal_scope_hash,
                                 workspace_id=material['workspace'].workspace_id))
     monkeypatch.setattr(wu,'_scope',lambda:scope)
     monkeypatch.setattr(pub,'_scope',lambda:scope)

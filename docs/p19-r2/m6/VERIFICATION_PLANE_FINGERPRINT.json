@@ -9,7 +9,7 @@
  "repair_policy_config_sha256": "a7002f614547ff00b5cd48b201c8b8c1873578531b165d216cf27f662e45c9ba",
  "completion_gate_sha256": "6e6b8f08b9a2eedbf9b341449189d47bda51e0f5f8d597828cf9d868e59e672f",
  "store_schema_version": 33,
- "authority_map_sha256": "2c9a076ce10fb01b0eed598eec3c6fa14ea532b87061236e1e55a758e8df373d",
+ "authority_map_sha256": "931d8ae31c5673c7f851abfbd5d59dc6d36ae1d40e8cdb87afc0dca45e2ba8cf",
  "golden_corpus_files": 13,
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1"

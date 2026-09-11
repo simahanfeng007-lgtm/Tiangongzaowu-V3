@@ -26,6 +26,7 @@ from contracts import ComponentManifest, ProtectedPrivateKeyEnvelope
 from total_gateway.runtime_authority import RuntimeTicketAuthority
 from total_gateway.tickets import ProtectedKeyStore
 from total_gateway import windows_private_files as private
+from runtime_security.path_identity import PathIdentityError, resolve_existing_path
 
 def observe_failed_write_cleanup(home, private, encrypted, report):
     # Reaching the injected failure is separate evidence from file cleanup.
@@ -86,6 +87,22 @@ report = {'schema':'tiangong.p8-key-lifecycle.v1', 'may_publish':False, 'may_aut
 try:
     principal = private.current_appcontainer_principal()
     report['appcontainer'] = principal is not None
+    if principal is not None:
+        # The host prepared a real junction after the broker copy. First prove
+        # its target is readable under this exact token, then require the
+        # product observer to reject both leaf and ancestor traversal.
+        normal = home/'path-target'/'selected'/'payload.txt'
+        assert normal.read_bytes() == b'path-identity-control'
+        assert resolve_existing_path(normal) == normal
+        assert (home/'path-junction'/'selected'/'payload.txt').read_bytes() == normal.read_bytes()
+        report['path_target_readable'] = True
+        for path, label in ((home/'path-junction', 'path_leaf_junction_rejected'),
+                            (home/'path-junction'/'selected'/'payload.txt', 'path_ancestor_junction_rejected')):
+            try:resolve_existing_path(path)
+            except PathIdentityError as exc:
+                assert str(exc) == 'link_or_junction', str(exc)
+                report[label] = True
+            else:raise AssertionError('container path observer followed a junction')
     store = ProtectedKeyStore(home/'private-keys')
     def create(kid):
         return store.create_key(kid=kid,purpose='execution_ticket',audience='omni_body',
@@ -185,6 +202,7 @@ _COMMON_OBSERVATIONS = (
     'metadata_disk_reopen', 'authority_disk_reopen', 'tamper_rejected', 'key_cleanup',
 )
 _CONTAINER_OBSERVATIONS = (
+    'path_target_readable', 'path_leaf_junction_rejected', 'path_ancestor_junction_rejected',
     'replace_read_cleanup', 'failed_write_injection_observed', 'failed_write_cleanup', 'other_package_fixture_prepared',
     'other_package_os_denied', 'other_package_denied',
 )
@@ -472,7 +490,20 @@ def test_real_protected_key_lifecycle_host_and_container(tmp_path, label, monkey
         def launch_prepared(*args, **kwargs):
             def observe_launch(*launch_args, **launch_kwargs):
                 phase['name'] = 'contained_worker'
-                result = launcher(*launch_args, **launch_kwargs)
+                actual_workspace = launch_args[1]
+                target = actual_workspace / 'path-target'
+                (target / 'selected').mkdir(parents=True)
+                (target / 'selected' / 'payload.txt').write_bytes(b'path-identity-control')
+                junction = actual_workspace / 'path-junction'
+                prepared = subprocess.run(['cmd', '/c', 'mklink', '/J', str(junction), str(target)],
+                    capture_output=True, text=True, check=False)
+                assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+                assert junction.is_junction()
+                try:
+                    result = launcher(*launch_args, **launch_kwargs)
+                finally:
+                    # Remove only the test link, before broker output scanning.
+                    junction.rmdir()
                 phase['name'] = 'other_package_fixture_recheck'
                 return result
             return _launch_with_foreign_fixture(observe_launch, *args, **kwargs)
