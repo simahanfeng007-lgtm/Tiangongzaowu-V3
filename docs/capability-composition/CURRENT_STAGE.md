@@ -1,49 +1,48 @@
 # 当前工程检查点导航
 
-更新：2026-09-10。进度导航不是 Source 发布、权限或产品验收权威。
+更新：2026-09-12。进度导航不是 Source 发布、权限、生产零使用或产品验收权威。
 
 | 项目 | 当前记录 |
 |---|---|
-| main 工程基线 | `b1ea3e9d511aae9cabcc816e071ad3da645ae753` |
-| 当前阶段 | P10，第 11/18 阶段；未合并 |
-| 当前分支 | `codex/capability-composition-p10-life-learning-cutover-v1` |
-| 已完成工作包 | R1 冻结；R2-A 三类产出准备；R2-B 机器经验准入/Memory 写回；R3-A 旧记录迁移；R3-B 兼容面覆盖及双平台验证 |
-| 当前工作包 | R3-C 部署退出复核待完成；按用户收尾要求进行 R4 工程预验证，草稿 PR #75 |
-| 下一工程步骤 | 修复全量门禁问题并验证最终候选；R3 退出复核后才可合并 |
-| 合并检查点比例 | 10/18 = 55.6%，不是产品验收率 |
+| main 工程基线 | `a13979a99b8f01f9ee8ff2d0a2269e6118eadee9`（PR #75 已合并） |
+| 已合并阶段 | P0–P10，共 11/18 = 61.1%；仅表示工程阶段已合并 |
+| 当前收口分支 | `codex/capability-composition-p10-final-closeout-20260912` |
+| P10 状态 | 工程实现已合并；代表性工作负载独立复核完成，兼容层继续保留 |
+| 下一阶段 | P11 Formal Shadow；尚未开始 |
+| 仍然开放 | P8/P9 真实模型任务、正式签审、打包、部署/回滚；P13 前生产零使用证明 |
 
-R3-B 用无存储进程内 bridge 将 Duihua legacy callbacks、旧 muscle learning、raw
-registry compatibility、legacy L0 projection 的实际调用转入原签名 Life journal。
-Coverage 只从 observer 真正安装后开始，不能倒填 R3-A 的更早窗口；遥测故障不
-改变旧入口业务结果，未覆盖面仍明确报告。
+## P10 最终边界
 
-当前已知 18 个旧入口可分别报告 coverage start、调用数与 workload。历史 active/
-published、pending patch、unknown ownership 和能力既有 usage 继续保守保留。
-`zero_usage_proven=false` 仍固定成立；测试/AST/短窗口为 0 不能替代生产零使用证据。
+P10 的固定候选为 `a23c4fe1e559483b7be2b3f4d3534d45de58650f`，测试合并树与该候选
+完全一致；PR #75 于 2026-09-11 合并为 main `a13979a`。候选上的 Architecture、
+P14、P19 和 P10 focused 共 13 个工作均成功。合并后的 Architecture
+[34549607615](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/34549607615)
+六个工作和 P19
+[34549607558](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/actions/runs/34549607558)
+两个工作也全部成功。
 
-Verification Plane 1.14 继承 R3-B 的 105 条冻结，包含 telemetry bridge 与 L0 projection，
-共 105 条；独立 Source Authority 数仍为 17。Golden、权限、Memory/Gateway schema、
-P5/P15 阈值和 Source 发布规则不放松。
+2026-09-12 的独立复核直接读取精确候选的 Windows/Ubuntu P10 artifact。两平台
+测试输入 1,097 个 SHA-256 完全相同，Source Authority 与 committed mirrors 均
+通过；focused 结果分别为 1608 passed / 11 skipped 和 1581 passed / 38 skipped。
+两份原始代表性报告的 SHA-256、复核断言和范围见
+`P10_FINAL_CLOSEOUT_2026-09-12.md`。
 
-R3 尚未完成；当前提前进行 R4 工程预验证，不代表 R3 退出。R3-C 必须取得
-经复核的代表性或真实部署观察窗口，核对
-起止残留/归属和在途 P9 source pin。有真实 legacy 调用就继续保留对应兼容面。
-P8/P9 的真实任务、正式签审、旧打包补丁和生产回退债继续单独保留。
+代表性工作负载覆盖 18/18 个已知旧入口，保留四类残留及原归属，严格读取连续的
+18 条 usage journal 事件，并证明已经 `SIDE_EFFECT_STARTED` 的 P9 任务在 70 次
+World 更新、历史裁剪、迁移和磁盘重放后仍固定到原 World/Method Source。该证据
+足以完成 P10 的代表性工作负载工程复核。
 
-续跑恢复与 Windows 路径修复见 `P10_R3B_RESUME_VALIDATION_2026-09-10.md`。
-固定代码候选 `a70b0b6` 已通过 P10 完整定向组：Windows CI 1514 passed、Ubuntu
-CI 1489 passed、本机 Windows 1513 passed；各自的跳过项、输入身份和 CI 链接见
-`P10_R3_CHECKPOINT_RESULTS_2026-09-10.md`。最终 `ed6094e` 仅完善测试 fixture
-清理，产品源码相同；其独立 Windows/Ubuntu CI 也已全部 SUCCESS，分别为
-1514 / 1489 passed。后续文档提交只记录结果，不替代这些固定代码 head。
+它不证明真实部署长期零使用。原始报告中的
+`production_zero_usage_proven=false` 保持不变，而且代表性流量实际触发了全部旧
+入口，所以旧兼容面必须继续保留。生产观察、零使用证明和删除授权是 P13 退出前
+的独立门槛；不得在 P11 中把它写成已通过，也不得据此删除 Static Skill Planner、
+旧 registry 或 compatibility authority。
 
-R3-C 工程证据见 `P10_R3C_REPRESENTATIVE_EVIDENCE_2026-09-10.md`：同一 Life
-身份下，18 个真实入口调用、残留快照、签名 journal 重放与已经开始执行的 P9
-任务来源保留联动验证。用户确认真实部署在其他电脑，本机负责计划内代码；短时
-fixture 窗口不替代该部署的持续观察或独立复核。
+## 历史导航
 
-2026-09-10 用户要求开始 P10 收尾，详见 `P10_R4_CLOSEOUT_2026-09-10.md`。
-草稿 PR #75 承载全量门禁与问题修复；最终结果按 PR 的提交身份核对。
-R4 修复了三处旧合同测试与 Node LFS 门禁配置，并修复设备映射查询在
-AppContainer 内被拒绝的真实回归。新增容器中可读目标与 junction 拒绝证据；
-具体原生、定向、全量结果与待验收项以 R4 记录和 PR 最终候选为准。
+- R0–R2 的冻结、产出准备、Source 绑定和机器经验写回分别见对应 P10 文档。
+- R3-A/B/C 的迁移、18 入口遥测和原始代表性 fixture 见对应 2026-09-09/10 文档；
+  这些文件保留当时“未独立复核、未合并”的历史状态，不回写历史。
+- R4 预验证、原生 AppContainer 修复和 PR 前门禁见
+  `P10_R4_CLOSEOUT_2026-09-10.md`；最终合并与复核结果以上述最终收口记录为准。
+- P8/P9 的未结真实任务、签审、打包和生产回退债继续在总台账中单独保留。
