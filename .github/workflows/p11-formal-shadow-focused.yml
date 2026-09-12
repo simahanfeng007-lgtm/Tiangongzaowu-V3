@@ -72,7 +72,8 @@ jobs:
         run: |
           from pathlib import Path
           import json, runpy, subprocess, sys
-          sys.path.insert(0, 'src')
+          repo_root = Path.cwd()
+          sys.path[:0] = [str(repo_root), str(repo_root/'src')]
           fixtures = runpy.run_path('tests/test_capability_formal_shadow_p11.py')
           _cases, _faults = fixtures['_cases'], fixtures['_faults']
           from world_understanding.capability_composition import build_p11_formal_shadow_report
