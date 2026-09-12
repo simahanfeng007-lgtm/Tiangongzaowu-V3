@@ -1,11 +1,11 @@
 name: P10 learning freeze focused gate
 
-# R3-A note: connector-authored workflow-only touch is used after GITHUB_TOKEN
-# source transport/test-fix commits because GitHub suppresses recursive push workflows.
+# Keep the focused gate available for P10 closeout/maintenance branches. It is
+# evidence-only and does not authorize compatibility retirement.
 on:
   push:
     branches:
-      - codex/capability-composition-p10-life-learning-cutover-v1
+      - 'codex/capability-composition-p10-*'
     paths:
       - src/life_service/**
       - src/runtime_security/path_identity.py
@@ -25,7 +25,6 @@ on:
       - docs/p19-r2/**
       - source-ownership.json
       - .github/workflows/p10-learning-freeze-focused.yml
-      - .github/workflows/p10-r1-transfer.yml
   workflow_dispatch:
 
 permissions:
@@ -124,4 +123,4 @@ jobs:
           name: p10-learning-freeze-${{ matrix.os }}-${{ github.sha }}
           path: output/p10-r1/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
