@@ -1,12 +1,24 @@
 # v1.2 P8–P17 implementation and acceptance ledger
 
-Status: **P8 IN PROGRESS — P8-R3 local native lifecycle passed; remote gates pending (2026-09-06)**.
+Status: **P0–P10 engineering stages merged; P10 representative-workload review
+closed with production-retirement gates retained (2026-09-12). P11 is not started.**
 
-The user authorized the discussed P8-R3 candidate review, necessary repairs
-and native lifecycle/startup acceptance on 2026-09-06. The earlier checkpoint
-and its stop instruction remain historical in `P8_HANDOFF_2026-09-05.md` and
-`P8_RESUME_PROMPT_2026-09-05.txt`. Current work is recorded in
-`P8_R3_NATIVE_ACCEPTANCE_2026-09-06.md`; P8 is not closed and P9 is not started.
+This ledger is append-only evidence across changing checkpoints. The P8 entries
+below remain historical records of their dates; they do not override this current
+header or the stage register. P8 merged at `34668e0`, P9 merged at `b1ea3e9`, and
+P10 PR #75 merged at `a13979a`. Product-evaluation and operational obligations
+are carried explicitly rather than converted into phase PASS by merge or CI.
+
+## Current checkpoint (2026-09-12)
+
+- P10 exact tested candidate: `a23c4fe1e559483b7be2b3f4d3534d45de58650f`.
+- P10 merged main: `a13979a99b8f01f9ee8ff2d0a2269e6118eadee9`.
+- Merged engineering-stage progress: **11/18 = 61.1%**; this is not product readiness.
+- Independent review accepts the cross-platform representative workload for P10
+  engineering closeout. It does not claim deployment duration or production zero use.
+- Legacy compatibility remains because legacy usage was observed. Production
+  zero-use evidence remains a P13 removal prerequisite.
+- P11 Formal Shadow is next and remains **NOT STARTED**.
 
 ## Scope and baseline
 
@@ -39,9 +51,9 @@ passing CI does not close the total objective.
 
 | Stage | Required result | Status | Closing evidence still required |
 |---|---|---|---|
-| P8 | Source candidate → build/static/sandbox/risk/evidence/review → existing manifest compiler → published source revision; running manifest lock | IN PROGRESS | Production path, adversarial and execution evaluation, local/remote gates, PR and merge |
-| P9 | Method Source add/update/remove lifecycle | NOT STARTED | Production lifecycle, invalidation, tests, PR and merge |
-| P10 | Knowledge / Source Evolution / Composition Experience learning cutover across every old publication entry | NOT STARTED | Frozen old publication, actual usage telemetry, replacement wiring, tests, PR and merge |
+| P8 | Source candidate → build/static/sandbox/risk/evidence/review → existing manifest compiler → published source revision; running manifest lock | MERGED — EVALUATION DEBT OPEN | Real model/task evaluation, formal signing, packaging and deployment/rollback evidence |
+| P9 | Method Source add/update/remove lifecycle | MERGED — EVALUATION DEBT OPEN | Real model/task lifecycle and operational acceptance evidence |
+| P10 | Knowledge / Source Evolution / Composition Experience learning cutover across every old publication entry | MERGED — ENGINEERING REVIEW CLOSED | Keep compatibility; production zero-use proof remains a P13 removal gate |
 | P11 | Static/dynamic formal Shadow differential with only one execution path per task | NOT STARTED | Approximately 200 cases, model/fault matrices and all cutover metrics |
 | P12 | Retire Static Skill Planner, context injection and full Skill publication | NOT STARTED | Stable new path, no lost capability, telemetry and removal evidence |
 | P13 | Retire old learning / registry / release compatibility authority | NOT STARTED | Zero production usage evidence before removal |
