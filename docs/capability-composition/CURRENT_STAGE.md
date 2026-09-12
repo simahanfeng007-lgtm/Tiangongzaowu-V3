@@ -4,11 +4,11 @@
 
 | 项目 | 当前记录 |
 |---|---|
-| main 工程基线 | `a13979a99b8f01f9ee8ff2d0a2269e6118eadee9`（PR #75 已合并） |
+| main 工程基线 | `bf29542b3048c8d1806add8063b0db7c72be055b`（PR #76 已合并） |
 | 已合并阶段 | P0–P10，共 11/18 = 61.1%；仅表示工程阶段已合并 |
-| 当前收口分支 | `codex/capability-composition-p10-final-closeout-20260912` |
-| P10 状态 | 工程实现已合并；代表性工作负载独立复核完成，兼容层继续保留 |
-| 下一阶段 | P11 Formal Shadow；尚未开始 |
+| 当前工作分支 | `codex/capability-composition-p11-formal-shadow-v1` |
+| P10 状态 | 工程实现及尾项 PR #76 已合并；代表性工作负载独立复核完成，兼容层继续保留 |
+| 当前阶段 | P11 Formal Shadow R0 工程合同已开始；生产 Cutover 证据未完成 |
 | 仍然开放 | P8/P9 真实模型任务、正式签审、打包、部署/回滚；P13 前生产零使用证明 |
 
 ## P10 最终边界
@@ -37,6 +37,20 @@ World 更新、历史裁剪、迁移和磁盘重放后仍固定到原 World/Meth
 入口，所以旧兼容面必须继续保留。生产观察、零使用证明和删除授权是 P13 退出前
 的独立门槛；不得在 P11 中把它写成已通过，也不得据此删除 Static Skill Planner、
 旧 registry 或 compatibility authority。
+
+P10 尾项由 PR #76 在精确候选 `ada993dc9eff4cc566e248cda620148903c797a8`
+完成，合并为当前 main `bf29542b`；候选树与测试树一致。候选 13 个工作、合并后
+Architecture run 34705569241 六个工作及 P19 run 34705569215 两个工作均成功。
+这次尾项只更新最终证据、当前导航和 P10 focused 维护门，不改变上述兼容保留
+决定。
+
+## P11 当前边界
+
+P11 R0 新增 Static/Dynamic Formal Shadow 差分合同。记录样本固定覆盖 200 个
+task、560 条模型规划观察和 40 个故障场景，并强制每 task 只有 Static 或 Dynamic
+一条执行路径。该样本只证明合同行为：`formal_gate_passed=true`，但由于不是
+真实模型与生产 Gateway/P19 trace，`cutover_gate_passed=false`。完整范围与下一步
+见 `P11_R0_FORMAL_SHADOW_CONTRACT_2026-09-12.md`；在 R1 证据完成前不进入 P12。
 
 ## 历史导航
 
