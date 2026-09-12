@@ -91,7 +91,9 @@ jobs:
           )
           payload = {**report.payload(), 'report_sha256': report.report_sha256}
           (out/'recorded-matrix.json').write_text(
-              json.dumps(payload, ensure_ascii=False, indent=1), encoding='utf-8'
+              json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True),
+              encoding='utf-8',
+              newline='\n',
           )
           (out/'identity.json').write_text(
               json.dumps({
@@ -106,8 +108,9 @@ jobs:
                   'model_observation_count': report.model_observation_count,
                   'fault_case_count': report.fault_case_count,
                   'report_sha256': report.report_sha256,
-              }, ensure_ascii=False, indent=1),
+              }, ensure_ascii=False, indent=1, sort_keys=True),
               encoding='utf-8',
+              newline='\n',
           )
       - name: Run focused P4-P7A-P11 regression
         run: >-
