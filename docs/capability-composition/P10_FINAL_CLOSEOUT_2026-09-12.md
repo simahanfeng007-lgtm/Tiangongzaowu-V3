@@ -101,3 +101,23 @@ R3-B 定义了“真实部署 **或经批准的代表性工作负载**”分支�
   维护分支正常触发；artifact 保留期延长到 90 天。
 - 历史 R3/R4 文档保持原日期和原结论；当前导航与总台账只追加最终状态，不伪造
   当时已经合并或已经独立复核。
+
+## 2026-09-12 尾项合并追加记录
+
+上述复核结论、导航修正和 P10 focused 维护门随后固定在 PR #76：
+
+- exact head：`ada993dc9eff4cc566e248cda620148903c797a8`；
+- exact tree：`f5a0ce54213a6922eeb0f419a14e7b999188d30f`；
+- merged main：`bf29542b3048c8d1806add8063b0db7c72be055b`，合并树与 exact tree 相同；
+- exact-head P10 run 34703058105：Windows 1608 passed / 11 skipped，Ubuntu
+  1581 passed / 38 skipped；两平台均有 11 subtests；
+- exact-head Architecture、P14、P19 runs 34703094587、34703094609、
+  34703094591 共 11 个工作全部成功；
+- post-merge Architecture run 34705569241 六个工作、P19 run 34705569215 两个
+  工作全部成功；Windows full Python 为 5203 passed / 32 skipped / 839 subtests。
+
+新 exact-head P10 artifact 保留 90 天。Windows artifact ID 10301173255，ZIP
+SHA-256 `70dae0c8b7f8a7360a8cccb4d2e7aa3e3e7d69be568fd3fc19797bebf5879768`；
+Ubuntu artifact ID 10300592040，ZIP SHA-256
+`e30edeb8a54d7d020e40b68a5bf600af7a811e43e87a780f330b287166bcc2cf`。
+两份原始报告继续保留三个 false 字段，未把 fixture 或短窗口改写成生产零使用。
