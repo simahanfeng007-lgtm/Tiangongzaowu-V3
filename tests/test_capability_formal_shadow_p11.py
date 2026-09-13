@@ -5,6 +5,7 @@ import hashlib
 
 import pytest
 
+from total_gateway.p11_live_replay_bridge import P11LiveReplayBindingV1
 from total_gateway.skill_selection import (
     SkillCatalog,
     SkillDefinition,
@@ -90,6 +91,7 @@ def _dynamic(
     value = P11DynamicPathObservationV1(
         task_id=task_id,
         model=profile,
+        live_replay_binding_sha256=None,
         goal_fingerprint_sha256=hashlib.sha256(
             ("goal:" + task_id).encode()
         ).hexdigest(),
@@ -122,6 +124,87 @@ def _dynamic(
         observation_sha256="0" * 64,
     )
     return value.with_computed_sha256()
+
+
+def _failed_dynamic(
+    value: P11DynamicPathObservationV1,
+    *,
+    error_code: str = "proposal.json.invalid",
+) -> P11DynamicPathObservationV1:
+    return replace(
+        value,
+        parse_succeeded=False,
+        repair_attempted=False,
+        repaired=False,
+        plan_succeeded=False,
+        activation_ready=False,
+        error_code=error_code,
+        composition_plan_sha256=None,
+        validation_sha256=None,
+        shadow_proposal_sha256=None,
+        validation_result=None,
+        composition_risk=None,
+        planned_action_ids=(),
+        static_comparison_action_ids=(),
+        added_vs_static=(),
+        removed_vs_static=(),
+        source_manifest_sha256=None,
+        observation_sha256="0" * 64,
+    ).with_computed_sha256()
+
+
+def _live_cases_and_bindings():
+    live_cases = []
+    bindings = []
+    for case in _cases():
+        dynamic_paths = []
+        for item in case.dynamic_paths:
+            live_profile = replace(
+                item.model,
+                provider_id="provider.live",
+                model_id="model.live." + item.model.role.lower(),
+                model_revision="2026-09-13",
+                profile_sha256="0" * 64,
+            ).with_computed_sha256()
+            binding = P11LiveReplayBindingV1(
+                schema="tiangong.p11-live-replay-binding.v1",
+                task_id=case.task_id,
+                task_input_sha256=case.task_input_sha256,
+                profile_sha256=live_profile.profile_sha256,
+                model_snapshot_sha256=H,
+                candidate_snapshot_sha256=H2,
+                primary_observation_id=(
+                    "runobs." + case.task_id + "." + item.model.role.lower()
+                ),
+                primary_observation_sha256=hashlib.sha256(
+                    ("primary:" + case.task_id + item.model.role).encode()
+                ).hexdigest(),
+                repair_observation_id=None,
+                repair_observation_sha256=None,
+                selected_attempt="PRIMARY",
+                selected_output_sha256=H,
+                legacy_output_sha256=H2,
+                proposal_sha256=H,
+                plan_sha256=item.composition_plan_sha256,
+                binding_sha256="0" * 64,
+            ).with_computed_sha256()
+            bindings.append(binding)
+            dynamic_paths.append(
+                replace(
+                    item,
+                    model=live_profile,
+                    live_replay_binding_sha256=binding.binding_sha256,
+                    observation_sha256="0" * 64,
+                ).with_computed_sha256()
+            )
+        live_cases.append(
+            replace(
+                case,
+                dynamic_paths=tuple(dynamic_paths),
+                case_sha256="0" * 64,
+            ).with_computed_sha256()
+        )
+    return tuple(live_cases), tuple(bindings)
 
 
 def _execution(
@@ -279,6 +362,83 @@ def test_recorded_200_task_matrix_proves_formal_contract_not_cutover() -> None:
     assert report.median_dynamic_context_tokens < (
         report.median_static_context_tokens
     )
+
+
+def test_bounded_parse_failure_remains_bound_to_the_task_goal() -> None:
+    cases = list(_cases())
+    first = cases[0]
+    dynamic = list(first.dynamic_paths)
+    index = next(
+        index
+        for index, item in enumerate(dynamic)
+        if item.model.role == "SECONDARY_A"
+    )
+    dynamic[index] = _failed_dynamic(dynamic[index])
+    cases[0] = replace(
+        first,
+        dynamic_paths=tuple(dynamic),
+        case_sha256="0" * 64,
+    ).with_computed_sha256()
+
+    report = build_p11_formal_shadow_report(
+        tuple(cases), _faults(), evidence_mode="RECORDED_FIXTURE"
+    )
+    assert report.model_matrix_complete is True
+    assert report.final_parse_failure_milli == 1
+    assert report.formal_gate_passed is True
+    assert cases[0].dynamic_paths[index].goal_fingerprint_sha256 == (
+        cases[0].goal_fingerprint_sha256
+    )
+
+
+def test_parse_failure_above_five_percent_blocks_formal_gate() -> None:
+    cases = list(_cases())
+    for case_index in range(29):
+        case = cases[case_index]
+        dynamic = list(case.dynamic_paths)
+        index = next(
+            index
+            for index, item in enumerate(dynamic)
+            if item.model.role == "SECONDARY_A"
+        )
+        dynamic[index] = _failed_dynamic(dynamic[index])
+        cases[case_index] = replace(
+            case,
+            dynamic_paths=tuple(dynamic),
+            case_sha256="0" * 64,
+        ).with_computed_sha256()
+
+    report = build_p11_formal_shadow_report(
+        tuple(cases), _faults(), evidence_mode="RECORDED_FIXTURE"
+    )
+    assert report.final_parse_failure_milli == 51
+    assert report.formal_gate_passed is False
+    assert "p11.parse_failure.above_5_percent" in report.cutover_blockers
+
+
+def test_failed_dynamic_observer_requires_explicit_goal_binding() -> None:
+    with pytest.raises(
+        P11FormalShadowError, match="goal_binding_missing"
+    ):
+        observe_dynamic_composition_path(
+            task_id="failed.001",
+            model=PROFILE_BY_ROLE["PRIMARY"],
+            context_tokens=620,
+            parse_succeeded=False,
+            error_code="proposal.json.invalid",
+        )
+
+    observed = observe_dynamic_composition_path(
+        task_id="failed.001",
+        model=PROFILE_BY_ROLE["PRIMARY"],
+        context_tokens=620,
+        parse_succeeded=False,
+        error_code="proposal.json.invalid",
+        goal_fingerprint_sha256=H,
+    )
+    assert observed.goal_fingerprint_sha256 == H
+    assert observed.plan_succeeded is False
+    assert observed.has_valid_sha256()
 
 
 def test_only_one_path_can_have_an_execution_trace() -> None:
@@ -454,6 +614,36 @@ def test_recorded_profiles_cannot_be_relabelled_as_production_evidence() -> None
             _cases(),
             _faults(),
             evidence_mode="PRODUCTION_SHADOW_TRACE",
+        )
+
+
+def test_live_report_requires_and_validates_full_replay_binding_set() -> None:
+    cases, bindings = _live_cases_and_bindings()
+    with pytest.raises(
+        P11FormalShadowError, match="binding_evidence_missing"
+    ):
+        build_p11_formal_shadow_report(
+            cases,
+            _faults(),
+            evidence_mode="LIVE_PROVIDER_REPLAY",
+        )
+
+    report = build_p11_formal_shadow_report(
+        cases,
+        _faults(),
+        evidence_mode="LIVE_PROVIDER_REPLAY",
+        live_replay_bindings=bindings,
+    )
+    assert report.formal_gate_passed is True
+    assert report.cutover_gate_passed is False
+    assert "p11.production_shadow_trace.required" in report.cutover_blockers
+
+    with pytest.raises(P11FormalShadowError, match="binding_set_invalid"):
+        build_p11_formal_shadow_report(
+            cases,
+            _faults(),
+            evidence_mode="LIVE_PROVIDER_REPLAY",
+            live_replay_bindings=bindings[:-1],
         )
 
 

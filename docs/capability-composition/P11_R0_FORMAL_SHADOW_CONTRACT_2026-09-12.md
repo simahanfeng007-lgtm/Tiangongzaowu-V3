@@ -1,6 +1,6 @@
 # P11 R0 — Formal Shadow 差分合同与记录样本矩阵
 
-状态：**R0 工程合同已实现；P11 生产切流证据未完成，不得开始 P12。**
+状态：**R0 精确提交工程门禁已通过；P11 生产切流证据未完成，不得开始 P12。**
 
 基线：`main @ bf29542b3048c8d1806add8063b0db7c72be055b`，即 PR #76
 完成 P10 尾项后的主线。工作分支：
@@ -125,13 +125,33 @@ drift、ambiguous Effect、verifier unavailable、context truncation 和 interru
 
 这些是确定性协议样本，不是任何真实厂商模型或真实生产任务的性能数字。
 
-当前工作树的 focused run 覆盖 P4 parser/compiler/validator、P4 hardening、P6
+最初工作树的 focused run 覆盖 P4 parser/compiler/validator、P4 hardening、P6
 context evaluation、P7A Shadow、Static Skill selection 和 P11，共 56 passed、
 0 failed、5 个既有 Pydantic `schema` 命名 warning。Source Authority 为
 17 independent / 1 alias / 24 generated targets / 1 closed-world，官方 committed
 mirror 检查通过。记录矩阵 report SHA-256 为
 `06f45379afb8e350669fe46c9694feca29471825f74d28e670478c03428c76d6`；它尚未绑定
 提交 HEAD，exact-head CI 运行后必须重新生成，不能把该工作树哈希当最终证据。
+
+## R0 精确提交结果（2026-09-13 复核）
+
+R0 远端精确 HEAD 为
+`a421c1ff347f57f3a42cb9630252c6bfca574d1b`，精确 tree 为
+`aa2dc90e8c3d35aeef70f15ea6415d0c5e67cc66`。该 HEAD 的 Architecture run
+34709985721（6/6）、P11 run 34709985720（2/2）、P19 run 34709985713（2/2）和
+P14 run 34709985679（3/3）全部成功，共 13/13 个工作。
+
+Ubuntu artifact 10303086067 与 Windows artifact 10302703341 的
+`identity.json` 和 `recorded-matrix.json` 逐字节一致；内部 report SHA-256 为
+`06f45379afb8e350669fe46c9694feca29471825f74d28e670478c03428c76d6`。这只完成
+R0 记录合同的 exact-head、跨平台可复现性证明，不改变
+`cutover_gate_passed=false`，也不替代真实模型、生产 trace 或独立切流复核。
+
+R1A 后续审计发现，早期观察模型把 goal 为空与 Plan 失败绑定，导致合法矩阵无法
+表达真实 parse/plan failure，5% parse failure 门槛因而成为不可触达分支。R1A 已将
+失败观察固定绑定 task goal，并新增低于/高于 5% 的正反例。该修复及真实回放接入
+属于 R0 精确 HEAD 之后的新候选，须以新的 exact-head 门禁为准；不得回写到上述
+R0 artifact。详见 `P11_R1A_LIVE_REPLAY_EVIDENCE_INTAKE_2026-09-13.md`。
 
 ## R1 退出条件
 

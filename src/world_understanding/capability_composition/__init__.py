@@ -52,6 +52,7 @@ from .compiler import (
     analyze_composition_risk,
     compile_capability_composition_plan,
     computed_plan_sha256,
+    plan_binds_proposal,
     plan_has_valid_sha256,
 )
 from .evaluation import (
@@ -168,6 +169,7 @@ __all__ = [
     "mark_capability_experience_source_change",
     "parse_composition_proposal",
     "parse_with_single_repair",
+    "plan_binds_proposal",
     "plan_has_valid_sha256",
     "posterior_success_milli",
     "observe_dynamic_composition_path",

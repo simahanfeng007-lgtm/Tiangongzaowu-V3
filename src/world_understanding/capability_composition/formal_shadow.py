@@ -100,6 +100,15 @@ class _ShadowActivationEvidence(Protocol):
     def has_valid_sha256(self) -> bool: ...
 
 
+class _LiveReplayBindingEvidence(Protocol):
+    task_id: str
+    profile_sha256: str
+    plan_sha256: str | None
+    binding_sha256: str
+
+    def has_valid_sha256(self) -> bool: ...
+
+
 def _require_identity(value: str, field: str) -> None:
     if _OPAQUE.fullmatch(value) is None:
         raise P11FormalShadowError("p11.identity.invalid", field)
@@ -229,7 +238,8 @@ class P11StaticPathObservationV1:
 class P11DynamicPathObservationV1:
     task_id: str
     model: P11ModelProfileV1
-    goal_fingerprint_sha256: str | None
+    live_replay_binding_sha256: str | None
+    goal_fingerprint_sha256: str
     context_tokens: int
     parse_succeeded: bool
     repair_attempted: bool
@@ -257,6 +267,10 @@ class P11DynamicPathObservationV1:
         if not self.model.has_valid_sha256():
             raise P11FormalShadowError(
                 "p11.model_profile.hash_invalid", self.model.profile_id
+            )
+        if self.live_replay_binding_sha256 is not None:
+            _require_sha256(
+                self.live_replay_binding_sha256, "live replay binding"
             )
         if self.context_tokens <= 0:
             raise P11FormalShadowError("p11.context_tokens.invalid", self.task_id)
@@ -297,14 +311,15 @@ class P11DynamicPathObservationV1:
             raise P11FormalShadowError(
                 "p11.dynamic.state_invalid", self.task_id
             )
-        if self.goal_fingerprint_sha256 is not None:
-            _require_sha256(
-                self.goal_fingerprint_sha256, "dynamic goal fingerprint"
-            )
-        if self.plan_succeeded != (self.goal_fingerprint_sha256 is not None):
+        _require_sha256(
+            self.goal_fingerprint_sha256, "dynamic goal fingerprint"
+        )
+        if not self.plan_succeeded and self.error_code is None:
             raise P11FormalShadowError(
-                "p11.dynamic.goal_binding_invalid", self.task_id
+                "p11.dynamic.failure_code_missing", self.task_id
             )
+        if self.error_code is not None:
+            _require_identity(self.error_code, "dynamic error code")
         for value, field in (
             (self.composition_plan_sha256, "dynamic plan"),
             (self.validation_sha256, "dynamic validation"),
@@ -313,6 +328,34 @@ class P11DynamicPathObservationV1:
         ):
             if value is not None:
                 _require_sha256(value, field)
+        plan_bindings = (
+            self.composition_plan_sha256,
+            self.validation_sha256,
+            self.validation_result,
+            self.composition_risk,
+            self.source_manifest_sha256,
+        )
+        if (
+            self.plan_succeeded
+            and any(value is None for value in plan_bindings)
+        ) or (
+            not self.plan_succeeded
+            and any(value is not None for value in plan_bindings)
+        ):
+            raise P11FormalShadowError(
+                "p11.dynamic.plan_binding_invalid", self.task_id
+            )
+        if self.activation_ready != (self.shadow_proposal_sha256 is not None):
+            raise P11FormalShadowError(
+                "p11.dynamic.shadow_binding_invalid", self.task_id
+            )
+        if self.activation_ready and self.validation_result not in {
+            "PROVED_VALID",
+            "UNKNOWN",
+        }:
+            raise P11FormalShadowError(
+                "p11.dynamic.activation_validation_invalid", self.task_id
+            )
         for values, field in (
             (self.planned_action_ids, "dynamic planned actions"),
             (self.static_comparison_action_ids, "dynamic static comparison"),
@@ -322,6 +365,21 @@ class P11DynamicPathObservationV1:
             _sorted_unique(values, field)
             for value in values:
                 _require_identity(value, field)
+        if self.plan_succeeded and not self.planned_action_ids:
+            raise P11FormalShadowError(
+                "p11.dynamic.plan_actions_missing", self.task_id
+            )
+        if not self.plan_succeeded and any(
+            (
+                self.planned_action_ids,
+                self.static_comparison_action_ids,
+                self.added_vs_static,
+                self.removed_vs_static,
+            )
+        ):
+            raise P11FormalShadowError(
+                "p11.dynamic.failed_plan_has_actions", self.task_id
+            )
         if self.activation_ready:
             dynamic = set(self.planned_action_ids)
             static = set(self.static_comparison_action_ids)
@@ -338,6 +396,7 @@ class P11DynamicPathObservationV1:
         return {
             "task_id": self.task_id,
             "model": {**self.model.payload(), "profile_sha256": self.model.profile_sha256},
+            "live_replay_binding_sha256": self.live_replay_binding_sha256,
             "goal_fingerprint_sha256": self.goal_fingerprint_sha256,
             "context_tokens": self.context_tokens,
             "parse_succeeded": self.parse_succeeded,
@@ -927,12 +986,26 @@ def observe_dynamic_composition_path(
     repair_attempted: bool = False,
     repaired: bool = False,
     error_code: str | None = None,
+    live_replay_binding_sha256: str | None = None,
+    goal_fingerprint_sha256: str | None = None,
     plan: CapabilityCompositionPlanV1 | None = None,
     validation: CompositionValidationResultV1 | None = None,
     shadow: _ShadowActivationEvidence | None = None,
 ) -> P11DynamicPathObservationV1:
     """Validate and freeze one Dynamic model result without executing it."""
 
+    if plan is None and goal_fingerprint_sha256 is None:
+        raise P11FormalShadowError(
+            "p11.dynamic.goal_binding_missing", task_id
+        )
+    if (
+        plan is not None
+        and goal_fingerprint_sha256 is not None
+        and goal_fingerprint_sha256 != plan.goal_fingerprint
+    ):
+        raise P11FormalShadowError(
+            "p11.dynamic.goal_binding_invalid", task_id
+        )
     if plan is None:
         if validation is not None or shadow is not None:
             raise P11FormalShadowError("p11.dynamic.orphan_binding", task_id)
@@ -974,8 +1047,11 @@ def observe_dynamic_composition_path(
     value = P11DynamicPathObservationV1(
         task_id=task_id,
         model=model,
+        live_replay_binding_sha256=live_replay_binding_sha256,
         goal_fingerprint_sha256=(
-            None if plan is None else plan.goal_fingerprint
+            goal_fingerprint_sha256
+            if plan is None
+            else plan.goal_fingerprint
         ),
         context_tokens=context_tokens,
         parse_succeeded=parse_succeeded,
@@ -1060,6 +1136,7 @@ def build_p11_formal_shadow_report(
     faults: tuple[P11FaultCaseV1, ...],
     *,
     evidence_mode: EvidenceMode,
+    live_replay_bindings: tuple[_LiveReplayBindingEvidence, ...] = (),
 ) -> P11FormalShadowReportV1:
     """Build the exact P11 matrix and cutover metrics without side effects."""
 
@@ -1102,12 +1179,57 @@ def build_p11_formal_shadow_report(
         for profile in profiles.values()
     ):
         raise P11FormalShadowError("p11.recorded_fixture.identity_invalid")
+    if evidence_mode == "RECORDED_FIXTURE" and (
+        live_replay_bindings
+        or any(item.live_replay_binding_sha256 is not None for item in observations)
+    ):
+        raise P11FormalShadowError(
+            "p11.recorded_fixture.live_binding_forbidden"
+        )
     if evidence_mode != "RECORDED_FIXTURE" and any(
         profile.provider_id.startswith("recorded.")
         or profile.model_id.startswith("recorded.")
         for profile in profiles.values()
     ):
         raise P11FormalShadowError("p11.live_evidence.recorded_identity_forbidden")
+    if evidence_mode != "RECORDED_FIXTURE" and any(
+        item.live_replay_binding_sha256 is None for item in observations
+    ):
+        raise P11FormalShadowError("p11.live_evidence.binding_missing")
+    if evidence_mode != "RECORDED_FIXTURE":
+        if not live_replay_bindings:
+            raise P11FormalShadowError(
+                "p11.live_evidence.binding_evidence_missing"
+            )
+        bindings_by_sha256 = {
+            item.binding_sha256: item for item in live_replay_bindings
+        }
+        observation_binding_sha256s = tuple(
+            item.live_replay_binding_sha256 for item in observations
+        )
+        if (
+            len(bindings_by_sha256) != len(live_replay_bindings)
+            or len(live_replay_bindings) != len(observations)
+            or set(bindings_by_sha256) != set(observation_binding_sha256s)
+            or any(not item.has_valid_sha256() for item in live_replay_bindings)
+        ):
+            raise P11FormalShadowError(
+                "p11.live_evidence.binding_set_invalid"
+            )
+        for observation in observations:
+            binding_sha256 = observation.live_replay_binding_sha256
+            if binding_sha256 is None:  # guarded above; narrows the type here
+                raise P11FormalShadowError("p11.live_evidence.binding_missing")
+            binding = bindings_by_sha256[binding_sha256]
+            if (
+                binding.task_id != observation.task_id
+                or binding.profile_sha256 != observation.model.profile_sha256
+                or binding.plan_sha256 != observation.composition_plan_sha256
+            ):
+                raise P11FormalShadowError(
+                    "p11.live_evidence.binding_observation_mismatch",
+                    observation.task_id,
+                )
 
     core = tuple(item for item in ordered_cases if item.cohort == "CORE")
     long_tail = tuple(

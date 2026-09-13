@@ -1,6 +1,6 @@
 # 当前工程检查点导航
 
-更新：2026-09-12。进度导航不是 Source 发布、权限、生产零使用或产品验收权威。
+更新：2026-09-13。进度导航不是 Source 发布、权限、生产零使用或产品验收权威。
 
 | 项目 | 当前记录 |
 |---|---|
@@ -8,7 +8,7 @@
 | 已合并阶段 | P0–P10，共 11/18 = 61.1%；仅表示工程阶段已合并 |
 | 当前工作分支 | `codex/capability-composition-p11-formal-shadow-v1` |
 | P10 状态 | 工程实现及尾项 PR #76 已合并；代表性工作负载独立复核完成，兼容层继续保留 |
-| 当前阶段 | P11 Formal Shadow R0 工程合同已开始；生产 Cutover 证据未完成 |
+| 当前阶段 | P11 Formal Shadow R0 精确提交门禁已通过；R1A 真实回放证据接入进行中，生产 Cutover 证据未完成 |
 | 仍然开放 | P8/P9 真实模型任务、正式签审、打包、部署/回滚；P13 前生产零使用证明 |
 
 ## P10 最终边界
@@ -49,8 +49,20 @@ Architecture run 34705569241 六个工作及 P19 run 34705569215 两个工作均
 P11 R0 新增 Static/Dynamic Formal Shadow 差分合同。记录样本固定覆盖 200 个
 task、560 条模型规划观察和 40 个故障场景，并强制每 task 只有 Static 或 Dynamic
 一条执行路径。该样本只证明合同行为：`formal_gate_passed=true`，但由于不是
-真实模型与生产 Gateway/P19 trace，`cutover_gate_passed=false`。完整范围与下一步
-见 `P11_R0_FORMAL_SHADOW_CONTRACT_2026-09-12.md`；在 R1 证据完成前不进入 P12。
+真实模型与生产 Gateway/P19 trace，`cutover_gate_passed=false`。
+
+R0 精确远端 HEAD `a421c1ff347f57f3a42cb9630252c6bfca574d1b` 的
+Architecture、P11 focused、P14、P19 共 13/13 个工作成功。Ubuntu/Windows P11
+artifact 的 `identity.json` 与 `recorded-matrix.json` 字节一致；该结论只绑定这个
+精确 HEAD。
+
+R1A 正在把既有 append-only `RunObservation` 中的真实候选原文、Static 对照输出、
+provider/model/revision 与 P4 Proposal/Plan 绑定为只读、内容寻址的回放证据。接入层
+不拥有模型客户端、业务 Store、Gateway、Runtime 或权限；它也不能代替生产
+Gateway/P19 单路径 trace。完整范围见
+`P11_R0_FORMAL_SHADOW_CONTRACT_2026-09-12.md` 与
+`P11_R1A_LIVE_REPLAY_EVIDENCE_INTAKE_2026-09-13.md`；在 R1 证据和独立复核完成前
+不进入 P12。
 
 ## 历史导航
 

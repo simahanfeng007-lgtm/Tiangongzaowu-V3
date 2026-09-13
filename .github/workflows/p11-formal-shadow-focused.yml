@@ -9,8 +9,10 @@ on:
       - src/world_understanding/capability_composition/**
       - src/world_understanding/context_output/**
       - src/total_gateway/composition_activation_shadow.py
+      - src/total_gateway/p11_live_replay_bridge.py
       - src/total_gateway/skill_selection.py
       - tests/test_capability_formal_shadow_p11.py
+      - tests/test_p11_live_replay_bridge.py
       - tests/test_capability_composition_p4.py
       - tests/test_capability_context_evaluation_p6.py
       - tests/test_composition_activation_shadow_p7a.py
@@ -26,8 +28,10 @@ on:
       - src/world_understanding/capability_composition/**
       - src/world_understanding/context_output/**
       - src/total_gateway/composition_activation_shadow.py
+      - src/total_gateway/p11_live_replay_bridge.py
       - src/total_gateway/skill_selection.py
       - tests/test_capability_formal_shadow_p11.py
+      - tests/test_p11_live_replay_bridge.py
       - tests/test_capability_composition_p4.py
       - tests/test_capability_context_evaluation_p6.py
       - tests/test_composition_activation_shadow_p7a.py
@@ -116,6 +120,7 @@ jobs:
         run: >-
           python -m pytest -q
           tests/test_capability_formal_shadow_p11.py
+          tests/test_p11_live_replay_bridge.py
           tests/test_capability_composition_p4.py
           tests/test_capability_composition_p4_hardening.py
           tests/test_capability_context_evaluation_p6.py
