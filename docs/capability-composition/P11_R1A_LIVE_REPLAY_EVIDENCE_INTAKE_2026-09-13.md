@@ -1,6 +1,6 @@
 # P11 R1A — 真实模型回放证据接入
 
-状态：**只读证据接入候选已实现；真实模型矩阵、生产 Gateway/P19 联结与独立复核仍待完成。**
+状态：**只读证据接入工程实现与精确提交门禁已完成；真实模型矩阵、生产 Gateway/P19 联结与独立复核仍待完成。**
 
 基线为 P11 R0 远端精确 HEAD
 `a421c1ff347f57f3a42cb9630252c6bfca574d1b`。R0 的 13/13 个精确提交工作和
@@ -59,23 +59,32 @@ Gateway/Effect/Fact/P19/Completion trace 精确联结，报告才有资格进入
 
 ## 当前验证与未结项
 
-本候选本地 focused 范围覆盖 P4 parser/compiler/validator、P4 hardening、P6、
-P7A、Static Skill selection、P11 Formal Shadow 和 R1A bridge。最终重跑为
-71 passed、0 failed、5 个既有 Pydantic `schema` warnings。Source Authority 为
-17 independent / 1 alias / 24 generated targets / 1 closed-world，committed mirror
-检查通过。
+本候选 focused 范围覆盖 P4 parser/compiler/validator、P4 hardening、P6、P7A、
+Static Skill selection、P11 Formal Shadow 和 R1A bridge。R1A 远端源码冻结点为
+`318b8bd7fc43c2c27e02ba202cdb3cb4287426c2`，tree 为
+`7a3423999a051cf550bdb5b3344939f574ade1d0`；本地候选 tree 与其完全一致。
 
-记录 fixture 因新增 live replay binding 字段而重新生成，当前工作树内部 report
-SHA-256 为 `45d84396b4ea7b7cd91b2607d4aa1e103f31f6429686e905e19e9c940860ae67`。
-它不是 exact-head artifact；最终 SHA、跨平台一致性和 CI 结果必须绑定新的远端
-精确 HEAD。
+该精确提交的 Architecture、P11 focused、P14、P19 共 13/13 个工作成功。P11
+Ubuntu/Windows 各为 71 passed、0 failed、0 skipped；Source Authority 为
+17 independent / 1 alias / 24 generated targets / 1 closed-world，committed mirror
+检查通过。两平台 `identity.json` 与 `recorded-matrix.json` 分别逐字节一致：
+
+- `identity.json` SHA-256：
+  `4aa7505fe029a3201a15e74eea9e6c9ddf362245dc89a13e5429dc0607470370`；
+- `recorded-matrix.json` SHA-256：
+  `a2da83557da223f3f12ebb12097bce6400f276233e901600cd283e154f07ec2c`；
+- 内部 report SHA-256：
+  `45d84396b4ea7b7cd91b2607d4aa1e103f31f6429686e905e19e9c940860ae67`。
+
+这些结果完成 R1A 工程候选的精确提交和跨平台复现证明；artifact 仍为
+`RECORDED_FIXTURE`，不构成真实模型或生产 Cutover 证据。
 
 仍然待完成：
 
 - 精确 provider/model/revision 的 Core 80×4 与 Long-tail 120×PRIMARY/WEAK；
 - 40 个多模型真实/受控 Fault case；
 - 每 task 唯一 active path 的生产 Gateway/Effect/Fact/P19/Completion 联结；
-- 全部 Cutover 指标、Ubuntu/Windows exact-head artifact 与独立复核；
+- 全部 Cutover 指标、生产证据候选的 Ubuntu/Windows exact-head artifact 与独立复核；
 - 合并、合并后 main 回归及 P11 正式关闭。
 
 缺少模型访问、运行授权、预算或生产遥测时保持 pending，不用记录 fixture、模拟、

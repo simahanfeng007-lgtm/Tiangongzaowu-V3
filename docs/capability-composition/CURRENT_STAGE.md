@@ -8,7 +8,7 @@
 | 已合并阶段 | P0–P10，共 11/18 = 61.1%；仅表示工程阶段已合并 |
 | 当前工作分支 | `codex/capability-composition-p11-formal-shadow-v1` |
 | P10 状态 | 工程实现及尾项 PR #76 已合并；代表性工作负载独立复核完成，兼容层继续保留 |
-| 当前阶段 | P11 Formal Shadow R0 精确提交门禁已通过；R1A 真实回放证据接入进行中，生产 Cutover 证据未完成 |
+| 当前阶段 | P11 Formal Shadow R0/R1A 工程实现与精确提交门禁已通过；生产 Cutover 验收输入未完成 |
 | 仍然开放 | P8/P9 真实模型任务、正式签审、打包、部署/回滚；P13 前生产零使用证明 |
 
 ## P10 最终边界
@@ -56,10 +56,16 @@ Architecture、P11 focused、P14、P19 共 13/13 个工作成功。Ubuntu/Window
 artifact 的 `identity.json` 与 `recorded-matrix.json` 字节一致；该结论只绑定这个
 精确 HEAD。
 
-R1A 正在把既有 append-only `RunObservation` 中的真实候选原文、Static 对照输出、
-provider/model/revision 与 P4 Proposal/Plan 绑定为只读、内容寻址的回放证据。接入层
-不拥有模型客户端、业务 Store、Gateway、Runtime 或权限；它也不能代替生产
-Gateway/P19 单路径 trace。完整范围见
+R1A 已把既有 append-only `RunObservation` 中的真实候选原文、Static 对照输出、
+provider/model/revision 与 P4 Proposal/Plan 绑定为只读、内容寻址的回放证据。远端
+源码冻结点 `318b8bd7fc43c2c27e02ba202cdb3cb4287426c2` 的 Architecture、P11、P14、
+P19 共 13/13 个工作成功，P11 两平台各 71 passed / 0 failed / 0 skipped，且记录
+artifact 的身份与矩阵字节跨平台一致。
+
+接入层不拥有模型客户端、业务 Store、Gateway、Runtime 或权限；它也不能代替生产
+Gateway/P19 单路径 trace。当前工程待办已清零，P11 剩余项全部是外部验收输入：
+四个精确模型角色的真实输出、40 个多模型 Fault、同 task 的生产单路径 trace 与
+未参与生成的独立复核。完整范围见
 `P11_R0_FORMAL_SHADOW_CONTRACT_2026-09-12.md` 与
 `P11_R1A_LIVE_REPLAY_EVIDENCE_INTAKE_2026-09-13.md`；在 R1 证据和独立复核完成前
 不进入 P12。
