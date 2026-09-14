@@ -5,6 +5,7 @@ import hashlib
 
 import pytest
 
+from contracts import canonical_json_bytes, canonical_sha256
 from total_gateway.p11_live_replay_bridge import P11LiveReplayBindingV1
 from total_gateway.skill_selection import (
     SkillCatalog,
@@ -183,7 +184,13 @@ def _live_cases_and_bindings():
                 repair_observation_sha256=None,
                 selected_attempt="PRIMARY",
                 selected_output_sha256=H,
-                legacy_output_sha256=H2,
+                legacy_output_sha256=canonical_sha256({
+                    "domain": "tiangong.p11-live-model-output.v1",
+                    "text": canonical_json_bytes({
+                        **case.static_path.payload(),
+                        "observation_sha256": case.static_path.observation_sha256,
+                    }).decode("utf-8"),
+                }),
                 proposal_sha256=H,
                 plan_sha256=item.composition_plan_sha256,
                 binding_sha256="0" * 64,
@@ -653,6 +660,46 @@ def test_raw_report_cannot_self_approve_cutover() -> None:
     )
     with pytest.raises(P11FormalShadowError, match="self_approval_forbidden"):
         replace(report, cutover_gate_passed=True)
+
+
+@pytest.mark.parametrize("field", ["task_input_sha256", "legacy_output_sha256"])
+@pytest.mark.parametrize("mode", ["LIVE_PROVIDER_REPLAY", "PRODUCTION_SHADOW_TRACE"])
+def test_live_report_rejects_rehashed_cross_task_or_static_binding(field, mode):
+    cases, bindings = _live_cases_and_bindings()
+    original = bindings[0]
+    changed = replace(original, **{field: "f" * 64}).with_computed_sha256()
+    cases = tuple(
+        replace(case, dynamic_paths=tuple(
+            replace(path, live_replay_binding_sha256=changed.binding_sha256)
+            .with_computed_sha256()
+            if path.live_replay_binding_sha256 == original.binding_sha256 else path
+            for path in case.dynamic_paths
+        )).with_computed_sha256()
+        for case in cases
+    )
+    with pytest.raises(P11FormalShadowError, match="binding_task_mismatch"):
+        build_p11_formal_shadow_report(
+            cases, _faults(), evidence_mode=mode,
+            live_replay_bindings=(changed, *bindings[1:]),
+        )
+
+
+def test_four_role_labels_cannot_substitute_for_four_exact_models():
+    cases = tuple(
+        replace(case, dynamic_paths=tuple(
+            replace(path, model=replace(
+                path.model, model_id="recorded.same-model"
+            ).with_computed_sha256()).with_computed_sha256()
+            for path in case.dynamic_paths
+        )).with_computed_sha256()
+        for case in _cases()
+    )
+    report = build_p11_formal_shadow_report(
+        cases, _faults(), evidence_mode="RECORDED_FIXTURE"
+    )
+    assert not report.model_matrix_complete
+    assert not report.formal_gate_passed
+    assert "p11.model_matrix.incomplete" in report.cutover_blockers
 
 
 def test_existing_static_and_p7a_dynamic_outputs_feed_the_p11_observers() -> None:

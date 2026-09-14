@@ -18,7 +18,7 @@ from statistics import median
 import re
 from typing import Any, Literal, Protocol
 
-from contracts import SkillSelectionRecord, canonical_sha256
+from contracts import SkillSelectionRecord, canonical_json_bytes, canonical_sha256
 from contracts.capability_composition import (
     CapabilityCompositionPlanV1,
     CompositionValidationResultV1,
@@ -102,6 +102,8 @@ class _ShadowActivationEvidence(Protocol):
 
 class _LiveReplayBindingEvidence(Protocol):
     task_id: str
+    task_input_sha256: str
+    legacy_output_sha256: str
     profile_sha256: str
     plan_sha256: str | None
     binding_sha256: str
@@ -1216,6 +1218,17 @@ def build_p11_formal_shadow_report(
             raise P11FormalShadowError(
                 "p11.live_evidence.binding_set_invalid"
             )
+        cases_by_id = {case.task_id: case for case in ordered_cases}
+        static_output_sha256s = {
+            case.task_id: canonical_sha256({
+                "domain": "tiangong.p11-live-model-output.v1",
+                "text": canonical_json_bytes({
+                    **case.static_path.payload(),
+                    "observation_sha256": case.static_path.observation_sha256,
+                }).decode("utf-8"),
+            })
+            for case in ordered_cases
+        }
         for observation in observations:
             binding_sha256 = observation.live_replay_binding_sha256
             if binding_sha256 is None:  # guarded above; narrows the type here
@@ -1230,6 +1243,15 @@ def build_p11_formal_shadow_report(
                     "p11.live_evidence.binding_observation_mismatch",
                     observation.task_id,
                 )
+            case = cases_by_id[observation.task_id]
+            if (
+                binding.task_input_sha256 != case.task_input_sha256
+                or binding.legacy_output_sha256
+                != static_output_sha256s[case.task_id]
+            ):
+                raise P11FormalShadowError(
+                    "p11.live_evidence.binding_task_mismatch", case.task_id
+                )
 
     core = tuple(item for item in ordered_cases if item.cohort == "CORE")
     long_tail = tuple(
@@ -1243,6 +1265,10 @@ def build_p11_formal_shadow_report(
         and len(long_tail) == 120
         and len({item.task_input_sha256 for item in ordered_cases}) == 200
         and len({item.goal_fingerprint_sha256 for item in ordered_cases}) == 200
+        and len({
+            (profile.provider_id, profile.model_id, profile.model_revision)
+            for profile in profiles.values()
+        }) == 4
         and all(
             {path.model.role for path in item.dynamic_paths} == core_roles
             and len(item.dynamic_paths) == 4

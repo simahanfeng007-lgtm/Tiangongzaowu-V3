@@ -13,6 +13,8 @@ on:
       - src/total_gateway/skill_selection.py
       - tests/test_capability_formal_shadow_p11.py
       - tests/test_p11_live_replay_bridge.py
+      - tests/test_p11_evidence_check.py
+      - scripts/check-p11-evidence.py
       - tests/test_capability_composition_p4.py
       - tests/test_capability_context_evaluation_p6.py
       - tests/test_composition_activation_shadow_p7a.py
@@ -32,6 +34,8 @@ on:
       - src/total_gateway/skill_selection.py
       - tests/test_capability_formal_shadow_p11.py
       - tests/test_p11_live_replay_bridge.py
+      - tests/test_p11_evidence_check.py
+      - scripts/check-p11-evidence.py
       - tests/test_capability_composition_p4.py
       - tests/test_capability_context_evaluation_p6.py
       - tests/test_composition_activation_shadow_p7a.py
@@ -116,11 +120,24 @@ jobs:
               encoding='utf-8',
               newline='\n',
           )
+      - name: Recompute recorded artifact from exported bytes
+        shell: python
+        run: |
+          import subprocess, sys
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          subprocess.run([
+              sys.executable, 'scripts/check-p11-evidence.py',
+              '--report', 'output/p11-r0/recorded-matrix.json',
+              '--identity', 'output/p11-r0/identity.json',
+              '--expected-head', head,
+              '--output', 'output/p11-r0/recorded-audit.json',
+          ], check=True)
       - name: Run focused P4-P7A-P11 regression
         run: >-
           python -m pytest -q
           tests/test_capability_formal_shadow_p11.py
           tests/test_p11_live_replay_bridge.py
+          tests/test_p11_evidence_check.py
           tests/test_capability_composition_p4.py
           tests/test_capability_composition_p4_hardening.py
           tests/test_capability_context_evaluation_p6.py

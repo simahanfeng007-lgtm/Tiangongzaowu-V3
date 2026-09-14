@@ -1,9 +1,9 @@
 # v1.2 P8–P17 implementation and acceptance ledger
 
 Status: **P0–P10 engineering stages merged; P10 representative-workload review
-closed with production-retirement gates retained. P11 R0/R1A engineering and
-exact-head gates passed (2026-09-13); production
-cutover evidence remains open.**
+closed with production-retirement gates retained. P11 R1B fixes replay input /
+Static binding and duplicate model identity, and adds an exported-evidence
+checker (2026-09-14). Production cutover evidence remains open.**
 
 This ledger is append-only evidence across changing checkpoints. The P8 entries
 below remain historical records of their dates; they do not override this current
@@ -12,7 +12,15 @@ P10 PR #75 merged at `a13979a`; its final tail PR #76 merged at `bf29542`.
 Product-evaluation and operational obligations
 are carried explicitly rather than converted into phase PASS by merge or CI.
 
-## Current checkpoint (2026-09-13)
+## Current checkpoint (2026-09-14)
+
+- P11 R1B follows remote `484da9ccfa676c5e257f8831ad4f057ad5caea0c`.
+  Five pre-fix negative cases reproduced missing input/Static linkage and the
+  same exact model being counted under four roles. The fixes and strict exported
+  report/sidecar recomputation are now in the focused gate. New candidate CI
+  evidence is recorded separately in PR #77; older green runs do not approve it.
+  Live resources and the acceptance sequence are listed in
+  `P11_R1B_ACCEPTANCE_HANDOFF_2026-09-14.md`; no P11 phase exit or P12 start.
 
 - P10 exact tested candidate: `a23c4fe1e559483b7be2b3f4d3534d45de58650f`.
 - Current main after P10 tail PR #76: `bf29542b3048c8d1806add8063b0db7c72be055b`.
@@ -67,7 +75,7 @@ passing CI does not close the total objective.
 | P8 | Source candidate → build/static/sandbox/risk/evidence/review → existing manifest compiler → published source revision; running manifest lock | MERGED — EVALUATION DEBT OPEN | Real model/task evaluation, formal signing, packaging and deployment/rollback evidence |
 | P9 | Method Source add/update/remove lifecycle | MERGED — EVALUATION DEBT OPEN | Real model/task lifecycle and operational acceptance evidence |
 | P10 | Knowledge / Source Evolution / Composition Experience learning cutover across every old publication entry | MERGED — ENGINEERING REVIEW CLOSED | Keep compatibility; production zero-use proof remains a P13 removal gate |
-| P11 | Static/dynamic formal Shadow differential with only one execution path per task | R0/R1A ENGINEERING + EXACT-HEAD GATES PASSED; EXTERNAL ACCEPTANCE INPUTS PENDING | Live 80×4 / 120×primary+weak outputs, 40 multi-model faults, production single-path traces, independent review and all cutover metrics |
+| P11 | Static/dynamic formal Shadow differential with only one execution path per task | R1B BINDING FIXES + EXPORTED EVIDENCE CHECKER; PRODUCTION ACCEPTANCE PENDING | Live 80×4 / 120×primary+weak outputs, 40 multi-model faults, production single-path traces, independent review and all cutover metrics |
 | P12 | Retire Static Skill Planner, context injection and full Skill publication | NOT STARTED | Stable new path, no lost capability, telemetry and removal evidence |
 | P13 | Retire old learning / registry / release compatibility authority | NOT STARTED | Zero production usage evidence before removal |
 | P14 | Dynamic Capability default with explicit, audited migration fallback only | NOT STARTED | Default wiring, fail-closed context, tests and cutover evidence |
