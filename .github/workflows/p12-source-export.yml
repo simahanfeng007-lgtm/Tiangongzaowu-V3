@@ -1,0 +1,43 @@
+name: P12 exact native source export (temporary)
+
+on:
+  push:
+    branches: [codex/capability-composition-p12-retirement-preflight-v1]
+    paths: [.github/workflows/p12-source-export.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.repository == 'simahanfeng007-lgtm/Tiangongzaowu-V3' && github.ref == 'refs/heads/codex/capability-composition-p12-retirement-preflight-v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export and verify native Git objects without archive filters
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-source-export'
+          out.mkdir()
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
+          if head != os.environ['GITHUB_SHA']:
+              raise SystemExit('Unexpected checkout')
+          bundle = out / 'source.bundle'
+          subprocess.run(['git', 'bundle', 'create', str(bundle), 'HEAD'], check=True)
+          subprocess.run(['git', 'bundle', 'verify', str(bundle)], check=True)
+          identity = {'head': head, 'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}']).decode().strip(), 'bundle_sha256': hashlib.sha256(bundle.read_bytes()).hexdigest(), 'bundle_bytes': bundle.stat().st_size, 'lfs_assets_hydrated': False, 'product_acceptance': False}
+          (out / 'identity.json').write_text(json.dumps(identity, sort_keys=True, indent=2), encoding='utf-8')
+          print(json.dumps(identity, sort_keys=True))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p12-native-source-${{ github.sha }}
+          path: ${{ runner.temp }}/p12-source-export/
+          if-no-files-found: error
+          retention-days: 7
