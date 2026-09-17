@@ -72,7 +72,7 @@ class WorkspaceAliasTests(unittest.TestCase):
         nested_target = self.alias / 'private'
         command = f'echo "{self.alias / "a"}" "{self.real / "b"}"'
         result = sandbox._rewrite_workspace_paths(command, self.alias, nested_target)
-        expected = f'echo "{self.real / "private" / "a"}" "{self.real / "private" / "b"}"'
+        expected = f'echo "{self.alias / "private" / "a"}" "{self.alias / "private" / "b"}"'
         self.assertEqual(result, expected)
 
     def test_native_separator_variant(self):

@@ -117,6 +117,8 @@ def _prepare_windows_utf8_shell_command(
             command_text.encode("utf-16-le")
         ).decode("ascii")
         script = (
+            # Load the two system modules before hermetic auto-discovery can stall.
+            "$tgSavedAutoload=$PSModuleAutoLoadingPreference;$PSModuleAutoLoadingPreference='None';try{Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop;Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop;}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 125}finally{$PSModuleAutoLoadingPreference=$tgSavedAutoload};"
             "$utf8=[System.Text.UTF8Encoding]::new($false);"
             "[Console]::InputEncoding=$utf8;"
             "[Console]::OutputEncoding=$utf8;"
@@ -327,11 +329,20 @@ def _merge_changes(
 
 
 def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: Path) -> list[str] | str:
-    real_text = str(real.resolve(strict=False))
-    sandbox_text = str(sandbox.resolve(strict=False))
+    real_resolved = real.resolve(strict=False)
+    sandbox_text = str(sandbox.expanduser().absolute())
+    # A Windows 8.3 spelling can survive inside shell text after Path.resolve
+    # expands it. Keep the caller spelling and the canonical spelling; both
+    # refer to the same frozen workspace, not to additional allowed roots.
+    spellings = {str(real.expanduser().absolute()), str(real_resolved)}
+    if os.name == "nt":
+        spellings.update(value.replace("\\", "/") for value in tuple(spellings))
     flags = re.IGNORECASE if os.name == "nt" else 0
+    # One substitution pass prevents a private target that contains a source
+    # spelling from being rewritten again by a later alias replacement.
+    alternatives = "|".join(re.escape(value) for value in sorted(spellings, key=lambda value: (-len(value), value)))
     embedded_root = re.compile(
-        re.escape(real_text) + r"(?=$|[\\/\"'\s])",
+        "(?:" + alternatives + r")(?=$|[\\/\"'\s])",
         flags,
     )
     def rewrite_item(item: object) -> str:
@@ -340,7 +351,7 @@ def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: 
         try:
             candidate = Path(value).expanduser()
             if candidate.is_absolute():
-                rel = candidate.resolve(strict=False).relative_to(real.resolve(strict=False))
+                rel = candidate.resolve(strict=False).relative_to(real_resolved)
                 value = str(sandbox / rel)
                 exact_path_rewritten = True
         except (OSError, ValueError):
@@ -432,7 +443,8 @@ def _run_windows_appcontainer(
 
 class SandboxRunner:
     def __init__(self, workspace: Path, state_root: Path, trash_root: Path, limits: SandboxLimits | None = None):
-        self.workspace = workspace.expanduser().resolve()
+        self._workspace_input = workspace.expanduser().absolute()
+        self.workspace = self._workspace_input.resolve()
         self.state_root = state_root.expanduser().resolve()
         self.trash_root = trash_root.expanduser().resolve()
         self.limits = limits or SandboxLimits()
@@ -456,6 +468,10 @@ class SandboxRunner:
             raise SandboxError("sandbox_os_containment_unavailable")
         if not command:
             raise SandboxError("sandbox_command_empty")
+        # Retaining an input alias must not let a changed symlink/junction
+        # redirect an existing runner to another workspace.
+        if self._workspace_input.resolve(strict=False) != self.workspace:
+            raise SandboxError("sandbox_workspace_identity_changed")
         raw_run_id = str(op_id or f"run_{time.time_ns()}")
         # Deep Windows workspaces can exceed MAX_PATH before the command even
         # starts when the full operation id is used as another directory
@@ -514,7 +530,7 @@ class SandboxRunner:
             real_cwd = (cwd or self.workspace).expanduser().resolve(strict=False)
             sandbox_cwd = sandbox_workspace / _safe_rel(self.workspace, real_cwd)
             sandbox_cwd.mkdir(parents=True, exist_ok=True)
-            rewritten = _rewrite_workspace_paths(command, self.workspace, sandbox_workspace)
+            rewritten = _rewrite_workspace_paths(command, self._workspace_input, sandbox_workspace)
             if os.name == "nt":
                 rewritten = _prepare_windows_utf8_shell_command(rewritten, cwd=sandbox_cwd)
             limits = SandboxLimits(

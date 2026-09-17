@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.14",
+ "verification_plane_version": "1.15",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -89,7 +89,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "ea0a9a748a3d7ca978fd7e4791b38ffbd8ccc40d7d04ac7a4124ef9aafc79e4a",
+  "src/total_gateway/verification_plane.py": "97da3c554415958e9225aeb97aa0d919b75f8fdcada506e3afb9d21b7a7b8311",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",
@@ -108,7 +108,7 @@
   "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
-  "src/omni_body_skill/tools/sandbox_runtime.py": "f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501",
+  "src/omni_body_skill/tools/sandbox_runtime.py": "246231859f8e18bc9985213b0bcc65c6d1e3cc463de9cabc25dd0610ae14ad17",
   "scripts/_tool_source_build_worker.py": "e42b8985ca4178e9b35115a032f34df6535f2dc575f94873c5c1682add01240f",
   "scripts/build-tool-source.py": "85409d4d7626ad596603bfea10514fbf6ce5e880401b846b29f206b295220e28",
   "scripts/stage-tool-source.py": "81f00c22d9b4e16639a19a580ee275a8ae64bd7ce4b2255294f296abec69c84c",
