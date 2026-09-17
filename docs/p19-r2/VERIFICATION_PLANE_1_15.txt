@@ -1,0 +1,34 @@
+Verification Plane 1.15 — P12 R1A Windows workspace-alias repair
+
+This declared maintenance revision preserves the existing authority chain.
+The only execution-source change is in the existing sandbox_runtime.py:
+keep the originally supplied workspace spelling alongside its canonical path,
+rewrite both spellings to the same private workspace, and reject an alias that
+resolves to another workspace after SandboxRunner construction.
+
+No permission, ACL, containment backend, network rule, timeout, process limit,
+Source admission, verifier, CompletionGate, repair policy, database schema,
+registry or Golden corpus is changed. In particular, the three failing original
+Windows tests remain unchanged, including their 20-second timeout and A5 checks.
+A terminal timeout is not presumed fixed by the path change.
+
+Existing source-ownership mappings and the authority map remain unchanged.
+Five Omni mirrors and their markers must be produced only by the existing
+sync-generated-sources.py. The freeze manifest is produced by the existing
+UPDATE_FREEZE generator; its only permitted top-level changes are the declared
+version and the two source hashes for sandbox_runtime.py and verification_plane.py.
+No authority surface entry may be added or removed. The independent fingerprint
+is checked normally and not rewritten. The guard test changes only its expected
+version from 1.14 to 1.15; no assertion or case is removed.
+
+The temporary preparation workflow validates an exact hash-bound repair in a
+full GitHub checkout because the local executor cannot directly clone the repo.
+It may upload prepared content blobs for explicit connector publication, but
+cannot create commits, update refs, merge or deploy in its implemented path.
+Prepared working-tree results must not be reported as committed-HEAD validation.
+The preparation script, patch/test transport and temporary workflow are to be
+removed when the real source and official generated outputs are committed.
+
+P11 production evidence remains pending. No P11 exit, P12 retirement, static
+fallback removal or P12 phase completion is authorized by this maintenance.
+P12 R1B manifest separation remains deferred until R1A's failed validation closes.
