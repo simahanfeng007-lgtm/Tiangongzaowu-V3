@@ -1,4 +1,4 @@
-name: P12 retirement preflight (read-only)
+name: P12 retirement mapping (read-only)
 
 on:
   push:
@@ -15,16 +15,16 @@ concurrency:
 
 jobs:
   preflight:
-    name: p12-preflight-${{ matrix.os }}
+    name: p12-mapping-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     env:
       EXPECTED_HEAD: ${{ github.sha }}
-      BASELINE_HEAD: bf29542b3048c8d1806add8063b0db7c72be055b
+      BASELINE_HEAD: 5d3ba57b135d8376f11b6b280e9f1f5939ea3803
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
@@ -35,40 +35,54 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Synthetic Git contract tests
+      - name: Original R0 and new R1A diagnostic contracts
         shell: python
         run: |
           import os, pathlib, subprocess, sys
           out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-evidence'
           out.mkdir(parents=True, exist_ok=True)
-          result = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement_preflight.py', '-v'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          (out / 'tests.log').write_bytes(result.stdout)
+          result = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement*.py', '-v'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          (out / 'diagnostic-tests.log').write_bytes(result.stdout)
           print(result.stdout.decode('utf-8', errors='replace'))
           raise SystemExit(result.returncode)
-      - name: Exact-commit inventory and no-production-change check
+      - name: Exact-commit consumer map and corpus preservation
         shell: python
         run: |
           import hashlib, json, os, pathlib, subprocess, sys
           out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-evidence'
-          result = subprocess.run([sys.executable, 'scripts/audit-p12-static-skill-retirement.py', '--expected-head', os.environ['EXPECTED_HEAD'], '--baseline-head', os.environ['BASELINE_HEAD']], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-          (out / 'inventory.json').write_bytes(result.stdout)
-          (out / 'inventory.stderr.log').write_bytes(result.stderr)
+          result = subprocess.run([sys.executable, 'scripts/audit-p12-retirement-map.py', '--expected-head', os.environ['EXPECTED_HEAD'], '--baseline-head', os.environ['BASELINE_HEAD']], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          (out / 'consumer-map.json').write_bytes(result.stdout)
+          (out / 'consumer-map.stderr.log').write_bytes(result.stderr)
           print(result.stderr.decode('utf-8', errors='replace'))
           if result.returncode:
               raise SystemExit(result.returncode)
           report = json.loads(result.stdout)
-          identity = {key: report[key] for key in ('head', 'baseline_head', 'tree', 'observer_sha256', 'report_sha256', 'evidence_mode', 'r0_scope_passed', 'p12_authorized', 'retirement_authorized', 'production_zero_usage_proven')}
-          identity['inventory_file_sha256'] = hashlib.sha256(result.stdout).hexdigest()
-          identity['scanned_file_count'] = len(report['scanned_inputs'])
-          identity['unscanned_file_count'] = len(report['unscanned_inputs'])
-          identity['reference_file_counts'] = {key: len(rows) for key, rows in report['findings'].items()}
+          keys = ('head', 'baseline_head', 'tree', 'observer_sha256', 'report_sha256', 'evidence_mode', 'mapping_gate_passed', 'source_preservation_proven', 'p12_authorized', 'retirement_authorized', 'capability_parity_proven', 'r0_scope_passed_on_r1_delta')
+          identity = {key: report[key] for key in keys}
+          identity.update(map_file_sha256=hashlib.sha256(result.stdout).hexdigest(), parsed_python_files=report['parsed_python_files'], unparsed_python_files=len(report['unparsed_python_files']), unscanned_inputs=len(report['unscanned_inputs']), anchor_count=len(report['anchors']), corpus_count=len(report['skill_migration_matrix']))
           (out / 'identity.json').write_bytes((json.dumps(identity, ensure_ascii=False, sort_keys=True, indent=2) + '\n').encode('utf-8'))
-          print(json.dumps(identity, ensure_ascii=False, sort_keys=True, indent=2))
-      - name: Preserve original diagnostic evidence
+          print('P12_MAP_IDENTITY_JSON=' + json.dumps(identity, ensure_ascii=False, sort_keys=True))
+          print('P12_MAP_ANCHORS_JSON=' + json.dumps(report['anchors'], ensure_ascii=False, sort_keys=True))
+          consumers = [{"path": row['path'], "role": row['role'], "anchors": sorted({r['anchor'] for r in row['references']}), "truncated": row['references_truncated']} for row in report['consumer_candidates'] if row['reference_count']]
+          print('P12_SYMBOL_CONSUMERS_JSON=' + json.dumps(consumers, ensure_ascii=False, sort_keys=True))
+          print('P12_CORPUS_MATRIX_JSON=' + json.dumps(report['skill_migration_matrix'], ensure_ascii=False, sort_keys=True))
+      - name: Install existing locked source-test environment
+        run: python scripts/install-python-dependencies.py --requirements requirements-source.lock
+      - name: Existing dynamic manifest, Grant and explicit-intent regressions
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-evidence'
+          tests = ['tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py']
+          result = subprocess.run([sys.executable, '-m', 'pytest', '-q', *tests, '--junitxml=' + str(out / 'existing-regressions.xml')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          (out / 'existing-regressions.log').write_bytes(result.stdout)
+          print(result.stdout.decode('utf-8', errors='replace'))
+          raise SystemExit(result.returncode)
+      - name: Preserve original diagnostic and regression evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p12-retirement-preflight-${{ matrix.os }}-${{ github.sha }}
+          name: p12-retirement-mapping-${{ matrix.os }}-${{ github.sha }}
           path: ${{ runner.temp }}/p12-evidence/
           if-no-files-found: error
           retention-days: 90
