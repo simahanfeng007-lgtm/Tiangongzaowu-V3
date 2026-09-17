@@ -1,0 +1,114 @@
+name: P12 native shell boundary diagnostic (temporary)
+
+on:
+  push:
+    branches: [codex/capability-composition-p12-retirement-preflight-v1]
+    paths: [.github/workflows/p12-native-shell-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.repository == 'simahanfeng007-lgtm/Tiangongzaowu-V3' && github.ref == 'refs/heads/codex/capability-composition-p12-retirement-preflight-v1'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+      TIANGONG_SANDBOX_COMPAT: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Observe exact native and portable boundaries without changing permissions
+        shell: python
+        run: |
+          import base64, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, time
+          source = pathlib.Path('src/omni_body_skill/tools/sandbox_runtime.py')
+          if hashlib.sha256(source.read_bytes()).hexdigest() != 'f18aaef51a8446168af57e54be9ef885c55188202f0975b51e91b19df77fa501':
+              raise SystemExit('Unexpected source baseline')
+          subprocess.run(['git', 'apply', '--check', 'docs/capability-composition/p12-alias-repair.patch'], check=True)
+          subprocess.run(['git', 'apply', 'docs/capability-composition/p12-alias-repair.patch'], check=True)
+          text = source.read_text(encoding='utf-8')
+          assert text.count('sandbox_text = str(sandbox.resolve(strict=False))') == 1
+          source.write_bytes(text.replace('sandbox_text = str(sandbox.resolve(strict=False))', 'sandbox_text = str(sandbox.expanduser().absolute())').encode('utf-8'))
+          sys.path.insert(0, str(pathlib.Path('src').resolve()))
+          from omni_body_skill.tools import sandbox_runtime as s
+          from omni_body_skill.tools import windows_appcontainer as w
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-native-shell'
+          out.mkdir()
+          events = []
+          original = w.run_appcontainer
+          ps = shutil.which('powershell.exe') or shutil.which('pwsh.exe')
+          def ps_command(text):
+              return [ps, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', base64.b64encode(text.encode('utf-16-le')).decode('ascii')]
+          case_name = ''
+          portable_observe = False
+          def capture(command, *, cwd, env, limits, sandbox_root):
+              event = {'case': case_name, 'cwd': str(cwd), 'root': str(sandbox_root), 'command': command,
+                       'environment': {k: env[k] for k in ('TEMP', 'TMP', 'LOCALAPPDATA', 'COMSPEC') if k in env}}
+              if not isinstance(command, str) and '-EncodedCommand' in command:
+                  event['powershell_script'] = base64.b64decode(command[-1]).decode('utf-16-le')
+              started = time.monotonic()
+              try:
+                  result = original(command, cwd=cwd, env=env, limits=limits, sandbox_root=sandbox_root)
+                  event.update(exit_code=result[0], stdout=result[1].decode('utf-8', errors='replace'), stderr=result[2].decode('utf-8', errors='replace'))
+                  return result
+              except Exception as exc:
+                  event['exception'] = type(exc).__name__ + ': ' + str(exc)
+                  raise
+              finally:
+                  event['native_seconds'] = round(time.monotonic() - started, 3)
+                  for key in ('stdout', 'stderr'):
+                      file = sandbox_root / (key + '.bin')
+                      if file.exists():
+                          event[key + '_file'] = file.read_bytes()[:8192].decode('utf-8', errors='replace')
+                  for label, path in (('cwd', cwd), ('project', cwd / 'project')):
+                      acl = subprocess.run(['icacls', str(path)], capture_output=True)
+                      event[label + '_acl'] = acl.stdout.decode('utf-8', errors='replace')
+                  if portable_observe:
+                      started_host = time.monotonic()
+                      try:
+                          host = s._run_portable(command, cwd, env, limits)
+                          event['portable'] = {'exit_code': host[0], 'stdout': host[1].decode('utf-8', errors='replace'), 'stderr': host[2].decode('utf-8', errors='replace')}
+                      except Exception as exc:
+                          event['portable'] = {'exception': type(exc).__name__ + ': ' + str(exc)}
+                      event['portable_seconds'] = round(time.monotonic() - started_host, 3)
+                  events.append(event)
+                  (out / 'events.json').write_text(json.dumps(events, ensure_ascii=False, indent=2), encoding='utf-8')
+                  print('P12_NATIVE_EVENT=' + json.dumps(event, ensure_ascii=False), flush=True)
+          w.run_appcontainer = capture
+          with tempfile.TemporaryDirectory() as td:
+              root = pathlib.Path(td)
+              workspace = root / '工作 区'
+              project = workspace / 'project'
+              project.mkdir(parents=True)
+              cmd = os.environ.get('COMSPEC') or 'cmd.exe'
+              python_probe = 'import os,pathlib; print("PY_CWD="+os.getcwd()); p=pathlib.Path.cwd()/"project"; print("PY_PROJECT="+str(p)); os.chdir(p); pathlib.Path("python.txt").write_text("ok"); print("PY_OK")'
+              cases = [
+                  ('cmd-relative-root', [cmd, '/d', '/s', '/c', 'echo root-ok>root.txt'], False),
+                  ('cmd-relative-child', [cmd, '/d', '/s', '/c', 'cd /d project && echo child-ok>child.txt'], False),
+                  ('cmd-original-absolute', f'{subprocess.list2cmdline([cmd])} /d /s /c "cd /d "{project}" && echo sandbox-ok>result.txt"', True),
+                  ('python-child-access', [sys.executable, '-c', python_probe], False),
+                  ('powershell-minimal', ps_command('[Console]::WriteLine("PS_START");exit 0'), True),
+                  ('powershell-relative', ps_command('[Console]::WriteLine("BEFORE_WRITE"); Set-Content -NoNewline -LiteralPath direct.txt -Value sandboxed; [Console]::WriteLine("AFTER_WRITE");exit 0'), True),
+                  ('powershell-product-wrapper', [s.WINDOWS_POWERSHELL_SHELL_MARKER, '[Console]::WriteLine("USER_START"); Set-Content -NoNewline -LiteralPath legacy.txt -Value sandboxed; [Console]::WriteLine("USER_END")'], True),
+              ]
+              for name, command, portable in cases:
+                  case_name, portable_observe = name, portable
+                  runner = s.SandboxRunner(workspace, root/'state', root/'trash', s.SandboxLimits(timeout_seconds=20))
+                  try:
+                      result = runner.run(command, cwd=workspace, op_id='p12-probe-' + name)
+                      print('P12_CASE_RESULT=' + json.dumps({'case': name, 'result': result}, ensure_ascii=False), flush=True)
+                  except Exception as exc:
+                      print('P12_CASE_ERROR=' + json.dumps({'case': name, 'error': type(exc).__name__+': '+str(exc)}), flush=True)
+          (out/'identity.json').write_text(json.dumps({'observer_commit': os.environ['GITHUB_SHA'], 'prepared_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'evidence_mode': 'BOUNDARY_DIAGNOSTIC_NOT_ACCEPTANCE', 'product_acceptance': False, 'permissions_changed_by_diagnostic': False}, indent=2), encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p12-native-shell-${{ github.sha }}
+          path: ${{ runner.temp }}/p12-native-shell/
+          if-no-files-found: error
+          retention-days: 90
