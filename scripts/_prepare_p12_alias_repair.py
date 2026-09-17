@@ -16,8 +16,10 @@ ROOT = Path.cwd()
 OUT = Path(os.environ['RUNNER_TEMP']) / 'p12-repair-evidence'
 PATCH = Path('docs/capability-composition/p12-alias-repair.patch')
 TEST_SOURCE = Path('docs/capability-composition/p12-alias-tests.py')
+SHELL_TEST_SOURCE = Path('docs/capability-composition/p12-shell-tests.py')
 PRODUCT = Path('src/omni_body_skill/tools/sandbox_runtime.py')
 TEST = Path('tests/test_sandbox_workspace_alias_p12.py')
+SHELL_TEST = Path('tests/test_sandbox_shell_bootstrap_p12.py')
 VERSION = Path('src/total_gateway/verification_plane.py')
 GUARD = Path('tests/golden/p19_r2/test_freeze_and_guards.py')
 FREEZE = Path('docs/p19-r2/m6/VERIFICATION_PLANE_FREEZE.json')
@@ -61,13 +63,48 @@ def prepare():
     run(['git', 'apply', '--check', str(PATCH)], name='patch-check')
     run(['git', 'apply', str(PATCH)], name='patch-apply')
     if hashlib.sha256(PRODUCT.read_bytes()).hexdigest() != 'dde9ad5f1807bba733b0d3a8ae4cc893608e9c0b2580fbe199884e1ac5311292':
-        raise RuntimeError('Repaired source differs from locally tested bytes')
+        raise RuntimeError('Initial alias candidate changed')
+
+    # Native observations bind this extension to the original alias candidate.
+    # No ACL, timeout, environment allowlist or execution authority is changed.
+    text = PRODUCT.read_text(encoding='utf-8')
+    old_target = 'sandbox_text = str(sandbox.resolve(strict=False))'
+    if text.count(old_target) != 1:
+        raise RuntimeError('Expected one destination spelling boundary')
+    text = text.replace(old_target, 'sandbox_text = str(sandbox.expanduser().absolute())', 1)
+    bootstrap = (
+        "$tgSavedAutoload=$PSModuleAutoLoadingPreference;"
+        "$PSModuleAutoLoadingPreference='None';"
+        "try{"
+        "Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop;"
+        "Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop;"
+        "}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 125}"
+        "finally{$PSModuleAutoLoadingPreference=$tgSavedAutoload};"
+    )
+    anchor = '        script = (\n            "$utf8='
+    if text.count(anchor) != 1:
+        raise RuntimeError('Expected one marked PowerShell bootstrap boundary')
+    replacement = '        script = (\n            # Load the two system modules before hermetic auto-discovery can stall.\n            ' + repr(bootstrap) + '\n            "$utf8='
+    text = text.replace(anchor, replacement, 1)
+    ast.parse(text, filename=PRODUCT.as_posix())
+    PRODUCT.write_bytes(text.encode('utf-8'))
+
     data = TEST_SOURCE.read_bytes()
     if hashlib.sha256(data).hexdigest() != '3835972e8844f6adeb55af2f7a058e96abe0db6b5aa2a08630b476ecbbf6f994':
-        raise RuntimeError('New regression bytes changed')
+        raise RuntimeError('Original alias regression bytes changed')
+    # The target spelling is now retained; keep the non-recursive replacement
+    # assertion while aligning only this new fixture with that explicit contract.
+    if data.count(b'self.real / "private"') != 2:
+        raise RuntimeError('Unexpected destination-spelling fixture')
+    data = data.replace(b'self.real / "private"', b'self.alias / "private"')
     TEST.write_bytes(data)
+    shell_data = SHELL_TEST_SOURCE.read_bytes()
+    if hashlib.sha256(shell_data).hexdigest() != '402bd9b830bd16c0b824a046280eef15b5a454bd5e1963c0ed4d31e411e2cdb2':
+        raise RuntimeError('Bootstrap regression bytes changed')
+    SHELL_TEST.write_bytes(shell_data)
+    for path in (TEST, SHELL_TEST):
+        ast.parse(path.read_text(encoding='utf-8'), filename=path.as_posix())
     VERSION.write_bytes(VERSION.read_bytes().replace(b'"1.14"', b'"1.15"'))
-    # The only guard-test change is its declared version; no assertions removed.
     GUARD.write_bytes(GUARD.read_bytes().replace(b'1.14', b'1.15'))
     run([sys.executable, 'scripts/sync-generated-sources.py', '--write'], name='official-mirrors')
     run([sys.executable, '-m', 'pytest', '-q', GUARD.as_posix() + '::VerificationPlaneFreezeGuardTests::test_freeze_manifest_unchanged'],
@@ -79,8 +116,6 @@ def prepare():
     old_surface, new_surface = before_freeze['authority_surface_sha256'], after_freeze['authority_surface_sha256']
     if old_surface.keys() != new_surface.keys() or {p for p in old_surface if old_surface[p] != new_surface[p]} != {PRODUCT.as_posix(), VERSION.as_posix()}:
         raise RuntimeError('Unexpected authority surface mutation')
-    # The existing independent fingerprint is not rewritten: neither its authority
-    # map, verifier, corpus, policy nor completion semantics changed in this repair.
     run([sys.executable, 'scripts/sync-generated-sources.py', '--check-committed'], name='normal-mirrors')
     run([sys.executable, 'scripts/check-source-authority.py'], name='normal-source-authority')
     run([sys.executable, '-m', 'pytest', '-q', GUARD.as_posix()], name='normal-freeze-and-guards')
@@ -95,11 +130,12 @@ def prepare():
     if len(fingerprint_nodes) != 1:
         raise RuntimeError('Expected one existing fingerprint guard')
     run([sys.executable, '-m', 'pytest', '-q', *fingerprint_nodes], name='normal-independent-fingerprint')
+    run([sys.executable, '-m', 'pytest', '-q', '-ra', TEST.as_posix(), SHELL_TEST.as_posix()], name='alias-and-bootstrap-regressions')
     dirs = ['readable-python-source/omni_body_skill', 'app/backend/tiangong-backend/omni_body_skill',
             'app/backend/tiangong-backend/_internal/omni_body_skill',
             'app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill',
             'app/backend/tiangong-backend/_internal/v3/bundled_skills/omni_body_skill']
-    allowed = {PRODUCT.as_posix(), VERSION.as_posix(), GUARD.as_posix(), FREEZE.as_posix(), TEST.as_posix()}
+    allowed = {PRODUCT.as_posix(), VERSION.as_posix(), GUARD.as_posix(), FREEZE.as_posix(), TEST.as_posix(), SHELL_TEST.as_posix()}
     allowed.update(d + '/tools/sandbox_runtime.py' for d in dirs)
     allowed.update(d + '/.tiangong-generated-source.json' for d in dirs)
     modified = subprocess.check_output(['git', 'diff', '--name-only', '-z']).decode().split('\0')
@@ -130,7 +166,6 @@ def upload():
             result = json.load(response)
         if result.get('sha') != entry['sha']:
             raise RuntimeError('Remote blob identity differs')
-    # Transfer only content objects, never commits, branches, merges or deployments.
     print('P12_REMOTE_BLOBS=' + json.dumps(receipt, sort_keys=True), flush=True)
 
 
