@@ -154,15 +154,11 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       PYTHONHASHSEED: "0"
-      # Windows shared runners cannot provide AppContainer profiles, release
-      # archive bindings, TTS network or short-path-stable temp directories;
-      # the ci_fragile-marked tests skip there only and keep running locally.
-      TIANGONG_CI_ENV: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
+      TIANGONG_CI_ENV: "0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -177,3 +173,100 @@ jobs:
 
       - name: Run full repository pytest
         run: python -m pytest -q
+
+
+  windows-regression-shards:
+    name: windows-pytest-shard-${{ matrix.shard }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONHASHSEED: "0"
+      # Preserve the EXISTING Windows ci_fragile behavior; no new marks/skips.
+      # The separate P12 native suite still exercises the repaired sandbox.
+      TIANGONG_CI_ENV: "1"
+      SHARD_INDEX: ${{ matrix.shard }}
+      EXPECTED_HEAD: ${{ github.sha }}
+    steps:
+      - name: Checkout exact workflow commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install unchanged source-runtime dependencies
+        run: python -m pip install -r requirements-source.lock
+      - name: Collect every test and execute assigned whole modules
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / ('pytest-shard-' + os.environ['SHARD_INDEX'])
+          root.mkdir()
+          cmd = [sys.executable, 'scripts/ci-pytest-shards.py', 'run', '--expected-head', os.environ['EXPECTED_HEAD'], '--shards', '8', '--shard', os.environ['SHARD_INDEX'], '--output', str(root / 'results')]
+          with (root / 'pytest.log').open('wb') as log:
+              process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              for line in process.stdout:
+                  log.write(line)
+                  log.flush()
+                  print(line.decode('utf-8', errors='replace'), end='', flush=True)
+              code = process.wait()
+          raise SystemExit(code)
+      - name: Preserve original shard outcomes even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-pytest-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/pytest-shard-${{ matrix.shard }}/
+          if-no-files-found: error
+          retention-days: 90
+
+  windows-regression-union:
+    # Keep the former Windows full-regression check name for required checks.
+    name: full-regression-windows-latest
+    needs: windows-regression-shards
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      SHARD_JOBS_RESULT: ${{ needs.windows-regression-shards.result }}
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download only this run attempt's separate shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: windows-pytest-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/pytest-shard-inputs
+          merge-multiple: false
+      - name: Require exact full-collection union and successful shard jobs
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          result = subprocess.run([sys.executable, 'scripts/ci-pytest-shards.py', 'aggregate', '--expected-head', os.environ['EXPECTED_HEAD'], '--shards', '8', '--inputs', str(root / 'pytest-shard-inputs'), '--output', str(root / 'pytest-union' / 'summary.json')])
+          if result.returncode:
+              raise SystemExit(result.returncode)
+          if os.environ['SHARD_JOBS_RESULT'] != 'success':
+              raise SystemExit('At least one shard job did not complete successfully')
+      - name: Preserve union verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-pytest-union-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pytest-union/
+          if-no-files-found: warn
+          retention-days: 90
