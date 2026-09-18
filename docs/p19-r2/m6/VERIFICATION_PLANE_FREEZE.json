@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.17",
+ "verification_plane_version": "1.18",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -13,6 +13,14 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
+  "app/backend/tiangong-backend/v3/world_context_integration.py": "4af7231978b76eac41087937241cd7e15f449c466bfa63b5aecba1dc557f8ee9",
+  "src/world_understanding/domain_contribution.py": "cad8904d2644f89731c82c893a0d99ac85646a32d46e5c602f89bb4946a960bc",
+  "src/world_understanding/world_state/domain_contributions.py": "afcec1c133515e9ef97ea10e7c35246c5fc7b8ae2b00fdfad538440f94ef4f8f",
+  "src/world_understanding/context_output/world_reference_context.py": "63aa318d00f6a11590d545843cde5bc065398776e795583fae688b650f7155e2",
+  "src/world_understanding/context_output/capability_context.py": "a7250ca99af77f8d744bc861cabdc1d2caf6fcac58aca34b75a6317914bac306",
+  "src/world_understanding/context_output/handler.py": "052d9b61b1f2cda853cfd77422ba9f53b495c15454bec32ded3aa04a8c42549c",
+  "src/world_understanding/context_output/output_port.py": "4c50f7a5e587f93fcbc4a405402acffa159087e980011436279a429ce7017c18",
+  "src/world_understanding/context_output/projection.py": "0ffbf68778231278c4cbffb5042637bd0ea2b8a0ba59e72c163f2314b61c7369",
   "app/backend/tiangong-backend/v3/fact_kernel/__init__.py": "c2112a16b04bc889ee7eff22f301fd69a1f976bb0e77d2b6dd57bbe67eac4940",
   "src/contracts/execution.py": "4c90c63dd1e87b7e196af8d1e620dc5bed15130342a4ffe8a14916ba95a39c0d",
   "src/contracts/verification.py": "0fb2a60a472b761a3ca04d26f02bfb3a8004d74c3bc4ddcdcbceb101d3a8fa15",
@@ -90,7 +98,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "9abec645746e521385b8e9d983c543f7277e6546cad40327ac10fbdbe6dc6ac6",
+  "src/total_gateway/verification_plane.py": "06c0158d2b833b125026d41d8814da83f07d0adb87863cc72f9d4f99880f0f8f",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

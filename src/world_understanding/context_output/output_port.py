@@ -7,6 +7,7 @@ from threading import RLock
 
 from contracts.world_understanding.context_packet import WorldContextPacket
 from contracts.world_understanding.query import WorldQuery
+from .capability_context import CapabilityContextPacketV1, ProtectedContextIdentityV1
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +15,7 @@ class ContextEmission:
     correlation_id: str
     query_id: str
     packet: WorldContextPacket
+    capability_packet: CapabilityContextPacketV1 | None = None
 
 
 class ContextOutputPort:
@@ -29,7 +31,8 @@ class ContextOutputPort:
         self._lock = RLock()
         self._pending: OrderedDict[str, ContextEmission] = OrderedDict()
 
-    def emit(self, query: WorldQuery, packet: WorldContextPacket) -> None:
+    def emit(self, query: WorldQuery, packet: WorldContextPacket, *,
+             capability_packet: CapabilityContextPacketV1 | None = None) -> None:
         if packet.scope != query.scope:
             raise ValueError("WORLD_CONTEXT_OUTPUT_SCOPE_MISMATCH")
         if packet.task_ref != query.task_ref or packet.task_sha256 != query.task_sha256:
@@ -38,7 +41,16 @@ class ContextOutputPort:
             raise ValueError("WORLD_CONTEXT_OUTPUT_PACKET_HASH_INVALID")
         if not packet.context_only or packet.authorizes or packet.confirms or packet.changes_risk or packet.may_execute:
             raise ValueError("WORLD_CONTEXT_OUTPUT_AUTHORITY_INVALID")
-        emission = ContextEmission(query.correlation_id, query.query_id, packet)
+        if ((query.frame_ref is not None and packet.frame_ref != query.frame_ref)
+                or (query.basis_world_state_ref is not None and packet.basis_world_state_ref != query.basis_world_state_ref)):
+            raise ValueError("WORLD_CONTEXT_OUTPUT_STATE_MISMATCH")
+        if capability_packet is not None:
+            if (not capability_packet.has_valid_sha256()
+                    or capability_packet.world_state_ref != packet.basis_world_state_ref
+                    or ProtectedContextIdentityV1("query_ref", f"{query.query_id}@{query.query_sha256}")
+                    not in capability_packet.protected_identities):
+                raise ValueError("WORLD_CONTEXT_OUTPUT_CAPABILITY_BINDING_INVALID")
+        emission = ContextEmission(query.correlation_id, query.query_id, packet, capability_packet)
         with self._lock:
             if query.correlation_id in self._pending:
                 raise ValueError("WORLD_CONTEXT_DUPLICATE_CORRELATION")

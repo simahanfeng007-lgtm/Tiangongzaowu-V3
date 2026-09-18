@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from contracts.canonical import canonical_sha256
 from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.context_packet import ExpansionHandle, WorldContextItem, WorldContextPacket
 from contracts.world_understanding.query import WorldQuery
@@ -36,6 +37,7 @@ class WorldContextProjector:
         generated_at_ms: int | None = None,
         prediction_refs: tuple[WorldRecordRef, ...] = (),
         enrichment_candidates: tuple[ContextProjectionCandidate, ...] = (),
+        reserved_tokens: int = 0,
     ) -> ProjectionResult:
         if not query.has_valid_hash():
             raise ValueError("WORLD_QUERY_HASH_INVALID")
@@ -44,6 +46,9 @@ class WorldContextProjector:
             raise ValueError("WORLD_QUERY_FRAME_MISMATCH")
         if query.basis_world_state_ref is not None and query.basis_world_state_ref != state_ref(snapshot):
             raise ValueError("WORLD_QUERY_WORLD_STATE_MISMATCH")
+        if type(reserved_tokens) is not int or not 0 <= reserved_tokens < query.token_budget:
+            raise ValueError("WORLD_CONTEXT_RESERVED_BUDGET_INVALID")
+        content_budget = query.token_budget - reserved_tokens
         now_ms = query.created_at_ms if generated_at_ms is None else int(generated_at_ms)
         if now_ms < query.created_at_ms:
             raise ValueError("WORLD_CONTEXT_GENERATED_BEFORE_QUERY")
@@ -69,6 +74,13 @@ class WorldContextProjector:
         effective_policy_ref, effective_policy_sha256 = effective_projection_policy(
             self.policy, tuple(enrichment_by_key.values())
         )
+
+        if reserved_tokens:
+            effective_policy_ref = "policy.world-context.source-reference.v1"
+            effective_policy_sha256 = canonical_sha256({
+                "domain": effective_policy_ref, "base_policy_sha256": effective_policy_sha256,
+                "reserved_tokens": reserved_tokens,
+            })
 
         prediction_refs = unique_refs(prediction_refs)
         if any(ref.record_type != "world_prediction" for ref in prediction_refs):
@@ -175,7 +187,7 @@ class WorldContextProjector:
             evidence_digest=mandatory_digest, expansion_handles=tuple(mandatory_handles), overflow_state="NONE",
         )
         base_tokens = max(0, int(self.token_estimator(render_world_context_packet(base_packet))))
-        if base_tokens > query.token_budget:
+        if base_tokens > content_budget:
             overflow = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=(),
                 uncertainty_items=(), prediction_items=(),
@@ -202,7 +214,7 @@ class WorldContextProjector:
                 overflow_state="NONE",
             )
             trial_tokens = max(0, int(self.token_estimator(render_world_context_packet(trial))))
-            if trial_tokens <= query.token_budget:
+            if trial_tokens <= content_budget:
                 if group == "ranked":
                     selected_ranked.append(item)
                 else:
@@ -227,7 +239,7 @@ class WorldContextProjector:
             return value, tokens
 
         packet, estimated = _final_packet()
-        while estimated > query.token_budget and accepted_pairs:
+        while estimated > content_budget and accepted_pairs:
             truncated = True
             group, item, handle = accepted_pairs.pop()
             if group == "ranked":
@@ -237,7 +249,7 @@ class WorldContextProjector:
             if handle is not None and handle in selected_handles:
                 selected_handles.remove(handle)
             packet, estimated = _final_packet()
-        if estimated > query.token_budget:
+        if estimated > content_budget:
             raise ValueError("WORLD_CONTEXT_PACKET_BUDGET_INVARIANT")
         return ProjectionResult(packet, estimated)
 

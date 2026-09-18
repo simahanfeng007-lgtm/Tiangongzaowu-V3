@@ -1,0 +1,31 @@
+Verification Plane 1.18 — P12 R1C1 source-reference context integration
+
+This batch connects non-authorizing Tool/Method reference DATA to the existing
+WorldContextRequestHandler, one-shot ContextOutputPort, V3 WorldContextIntegration
+and the existing typed renderer. It does not switch the execution planner.
+
+The existing Tool/Method contribution compilers retain exact SourceRevisionRef
+and FrameBinding addresses in ordinary WorldEntity attributes. The existing
+single materialization binder attaches each new full-address digest only to its
+own entity, avoiding a new all-sources-by-all-records metadata multiplier.
+Inherited source/invalidation keys remain unchanged. No second Source catalog,
+Runtime, ingress, registry, database or current-head authority is introduced.
+
+The context projector reserves identity space before selecting optional base
+records. Query/state/frame/workspace identity is checked at output and V3 readback.
+Descriptive text uses reversible JSON escapes for delimiters and Unicode line
+separators; this is formatting isolation, not proof of general LLM injection immunity.
+
+Add eight context/provenance paths to the inherited frozen set; remove none.
+The only previously frozen source changed is the single version source. Store
+stays v33. Schemas, registry, permissions, sandbox, Golden corpus, independent
+fingerprint, P10 publication freeze, and actual completion/verification semantics
+remain unchanged. Official mirror generation and explicit freeze regeneration
+are followed by ordinary checks without update flags. P7B.2 advances exactly
+to 1.18 and keeps its v33 assertion and all other behavioral checks.
+
+Old snapshots without retained addresses are not silently upgraded. Display
+references explicitly require Source resolution before planning; they are not
+CompositionCandidateSnapshot identities or executable/authorizing objects.
+The HTTP legacy injection, static startup/catalog and static query actions remain
+in place. No P11 waiver, P12 retirement, main merge or deployment is implied.

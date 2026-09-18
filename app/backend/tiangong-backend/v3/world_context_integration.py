@@ -20,6 +20,8 @@ from world_understanding.context_output import (
     WorldContextRequestHandler,
     build_context_request_envelope,
     build_world_context_slot,
+    build_capability_world_context_slot,
+    ProtectedContextIdentityV1,
 )
 from world_understanding.facade import WorldUnderstandingFacade
 from world_understanding.world_state.store import MaterializedWorldSnapshot, WorldStateStore
@@ -40,6 +42,10 @@ def world_understanding_enabled() -> bool:
     if normalized in _DISABLED_VALUES:
         return False
     return normalized in _ENABLED_VALUES
+
+
+def _wrapped_slot_tokens(text: str) -> int:
+    return estimate_tokens("[WORLD_CONTEXT_SLOT]\n" + text + "\n[/WORLD_CONTEXT_SLOT]")
 
 
 def _bounded_token_budget() -> int:
@@ -124,6 +130,12 @@ class WorldContextIntegration:
             snapshot = self._select_current(run_context)
         if snapshot is None:
             return ""
+        scope = snapshot.state.scope
+        scope_workspace = {item.key: item.value for item in scope.scope_bindings}.get("workspace_id")
+        if (scope.life_id != str(getattr(run_context, "life_id", "") or "").strip()
+                or scope.principal_scope_hash != str(getattr(run_context, "principal_scope_hash", "") or "").strip()
+                or (scope_workspace is not None and scope_workspace != str(getattr(run_context, "workspace_id", "") or "").strip())):
+            raise ValueError("WORLD_CONTEXT_TURN_SCOPE_MISMATCH")
         text = str(user_text or "").strip()
         if not text:
             return ""
@@ -174,9 +186,29 @@ class WorldContextIntegration:
         if receipt.disposition != "ACCEPTED" or not receipt.processed:
             return ""
         emission = self.output_port.take(correlation_id)
-        if emission is None or emission.query_id != query.query_id:
+        if emission is None:
             return ""
-        slot = build_world_context_slot(emission.packet, token_estimator=estimate_tokens)
+        packet = emission.packet
+        if (emission.correlation_id != correlation_id or emission.query_id != query.query_id
+                or packet.scope != query.scope or packet.frame_ref != query.frame_ref
+                or packet.basis_world_state_ref != query.basis_world_state_ref
+                or packet.task_ref != query.task_ref or packet.task_sha256 != query.task_sha256
+                or packet.token_budget != query.token_budget or packet.generated_at_ms < query.created_at_ms):
+            raise ValueError("WORLD_CONTEXT_TURN_EMISSION_MISMATCH")
+        capability = emission.capability_packet
+        if capability is not None:
+            query_identity = ProtectedContextIdentityV1("query_ref", f"{query.query_id}@{query.query_sha256}")
+            workspace_identity = ProtectedContextIdentityV1("workspace_id", str(getattr(run_context, "workspace_id", "") or "").strip())
+            if workspace_identity not in capability.protected_identities:
+                raise ValueError("WORLD_CONTEXT_TURN_CAPABILITY_WORKSPACE_MISMATCH")
+            if query_identity not in capability.protected_identities:
+                raise ValueError("WORLD_CONTEXT_TURN_CAPABILITY_QUERY_MISMATCH")
+            result = build_capability_world_context_slot(packet, capability, mode="SHADOW", token_estimator=_wrapped_slot_tokens)
+            if result.status != "AVAILABLE":
+                _log.warning("CAPABILITY_REFERENCE_CONTEXT_UNAVAILABLE: %s", result.reason_code)
+            slot = result.slot
+        else:
+            slot = build_world_context_slot(packet, token_estimator=estimate_tokens)
         return "[WORLD_CONTEXT_SLOT]\n" + slot.rendered_text + "\n[/WORLD_CONTEXT_SLOT]"
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from contracts.canonical import canonical_sha256
+from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.world_understanding._base import WorldRecordRef
 from contracts.world_understanding.entity import WorldEntity
 from contracts.world_understanding.relation import WorldRelation
@@ -123,13 +123,30 @@ def bind_domain_contributions(
                 | {"contribution:" + contribution.contribution_sha256}
             )
         )
+        # Keep the newly retained full-address key local to its owning entity.
+        # Broadcasting every address to every entity/relation would introduce
+        # quadratic snapshot metadata as the source catalog grows. Inherited
+        # invalidation keys remain unchanged; no source permission is inferred.
+        context_sources = {
+            canonical_json_bytes(source.model_dump(mode="json")).decode("utf-8"):
+            "source-ref:" + canonical_sha256(source.model_dump(mode="json"))
+            for source in contribution.source_revision_refs
+        }
         for entity in contribution.entities:
+            entity_keys = source_keys
+            if contribution.contribution_kind in {"TOOL_CAPABILITY", "SKILL_METHOD"}:
+                addresses = [attr.value.string_value for attr in entity.attributes
+                             if attr.key == "context_source_ref"]
+                if addresses:
+                    if len(addresses) != 1 or addresses[0] not in context_sources:
+                        raise ValueError("WORLD_DOMAIN_CONTEXT_SOURCE_NOT_BOUND")
+                    entity_keys = tuple(sorted(set(source_keys) | {context_sources[addresses[0]]}))
             _merge_entity(merged, entity)
             _merge_dependency(
                 dependencies,
                 DependencyBinding(
                     ref=_entity_ref(entity),
-                    source_keys=source_keys,
+                    source_keys=entity_keys,
                 ),
             )
         for relation in contribution.relations:

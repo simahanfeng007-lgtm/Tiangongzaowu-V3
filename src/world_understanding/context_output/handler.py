@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import re
 from typing import Callable
 
 from contracts.world_understanding.ingress import WorldIngressEnvelope
@@ -12,6 +14,10 @@ from .enrichment import ContextProjectionCandidate
 from .output_port import ContextOutputPort
 from .projection import WorldContextProjector
 from .request import compile_world_query
+from .world_reference_context import build_world_reference_context_packet
+from .capability_context import capability_context_reserved_tokens
+
+_log = logging.getLogger("tiangong.world_context")
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,12 +56,26 @@ class WorldContextRequestHandler:
                 # improvement. It must never make the canonical P10 context path
                 # unavailable when its cache/live-frame preconditions are absent.
                 enrichment = ()
+        capability = None
+        reserved = 0
+        try:
+            capability = build_world_reference_context_packet(
+                snapshot, query, token_estimator=self.projector.token_estimator)
+            if capability is not None:
+                reserved = capability_context_reserved_tokens(capability, token_estimator=self.projector.token_estimator)
+        except ValueError as exc:
+            # R1C1 is observational SHADOW, not a dynamic execution switch.
+            # Never synthesize missing addresses or turn display failure into authority.
+            reason = str(exc)
+            code = reason if re.fullmatch(r"[A-Z][A-Z0-9_]{0,159}", reason) else "CAPABILITY_CONTEXT_INVALID_RECORD"
+            _log.warning("CAPABILITY_REFERENCE_CONTEXT_UNAVAILABLE: %s", code)
         result = self.projector.project(
             query,
             snapshot,
             enrichment_candidates=enrichment,
+            reserved_tokens=reserved,
         )
-        self.output_port.emit(query, result.packet)
+        self.output_port.emit(query, result.packet, capability_packet=capability)
         return ContextRequestDisposition("CONTEXT_PACKET_EMITTED", True)
 
 
