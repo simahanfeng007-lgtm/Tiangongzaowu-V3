@@ -1,0 +1,25 @@
+Verification Plane 1.16 — P12 initial CMD private-directory compatibility
+
+Maintenance scope: existing SandboxRunner translates only an initial, literal,
+broker-bound CMD cd/chdir target from private absolute form to its equivalent
+relative form against the exact private native process cwd. Everything outside
+that unambiguous form remains unchanged. No parent ACL or containment relaxation.
+
+The system CMD executable identity, initial-command position, supported switches,
+quoted literal target and common private root are required. User command suffix,
+launch cwd, timeout, process limits, errors and file-effect broker are preserved.
+Existing PowerShell initialization and A5 floors remain unchanged.
+
+Store schema remains 33. All existing frozen authority paths remain covered; only
+the existing sandbox_runtime.py and the single Verification Plane version source
+have changed content. Source ownership and all generated targets use the existing
+official generator. Normal freeze/mirror/authority checks run after explicit
+regeneration with their update switches absent. Golden corpus, independent
+fingerprint, verifier semantics, registry and CompletionGate are not changed.
+
+The old P7B.2 exact-version assertion missed the previous 1.15 update. It is now
+explicitly advanced to 1.16 with the same schema/version exactness, not bypassed.
+Original native tests remain unchanged. New strict native checks require actual
+AppContainer and brokered readback; local skips never substitute for them.
+
+This revision is not P11 acceptance, P12 retirement authorization or deployment.

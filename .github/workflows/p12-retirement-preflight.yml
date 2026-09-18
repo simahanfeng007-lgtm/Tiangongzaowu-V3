@@ -1,4 +1,4 @@
-name: P12 R1A repair regression (read-only)
+name: P12 R1A native path closeout (read-only)
 
 on:
   push:
@@ -45,11 +45,11 @@ jobs:
           tests = ['tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', 'tests/test_p12_retirement_map.py', 'tests/test_p12_retirement_preflight.py']
           for path in tests:
               assert pathlib.Path(path).read_bytes() == subprocess.check_output(['git', 'show', base + ':' + path]), path
-          removed = ['.github/workflows/p12-alias-repair-preparation.yml', '.github/workflows/p12-source-export.yml', '.github/workflows/p12-native-shell-diagnostic.yml', 'scripts/_prepare_p12_alias_repair.py', 'docs/capability-composition/p12-alias-repair.patch', 'docs/capability-composition/p12-alias-tests.py', 'docs/capability-composition/p12-shell-tests.py']
+          removed = ['.github/workflows/p12-alias-repair-preparation.yml', '.github/workflows/p12-source-export.yml', '.github/workflows/p12-native-shell-diagnostic.yml', 'scripts/_prepare_p12_alias_repair.py', 'docs/capability-composition/p12-alias-repair.patch', 'docs/capability-composition/p12-alias-tests.py', 'docs/capability-composition/p12-shell-tests.py', 'scripts/diagnose-p12-cmd-native-path.py', '.github/workflows/p12-native-path-api.yml']
           assert all(not pathlib.Path(path).exists() for path in removed)
           paths = subprocess.check_output(['git', 'ls-files', '-z']).decode('utf-8').split('\0')
           inputs = {p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths if p.endswith('.py') or p == 'requirements-source.lock'}
-          identity = {'head': os.environ['EXPECTED_HEAD'], 'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}']).decode().strip(), 'evidence_mode': 'COMMITTED_SOURCE_REGRESSION', 'inputs': inputs, 'p12_authorized': False, 'retirement_authorized': False, 'production_acceptance': False, 'known_open_case': 'SandboxCloseoutTests.test_absolute_unicode_workspace_path_in_cmd_runs_inside_private_copy'}
+          identity = {'head': os.environ['EXPECTED_HEAD'], 'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}']).decode().strip(), 'evidence_mode': 'COMMITTED_SOURCE_REGRESSION', 'inputs': inputs, 'p12_authorized': False, 'retirement_authorized': False, 'production_acceptance': False, 'required_native_case': 'SandboxCloseoutTests.test_absolute_unicode_workspace_path_in_cmd_runs_inside_private_copy'}
           (out / 'identity.json').write_bytes((json.dumps(identity, sort_keys=True, indent=2) + '\n').encode('utf-8'))
           print('P12_INPUT_IDENTITY=' + json.dumps({k: v for k, v in identity.items() if k != 'inputs'}, sort_keys=True))
           print('P12_INPUT_FILE_COUNT=' + str(len(inputs)))
@@ -67,6 +67,8 @@ jobs:
               ('source-authority', [sys.executable, 'scripts/check-source-authority.py']),
               ('committed-mirrors', [sys.executable, 'scripts/sync-generated-sources.py', '--check-committed']),
               ('historical-diagnostic-contracts', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement*.py', '-v']),
+              ('native-directory', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_cmd_directory_p12.py', 'tests/test_foundation_closeout.py::SandboxCloseoutTests', '--junitxml=' + str(out / 'native-directory.xml')]),
+              ('version-compatibility', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_activation_store_p7b2.py', '--junitxml=' + str(out / 'version-compatibility.xml')]),
               ('freeze-and-golden', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/golden/p19_r2', '--junitxml=' + str(out / 'golden.xml')]),
               ('alias-and-bootstrap', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_workspace_alias_p12.py', 'tests/test_sandbox_shell_bootstrap_p12.py', '--junitxml=' + str(out / 'repair.xml')]),
               ('unchanged-product', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', '--junitxml=' + str(out / 'product.xml')]),
