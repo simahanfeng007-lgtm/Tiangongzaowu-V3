@@ -408,7 +408,8 @@ def _prepare_windows_cmd_initial_directory(
             or norm(executable) != norm(comspec)):
         return command
     switches = launch['flags'].lower().split()
-    if len(switches) != len(set(switches)):
+    # Without /d, registry AutoRun commands can change cwd before the first cd.
+    if '/d' not in switches or len(switches) != len(set(switches)):
         return command
     body = launch['body']
     wrapped = body.startswith('"') and body.endswith('"')

@@ -6,7 +6,7 @@ relative form against the exact private native process cwd. Everything outside
 that unambiguous form remains unchanged. No parent ACL or containment relaxation.
 
 The system CMD executable identity, initial-command position, supported switches,
-quoted literal target and common private root are required. User command suffix,
+mandatory /d disabling AutoRun, quoted literal target and common private root are required. User command suffix,
 launch cwd, timeout, process limits, errors and file-effect broker are preserved.
 Existing PowerShell initialization and A5 floors remain unchanged.
 

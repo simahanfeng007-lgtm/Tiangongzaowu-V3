@@ -83,6 +83,7 @@ class InitialCmdDirectoryTests(unittest.TestCase):
     def test_unrecognized_executable_flags_or_list_preserve_input(self):
         original = self.raw('cd /d "' + self.workspace + r'\project"')
         variants = [original.replace(self.cmd, r'C:\other\cmd.exe'),
+                    original.replace(' /d /s /c ', ' /s /c '),
                     original.replace(' /d /s /c ', ' /d /v:on /c '),
                     original.replace(' /d /s /c ', ' /d /d /c '),
                     original.replace(' /d /s /c ', ' /d /s /k '),
