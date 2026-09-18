@@ -1,0 +1,31 @@
+Verification Plane 1.17 — P12 R1B shared capability-manifest implementation
+
+This is a structural source-ownership change, not an execution-policy change.
+Six existing definitions move verbatim from total_gateway/skill_selection.py to
+src/total_gateway/capability_manifest.py: the shared exception, immutable loaded
+manifest value, strict JSON pairs hook, side-effect projection, release-pinned
+manifest loader and composition execution-manifest compiler.
+
+All six normalized AST hashes equal the 0354b24 pre-extraction definitions.
+The old module exports the same objects rather than copied bodies or wrappers.
+The pre-service Source consumer imports the shared module directly. Existing
+orchestration retains its compatible imports and sees those same function objects;
+its static selection/startup policy is not changed in this batch.
+
+All existing frozen authority paths remain covered. The shared file is added to
+AUTHORITY_SURFACE_FILES, preventing the moved logic from escaping the freeze.
+Changed inherited entries: skill_selection.py, tool_source_launch.py and the single
+Verification Plane version source. Store stays v33. Action Registry, schema bodies,
+risk/side-effect floors, limits, CompletionGate, Golden corpus and independent
+fingerprint are unchanged. No new Runtime, Gateway, registry or fallback exists.
+
+The original source/mirror generator and explicit freeze regeneration are used.
+The P7B.2 version assertion advances exactly to 1.17. Normal checks run without
+update switches. Original P8 test assertions stay intact; its monkeypatch module
+alias points at the defining shared module so negative interception stays effective.
+
+Shared classes/functions now report the shared module as their defining module.
+Old import paths and trusted legacy pickle globals still resolve through aliases;
+this does not claim identical traceback line numbers or old __module__ metadata.
+
+No P11 acceptance, P12 production retirement, main merge or deployment is implied.

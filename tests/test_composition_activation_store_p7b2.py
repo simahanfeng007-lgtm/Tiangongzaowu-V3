@@ -182,9 +182,10 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # continuation/attempt chain. P8 explicitly advances the frozen plane to
     # 1.6; P9 source retention advances it to 1.7. P10 explicitly advances
     # the learning/telemetry and native-path surface to 1.14. P12 explicitly
-    # advances native shell path compatibility through 1.15 to 1.16; Store stays v33.
+    # advances native shell path compatibility through 1.16; R1B moves shared
+    # manifest ownership at 1.17. Store stays v33.
     assert STORE_SCHEMA_VERSION == 33
-    assert VERIFICATION_PLANE_VERSION == "1.16"
+    assert VERIFICATION_PLANE_VERSION == "1.17"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

@@ -1,4 +1,4 @@
-name: P12 R1A native path closeout (read-only)
+name: P12 shared manifest regression (read-only)
 
 on:
   push:
@@ -44,7 +44,12 @@ jobs:
           base = '9e941b22c18e9645ea5c47f94d7b52b439f1653e'
           tests = ['tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', 'tests/test_p12_retirement_map.py', 'tests/test_p12_retirement_preflight.py']
           for path in tests:
-              assert pathlib.Path(path).read_bytes() == subprocess.check_output(['git', 'show', base + ':' + path]), path
+              expected = subprocess.check_output(['git', 'show', base + ':' + path])
+              if path == 'tests/test_tool_manifest_loading_p8.py':
+                  old = b'from total_gateway import skill_selection\n'
+                  assert expected.count(old) == 1
+                  expected = expected.replace(old, b'from total_gateway import capability_manifest as skill_selection\n')
+              assert pathlib.Path(path).read_bytes() == expected, path
           removed = ['.github/workflows/p12-alias-repair-preparation.yml', '.github/workflows/p12-source-export.yml', '.github/workflows/p12-native-shell-diagnostic.yml', 'scripts/_prepare_p12_alias_repair.py', 'docs/capability-composition/p12-alias-repair.patch', 'docs/capability-composition/p12-alias-tests.py', 'docs/capability-composition/p12-shell-tests.py', 'scripts/diagnose-p12-cmd-native-path.py', '.github/workflows/p12-native-path-api.yml']
           assert all(not pathlib.Path(path).exists() for path in removed)
           paths = subprocess.check_output(['git', 'ls-files', '-z']).decode('utf-8').split('\0')
@@ -69,10 +74,11 @@ jobs:
               ('historical-diagnostic-contracts', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement*.py', '-v']),
               ('native-directory', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_cmd_directory_p12.py', 'tests/test_foundation_closeout.py::SandboxCloseoutTests', '--junitxml=' + str(out / 'native-directory.xml')]),
               ('fixture-isolation', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_learning_experience_writeback_p10.py::test_runtime_root_passes_recovery_callback_to_existing_worker', 'tests/test_learning_output_binding_p10.py::test_gateway_start_fixture_restores_prior_epoch_provider_identity', 'tests/test_p18_m1_execution_epoch.py', 'tests/test_p18_m1_canonical_continuity.py', 'tests/test_p18_m1_delivery_boundaries.py', 'tests/test_life_shadow_compat.py', '--junitxml=' + str(out / 'fixture-isolation.xml')]),
+              ('shared-manifest', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_capability_manifest_separation_p12.py', 'tests/test_tool_source_launch_p8.py', 'tests/test_action_schema_catalog_p7c1.py', 'tests/test_result_value_schema_authority_p7d2.py', 'tests/test_skill_selection.py', 'tests/test_skill_authority_p9.py', '--junitxml=' + str(out / 'shared-manifest.xml')]),
               ('version-compatibility', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_activation_store_p7b2.py', '--junitxml=' + str(out / 'version-compatibility.xml')]),
               ('freeze-and-golden', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/golden/p19_r2', '--junitxml=' + str(out / 'golden.xml')]),
               ('alias-and-bootstrap', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_workspace_alias_p12.py', 'tests/test_sandbox_shell_bootstrap_p12.py', '--junitxml=' + str(out / 'repair.xml')]),
-              ('unchanged-product', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', '--junitxml=' + str(out / 'product.xml')]),
+              ('preserved-product-contracts', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', '--junitxml=' + str(out / 'product.xml')]),
           ]
           failed = False
           for name, command in commands:
