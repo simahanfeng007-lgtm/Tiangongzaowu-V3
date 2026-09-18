@@ -38,6 +38,13 @@ def test_parent_ticket_binds_the_persisted_effect_claim(
         release_source_root=ROOT, workspace_root=workspace,
         skill_root=ROOT / "src/omni_body_skill",
     )
+    # The real embedded Gateway installs process-global providers. Record the
+    # surrounding identities before startup and restore them via fixture teardown,
+    # including exceptional startup; no actual startup or authority is mocked.
+    from v3.simple_chain import kernel
+    for name in ("_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER",
+                 "_SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER"):
+        monkeypatch.setattr(kernel, name, getattr(kernel, name))
     runtime = GatewayRuntime.start(config)
     observed = []
 

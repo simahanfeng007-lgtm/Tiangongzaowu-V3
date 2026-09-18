@@ -75,7 +75,12 @@ class WorldContextRequestHandler:
             enrichment_candidates=enrichment,
             reserved_tokens=reserved,
         )
-        self.output_port.emit(query, result.packet, capability_packet=capability)
+        if capability is None:
+            # Keep the existing base-only output protocol. Do not discard a
+            # present capability packet to accommodate an incompatible sink.
+            self.output_port.emit(query, result.packet)
+        else:
+            self.output_port.emit(query, result.packet, capability_packet=capability)
         return ContextRequestDisposition("CONTEXT_PACKET_EMITTED", True)
 
 

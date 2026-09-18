@@ -186,7 +186,8 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # manifest ownership at 1.17; R1C1 adds source-reference context at 1.18.
     # Store stays v33.
     assert STORE_SCHEMA_VERSION == 33
-    assert VERIFICATION_PLANE_VERSION == "1.18"
+    # R1C2 adds the read-only pre-Plan Source/P4 preparation boundary at 1.19.
+    assert VERIFICATION_PLANE_VERSION == "1.19"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

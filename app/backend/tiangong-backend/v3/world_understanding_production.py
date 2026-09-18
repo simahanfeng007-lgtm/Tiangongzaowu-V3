@@ -264,6 +264,35 @@ def reconcile_production_method_retention():
     return _method_run_resolver.reconcile()
 
 
+def prepare_production_composition(query, reference_context, *, tool_source, registry,
+                                   prepared_at_ms, run_context=None):
+    """Use the installed Gateway/World pair before a sealed Plan exists."""
+    context = run_context or current_run_context()
+    scope = _scope(_run_identity(context))
+    resolver = _method_run_resolver
+    if resolver is None or scope != query.scope:
+        raise ValueError("COMPOSITION_SOURCE_RUNTIME_SCOPE_UNAVAILABLE")
+    return resolver.prepare_composition(query=query, reference_context=reference_context,
+        tool_source=tool_source, registry=registry, request_id=context.request_id,
+        run_id=context.run_id, generation=context.generation, workspace_id=context.workspace_id,
+        prepared_at_ms=prepared_at_ms)
+
+
+def compile_production_composition(prepared, primary_text, *, tool_source, validated_at_ms,
+                                   run_context=None, repair_text=None, available_verifiers=frozenset()):
+    """The model supplies only its Proposal text; the runtime owns all identities."""
+    from total_gateway.composition_source_preparation import PreparedSourceComposition
+    context = run_context or current_run_context()
+    resolver = _method_run_resolver
+    if (type(prepared) is not PreparedSourceComposition or resolver is None
+            or _scope(_run_identity(context)) != prepared.query.scope
+            or (context.request_id, context.run_id, context.generation, context.workspace_id)
+            != (prepared.context.request_id, prepared.context.run_id, prepared.context.generation, prepared.workspace_id)):
+        raise ValueError("COMPOSITION_SOURCE_REPLY_SCOPE_MISMATCH")
+    return resolver.compile_composition(prepared, primary_text, tool_source=tool_source,
+        validated_at_ms=validated_at_ms, repair_text=repair_text, available_verifiers=available_verifiers)
+
+
 def production_context_output_port() -> ContextOutputPort:
     production_world_understanding_runtime()
     assert _context_output is not None

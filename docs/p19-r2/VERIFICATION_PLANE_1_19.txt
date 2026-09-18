@@ -1,0 +1,33 @@
+Verification Plane 1.19 — P12 R1C2 exact Source to P4 planning seam
+
+The installed V3 World context bridge and its existing Gateway/World reader now
+provide explicit preparation and reply-compilation methods. They resolve the
+request's precise Source references into the ORIGINAL P4 candidate snapshot,
+compile context, strict Proposal parser, Plan compiler and tri-state validator.
+No model chooses Source files, commits, hashes, registry, risk or permissions.
+
+Add src/total_gateway/composition_source_preparation.py to the inherited frozen
+surface. Preserve every prior member. Changed prior members are the existing
+context handler, V3 context bridge, V3 installed-reader bridge, Method run reader
+and this single version source. The sealed-Plan read and retention API is intact.
+
+P8 Tool bundle evidence is independently checked against pinned native Git inputs;
+P9 Method archives retain their signature and exact-state validation. P8 review
+blockers and installed-release admission remain separate, unfulfilled by planning.
+A pre-Plan method never fabricates an executable Plan registration or retention pin.
+
+The original empty/base-context output protocol is preserved without discarding
+nonempty capability packets. A leaking real Gateway test fixture now restores its
+prior callbacks; production callback lifetime and original failure assertions
+are unchanged. Full Windows sharding and full Ubuntu regression are unchanged.
+
+Store remains v33. Contracts, action registry, risk/permission rules, sandbox,
+product timeouts, Golden corpus, independent fingerprint and P19 completion
+semantics are unchanged. Official mirror and explicit freeze generation precede
+normal tests without update flags. Exact-version assertions advance to 1.19.
+
+This is system-invoked planning preparation, NOT automatic default-planner
+cutover. A result is non-authorizing even when mechanically PROVED_VALID;
+UNKNOWN and PROVED_INVALID stay unchanged. Execution must still use the existing
+registration/activation, Policy/Ticket/Grant/A5 and P19 completion chain.
+No P11 waiver, legacy decommission, main merge or deployment is implied.

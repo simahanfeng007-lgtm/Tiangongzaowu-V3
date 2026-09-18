@@ -1,4 +1,4 @@
-name: P12 World reference context regression (read-only)
+name: P12 Source to P4 planning regression (read-only)
 
 on:
   push:
@@ -74,6 +74,8 @@ jobs:
               ('historical-diagnostic-contracts', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement*.py', '-v']),
               ('native-directory', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_cmd_directory_p12.py', 'tests/test_foundation_closeout.py::SandboxCloseoutTests', '--junitxml=' + str(out / 'native-directory.xml')]),
               ('fixture-isolation', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_learning_experience_writeback_p10.py::test_runtime_root_passes_recovery_callback_to_existing_worker', 'tests/test_learning_output_binding_p10.py::test_gateway_start_fixture_restores_prior_epoch_provider_identity', 'tests/test_p18_m1_execution_epoch.py', 'tests/test_p18_m1_canonical_continuity.py', 'tests/test_p18_m1_delivery_boundaries.py', 'tests/test_life_shadow_compat.py', '--junitxml=' + str(out / 'fixture-isolation.xml')]),
+              ('source-to-p4', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_source_composition_preparation_p12.py', 'tests/test_capability_composition_p4.py', 'tests/test_tool_source_world_p8.py', 'tests/test_method_run_retention_p9.py', '--junitxml=' + str(out / 'source-to-p4.xml')]),
+              ('base-protocol-and-isolation', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_gateway_parent_claim_ticket_p8.py', 'tests/test_p18_m1_execution_epoch.py', 'tests/test_repository_context_p14_m4.py', 'tests/test_repository_context_p14_m4_wiring.py', '--junitxml=' + str(out / 'base-protocol-and-isolation.xml')]),
               ('world-reference-context', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_world_reference_context_p12.py', 'tests/test_world_reference_context_boundaries_p12.py', 'tests/test_one_world_context_p6.py', 'tests/test_world_understanding_p10_integration_guards.py', 'tests/test_world_understanding_p10_context_output.py', 'tests/test_method_source_publication_p9.py', 'tests/test_method_run_retention_p9.py', '--junitxml=' + str(out / 'world-reference-context.xml')]),
               ('shared-manifest', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_capability_manifest_separation_p12.py', 'tests/test_tool_source_launch_p8.py', 'tests/test_action_schema_catalog_p7c1.py', 'tests/test_result_value_schema_authority_p7d2.py', 'tests/test_skill_selection.py', 'tests/test_skill_authority_p9.py', '--junitxml=' + str(out / 'shared-manifest.xml')]),
               ('version-compatibility', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_activation_store_p7b2.py', '--junitxml=' + str(out / 'version-compatibility.xml')]),
