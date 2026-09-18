@@ -1,7 +1,9 @@
 """P12 R1B shared implementation, compatibility and rejection-path regression.
 
-AST pins below bind the six moved definitions to the exact pre-extraction 0354b24
-source. They deliberately test a move, not a second executable reference model.
+Definition-byte pins bind the six moved definitions to the exact pre-extraction
+0354b24 source blob f185e752b4cb3116b8aca547e36d51ac19c026b0. Only CRLF
+normalization is allowed. This avoids Python-version-dependent ast.dump output
+without weakening source identity or installing a second reference implementation.
 """
 from __future__ import annotations
 
@@ -23,13 +25,13 @@ from total_gateway import skill_selection as legacy
 from tests.test_tool_manifest_evolution_p8 import compiled
 
 ROOT = Path(__file__).resolve().parents[1]
-AST_PINS = {
-    "SkillSelectionError": "2438b714b19c77f84dd5bf3e3fab13e7dc0e57805699727c3b1bd71080bf6272",
-    "LoadedModelCapabilityManifest": "8e6e25fc2a6a05b85acefaa6a31e6f496530bb7fa99f67a80589665a4fc48bcb",
-    "_strict_json_pairs": "fd613b27151422c8f3954f7f166d2d5129ba497973705aa1bdef9b1b93010d3a",
-    "_routing_side_effects": "4b0429779c6dbb14d025155088b4268b1379a832923358bde1b8c5502032d6e7",
-    "load_model_capability_manifest": "c2ffdf63ff0c48f3c6a8826f38386cbe012ea4720880ea507de7aa4f9fddcec3",
-    "compile_composition_execution_manifest": "f89e01cfe2424cb5a186d45c82308c63fd7f9a67d9d157754bf1681d68911c9b",
+DEFINITION_PINS = {
+    "SkillSelectionError": "1f02fd860ec32590736168d2a914fc439262a18f28c6a28e6389200de596ea52",
+    "LoadedModelCapabilityManifest": "056e9e0c891a431ae506e768c686382333343d24bd1beaf729dbadbedd0c1f4f",
+    "_strict_json_pairs": "de98bb1e90f2e039afab29b9860e4116f5f22edc378ff4582e7c45ce6ca7a22a",
+    "_routing_side_effects": "e81a62f999be0c22e7cf4f23534c0a17cb4a5b1df574f2935481b3bbace22124",
+    "load_model_capability_manifest": "d82ea06c54ea6aa55195444033f30a11961b42c9ccac3a4ee80891f08eda06fe",
+    "compile_composition_execution_manifest": "245915170843aa409d91c78c519f32c13af411224916cbd962e9232fbb86c5ee"
 }
 
 
@@ -48,22 +50,62 @@ def manifest_path(tmp_path):
     return path
 
 
-@pytest.mark.parametrize("name", AST_PINS)
+@pytest.mark.parametrize("name", DEFINITION_PINS)
 def test_legacy_exports_the_same_object_without_a_wrapper(name):
     assert getattr(legacy, name) is getattr(shared, name)
 
 
-@pytest.mark.parametrize("name,digest", AST_PINS.items())
-def test_moved_implementation_ast_is_unchanged(name, digest):
-    tree = ast.parse((ROOT / "src/total_gateway/capability_manifest.py").read_text("utf-8"))
-    nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name == name]
-    assert len(nodes) == 1
-    assert hashlib.sha256(ast.dump(nodes[0], include_attributes=False).encode()).hexdigest() == digest
+def _definition_bytes(source: bytes, name: str) -> bytes:
+    """Pin complete source, including decorators; do not serialize versioned ASTs."""
+    source = source.replace(b"\r\n", b"\n")
+    tree = ast.parse(source.decode("utf-8"))
+    nodes = [node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+             and node.name == name]
+    if len(nodes) != 1:
+        raise ValueError("Expected exactly one top-level definition: " + name)
+    node = nodes[0]
+    first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+    lines = source.splitlines(keepends=True)
+    # AST columns are UTF-8 byte offsets. Slice bytes, not Unicode characters.
+    return b"".join(lines[first - 1:node.end_lineno - 1]) + lines[node.end_lineno - 1][:node.end_col_offset]
+
+
+@pytest.mark.parametrize("name,digest", DEFINITION_PINS.items())
+def test_moved_definition_bytes_are_unchanged(name, digest):
+    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes()
+    assert hashlib.sha256(_definition_bytes(source, name)).hexdigest() == digest
+
+
+@pytest.mark.parametrize("name", DEFINITION_PINS)
+def test_definition_pin_rejects_body_changes(name):
+    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes()
+    body = _definition_bytes(source, name)
+    # A harmless comment still changes the pinned source, so executable edits cannot hide.
+    altered = body.replace(b"\n", b"  # changed definition\n", 1)
+    assert altered != body
+    mutated_source = source.replace(body, altered, 1)
+    assert hashlib.sha256(_definition_bytes(mutated_source, name)).hexdigest() != DEFINITION_PINS[name]
+
+
+def test_definition_pin_includes_decorators_and_utf8_end_columns():
+    source = '@decorator(frozen=True)\nclass Sample:\n    value = "你好"\n'.encode("utf-8")
+    pinned = _definition_bytes(source, "Sample")
+    assert pinned == source.rstrip(b"\n")
+    assert _definition_bytes(b"# moved\n\n" + source + b"\nother = 1\n", "Sample") == pinned
+    assert _definition_bytes(source.replace(b"\n", b"\r\n"), "Sample") == pinned
+    assert _definition_bytes(source.replace(b"True", b"False"), "Sample") != pinned
+
+
+@pytest.mark.parametrize("source", [b"", b"from elsewhere import Sample", b"class Sample: pass\nclass Sample: pass\n"])
+def test_definition_pin_rejects_missing_imported_or_duplicate_definitions(source):
+    with pytest.raises(ValueError, match="exactly one"):
+        _definition_bytes(source, "Sample")
 
 
 def test_legacy_has_no_duplicate_shared_definitions():
     tree = ast.parse((ROOT / "src/total_gateway/skill_selection.py").read_text("utf-8"))
-    assert not {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef))} & AST_PINS.keys()
+    assert not {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef))} & DEFINITION_PINS.keys()
 
 
 @pytest.mark.parametrize("first", ["capability_manifest", "skill_selection"])
