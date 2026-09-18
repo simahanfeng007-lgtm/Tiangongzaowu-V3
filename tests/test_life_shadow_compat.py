@@ -60,6 +60,16 @@ def canonical(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def tamper_last_byte(path: Path) -> None:
+    """Fault fixture: always change ciphertext, even when its last byte is x."""
+    original = path.read_bytes()
+    if not original:
+        raise ValueError("Cannot tamper with an empty ciphertext fixture")
+    corrupted = original[:-1] + bytes((original[-1] ^ 1,))
+    assert corrupted != original
+    path.write_bytes(corrupted)
+
+
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical(value))
@@ -542,10 +552,26 @@ class LifeShadowCompatibilityTests(unittest.TestCase):
         )
         connection.close()
 
+    def test_corruption_fixture_changes_every_possible_final_byte(self) -> None:
+        path = Path(self.temporary.name) / "ciphertext-fixture.bin"
+        for final_byte in range(256):
+            with self.subTest(final_byte=final_byte):
+                original = b"unchanged-prefix" + bytes((final_byte,))
+                path.write_bytes(original)
+                tamper_last_byte(path)
+                corrupted = path.read_bytes()
+                self.assertEqual(corrupted[:-1], original[:-1])
+                self.assertEqual(len(corrupted), len(original))
+                self.assertEqual(corrupted[-1] ^ final_byte, 1)
+        path.write_bytes(b"")
+        with self.assertRaisesRegex(ValueError, "empty"):
+            tamper_last_byte(path)
+        self.assertEqual(path.read_bytes(), b"")
+
     def test_shadow_failure_is_isolated_and_snapshot_remains_unchanged(self) -> None:
         api = ShadowLifeApi(self.reader())
         context_blob = self.snapshot / "lives" / LIFE_ID / "context" / "envelopes" / f"{CONTEXT_HASH}.ctx"
-        context_blob.write_bytes(context_blob.read_bytes()[:-1] + b"x")
+        tamper_last_byte(context_blob)
         refresh_manifest(self.snapshot)
         before_request = snapshot_tree_sha256(self.snapshot)
         status, payload = ShadowLifeApi(self.reader()).handle(
