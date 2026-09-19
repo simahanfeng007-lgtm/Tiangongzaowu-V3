@@ -403,3 +403,34 @@ def test_released_generation_refuses_execution(execution):
                        match='not on the current generation'):
         c['gateway'].get_composition_step_authorization(
             c['admission'].executable_plan_id, 's1', now_ms=5370)
+
+
+def test_completion_gate_completes_only_with_required_facts(execution):
+    """Execution success reaches business Completion only through the Gate."""
+    from total_gateway.completion_gate import CompletionGate, CompletionRequirements
+    c = execution
+    _receipt, record, outcome, _backend = _authorize_and_dispatch(c)
+    assert outcome.status == 'SUCCEEDED'
+    gate = CompletionGate(c['objects'], c['facts'],
+                          head_state_reader=c['gateway'].get_effect_head_state)
+    requirements = CompletionRequirements(
+        request_id=record.request.request_id,
+        run_id=record.request.run_id,
+        generation=record.request.generation,
+        required_execution_effect_ids=(record.request.prebound_effect_id,),
+    )
+    decision = gate.evaluate(requirements)
+    assert decision.outcome == 'COMPLETED'
+    assert decision.execution_ready and decision.can_transition_request_completed
+    # A required Effect without its durable Fact cannot complete: the same
+    # requirement pointed at the seeded parent-only world fails closed.
+    missing = CompletionRequirements(
+        request_id=record.request.request_id,
+        run_id=record.request.run_id,
+        generation=record.request.generation,
+        required_execution_effect_ids=tuple(sorted({
+            record.request.prebound_effect_id, 'eff_' + 'e' * 64})),
+    )
+    refused = gate.evaluate(missing)
+    assert refused.outcome != 'COMPLETED'
+    assert not refused.can_transition_request_completed
