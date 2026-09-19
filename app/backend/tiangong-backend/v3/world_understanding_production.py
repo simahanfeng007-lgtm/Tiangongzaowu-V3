@@ -293,6 +293,29 @@ def compile_production_composition(prepared, primary_text, *, tool_source, valid
         validated_at_ms=validated_at_ms, repair_text=repair_text, available_verifiers=available_verifiers)
 
 
+def register_production_composition(result, *, verification_registry, intent_evidence,
+                                    workspace, plan_inputs, step_bindings, final_output_aliases,
+                                    issued_at_ms, expires_at_ms, recorded_at_ms, run_context=None):
+    """Admit one compiled Source plan into the original P7 registration chain.
+
+    Registration is eligibility state only: no Policy decision, Ticket, Grant,
+    Runtime call or Completion is produced here, and no model field is read.
+    """
+    from total_gateway.composition_source_preparation import SourceCompositionResult
+    context = run_context or current_run_context()
+    resolver = _method_run_resolver
+    if (type(result) is not SourceCompositionResult or resolver is None
+            or _scope(_run_identity(context)) != result.preparation.query.scope
+            or (context.request_id, context.run_id, context.generation, context.workspace_id)
+            != (result.preparation.context.request_id, result.preparation.context.run_id,
+                result.preparation.context.generation, result.preparation.workspace_id)):
+        raise ValueError("COMPOSITION_SOURCE_REGISTRATION_SCOPE_MISMATCH")
+    return resolver.register_composition(result, verification_registry=verification_registry,
+        intent_evidence=intent_evidence, workspace=workspace, plan_inputs=plan_inputs,
+        step_bindings=step_bindings, final_output_aliases=final_output_aliases,
+        issued_at_ms=issued_at_ms, expires_at_ms=expires_at_ms, recorded_at_ms=recorded_at_ms)
+
+
 def production_context_output_port() -> ContextOutputPort:
     production_world_understanding_runtime()
     assert _context_output is not None

@@ -52,6 +52,11 @@ class MethodRunSourceResolver:
         from .composition_source_preparation import compile_source_composition
         return compile_source_composition(self, prepared, primary_text, **system_inputs)
 
+    def register_composition(self, result, **system_inputs):
+        """Admit one compiled result via the original P7 registration chain."""
+        from .composition_registration_intake import register_source_composition
+        return register_source_composition(self, result, **system_inputs)
+
     def _generation(self, plan) -> dict:
         current = self.gateway.get_request_generation_binding(plan.request_id)
         if (current is None or current["run_id"] != plan.run_id
