@@ -9,6 +9,22 @@ header or the stage register. P8 merged at `34668e0`, P9 merged at `b1ea3e9`, an
 P10 PR #75 merged at `a13979a`. Product-evaluation and operational obligations
 are carried explicitly rather than converted into phase PASS by merge or CI.
 
+## Current checkpoint (2026-09-20)
+
+- main: `069d2580517e418a01aff16ee68e54d7dd6a0aef` (PR #79 merged 2026-09-19).
+- P12 in progress and NOT closed: R0–R1C2 merged via PR #78 (`af2fdf1`);
+  R1C3 (Source→P4 results into the original P7 registration/sealing chain,
+  Verification Plane 1.19→1.20) merged via PR #79 (`069d258`). Post-merge
+  Architecture and P19 golden gates on main both succeeded.
+- Next package: P12-R1C4 controlled end-to-end execution through the original
+  Adapter/Policy/Ticket/Grant/Runtime → Effect/Fact → P19 → Completion chain.
+- P11 formal acceptance remains open; PR #77 is still draft/unmerged
+  (HEAD `3e8a6f0ffbf1488cc1e3f954773917b01767ced9`, pre-dates current main).
+- Verification Plane 1.20; Gateway Store v33.
+- Working-package ledger, D01–D07 obligations and R01–R07 resource status:
+  `P12_TO_P17_EXECUTION_LEDGER_2026-09-20.md`.
+- The 2026-09-12 checkpoint below is retained as history.
+
 ## Current checkpoint (2026-09-12)
 
 - P10 exact tested candidate: `a23c4fe1e559483b7be2b3f4d3534d45de58650f`.
