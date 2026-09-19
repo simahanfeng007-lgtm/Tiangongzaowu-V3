@@ -312,11 +312,11 @@ class _BackendFixture:
         return 200, value, hashlib.sha256(raw).hexdigest()
 
 
-def _coordinator(c, backend):
+def _coordinator(c, backend, *, facts=None):
     return CompositionStepExecutionCoordinator(
         store=c['gateway'],
         objects=c['objects'],
-        facts=c['facts'],
+        facts=c['facts'] if facts is None else facts,
         registry=c['registry'],
         schema_catalog=c['loaded'].schema_catalog,
         capability_manifest=c['exec_manifest'],
@@ -434,3 +434,105 @@ def test_completion_gate_completes_only_with_required_facts(execution):
     refused = gate.evaluate(missing)
     assert refused.outcome != 'COMPLETED'
     assert not refused.can_transition_request_completed
+
+
+class _FailingBackend:
+    """Deterministic backend failure; explicitly NOT live I/O."""
+
+    def __init__(self, action_id):
+        self._action_id = action_id
+        self.calls = 0
+
+    def request(self, method, path, payload, *, timeout_seconds,
+                backend_started=False, before_request=None):
+        del method, path, payload, timeout_seconds, backend_started, before_request
+        self.calls += 1
+        value = {
+            'schema': 'tiangong.v3.omni_body.v1', 'ok': False,
+            'zhuangtai': 'shibai', 'gongju': 'omni_body',
+            'action': self._action_id, 'target': '',
+            'result': {'success': False}, 'llm_brief': 'R1C4 fixture failure',
+            'evidence': {},
+        }
+        raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                         separators=(',', ':')).encode('utf-8')
+        return 200, value, hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize('commit_first', [False, True])
+def test_fact_commit_crash_stays_started_and_reconciles_on_restart(
+        execution, commit_first):
+    """A Fact-boundary crash never replays; restart reconciles the exact fact.
+
+    commit_first=False leaves no durable Fact, so recovery closes the Effect
+    AMBIGUOUS; commit_first=True leaves the exact batch, so recovery completes
+    it SUCCEEDED. Neither path calls the backend a second time.
+    """
+    from tests.test_composition_step_execution_p7d1 import _FactCrashProxy
+    c = execution
+    receipt = c['authority'].issue_composition_step(
+        parent_ticket_id=c['outer'].payload.ticket_id,
+        registration_id=c['admission'].registration_id,
+        step_id='s1', now_ms=5350)
+    assert receipt['status'] == 'OK'
+    record = c['gateway'].get_composition_step_authorization(
+        c['admission'].executable_plan_id, 's1', now_ms=5350)
+    effect_id = record.request.prebound_effect_id
+    crash_backend = _BackendFixture(
+        c['gateway'], c['facts'], effect_id,
+        c['plan_result'].plan.steps[0].action_id)
+    crashed = _coordinator(c, crash_backend,
+                           facts=_FactCrashProxy(c['facts'], commit_first=commit_first))
+    from total_gateway.composition_step_execution import (
+        CompositionStepExecutionError)
+    with pytest.raises(CompositionStepExecutionError,
+                       match='composition.execution.fact_commit_unknown'):
+        crashed.dispatch_record(record, now_ms=5360)
+    assert crash_backend.calls == 1
+    assert c['gateway'].get_effect(effect_id).state == 'SIDE_EFFECT_STARTED'
+    assert (c['facts'].get_batch_for_effect(effect_id) is not None) is commit_first
+
+    # A fresh coordinator over the same durable authorities plays restart.
+    restart_backend = _BackendFixture(
+        c['gateway'], c['facts'], effect_id,
+        c['plan_result'].plan.steps[0].action_id)
+    restarted = _coordinator(c, restart_backend)
+    outcomes = restarted.recover_started(now_ms=5400)
+    assert len(outcomes) == 1
+    assert outcomes[0].recovered is True
+    assert outcomes[0].status == ('SUCCEEDED' if commit_first else 'AMBIGUOUS')
+    assert crash_backend.calls == 1
+    assert restart_backend.calls == 0
+    assert c['gateway'].get_effect(effect_id).state == outcomes[0].status
+    assert restarted.dispatch_next(now_ms=5410) is None
+
+
+def test_backend_failure_is_final_and_never_completes(execution):
+    """A failed action is a durable FAILED_FINAL Effect, never a Completion."""
+    from total_gateway.completion_gate import CompletionGate, CompletionRequirements
+    c = execution
+    receipt = c['authority'].issue_composition_step(
+        parent_ticket_id=c['outer'].payload.ticket_id,
+        registration_id=c['admission'].registration_id,
+        step_id='s1', now_ms=5350)
+    assert receipt['status'] == 'OK'
+    record = c['gateway'].get_composition_step_authorization(
+        c['admission'].executable_plan_id, 's1', now_ms=5350)
+    failing = _FailingBackend(c['plan_result'].plan.steps[0].action_id)
+    coordinator = _coordinator(c, failing)
+    outcome = coordinator.dispatch_record(record, now_ms=5360)
+    assert failing.calls == 1
+    assert outcome.status == 'FAILED_FINAL'
+    effect = c['gateway'].get_effect(record.request.prebound_effect_id)
+    assert effect.state == 'FAILED_FINAL'
+    # The action's failure cannot become business Completion.
+    gate = CompletionGate(c['objects'], c['facts'],
+                          head_state_reader=c['gateway'].get_effect_head_state)
+    decision = gate.evaluate(CompletionRequirements(
+        request_id=record.request.request_id,
+        run_id=record.request.run_id,
+        generation=record.request.generation,
+        required_execution_effect_ids=(record.request.prebound_effect_id,),
+    ))
+    assert decision.outcome == 'FAILED'
+    assert decision.can_transition_request_completed is False
