@@ -42,6 +42,16 @@ class MethodRunSourceResolver:
         if not isinstance(self.gateway, GatewayStateStore) or type(self.world) is not ProductionWorldUnderstandingRuntime:
             raise TypeError("METHOD_RUN_EXISTING_AUTHORITIES_REQUIRED")
 
+    def prepare_composition(self, **system_inputs):
+        """Pre-Plan Source preparation, separate from the sealed-Plan read API."""
+        from .composition_source_preparation import prepare_source_composition
+        return prepare_source_composition(self, **system_inputs)
+
+    def compile_composition(self, prepared, primary_text, **system_inputs):
+        """Use the existing P4 compiler; do not register or execute its result."""
+        from .composition_source_preparation import compile_source_composition
+        return compile_source_composition(self, prepared, primary_text, **system_inputs)
+
     def _generation(self, plan) -> dict:
         current = self.gateway.get_request_generation_binding(plan.request_id)
         if (current is None or current["run_id"] != plan.run_id

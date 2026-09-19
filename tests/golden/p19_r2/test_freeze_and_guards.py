@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.14"
+- the single Verification Plane version source exists and is "1.19"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.14")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.19")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.14"' in (
+            if '"1.19"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -204,15 +204,26 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # Every 1.14 execution, result-schema and verification authority
+            # Every 1.19 execution, result-schema and verification authority
             # file is content-hashed.  Semantic drift in the runtime chain,
             # store/binding/coordinator/executor/readiness/fencing/successor
             # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.14; all inherited 1.10 and earlier entries remain covered.
+    #: The authority surface frozen at 1.19; all inherited 1.10 and earlier entries remain covered.
     AUTHORITY_SURFACE_FILES = (
+        "src/total_gateway/composition_source_preparation.py",
+        # R1C1 reference-only context provenance; old members remain covered.
+        "app/backend/tiangong-backend/v3/world_context_integration.py",
+        "src/world_understanding/domain_contribution.py",
+        "src/world_understanding/world_state/domain_contributions.py",
+        "src/world_understanding/context_output/world_reference_context.py",
+        "src/world_understanding/context_output/capability_context.py",
+        "src/world_understanding/context_output/handler.py",
+        "src/world_understanding/context_output/output_port.py",
+        "src/world_understanding/context_output/projection.py",
+
         "app/backend/tiangong-backend/v3/fact_kernel/__init__.py",
         "src/contracts/execution.py",
         "src/contracts/verification.py",
@@ -284,6 +295,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/readiness_collector.py",
         "src/total_gateway/runtime.py",
         "src/total_gateway/skill_selection.py",
+        "src/total_gateway/capability_manifest.py",
         "src/total_gateway/tickets.py",
         "src/total_gateway/windows_private_files.py",
         "src/total_gateway/verification_repair_coordinator.py",

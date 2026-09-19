@@ -253,7 +253,7 @@ def preflight_source_revision(config) -> dict[str, object] | None:
         if not sys.dont_write_bytecode:
             raise SourceLaunchError("source_launch.bytecode_writes_must_be_disabled")
         from .release_manifest import select_latest_release_manifest_with_path
-        from .skill_selection import load_model_capability_manifest
+        from .capability_manifest import load_model_capability_manifest
 
         candidates = tuple(path for path in (config.release_manifest_path, *config.release_manifest_candidates) if path is not None)
         if not candidates:

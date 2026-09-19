@@ -20,6 +20,8 @@ from world_understanding.context_output import (
     WorldContextRequestHandler,
     build_context_request_envelope,
     build_world_context_slot,
+    build_capability_world_context_slot,
+    ProtectedContextIdentityV1,
 )
 from world_understanding.facade import WorldUnderstandingFacade
 from world_understanding.world_state.store import MaterializedWorldSnapshot, WorldStateStore
@@ -40,6 +42,10 @@ def world_understanding_enabled() -> bool:
     if normalized in _DISABLED_VALUES:
         return False
     return normalized in _ENABLED_VALUES
+
+
+def _wrapped_slot_tokens(text: str) -> int:
+    return estimate_tokens("[WORLD_CONTEXT_SLOT]\n" + text + "\n[/WORLD_CONTEXT_SLOT]")
 
 
 def _bounded_token_budget() -> int:
@@ -113,7 +119,7 @@ class WorldContextIntegration:
         # part of the state stream; ambiguity means no context for this turn.
         return candidates[0] if len(candidates) == 1 else None
 
-    def render_for_turn(self, *, run_context: Any, user_text: str, now_ms: int | None = None) -> str:
+    def _emission_for_turn(self, *, run_context: Any, user_text: str, now_ms: int | None = None):
         snapshot = None
         if self.repository_snapshot_refresher is not None:
             try:
@@ -123,10 +129,16 @@ class WorldContextIntegration:
         if snapshot is None:
             snapshot = self._select_current(run_context)
         if snapshot is None:
-            return ""
+            return None
+        scope = snapshot.state.scope
+        scope_workspace = {item.key: item.value for item in scope.scope_bindings}.get("workspace_id")
+        if (scope.life_id != str(getattr(run_context, "life_id", "") or "").strip()
+                or scope.principal_scope_hash != str(getattr(run_context, "principal_scope_hash", "") or "").strip()
+                or (scope_workspace is not None and scope_workspace != str(getattr(run_context, "workspace_id", "") or "").strip())):
+            raise ValueError("WORLD_CONTEXT_TURN_SCOPE_MISMATCH")
         text = str(user_text or "").strip()
         if not text:
-            return ""
+            return None
         created_at_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
         task_sha256 = canonical_sha256({"current_user_text": text})
         identity = canonical_sha256({
@@ -172,12 +184,78 @@ class WorldContextIntegration:
         )
         receipt = self.facade.accept(envelope)
         if receipt.disposition != "ACCEPTED" or not receipt.processed:
-            return ""
+            return None
         emission = self.output_port.take(correlation_id)
-        if emission is None or emission.query_id != query.query_id:
-            return ""
-        slot = build_world_context_slot(emission.packet, token_estimator=estimate_tokens)
+        if emission is None:
+            return None
+        return query, emission
+
+    def _render_emission(self, query, emission, run_context) -> str:
+        packet = emission.packet
+        if (emission.correlation_id != query.correlation_id or emission.query_id != query.query_id
+                or packet.scope != query.scope or packet.frame_ref != query.frame_ref
+                or packet.basis_world_state_ref != query.basis_world_state_ref
+                or packet.task_ref != query.task_ref or packet.task_sha256 != query.task_sha256
+                or packet.token_budget != query.token_budget or packet.generated_at_ms < query.created_at_ms):
+            raise ValueError("WORLD_CONTEXT_TURN_EMISSION_MISMATCH")
+        capability = emission.capability_packet
+        if capability is not None:
+            query_identity = ProtectedContextIdentityV1("query_ref", f"{query.query_id}@{query.query_sha256}")
+            workspace_identity = ProtectedContextIdentityV1("workspace_id", str(getattr(run_context, "workspace_id", "") or "").strip())
+            if workspace_identity not in capability.protected_identities:
+                raise ValueError("WORLD_CONTEXT_TURN_CAPABILITY_WORKSPACE_MISMATCH")
+            if query_identity not in capability.protected_identities:
+                raise ValueError("WORLD_CONTEXT_TURN_CAPABILITY_QUERY_MISMATCH")
+            result = build_capability_world_context_slot(packet, capability, mode="SHADOW", token_estimator=_wrapped_slot_tokens)
+            if result.status != "AVAILABLE":
+                _log.warning("CAPABILITY_REFERENCE_CONTEXT_UNAVAILABLE: %s", result.reason_code)
+            slot = result.slot
+        else:
+            slot = build_world_context_slot(packet, token_estimator=estimate_tokens)
         return "[WORLD_CONTEXT_SLOT]\n" + slot.rendered_text + "\n[/WORLD_CONTEXT_SLOT]"
+
+
+    def render_for_turn(self, *, run_context: Any, user_text: str, now_ms: int | None = None) -> str:
+        item = self._emission_for_turn(run_context=run_context, user_text=user_text, now_ms=now_ms)
+        return "" if item is None else self._render_emission(*item, run_context)
+
+    def prepare_composition_for_turn(self, *, run_context: Any, user_text: str,
+                                     tool_source, registry, now_ms: int):
+        """Explicit planning entry on the same ingress/Store, not a default cutover.
+
+        Returns system-bound preparation plus its REAL P4 candidate prompt. The
+        existing HTTP client may obtain a proposal outside all Store locks, then
+        compile_composition_for_turn revalidates it against this exact preparation.
+        """
+        item = self._emission_for_turn(run_context=run_context, user_text=user_text, now_ms=now_ms)
+        if item is None or item[1].capability_packet is None:
+            raise ValueError("COMPOSITION_SOURCE_CONTEXT_UNAVAILABLE")
+        query, emission = item
+        self._render_emission(query, emission, run_context)  # Original readback identity guards.
+        from .world_understanding_production import prepare_production_composition
+        prepared = prepare_production_composition(query, emission.capability_packet,
+            tool_source=tool_source, registry=registry, run_context=run_context, prepared_at_ms=now_ms)
+        capability = prepared.capability_context()
+        from world_understanding.context_output.capability_context import capability_context_reserved_tokens
+        snapshot = self.store.get(query.basis_world_state_ref.record_id)
+        if snapshot is None or snapshot.state_ref != query.basis_world_state_ref:
+            raise ValueError("COMPOSITION_SOURCE_WORLD_UNAVAILABLE")
+        projector = WorldContextProjector(token_estimator=estimate_tokens)
+        world_packet = projector.project(query, snapshot,
+            reserved_tokens=capability_context_reserved_tokens(capability, token_estimator=estimate_tokens)).packet
+        rendered = build_capability_world_context_slot(world_packet, capability, mode="SHADOW", token_estimator=_wrapped_slot_tokens)
+        if rendered.status != "AVAILABLE":
+            # Never send display-only IDs while claiming a real P4 candidate prompt.
+            raise ValueError(rendered.reason_code)
+        return prepared, "[WORLD_CONTEXT_SLOT]\n" + rendered.slot.rendered_text + "\n[/WORLD_CONTEXT_SLOT]"
+
+    def compile_composition_for_turn(self, prepared, primary_text: str, *, run_context: Any,
+                                    tool_source, validated_at_ms: int, repair_text: str | None = None,
+                                    available_verifiers: frozenset[str] = frozenset()):
+        from .world_understanding_production import compile_production_composition
+        return compile_production_composition(prepared, primary_text, run_context=run_context,
+            tool_source=tool_source, validated_at_ms=validated_at_ms, repair_text=repair_text,
+            available_verifiers=available_verifiers)
 
 
 _runtime_lock = threading.Lock()

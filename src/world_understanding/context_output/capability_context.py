@@ -7,6 +7,7 @@ context-only DATA: it cannot authorize, confirm, change risk, or execute.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
+import json
 from typing import Callable, Literal
 
 from contracts.canonical import canonical_sha256
@@ -34,9 +35,11 @@ _NEVER_COMPRESS_KEYS = (
     "candidate_id",
     "method_ref",
     "plan_ref",
+    "query_ref",
     "source_revision",
     "verification_plan_ref",
     "world_state_ref",
+    "workspace_id",
 )
 
 
@@ -431,9 +434,26 @@ def _identity_lines(packet: CapabilityContextPacketV1) -> list[str]:
     return lines
 
 
+def _display_text(value: str) -> str:
+    # Descriptive Source text remains one DATA line, never a slot delimiter.
+    encoded = json.dumps(value, ensure_ascii=False).replace("[", "\\u005b").replace("]", "\\u005d")
+    # JSON allows these Unicode separators literally; a prompt line parser does
+    # not. Preserve their values through reversible escapes, never truncation.
+    for character in ("\x85", "\u2028", "\u2029"):
+        encoded = encoded.replace(character, "\\u" + format(ord(character), "04x"))
+    return encoded
+
+
+def capability_context_reserved_tokens(packet: CapabilityContextPacketV1, *,
+                                       token_estimator=conservative_token_estimate) -> int:
+    """Reserve complete identity lines before optional base context is selected."""
+    text = "\n".join(_identity_lines(packet))
+    return max(0, int(token_estimator(text))) + 128
+
+
 def _summary_lines(packet: CapabilityContextPacketV1) -> list[str]:
     return [
-        f"method_summary candidate_id={item.candidate_id} title={item.title} summary={item.summary}"
+        f"method_summary candidate_id={item.candidate_id} title={_display_text(item.title)} summary={_display_text(item.summary)}"
         for item in packet.method_candidates
     ]
 
@@ -563,6 +583,7 @@ __all__ = [
     "MethodContextEntryV1",
     "NegativeEvidenceContextEntryV1",
     "ProtectedContextIdentityV1",
+    "capability_context_reserved_tokens",
     "build_capability_context_packet",
     "build_capability_world_context_slot",
 ]

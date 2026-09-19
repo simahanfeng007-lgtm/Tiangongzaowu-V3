@@ -415,6 +415,13 @@ def test_actual_gateway_start_installs_both_existing_call_sites(tmp_path,monkeyp
         state_root=tmp_path/'gateway-root',min_free_bytes=1_048_576,
         backend_internal_token='test-binding-token-'+('x'*48),release_source_root=root,
         workspace_root=workspace,skill_root=root/'app/backend/tiangong-backend/_internal/omni_body_skill')
+    # Gateway startup installs process-global callbacks. Record their previous
+    # identities for this fixture's cleanup; the real startup still installs and
+    # exercises its own providers, and none of its authority checks are mocked.
+    from v3.simple_chain import kernel
+    for name in ("_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER",
+                 "_SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER"):
+        monkeypatch.setattr(kernel, name, getattr(kernel, name))
     runtime=GatewayRuntime.start(config)
     try:
         hook=runtime.learning_output_binding
@@ -439,3 +446,20 @@ def test_source_preparation_does_not_acquire_world_runtime_lock_under_life(life,
                 code,result,_=future.result(timeout=15)
                 assert code==200,result
         assert result['learning_output']['output_kind']=='METHOD_SOURCE'
+
+
+def test_gateway_start_fixture_restores_prior_epoch_provider_identity(tmp_path, monkeypatch):
+    """A real Gateway fixture must not leak a closed store into a later epoch test."""
+    from unittest.mock import Mock
+    from v3.simple_chain import kernel
+
+    previous_continuity = Mock(name="surrounding_continuity_provider")
+    previous_regenerative = Mock(name="surrounding_regenerative_provider")
+    monkeypatch.setattr(kernel, "_SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER", previous_continuity)
+    monkeypatch.setattr(kernel, "_SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER", previous_regenerative)
+    with monkeypatch.context() as fixture_scope:
+        test_actual_gateway_start_installs_both_existing_call_sites(tmp_path, fixture_scope)
+    assert kernel._SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER is previous_continuity
+    assert kernel._SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER is previous_regenerative
+    previous_continuity.assert_not_called()
+    previous_regenerative.assert_not_called()

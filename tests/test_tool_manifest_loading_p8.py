@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from contracts import canonical_json_bytes, canonical_sha256
-from total_gateway import skill_selection
+from total_gateway import capability_manifest as skill_selection
 from total_gateway.skill_selection import (
     SkillSelectionError,
     compile_composition_execution_manifest,

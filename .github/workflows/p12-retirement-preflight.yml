@@ -1,0 +1,112 @@
+name: P12 Source to P4 planning regression (read-only)
+
+on:
+  push:
+    branches: [codex/capability-composition-p12-retirement-preflight-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p12-native-cmd-closeout-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    name: p12-repair-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Freeze current observer and unchanged regression inputs
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-repair-evidence'
+          out.mkdir(parents=True, exist_ok=True)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip() == os.environ['EXPECTED_HEAD']
+          subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--'], check=True)
+          base = '9e941b22c18e9645ea5c47f94d7b52b439f1653e'
+          tests = ['tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', 'tests/test_p12_retirement_map.py', 'tests/test_p12_retirement_preflight.py']
+          for path in tests:
+              expected = subprocess.check_output(['git', 'show', base + ':' + path])
+              if path == 'tests/test_tool_manifest_loading_p8.py':
+                  old = b'from total_gateway import skill_selection\n'
+                  assert expected.count(old) == 1
+                  expected = expected.replace(old, b'from total_gateway import capability_manifest as skill_selection\n')
+              assert pathlib.Path(path).read_bytes() == expected, path
+          removed = ['.github/workflows/p12-alias-repair-preparation.yml', '.github/workflows/p12-source-export.yml', '.github/workflows/p12-native-shell-diagnostic.yml', 'scripts/_prepare_p12_alias_repair.py', 'docs/capability-composition/p12-alias-repair.patch', 'docs/capability-composition/p12-alias-tests.py', 'docs/capability-composition/p12-shell-tests.py', 'scripts/diagnose-p12-cmd-native-path.py', '.github/workflows/p12-native-path-api.yml']
+          assert all(not pathlib.Path(path).exists() for path in removed)
+          paths = subprocess.check_output(['git', 'ls-files', '-z']).decode('utf-8').split('\0')
+          inputs = {p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths if p.endswith('.py') or p == 'requirements-source.lock'}
+          identity = {'head': os.environ['EXPECTED_HEAD'], 'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}']).decode().strip(), 'evidence_mode': 'COMMITTED_SOURCE_REGRESSION', 'inputs': inputs, 'p12_authorized': False, 'retirement_authorized': False, 'production_acceptance': False, 'required_native_case': 'SandboxCloseoutTests.test_absolute_unicode_workspace_path_in_cmd_runs_inside_private_copy'}
+          (out / 'identity.json').write_bytes((json.dumps(identity, sort_keys=True, indent=2) + '\n').encode('utf-8'))
+          print('P12_INPUT_IDENTITY=' + json.dumps({k: v for k, v in identity.items() if k != 'inputs'}, sort_keys=True))
+          print('P12_INPUT_FILE_COUNT=' + str(len(inputs)))
+      - name: Install existing locked source-test environment
+        run: python scripts/install-python-dependencies.py --requirements requirements-source.lock
+      - name: Original contracts and complete focused regressions
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-repair-evidence'
+          env = os.environ.copy()
+          for key in ('UPDATE_FREEZE', 'UPDATE_FINGERPRINT', 'UPDATE_GOLDEN', 'UPDATE_PERF', 'GH_TOKEN'):
+              env.pop(key, None)
+          commands = [
+              ('source-authority', [sys.executable, 'scripts/check-source-authority.py']),
+              ('committed-mirrors', [sys.executable, 'scripts/sync-generated-sources.py', '--check-committed']),
+              ('historical-diagnostic-contracts', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_p12_retirement*.py', '-v']),
+              ('native-directory', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_cmd_directory_p12.py', 'tests/test_foundation_closeout.py::SandboxCloseoutTests', '--junitxml=' + str(out / 'native-directory.xml')]),
+              ('fixture-isolation', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_learning_experience_writeback_p10.py::test_runtime_root_passes_recovery_callback_to_existing_worker', 'tests/test_learning_output_binding_p10.py::test_gateway_start_fixture_restores_prior_epoch_provider_identity', 'tests/test_p18_m1_execution_epoch.py', 'tests/test_p18_m1_canonical_continuity.py', 'tests/test_p18_m1_delivery_boundaries.py', 'tests/test_life_shadow_compat.py', '--junitxml=' + str(out / 'fixture-isolation.xml')]),
+              ('source-to-p4', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_source_composition_preparation_p12.py', 'tests/test_capability_composition_p4.py', 'tests/test_tool_source_world_p8.py', 'tests/test_method_run_retention_p9.py', '--junitxml=' + str(out / 'source-to-p4.xml')]),
+              ('base-protocol-and-isolation', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_gateway_parent_claim_ticket_p8.py', 'tests/test_p18_m1_execution_epoch.py', 'tests/test_repository_context_p14_m4.py', 'tests/test_repository_context_p14_m4_wiring.py', '--junitxml=' + str(out / 'base-protocol-and-isolation.xml')]),
+              ('world-reference-context', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_world_reference_context_p12.py', 'tests/test_world_reference_context_boundaries_p12.py', 'tests/test_one_world_context_p6.py', 'tests/test_world_understanding_p10_integration_guards.py', 'tests/test_world_understanding_p10_context_output.py', 'tests/test_method_source_publication_p9.py', 'tests/test_method_run_retention_p9.py', '--junitxml=' + str(out / 'world-reference-context.xml')]),
+              ('shared-manifest', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_capability_manifest_separation_p12.py', 'tests/test_tool_source_launch_p8.py', 'tests/test_action_schema_catalog_p7c1.py', 'tests/test_result_value_schema_authority_p7d2.py', 'tests/test_skill_selection.py', 'tests/test_skill_authority_p9.py', '--junitxml=' + str(out / 'shared-manifest.xml')]),
+              ('version-compatibility', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_activation_store_p7b2.py', '--junitxml=' + str(out / 'version-compatibility.xml')]),
+              ('freeze-and-golden', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/golden/p19_r2', '--junitxml=' + str(out / 'golden.xml')]),
+              ('alias-and-bootstrap', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_sandbox_workspace_alias_p12.py', 'tests/test_sandbox_shell_bootstrap_p12.py', '--junitxml=' + str(out / 'repair.xml')]),
+              ('preserved-product-contracts', [sys.executable, '-m', 'pytest', '-q', '-ra', 'tests/test_composition_execution_manifest_p7d1.py', 'tests/test_tool_manifest_loading_p8.py', 'tests/test_composition_grant_authority_p7d2.py', 'tests/test_composition_step_execution_p7d1.py', 'tests/test_foundation_closeout.py', '--junitxml=' + str(out / 'product.xml')]),
+          ]
+          failed = False
+          for name, command in commands:
+              result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+              (out / (name + '.log')).write_bytes(result.stdout)
+              print(name + '\n' + result.stdout.decode('utf-8', errors='replace'), flush=True)
+              failed = failed or result.returncode != 0
+          raise SystemExit(1 if failed else 0)
+      - name: Verify unchanged tested inputs and record file digests
+        if: always()
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p12-repair-evidence'
+          identity = json.loads((out / 'identity.json').read_bytes())
+          for path, digest in identity['inputs'].items():
+              assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest() == digest, path
+          subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--'], check=True)
+          digests = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir()) if p.is_file()}
+          (out / 'file-digests.json').write_bytes((json.dumps(digests, sort_keys=True, indent=2) + '\n').encode('utf-8'))
+          print('P12_EVIDENCE_DIGESTS=' + json.dumps(digests, sort_keys=True))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p12-source-repair-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/p12-repair-evidence/
+          if-no-files-found: error
+          retention-days: 90

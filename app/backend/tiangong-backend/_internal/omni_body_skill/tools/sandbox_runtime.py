@@ -117,6 +117,8 @@ def _prepare_windows_utf8_shell_command(
             command_text.encode("utf-16-le")
         ).decode("ascii")
         script = (
+            # Load the two system modules before hermetic auto-discovery can stall.
+            "$tgSavedAutoload=$PSModuleAutoLoadingPreference;$PSModuleAutoLoadingPreference='None';try{Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop;Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop;}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 125}finally{$PSModuleAutoLoadingPreference=$tgSavedAutoload};"
             "$utf8=[System.Text.UTF8Encoding]::new($false);"
             "[Console]::InputEncoding=$utf8;"
             "[Console]::OutputEncoding=$utf8;"
@@ -327,11 +329,20 @@ def _merge_changes(
 
 
 def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: Path) -> list[str] | str:
-    real_text = str(real.resolve(strict=False))
-    sandbox_text = str(sandbox.resolve(strict=False))
+    real_resolved = real.resolve(strict=False)
+    sandbox_text = str(sandbox.expanduser().absolute())
+    # A Windows 8.3 spelling can survive inside shell text after Path.resolve
+    # expands it. Keep the caller spelling and the canonical spelling; both
+    # refer to the same frozen workspace, not to additional allowed roots.
+    spellings = {str(real.expanduser().absolute()), str(real_resolved)}
+    if os.name == "nt":
+        spellings.update(value.replace("\\", "/") for value in tuple(spellings))
     flags = re.IGNORECASE if os.name == "nt" else 0
+    # One substitution pass prevents a private target that contains a source
+    # spelling from being rewritten again by a later alias replacement.
+    alternatives = "|".join(re.escape(value) for value in sorted(spellings, key=lambda value: (-len(value), value)))
     embedded_root = re.compile(
-        re.escape(real_text) + r"(?=$|[\\/\"'\s])",
+        "(?:" + alternatives + r")(?=$|[\\/\"'\s])",
         flags,
     )
     def rewrite_item(item: object) -> str:
@@ -340,7 +351,7 @@ def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: 
         try:
             candidate = Path(value).expanduser()
             if candidate.is_absolute():
-                rel = candidate.resolve(strict=False).relative_to(real.resolve(strict=False))
+                rel = candidate.resolve(strict=False).relative_to(real_resolved)
                 value = str(sandbox / rel)
                 exact_path_rewritten = True
         except (OSError, ValueError):
@@ -356,6 +367,81 @@ def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: 
     if isinstance(command, str):
         return rewrite_item(command)
     return [rewrite_item(item) for item in command]
+
+
+def _prepare_windows_cmd_initial_directory(
+    command: Sequence[str] | str,
+    *,
+    cwd: Path | str,
+    workspace: Path | str,
+    comspec: Path | str,
+) -> Sequence[str] | str:
+    """Translate only an initial literal CMD cd into the bound private tree.
+
+    CMD's absolute-name canonicalization can query inaccessible ancestors even
+    when the target directory is accessible to AppContainer. For the FIRST cd,
+    the native process cwd is known: relpath(target, cwd) selects the same private
+    directory without that ancestor walk. Later commands, flags, expansion,
+    redirection and exit behavior are not interpreted or rewritten here.
+
+    This is not a general shell parser. Ambiguous forms and non-CMD executables
+    are left unchanged, as are targets outside the existing brokered workspace.
+    The caller invokes this only after copying/link checks and path rebinding,
+    immediately before launching with that exact private cwd.
+    """
+    import ntpath
+
+    if not isinstance(command, str) or any(ch in command for ch in '\r\n\0'):
+        return command
+    launch = re.fullmatch(
+        r'(?P<exe>"[^"\r\n]+"|[^"\s]+)(?P<gap>[ \t]+)'
+        r'(?P<flags>(?:/[dDsS][ \t]+){0,2}/[cC][ \t]+)(?P<body>.+)',
+        command,
+    )
+    if launch is None:
+        return command
+    executable = launch['exe'].strip('"')
+    def norm(value: Path | str) -> str:
+        return ntpath.normcase(ntpath.normpath(str(value)))
+
+    if (re.match(r"^[A-Za-z]:[\\/]", str(comspec)) is None
+            or norm(executable) != norm(comspec)):
+        return command
+    switches = launch['flags'].lower().split()
+    # Without /d, registry AutoRun commands can change cwd before the first cd.
+    if '/d' not in switches or len(switches) != len(set(switches)):
+        return command
+    body = launch['body']
+    wrapped = body.startswith('"') and body.endswith('"')
+    inner = body[1:-1] if wrapped else body
+    initial = re.match(
+        r'(?P<prefix>[ \t]*@?(?:cd|chdir)[ \t]+(?:/d[ \t]+)?)'
+        r'"(?P<target>[^"\r\n]+)"(?P<suffix>.*)\Z', inner, re.IGNORECASE,
+    )
+    if initial is None:
+        return command
+    suffix = initial['suffix'].lstrip(' \t')
+    if suffix and not (suffix.startswith('&&') or suffix.startswith('||')
+                       or suffix.startswith('&')):
+        return command
+    target = initial['target']
+    if any(ch in target for ch in '%!^&|<>*?'):
+        return command
+    values = (str(cwd), str(workspace), target)
+    if any(re.match(r'^[A-Za-z]:[\\/]', value) is None for value in values):
+        return command
+    try:
+        private_root = norm(workspace)
+        if any(ntpath.commonpath((private_root, norm(value))) != private_root
+               for value in (cwd, target)):
+            return command
+        relative = ntpath.relpath(target, str(cwd))
+    except ValueError:
+        return command
+    rewritten = initial['prefix'] + '"' + relative + '"' + initial['suffix']
+    if wrapped:
+        rewritten = '"' + rewritten + '"'
+    return command[:launch.start('body')] + rewritten
 
 
 def _posix_preexec(limits: SandboxLimits):
@@ -432,7 +518,8 @@ def _run_windows_appcontainer(
 
 class SandboxRunner:
     def __init__(self, workspace: Path, state_root: Path, trash_root: Path, limits: SandboxLimits | None = None):
-        self.workspace = workspace.expanduser().resolve()
+        self._workspace_input = workspace.expanduser().absolute()
+        self.workspace = self._workspace_input.resolve()
         self.state_root = state_root.expanduser().resolve()
         self.trash_root = trash_root.expanduser().resolve()
         self.limits = limits or SandboxLimits()
@@ -456,6 +543,10 @@ class SandboxRunner:
             raise SandboxError("sandbox_os_containment_unavailable")
         if not command:
             raise SandboxError("sandbox_command_empty")
+        # Retaining an input alias must not let a changed symlink/junction
+        # redirect an existing runner to another workspace.
+        if self._workspace_input.resolve(strict=False) != self.workspace:
+            raise SandboxError("sandbox_workspace_identity_changed")
         raw_run_id = str(op_id or f"run_{time.time_ns()}")
         # Deep Windows workspaces can exceed MAX_PATH before the command even
         # starts when the full operation id is used as another directory
@@ -514,8 +605,14 @@ class SandboxRunner:
             real_cwd = (cwd or self.workspace).expanduser().resolve(strict=False)
             sandbox_cwd = sandbox_workspace / _safe_rel(self.workspace, real_cwd)
             sandbox_cwd.mkdir(parents=True, exist_ok=True)
-            rewritten = _rewrite_workspace_paths(command, self.workspace, sandbox_workspace)
+            rewritten = _rewrite_workspace_paths(command, self._workspace_input, sandbox_workspace)
             if os.name == "nt":
+                system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
+                if system_root:
+                    rewritten = _prepare_windows_cmd_initial_directory(
+                        rewritten, cwd=sandbox_cwd, workspace=sandbox_workspace,
+                        comspec=Path(system_root) / "System32" / "cmd.exe",
+                    )
                 rewritten = _prepare_windows_utf8_shell_command(rewritten, cwd=sandbox_cwd)
             limits = SandboxLimits(
                 timeout_seconds=max(1, int(timeout_seconds or self.limits.timeout_seconds)),

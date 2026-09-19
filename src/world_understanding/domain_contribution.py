@@ -13,7 +13,7 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
-from contracts.canonical import canonical_sha256
+from contracts.canonical import canonical_json_bytes, canonical_sha256
 from contracts.capability_composition import SourceRevisionRefV1
 from contracts.models import ContractModel, OpaqueId, Sha256
 from contracts.world_understanding._base import WorldRecordRef, WorldValue
@@ -499,6 +499,19 @@ def compile_software_domain_contribution(
     )
 
 
+def _context_source_attributes(source: SourceRevisionRefV1, binding: FrameBindingV1,
+                               workspace: str) -> dict[str, str]:
+    """Retain addresses/digests, never source bodies or execution permission."""
+    return {
+        "context_source_ref": canonical_json_bytes(source.model_dump(mode="json")).decode("utf-8"),
+        "context_frame_binding": binding.binding_sha256,
+        "context_frame_ref": canonical_json_bytes(binding.model_dump(mode="json")).decode("utf-8"),
+        "context_frame_revision": binding.frame_revision_hash,
+        "context_world_cut": binding.world_cut_ref.sha256,
+        "context_workspace": workspace,
+    }
+
+
 def compile_tool_capability_contribution(
     frame: SoftwareWorldFrame,
     cut: WorldCut,
@@ -544,6 +557,7 @@ def compile_tool_capability_contribution(
             canonical_name=primitive.action_id,
             aliases=(),
             attributes={
+                **_context_source_attributes(derive_action_source_revision(primitive), binding, frame.workspace),
                 "action_id": primitive.action_id,
                 "action_version": primitive.action_version,
                 "availability": primitive.availability,
@@ -595,6 +609,7 @@ def compile_tool_capability_contribution(
         "world-cut:" + cut.cut_sha256,
     }
     dependency_keys.update("source:" + item.source_sha256 for item in sources)
+    dependency_keys.add("context-frame:" + binding.binding_sha256)
     return _contribution(
         kind="TOOL_CAPABILITY",
         binding=binding,
@@ -647,6 +662,7 @@ def compile_skill_method_contribution(
             canonical_name=primitive.title,
             aliases=(primitive.method_id,),
             attributes={
+                **_context_source_attributes(primitive.source_ref, binding, frame.workspace),
                 "descriptor_sha256": primitive.descriptor_sha256,
                 "method_id": primitive.method_id,
                 "semantic_summary": primitive.semantic_summary,
@@ -700,6 +716,7 @@ def compile_skill_method_contribution(
         "world-cut:" + cut.cut_sha256,
     }
     dependency_keys.update("source:" + item.source_sha256 for item in sources)
+    dependency_keys.add("context-frame:" + binding.binding_sha256)
     return _contribution(
         kind="SKILL_METHOD",
         binding=binding,
