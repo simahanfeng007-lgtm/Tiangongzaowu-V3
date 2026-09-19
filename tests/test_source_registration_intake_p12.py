@@ -107,7 +107,7 @@ def source(tmp_path):
 def intake_factory(source, publication, tmp_path, monkeypatch):
     """Build the R1C2 planning world with an authority-derived workspace id."""
 
-    def build():
+    def build(*, attachments=()):
         from v3 import world_understanding_production as installed
         from v3.world_context_integration import WorldContextIntegration
         repo, base, head, package, marker = publication
@@ -123,7 +123,8 @@ def intake_factory(source, publication, tmp_path, monkeypatch):
         workspace_root.mkdir()
         workspace_id = _workspace_binding(workspace_root).workspace_id
         gateway = GatewayStateStore.open(tmp_path / 'registered-gateway.sqlite3', now_ms=1000)
-        inbound = _envelope('registration').model_copy(update={'text': '请用 native_0，查看 skill.list。'})
+        inbound = _envelope('registration').model_copy(
+            update={'text': '请用 native_0，查看 skill.list。', 'attachments': tuple(attachments)})
         registered = gateway.register_request(inbound, ingress_sha256='b' * 64, created_at_ms=1100)
         request = registered.entry.request_id
         run = derive_run_identity(request, 1).run_id
