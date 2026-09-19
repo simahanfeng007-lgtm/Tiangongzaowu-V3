@@ -1,0 +1,19 @@
+Verification Plane 1.20 — P12 R1C3 plan results into the P7 registration chain
+
+The request-bound Source planning seam now has an admission intake: one
+revalidated SourceCompositionResult enters the ORIGINAL P7A shadow compiler and
+the existing GatewayStateStore registration + executable-plan sealing entry in a
+single Unit of Work, with P19 authorities and method-source retention intact.
+The trivalent contract is preserved exactly: PROVED_INVALID is refused with its
+original findings, UNKNOWN is admitted only as PROVISIONAL_ALLOW with mandatory
+verification, and PROVED_VALID remains mechanical proof. Registration reports
+its stages separately and structurally cannot report granted, executed or
+completed; Policy/Ticket/Grant/A5 and Completion are untouched.
+
+Add src/total_gateway/composition_registration_intake.py to the inherited frozen
+surface. Preserve every prior member. Changed prior members are the existing
+Method run reader (one delegating register_composition method, prepare/compile
+and the sealed-Plan read API unchanged) and the V3 installed-reader bridge (one
+register_production_composition entry beside the existing prepare/compile pair).
+No second Store, registry, Runtime, Gateway, Planner or completion authority is
+introduced; the Store schema (v33) and all prior protections are unchanged.
