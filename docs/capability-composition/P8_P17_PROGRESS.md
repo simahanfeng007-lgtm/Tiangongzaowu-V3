@@ -9,7 +9,24 @@ header or the stage register. P8 merged at `34668e0`, P9 merged at `b1ea3e9`, an
 P10 PR #75 merged at `a13979a`. Product-evaluation and operational obligations
 are carried explicitly rather than converted into phase PASS by merge or CI.
 
-## Current checkpoint (2026-09-20)
+## Current checkpoint (2026-09-20, final for this working session)
+
+- main: `2a9fce5c5fa818989c2f20ee9310d68336404eba` (PR #90).
+- Engineering wiring across P12–P17 is now in place through 14 merged PRs
+  (#79–#90): registration/sealing/execution/completion chain, controlled
+  orchestration turn, experience loop, source invalidation (world + memory),
+  temporal policy verification, P11 evaluation assets, capability parity
+  table, retirement inventory, 150-round plan freeze + execution framework +
+  interruption injector, P17-B traceability seed with ZERO unexplained
+  obligations (authoritative AND test trees).
+- Verification Plane 1.22; Store v33; every merge verified by post-merge
+  Architecture + P19 golden gates.
+- All remaining work is resource-gated and recorded verbatim in the ledger:
+  R1G/R1H (R03/R04/R06), P13-B/C/D execution (R05), P14 switching (P11
+  exit), P16 real rounds (R02/R03), P17-C/D (R07). No fixture impersonation.
+- P11 PR #77 remains draft/unmerged; its evaluation code is integrated.
+
+## Current checkpoint (2026-09-20, morning — historical)
 
 - main: `069d2580517e418a01aff16ee68e54d7dd6a0aef` (PR #79 merged 2026-09-19).
 - P12 in progress and NOT closed: R0–R1C2 merged via PR #78 (`af2fdf1`);
