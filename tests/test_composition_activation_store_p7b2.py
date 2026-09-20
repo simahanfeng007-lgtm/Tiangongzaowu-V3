@@ -189,8 +189,9 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # R1C2 adds the read-only pre-Plan Source/P4 preparation boundary at 1.19;
     # R1C3 admits its revalidated plan results into the P7 registration chain
     # at 1.20; R1E/R1F/R1G-prep extend the frozen surface at 1.21; the P15-A
-    # tool-source invalidation preflight extends it at 1.22.
-    assert VERIFICATION_PLANE_VERSION == "1.22"
+    # tool-source invalidation preflight extends it at 1.22; admission
+    # materialization and the experience-recall seam extend it at 1.23.
+    assert VERIFICATION_PLANE_VERSION == "1.23"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:
