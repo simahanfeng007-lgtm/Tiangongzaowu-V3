@@ -149,12 +149,12 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
         "schema": SCHEMA,
         "generated_from": {
             "skill_router_index": {
-                "path": str(index_path.relative_to(ROOT)),
+                "path": index_path.resolve().relative_to(ROOT).as_posix(),
                 "index_blob": _git_blob_id(index_path),
                 "item_count": total,
             },
             "capability_manifest": {
-                "path": str(manifest_path.relative_to(ROOT)),
+                "path": manifest_path.resolve().relative_to(ROOT).as_posix(),
                 "manifest_blob": _git_blob_id(manifest_path),
                 "action_count": len(capabilities),
             },
