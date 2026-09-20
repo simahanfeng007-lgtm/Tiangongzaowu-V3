@@ -22,8 +22,8 @@ from world_understanding.capability_composition.capability_experience_policy imp
     CapabilityExperienceInvalidationIntentV1,
     mark_capability_experience_source_change,
 )
-from life_service.memory_invalidation import invalidate_cascade
-from life_service.store import LifeShadowStore
+from .memory_invalidation import invalidate_cascade
+from .store import LifeShadowStore
 
 
 @dataclass(frozen=True, slots=True)

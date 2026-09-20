@@ -24,7 +24,7 @@ from world_understanding.capability_composition.capability_experience_policy imp
     source_revision_family,
     exact_source_hashes,
 )
-from world_understanding.capability_composition.experience_invalidation_bridge import (
+from life_service.experience_invalidation_bridge import (
     propagate_source_change_to_experiences,
 )
 
