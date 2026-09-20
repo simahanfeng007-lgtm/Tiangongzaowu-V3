@@ -162,6 +162,7 @@
         "implementation_roots": [
           "body_settings.py",
           "codex_turn_chain.py",
+          "composition_turn.py",
           "confirmation_store.py",
           "context_compactor.py",
           "desktop_daemon.py",

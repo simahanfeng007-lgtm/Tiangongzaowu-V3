@@ -2674,6 +2674,47 @@ class Zongdiaodu:
         def current_text(self) -> str:
             return self._accumulated
 
+    def _controlled_composition_turn_reply_if_enabled(
+        self, *, xiaoxi: str, system_tishi: str,
+    ) -> str | None:
+        """Run the P12-R1D controlled composition turn when explicitly enabled.
+
+        Returns None when the mode is ``off`` (default; the legacy planner is
+        untouched). A controlled turn's failure is returned to the user with
+        its original code — the legacy path is never replayed for the same
+        message, so a controlled deployment cannot silently degrade.
+        """
+
+        from .composition_turn import (
+            CompositionTurnError,
+            composition_planner_mode,
+            run_controlled_composition_turn,
+        )
+        if composition_planner_mode() != "controlled":
+            return None
+
+        def _model_call(prompt: str) -> str:
+            return self.http_kehuduan.llm_diaoyong(system_tishi, prompt)
+
+        try:
+            outcome = run_controlled_composition_turn(
+                user_text=xiaoxi, model_call=_model_call)
+        except CompositionTurnError as exc:
+            detail = f" {exc.detail}" if exc.detail else ""
+            return (f"[受控组合规划未完成：{exc.code}{detail}]\n"
+                    "本轮未回退旧规划路径。")
+        if outcome["outcome"] == "refused":
+            findings = ", ".join(outcome.get("findings") or [])
+            return (f"[受控组合规划拒绝：{outcome['reason']}]\n"
+                    f"原始校验发现：{findings or '无'}。本轮未回退旧规划路径。")
+        if outcome["outcome"] == "registration_not_configured":
+            return (f"[受控组合规划：计划 {outcome['plan_id']} 通过编译与校验"
+                    f"（{outcome['validation']}），但尚未配置系统登记证据提供方，"
+                    "计划未登记、未执行。]")
+        return (f"[受控组合规划：计划 {outcome['plan_id']} 已通过原 P7 链登记"
+                f"（registration {outcome.get('registration_id')}）。"
+                "执行仍需原有授权链。")
+
     def _huanxing_simple_chain(
         self,
         *,
@@ -5156,6 +5197,14 @@ class Zongdiaodu:
                     _CONFIRM_GRANT_CONTEXT.set(_confirm_ctx) if _confirm_ctx is not None else None
                 )
                 try:
+                    # P12-R1D controlled composition turn: explicit opt-in only.
+                    # Returns None when the mode is off (the legacy chain runs
+                    # byte-for-byte unchanged); a controlled turn NEVER falls
+                    # back here — its failure is returned to the user as-is.
+                    _composition_reply = self._controlled_composition_turn_reply_if_enabled(
+                        xiaoxi=xiaoxi, system_tishi=system_tishi)
+                    if _composition_reply is not None:
+                        return _composition_reply
                     return self._huanxing_simple_chain(
                         xiaoxi=xiaoxi,
                         shenti=shenti,
