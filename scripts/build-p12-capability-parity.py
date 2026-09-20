@@ -40,22 +40,21 @@ def _sha256(path: Path) -> str:
 
 
 def _git_blob_id(path: Path) -> str:
-    """Return the Git blob SHA-1 recorded in the index for this path.
+    """Return the committed blob SHA-1 for this path from the HEAD tree.
 
     Working-tree bytes drift across platforms (a Windows runner's git may
-    even smudge ``git show`` output through core.autocrlf), but the index
-    blob identity is the repository's own content address and is stable by
-    construction. ``ls-files`` never applies any content conversion.
+    even smudge ``git show`` output through core.autocrlf) and a runner may
+    refresh the index, but the HEAD tree blob is the repository's own
+    content address and is stable by construction everywhere.
     """
 
     relative = path.resolve().relative_to(ROOT).as_posix()
-    row = subprocess.run(
-        ["git", "ls-files", "-s", "--", relative], cwd=ROOT,
+    blob = subprocess.run(
+        ["git", "rev-parse", f"HEAD:{relative}"], cwd=ROOT,
         capture_output=True, check=True, text=True).stdout.strip()
-    parts = row.split()
-    if len(parts) < 2 or not re.fullmatch(r"[0-9a-f]{40}", parts[1]):
-        raise SystemExit(f"parity: no index blob for {relative}")
-    return parts[1]
+    if not re.fullmatch(r"[0-9a-f]{40}", blob):
+        raise SystemExit(f"parity: no committed blob for {relative}")
+    return blob
 
 
 def _strict(payload_text: str, label: str):
