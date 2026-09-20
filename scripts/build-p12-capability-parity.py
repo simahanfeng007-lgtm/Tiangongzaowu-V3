@@ -148,12 +148,12 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
         "generated_from": {
             "skill_router_index": {
                 "path": str(index_path.relative_to(ROOT)),
-                "sha256": _sha256(index_path),
+                "sha256": _git_blob_sha256(index_path),
                 "item_count": total,
             },
             "capability_manifest": {
                 "path": str(manifest_path.relative_to(ROOT)),
-                "sha256": _sha256(manifest_path),
+                "sha256": _git_blob_sha256(manifest_path),
                 "action_count": len(capabilities),
             },
         },
