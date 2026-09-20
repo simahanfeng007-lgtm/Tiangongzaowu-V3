@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | 0 | P12-R1C3 | Source→P4 结果接入原 P7 登记/封存/准入 | 无 | **MERGED**（PR #79，2026-09-19） |
 | 1 | P12-R1C4 | 登记计划经原 Adapter/Policy/Ticket/Grant/Runtime→Effect/Fact→P19→Completion 受控全链 | 无（A0 受控任务） | IN_PROGRESS |
-| 2 | P12-R1D | 原工作编排接入 prepare→模型→compile→受控 P7 handoff（受控模式，不切默认） | 无 | NOT_STARTED |
+| 2 | P12-R1D | 原工作编排接入 prepare→模型→compile→受控 P7 handoff（受控模式，不切默认） | 无 | **MERGED**（PR #83，2026-09-20） |
 | 3 | P12-R1E | 旧 Skill（按当次目录重枚举）与新旧能力逐项对等表 | 无（工程侧）；能力迁移范围可能需授权 | NOT_STARTED |
 | 4 | P12-R1F | 真实经验召回接入唯一槽 + 事实轨迹写回原记忆体系 | 无（受控验证）；真实任务属 R1G/D06 | NOT_STARTED |
 | 5 | P12-R1G-prep | PR #77 评测代码与最新 main 兼容整合（formal_shadow/check-p11-evidence 进 main，不自称验收） | 无 | NOT_STARTED |
@@ -91,3 +91,4 @@ NOT_STARTED / IMPLEMENTED_LOCAL / TESTED_LOCAL / PUSHED / CI_VERIFIED / MERGED /
 ## 八、变更记录
 
 - 2026-09-20：建立台账。登记 R1C3 MERGED、R1C4 IN_PROGRESS、R1G/R1H/P13-B/P14-A/P16 全量 BLOCKED 及原因；D01–D07、R01–R07 现状入册。
+- 2026-09-20（续）：R1C4 全矩阵闭合（PR #81/#82，main 5ac7450）；R1D 受控回合接入真实入口（PR #83，main 52fcf99，11 项测试：正向登记往返/诚实拒绝/无回退契约/AST 接线证明）。
