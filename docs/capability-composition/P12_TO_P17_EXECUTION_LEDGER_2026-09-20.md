@@ -42,11 +42,11 @@
 | 14 | P14-B/C | 动态默认真实接线 + 清除隐式 fallback | 依赖 P13 状态 + P14-A | NOT_STARTED（可提前做不切流的工程准备） |
 | 15 | P14-D | 有限生产→全范围默认与受控回退演练 | R05 授权实例 | BLOCKED |
 | 16 | P14-EXIT | P14 验收 | 13–15 | NOT_STARTED |
-| 17 | P15-A | Source 变化→原 World 失效链（含最小前置保护） | 无 | NOT_STARTED |
-| 18 | P15-B/C | Memory 经验过期/重验闭环 | 无（受控验证） | NOT_STARTED |
-| 19 | P15-D | 新请求/pre-Plan/sealed 三时态版本策略 | 无 | NOT_STARTED |
+| 17 | P15-A | Source 变化→原 World 失效链（含最小前置保护） | 无 | **MERGED**（PR #85，平面 1.22） |
+| 18 | P15-B/C | Memory 经验过期/重验闭环 | 无（受控验证） | **B MERGED**（PR #86）；C 机制就位、完整验收 OPEN |
+| 19 | P15-D | 新请求/pre-Plan/sealed 三时态版本策略 | 无 | **MERGED**（核验矩阵+3 补缺反例） |
 | 20 | P15-EXIT | Source 漂移端到端验收 | 17–19 | NOT_STARTED |
-| 21 | P16-A | 冻结 150 轮方案/负载/观测方法 | 无（方案冻结） | NOT_STARTED |
+| 21 | P16-A | 冻结 150 轮方案/负载/观测方法 | 无（方案冻结） | **冻结完成**（方案 v1.0；执行待 R02/R03） |
 | 22 | P16-B/C/D | 150 轮连续主链 + 中断/重启矩阵 + 运行中漂移压力 | R03 模型、R02 原生环境 | BLOCKED（脚本与受控部分可先行） |
 | 23 | P16-EXIT | 双平台与实际桌面/链路认证 | R02/R06 | BLOCKED |
 | 24 | P17-A/B | 最终审计 + 母版逐条追踪矩阵 | 无（审计侧） | NOT_STARTED |
@@ -93,3 +93,4 @@ NOT_STARTED / IMPLEMENTED_LOCAL / TESTED_LOCAL / PUSHED / CI_VERIFIED / MERGED /
 - 2026-09-20：建立台账。登记 R1C3 MERGED、R1C4 IN_PROGRESS、R1G/R1H/P13-B/P14-A/P16 全量 BLOCKED 及原因；D01–D07、R01–R07 现状入册。
 - 2026-09-20（续）：R1C4 全矩阵闭合（PR #81/#82，main 5ac7450）；R1D 受控回合接入真实入口（PR #83，main 52fcf99，11 项测试：正向登记往返/诚实拒绝/无回退契约/AST 接线证明）。
 - 2026-09-20（三合一）：R1E/R1F/R1G-prep 同批完成（对等表 34 项、经验闭环 6 项、P11 评测件整合 47 项测试）。P12 剩余：R1G 正式验收与 R1H 退役（外部资源 R03/R04/R05/R06 阻塞）+ EXIT。
+- 2026-09-20（P15 批）：P15-A/B/D MERGED（PR #85/#86/本批），P15-C 机制就位完整验收 OPEN，P15 阶段工程接线全就位、阶段未关闭；P16-A 方案冻结 v1.0 完成（执行 BLOCKED 于 R02/R03）。
