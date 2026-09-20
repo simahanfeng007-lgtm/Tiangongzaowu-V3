@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +37,22 @@ SCHEMA = "tiangong.p12.capability-parity.v1"
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _git_blob_sha256(path: Path) -> str:
+    """Hash the Git index blob bytes, not the working tree.
+
+    A text document checks out with platform-dependent line endings, so the
+    working-tree digest would make this table drift between Linux and
+    Windows. The index blob is the repository's own byte authority and is
+    therefore the only platform-stable document pin.
+    """
+
+    relative = path.resolve().relative_to(ROOT).as_posix()
+    blob = subprocess.run(
+        ["git", "show", f":{relative}"], cwd=ROOT,
+        capture_output=True, check=True).stdout
+    return hashlib.sha256(blob).hexdigest()
 
 
 def _strict(payload_text: str, label: str):
@@ -101,7 +118,7 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
             "mingcheng": item.get("mingcheng"),
             "category": item.get("category"),
             "file": item.get("file"),
-            "file_sha256": _sha256(doc),
+            "file_sha256": _git_blob_sha256(doc),
             "task_intents": list(item.get("taskIntents") or []),
             "deliverables": list(item.get("deliverables") or []),
             "required_actions": action_set,
