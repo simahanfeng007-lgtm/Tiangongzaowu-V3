@@ -1,0 +1,313 @@
+{
+ "schema": "tiangong.p13.retirement-matrix.v1",
+ "summary": {
+  "surfaces_total": 20,
+  "retire_candidates_now": 2,
+  "retained_modern": 4,
+  "zero_production_use_proven": false,
+  "note": "Inventory only: zero callers observed ≠ production zero use; P13-B's telemetry window remains the removal gate."
+ },
+ "entries": [
+  {
+   "path": "src/life_service/learning_workflow.py",
+   "kind": "legacy_write_authority",
+   "storage": "Life shadow store (journal)",
+   "migration_target": "MemoryCoordinator promotions",
+   "rollback_cost": "medium",
+   "note": "21+ live callers incl. runtime + learning_output chain",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
+    "app/backend/tiangong-backend/v3/jineng/jirou_ceng.py",
+    "app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py",
+    "src/life_service/artifact_executor.py",
+    "src/life_service/embedded_runtime.py",
+    "src/life_service/legacy_learning_migration.py",
+    "src/life_service/store.py",
+    "src/total_gateway/learning_output_binding.py",
+    "src/total_gateway/learning_output_preparation.py",
+    "src/total_gateway/runtime.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 10
+  },
+  {
+   "path": "src/life_service/learning_executor.py",
+   "kind": "execution_entry",
+   "storage": "Life journal",
+   "migration_target": "P19-verified write-back only",
+   "rollback_cost": "medium",
+   "note": "embedded_runtime executor",
+   "exists": true,
+   "callers": [
+    "src/life_service/embedded_runtime.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "src/life_service/artifact_executor.py",
+   "kind": "execution_entry",
+   "storage": "artifact store",
+   "migration_target": "P8 source publication",
+   "rollback_cost": "medium",
+   "note": "embedded_runtime + learning_output_preparation",
+   "exists": true,
+   "callers": [
+    "src/life_service/embedded_runtime.py",
+    "src/total_gateway/learning_output_preparation.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 2
+  },
+  {
+   "path": "src/life_service/journal_replay.py",
+   "kind": "historical_read",
+   "storage": "Life journal",
+   "migration_target": "retained for restart replay",
+   "rollback_cost": "low",
+   "note": "embedded_runtime restart path",
+   "exists": true,
+   "callers": [
+    "src/life_service/embedded_runtime.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "src/life_service/legacy_learning_migration.py",
+   "kind": "compatibility_shim",
+   "storage": "signed Life journal",
+   "migration_target": "P13-C field migration",
+   "rollback_cost": "high",
+   "note": "owns EXTERNAL_COMPATIBILITY_ENTRYPOINTS + telemetry",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/legacy_learning_telemetry.py",
+    "src/life_service/embedded_runtime.py",
+    "src/life_service/journal_replay.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 3
+  },
+  {
+   "path": "src/life_service/capability_lifecycle.py",
+   "kind": "retire_candidate",
+   "storage": "n/a (no callers found)",
+   "migration_target": "none observed",
+   "rollback_cost": "low",
+   "note": "zero authoritative callers at audit time",
+   "exists": true,
+   "callers": [],
+   "data_consumers": [],
+   "caller_count": 0
+  },
+  {
+   "path": "src/life_service/life_learning_memory.py",
+   "kind": "retire_candidate",
+   "storage": "n/a (no callers found)",
+   "migration_target": "none observed",
+   "rollback_cost": "low",
+   "note": "zero authoritative callers at audit time",
+   "exists": true,
+   "callers": [],
+   "data_consumers": [],
+   "caller_count": 0
+  },
+  {
+   "path": "src/life_service/capability_learning.py",
+   "kind": "legacy_write_authority",
+   "storage": "Life shadow store",
+   "migration_target": "capability experience (P5)",
+   "rollback_cost": "medium",
+   "note": "12+ live callers incl. store/episode_builder",
+   "exists": true,
+   "callers": [
+    "src/life_service/__init__.py",
+    "src/life_service/embedded_runtime.py",
+    "src/life_service/episode_builder.py",
+    "src/life_service/store.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 4
+  },
+  {
+   "path": "src/total_gateway/learning_output_preparation.py",
+   "kind": "compatibility_shim",
+   "storage": "gateway store",
+   "migration_target": "composition experience bridge (R1F)",
+   "rollback_cost": "medium",
+   "note": "bridges legacy learning into runtime",
+   "exists": true,
+   "callers": [
+    "src/total_gateway/learning_output_binding.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "src/total_gateway/learning_output_binding.py",
+   "kind": "compatibility_shim",
+   "storage": "gateway store",
+   "migration_target": "composition experience bridge (R1F)",
+   "rollback_cost": "medium",
+   "note": "runtime-scoped binding",
+   "exists": true,
+   "callers": [
+    "src/total_gateway/learning_experience_writeback.py",
+    "src/total_gateway/runtime.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 2
+  },
+  {
+   "path": "src/total_gateway/learning_experience_writeback.py",
+   "kind": "legacy_write_authority",
+   "storage": "MemoryCoordinator (L3)",
+   "migration_target": "already the modern owner",
+   "rollback_cost": "high",
+   "note": "P10 verified write-back; retained",
+   "exists": true,
+   "callers": [
+    "src/total_gateway/learning_output_binding.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "app/backend/tiangong-backend/v3/legacy_learning_telemetry.py",
+   "kind": "compatibility_shim",
+   "storage": "append-only usage journal",
+   "migration_target": "P13-B zero-use window",
+   "rollback_cost": "low",
+   "note": "the ONLY production observation of legacy entries",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/duihua_qiaojie.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "app/backend/tiangong-backend/v3/l0_ability_projection.py",
+   "kind": "read_projection",
+   "storage": "read-only projection",
+   "migration_target": "world-understanding candidates",
+   "rollback_cost": "low",
+   "note": "display only; must never gain a write path",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/duihua_qiaojie.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 1
+  },
+  {
+   "path": "app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py",
+   "kind": "compatibility_shim",
+   "storage": "~/.tiangong/v3/nengli_zhuche.json (legacy data protocol)",
+   "migration_target": "P8/P9 source publication",
+   "rollback_cost": "high",
+   "data_consumers": [
+    "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
+    "app/backend/tiangong-backend/v3/jinhua/yuanyu_yingshe.py"
+   ],
+   "note": "zero import callers, BUT duihua_qiaojie reads/writes its JSON path directly (data-protocol consumer, not an import)",
+   "exists": true,
+   "callers": [],
+   "caller_count": 0
+  },
+  {
+   "path": "src/life_service/memory_coordinator.py",
+   "kind": "retained_modern",
+   "storage": "Life shadow store",
+   "migration_target": "n/a",
+   "rollback_cost": "n/a",
+   "note": "the sole memory write authority",
+   "exists": true,
+   "callers": [
+    "src/life_service/embedded_runtime.py",
+    "src/total_gateway/learning_experience_writeback.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 2
+  },
+  {
+   "path": "src/life_service/memory_invalidation.py",
+   "kind": "retained_modern",
+   "storage": "append-only invalidations",
+   "migration_target": "n/a",
+   "rollback_cost": "n/a",
+   "note": "P15-B cascade",
+   "exists": true,
+   "callers": [
+    "src/life_service/experience_invalidation_bridge.py",
+    "src/life_service/memory_compaction.py",
+    "src/life_service/memory_coordinator.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 3
+  },
+  {
+   "path": "src/life_service/experience_invalidation_bridge.py",
+   "kind": "retained_modern",
+   "storage": "n/a (bridge)",
+   "migration_target": "n/a",
+   "rollback_cost": "n/a",
+   "note": "P15-B bridge",
+   "exists": true,
+   "callers": [],
+   "data_consumers": [],
+   "caller_count": 0
+  },
+  {
+   "path": "src/world_understanding/capability_composition/capability_experience_api.py",
+   "kind": "retained_modern",
+   "storage": "aggregate states",
+   "migration_target": "n/a",
+   "rollback_cost": "n/a",
+   "note": "P5 policy API",
+   "exists": true,
+   "callers": [
+    "src/total_gateway/learning_experience_writeback.py",
+    "src/total_gateway/learning_output_preparation.py",
+    "src/world_understanding/capability_composition/__init__.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 3
+  },
+  {
+   "path": "src/life_service/legacy_learning_migration.py::R3A_LEGACY_MUTATION_ENTRYPOINTS",
+   "kind": "execution_entry",
+   "storage": "signed Life journal",
+   "migration_target": "P13-C/D staged removal",
+   "rollback_cost": "high",
+   "note": "14 HTTP mutation routes",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/legacy_learning_telemetry.py",
+    "src/life_service/embedded_runtime.py",
+    "src/life_service/journal_replay.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 3
+  },
+  {
+   "path": "src/life_service/legacy_learning_migration.py::EXTERNAL_COMPATIBILITY_ENTRYPOINTS",
+   "kind": "compatibility_shim",
+   "storage": "usage journal",
+   "migration_target": "P13-B zero-use window",
+   "rollback_cost": "medium",
+   "note": "4 in-process backend surfaces",
+   "exists": true,
+   "callers": [
+    "app/backend/tiangong-backend/v3/legacy_learning_telemetry.py",
+    "src/life_service/embedded_runtime.py",
+    "src/life_service/journal_replay.py"
+   ],
+   "data_consumers": [],
+   "caller_count": 3
+  }
+ ],
+ "honesty": "Callers are import-level facts from the authoritative trees at build time, not a sound call graph (dynamic dispatch and external consumers still need review). Deletion authority stays with P13-B zero-use proof and operator approval; this matrix never deletes anything."
+}
