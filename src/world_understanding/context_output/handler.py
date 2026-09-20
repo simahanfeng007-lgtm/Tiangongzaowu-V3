@@ -41,6 +41,12 @@ class WorldContextRequestHandler:
         self.projector = projector
         self.output_port = output_port
         self.projection_enricher = projection_enricher
+        # P12-R1F: optional, read-only capability-experience recall. The
+        # provider returns (positive entries, negative evidence) for the
+        # current query/snapshot; a missing provider is a legal cold start
+        # (empty experience), and a failing provider must not break the
+        # canonical context path — but it never injects anything itself.
+        self.experience_provider = None
 
     def __call__(self, envelope: WorldIngressEnvelope) -> ContextRequestDisposition:
         query = compile_world_query(envelope)
@@ -58,9 +64,20 @@ class WorldContextRequestHandler:
                 enrichment = ()
         capability = None
         reserved = 0
+        recalled_experience = ()
+        recalled_negative = ()
+        provider = getattr(self, "experience_provider", None)
+        if callable(provider):
+            try:
+                recalled_experience, recalled_negative = provider(query, snapshot)
+            except Exception:
+                _log.warning("CAPABILITY_EXPERIENCE_RECALL_UNAVAILABLE", exc_info=True)
+                recalled_experience, recalled_negative = (), ()
         try:
             capability = build_world_reference_context_packet(
-                snapshot, query, token_estimator=self.projector.token_estimator)
+                snapshot, query, token_estimator=self.projector.token_estimator,
+                procedural_experience=recalled_experience,
+                negative_evidence=recalled_negative)
             if capability is not None:
                 reserved = capability_context_reserved_tokens(capability, token_estimator=self.projector.token_estimator)
         except ValueError as exc:
