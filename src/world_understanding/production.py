@@ -37,6 +37,10 @@ from .skill_method_world.publication import (
     PUBLICATION_SCHEMA, ARCHIVE_WATERMARK, MethodRevisionResolver,
     materialize_method_update, method_marker,
 )
+from .tool_capability_world.publication import (
+    TOOL_BUNDLE_WATERMARK, TOOL_PUBLICATION_SCHEMA, ToolRevisionResolver,
+    materialize_tool_update,
+)
 
 
 class FrameFactory(Protocol):
@@ -103,6 +107,7 @@ class ProductionWorldUnderstandingRuntime:
         self._materializer = WorldStateMaterializer(store)
         self._committed_state_observer = committed_state_observer
         self._method_revision_resolver = method_revision_resolver
+        self._tool_revision_resolver = None
         self.facade = WorldUnderstandingFacade(
             enabled=True,
             context_request_handler=context_request_handler,
@@ -312,6 +317,15 @@ class ProductionWorldUnderstandingRuntime:
                 raise ValueError("METHOD_PUBLICATION_RESOLVER_ALREADY_CONFIGURED")
             self._method_revision_resolver = resolver
 
+    def install_tool_revision_resolver(self, resolver: ToolRevisionResolver) -> None:
+        """Operator-only composition seam; never an envelope or model field."""
+        if not callable(resolver):
+            raise TypeError("TOOL_PUBLICATION_RESOLVER_INVALID")
+        with self._lock:
+            if getattr(self, "_tool_revision_resolver", None) is not None and self._tool_revision_resolver is not resolver:
+                raise ValueError("TOOL_PUBLICATION_RESOLVER_ALREADY_CONFIGURED")
+            self._tool_revision_resolver = resolver
+
     def method_world_for_state(
         self, state_ref: WorldRecordRef, *, scope: WorldScope,
         retention_owner: str | None = None, expected_method_source_refs: tuple | None = None,
@@ -352,6 +366,38 @@ class ProductionWorldUnderstandingRuntime:
                 self.store.retain_state(RetainedWorldState(retention_owner, state_ref, scope))
             return methods
 
+    def _consume_tool_publication(self, envelope: WorldIngressEnvelope) -> SourceMaterializationDisposition:
+        payload = envelope.payload_inline
+        if (envelope.source_kind != "SYSTEM_GOVERNANCE" or type(payload) is not dict
+                or set(payload) != {"schema", "bundle_sha256", "frame_id"}
+                or payload["schema"] != TOOL_PUBLICATION_SCHEMA
+                or type(payload["frame_id"]) is not str):
+            raise ValueError("TOOL_PUBLICATION_ENVELOPE_INVALID")
+        with self._lock:
+            resolver = self._tool_revision_resolver
+            if resolver is None:
+                raise ValueError("TOOL_PUBLICATION_NOT_CONFIGURED")
+            scope = envelope.scope_hint
+            previous = self.store.current(life_id=scope.life_id, world_scope_hash=scope.world_scope_hash,
+                                          principal_scope_hash=scope.principal_scope_hash, frame_id=payload["frame_id"])
+            if previous is None:
+                raise ValueError("TOOL_PUBLICATION_REQUIRES_EXISTING_FRAME")
+            with self.store.publication_transaction(previous):
+                from .skill_method_world.publication import method_marker
+                if method_marker(previous, TOOL_BUNDLE_WATERMARK) == payload["bundle_sha256"]:
+                    return SourceMaterializationDisposition("TOOL_REVISION_ALREADY_MATERIALIZED", True, previous.state.world_state_id)
+                update = resolver(envelope, previous)
+                snapshot, frame, graph = materialize_tool_update(
+                    self._materializer, envelope, previous, update, self._next_cut(envelope, previous))
+                live = self._streams.get(frame.frame_id)
+                self._streams[frame.frame_id] = _StreamState(frame, graph, None if live is None else live.closure)
+            if self._committed_state_observer is not None:
+                try:
+                    self._committed_state_observer(envelope, snapshot)
+                except Exception:
+                    pass
+            return SourceMaterializationDisposition("TOOL_REVISION_MATERIALIZED", True, snapshot.state.world_state_id)
+
     def _consume_method_publication(self, envelope: WorldIngressEnvelope) -> SourceMaterializationDisposition:
         payload = envelope.payload_inline
         if (envelope.source_kind != "SYSTEM_GOVERNANCE" or type(payload) is not dict
@@ -390,6 +436,8 @@ class ProductionWorldUnderstandingRuntime:
     ) -> SourceMaterializationDisposition:
         if isinstance(envelope.payload_inline, dict) and envelope.payload_inline.get("schema") == PUBLICATION_SCHEMA:
             return self._consume_method_publication(envelope)
+        if isinstance(envelope.payload_inline, dict) and envelope.payload_inline.get("schema") == TOOL_PUBLICATION_SCHEMA:
+            return self._consume_tool_publication(envelope)
         if not rows:
             return SourceMaterializationDisposition("SOURCE_EMPTY", True, None)
         with self._lock:

@@ -1,0 +1,19 @@
+Verification Plane 1.22 — P15-A tool-source publication preflight
+
+A Tool-source bundle publication now flows into the ONE World invalidation
+chain, mirroring the Method publication path: one SYSTEM_GOVERNANCE envelope
+names the published bundle digest, the operator-configured resolver verifies
+the bundle bytes through the original P8 reader and compiles the exact Tool
+Capability World, and the original materializer replaces ONLY the Tool domain
+while precise changed_source_keys (tool-world:<old/new snapshot>) invalidate
+exactly the tool-bound records. Same-digest different-byte bundles are
+refused by the original reader; duplicate publications replay idempotently;
+unrelated records and the sealed-plan readers are untouched.
+
+Add src/world_understanding/tool_capability_world/publication.py to the
+inherited frozen surface. Preserve every prior member. Changed prior members
+are the single production runtime (tool publication routing, install seam and
+consumer beside the Method path) plus the single version source and this
+freeze. The Gateway-side resolver lives outside the frozen list and holds no
+authority of its own; no second invalidation store, registry, planner route
+or execution grant is introduced. Store stays v33.
