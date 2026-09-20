@@ -3,12 +3,12 @@
  "generated_from": {
   "skill_router_index": {
    "path": "src/omni_body_skill/registry/skill_router_index.json",
-   "sha256": "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45",
+   "index_blob": "14be311bc7368b307e6f64d748eb25cf1185076a",
    "item_count": 34
   },
   "capability_manifest": {
    "path": "src/omni_body_skill/registry/capability_manifest.generated.json",
-   "sha256": "0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d",
+   "manifest_blob": "f443737de830ad600c41792c8afbe30d9a7c4618",
    "action_count": 790
   }
  },
@@ -38,7 +38,7 @@
    "mingcheng": "显式学习请求建卡",
    "category": "learning",
    "file": "deliverable_skills/57_learning_card_ingest.md",
-   "file_sha256": "97c63acd27b98218bb323245dface0faac23cd47548345150307c141ff66dbc9",
+   "file_blob": "c205e49ac201f6599bd640d38aee2366da4845f6",
    "task_intents": [
     "显式学习",
     "生成学习卡",
@@ -67,7 +67,7 @@
    "mingcheng": "Omni Body 核心动作参数手册",
    "category": "core",
    "file": "deliverable_skills/00_core_actions_reference.md",
-   "file_sha256": "954571054caac825bb69efe49d0e6f60770bf0d9c1eac8372db90b554224ede8",
+   "file_blob": "c2a9b78d8b1709f974209e1f2ed9cbb81109c9a0",
    "task_intents": [
     "文件操作",
     "文档生成",
@@ -100,7 +100,7 @@
    "mingcheng": "世界顶尖级受管超长文档工程",
    "category": "managed_long_document",
    "file": "deliverable_skills/60_skill_managed_long_document_worldclass.md",
-   "file_sha256": "bcdd56d27cbe81c59584f776b5174b3014527b0b0990099fcbfacdb55d591398",
+   "file_blob": "0737be0db7a166a990ec737521af5fae1599eee3",
    "task_intents": [
     "超长文档设计",
     "受管长文档",
@@ -151,7 +151,7 @@
    "mingcheng": "世界顶尖级商业 Word 方案交付",
    "category": "business_document",
    "file": "deliverable_skills/29_skill_word_business_proposal_worldclass.md",
-   "file_sha256": "f42c07e0234df77cfc10a7fc45b077d4b0344ad89fef3477b2ebfe63181f13a6",
+   "file_blob": "07571701ae7cbb3c41a68a6010cf2549b6af8bd8",
    "task_intents": [
     "商业方案",
     "Word文档",
@@ -195,7 +195,7 @@
    "mingcheng": "世界顶尖级商业汇报 PPT 交付",
    "category": "executive_presentation",
    "file": "deliverable_skills/30_skill_ppt_executive_report_worldclass.md",
-   "file_sha256": "d13862f853d0513ccb95ad1894671d439d8e0aa419065394f34f435874c545f4",
+   "file_blob": "7249edd7d56d5f294ea9a82fd9f0607adea7f7f7",
    "task_intents": [
     "商业汇报",
     "PPT",
@@ -237,7 +237,7 @@
    "mingcheng": "世界顶尖级代码工程交付",
    "category": "code_engineering",
    "file": "deliverable_skills/31_skill_code_project_delivery_worldclass.md",
-   "file_sha256": "c95fc4d2d7093db1cc9eb6fda97aa6c0f3956bd1c2a0514346ce0fcb63436184",
+   "file_blob": "5f0b4897b009dd846962db9228f1909a3992ff57",
    "task_intents": [
     "代码工程",
     "程序开发",
@@ -287,7 +287,7 @@
    "mingcheng": "世界顶尖级资料/论文综述交付",
    "category": "research_review",
    "file": "deliverable_skills/32_skill_research_literature_review_worldclass.md",
-   "file_sha256": "a5309ae38c6fe2537b0d8e3293e1c6050abc74dbaef7af2e1e1cc9276a922e18",
+   "file_blob": "4c609135e8118a7209c1bc50dfa48b0a6dc46a99",
    "task_intents": [
     "资料搜索",
     "论文综述",
@@ -331,7 +331,7 @@
    "mingcheng": "世界顶尖级短视频交付",
    "category": "short_video",
    "file": "deliverable_skills/33_skill_short_video_delivery_worldclass.md",
-   "file_sha256": "0bcdfb707b6720897e195300f8e5e8d00c6e02a52f44752d755bd0d80709aa7a",
+   "file_blob": "9d026c17218ae75356400314ba5400914df07b07",
    "task_intents": [
     "短视频",
     "剪辑",
@@ -377,7 +377,7 @@
    "mingcheng": "世界顶尖级受管长篇小说工程",
    "category": "managed_longform_fiction",
    "file": "deliverable_skills/58_skill_managed_longform_novel_worldclass.md",
-   "file_sha256": "70613be3ebb0a81a5300078caaa4cb0e7d066ece51121353b60a270a5e20219f",
+   "file_blob": "a09b16c7f7a9ccb3bd88d5b7e9a1212199d05e92",
    "task_intents": [
     "受管长篇小说",
     "长篇小说工程",
@@ -430,7 +430,7 @@
    "mingcheng": "世界顶尖级网文章节交付",
    "category": "creative_writing",
    "file": "deliverable_skills/34_skill_webnovel_chapter_delivery_worldclass.md",
-   "file_sha256": "5b1ffedd0ed0479350a71629043ea38e85092bb0e5329d1b799631c7875a8230",
+   "file_blob": "7b7a41de0fc48fbb8b074e8d8cde84df8b861a11",
    "task_intents": [
     "网文写作",
     "小说章节",
@@ -459,7 +459,7 @@
    "mingcheng": "世界顶尖级海报/修图视觉交付",
    "category": "visual_design",
    "file": "deliverable_skills/35_skill_poster_visual_delivery_worldclass.md",
-   "file_sha256": "a66c798440c256f7e2df667218699bd892614efcd9651129cbd73e1e46c480af",
+   "file_blob": "bed34dd66d571fd74c7affe2d6768e294d63e379",
    "task_intents": [
     "海报设计",
     "修图",
@@ -502,7 +502,7 @@
    "mingcheng": "世界顶尖级表格分析报告交付",
    "category": "data_analysis",
    "file": "deliverable_skills/36_skill_spreadsheet_analysis_report_worldclass.md",
-   "file_sha256": "5b226a30e5e02d75ef744a630ef96a3cf819ad96b7fcf00d1f18dce2812196db",
+   "file_blob": "9ae18e803e3a64f48ad67fd958e1a4e61debba6e",
    "task_intents": [
     "表格分析",
     "数据报告",
@@ -545,7 +545,7 @@
    "mingcheng": "世界顶尖级会议纪要与行动跟进交付",
    "category": "meeting_ops",
    "file": "deliverable_skills/37_skill_meeting_minutes_action_followup_worldclass.md",
-   "file_sha256": "7c982d7485c0ec48e0b60a7bafa48e5d11ffa2f339b3c0d57e10f46309fb51c4",
+   "file_blob": "a8e9cd82e5cfdf8b883dce4ec82afeabaa028b80",
    "task_intents": [
     "会议纪要",
     "行动跟进",
@@ -586,7 +586,7 @@
    "mingcheng": "世界顶尖级B2B销售话术交付",
    "category": "sales_enablement",
    "file": "deliverable_skills/38_skill_sales_script_delivery_worldclass.md",
-   "file_sha256": "bf6a0530ab93dbae90218587cc93c379c2fa1f1ea5969ed04867275821419571",
+   "file_blob": "b5d7d640ae09180d2ffb473273a01546889346f6",
    "task_intents": [
     "销售话术",
     "B2B转化",
@@ -627,7 +627,7 @@
    "mingcheng": "世界顶尖级课程/教案交付",
    "category": "education",
    "file": "deliverable_skills/39_skill_course_lesson_plan_worldclass.md",
-   "file_sha256": "f0898b901be1313e72ed3feb84f2c0b646cf8a171e3ce2e09b328a4d04bb6128",
+   "file_blob": "6d61a0199fbd0d39f31371b77f41b87477f3cec3",
    "task_intents": [
     "课程设计",
     "教案",
@@ -669,7 +669,7 @@
    "mingcheng": "世界顶尖级知识库入库交付",
    "category": "knowledge_base",
    "file": "deliverable_skills/40_skill_knowledge_base_ingestion_worldclass.md",
-   "file_sha256": "202ef7f7fee5619f657526d80eef59cf825b38417e28844d9849ac89b7933f26",
+   "file_blob": "2d16c83b6b68eabd7a677f2392177e39f2f78835",
    "task_intents": [
     "知识库入库",
     "文档结构化",
@@ -711,7 +711,7 @@
    "mingcheng": "世界顶尖级授权声音/音频交付",
    "category": "authorized_audio",
    "file": "deliverable_skills/41_skill_authorized_voice_audio_worldclass.md",
-   "file_sha256": "d7409bb6b9d1ebdd0089c118a1a6730c677c6b86042a15143e4c1cbfcfe031e7",
+   "file_blob": "fbe3854dda3aae78aca118b38d3b576f40470d2a",
    "task_intents": [
     "授权声音",
     "音频交付",
@@ -753,7 +753,7 @@
    "mingcheng": "世界顶尖级SEO/网页内容交付",
    "category": "web_content",
    "file": "deliverable_skills/42_skill_seo_people_first_content_worldclass.md",
-   "file_sha256": "5b5c8a0982be85005bbcb2aa0c4add1d9fbd4264ff0b8ab24f16f1625a075725",
+   "file_blob": "80b96a15ec5ea56e76e42f921d7d2c355874c768",
    "task_intents": [
     "SEO内容",
     "网页内容",
@@ -795,7 +795,7 @@
    "mingcheng": "世界顶尖级内容日历交付",
    "category": "content_ops",
    "file": "deliverable_skills/43_skill_content_calendar_worldclass.md",
-   "file_sha256": "becda8a920a45a7db1699a46eb238679a06e547e7e3984881eb1b6b6caf615da",
+   "file_blob": "5e6e0a35c1f9504624bb3f20a6603682e1cc25d0",
    "task_intents": [
     "内容运营",
     "内容日历",
@@ -836,7 +836,7 @@
    "mingcheng": "世界顶尖级专业应用桥接交付",
    "category": "professional_app_bridge",
    "file": "deliverable_skills/44_skill_professional_application_bridge_worldclass.md",
-   "file_sha256": "cd0275cda965ae735f7a72df77d791e3d28ba84d24605111473abf32b09f4246",
+   "file_blob": "6608ec7f4707e069c60ff1521ec909867b163acc",
    "task_intents": [
     "专业应用桥接",
     "应用适配器",
@@ -879,7 +879,7 @@
    "mingcheng": "世界顶尖级浏览器自动化交付",
    "category": "browser_automation",
    "file": "deliverable_skills/45_skill_browser_playwright_automation_worldclass.md",
-   "file_sha256": "26d06918e019a0f052b7f6cff7781a43c6726a0ce88d832265dd5ec62d0362d8",
+   "file_blob": "25d7b3133db34843e4ac6f30804e54700af1ab78",
    "task_intents": [
     "浏览器自动化",
     "网页抓取",
@@ -926,7 +926,7 @@
    "mingcheng": "世界顶尖级 Office / WPS 原生桥接交付",
    "category": "office_native_bridge",
    "file": "deliverable_skills/46_skill_office_native_bridge_worldclass.md",
-   "file_sha256": "b44b4944d83400b7a60dc73db676fe2ad062628df5c5eafbba29af78edac18cc",
+   "file_blob": "ff4c16b3f0a3c82547cbf961b55b5da41a9e3de9",
    "task_intents": [
     "Office原生桥接",
     "WPS桥接",
@@ -978,7 +978,7 @@
    "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
    "category": "design_native_bridge",
    "file": "deliverable_skills/47_skill_adobe_blender_design_bridge_worldclass.md",
-   "file_sha256": "826cb104272575747706a19c0711da6194bdc232ffcd6d1530c9183104dc8429",
+   "file_blob": "eb2ca14d50bd72641e11cedeee40f05b46c68a07",
    "task_intents": [
     "Adobe桥接",
     "Photoshop脚本",
@@ -1030,7 +1030,7 @@
    "mingcheng": "电脑操作",
    "category": "system",
    "file": "deliverable_skills/49_skill_computer_operation.md",
-   "file_sha256": "b0606d288aa4c04f564c101846d424fbbfc9aa034bab58d50850299b0ee3e403",
+   "file_blob": "c7029ce7c388694c36f3220e4d2fc53aff18f979",
    "task_intents": [
     "执行命令",
     "系统操作",
@@ -1063,7 +1063,7 @@
    "mingcheng": "桌面清理与文件整理",
    "category": "system",
    "file": "deliverable_skills/50_skill_desktop_cleanup.md",
-   "file_sha256": "a14dedcafaa6ce55c4e6cc4f063db272812f63ffd9fdd2fd317cc13620e51c99",
+   "file_blob": "b11efbe691f3ac889f595eb2b4f5627bedbb97f0",
    "task_intents": [
     "桌面清理",
     "文件整理",
@@ -1096,7 +1096,7 @@
    "mingcheng": "实用工具箱",
    "category": "utility",
    "file": "deliverable_skills/51_skill_utility_toolbox.md",
-   "file_sha256": "93c73eb1e5dcef41c0e00c158792f48b7b51c20a6a19a9b10a176ea589046ec4",
+   "file_blob": "dd7b017ec7b5560bf37271ac0b1e673b8ec07f4c",
    "task_intents": [
     "批量重命名",
     "PDF处理",
@@ -1129,7 +1129,7 @@
    "mingcheng": "万能格式转换",
    "category": "utility",
    "file": "deliverable_skills/52_skill_format_converter.md",
-   "file_sha256": "e7ed17521fbdbfd996b66b37fa17ee38cb408387643faa55127019842a4ab790",
+   "file_blob": "7766788d3a4683b25f457e3d8fad76c467553770",
    "task_intents": [
     "格式转换",
     "音频转换",
@@ -1165,7 +1165,7 @@
    "mingcheng": "网络搜索与图搜",
    "category": "search",
    "file": "deliverable_skills/48_skill_web_search_research_worldclass.md",
-   "file_sha256": "661d4726a110101ae3ffe1a617c145fbdd91123addfdbe5c414afed5e5b141db",
+   "file_blob": "fdbdc5227c2d8080531c6464864ba86062630537",
    "task_intents": [
     "搜索",
     "图片搜索",
@@ -1198,7 +1198,7 @@
    "mingcheng": "产品级EXE打包",
    "category": "devops",
    "file": "deliverable_skills/53_skill_production_packaging.md",
-   "file_sha256": "f9a6e03e37e9503c80435b48f54f721d15b8c65f6abe2eb3ea1b170f8771c10a",
+   "file_blob": "de875f90337cba90cd84887a6157c015af671802",
    "task_intents": [
     "打包",
     "构建安装包",
@@ -1230,7 +1230,7 @@
    "mingcheng": "前端性能优化",
    "category": "frontend",
    "file": "deliverable_skills/54_skill_frontend_optimization.md",
-   "file_sha256": "e812291457e998a8cbcaeaaa55cd22d76a23ccd688cebd1aa3e56da5bf0c08b5",
+   "file_blob": "6dee5e8706fc4d761dade28d128dc9f09b062d2f",
    "task_intents": [
     "前端优化",
     "性能优化",
@@ -1262,7 +1262,7 @@
    "mingcheng": "前端美化",
    "category": "frontend",
    "file": "deliverable_skills/55_skill_frontend_design.md",
-   "file_sha256": "98a0a9535fc1adab231bb937b1cdd92b95e6eae09c776da5db91285e37b7f3a0",
+   "file_blob": "767d6eb4bd74d4236ce7db67b621bcc08e11e48e",
    "task_intents": [
     "前端美化",
     "设计令牌",
@@ -1294,7 +1294,7 @@
    "mingcheng": "VRM身体展示优化",
    "category": "frontend",
    "file": "deliverable_skills/56_skill_vrm_optimization.md",
-   "file_sha256": "d13b35aab382a7a2871e60497d15e72409be3af0d5dc587237d6f0ebd209be29",
+   "file_blob": "bafae9a977129223863951575ab1a628580af382",
    "task_intents": [
     "VRM优化",
     "3D调整",
@@ -1326,7 +1326,7 @@
    "mingcheng": "世界顶尖级脑图与知识结构交付",
    "category": "knowledge_architecture",
    "file": "deliverable_skills/59_skill_mindmap_knowledge_architecture_worldclass.md",
-   "file_sha256": "12a6f5186718e1160c77fc3c45ecfbd9ccc12165ce4a2c0df3864eee601316ad",
+   "file_blob": "69f65e9b3f4b15daff45f81b10615f76c9bd4b7c",
    "task_intents": [
     "脑图设计",
     "思维导图",
@@ -1367,7 +1367,7 @@
    "mingcheng": "Omni Body 万能工具参考",
    "category": "core",
    "file": "deliverable_skills/51_skill_omni_body_reference.md",
-   "file_sha256": "ddbd552c79537d275d4f5b76e804932df6259bf69e8b001c688af72616a85a72",
+   "file_blob": "a39f34697e36d04336f76468a96698c1f4264d25",
    "task_intents": [
     "文件操作",
     "文档生成",

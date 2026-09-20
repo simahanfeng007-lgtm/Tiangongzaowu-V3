@@ -14,8 +14,8 @@ status and never fabricates evidence.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -39,20 +39,23 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _git_blob_sha256(path: Path) -> str:
-    """Hash the Git index blob bytes, not the working tree.
+def _git_blob_id(path: Path) -> str:
+    """Return the Git blob SHA-1 recorded in the index for this path.
 
-    A text document checks out with platform-dependent line endings, so the
-    working-tree digest would make this table drift between Linux and
-    Windows. The index blob is the repository's own byte authority and is
-    therefore the only platform-stable document pin.
+    Working-tree bytes drift across platforms (a Windows runner's git may
+    even smudge ``git show`` output through core.autocrlf), but the index
+    blob identity is the repository's own content address and is stable by
+    construction. ``ls-files`` never applies any content conversion.
     """
 
     relative = path.resolve().relative_to(ROOT).as_posix()
-    blob = subprocess.run(
-        ["git", "show", f":{relative}"], cwd=ROOT,
-        capture_output=True, check=True).stdout
-    return hashlib.sha256(blob).hexdigest()
+    row = subprocess.run(
+        ["git", "ls-files", "-s", "--", relative], cwd=ROOT,
+        capture_output=True, check=True, text=True).stdout.strip()
+    parts = row.split()
+    if len(parts) < 2 or not re.fullmatch(r"[0-9a-f]{40}", parts[1]):
+        raise SystemExit(f"parity: no index blob for {relative}")
+    return parts[1]
 
 
 def _strict(payload_text: str, label: str):
@@ -118,7 +121,7 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
             "mingcheng": item.get("mingcheng"),
             "category": item.get("category"),
             "file": item.get("file"),
-            "file_sha256": _git_blob_sha256(doc),
+            "file_blob": _git_blob_id(doc),
             "task_intents": list(item.get("taskIntents") or []),
             "deliverables": list(item.get("deliverables") or []),
             "required_actions": action_set,
@@ -148,12 +151,12 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
         "generated_from": {
             "skill_router_index": {
                 "path": str(index_path.relative_to(ROOT)),
-                "sha256": _git_blob_sha256(index_path),
+                "index_blob": _git_blob_id(index_path),
                 "item_count": total,
             },
             "capability_manifest": {
                 "path": str(manifest_path.relative_to(ROOT)),
-                "sha256": _git_blob_sha256(manifest_path),
+                "manifest_blob": _git_blob_id(manifest_path),
                 "action_count": len(capabilities),
             },
         },
@@ -189,7 +192,13 @@ def main() -> int:
     if args.check:
         current = args.output.read_text(encoding="utf-8") if args.output.is_file() else ""
         if current != rendered:
-            print("parity table drift: rebuild required", file=sys.stderr)
+            import difflib
+            diff = next(difflib.unified_diff(
+                current.splitlines(), rendered.splitlines(),
+                "committed", "rebuilt", n=1), None)
+            print("parity table drift: rebuild required "
+                  f"(first diff: {diff.strip() if diff else 'file missing'})",
+                  file=sys.stderr)
             return 1
         print(f"parity table ok: {table['summary']['items_total']} items, "
               f"{table['summary']['action_surface_covered_items']} covered")
