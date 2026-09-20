@@ -33,8 +33,11 @@ AUTHORITATIVE_PACKAGES = (
 #     world candidate outbox consumer hook)
 #   - world_understanding only reads life_service.action_intents (self-will
 #     integration adapter)
+#   - life_service reads the P5 capability-experience policy to expire its own
+#     experience aggregates on source changes (P15-B bridge)
 ALLOWED_LIFE_WORLD_EDGES = {
     ("life_service", "world_understanding.post_commit"),
+    ("life_service", "world_understanding.capability_composition.capability_experience_policy"),
     ("world_understanding", "life_service.action_intents"),
 }
 
