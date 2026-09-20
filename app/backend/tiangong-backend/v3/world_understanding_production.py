@@ -316,6 +316,30 @@ def register_production_composition(result, *, verification_registry, intent_evi
         issued_at_ms=issued_at_ms, expires_at_ms=expires_at_ms, recorded_at_ms=recorded_at_ms)
 
 
+def install_production_experience_recall(provider) -> None:
+    """Install the operator-pinned capability-experience recall seam.
+
+    The provider receives (WorldQuery, MaterializedWorldSnapshot) and
+    returns (positive ExperienceContextEntryV1 tuple, negative
+    NegativeEvidenceContextEntryV1 tuple) read from the real P5 aggregate
+    store under the caller's own scope filtering. Absent installation the
+    slot stays a legal cold start; a failing provider never breaks the
+    canonical context path (the handler logs and continues). This is a
+    composition seam, never a write authority.
+    """
+    if not callable(provider):
+        raise TypeError("experience recall provider must be callable")
+    runtime = production_world_understanding_runtime()
+    handler = getattr(
+        runtime.facade._ingress._router, "_context_request_handler", None)
+    if not hasattr(handler, "experience_provider"):
+        raise ValueError("WORLD_CONTEXT_HANDLER_EXPERIENCE_SEAM_UNAVAILABLE")
+    if handler.experience_provider is not None and \
+            handler.experience_provider is not provider:
+        raise ValueError("EXPERIENCE_RECALL_ALREADY_CONFIGURED")
+    handler.experience_provider = provider
+
+
 def production_context_output_port() -> ContextOutputPort:
     production_world_understanding_runtime()
     assert _context_output is not None
