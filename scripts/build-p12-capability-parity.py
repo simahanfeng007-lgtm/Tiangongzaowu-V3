@@ -190,15 +190,20 @@ def main() -> int:
     table = build()
     rendered = json.dumps(table, ensure_ascii=False, indent=1) + "\n"
     if args.check:
-        current = args.output.read_text(encoding="utf-8") if args.output.is_file() else ""
-        if current != rendered:
-            import difflib
-            diff = next(difflib.unified_diff(
-                current.splitlines(), rendered.splitlines(),
-                "committed", "rebuilt", n=1), None)
-            print("parity table drift: rebuild required "
-                  f"(first diff: {diff.strip() if diff else 'file missing'})",
-                  file=sys.stderr)
+        # Compare parsed structure, not byte layout: the table is generated
+        # deterministically, so any semantic drift is caught here while
+        # platform text-mode reading cannot fabricate one.
+        try:
+            committed = json.loads(
+                args.output.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            committed = None
+        if committed != table:
+            print("parity table drift: rebuild required", file=sys.stderr)
+            if isinstance(committed, dict) and isinstance(table, dict):
+                for key in sorted(set(committed) | set(table)):
+                    if committed.get(key) != table.get(key):
+                        print(f"  differs: {key}", file=sys.stderr)
             return 1
         print(f"parity table ok: {table['summary']['items_total']} items, "
               f"{table['summary']['action_surface_covered_items']} covered")
