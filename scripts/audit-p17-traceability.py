@@ -19,7 +19,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TREES = ("src", "app/backend/tiangong-backend")
-MIRROR_SEGMENTS = ("runtime314", "site-packages", "bundled_skills", "node_modules", "_internal")
+TEST_TREES = ("tests",)
+MIRROR_SEGMENTS = ("runtime314", "site-packages", "bundled_skills",
+                   "node_modules", "_internal")
+# Test-tree-only pattern: a test function whose body is just pass/docstring
+# (no assertion) is the classic constant-PASS placeholder.
+_PASS_ONLY_TEST = "pass_only_test"
 DEFAULT_OUTPUT = ROOT / "docs/capability-composition/P17_B_OBLIGATION_SCAN_2026-09-20.json"
 SCHEMA = "tiangong.p17.obligation-scan.v1"
 _MARKER = re.compile(r"\b(TODO|FIXME|XXX)\b")
@@ -35,6 +40,39 @@ def _authoritative(path: Path) -> bool:
     return any(text.startswith(t) for t in TREES) and not any(
         seg in text for seg in MIRROR_SEGMENTS) and "/test" not in text \
         and "conftest" not in text
+
+
+def _test_tree(path: Path) -> bool:
+    text = path.relative_to(ROOT).as_posix()
+    return any(text.startswith(t) for t in TEST_TREES) and "conftest" not in text
+
+
+def _pass_only_tests(tree: ast.Module, source: str) -> list[dict]:
+    found = []
+    lines = source.splitlines()
+
+    class TestVisitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, node):
+            name = getattr(node, "name", "")
+            if name.startswith("test_"):
+                body = [n for n in node.body
+                        if not (isinstance(n, ast.Expr)
+                                and isinstance(n.value, ast.Constant)
+                                and isinstance(n.value.value, str))]
+                has_assert = any(isinstance(n, (ast.Assert, ast.Raise)) or (
+                    isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+                    and getattr(n.value.func, "attr", "") in {
+                        "raises", "equal", "isequal"}) for n in ast.walk(node))
+                if not has_assert and body and all(
+                        isinstance(n, (ast.Pass, ast.Return)) for n in body):
+                    found.append({
+                        "kind": _PASS_ONLY_TEST, "label": name,
+                        "line": node.lineno, "classification": None,
+                        "text": lines[node.lineno - 1].strip()[:160]})
+            self.generic_visit(node)
+
+    TestVisitor().visit(tree)
+    return found
 
 
 def _pass_only_defs(tree: ast.Module, source: str) -> list[dict]:
@@ -75,19 +113,20 @@ def _pass_only_defs(tree: ast.Module, source: str) -> list[dict]:
 def scan() -> dict:
     hits: list[dict] = []
     for path in sorted(ROOT.rglob("*.py")):
-        if not _authoritative(path):
+        in_test_tree = _test_tree(path)
+        if not _authoritative(path) and not in_test_tree:
             continue
         source = path.read_text(encoding="utf-8", errors="strict")
         rel = path.relative_to(ROOT).as_posix()
         for number, line in enumerate(source.splitlines(), 1):
-            if _MARKER.search(line):
+            if _MARKER.search(line) and not in_test_tree:
                 classification = "explicit_feature_use" if any(
                     pattern in line for pattern in _KNOWN_FEATURE_PATTERNS) \
                     else "needs_review"
                 hits.append({"kind": "marker", "path": rel, "line": number,
                              "text": line.strip()[:160],
                              "classification": classification})
-            if "NotImplementedError" in line:
+            if "NotImplementedError" in line and not in_test_tree:
                 # an except clause handling it is a feature; a bare raise is
                 # an unimplemented path needing review
                 classification = ("explicit_feature_use"
@@ -99,6 +138,12 @@ def scan() -> dict:
         try:
             tree = ast.parse(source)
         except SyntaxError:
+            continue
+        if in_test_tree:
+            for item in _pass_only_tests(tree, source):
+                item["path"] = rel
+                item["classification"] = "needs_review"
+                hits.append(item)
             continue
         for item in _pass_only_defs(tree, source):
             item["path"] = rel
