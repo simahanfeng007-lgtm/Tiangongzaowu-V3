@@ -63,6 +63,59 @@ def plan_has_valid_sha256(plan: CapabilityCompositionPlanV1) -> bool:
     return plan.plan_sha256 == computed_plan_sha256(plan)
 
 
+def _plan_identity_sha256(
+    *,
+    request_id: str,
+    run_id: str,
+    generation: int,
+    principal_scope_hash: str,
+    world_state_sha256: str,
+    goal_fingerprint: str,
+    proposal_sha256: str,
+    bindings_sha256: str,
+    source_manifest_sha256: str,
+    capability_manifest_sha256: str,
+) -> str:
+    return canonical_sha256(
+        {
+            "domain": "tiangong.capability-composition.plan-identity.v1",
+            "request_id": request_id,
+            "run_id": run_id,
+            "generation": generation,
+            "principal_scope_hash": principal_scope_hash,
+            "world_state_sha256": world_state_sha256,
+            "goal_fingerprint": goal_fingerprint,
+            "proposal_sha256": proposal_sha256,
+            "bindings_sha256": bindings_sha256,
+            "source_manifest_sha256": source_manifest_sha256,
+            "capability_manifest_sha256": capability_manifest_sha256,
+        }
+    )
+
+
+def plan_binds_proposal(
+    plan: CapabilityCompositionPlanV1,
+    proposal: CompositionProposalV1,
+) -> bool:
+    """Prove that the authoritative Plan identity includes this model proposal."""
+
+    if not plan_has_valid_sha256(plan) or not proposal_has_valid_sha256(proposal):
+        return False
+    expected = _plan_identity_sha256(
+        request_id=plan.request_id,
+        run_id=plan.run_id,
+        generation=plan.generation,
+        principal_scope_hash=plan.principal_scope_hash,
+        world_state_sha256=plan.world_state_sha256,
+        goal_fingerprint=plan.goal_fingerprint,
+        proposal_sha256=proposal.proposal_sha256,
+        bindings_sha256=plan.bindings_sha256,
+        source_manifest_sha256=plan.source_manifest_sha256,
+        capability_manifest_sha256=plan.capability_manifest_sha256,
+    )
+    return plan.plan_id == "plan_" + expected
+
+
 def _risk_max(values: Iterable[str]) -> str:
     materialized = tuple(values)
     if not materialized or any(value not in _RISK_ORDER for value in materialized):
@@ -393,20 +446,17 @@ def compile_capability_composition_plan(
         )
     )
 
-    plan_identity_sha256 = canonical_sha256(
-        {
-            "domain": "tiangong.capability-composition.plan-identity.v1",
-            "request_id": context.request_id,
-            "run_id": context.run_id,
-            "generation": context.generation,
-            "principal_scope_hash": context.principal_scope_hash,
-            "world_state_sha256": context.world_state_sha256,
-            "goal_fingerprint": context.goal_fingerprint,
-            "proposal_sha256": proposal.proposal_sha256,
-            "bindings_sha256": bindings_sha256,
-            "source_manifest_sha256": source_manifest_sha256,
-            "capability_manifest_sha256": context.capability_manifest_sha256,
-        }
+    plan_identity_sha256 = _plan_identity_sha256(
+        request_id=context.request_id,
+        run_id=context.run_id,
+        generation=context.generation,
+        principal_scope_hash=context.principal_scope_hash,
+        world_state_sha256=context.world_state_sha256,
+        goal_fingerprint=context.goal_fingerprint,
+        proposal_sha256=proposal.proposal_sha256,
+        bindings_sha256=bindings_sha256,
+        source_manifest_sha256=source_manifest_sha256,
+        capability_manifest_sha256=context.capability_manifest_sha256,
     )
     plan = CapabilityCompositionPlanV1(
         plan_id="plan_" + plan_identity_sha256,
@@ -447,5 +497,6 @@ __all__ = [
     "analyze_composition_risk",
     "compile_capability_composition_plan",
     "computed_plan_sha256",
+    "plan_binds_proposal",
     "plan_has_valid_sha256",
 ]

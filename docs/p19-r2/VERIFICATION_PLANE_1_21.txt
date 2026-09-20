@@ -1,0 +1,20 @@
+Verification Plane 1.21 — P12 R1E/R1F/R1G-prep surface extension
+
+The capability context slot now admits system-recalled capability experience
+instead of the hard-coded empty tuple: only STABLE positive lifecycle states
+pass at the slot, refusals are counted in an explicit ABI marker, and every
+entry is digest-covered with experience_data_only=true. The write-back side
+assembles one P5 observation from the durable roundtrip records through the
+original attribution evaluator; the P5 admission/statistics policy remains
+the sole writer and nothing promotes an experience by itself.
+
+Add src/world_understanding/capability_composition/composition_experience_bridge.py
+and src/world_understanding/capability_composition/formal_shadow.py to the
+inherited frozen surface (the latter integrated unchanged from the unmerged
+P11 evaluation branch). Preserve every prior member. Changed prior members
+are the existing world reference context builder and its context handler
+(experience parameters and provider seam; the default no-provider path stays
+byte-compatible) plus the single version source and this freeze. The
+compiler's additive plan_binds_proposal proof from the P11 branch lands
+outside the frozen list, covered by its own test suite. No Store, registry,
+Runtime, Gateway or completion authority changes; schema stays v33.

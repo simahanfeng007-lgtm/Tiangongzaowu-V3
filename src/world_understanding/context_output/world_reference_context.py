@@ -115,13 +115,41 @@ def _address(entity, snapshot):
     return entity, source, ref, attrs
 
 
+def _admit_recalled_experience(entries):
+    """Only STABLE positive experience enters the slot; stale items are refused.
+
+    The count of refused lifecycle states is surfaced in the ABI marker so a
+    caller can observe the filtering instead of guessing why an experience is
+    missing. Entries are DATA: nothing here turns them into instructions or
+    permissions.
+    """
+
+    from .capability_context import ExperienceContextEntryV1
+    admitted = []
+    rejected = 0
+    for entry in entries:
+        if not isinstance(entry, ExperienceContextEntryV1):
+            raise ValueError("CAPABILITY_CONTEXT_EXPERIENCE_ENTRY_INVALID")
+        if entry.lifecycle != "STABLE":
+            rejected += 1
+            continue
+        admitted.append(entry)
+    return tuple(admitted), rejected
+
+
 def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, query: WorldQuery,
-                                         *, token_estimator=conservative_token_estimate) -> CapabilityContextPacketV1 | None:
+                                         *, token_estimator=conservative_token_estimate,
+                                         procedural_experience=(), negative_evidence=()) -> CapabilityContextPacketV1 | None:
     """Project bounded display candidates; execution still needs exact Source resolution.
 
     Selection is a deterministic presentation order (literal task match, then ID),
     not a planner. Whole optional records may be omitted; identity strings never
     are truncated. Ineligible records and omissions remain explicitly counted.
+
+    P12-R1F: recalled capability experiences may be attached by the SYSTEM
+    caller only. They are DATA for the model — never instructions, permissions
+    or World facts — and only STABLE positive lifecycle states pass; STALE,
+    REVALIDATION_REQUIRED and RETIRED items are refused right here.
     """
     _validate_snapshot(snapshot, query)
     cap_entities = [e for e in snapshot.entities if e.entity_type in {"ToolCapability", "SkillMethod"}]
@@ -162,10 +190,14 @@ def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, qu
         identities = tuple(sorted((ProtectedContextIdentityV1("world_state_ref", f"{snapshot.state_ref.record_id}@{snapshot.state_ref.sha256}"),
                                    ProtectedContextIdentityV1("query_ref", f"{query.query_id}@{query.query_sha256}"),
                                    ProtectedContextIdentityV1("workspace_id", next(iter(workspaces)))), key=lambda x: (x.key, x.value)))
+        stable_experience, rejected_lifecycle = _admit_recalled_experience(procedural_experience)
+        stable_negative = tuple(negative_evidence)
         value = CapabilityContextPacketV1(schema="tiangong.capability-context-packet.v1", world_state_ref=snapshot.state_ref,
             frame_binding_sha256=next(iter(frame_bindings)), candidate_snapshot_sha256=digest,
-            method_candidates=method_entries, action_candidates=action_entries, procedural_experience=(), negative_evidence=(),
-            protected_identities=identities, composition_abi=_REFERENCE_ABI + f";omitted_records={len(rows)-len(selected)};ineligible_records={len(cap_entities)-len(rows)}",
+            method_candidates=method_entries, action_candidates=action_entries,
+            procedural_experience=stable_experience, negative_evidence=stable_negative,
+            protected_identities=identities, composition_abi=_REFERENCE_ABI + f";omitted_records={len(rows)-len(selected)};ineligible_records={len(cap_entities)-len(rows)}"
+            + f";experience_data_only=true;stable_experience={len(stable_experience)};negative_evidence={len(stable_negative)};rejected_lifecycle={rejected_lifecycle}",
             packet_sha256="0"*64)
         return replace(value, packet_sha256=value.computed_sha256())
 
