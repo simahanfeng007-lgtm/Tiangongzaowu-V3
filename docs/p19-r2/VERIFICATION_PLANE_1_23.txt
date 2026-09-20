@@ -1,0 +1,20 @@
+Verification Plane 1.23 — admission materialization and recall seam
+
+Two self-recorded integration gaps close on the frozen surface. The
+admission materializer derives the FULL system side of a P7 admission
+from one compiled SourceCompositionResult — authority-derived workspace,
+per-intent verifier evidence, per-step invocation bindings straight from
+the sealed preparation, and the activation window — while semantic values
+arrive only through the system channel and refusals are explicit. The
+controlled composition turn can therefore register end to end with no
+hand-assembled admission fixtures. The production runtime gains the
+operator-pinned experience-recall installation seam onto the context
+handler; absent installation stays a legal cold start and a failing
+provider never breaks the canonical context path.
+
+Add src/total_gateway/composition_admission_materialization.py to the
+inherited frozen surface. Preserve every prior member. Changed prior
+members are the single installed-reader bridge (one installation
+function beside the existing prepare/compile pair) plus the single
+version source and this freeze. No Store, registry, Runtime, Gateway or
+completion authority changes; schema stays v33.
