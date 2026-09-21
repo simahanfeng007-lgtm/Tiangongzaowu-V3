@@ -46,13 +46,18 @@ SURFACES = (
          rollback_cost="high", note="owns EXTERNAL_COMPATIBILITY_ENTRYPOINTS + telemetry"),
     dict(path="src/life_service/capability_lifecycle.py", kind="retire_candidate",
          storage="n/a (no callers found)", migration_target="none observed",
-         rollback_cost="low", note="zero authoritative callers at audit time"),
-    dict(path="src/life_service/life_learning_memory.py", kind="legacy_write_authority",
-         storage="in-memory policy constants", migration_target="fold into memory_coordinator",
          rollback_cost="low",
-         note="P13-D deletion drill exposed the hidden consumer: "
-              "memory_coordinator does `from . import life_learning_memory` "
-              "(relative import the original grep missed). NOT a retire candidate."),
+         note="zero authoritative callers; P13-D deletion drill PASSED "
+              "(deleted → 85 tests green → smoke ok → restored). Actual "
+              "deletion gated on P13-B zero-use window."),
+    dict(path="src/life_service/life_learning_memory.py", kind="retained_modern",
+         storage="pure policy functions (no state)",
+         migration_target="n/a", rollback_cost="n/a",
+         note="P13-D drill + P13-C deep pass: this is the P15 M4 "
+              "learning-to-memory closure STRATEGY LIBRARY (backoff, scope "
+              "bounding, deterministic id derivation), consumed normally by "
+              "memory_coordinator. It is NOT a legacy learning remnant — "
+              "reclassified retained modern. No fold needed."),
     dict(path="src/life_service/capability_learning.py", kind="legacy_write_authority",
          storage="Life shadow store", migration_target="capability experience (P5)",
          rollback_cost="medium", note="12+ live callers incl. store/episode_builder"),
