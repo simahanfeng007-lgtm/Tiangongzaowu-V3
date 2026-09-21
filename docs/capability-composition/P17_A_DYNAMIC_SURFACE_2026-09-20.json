@@ -1,12 +1,12 @@
 {
  "schema": "tiangong.p17.dynamic-surface.v1",
  "summary": {
-  "total_hits": 121,
-  "dynamic_imports": 43,
+  "total_hits": 122,
+  "dynamic_imports": 44,
   "reflective_getattrs": 77,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 121,
+  "verified": 122,
   "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
@@ -483,6 +483,14 @@
    "target": "function_name",
    "classification": "verified",
    "verified_category": "optional_dependency"
+  },
+  {
+   "kind": "dynamic_import",
+   "path": "src/total_gateway/composition_mode_runtime.py",
+   "line": 113,
+   "target": "<__import__>",
+   "classification": "verified",
+   "verified_category": "lazy_module_import"
   },
   {
    "kind": "reflective_getattr",

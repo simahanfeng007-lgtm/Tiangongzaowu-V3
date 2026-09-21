@@ -468,10 +468,14 @@
   "app/backend/tiangong-backend/v3/zongdiaodu.py:5547": {
    "category": "structural_field_access",
    "reason": "existing zongdiaodu field access (shifted by R1H insert)"
+  },
+  "src/total_gateway/composition_mode_runtime.py:113": {
+   "category": "lazy_module_import",
+   "reason": "lazy import of time module for timestamp in shadow init"
   }
  },
  "summary": {
-  "annotated_hits": 117,
+  "annotated_hits": 118,
   "categories": [
    "handler_dispatch",
    "inline_stdlib_import",
