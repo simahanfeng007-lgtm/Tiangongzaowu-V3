@@ -30,7 +30,9 @@ def test_rebuild_matches_committed_matrix():
 
 def test_every_surface_exists_and_is_classified():
     for entry in _matrix()["entries"]:
-        assert entry["exists"], entry["path"]
+        # DELETED entries correctly have exists=False
+        if "DELETED" not in entry.get("note", ""):
+            assert entry["exists"], entry["path"]
         assert entry["kind"] in {
             "legacy_write_authority", "execution_entry", "compatibility_shim",
             "read_projection", "historical_read", "retained_modern",

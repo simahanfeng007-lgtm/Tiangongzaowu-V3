@@ -45,11 +45,11 @@ SURFACES = (
          storage="signed Life journal", migration_target="P13-C field migration",
          rollback_cost="high", note="owns EXTERNAL_COMPATIBILITY_ENTRYPOINTS + telemetry"),
     dict(path="src/life_service/capability_lifecycle.py", kind="retire_candidate",
-         storage="n/a (no callers found)", migration_target="none observed",
-         rollback_cost="low",
-         note="zero authoritative callers; P13-D deletion drill PASSED "
-              "(deleted → 85 tests green → smoke ok → restored). Actual "
-              "deletion gated on P13-B zero-use window."),
+         storage="n/a", migration_target="none",
+         rollback_cost="n/a",
+         note="DELETED in P13-D (batch E) after P13-B ZERO_USE proof. "
+              "Deletion drill passed (85 tests green). File removed from "
+              "source and mirror; git history preserves the content."),
     dict(path="src/life_service/life_learning_memory.py", kind="retained_modern",
          storage="pure policy functions (no state)",
          migration_target="n/a", rollback_cost="n/a",
@@ -154,7 +154,8 @@ def build() -> dict:
         row = dict(surface)
         path = surface["path"]
         module = _module_of(path) if "::" not in path else _module_of(path.split("::")[0])
-        row["exists"] = Path(path.split("::")[0]).is_file()
+        is_deleted = "DELETED" in surface.get("note", "")
+        row["exists"] = (not is_deleted) and Path(path.split("::")[0]).is_file()
         if module:
             row["callers"] = _callers(module)
             row["data_consumers"] = surface.get("data_consumers", [])
