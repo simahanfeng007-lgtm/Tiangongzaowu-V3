@@ -47,9 +47,12 @@ SURFACES = (
     dict(path="src/life_service/capability_lifecycle.py", kind="retire_candidate",
          storage="n/a (no callers found)", migration_target="none observed",
          rollback_cost="low", note="zero authoritative callers at audit time"),
-    dict(path="src/life_service/life_learning_memory.py", kind="retire_candidate",
-         storage="n/a (no callers found)", migration_target="none observed",
-         rollback_cost="low", note="zero authoritative callers at audit time"),
+    dict(path="src/life_service/life_learning_memory.py", kind="legacy_write_authority",
+         storage="in-memory policy constants", migration_target="fold into memory_coordinator",
+         rollback_cost="low",
+         note="P13-D deletion drill exposed the hidden consumer: "
+              "memory_coordinator does `from . import life_learning_memory` "
+              "(relative import the original grep missed). NOT a retire candidate."),
     dict(path="src/life_service/capability_learning.py", kind="legacy_write_authority",
          storage="Life shadow store", migration_target="capability experience (P5)",
          rollback_cost="medium", note="12+ live callers incl. store/episode_builder"),
@@ -123,7 +126,11 @@ def _module_of(path: str) -> str | None:
 
 
 def _callers(module: str) -> list[str]:
-    pattern = rf"(from {re.escape(module)} import|import {re.escape(module)}\b|from \.{module.split('.')[-1]} import|from \.\. import .*{re.escape(module.split('.')[-1])})"
+    short = module.split('.')[-1]
+    # P13-D deletion-drill fix: the original pattern missed same-package
+    # relative imports (`from . import X`), which hid a real consumer of
+    # life_learning_memory inside memory_coordinator.
+    pattern = rf"(from {re.escape(module)} import|import {re.escape(module)}\b|from \. import .*\b{re.escape(short)}\b|from \.{re.escape(short)} import|from \.\. import .*\b{re.escape(short)}\b)"
     result = subprocess.run(
         ["grep", "-rEl", pattern, "src", "app/backend/tiangong-backend", "--include=*.py"],
         cwd=ROOT, capture_output=True, text=True)
