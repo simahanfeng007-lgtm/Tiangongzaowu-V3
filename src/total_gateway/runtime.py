@@ -272,6 +272,7 @@ def _gateway_execution_epoch_checkpoint(
             request_id, run_id=run_id, generation=generation
         )
     except Exception:
+        import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return {"ok": False, "error": "continuity.authority_lookup_failed"}
     if active is None:
         return {"ok": False, "error": "continuity.authority_not_found"}
@@ -312,6 +313,7 @@ def _gateway_execution_epoch_checkpoint(
             created_at_ms=time.time_ns() // 1_000_000,
         )
     except Exception:
+        import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return {"ok": False, "error": "continuity.checkpoint_commit_failed"}
     capsule = record.capsule
     return {
@@ -493,6 +495,7 @@ def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
             collect("")
         return "\n".join((explicit_lines + lines)[:10])
     except Exception:
+        import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return ""
 
 
@@ -1617,6 +1620,7 @@ class GatewayRuntime:
             try:
                 runtime.close()
             except Exception:
+                import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
                 pass
             raise
         return runtime

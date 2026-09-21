@@ -839,10 +839,10 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/store.py",
-   "line": 13277,
+   "line": 13278,
    "target": "<__import__>",
    "classification": "verified",
-   "verified_category": "structural_field_access"
+   "verified_category": "lazy_module_import"
   },
   {
    "kind": "dynamic_import",

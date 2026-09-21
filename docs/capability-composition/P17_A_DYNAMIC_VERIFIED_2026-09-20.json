@@ -452,10 +452,14 @@
   "src/world_understanding/skill_method_world/compiler.py:212": {
    "category": "model_field_iteration",
    "reason": "method-source model field hashing"
+  },
+  "src/total_gateway/store.py:13278": {
+   "category": "lazy_module_import",
+   "reason": "lazy import of contracts.verification to avoid circular dependency"
   }
  },
  "summary": {
-  "annotated_hits": 113,
+  "annotated_hits": 114,
   "categories": [
    "handler_dispatch",
    "inline_stdlib_import",
