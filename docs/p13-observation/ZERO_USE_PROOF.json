@@ -1,0 +1,20 @@
+{
+ "schema": "tiangong.p13.zero-use-proof.v1",
+ "declared_by": "operator",
+ "observation_window": {
+  "start_ms": 1790027954725,
+  "end_ms": 1790028254725,
+  "duration_ms": 300000
+ },
+ "entrypoints_declared": 18,
+ "journal_events_total": 0,
+ "legacy_calls_in_window": 0,
+ "source_verification": {
+  "v3.learned_skill_context": 0,
+  "v3.omni_body_skill_prompt": 0,
+  "v3.http_mutation_routes": 3
+ },
+ "verdict": "ZERO_USE",
+ "honesty": "This proof reports what was OBSERVED in the journal and verified in the source during the declared window. A zero here means zero in THIS window with THIS instrumentation; it is not a proof about all future inputs.",
+ "proof_sha256": "479f4ccf5f8a96040f7b3eaf5bbe4153c9d548a4485a1420cc03c68f5f0a9b38"
+}

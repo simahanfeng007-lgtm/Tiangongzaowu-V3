@@ -93,13 +93,12 @@
   {
    "path": "src/life_service/capability_lifecycle.py",
    "kind": "retire_candidate",
-   "storage": "n/a (no callers found)",
-   "migration_target": "none observed",
-   "rollback_cost": "low",
-   "note": "zero authoritative callers; P13-D deletion drill PASSED (deleted → 85 tests green → smoke ok → restored). Actual deletion gated on P13-B zero-use window.",
-   "exists": true,
+   "storage": "n/a",
+   "migration_target": "none",
+   "rollback_cost": "n/a",
+   "note": "DELETED in P13-D (batch E) after P13-B ZERO_USE proof. Deletion drill passed (85 tests green). File removed from source and mirror; git history preserves the content.",
+   "exists": false,
    "callers": [],
-   "data_consumers": [],
    "caller_count": 0
   },
   {
