@@ -69,7 +69,7 @@ def load_operator_tool_source_pin(path: Path):
     ):
         raise CompositionTurnError("pin.incomplete")
     try:
-        return PlanningToolSource(
+        tool_source = PlanningToolSource(
             repository=Path(payload["repository"]),
             bundle_path=Path(payload["bundle_path"]),
             bundle_sha256=payload["bundle_sha256"],
@@ -82,6 +82,30 @@ def load_operator_tool_source_pin(path: Path):
         )
     except (TypeError, ValueError) as exc:
         raise CompositionTurnError("pin.invalid", str(exc)) from exc
+    return tool_source
+
+
+def pin_available_verifiers(path: Path) -> frozenset:
+    """The operator-declared verification intents for this pinned bundle.
+
+    The P4 validator needs the intent set BEFORE the plan compiles, so the
+    operator declares it beside the pin; an absent declaration keeps the
+    honest refused-by-default behaviour (empty set -> UNKNOWN/REJECT).
+    """
+
+    if not path.is_file():
+        raise CompositionTurnError("pin.missing", str(path))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise CompositionTurnError("pin.invalid", str(exc)) from exc
+    declared = payload.get("available_verifiers")
+    if declared is None:
+        return frozenset()
+    if (not isinstance(declared, list) or not declared
+            or not all(isinstance(item, str) and item for item in declared)):
+        raise CompositionTurnError("pin.verifiers_invalid")
+    return frozenset(declared)
 
 
 def _registry_from_pin(tool_source, generated_at_ms: int):
@@ -139,6 +163,8 @@ def run_controlled_composition_turn(
     if not pin_path:
         raise CompositionTurnError("pin.env_missing")
     tool_source = load_operator_tool_source_pin(Path(pin_path))
+    if not available_verifiers:
+        available_verifiers = pin_available_verifiers(Path(pin_path))
     if bridge is None:
         from .world_context_integration import _runtime_instance
         bridge = _runtime_instance()
@@ -201,5 +227,6 @@ __all__ = [
     "CompositionTurnError",
     "composition_planner_mode",
     "load_operator_tool_source_pin",
+    "pin_available_verifiers",
     "run_controlled_composition_turn",
 ]

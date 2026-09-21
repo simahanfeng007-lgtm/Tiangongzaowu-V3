@@ -93,4 +93,5 @@ NOT_STARTED / IMPLEMENTED_LOCAL / TESTED_LOCAL / PUSHED / CI_VERIFIED / MERGED /
 - 2026-09-20：建立台账。登记 R1C3 MERGED、R1C4 IN_PROGRESS、R1G/R1H/P13-B/P14-A/P16 全量 BLOCKED 及原因；D01–D07、R01–R07 现状入册。
 - 2026-09-20（续）：R1C4 全矩阵闭合（PR #81/#82，main 5ac7450）；R1D 受控回合接入真实入口（PR #83，main 52fcf99，11 项测试：正向登记往返/诚实拒绝/无回退契约/AST 接线证明）。
 - 2026-09-20（三合一）：R1E/R1F/R1G-prep 同批完成（对等表 34 项、经验闭环 6 项、P11 评测件整合 47 项测试）。P12 剩余：R1G 正式验收与 R1H 退役（外部资源 R03/R04/R05/R06 阻塞）+ EXIT。
+- 2026-09-20（收官三批）：P15 全家（PR #85/#86/#87）、P13-A（#88）、P17-B（#89）、P16 框架+P15-C+测试树扫（#90）、P16-C+P13-C 核查+导航（#91）、admission 物化+经验召回缝（#92，平面 1.23）俱 MERGED；pin 携带 verifiers 与受控回合加固（本批）。自记欠项清零；剩余全量 BLOCKED 于 R02–R07。
 - 2026-09-20（P15 批）：P15-A/B/D MERGED（PR #85/#86/本批），P15-C 机制就位完整验收 OPEN，P15 阶段工程接线全就位、阶段未关闭；P16-A 方案冻结 v1.0 完成（执行 BLOCKED 于 R02/R03）。

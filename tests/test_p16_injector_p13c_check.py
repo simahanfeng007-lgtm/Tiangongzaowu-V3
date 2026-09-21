@@ -80,3 +80,37 @@ def test_p13c_migration_mechanism_facts_are_pinned():
         is True
     assert scope["legacy_learning_migration"]["records"][
         "learning_card:lc_1"]["record_sha256"] == "b" * 64
+
+
+def test_driver_and_injector_compose_under_control():
+    """The two P16 components work as one machine: an injected raise at
+    REGISTRATION turns that round's outcome failed, the ledger keeps its
+    place, and continuity stays intact with the failure honestly recorded."""
+    from total_gateway.p16_injection import InjectionHarness, InjectionRule
+    from total_gateway.p16_long_horizon import RoundObservation, drive
+
+    harness = InjectionHarness(rules=(
+        InjectionRule(point="REGISTRATION", action="raise", rounds=(3,)),))
+
+    def runner(index):
+        try:
+            harness.at("REGISTRATION", index)
+            outcome = "completed"
+        except InjectionError:
+            outcome = "failed"
+        return RoundObservation(
+            round_index=index, request_id=f"req_{index:064x}",
+            run_id=f"run_{index:064x}", generation=1,
+            active_path="controlled_composition", outcome=outcome,
+            completion_decision_sha256=None if outcome == "failed"
+            else f"{index:064x}",
+            note="injected" if outcome == "failed" else "")
+
+    result = drive(runner, 6)
+    assert result.rounds_observed == 6
+    assert result.stop_reason is None
+    assert result.continuity.continuous is True
+    assert [o.outcome for o in result.observations] == [
+        "completed", "completed", "failed", "completed", "completed",
+        "completed"]
+    assert len(harness.log_payload()) == 1  # only the injected round is recorded

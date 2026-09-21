@@ -211,3 +211,59 @@ def test_orchestration_user_branch_wires_the_controlled_turn_before_legacy():
     helper_source = ast.get_source_segment(source_text, helper)
     assert "composition_planner_mode() != \"controlled\"" in helper_source
     assert 'return None' in helper_source
+
+
+def test_pin_declared_verifiers_unblock_the_controlled_turn(intake, tmp_path,
+                                                            monkeypatch):
+    """The production gap: absent explicit verifiers, the turn reads the
+    operator's pin declaration instead of falling into refused-by-default."""
+    import json as _json
+    from v3.composition_turn import (
+        CompositionTurnError, pin_available_verifiers,
+        run_controlled_composition_turn, CompositionTurnError as _E)
+    from v3 import composition_turn as turn_module
+    from tests.test_composition_turn_p12 import _write_pin, _proposal_from_prompt
+    c = intake
+    pin_path = _write_pin(c, tmp_path)
+    payload = _json.loads(pin_path.read_text(encoding="utf-8"))
+    payload["available_verifiers"] = [
+        "verification-intent:plan-bound-acceptance"]
+    pin_path.write_text(_json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv(turn_module.COMPOSITION_TOOL_SOURCE_PIN_ENV,
+                       str(pin_path))
+    monkeypatch.setattr(turn_module, 'composition_planner_mode',
+                        lambda: 'controlled')
+    outcome = run_controlled_composition_turn(
+        user_text=c['user'], model_call=_proposal_from_prompt,
+        run_context=c['rc'], bridge=c['bridge'], now_ms=5000)
+    assert outcome['outcome'] == 'registration_not_configured'
+    assert outcome['validation'] in {'UNKNOWN', 'PROVED_VALID'}
+    assert pin_available_verifiers(pin_path) == frozenset(
+        {'verification-intent:plan-bound-acceptance'})
+
+
+def test_pin_with_invalid_verifiers_declaration_is_refused(intake, tmp_path):
+    import json as _json
+    from v3.composition_turn import pin_available_verifiers
+    from tests.test_composition_turn_p12 import _write_pin
+    c = intake
+    pin_path = _write_pin(c, tmp_path)
+    payload = _json.loads(pin_path.read_text(encoding="utf-8"))
+    payload["available_verifiers"] = ["ok", 42]
+    pin_path.write_text(_json.dumps(payload), encoding="utf-8")
+    with pytest.raises(Exception, match="pin.verifiers_invalid"):
+        pin_available_verifiers(pin_path)
+
+
+def test_model_call_exception_propagates_untouched(pin_env):
+    """A failing model adapter surfaces its ORIGINAL error; the turn never
+    swallows, wraps or retries it silently."""
+    c = pin_env
+
+    def _explode(prompt):
+        raise ConnectionError("provider stream reset")
+
+    with pytest.raises(ConnectionError, match="provider stream reset"):
+        run_controlled_composition_turn(
+            user_text=c['user'], model_call=_explode,
+            run_context=c['rc'], bridge=c['bridge'], now_ms=5000)
