@@ -6,8 +6,8 @@
   "reflective_getattrs": 77,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 120,
-  "needs_review": 1,
+  "verified": 121,
+  "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -841,7 +841,8 @@
    "path": "src/total_gateway/store.py",
    "line": 13278,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "lazy_module_import"
   },
   {
    "kind": "dynamic_import",
