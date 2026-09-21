@@ -1,0 +1,231 @@
+[
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790014126677,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "1a0cd835ec3727da80d75ef108d6b3038103ba598db05411584e7882fbb52f33",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790014132977,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "20ab396cefbd2dc4c4bed2934066b895b642c5f677803b8c7008f685e127464b",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790014135121,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "0ef6018aa0d939132258d548a7799d4a20d7c0fc423381a081bf09357c45a2ac",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790014171276,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "cef5ee382801e3dca04dc78e186ce3865965df230c4cd8a510582d7ece48039f",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790014286468,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "f5bfc9ebf35e3149d597ef7a7825ee75c413bcac130519e5075fffe99cdb9b13",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790014291692,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "71ad2367f648f453c2f510148d246fb74075a3751079fb323bed15cc9fa95f56",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790014293943,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "774f0b70e371e7dbc78b3a5641ec81609cb8b3fda1a2052c2cfbe4d67da92ae2",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790014321585,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "d91527721bd100f93bc7c9d0029765f3ad645ff8494a92b169787f147665770a",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790014681324,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "c4d3640ca867b285dea5b9db95f61971ba06607643ffa54c74281931165f8b7a",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790014686342,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "7c5245c32e55a02a13383098bb85d46efcab8385350a3417e013d9e8acfc57c8",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790014688389,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "563db8ed46efa4b4c34dca724f62d385a980f48521367ab6880012cc0bc6d133",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790014714774,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "d860e6dd981be0ec13ab5c4f977fdef2dca58e82164eb8e6e820b42db396a8f9",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ }
+]

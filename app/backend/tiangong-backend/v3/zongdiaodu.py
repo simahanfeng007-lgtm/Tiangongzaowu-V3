@@ -2777,7 +2777,17 @@ class Zongdiaodu:
                 + "No tool is available in this turn. Return the requested text directly."
             )
         else:
-            system_tishi = system_tishi.rstrip() + "\n\n" + _omni_body_skill_prompt(xiaoxi)
+            # R1H: when the controlled composition turn is active, the old
+            # full-skill planning instructions MUST NOT be injected — the
+            # model request must not carry both the new candidates (via
+            # WORLD_CONTEXT_SLOT) and the old planning text simultaneously.
+            from .composition_turn import composition_planner_mode
+            if composition_planner_mode() == "controlled":
+                system_tishi = system_tishi.rstrip() + (
+                    "\n\n[Omni Body — 唯一可执行工具]\n"
+                    "本地操作通过 omni_body 执行；组合规划由系统上下文驱动。")
+            else:
+                system_tishi = system_tishi.rstrip() + "\n\n" + _omni_body_skill_prompt(xiaoxi)
         dynamic_context = _simple_chain_with_current_image_observations(dynamic_context, xiaoxi)
         if dynamic_context:
             # Provider caches match an exact tools -> system -> message prefix.

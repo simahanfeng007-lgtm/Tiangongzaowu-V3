@@ -1,0 +1,291 @@
+[
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790016006312,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "b8dda54be48c6f5579544242f74329fecd4883b6166c005e6ea2a06e5e222188",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790016015191,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "61574bf2cfdc8bf7041cdd882539877749bd4abf015b5157552870fcf58ae9d3",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790016016418,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "24bf52b34563daa4cff588081bda66e7310b524fe0ceae98632ed90df0fd6f9c",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0001",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790016039151,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "e87f57041fbfdd82c83f024434f1e188a2e67fd6bb9180f28716f5a38f9b7ecc",
+  "response_sha256": "48f6237dc3e1026704ade5b0d43ade391aa658c915e71c159f24d0745037c16b",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790016345743,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "774f0b70e371e7dbc78b3a5641ec81609cb8b3fda1a2052c2cfbe4d67da92ae2",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790016351271,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "92399b46eab89793e633960b8c8ca6e1427b7043f2dd9629a96dfa55e5898bdb",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790016429109,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "73af913566e05ffb1557d095c1e601789e11e417485ab542c63dac85d21ee974",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0002",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790016793944,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "5d4b704d4a25c35eefc02392fa112fe8dabda1cb1e726c00eae3163092a1e01b",
+  "response_sha256": "3fb5d7878e70fc4a810c15f442057f779e6bed052401d1a3554142b3bac4c5de",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790016795543,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "563db8ed46efa4b4c34dca724f62d385a980f48521367ab6880012cc0bc6d133",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790016799169,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "5e6007c67fc049d2038a9688976c8d88d8aba3c2c3a13c6a6f4570da1883259e",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790016813310,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "556965fef7cc05dd52146d997635061fd9d20e7adae3a5f9c5536008dd5197b5",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0003",
+  "model_profile_id": "glm-5.3-primary",
+  "role": "PRIMARY",
+  "timestamp_ms": 1790017142617,
+  "model": "glm-5.3",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "416ebbc834a2f0790d122ed54b962cae0a2c863266bbdb93377572d37bb1f08f",
+  "response_sha256": "830a64eee697cf809d81c32a1fd0abdddc26ee46f83aa5d86cde097fca9fbdbf",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0004",
+  "model_profile_id": "deepseek-v4.1-flash-secondary-b",
+  "role": "SECONDARY_B",
+  "timestamp_ms": 1790017144152,
+  "model": "deepseek-chat",
+  "provider": "api.deepseek.com",
+  "prompt_sha256": "f8e668a174f00ba15358b0ca17a3caa487ddf6342c864f584355f7fe7244432b",
+  "response_sha256": "a3a815beeb9efdd0fa36077a979fdb2f107156a81770eb693730b4cebba20850",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A0"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0004",
+  "model_profile_id": "minimax-m3-secondary-a",
+  "role": "SECONDARY_A",
+  "timestamp_ms": 1790017147123,
+  "model": "MiniMax-M3",
+  "provider": "api.minimax.chat",
+  "prompt_sha256": "f8e668a174f00ba15358b0ca17a3caa487ddf6342c864f584355f7fe7244432b",
+  "response_sha256": "8ab06e911c31199477cdb63afbabeb2856db1ecabbf6bc5a22f6e0efc3c7d5b1",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ },
+ {
+  "task_id": "p11t_0004",
+  "model_profile_id": "glm-5.3-flash-weak",
+  "role": "WEAK",
+  "timestamp_ms": 1790017171083,
+  "model": "glm-5.3-flash",
+  "provider": "open.bigmodel.cn",
+  "prompt_sha256": "f8e668a174f00ba15358b0ca17a3caa487ddf6342c864f584355f7fe7244432b",
+  "response_sha256": "5d6d21775913bfc9c4181439fc1fd702ffaeb2b96866765ceb321cc2a32d37ac",
+  "parse_success": true,
+  "parse_error": "",
+  "activation_ready": true,
+  "validation_result": "UNKNOWN",
+  "planned_action_ids": [
+   "A01",
+   "A02",
+   "A03"
+  ],
+  "api_success": true
+ }
+]
