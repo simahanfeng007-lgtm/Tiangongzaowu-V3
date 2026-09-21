@@ -166,6 +166,7 @@ def _append_orchestration_effect_event(
         )
         binding = store.get_request_generation_binding(request_id)
     except Exception:
+        import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return False
     if contract is None or binding is None:
         return False
@@ -200,6 +201,7 @@ def _append_orchestration_effect_event(
         )
         return True
     except Exception:
+        import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return False
 from .communication_client import CommunicationControlClient
 from .context_projection import SessionContextProjector, estimate_projected_context_tokens
@@ -2589,6 +2591,7 @@ class GatewayOrchestrationWorker:
                     created_at_ms=now_ms,
                 )
             except Exception:
+                import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
                 pass
         if reconciled:
             diagnostic_log(
@@ -3763,6 +3766,7 @@ class GatewayOrchestrationWorker:
             )
             return (identity, pre)
         except Exception:
+            import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
             return None
 
     def _bind_repository_sensor_post(
@@ -3803,6 +3807,7 @@ class GatewayOrchestrationWorker:
                 )
             return True
         except Exception:
+            import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
             return False
 
     def _register_repair_artifacts(

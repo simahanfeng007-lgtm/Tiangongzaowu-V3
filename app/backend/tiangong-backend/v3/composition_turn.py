@@ -127,10 +127,11 @@ def _require_run_identity(run_context) -> None:
         value = getattr(run_context, field, None)
         if value in (None, ""):
             raise CompositionTurnError("identity.missing", field)
-    if str(getattr(run_context, "principal_scope_hash", "")).strip().lower() \
-            in {"", "unknown"} or not _SHA256.fullmatch(
-            str(run_context.principal_scope_hash)):
-        raise CompositionTurnError("identity.principal_invalid")
+    principal = str(getattr(run_context, "principal_scope_hash", ""))
+    if not _SHA256.fullmatch(principal):
+        raise CompositionTurnError(
+            "identity.principal_invalid",
+            f"field=principal_scope_hash value={principal[:16]}…")
 
 
 def run_controlled_composition_turn(
@@ -229,6 +230,7 @@ def run_governed_composition_turn(
     run_context=None,
     bridge=None,
     admission_provider: Callable[[object], dict] | None = None,
+    repair_call: Callable[[str, str], str] | None = None,
     now_ms: int | None = None,
 ) -> dict:
     """P14-B/C pre-wiring: one turn governed by a validated mode config.
@@ -278,15 +280,34 @@ def run_governed_composition_turn(
     primary_text = model_call(prompt)
     if not isinstance(primary_text, str) or not primary_text.strip():
         raise CompositionTurnError("model.empty_reply")
+    validated_at = now_ms if now_ms is not None else int(time.time() * 1000)
     try:
         result = bridge.compile_composition_for_turn(
             prepared, primary_text, run_context=context,
             tool_source=tool_source,
-            validated_at_ms=now_ms if now_ms is not None
-            else int(time.time() * 1000),
+            validated_at_ms=validated_at,
             available_verifiers=verifiers)
-    except ValueError as exc:
-        raise CompositionTurnError("compile.rejected", str(exc)[:400]) from exc
+    except ValueError as primary_error:
+        # SMALL ABI: at most one repair, mirroring the controlled turn.
+        if repair_call is None:
+            raise CompositionTurnError(
+                "compile.rejected", str(primary_error)[:400]) from primary_error
+        try:
+            repair_text = repair_call(prompt, primary_text)
+        except Exception as exc:
+            raise CompositionTurnError(
+                "repair.model_failed", str(exc)[:200]) from exc
+        if not isinstance(repair_text, str) or not repair_text.strip():
+            raise CompositionTurnError("repair.empty_reply") from primary_error
+        try:
+            result = bridge.compile_composition_for_turn(
+                prepared, repair_text, run_context=context,
+                tool_source=tool_source,
+                validated_at_ms=validated_at,
+                available_verifiers=verifiers)
+        except ValueError as exc:
+            raise CompositionTurnError(
+                "compile.rejected_after_repair", str(exc)[:400]) from exc
     validation = result.validation
     refused = validation.result == "PROVED_INVALID" or (
         validation.result == "UNKNOWN" and not (

@@ -13176,6 +13176,7 @@ class GatewayStateStore:
                     "schema_version", ""
                 )
             except Exception:
+                import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
                 pass
             if plan_schema == "tiangong.verification_plan.v1":
                 raise StoreConflictError(
