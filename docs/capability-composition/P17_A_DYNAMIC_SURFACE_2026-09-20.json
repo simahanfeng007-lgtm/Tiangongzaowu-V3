@@ -6,8 +6,8 @@
   "reflective_getattrs": 77,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 118,
-  "needs_review": 3,
+  "verified": 120,
+  "needs_review": 1,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -201,14 +201,16 @@
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 2810,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "lazy_module_import"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 5370,
    "target": "field.name",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
