@@ -184,9 +184,54 @@ def check_restart_consistency(
                                         "stored != effective")
 
 
+class TurnPolicyV1(ContractModel):
+    """What ONE governed turn may do under the current mode.
+
+    P14-B/C pre-wiring: the policy is derived from a validated mode
+    configuration only — never from a model, an envelope field or an
+    implicit fallback. ``may_dispatch`` stays structurally False: the
+    original Policy/Ticket/Grant chain alone owns execution.
+    """
+
+    schema_version: Literal[
+        "tiangong.composition-planner-turn-policy.v1"
+    ] = "tiangong.composition-planner-turn-policy.v1"
+    mode: PlannerMode
+    may_prepare: bool
+    may_register: bool
+    may_dispatch: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _policy_is_monotone(self):
+        if self.may_register and not self.may_prepare:
+            raise ValueError("mode turn policy cannot register unprepared")
+        return self
+
+
+_TURN_POLICIES: dict[str, tuple[bool, bool]] = {
+    # mode: (may_prepare, may_register)
+    "OFF": (False, False),       # disabled outright
+    "SHADOW": (True, False),      # plan-only sidecar: compile, never register
+    "LIMITED": (True, True),      # controlled registration
+    "DEFAULT": (True, True),      # governed registration at the default mode
+}
+
+
+def resolve_turn_policy(config: PlannerModeConfigV1) -> TurnPolicyV1:
+    """Derive one turn's permissions from a validated mode configuration."""
+    if not isinstance(config, PlannerModeConfigV1) \
+            or not config.has_valid_sha256():
+        raise PlannerModeAuthorityError("mode.turn_policy.config_invalid")
+    may_prepare, may_register = _TURN_POLICIES[config.mode]
+    return TurnPolicyV1(
+        mode=config.mode, may_prepare=may_prepare,
+        may_register=may_register)
+
+
 __all__ = [
     "MODE_AUTHORITY_SCHEMA", "TRANSITION_SCHEMA",
     "PlannerModeAuthorityError", "PlannerModeConfigV1",
-    "PlannerModeTransitionV1", "validate_mode_transition",
-    "check_restart_consistency",
+    "PlannerModeTransitionV1", "TurnPolicyV1",
+    "validate_mode_transition", "check_restart_consistency",
+    "resolve_turn_policy",
 ]

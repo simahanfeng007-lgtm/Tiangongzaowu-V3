@@ -221,6 +221,99 @@ def run_controlled_composition_turn(
             "executable_plan_id": executable_plan_id}
 
 
+def run_governed_composition_turn(
+    mode_config,
+    *,
+    user_text: str,
+    model_call: Callable[[str], str],
+    run_context=None,
+    bridge=None,
+    admission_provider: Callable[[object], dict] | None = None,
+    now_ms: int | None = None,
+) -> dict:
+    """P14-B/C pre-wiring: one turn governed by a validated mode config.
+
+    The turn policy comes from ``resolve_turn_policy(mode_config)`` — the
+    mode authority, never a model or an envelope field. OFF refuses before
+    any work; SHADOW runs prepare+compile and returns plan-only output
+    (nothing registers, nothing executes — the shadow sidecar semantics);
+    LIMITED/DEFAULT add admission through the same explicit provider
+    contract as the controlled turn. The legacy ``off/controlled`` env
+    channel and this governed entry are separate callers of the same
+    core; neither changes the other's behaviour, and neither flips any
+    production default.
+    """
+    from total_gateway.composition_planner_mode_authority import (
+        PlannerModeAuthorityError, resolve_turn_policy,
+    )
+    try:
+        policy = resolve_turn_policy(mode_config)
+    except PlannerModeAuthorityError as exc:
+        raise CompositionTurnError("mode.config_invalid", exc.code) from exc
+    if not policy.may_prepare:
+        return {"outcome": "mode_disabled", "mode": policy.mode}
+
+    context = run_context
+    pin_path = os.environ.get(COMPOSITION_TOOL_SOURCE_PIN_ENV, "").strip()
+    if not pin_path:
+        raise CompositionTurnError("pin.env_missing")
+    tool_source = load_operator_tool_source_pin(Path(pin_path))
+    verifiers = pin_available_verifiers(Path(pin_path))
+    if bridge is None:
+        from .world_context_integration import _runtime_instance
+        bridge = _runtime_instance()
+    if context is None:
+        from .run_context import current_run_context
+        context = current_run_context()
+    _require_run_identity(context)
+    prepared_at = now_ms if now_ms is not None else int(time.time() * 1000)
+    registry = _registry_from_pin(tool_source, generated_at_ms=0)
+    try:
+        prepared, prompt = bridge.prepare_composition_for_turn(
+            run_context=context, user_text=user_text,
+            tool_source=tool_source, registry=registry,
+            now_ms=prepared_at)
+    except ValueError as exc:
+        raise CompositionTurnError("prepare.rejected", str(exc)[:400]) from exc
+    primary_text = model_call(prompt)
+    if not isinstance(primary_text, str) or not primary_text.strip():
+        raise CompositionTurnError("model.empty_reply")
+    try:
+        result = bridge.compile_composition_for_turn(
+            prepared, primary_text, run_context=context,
+            tool_source=tool_source,
+            validated_at_ms=now_ms if now_ms is not None
+            else int(time.time() * 1000),
+            available_verifiers=verifiers)
+    except ValueError as exc:
+        raise CompositionTurnError("compile.rejected", str(exc)[:400]) from exc
+    validation = result.validation
+    refused = validation.result == "PROVED_INVALID" or (
+        validation.result == "UNKNOWN" and not (
+            validation.unknown_disposition == "PROVISIONAL_ALLOW"
+            and validation.mandatory_verification))
+    if refused:
+        return {"outcome": "refused", "mode": policy.mode,
+                "reason": validation.result,
+                "findings": sorted({f.code for f in validation.findings}),
+                "plan_id": result.plan.plan_id}
+    if not policy.may_register or admission_provider is None:
+        return {"outcome": "plan_only" if policy.may_register
+                else "plan_only_shadow",
+                "mode": policy.mode, "plan_id": result.plan.plan_id,
+                "validation": validation.result}
+    admission = admission_provider(result)
+    registration_id = getattr(admission, "registration_id", None) \
+        if not isinstance(admission, dict) else admission.get("registration_id")
+    executable_plan_id = getattr(admission, "executable_plan_id", None) \
+        if not isinstance(admission, dict) else admission.get("executable_plan_id")
+    return {"outcome": "registered", "mode": policy.mode,
+            "plan_id": result.plan.plan_id,
+            "validation": validation.result,
+            "registration_id": registration_id,
+            "executable_plan_id": executable_plan_id}
+
+
 __all__ = [
     "COMPOSITION_PLANNER_MODE_ENV",
     "COMPOSITION_TOOL_SOURCE_PIN_ENV",
@@ -229,4 +322,5 @@ __all__ = [
     "load_operator_tool_source_pin",
     "pin_available_verifiers",
     "run_controlled_composition_turn",
+    "run_governed_composition_turn",
 ]

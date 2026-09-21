@@ -39,7 +39,7 @@
 | 11 | P13-C/D | 迁移旧数据、关闭旧写权威、删除兼容分支 | 依赖 P13-B | BLOCKED |
 | 12 | P13-EXIT | P13 验收 | 9–11 | NOT_STARTED |
 | 13 | P14-A | 冻结动态默认适用范围与模式转换规则 | 依赖 P11 退出（R1G） | **草案权威 MERGED**（模式合同+状态机 10 测试：单步渐进/先决点名含 P11 退出/冷却/回退/A0 结构天花板/模型禁选/防篡改/重启漂移）；正式启用仍 BLOCKED |
-| 14 | P14-B/C | 动态默认真实接线 + 清除隐式 fallback | 依赖 P13 状态 + P14-A | NOT_STARTED（可提前做不切流的工程准备） |
+| 14 | P14-B/C | 动态默认真实接线 + 清除隐式 fallback | 依赖 P13 状态 + P14-A | **预研接线 MERGED**（TurnPolicy+受治理回合：OFF 拒/SHADOW 只产 Plan/LIMITED-DEFAULT 受控登记；旧通道共存、默认不动）；真实切换仍 BLOCKED |
 | 15 | P14-D | 有限生产→全范围默认与受控回退演练 | R05 授权实例 | BLOCKED |
 | 16 | P14-EXIT | P14 验收 | 13–15 | NOT_STARTED |
 | 17 | P15-A | Source 变化→原 World 失效链（含最小前置保护） | 无 | **MERGED**（PR #85，平面 1.22） |
