@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.25",
+ "verification_plane_version": "1.26",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -38,7 +38,6 @@
   "src/life_service/legacy_learning_migration.py": "832519e7aa02224cde3f57fd921442fed2312b411d346b7d2b972cfe1f756b6d",
   "src/life_service/artifact_executor.py": "c75662f9fe222991804b8e26a56d1a7a67f7d2ae6596642902904b12d740b624",
   "src/life_service/journal_replay.py": "787c54b067a8cf415fbe0aaa52114d82b3e3e0e4d8c48c1fdb26b05c417bdb66",
-  "src/life_service/capability_lifecycle.py": "a8de882f980113868e55a0087074505ef3660c393bb00cdd5e8b52e25e1c7235",
   "app/backend/tiangong-backend/v3/duihua_qiaojie.py": "09bdd4a545d833d2e17a2174bcaa49baed0510af71527fc4705033ac019fd81f",
   "app/backend/tiangong-backend/v3/jineng/jirou_ceng.py": "179d52c1348fecdcf01d6c3c54811ab1f8d64641f7616ce030a319d77fcb64bc",
   "app/backend/tiangong-backend/v3/legacy_learning_telemetry.py": "167104a8837aa89b93e78f30950d4d234a8e4a911e9981043a6e84759e6cf42c",
@@ -104,7 +103,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "4e60898f5f6f604870b9ecb1cefeb106b881b9f58668a0380148348c8c08038e",
+  "src/total_gateway/verification_plane.py": "1fd0f8e36d7554bd2ae8227dca301a4e403ea562d02781a183307a109b4fd226",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

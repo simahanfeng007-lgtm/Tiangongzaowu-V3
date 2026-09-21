@@ -1,0 +1,8 @@
+Verification Plane 1.26 — P13-D deletion of capability_lifecycle
+
+The first actual code deletion in the project: capability_lifecycle.py
+(zero callers, deletion-safe by drill, zero-use proof obtained) is
+removed from the source tree, the runtime314 mirror, and the frozen
+surface. The P13-B zero-use proof and the P13-D deletion drill (PR #97)
+together authorize this removal. No other member changes; schema stays
+v33.
