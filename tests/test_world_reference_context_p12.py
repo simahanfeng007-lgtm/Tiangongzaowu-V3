@@ -351,7 +351,9 @@ def test_provider_wire_payload_keeps_one_typed_slot_and_unchanged_explicit_user(
         'description':'Fixture, not executable','status':'active','skill_ref':'skill:test.legacy',
         'risk_level':'A0','tool_callable':False,'registers_tool':False,'tool_release_state':'not_requested'}]}),'utf-8')
     monkeypatch.setattr(client,'NENGLI_ZHUCE_LUJING',registry)
-    monkeypatch.delenv('TIANGONG_ENABLE_LEARNED_SKILL_CONTEXT',raising=False)
+    # R1H: the default is now OFF; this test exercises the explicit
+    # migration re-enable path, so set it to 1.
+    monkeypatch.setenv('TIANGONG_ENABLE_LEARNED_SKILL_CONTEXT','1')
     endpoint=ModelEndpointConfig(service_preset='deepseek',provider_identity='deepseek_v4',
         protocol_family='openai_chat_completions',base_url='https://model.example.test/v1',
         model_name='deepseek-v4-pro',credential_scope='fixture',reasoning_mode='off',endpoint_overrides={},

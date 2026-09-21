@@ -1,0 +1,33 @@
+{
+ "schema": "tiangong.p11.model-profiles.v1",
+ "profiles": [
+  {
+   "profile_id": "glm-5.3-primary",
+   "role": "PRIMARY",
+   "provider": "open.bigmodel.cn",
+   "model": "glm-5.3",
+   "api_key_env": "P11_GLM_API_KEY"
+  },
+  {
+   "profile_id": "minimax-m3-secondary-a",
+   "role": "SECONDARY_A",
+   "provider": "api.minimax.chat",
+   "model": "MiniMax-M3",
+   "api_key_env": "P11_MINIMAX_API_KEY"
+  },
+  {
+   "profile_id": "deepseek-v4.1-flash-secondary-b",
+   "role": "SECONDARY_B",
+   "provider": "api.deepseek.com",
+   "model": "deepseek-chat",
+   "api_key_env": "P11_DEEPSEEK_API_KEY"
+  },
+  {
+   "profile_id": "glm-5.3-flash-weak",
+   "role": "WEAK",
+   "provider": "open.bigmodel.cn",
+   "model": "glm-5.3-flash",
+   "api_key_env": "P11_GLM_API_KEY"
+  }
+ ]
+}

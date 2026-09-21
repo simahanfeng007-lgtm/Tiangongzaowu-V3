@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.24",
+ "verification_plane_version": "1.25",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -104,7 +104,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "41c6d9fb6d98847d447fc808dcc9b22776cac3889b0692bc0287de7b50022144",
-  "src/total_gateway/verification_plane.py": "0252d1951f80a567d948dd1761697bf7191815d9d91426342585b4379f39c3ef",
+  "src/total_gateway/verification_plane.py": "4e60898f5f6f604870b9ecb1cefeb106b881b9f58668a0380148348c8c08038e",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",
@@ -119,7 +119,7 @@
   "src/total_gateway/tool_source_bundle.py": "b38bb65ad615e461d125039e7297ac4082cecf2a236852875640761c95d20ffe",
   "src/total_gateway/tool_source_launch.py": "92b066b1eaa2d0ebf40c97de34e8de2ae6497e2c57da7cd2998aa7b0996289a2",
   "src/total_gateway/tool_source_publication.py": "0fd877f3e2a6696d2583ccc68cf5d3b5ba2c0b58b3b674be9316cc89732b1fb9",
-  "app/backend/tiangong-backend/v3/jineng/http_kehuduan.py": "40966ae2434c4443645cf78adb60879ad6e28ca08c77c121b7b98fe6c433ed81",
+  "app/backend/tiangong-backend/v3/jineng/http_kehuduan.py": "4976e55a523f0afbd70e993985118f3bc1a7a0ef9fd2ecdebae54e8b9fbee6c7",
   "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",

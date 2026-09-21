@@ -1,0 +1,13 @@
+Verification Plane 1.25 — P12 R1H logical retirement
+
+After P11's formal exit, the old skill-injection paths stand down
+logically: the learned-skill context defaults OFF (an explicit env
+re-enable remains for migration), and the omni-body planning prompt is
+replaced by a neutral stub when the controlled composition turn is
+active. Mode=off keeps the legacy text unchanged; no physical deletion
+occurs (that is P13-D, gated on P13-B's zero-use window).
+
+Changed prior members: the HTTP model client (learned-skill context
+default) and the orchestration entry (conditional planning-prompt
+replacement) — both frozen members since earlier versions. No prior
+member is removed; schema stays v33; no authority changes.
