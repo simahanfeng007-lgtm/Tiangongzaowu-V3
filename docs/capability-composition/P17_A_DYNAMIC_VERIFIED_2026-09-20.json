@@ -465,7 +465,7 @@
    "category": "structural_field_access",
    "reason": "existing zongdiaodu field access (shifted by R1H insert)"
   },
-  "app/backend/tiangongzaowu-V3:5547": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5547": {
    "category": "structural_field_access",
    "reason": "existing zongdiaodu field access (shifted by R1H insert)"
   }

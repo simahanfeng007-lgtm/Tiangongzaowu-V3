@@ -6,8 +6,8 @@
   "reflective_getattrs": 77,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 120,
-  "needs_review": 1,
+  "verified": 121,
+  "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -217,7 +217,8 @@
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 5547,
    "target": "key",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
