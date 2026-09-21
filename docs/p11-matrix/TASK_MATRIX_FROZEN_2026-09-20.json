@@ -1,0 +1,3497 @@
+{
+ "schema": "tiangong.p11.task-matrix-freeze.v1",
+ "summary": {
+  "tasks_total": 200,
+  "core": 80,
+  "long_tail": 120,
+  "fault_cases": 40,
+  "fault_kinds": 12,
+  "unique_input_digests": 200,
+  "unique_goal_fingerprints": 200
+ },
+ "tasks": [
+  {
+   "task_id": "p11t_0001",
+   "cohort": "CORE",
+   "prompt": "读取并总结季度财务汇总表，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "100fdc537051c51f83bed47a745826ae634a1d22cb705b80145e2d1b5949bd7d",
+   "goal_fingerprint_sha256": "d5c478b0f8d75bcc0c7c269e5c8f6f1fb57af3a7b88e87653d2025a1a913acba",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "12ad91f49b07b9d1ad1b3f85b234c2b7b9150978f8185640c647f73368a7239a",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0002",
+   "cohort": "CORE",
+   "prompt": "读取并总结项目周报草稿，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "59141d3bcb9020a3324b611d8aee36a7d7dc8a56c0b39ac5ecc3210493d73801",
+   "goal_fingerprint_sha256": "5e75733523a2cd8ceaaea42809b7bcf28915de31c16c6d350be2fb73af73812b",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "e97c2b3f74c3348cb92ebd790d3422349cb3c3bce110f14b65393da8bd4e86e1",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0003",
+   "cohort": "CORE",
+   "prompt": "读取并总结客户来信记录，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "12833365ddd35248ef074f7daf42234ae74a9f4c27f2a575e3dce43c115717da",
+   "goal_fingerprint_sha256": "9c99911dcde4c3e6d202066819c770a41d58361337ebf75ee4f68cce546eecbb",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "babee1d0f84bba8bc1fc0154cdad87fb1985750cba77f2706edc3c3b9af98560",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0004",
+   "cohort": "CORE",
+   "prompt": "读取并总结产品需求清单，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "1ee47801feb7af475e394815a020fcc536693d78a5f71e52f3168088be957877",
+   "goal_fingerprint_sha256": "ff00401d7787515bff2219c5c6288a2c2e0addc5f4abd80114554e297a28a62e",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5fdd642aa82c83eb4b9142c694b6276c5a16dce1c9696197a6ff2e8fcc1b98a4",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0005",
+   "cohort": "CORE",
+   "prompt": "读取并总结会议纪要初稿，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "8048d9d6812e59eed6ea58ac1b366db9c4563e8e9edaf7c502d4bb06f175eb7e",
+   "goal_fingerprint_sha256": "89d1cb09473f88939d1d9cb250cfa685b3b276a71f3d3e162a2e06882f7ab5c2",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "df3c2c6f432190898080ec048a4c9281f6b54e84e89e3e223673fa522dbec826",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0006",
+   "cohort": "CORE",
+   "prompt": "读取并总结代码审查意见，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "78729bf460ba5f83dd460f9385655735b4583ae59e5fa14bddb08965d82ee6ec",
+   "goal_fingerprint_sha256": "80da8b343ad60db9d7c1a9807fdaa8d7b42ea9687874a16fed4ce975b6f8d21a",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ae7748b4bcea50cfc146b0717d7755748c6c2a8584b29ee3774605e6e13e1f77",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0007",
+   "cohort": "CORE",
+   "prompt": "读取并总结市场调研笔记，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "b17f2d70531b4a8d35a6dce82b8ea43736d61bc89a70c0657b688a7427581a02",
+   "goal_fingerprint_sha256": "fb4c934db035326ab8820637522fddf36388ec57f6ea596b49aceb1a194ae954",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "868a9dca9e4353fa381fe2f311e62865d94efbd845221d0524921946f8216891",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0008",
+   "cohort": "CORE",
+   "prompt": "读取并总结设备巡检日志，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "a37b890e4e5377a92e8f6a964bddd17f72c9ba4c6b83f89473d9ee77c6ca3a51",
+   "goal_fingerprint_sha256": "d74172e0720797fb2b561a60528cbb90b0e15982387d32c8d5c8ae3cde57a273",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c64b3c2262d47ea5dfcb4d62e233482d752e25de7ad4e839b2ce5f86d375e23a",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0009",
+   "cohort": "CORE",
+   "prompt": "读取并总结合同扫描件目录，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "b0bf0ad1c7d7299482784463defe5897365b3b3247bb1c944672c3e7b36935a3",
+   "goal_fingerprint_sha256": "b0401c54759aa6557808c92a9fe50c36abbf99a847923b0c6c420303cc5c7ed6",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7e8eb019728d4ac2a3ed78782116fdff9b6c02a0723cfd00c8ddd2d3fb7190b0",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0010",
+   "cohort": "CORE",
+   "prompt": "读取并总结设计稿导出文件，按日期分组。",
+   "category": "read",
+   "task_input_sha256": "34db7940d2293e43319f777f2879a58fb9df404a4af9f87daaf7f3ff9ded6962",
+   "goal_fingerprint_sha256": "1300a59d9ce888ff360f99e1a5618933ddfb37f9abd21768a1a30057e5c50564",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9caab331fdb09b7a7d9eadf0d217eeaba48452c385326c672687bb376bd07624",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0011",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找培训材料讲义，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "c8778663213fee6874564692fa481a274c771d6fc8ae95fec9a336e6c74233f1",
+   "goal_fingerprint_sha256": "2d9326b2213e9668a6655c2ab91f37e9a2fba2644d3954f81a630dac46ddaca7",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bb4e608cee82b8431ba6c53364cb8e70d16848a02b6531e3424912f102aa465f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0012",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找供应商报价单，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "abce059954c67fdf3cef3ec221ac5e8132508f84f81943f18db760814be6c503",
+   "goal_fingerprint_sha256": "741612b28277e981e683c55618ee42c48b5bed20285258483dfcd05ab141ec3a",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "b02d35184771dd4223cd46a94da1ba303c2065fd3cad04e5fd57ab53984d5030",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0013",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找工单处理记录，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "71996df5e397cb580a99b4c1f6475ee608928a85dcdc1b23509f094ac60b0331",
+   "goal_fingerprint_sha256": "4d0a54d6524687cc7489b6258b3cbd2f084f41d3a63e99042181e1a0d402ef0f",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c9d38a9ea175ce7f22883d519ed2db9cc47eeed1b9d35b46baf71d3300f705cc",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0014",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找实验数据表格，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "4f65c278affb82e9dbefa049316e42bdf8fe4822858541d26ebf95ff120d98f0",
+   "goal_fingerprint_sha256": "64c2533931614d11e80a23c12207cd628772e298d729c4b3059459b155bb0588",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "47621d5ef7058fc3cbd22099ced1c2ba8bebaeea2e25fb474f5a34ee5434cae7",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0015",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找活动策划方案，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "27fc3c07b433de5c70bdf9f3ff64193b230e05b0f4c59bb9562cb32ff8721c60",
+   "goal_fingerprint_sha256": "73ac925acba888299c7b39b998ee422d726b20171a68ca06201539400301139d",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fffafd883f48096b09ecde316412a5c7c28a21f0839212e96bd628e907932538",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0016",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找人事入职材料，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "89190bd40b40271d12ce7f20374077130cb5e3a2c154d0356514b33d177b50be",
+   "goal_fingerprint_sha256": "c08b4230e0e0009025cd3868e5098f3125d946c7207a9f490e928f773a30e6cd",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "cc027ea8a8d478c3490a74dd55400952721aee4e87497f0077f2ae7e60ccdafc",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0017",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找运维告警快照，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "2333fee478bbba1762d56f2b6672a14571364b71b480bc969919c06d0281baa6",
+   "goal_fingerprint_sha256": "b5beacca98ef0f187ab04269cd4b552bb65e67d531a313bede6322ccf2ffd7ec",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fee16d139328ec372df6043e9ec2b9bf1911eecac612750c103a5218113e34f7",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0018",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找课程作业集，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "d0fd8ae0d128a643933e3cab6c1e0c6dd3ea9e77daf9651dab514fe6a2d3be19",
+   "goal_fingerprint_sha256": "56171ddd066ce059f159aa71660387cff19eed61c5de529b66a5b40504fcb2ae",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6e99851e67fcb78b06231b369bb54a420bef0a36cd64235b5b4a4437671e7cc6",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0019",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找旅行行程单，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "04b4ba730dbc8788009233513e48536d8b072605256bac463046174787f1968b",
+   "goal_fingerprint_sha256": "d2831561c5e1a0fcd3a3c323d9ffa0335879d275b5e0c6c25571e8e3bf8785ce",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c2bad5bf08f20041dc7bbafe4555922e608f7bc69fb30b32cad6cf285cd39db4",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0020",
+   "cohort": "CORE",
+   "prompt": "在指定目录中查找图书借阅清单，按日期分组。",
+   "category": "search",
+   "task_input_sha256": "c0ae22780dce0e60f055ed7aa96cccd1cf89867c4bb85e4d5890f3df78d2a810",
+   "goal_fingerprint_sha256": "13a4b1670039386d9c2faec642b3346e793d6aa553bda898796a752ad17e6658",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "aea2eeae34d3358746ab234591a161d012933b6e8074b6eaa5409a9ea4a433f5",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0021",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为库存盘点表，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "16b827333befa466667672b0762d29f0ef2ab7e9c8a48ffca57c8b8b38ffaf46",
+   "goal_fingerprint_sha256": "533e35dfd840d198680b8b5dceb328a1f7f87dbfe57fbba099aae3a9fb6e72a4",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "e5b8bfd0bbc6c81696c9ad3adba691ff104639fa4623bee04ba358d3bd81bbe7",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0022",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为问卷回收结果，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "b4f39b9f509ad75816565d55f7c1cffcd2fbe903ea0ab90450d77f91db146c5f",
+   "goal_fingerprint_sha256": "9f0495c163a310fd6435410f85bd3092a884d83a9da5d468879cdbd853496716",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0d7c97d40aa413f3d7c8800f9cd5caa4f10b8187957b5b1a63bf374ee96d8fb1",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0023",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为竞品分析报告，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "0626de7e0a7e55a797dce4baae496da002b8280fc5a0d7c19cf0887694f01015",
+   "goal_fingerprint_sha256": "fcf35b2a67284ddb6b204afa5086710d56d290fb933776753d1ed20cf7b1651e",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8c7c0d7a86b71dd83d248801b719eddaa02846317dd467d2c410d2109c9c5098",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0024",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为维修保养记录，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "01100af9bf622aa6acfc63d95ac2ba337e5efcd9724129efdec61bdc69939498",
+   "goal_fingerprint_sha256": "10b64b8c0b270d066ed67f5adc5600eb5b06bfb389539dce3e44de41311a253d",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "abad69ad7c69d54a46f14ccde9d6e2f52e67b258285fa4840324e49e86c75440",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0025",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为稿件投稿包，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "6879f8a7944da9e35d595ab0aca2b0877cdf8b4b1f4609b0be87ff220873fdca",
+   "goal_fingerprint_sha256": "777f2f4ec860aae35760ea783bf9e2e6f7cbaf17ecd3a660e1cd2686ed90078b",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7b458e22ed8b1e6ca43197055837e9aad66502ffe168dee1bfe45630aea01562",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0026",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为验收测试记录，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "3999c5ecba128bb34e1ac63757aa5af5986b6c0b95490d1578a7462ecf57a321",
+   "goal_fingerprint_sha256": "d4248b754cf7ce478c2aa3f851cfbda998988be4aa7beff08fef61c265cc9de1",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "85619340caae94c7fbdf0bcaa8f20a54dacac9bee904267f6a4dbc2788e8afdb",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0027",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为访谈整理稿，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "8cc9a9ae477a21a7ce1183bb726f6fe1df55ca36c827e7229f0a22a86ab8597b",
+   "goal_fingerprint_sha256": "77ebd096bb732dbaece708adeb8319ab8f4bf5ae481e10746b19ff2ec91f63cd",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "14257de7b90c4eafa1bfc6a435c0f61dc2f1ede7f4676161cf4123ea9ed92126",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0028",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为白皮书草稿，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "184bda30679ba156cae74c23a694b3d9dab07d963ddc5e1c19150ce34e8842d5",
+   "goal_fingerprint_sha256": "fc8c2aaa6227b43198e1d8b1032f65c5171a7cec6c4139dc3b61f67fb63ea43e",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "b106bb0a41ae8474e081ef64d7abd2b5e84b6c95c1215ae1796769325627fa45",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0029",
+   "cohort": "CORE",
+   "prompt": "把文件转换格式为发布说明清单，按日期分组。",
+   "category": "convert",
+   "task_input_sha256": "5df125d23e3228feefb92019a088440a4bef36ca160481ab3fae1087283b9a5e",
+   "goal_fingerprint_sha256": "af447b803da42a5ae0b61777479845e98be0c7d5c7858294dfbd5a77fe978926",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7f7f0e1d8a47bbb5e1b75faee85bc7d399bb2ba62f247309bfcba8b8edfedb52",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0030",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档数据字典片段，按日期分组。",
+   "category": "write",
+   "task_input_sha256": "d97745f0794a1c4e6c7fd577f71f9e427a3ea4ccbebaf8aabe1f4f7aa78377d6",
+   "goal_fingerprint_sha256": "07633d183bb4aa7cdea1935b53efb38a4ab2569a6625651ce39dc67881b983b3",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "按日期分组",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7071ff91b42289b9b86a7d1b8b67a06bb482f711ab3be4b577b2c93ca034f8f5",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0031",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档季度财务汇总表，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "97ff05d082ae4b8b5e748ae5bfb4a6f56e12d691b0dc3429c34e7473de946529",
+   "goal_fingerprint_sha256": "817b56965960aa51421aa30bbe010ffccd2492e9e5c5619742602b5aa87986b2",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c47f943c749dae264d03013287c7aabe3fb36b7d1b08df1ab5dcc3bd19b4927b",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0032",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档项目周报草稿，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "4dbaa33e848cceaa8018f35625ebf70e002e252bcd2b9c899d212dcfaf19b4f0",
+   "goal_fingerprint_sha256": "4b75922b5d08fd1cac3d8d60046040c74c93123d904bf028606ef3d6ff131fce",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6d3f85ca3d503a718c495080507a44eac5e4660e25de4f70a7527e78dda8dbab",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0033",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档客户来信记录，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "f51fca2d3a4e00361c58b381caa4e1615906b79f8bad8e5fcd78f62992b58005",
+   "goal_fingerprint_sha256": "3557443f131e5389b50e33d0afe2062e249865505ffbe85e5997e5803fd66523",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "25677fb5bbc68fb8bef6b1cfa9cee76d2711d1de7ee94717b2eba9f8c39fcee9",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0034",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档产品需求清单，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "af13575d77fe9b4cf4295f163c2a24c6b1d51ad8551800cebf4ace6c90fc0aa6",
+   "goal_fingerprint_sha256": "23cf4752b74c3474e6ccd98519fd110e60aa3e89ccb109a75887234d08513724",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "d245f305d7aa65b971611dcd7278d9680e04ee7f1b0d2ace8c2e84b83ccbc213",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0035",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档会议纪要初稿，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "ddfab240e22575029456ab9959afbad52eeec19dc0703bd9966c63fc8a035d76",
+   "goal_fingerprint_sha256": "50ba4ecae8897d7098cf33b04b9b0a38a2823670542c888f59816ea8b905a8b9",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0edeea0b7dc8ae2c9de9ee03e0819ce5b6090f6b1f18170d413a87d917217156",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0036",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档代码审查意见，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "2d5c6877996303ec1c712cb10d3a123d3be0d115558d9b139261cec4c14d177f",
+   "goal_fingerprint_sha256": "a6209d67531de87e20bb6d80d9900708b7bf60b6d2679a733b85c7520fbe8e0b",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "39bb479ce1ee9effc32ce59a794f5e14890f81798cf9ca32d143ec17950fa897",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0037",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档市场调研笔记，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "01938320abbaeb6a6244734f786a42f075000a8a72b7ed208059e7744f5f7047",
+   "goal_fingerprint_sha256": "545ff51c90ba5788dfdc59b5b8d3d4308e41cbaf43b482bc5150fcabd28f6bc8",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c481d6573998c067443ed8d3cd544bb9b89c87201fdb31fde5955b1899e0f160",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0038",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档设备巡检日志，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "cc390fa50b8ff740838334876c1eab22a7f3e523275271b92f4d8d745c1b86ca",
+   "goal_fingerprint_sha256": "cee2863069aae65fc7fd5bbaf8af149aaf7d9390c959eb29652d00dc21202fba",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f65640efa714eed3418e31439af81029ef6be09ba9de68117ec797839d856e4a",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0039",
+   "cohort": "CORE",
+   "prompt": "按要点创建文档合同扫描件目录，突出异常项。",
+   "category": "write",
+   "task_input_sha256": "c1b8d50f8e24e89acd188addf5cf39776dd03a0256a85456599e4d6805f4ab07",
+   "goal_fingerprint_sha256": "561d621b985ff4355fde9b4ff42d7cfb630b5b5431ed509bf8ff03f7180b7ab6",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9efaa8a1d94bf5baf831a3d9294050f40093104e5f81b38442bc8cba88398f21",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0040",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量设计稿导出文件，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "7b4d541e6b3d46d21550a30dcd4776db4ffd663a9b73df7b198c4673d15a53d6",
+   "goal_fingerprint_sha256": "48867f35ebe180e96fd97792ba338e9c48f12ba949980ec2dc22c0c49fe6e6dc",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a8105cec780122443c889ab0b7303d62e14a8f8a1fe1e48ef2a74462a8fb6b04",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0041",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量培训材料讲义，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "03e65202ed482376387bbd722168df7ce0e76fdad6a1992d0d6295fc5aeba96a",
+   "goal_fingerprint_sha256": "62c618362ddb71d445fd51f3da1e809b6ef9a2daf451d3c6a0adf8fc58498214",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7695b8b6000b415a6c27594f8075f6e165db85307bf81717cb1c65c8e25b92b4",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0042",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量供应商报价单，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "738bcdd233427586dcb6e5229d74d52bd7c73551ca0efdbacb00765d999a5667",
+   "goal_fingerprint_sha256": "c86de1e6dae0fb3058b35c092aa5aee1f470a7da9f861405bdf3ecca78321cb4",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5904f5405da05829e8dea2ce40bcc3ce7a2f685dfc9dd6857e22191726769a23",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0043",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量工单处理记录，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "c599e3e075bdbe8fe085226174d457739d77865941c0256137050c3bb376b023",
+   "goal_fingerprint_sha256": "b65663968cc6a03ac3cb0a8dd5bfda447b482642da8555fa31d1e47023877ff2",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a029eefd702e03665bd83aa58b0017fc2dff1eef2d47f14151109b9e79348201",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0044",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量实验数据表格，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "ddb7707fcf209ea0bc4bc8546ae1bf27b21ab6861a3799433e76336c41156336",
+   "goal_fingerprint_sha256": "3c907a2bc6e9144afb23f4cce24b5fbb0a826e2b7201462712433ce46a60cb2e",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fdbdd1a3da5fd15a3d709e3d4a7833ef8c20594af2b100f176afbc69cdda6efc",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0045",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量活动策划方案，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "ed28867ef6b02353e8719548f1f1073d908f6fe39097eab29135e3e5d6f038de",
+   "goal_fingerprint_sha256": "6c1a46816dc9ab789d59d7bf13d8a7b4b3df3d1f4d5d641a2d6b02130e2112fe",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "40dce30acfc96bd3006cf2038746d07cac5a5c7f090010c6f6e1abda10cac4cf",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0046",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量人事入职材料，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "a7881f4eb6e470ef72631515f5cccfcaad61b3d9c964c420fad827637064000e",
+   "goal_fingerprint_sha256": "3309f6b991e806bae5acb1949199cdc2b55d2af88ecf3dc7675cfbf80cff5628",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "60236b28730c82d24a34c0effd9cc6bc16b8990376600c61864ea5518f8c7cec",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0047",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量运维告警快照，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "38d2837f14c6b12b7a4e0465c059029311ce0cd0a03545deb3a41a12512426b4",
+   "goal_fingerprint_sha256": "d8a5d46b07a7a1e3b0b032b4112dd36186188225126bea2a4ba4f51cc9901eba",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ecf6685acbd30068f4e3f4d2f07ba6ab74f9f4966e943f553a86ce5c8c2ce523",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0048",
+   "cohort": "CORE",
+   "prompt": "检查并报告质量课程作业集，突出异常项。",
+   "category": "inspect",
+   "task_input_sha256": "c909885ea00abfd95b159b38e3fb73715921000416aa9f2d1d49eb8b7dee1612",
+   "goal_fingerprint_sha256": "ab7eebcc0efdb8c63c1536cf6aaa7812501775a96e85f2eb97c813c076f318d0",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6872b5568f194df4fcd2fe08bbced10525661d4e8fe099cd0ffca1aa17154b11",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0049",
+   "cohort": "CORE",
+   "prompt": "整理归类归档旅行行程单，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "5ef139492a1516d72f9b9eff5e69e0abf63ac2be6f3432db8b98dd2c874b8c5b",
+   "goal_fingerprint_sha256": "b3372fde349832fcf28bc982b77c6cd3673201d659e27ad2b868b9854cdd51ea",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "51d247435ad3f31555fc918af9fadbf4a083a0234f675ba4d5300bc765d467a2",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0050",
+   "cohort": "CORE",
+   "prompt": "整理归类归档图书借阅清单，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "ba59fc41764f532fbbbc7ec6770f65a869983dada78058306c1c5e928d5cc8e3",
+   "goal_fingerprint_sha256": "de699d7ca1036b3fa2ce1b6f04b506df623d66632c4a188b0157549735fc33b8",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c2eeb3ff556c61088452867e0ac878cdb411cf2d38feee7d1ae3d1e9e559cea5",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0051",
+   "cohort": "CORE",
+   "prompt": "整理归类归档库存盘点表，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "6570c951a31fde3db3938acc0a5e55e54bcba8fb117762b587a75aa1d61d5576",
+   "goal_fingerprint_sha256": "0479c46b4715ce3814647a98fed0eb4ef2e02c7e059774f314da1156a87f4470",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7c1c4ae6a1ef4a0b9971fb39dcd3cdc14ba7e705b814b27152c037ed8d6e31ef",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0052",
+   "cohort": "CORE",
+   "prompt": "整理归类归档问卷回收结果，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "fae8259ea4a7162da07c2221631d3bbcfd7043553180ee04cbb4772be0af5cf0",
+   "goal_fingerprint_sha256": "dabd5ffedd90e24ac1f61c8573a9af71164221ca49258eeac081048f8835f026",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4be2e339748b01e0d45d763d0924c5faaa8aae3737c5dbb80c213dff9b920f76",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0053",
+   "cohort": "CORE",
+   "prompt": "整理归类归档竞品分析报告，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "998a867c64c3cbbdad4ccb76613c195ddfd54bc5cf9a9bae85aeef9bbad2eaed",
+   "goal_fingerprint_sha256": "8259b1746421703719b07d0b2ed24460b8a96748c3f5bde55a0bee5389dc1bde",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4dc924b4b5e3a91faa41d86751c4d1f6c1fc605d13a780b8cba6530fce2daea8",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0054",
+   "cohort": "CORE",
+   "prompt": "整理归类归档维修保养记录，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "81db0a027ee8c8f6bc0a226ec7e1cc5387fa7400a9d0a75687f1b579efa3359d",
+   "goal_fingerprint_sha256": "88e01d3027ad85fe19557d7070f4de849b4c2b0aacc0e4dc996d6dc0dc945a50",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8d31a9347ceed09a18fdf3b800741ceae90cdcc4251810cdb5087de0d1579ca7",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0055",
+   "cohort": "CORE",
+   "prompt": "整理归类归档稿件投稿包，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "71938bf992ffba5602e62a6b18f86256765bf18a11cfce1aa3137df4d164dda1",
+   "goal_fingerprint_sha256": "8813769c25987711811e296bb6b1f5eb8aea31a5c5b7f6cb79ec1319b2865275",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f65e4de4270e60c2ea05a5263c4ecab1f89d26580cdbaf1e4dce1b442fce8a71",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0056",
+   "cohort": "CORE",
+   "prompt": "整理归类归档验收测试记录，突出异常项。",
+   "category": "organize",
+   "task_input_sha256": "2ff16f1944a11726a97464792019c538cea9257a5f9751e8e45ca4472f2960d5",
+   "goal_fingerprint_sha256": "a3c757bd9913fedc2e586cd9f9136487550ab34e99252541cf06df77f89da5b1",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f430fc174f4b85baf485b981faa78c8d63556f16733eeff7467ce5db7b820fad",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0057",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异访谈整理稿，突出异常项。",
+   "category": "compare",
+   "task_input_sha256": "62dea64a27766ea4f1485432d80280fdec169846e6554e174fdea46b2935bc99",
+   "goal_fingerprint_sha256": "7680c4dbce2e9883e1404bd78c5f199388304f4f8f7e98187e081d517ce9f99b",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "79c757b35f8bd030db00efd3eb5448ef75ff1d46034d2a6e9133d309027aaa6f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0058",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异白皮书草稿，突出异常项。",
+   "category": "compare",
+   "task_input_sha256": "c7dc905b2f40284cfd0ff4ebccab92f7df943eb741059d11ba767c605eacf34d",
+   "goal_fingerprint_sha256": "11282e196164c5d8ee7d87bb4d13c60421bfd6543ea368cac6827ea5b9d5223b",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f54d604867cbdc62340e4e9c9fbe079b420c4446247f956a88d3fd7d03168e48",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0059",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异发布说明清单，突出异常项。",
+   "category": "compare",
+   "task_input_sha256": "8d362dbe075c37532a064b7bf3fa338f44e2cd9f8d896d1138b78fb2926b94a3",
+   "goal_fingerprint_sha256": "3cd625d92a672da9fd9f13e16f0b33d2855c2ed87613ee039f1fa11f19efbcd6",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6cb3278b60561eef99df5b882da03f5852f5e3b453bb71f20cba527183d3e251",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0060",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异数据字典片段，突出异常项。",
+   "category": "compare",
+   "task_input_sha256": "6bdfcb1da660dd51f6ea1b7a1370041ae038fb4fef785add50ff5e3fb86d768a",
+   "goal_fingerprint_sha256": "6bae1f0fd7f996eb0a7230be97a483f492af1858df3ed61abcafc2fa17a14678",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "突出异常项",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f9aa34c845ef1441c0f360f58416f5a717ec2421d1d8312b97d03ff3c4ecfea1",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0061",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异季度财务汇总表，生成双列对照。",
+   "category": "compare",
+   "task_input_sha256": "f7cea4c3731abd549c8e34113747e6600dedcc9caa6199631e8d629a86ba6e98",
+   "goal_fingerprint_sha256": "e58ae94651b7d7980906e28a34d82e73ef92d0340f13d66453b381fec7e3fa81",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8480449a11da19f30d23e0b629c5b89b7f8860aa9202331fabcd46340caefb35",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0062",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异项目周报草稿，生成双列对照。",
+   "category": "compare",
+   "task_input_sha256": "e51f917ef24990269d45017340d6bd323f6ad12857555d7a710409420a20c842",
+   "goal_fingerprint_sha256": "757d920c67c399b988462253ea8a1aa96887c47b9e27d1318f15ec7c753873c0",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "df0066a7248e6254810b51abdd845527aa0bb56814cfb5e896f92b769046d0ca",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0063",
+   "cohort": "CORE",
+   "prompt": "对比两份内容并列出差异客户来信记录，生成双列对照。",
+   "category": "compare",
+   "task_input_sha256": "336968f233c5e178feca5a0cf246b5532db98a6cc849aa4ee8b7ab0008252ff9",
+   "goal_fingerprint_sha256": "efb5fc662177460df9c58903c7804dd24d1fb1a7f3a622cbeadf5c855c34ffff",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8cd46d4fb287fafb5d3c4436374f552b36d317414899dc51eed5ec075c78a8f2",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0064",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性产品需求清单，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "ffad15eded1eb3d1fcd3e0ddd504e192362a7e79db796ec08837cc9e4145fd31",
+   "goal_fingerprint_sha256": "4958ac841db04c1d19c86db1fe2f64c56cca64637641f39ec6ce402e2fd8190c",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "08c221ffd910bee3822cdbbf712ed7749a1d43d9c13c654ccf5884ec2892f042",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0065",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性会议纪要初稿，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "ee80fc6254e5da7d3a476afc1072f80b2d869c1d73b1870d0375e59441ad8b54",
+   "goal_fingerprint_sha256": "4b81c319dda58cbfc2cf91e27e26c8667f76932e91ebcc2e03740996695e74d4",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7f7618c31b8de7c04b01b4fbac4ab9427e26d5ef467f02145227c5cd5d336777",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0066",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性代码审查意见，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "1ae9062026d79846fc49b0643c56956bdd7978295a41eb1c7da5e11ec6003072",
+   "goal_fingerprint_sha256": "cfd95eeef530cf493bdb92ce68a3f42e94e173fa2349ff3ecb136d564e1dd72c",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "d9143c675f1eb280249827e162da64f4fc90804a75a5b9fe31141c59d44816f6",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0067",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性市场调研笔记，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "717cf2d055c18deccd206e36b7b99f1bf6fb34903a1f3963b94c06fb7b7172f3",
+   "goal_fingerprint_sha256": "d7f6f30feaa133d81d6e26bb44a03809340e2856cb5859a7373ad3678567080c",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7cf2d703e6f30ff701eace5c4736ecdc15d4d1213fc4d4a0dbd1d3a32483e22e",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0068",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性设备巡检日志，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "50ce4ca6f269faf3eec3082f9216c445da2a8cfaa5b86051ce7d406cbe9797ba",
+   "goal_fingerprint_sha256": "1cea68966d0d78e835052423c89cc547db6acd30d1b76d995967de8dfa547c48",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c41b9a22c2a92ce00251e0b2ddb70cf2da271ca7dd79c4d43b841848c929e036",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0069",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性合同扫描件目录，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "b7fed5c1ba0e32e801031afaab343699fb17a8596a9b62000cfb3ed364f5f887",
+   "goal_fingerprint_sha256": "62a1ad1e363b9a70142214a5428a767d17f2e3a24186957652433d4652a334b5",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "77d24f98a99f20c1d98c4f6b6d8c56b781635f8bd0051832e07d1971466cf750",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0070",
+   "cohort": "CORE",
+   "prompt": "核验数据一致性设计稿导出文件，生成双列对照。",
+   "category": "verify",
+   "task_input_sha256": "eb736fcaf860338eef7254910943cde6112ce45be30efe2bc1935653e718be18",
+   "goal_fingerprint_sha256": "dbceecc3f2c5abdb09c24dccd491e388aebd0dd465ff4d18f8b8473c80f4b8c4",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fbb5f20bf2c0496f8e94d24afff9d75561b7ecc2777016ce2102c7526fbb434b",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0071",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息培训材料讲义，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "6a785d28dd2404fc65b398dae399898f4f9c0228dd240f8dfd9b6981295ddee0",
+   "goal_fingerprint_sha256": "c9a693175a1c46cf82071e2da07dacd5c78a6d7b5f226e5efca49d983b7ff392",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4afb720c9a350abc90ebacc69ad66d1182a2319e9766d7421e82ab66e4bf5e91",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0072",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息供应商报价单，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "13e556fa7ac8ef48769e26613b1387596c7d836e8f18742b0d3b39f08c3e9894",
+   "goal_fingerprint_sha256": "a46f21ec231e7e212b6da9f2ba96a1179c5461d8498c54d4180207d231dc8f93",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4d1d493970a95afc5fd198111fb1043c32e44b5183f93606ea7d2c4f9ecfb5ef",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0073",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息工单处理记录，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "1dde3ae5b61df16dd8cda0180b0f95cfa7b6eca1e8f4a81737e4645202a87c87",
+   "goal_fingerprint_sha256": "53fb81948118ecc398c1d5a7d845d3a1b9e2931246dfee3e0871710bbea1fd27",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0e07a8ec77a3f89fe96e0daf47fee12cb4054050b4db8a28e9a61558e9d2ab04",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0074",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息实验数据表格，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "ebb4497a667db5609028a33de5f47f51dc2ba81365d14b2d52caf4494399bd4c",
+   "goal_fingerprint_sha256": "c25aaed7671b06c2987ae0a87cef2072e9c469c51285d47a5b85e1c62f6ca67b",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5dad12b8d84f708848b825ee8120410e3547e31a00f47e45fb302ea6993778b5",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0075",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息活动策划方案，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "9d255709b0eee47e87f106fea99257e2f8a74ebe29d79bdf22646fb5cd0264c1",
+   "goal_fingerprint_sha256": "0c223914daffc97ef44c560c4617549f30e26bb913476fcf3c48243292e00bc2",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "24e0845dab1459f9c229af00343b6f6cee88d1a92e4ca935e5950ff698dbb1e6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0076",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息人事入职材料，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "fb74d70dc78a24368c00e87c7f62d697f02436fe2cb75b9d6f25bfe2460f3a66",
+   "goal_fingerprint_sha256": "009ac83c226295d66f0249c6612e8895e90fff55353cf7813fc9cbb637e18d4a",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5bffcadab281fdb280b2d0e3aec42257d9b3b4532a9b7a693dcb9e4c917d3991",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0077",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息运维告警快照，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "bba481aba3ffbf7130f075bb383e26a70b2d9a13830ad495bacf278366caca13",
+   "goal_fingerprint_sha256": "62b1b626e57640a850b7a386a1055fd027402686d41f5dbb8ab08d0d1a607f9d",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "94464dfb7e86aea7432f60212cb40dd96f1f474cbcc9187b2bb859f804e7ba8c",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0078",
+   "cohort": "CORE",
+   "prompt": "从中提取关键信息课程作业集，生成双列对照。",
+   "category": "extract",
+   "task_input_sha256": "23dc533dbc5ef501f02832b7520330611afd61003a60d2f41a48f0ac495f2107",
+   "goal_fingerprint_sha256": "ecadfb134c5840620ae758e71b934c000eb664701619ebc817a45b85debda8d7",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bc2fbc4b9c952c6847c72fd1e556bc048cfdcbe322007d49051efcbcd9cb5db0",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0079",
+   "cohort": "CORE",
+   "prompt": "梳理会话或记录时间线旅行行程单，生成双列对照。",
+   "category": "summarize_thread",
+   "task_input_sha256": "07b6b25db61914287ea7987b3f2694c35e957213b773af3c1287cc70fee0288a",
+   "goal_fingerprint_sha256": "2493c1c798c4d2a4b35374e32b3d9cb8fe6a5ee7ff480ea7fea7d61385d5048e",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7bcb9b484ef02835f974e153ba70b6ac525cba487b2b50b23a94625afccd0747",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0080",
+   "cohort": "CORE",
+   "prompt": "梳理会话或记录时间线图书借阅清单，生成双列对照。",
+   "category": "summarize_thread",
+   "task_input_sha256": "e11a1c6ac945bf1a7336aeb328921c09237bd7f9d48cb3c97bf9bd537a716a26",
+   "goal_fingerprint_sha256": "89f5b31254d6f9dcdd8df517f735f92571cca0f7e31ad6fc689cbf33a35b1ec3",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a6167f1b4a48b66369fbc0a4c46e2b73f5a564b3f7db35a4b8fc605279d04484",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0081",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义库存盘点表，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "99c60754ecafa469ce657bc0bc548637569c0c459dc75d4cc5e717df54473be5",
+   "goal_fingerprint_sha256": "486027e72938efd8b9baaa968e4029f7b756d8ce1e133b5e6131eabe002d3a51",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8758a63452c9cc08fd17ceab91e5c6ae7f1c31cbb667bd959b420fcc06bd3c8e",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0082",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义问卷回收结果，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "932bcd5600c5fcfd7a7c46e17e39ef08a602b6925b61edf8d5e7f6ba24ac6408",
+   "goal_fingerprint_sha256": "5029b68db5c84afb8e56ad1a0afab468e0007c7804231b24718707a8d3009394",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ae06a14b903b19e19f192f006437d24c76288870060f4c64b03f791e343f1d75",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0083",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义竞品分析报告，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "10b3c8443a7306afbd998cab3e4a41267f653d4e5ce3da553e5fe9d0160b6164",
+   "goal_fingerprint_sha256": "2be8f884cb5954420b7f4c1f777fdab62d392f06e45aecc48f65c95db835489f",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7e11375b67f7a7d301a6d3f6285932f52999e747da7a3176cdb6a0e700dbeed6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0084",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义维修保养记录，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "72ae61e83545929112d22869f55ad850a5a1a3e13c636db54b25fde50380fc96",
+   "goal_fingerprint_sha256": "068c5e08d1bf6328f1c660f254a3c270a166599131072697189bd7b7fa640524",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0e8c9fc50655af7b772c91ad8b51af233857208548d2f62d12f4231475625d93",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0085",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义稿件投稿包，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "3ef1e766b678757df696d8f17c14f9538424d93fe86c1116007caa5a4c616612",
+   "goal_fingerprint_sha256": "508e31c6b51118b1875e0a9ff3dabda45246e75ab94338b6032d0012e1e4a44c",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a31c543ee651a0941f4aab6607e228a6ce85a337dbc0efd9ae57342b2ceea9e9",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0086",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义验收测试记录，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "dd3c90b1b64d8bf3875556b6119c9a6b9c9904a0d50fd647155de0cdb2a1dcca",
+   "goal_fingerprint_sha256": "eb7ddda00c3ee7450152f3922c9bbd9f687cc6b41796837521690971f280df32",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5212373a8bdfe01b6960a4450c1f3a2da12d857d1fdbd68ffb610505911789af",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0087",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义访谈整理稿，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "bd3d507a6a116258b906a8ce941b9ccf0ffbbf7f7a0f065d6b4b8528cb26d596",
+   "goal_fingerprint_sha256": "a79a0c4e68b0e3948ee14230d7d686f8cbb54a87d9bfafc03236fbfadaeb6937",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "81f2f61fb7289ce247261a01ad9902c4d71095ee54e405e75e487c3fa23e6691",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0088",
+   "cohort": "LONG_TAIL",
+   "prompt": "读取少见的配置并解释含义白皮书草稿，生成双列对照。",
+   "category": "niche_read",
+   "task_input_sha256": "46fb35c526e28ce908b9953221e13310cdd10181d6848d016b7d50961c67fad8",
+   "goal_fingerprint_sha256": "e0744f1f96baf183c3af4dada41186065a9865dbb6a8ad38da2890dd182d8427",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fc27df2773f226c259187110792d5e08224e9a2a2f34db8fc27c43b2a4c94d93",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0089",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务发布说明清单，生成双列对照。",
+   "category": "multi_step",
+   "task_input_sha256": "6131f84770d5a4a6dbe86821a1594bd3ea93b9891942493a970dd61785cdea32",
+   "goal_fingerprint_sha256": "e65c49aa5906274b17d93fc2dd1a0e77a005fba428985798461f3419153a8ed3",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "03905550168d476919eeb748cd267c39bf0ee597d113c08ec575ce46b4178736",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0090",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务数据字典片段，生成双列对照。",
+   "category": "multi_step",
+   "task_input_sha256": "77771c32e14da1bafac68301b5be48a4fac75e4abe2f77452d10eaf60f11b02d",
+   "goal_fingerprint_sha256": "1f2858370cbf8102a5a3ceebfe9664685d37f553e9745f1c755f3fd441ba1df0",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "生成双列对照",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "29d361417e8ef2a6237098af276ee21254a6beb682c4a6d6199103717c562c97",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0091",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务季度财务汇总表，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "b6681ff60efd56d3b9338b9ad5103b617273747f635d8e8648b14cd5fa266af9",
+   "goal_fingerprint_sha256": "7203603541fbfaee5c527a8532f21125cf2b40fbc4aed2a0fe574cddfc869ac8",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6b98b559de08148268e7fd1edafacda931e208425955f315bfc8634a1690f6ea",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0092",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务项目周报草稿，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "8840c2e3b8c47f071b7fb73f0081674d768b2021c2b53879d758f1d786c446e8",
+   "goal_fingerprint_sha256": "82e802ebf589ee48f1bcc2e2785a4be0c1dfb81aa2f1b097a40fe673ce7b0c6d",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "2c6acba4c81308efa1da0265db2fb443dc6394686872ae678fe3fd52a9cf6db1",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0093",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务客户来信记录，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "634730aac1eeec41c0f4e49e94dae3f8515698da3743112239b36243dfcfcd2b",
+   "goal_fingerprint_sha256": "00ab9e0c7fec94a3df69d1b9b9a35ed0f0afc6315ac2d340f5642bcd27b7ad94",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ac18014622bae09eb10caaa2d7ea78cf90af1f158ccefc087b4666508674dbac",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0094",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务产品需求清单，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "ba3c7b43a6492c8b3f19e5a0911bbe75a5070526ae75444a06b82a72f729d76a",
+   "goal_fingerprint_sha256": "e6852213b67cdae8e73f9418173548caa218211955e38125eda2993646c5bff4",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "1043f7c9be661d2d5a14d1fd434610988bbaaf09de922877e6292fb407dd41ac",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0095",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务会议纪要初稿，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "74de6fa8d3923701b3401b55d156d7e7e1eb268a725cfc3fa1e96946ea665ddb",
+   "goal_fingerprint_sha256": "85d2d97912aa27e51e5ae9206bb3637754e21e125404c0debb5050f48c5bd4af",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "637b5f483def4e705dad5e9a525d720b67fbea8b0256e8c454eb4c2ef6ae6082",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0096",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务代码审查意见，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "2a6cc79bfc71082105e3a62ec7d9e7f120bcf8538e73da37ae4909f418e9681f",
+   "goal_fingerprint_sha256": "d561b0235a5527dab4854330cf7404670b6131a2dd29c342a26aad006570b021",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8f4b6069e36f4a6ceb8b1841edc3e71bb1eb72e3bcf0a87910428854c95e54a6",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0097",
+   "cohort": "LONG_TAIL",
+   "prompt": "分步骤完成组合任务市场调研笔记，附检查结论。",
+   "category": "multi_step",
+   "task_input_sha256": "38992d49bfd78e02a8dd5ba2c437f7ed2fb44a1bc9df012888bb4a9160779b8c",
+   "goal_fingerprint_sha256": "1a6ba8b3b814b456f1ccac89c6383d89e754caf54fec57cb9e57826f5f91ded7",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "56b2dec07814ca304ee703b25d1d05d1548617fb66ba5f426655ad50065550a6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0098",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题设备巡检日志，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "15410c9130ec05e626952a0b3b9fe8e0bfc19e572397cb1966431d2781b30c51",
+   "goal_fingerprint_sha256": "25b9f09454ac62e5f46c62ee3e2aaaf0b2dfaf52baf384ac997fdd571ef2e176",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "06548f652a9e2ae37ea41ea97ddd17d14fe190264bc399e9e64a986734ca76af",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0099",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题合同扫描件目录，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "d41e7f703763f5a822bccd0940ffb2578162230af9c4930325abe3a97d6e9ced",
+   "goal_fingerprint_sha256": "9d5e757427d866ca76715abae0e2e6ca29b003b0a2dd1cf27ffc10e65531775b",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "2f44a5c7968b61dda46925ccb59eaa6ed1bb9e17ec94415de132c74414c0d7be",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0100",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题设计稿导出文件，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "6abff1ef13a193080f7252849965c06a0cef428323fb70957272d87400d9ad59",
+   "goal_fingerprint_sha256": "64adbd4e6ede5bf3b532ae9de622217b967f32bcf5bdbe4a94f185a1ae60a6cf",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f9d0dc6af1b52161ba710f6557a41bfd38a8743f6ffa3136bace0950c6a5e328",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0101",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题培训材料讲义，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "cb8898663b241400b35e5038e14fe8b99812f6964918fb16735758e2f65c81eb",
+   "goal_fingerprint_sha256": "22185826484f26777e00ba3d440470dc6b39d41736ce4d894a8315b3828ad3da",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "3e05911ab9670bbc7201d50c0423a16ae5f23671692f8792640ad26e2036ec04",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0102",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题供应商报价单，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "d21367f68b90e16c6214eb08dfdc78fa4ed758ada90e160d46b3f48b4ec479d9",
+   "goal_fingerprint_sha256": "0e00cf6c41e7f6baf3233fe723723a3ec6ef2252d9ffddd678ec7c5e8b363b80",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a3ca9804fb665bffefcf8ea8bfebde1f8349a2327e7517785281519e676b35a7",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0103",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题工单处理记录，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "13769dd59b88bb0880760b30f13bb82950019bc3c71372b08324cf5326f33697",
+   "goal_fingerprint_sha256": "d78fc87f3d52376b7d2e36bd1c6d80e52130a4fe85e22081f2482fa5245691f4",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "3aa175f6e1ff579eb95ae1ce91da9753aa4dcbbe5d55375bc188978acb0316ba",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0104",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题实验数据表格，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "d494cad5536e0e9b816df90a28816e0ad59bc500365c31ce04a58ea7129adbbd",
+   "goal_fingerprint_sha256": "98e9f012f05bf8e294a7aec79f997953650d7007bdfbc56293af2abcd038905f",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a6e4755344a9fa1d4e50e9e4ea8a19344afc1e5485de56f4445b586c03957b6d",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0105",
+   "cohort": "LONG_TAIL",
+   "prompt": "发现并修复问题活动策划方案，附检查结论。",
+   "category": "repair",
+   "task_input_sha256": "2cede107645f2d07c775dda996068746a3249198af4290f261ad96a21368785f",
+   "goal_fingerprint_sha256": "ff5b0004fd3a8230b51b271875e7d7fe1d77fe6bd3b81fcea65f347f881b6b1a",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "633327bf584a7b5537fe69d9cf9abc6789d1197b3c495f85dbb5bcbc69b48d07",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0106",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动人事入职材料，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "93acacf5b59f6e7123cc69a75379ccd20174b7933ea72bf363f35a35b7aa2030",
+   "goal_fingerprint_sha256": "6fd441dc5ce48385ebdbf39b841b362984166810c389aa9827258c9fb8af3ad6",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "d4cae103ec295ee4044e577ab42aa68fb6c79ee3ce764fc9d37bf4742c64f901",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0107",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动运维告警快照，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "a2073e70d0432d9b574d9e13dde869f3ceea4ad4ad2764da02c51cc5b3b3b418",
+   "goal_fingerprint_sha256": "bb3d2e170b94f3ee14c70b5589ad6748ef15858386c40d2801e4c10158c5da4d",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ba4d0ea7001a6aa6cb83112e6baad866712b47884bdb52475528a57452db00d1",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0108",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动课程作业集，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "9523dc1f5b7eef804af5ca0d7cc17e65c39663efb35eb2c34e330f1c22ab8805",
+   "goal_fingerprint_sha256": "43d690372f14c4b3cb93c477a53b9bd197e2327db0899adf2c15759fd68d86e3",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "aa22fc4240dff4680516bce089765a4e6d1cdbefa4a4d20a2195d1a1575d950c",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0109",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动旅行行程单，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "6117ee56d4bb7a2ba4385cdd3a1fb89aa87fafc669eb04642bf0ebaef2c9cb45",
+   "goal_fingerprint_sha256": "21cfb1a5523cece0c77b8338ef10611e81187cf564335e2c8b91d04562620b89",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "369435dbb5df99394e24b17bdf3f0d39d77ad31c8aba96081ded64dfea2116f5",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0110",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动图书借阅清单，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "23281a433bdfacf0c854b21528be6019887d99570de75ecbb980afca225b3e50",
+   "goal_fingerprint_sha256": "86db638a9ccde23a5503269abe771c769e0d4ae7a233bc23515a312d31aaa4f3",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9196e7e8d93356ea8a658fb82d71920b29f9395a03aa47460943dce910220a78",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0111",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动库存盘点表，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "9833d5fa263483333a471968360c99405a44c48614e856c24629750d93694aac",
+   "goal_fingerprint_sha256": "a11e3c4eaa1cef958c0c1cc1c6ce068642e0aabcbb4c4ea289b9ca1483ea3ad5",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "80823afa41049a7fa81c437d606b0df7f97302b7bf42bd0cdb4ae44c355ee7b5",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0112",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动问卷回收结果，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "7ab4dd4a846f6dd3ab404ccd8b079e2f91cd7e0c4193808e93d14ba596f40567",
+   "goal_fingerprint_sha256": "15dd32371dded5bf56da36f65408d2337eba711e29cd22dcd39e1a1cc9d1906b",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0789da0d53e01bd0be0bf0a7bd80af969ef76f689c09ba9585175867e82e7a58",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0113",
+   "cohort": "LONG_TAIL",
+   "prompt": "批量重命名或移动竞品分析报告，附检查结论。",
+   "category": "batch",
+   "task_input_sha256": "b3ca131aaee11e3d3cdfe41d624672290c8b9ee2d40a7de38a77d94ea76db9f6",
+   "goal_fingerprint_sha256": "e537d7d6410f43c78de5c0d23ff18313917c85683010f55578a044c8ef552206",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f3bd1424b8de8b36d48c160f6d5dd9915a817b6039930d2c1f89f97464d8f888",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0114",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对维修保养记录，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "2e8387b6f9da03422cafa801be49ffbd3ba0c4f399bbdb6da2213db74537f6c8",
+   "goal_fingerprint_sha256": "6a47536ad6d928a45c5e5b5c542e9f4f5404fb60f36e2cefe2d6634c59a8a92b",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "2ebafa09f2dc17153f571e15649b7a7f1ff1f8368ff6381a97066d1e6da40e16",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0115",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对稿件投稿包，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "f15f24544ecf87b501f7a737da00e672e7725497da560f6746478ec70512eb78",
+   "goal_fingerprint_sha256": "aecd61c2ae130b504148e9f730ca0c094f097d40dc3b8ba1ebc42a5ee5deb49f",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "e79b728661313f5d9a5204fcdc931206d1eb02479c0256e7881de3ee62d194b6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0116",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对验收测试记录，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "b38407057131d29a285a3a30172eb90bce1d7d9b863ffcb77b2ad89f2723d64b",
+   "goal_fingerprint_sha256": "96c3767ef008b6edad7093e4176e6e753af3d7990278003a314958f597aa326f",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "e3e6c73adc4ed73d7910bb3687ff82e0092e0eae488ab1f859a197738017ef7b",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0117",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对访谈整理稿，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "62b9454a1184d5e32d30591f8388f04759b14dfc4a462cf5cfbd988f5274eaca",
+   "goal_fingerprint_sha256": "ec849869dfc5f03f81ee03fd245fe46ca44556aa1bb8b4e78026afff7b76e39a",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "37da505a341ca5fae3918c24c9302bed52c2a291ae690518bcac473ed7e6b3b4",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0118",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对白皮书草稿，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "b62a59440523ebcf7cb42884efea4af38fd3fa2021e09d7ad02217fe7d62fc5f",
+   "goal_fingerprint_sha256": "23ef4643b64495652782137ef71f97970da0d09a48b995ad3fe2bbbf004efb03",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "56bb50e29b84223a70c1e8a4ca4160c8ce518d5e8e83c67ebe391a186e8297a9",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0119",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对发布说明清单，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "6c816fc0ba9a5369ba53b31c30afaa780517c257c62cd0a0db597320626ec7b2",
+   "goal_fingerprint_sha256": "48d2622e7fca614e689953ff78e775cce9847ba95ef4820f8853d12eed56f539",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4778a4f3014a1960d1981982ad5b7d37bfe04f157e5a4cc543035074df9b2407",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0120",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对数据字典片段，附检查结论。",
+   "category": "cross_check",
+   "task_input_sha256": "09b116d8a204f423f40439a1f45a18feea7d0980e7c9426cd87b82f036028508",
+   "goal_fingerprint_sha256": "6dcea8b659db9786a33375b0aabd3a846646463ed8018d4810cabc1d6fa21362",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "附检查结论",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9b725dd9d8404868b081468e93d67bdb830430d64de70d7f5e181e28a60565df",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0121",
+   "cohort": "LONG_TAIL",
+   "prompt": "跨两个来源交叉核对季度财务汇总表，保留原始编号。",
+   "category": "cross_check",
+   "task_input_sha256": "50d8cdf6342845f5a5274baaba0fc41f0b7d26317a412d5063cf2a2df84e8593",
+   "goal_fingerprint_sha256": "2939d3ae28b3a3946817e21ddb605f0b1123f04e9f2d4ac3772397cf812091ab",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "22fe9b79915d194168b9ba904ac80b3dcee3b8e79e9ca78999d9504d2d23a310",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0122",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单项目周报草稿，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "ab1b3853defc7d304abeb5044a76d882e110f1d9c55eafac14c48661aee737ca",
+   "goal_fingerprint_sha256": "dfcaabc07d083cbd1c5e52644d2cb3b283f18ec72b22e08f853f107782aa8467",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6f2a3b2c3eb37c8721791a3f4d6e4b77ff8480f0713d366d7d71c365f69c05cd",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0123",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单客户来信记录，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "2dbf4070ced630c47fcd01e94dc16fef646e24a74ba94172d1bdb6bde04a133b",
+   "goal_fingerprint_sha256": "00b85ce5e0acacd6cf31801e0ed5f810c84a311eaaf6ebac0bf42dd8cd007f1d",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "3defb6ddad7cc370a0905483ab19e1900c677d25c228df60ee6cadd04cf05add",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0124",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单产品需求清单，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "ff694a1e323088a4228f05f09159e2649504fd38eb7275a2083478e33862e092",
+   "goal_fingerprint_sha256": "cc5fd4c69f9521349546127170e89b36b785d006cad1b8518fdbd07c0f08d9e1",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7309be0396b85deb1860438b81fa95e214d347b5c5b9145f66d861a9dbf70059",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0125",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单会议纪要初稿，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "62687674e7cff16e614358922102c8f43bf33ce071a3c00522807e9c319d2da7",
+   "goal_fingerprint_sha256": "5a209c45bf7dc14f6df7778120120c1392b73015837b5127bc4e0ada08f8f8d6",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "065153d107ee3b4b7b7af7ebd841aa91e78e767adaeeed04921cb0d1883c2e52",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0126",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单代码审查意见，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "3ecd914579f442c32ea584911feceac594326a830d386a0f4a9320a9c6079d9e",
+   "goal_fingerprint_sha256": "17e2463d18ca03170c4d1acaeeded34263f292225d54ff0e04c5e2b4dc08b2c2",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "47654169832f5d255b2225f8212e5c7834b0a1f33094dbc5867acdca3d81e0c8",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0127",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单市场调研笔记，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "870fa90b262870ff7760e97e36d99902a4b3eff0605c5954d784a54b67076ff9",
+   "goal_fingerprint_sha256": "a1b4c3a0df57589412753b25d7d78646dee2f04743dc343623f62837a587a353",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8ca496ddce219b86d6f919eb5257e35558714ee6f2a0f167bb96cbd66d0f8743",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0128",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单设备巡检日志，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "ec93b649131ffef7d82739639173a503b4ffe05966fd5bec90a85805a5ba0fd3",
+   "goal_fingerprint_sha256": "1f67779878986278f0ad742f458787694b5c880c1800ba4317dc08c4cc1bc0f5",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0d96f6f0010dde13c075df282a03d5879ddb693d8616b54da30a500ab0323af0",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0129",
+   "cohort": "LONG_TAIL",
+   "prompt": "打包归档并生成清单合同扫描件目录，保留原始编号。",
+   "category": "archive",
+   "task_input_sha256": "0e3f74ef968894b1127ef7bbcfb0f8b5af0083b13ae9d8011adbb363dbf99344",
+   "goal_fingerprint_sha256": "e96b0d224f4b20cc7d07eebd77b12ab103efb4e14f57e82b04dab8d170ee7a7c",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ed2fe014b928b7248301b4087ba395e15882cc32c5b37a5802e846205bb33d1f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0130",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见设计稿导出文件，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "8a9f6ae0c7da697ef0bb4b8b26157bfa38eb7b97903a5e696ef2c5afc0e35273",
+   "goal_fingerprint_sha256": "7f4b94861e621ca26aa33a991cd7848d2877a800612e168c208918f82655fc81",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "10c8839177bdbe7da1645f263e7445bbbe02aae34ffce8ffe741ffe1b898c3ef",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0131",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见培训材料讲义，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "aebdbde0011f8c5a5a1dac42095898f5bf7a35a73e79d979fc5eee6d6376975f",
+   "goal_fingerprint_sha256": "a6481852c4bf39167622537ddde9af03db2f7fca6966a04c4bf8d2bf4e1a6660",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "eb6f815cb4c1e38ddf52cecc41928336abc47b1c82dd89f6f1da353a0f08b141",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0132",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见供应商报价单，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "9891b622cf693aeea4fa7e85edb0497559e50eb1db73542f1eabe94a75287627",
+   "goal_fingerprint_sha256": "6a27a6bef75f91a795b21ce8f1dbafa6b35c56767b6e4b110e42c616b4e94d62",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8a8e36914a44b159fe6f911d21bed0e47560c1a7f175dffcc201bc44e797130a",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0133",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见工单处理记录，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "d1e0866bc4231ebce22d2d11e26ceaeff8ccde7bb17e1c63c965d0261e347228",
+   "goal_fingerprint_sha256": "edb0136b6ff4d7d295fd3c58fa80a17c1422bc05484e684063b7c1a6fae37557",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "30a9398db59f80c7af653b1211709a99cd5e43d0906cf780201b2d26746871b0",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0134",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见实验数据表格，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "35410a07aaba121f4753a887b1c87e88d23f7c477d6180ff1787557c1bd0d489",
+   "goal_fingerprint_sha256": "3c5df8a410bc4f1ba3222e7880d7b095363902ebf7ef14367ca4bdd86379d5ec",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8e5dbff918fa598b29c9caf7c6a3233941b5c258b156bd2cc85e2faca0b4c94d",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0135",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见活动策划方案，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "45f53d3ed41b72aa35dd1afc02690d00b5e3f141a4c32d6c2fa6d45f6370f03d",
+   "goal_fingerprint_sha256": "79ce2691d224e9a4f517beeaf8971f58668c458a99c63de9597b53a1af8b6487",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ce1793d337ed48a12369a6b8e2e5efefd00f4e62c95a6046e2a7c0fc2607049c",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0136",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见人事入职材料，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "eb846bd751d72401f4fe09c216a298ee7bb1c8bb220650ee9208e5e89ddab5d9",
+   "goal_fingerprint_sha256": "98e53b388ceca42a82be3fae53e674c5bfaf8743a93bb843a6bf1afd81801ecd",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5ba2d56d3f7eeef8c820ea7dccae5cafe13259abbd2a2d1262873d04a6cb1487",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0137",
+   "cohort": "LONG_TAIL",
+   "prompt": "审阅变更并给出评审意见运维告警快照，保留原始编号。",
+   "category": "diff_review",
+   "task_input_sha256": "ca23d179f2a24574a11d8036bf3ba030cf3991089ee91be34682a7c72101c354",
+   "goal_fingerprint_sha256": "ee1799ad413d3e5fc72155d1892665bfb4defaae4be1a3cd2f8ca394ac8defea",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "23307fca8be40b4fe341d751b3c759463f25e9cf8300f29d958351def503828e",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0138",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构课程作业集，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "13e00b7021d8989db61d5adfaa8ba321c3e36d219d2d19731bd5d650216fb22a",
+   "goal_fingerprint_sha256": "756a68c7875beb789b4ac9ba8484926e0bd20da6d23e43ad97d5a494f600949c",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9c4b8bd3bca6ee8f0944f2d23c615c9bba827823940c9f057eddd8946e3bff61",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0139",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构旅行行程单，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "44b73c79c4e181bf3a2115aa8ceb66f621cf833c422b862d2cc1ece0dc318ad2",
+   "goal_fingerprint_sha256": "4811d17eb406acfd033f9d9fa0192851926f601c825cf3400ba1f552d312066d",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0db69d891f560f395ab89a7d9127d8ca62353850d64f817376a1322c1e523e6f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0140",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构图书借阅清单，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "9cc5f8540f08f86c02ef5a9896ca4c4f2caf0b3304921b295cebbb93c96ae78c",
+   "goal_fingerprint_sha256": "424fa64ccbf522bbbd46d9e2e4aa49e7a1eab16cdfcd8f30affee023e7b57073",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "32dfd21e692b3200ceb64ab8cbd2fac4f4060142dfc768e799913bc6841c97f8",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0141",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构库存盘点表，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "e85ecc1f6401c475619ddca0d18b88ea0cb3f25ee2769224646fdf1695da1669",
+   "goal_fingerprint_sha256": "8c2f6955fb0ef9f53123072f3e3b2be714c79d38c8fdb0e0468694b9c2e70c9a",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9ad34b16ff5847148a5861e048327153ec1dcc39220851863b24ad2efa219571",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0142",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构问卷回收结果，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "3a8617d21722eac9c0faa5e3de405de09595c8df955d8a2d4fad68f21d7e13d4",
+   "goal_fingerprint_sha256": "c8cd030ecb4818dea53b5e10f5ce8893ebab0635ab8c70b7a62919ef36eac586",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "56663f5ff15e5cec5c46f6a81552082a43fc661fbd5b3b8b3588fbe948418d79",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0143",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构竞品分析报告，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "b2f7dd12a474894fb37f7d662ce73cbed671f3f9f848c27edd7a7a0a560f84be",
+   "goal_fingerprint_sha256": "33022e497f3e6e265aca788aadac806ff9df118a2b83f8d95eae410390dd12b2",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "352a9dd13cd8b51824971a65a3e1babc615d0ca57e76fc5d9236c8b524230a2f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0144",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构维修保养记录，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "8485ba4e61ada85fe7a80ebf36af56acd0640aa21902c7f387898f3f3bc41dea",
+   "goal_fingerprint_sha256": "886640fa7368552e69545852d0ad9b60d92a90c3eb0f733711c37ea09234d2b4",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "344cbe58ed83a80182144f4c49233aac95f469b4179601bf87d7206f3200dba8",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0145",
+   "cohort": "LONG_TAIL",
+   "prompt": "为散乱内容设计结构稿件投稿包，保留原始编号。",
+   "category": "structure",
+   "task_input_sha256": "3fe03aac03e2548f14bc4acde1608a29e1ed15d783adb06b00d8ca899d958473",
+   "goal_fingerprint_sha256": "a0eb7ee8803ecd830691333d2a71dda7c20d201f0fe0731859bcac3d8e04b9ce",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "41932e18e667ba70aadecbd3117347fb497d76abf531bc36629d4fde5cc6c3f8",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0146",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序验收测试记录，保留原始编号。",
+   "category": "timeline",
+   "task_input_sha256": "2e2101020718f35c41ce87c6e326d9a608b46f7b736282fde7c09d374fdd9354",
+   "goal_fingerprint_sha256": "97509e3e73ec8945d86782e0d43f38f59b60fb2b3beb1d2fdcbb21fe642dcd72",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4243478bb06bec8079bbc18494898ddc9e741503ec14b6c2e961d28f938fe8f9",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0147",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序访谈整理稿，保留原始编号。",
+   "category": "timeline",
+   "task_input_sha256": "f93fe0e8e30e1b03af6a9ad1d248efe4ecab29a4a29ab7145d91bdf9e5f79011",
+   "goal_fingerprint_sha256": "c7a9c5526e6cea645b610abefe22bca94021b37b3baabc2f05841693d58ec081",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bea6dec0084b3d330b36580efb39bbc05716eeea91cf4662246401accb7fdae6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0148",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序白皮书草稿，保留原始编号。",
+   "category": "timeline",
+   "task_input_sha256": "9257171b23c2235f0a2c9bdc45f16f60c975251c3e97fe22ac91c6accc2c08da",
+   "goal_fingerprint_sha256": "d0515900ad94fb84792c0b758a0d8c432e51cd65d4f63c7903781c9b8c7fa85d",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4bc45f09863235dec3dc38a7d617298875847fa6a82b97e99b33d44d0b747712",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0149",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序发布说明清单，保留原始编号。",
+   "category": "timeline",
+   "task_input_sha256": "57603ea1743f72bfc95e66911cbf4b8169a2cc884b5ab02d505fad0e99919c62",
+   "goal_fingerprint_sha256": "955c6e5fcddd44dd478f04bce612c146cc3eec209c56c92148a761deb5c8b08a",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9ea2cadd85fe0f1e8d38a77e38c9dbfa55299236d03933046fce687bd36d6240",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0150",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序数据字典片段，保留原始编号。",
+   "category": "timeline",
+   "task_input_sha256": "485bb027a983c98ce72cf955291dce4ed6375ca8ba529c301f165ea5202aad0e",
+   "goal_fingerprint_sha256": "8aa4b0c0ba16866c635c63090da90a873f0b4350693058b5cb3cfbc3679a14a7",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "保留原始编号",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "d495f6251b214fae96c9057ccde9ac5b5a2fe4b3adb0081bb5ccb12bb3011639",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0151",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序季度财务汇总表，输出为简洁要点。",
+   "category": "timeline",
+   "task_input_sha256": "e941f318258ff95572daa84e075e27095f90da6811caaff3aa39824cbb6941d3",
+   "goal_fingerprint_sha256": "a889a3e90fa3e855714173b5630a5b8ceadcc0b5c69ed44e347a03f13a8ad581",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "ff4204ebe49b0658ec6f1415e93f0a1f8979537049e1765e3975e0a3ec89f581",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0152",
+   "cohort": "LONG_TAIL",
+   "prompt": "重建事件先后顺序项目周报草稿，输出为简洁要点。",
+   "category": "timeline",
+   "task_input_sha256": "9bafd1ab3bfddbd3d4c01c48d7c5f2ee367aae3ab09a7dea2317c8a74eb24d3a",
+   "goal_fingerprint_sha256": "d5c4ee3c23d09e2e879013d0bd68ccbb27c1ecd30ba83e8a336a3915e6a81589",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5c18588b331a451538c5c1ec809952cb55e59efb1a140b28f842b750bcbf97ab",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0153",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计客户来信记录，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "bc230028e8bcf818e5800a7c0a2f4f312da443b132c247e03ba5b6bdc9b182cc",
+   "goal_fingerprint_sha256": "efa84df40609484f6c8a8cdee7cff8edfc73e5b28b71d3a80072171a80f7e191",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5f9e26569c0c9a33c4d4ab028b35a2dc0e4d1869f655a50e74a8b3285c32e6f4",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0154",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计产品需求清单，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "94d6cf6ab92c061e0fb47986fd0857c48939c24f0b32b4c343907fdde716de6b",
+   "goal_fingerprint_sha256": "32e9b74fb99d40c75a86764e446c6b54a965d5749e4394fc9e55533910472488",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "b2f329260745d953fa94990ad5fb18414f65f33128de3b793cae1697fa56cce3",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0155",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计会议纪要初稿，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "08bcb8bab26c24a0bbf4825d87317b2f3684968871f60ae668ec71afa9452bce",
+   "goal_fingerprint_sha256": "155d284fc859ade9cb6215b2eebcb3f951cafbe10d2d5dcdd80760967dc71824",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fc2b15b352ee5db9995f9e45186fa947267199fd652dd6e257de007c09e878ae",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0156",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计代码审查意见，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "e7d9aaff81b24f7f483ee94c8d13c4bfa83861ae298090ecdcfdaf0d33a0f7db",
+   "goal_fingerprint_sha256": "ed2f7eb9e1d227f1a75be6790bd4ff474ae1896eacfda2208b6db640f8f8a91d",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fba13f7d882b0b102d24aa14bdae49f2d9cedc76b5644c6422a39692e7349938",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0157",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计市场调研笔记，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "e6e6e7cbb6d82396cce6260704cac86f6289652c103e8aa01ec15a16a6585e63",
+   "goal_fingerprint_sha256": "013c019cb24754932f6f16676db29f4d8bb4f040f229a8f3376bd1a4fc10ecde",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bc2808d03bd0e75bcb30577043b4b32771195fb827b776149701dbcc002f5b01",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0158",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计设备巡检日志，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "342b446469e65ebffcc4712ad167c71abccc52e2185bf4b599ff561de8962c6f",
+   "goal_fingerprint_sha256": "ed86525bd436323fcf15c6321dd1d8746610c54dc40d29cb0ce9d54f4fe633af",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "23dd283566fd7f22edb8d563690cd70770be19fbb0ef80d0ba2556d1cbc14c4c",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0159",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计合同扫描件目录，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "122a15ca8f63f5697e2aab9eaaa2389d3e491d7b6557217e0dda5b241e0aa071",
+   "goal_fingerprint_sha256": "87d8bf4db54d227466ed83f8f5f798ce969c481850327c3f30970b3f260c0478",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a74ffc24ca56ce5a11c665a642f920c7583e53eb242e541f1c996b862e7838ad",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0160",
+   "cohort": "LONG_TAIL",
+   "prompt": "盘点目录生成统计设计稿导出文件，输出为简洁要点。",
+   "category": "inventory",
+   "task_input_sha256": "dfd438ce8c211168b2897834f821f8415a4d2f67ca35f551feb8bc45985eb1d8",
+   "goal_fingerprint_sha256": "cef0e3eb8e8e12330566e9046cb511b7bdac91eee81d6b63e863a93144d6c68d",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4b193f7868f63aaa627bb816f479d29a70f01352e9275df382ec551f11a83e96",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0161",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题培训材料讲义，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "8f148a6861f6518a53c45d725e2c3dbbfc773a5c607506a65862ad7730771166",
+   "goal_fingerprint_sha256": "61956c65ba14f50bf76219749d8ced2039bece78aa681915b7f61604bd3b6908",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "80d5c8b6e1dadbe5533c0446121ea2de2e113a1308c862d4e61f9e9c958c47ad",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0162",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题供应商报价单，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "2b186882b5cabb212b57745542c9f9289cb558f540306266ee55ddad7103c6ae",
+   "goal_fingerprint_sha256": "a66d854ddd28202835d842d1045dce97c4eb2eb7381919dcc9dd57bc3a980fc3",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c75817f77e5e6a662fb7c27028261c1432018438948489ee4fa3d820d391d65b",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0163",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题工单处理记录，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "a8a0dec3d1ea0911193f269b0ab4fb42321e8d77e59dd061e008230b82952676",
+   "goal_fingerprint_sha256": "3c250f550b65806260e7a405e1ab5b4b625752a29e6280658f8022b8d1f00d5c",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "3b579498a3ca4e0406b84fb13035da8c19fb48ec63aec498daaa1db5e92c3c5a",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0164",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题实验数据表格，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "e915038c920c5c8aa0abbc46d797fde304e6614999af9a8b60a76620107a3a75",
+   "goal_fingerprint_sha256": "f92a3ffe2c910bb8dbb22db613d6d1f06e2a331088302e89d1e9e95f4ba84a02",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a6e3905d98b99c2b8ac47cb38189c0b01c0edff211b9227ff6f92045e6592a41",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0165",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题活动策划方案，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "38520e15e24f23b8fb08af4cd2ad3912b5a32a2eb8f7444ced1392bf9234fff6",
+   "goal_fingerprint_sha256": "6c71929f9646e1740cde9d3bfb616747d32f0d6f7cabff48751ae27a78239850",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bedc56118f309e299c171ff22e7c35555feb5aa98c22f6a1fa3a5eaca36f45f5",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0166",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题人事入职材料，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "c69cfb56ebe0b910fffb31ccb60d9243a45f86a4de23bfbd690b3109d4f2107b",
+   "goal_fingerprint_sha256": "76db1e0923bf1dd3a12a88d4765c86d12741d4f48e1a3df5817580d26ef58716",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f68750b305fdc71e4f1e6e7845a7322ea8e287f9a7f27656c8b341aaaa1b181e",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0167",
+   "cohort": "LONG_TAIL",
+   "prompt": "纠正格式问题运维告警快照，输出为简洁要点。",
+   "category": "format_fix",
+   "task_input_sha256": "23bb23220abd9d94ec5db9e98204d247cd7ff3119aaed981f38faff39cbbd41a",
+   "goal_fingerprint_sha256": "edfb9fb440c435f345d1cccd70fd7166cc5a32e4cded80f725f3c820326fca43",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "b263219ad1f7fba915e4b79766f831b54f79ab25eecad942b8551e86dbc19b24",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0168",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿课程作业集，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "323c6b90d8466029b717e9852c7c2578ccaa8667289f216f981389087765174f",
+   "goal_fingerprint_sha256": "976cea34c93806cdb58c215db5c9d7a357d5c15ab2c3379226b0ed16a3fdfbfc",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "1a3dc107ff6c1ca51cef4de788af01b965c833269b304a819ae37733adb32400",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0169",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿旅行行程单，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "cd79a8c480e2a99e5e291b6d9541d9bfbe8fbd77864fe1b11e0e2296be2ad03a",
+   "goal_fingerprint_sha256": "8758b9f33eb8235b40f263ec829210020e3228fa018834462aca165f493c52c5",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "3dee8763fb0c814bc00ce1f3513fcfdad13fc7b8e4efd4d8422384839fc45e6f",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0170",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿图书借阅清单，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "92d7977059b761a7f60c46af5e18521fbc4b27de5e950373cc7704fad406a919",
+   "goal_fingerprint_sha256": "08e830e1d70ed829d94ace235867216aaa4bb1032fa56ab41cff095907252f24",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "5607dfe4b772bc22c1c98dd0ea77d88444eb2f8bb398c15c72d4a8a245398972",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0171",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿库存盘点表，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "29988141f7963d017ba1b49d9499d4ca955e695372dee3ef7bb002f8e0aac2bd",
+   "goal_fingerprint_sha256": "cf9f2d9e2a3f8b029dda2cc84ef68d4769deaa67080823541936b94b91ebcf1a",
+   "acceptance_profile": {
+    "must_deliver": "库存盘点表",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "35275ce104a20d07f5e55862ca63c7db51dd2520c6dbfa0629d70fe7b71724f4",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0172",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿问卷回收结果，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "b95542742db89bcec7dc5b49a64a2950ffe361dd056965414ae9bd1de6acfaa8",
+   "goal_fingerprint_sha256": "bec8eb501321107f0d430dd8ff7ee0863d867b3ba14048582d334d744d7157a6",
+   "acceptance_profile": {
+    "must_deliver": "问卷回收结果",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9df4054602bff217834622908a3ea8d6e0939c0c324f9ab1ba63f3802fe0f947",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0173",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿竞品分析报告，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "516e500aa3a0a20491c4386d7dfe771cda78f5a6df3273aa0cfd7e79448d0ac5",
+   "goal_fingerprint_sha256": "169b9ca98190520c92c80744bb56a6a0a61c8bed1005bc27160d0a5fe616ff79",
+   "acceptance_profile": {
+    "must_deliver": "竞品分析报告",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "cacbe8721d43ed208c781f47e181eb4945aa647d86243a48a469c6f773ef313d",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0174",
+   "cohort": "LONG_TAIL",
+   "prompt": "按规范起草草稿维修保养记录，输出为简洁要点。",
+   "category": "guided_draft",
+   "task_input_sha256": "14805867031f6401e6471388778120381820b6eb8e18bcc72e0d6865839081f6",
+   "goal_fingerprint_sha256": "f654d888dae66c4dab8aea472a9251efa41139bf3351f315bf5df53a3a596891",
+   "acceptance_profile": {
+    "must_deliver": "维修保养记录",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "908f4801650debe85a82da241caa720940e04cb536a59afafd56c4aba37e7758",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0175",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记稿件投稿包，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "58e3b698bfc3000dc03685d1175fc86983b8d00214297a06f17c5936886d5efb",
+   "goal_fingerprint_sha256": "1730df50c12c9b8db9e61239c98db63a3592c6b04ebcbe3394ccc98b36a0c308",
+   "acceptance_profile": {
+    "must_deliver": "稿件投稿包",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6f1732e66b1409ef1fe45bf774712d2ac7d91658cf710a22ef958051ddf0b531",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0176",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记验收测试记录，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "754da23b19f34e347b82ad686b2f04a5c0e642663980347aed7628ba7738ecf6",
+   "goal_fingerprint_sha256": "d4469c045668b4447d8836029a36b366465730a1fc1485ac8de28cf893823e16",
+   "acceptance_profile": {
+    "must_deliver": "验收测试记录",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "7fb59a4c1e320b6906a244a31042f10da173020e673d3798e91386ac453433aa",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0177",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记访谈整理稿，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "8bb8edc6a0244646e28a7de5b2414db4add83dbf015d0f94ebc841b4a3d101d2",
+   "goal_fingerprint_sha256": "4174968de31a634c4fc4db3576ad77019bddb0e5741d8131931f8d69211a2eb2",
+   "acceptance_profile": {
+    "must_deliver": "访谈整理稿",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "59b327efad1aa08254595797b32cddeab3ccc8ae43caff247d268f666acbb78a",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0178",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记白皮书草稿，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "5d3b76ba2e3829033cb73cdea8e18c04f7c5f822b692b6fae33c2f5b87d09caa",
+   "goal_fingerprint_sha256": "656ec736896484a6c3a03bbabc75a19fc5f87adf0da2b7325e41aeaf5c1189ad",
+   "acceptance_profile": {
+    "must_deliver": "白皮书草稿",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "02d340e389c15fac4a3c5444e9f1c1edd73ff90da06b4f98462c9a859c19aca7",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0179",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记发布说明清单，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "fe0ca99ce2d990e234fe49e3bd66ac8a2c04e4d28f4c3a3ea804218abefcc2f8",
+   "goal_fingerprint_sha256": "d88da66bfdb34fd6cb79dfc9ca3b0b7590d92a8f011e759ada28ef8bddb8da50",
+   "acceptance_profile": {
+    "must_deliver": "发布说明清单",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "8e221376f0aba24a879c0f60544a666bbfb6bdcd5c151096f3d5ec43706b83e6",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0180",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记数据字典片段，输出为简洁要点。",
+   "category": "annotate",
+   "task_input_sha256": "a840765e409bbe69cb8e6e12a0692b942080e7612bebaa4b6a6e6c6992bf8f2f",
+   "goal_fingerprint_sha256": "19471ee9f4cdf46aa5a36d1a8257b746fad657c1b4d095082c1d3f7b2da8cc94",
+   "acceptance_profile": {
+    "must_deliver": "数据字典片段",
+    "must_satisfy": "输出为简洁要点",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "939f6fb215740bf105c3832517cea2520ea17dddcdf0b1dc3421b61b7619c5e9",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0181",
+   "cohort": "LONG_TAIL",
+   "prompt": "添加批注或标记季度财务汇总表，标注缺失字段。",
+   "category": "annotate",
+   "task_input_sha256": "eb9b3cba34d5b175f5c7fd3b49ffb9214565178bc4012f83b600b19cf0f007b1",
+   "goal_fingerprint_sha256": "11d7b805580b12634fa9a00cf932abd12b115dfeec17c89dc22e2bf5ad9d9ebe",
+   "acceptance_profile": {
+    "must_deliver": "季度财务汇总表",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f13f7891ad5a9c4364645e4744a67f53876e97d710e2ddc1d288597cd00efca8",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0182",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局项目周报草稿，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "f5bc929c1cb253ac770f0cb17cae2eeec979396a9b0ed0cd71c9bbd74755fc4a",
+   "goal_fingerprint_sha256": "0862c133b84198419871b30c98883f459503d3efea1f7f3f79a571c2d8c5e8c4",
+   "acceptance_profile": {
+    "must_deliver": "项目周报草稿",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "14bb18bdfad1ecad9919735f680678676b6a2e373de3cf60eb35c33e6cd41258",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0183",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局客户来信记录，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "25444772c2c1264a3f8659bcc0ba422000732b74a1a77d83831f870fbbb00326",
+   "goal_fingerprint_sha256": "cd0c4d66e13eff81ba4cb18a6eb2c5df6f2083cae18e45596e342ca7bd21cc0a",
+   "acceptance_profile": {
+    "must_deliver": "客户来信记录",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c6eb7ad91ed3ac306ddb83158583b646ce61f1ac3f9d3c878e2346333ba9c319",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0184",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局产品需求清单，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "722611be2409dc47b22bf984334fee69983eed435cf269f825de30cb7672890e",
+   "goal_fingerprint_sha256": "abf42adfacb4542bb23aadecc9fead272490cdde24db029b506fac11ee5b3342",
+   "acceptance_profile": {
+    "must_deliver": "产品需求清单",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "43c4a591c30bc42c68d6a9af96da3c8efdfc20a87f944e4bcf0c74f3cf57deb8",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0185",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局会议纪要初稿，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "ec879788db0c3233b3e1f6be02203fe9d56ab9ef11c30ce305675b159f73feb1",
+   "goal_fingerprint_sha256": "c3c7dee6978462828714052df4bcc21e0a15bf79eecf487842c135da2b432a59",
+   "acceptance_profile": {
+    "must_deliver": "会议纪要初稿",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "4d75a382378f56be5f9f6c690f5dddd9abf452bdb98a1f673d49b9bc8b3b3735",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0186",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局代码审查意见，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "a6553dc90cf2a9f8ebf3ec3cb4593841f63125c5f7b01b3b3e80751c06716e87",
+   "goal_fingerprint_sha256": "5d37dffee9964177237420f3584e8e60ed59e69c73a45e6a3ba49f0e999bf16e",
+   "acceptance_profile": {
+    "must_deliver": "代码审查意见",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "19334d1393a712dadc7181c26fd62166c9e37e002373e86b0aa712bcd4c7be3a",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0187",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局市场调研笔记，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "3c7a31dd6df5cc0cc18f5bedd233c33fc26f98e8f68dc86b883c5d4ca5fbd8ca",
+   "goal_fingerprint_sha256": "0ea6a98a37b73d2fbfa5f2875beaadbecafd730758bd5ad3f49d3042ee38783e",
+   "acceptance_profile": {
+    "must_deliver": "市场调研笔记",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "0cb3f7340aac6b68852f4fa1ae4a8d96b06fe4ca33d0dc963fc7c170d0f8cace",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0188",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局设备巡检日志，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "7215cc5c5cc10f5940cb0d627590be89abe5d2a9737bdea6420aa291af545b92",
+   "goal_fingerprint_sha256": "192688f0e8960ef8b76f76774722719decd58f47b6c3dd7f1de04d105da768c6",
+   "acceptance_profile": {
+    "must_deliver": "设备巡检日志",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c115b4e5fec94d576fbbd8c31b00c741f7b45137b25248a5efbe320091d5591a",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0189",
+   "cohort": "LONG_TAIL",
+   "prompt": "迁移到新布局合同扫描件目录，标注缺失字段。",
+   "category": "migrate_layout",
+   "task_input_sha256": "94a54080eea0df3f526815f9194bf86d7db25400f3400b95bfb4fc7259fbb7d9",
+   "goal_fingerprint_sha256": "2e3e9f2b9fa89fbc94078530f530f00f4567896db6469869019968a5e5646d0f",
+   "acceptance_profile": {
+    "must_deliver": "合同扫描件目录",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "9e3619fde0841c0d9c6f0246ca4a4c7e8810dbc749e90de3a7a1c070cbad0040",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0190",
+   "cohort": "LONG_TAIL",
+   "prompt": "把大任务拆成子任务清单设计稿导出文件，标注缺失字段。",
+   "category": "decompose",
+   "task_input_sha256": "9492e99c0576bb5a99dfc541f6ed1fd6787263aa8f4bd74775d7eee498906587",
+   "goal_fingerprint_sha256": "dc1c884860ee636552c02424e316b442a5d278f5916e616336e6b5dcb2e5b48b",
+   "acceptance_profile": {
+    "must_deliver": "设计稿导出文件",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "aacb781b9f19a634dfaff4c0baeab83ad751bc55fa7bf6528c12146f8d9a4c1b",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0191",
+   "cohort": "LONG_TAIL",
+   "prompt": "把大任务拆成子任务清单培训材料讲义，标注缺失字段。",
+   "category": "decompose",
+   "task_input_sha256": "c823f737c3bc5a728dfb53c01d1b536736f783b3878a57c2671f120c71e2e68a",
+   "goal_fingerprint_sha256": "050db379a02e337cd244d7146f85f21908f074aecfcd1357b878545669dc5de6",
+   "acceptance_profile": {
+    "must_deliver": "培训材料讲义",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "6b6776651f972eb08069369a81aa32d1d8697867d6dc6fdd1d1a488cc7a03cc1",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0192",
+   "cohort": "LONG_TAIL",
+   "prompt": "把大任务拆成子任务清单供应商报价单，标注缺失字段。",
+   "category": "decompose",
+   "task_input_sha256": "2284e0f0aaf312a04aec3871665077f89f7e8a16236600ea4225b76fafae358b",
+   "goal_fingerprint_sha256": "c39aba51025fca964e25cf45f8f2edb9c661af7861d8e74774f3fe23e0311836",
+   "acceptance_profile": {
+    "must_deliver": "供应商报价单",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "605cfb000f60ca7305d491cef32d41d536bd7df8e608e9c3ffad9aed317774aa",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0193",
+   "cohort": "LONG_TAIL",
+   "prompt": "把大任务拆成子任务清单工单处理记录，标注缺失字段。",
+   "category": "decompose",
+   "task_input_sha256": "e5c963f5af2f1577aa245b0fac2c351a429a7459e7eebeed8b83211503fb73e9",
+   "goal_fingerprint_sha256": "c933aa4dc3d2da74e5b3dbcb674ce41af4b570660ad986287015e69bb0cd515c",
+   "acceptance_profile": {
+    "must_deliver": "工单处理记录",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "fb290b4e5539d8b38a435a0bf4d1a3574c1569f38173024a66d1e173e301ac71",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0194",
+   "cohort": "LONG_TAIL",
+   "prompt": "把大任务拆成子任务清单实验数据表格，标注缺失字段。",
+   "category": "decompose",
+   "task_input_sha256": "3b28afa3c6269c63fc3394cad901f8ef10a5e763e5fd3630e266b7ebf13a42f9",
+   "goal_fingerprint_sha256": "03f542042bab25c311914f546af1435040984838bdd379064c6f0bde4349834c",
+   "acceptance_profile": {
+    "must_deliver": "实验数据表格",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "a1eb63a6b65236c348defb87b43534f5a0f6c038252fcb808a47cacdf348bc36",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0195",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出活动策划方案，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "0e2e01738789338115eec499f915bafc2bc5de964efbdc65f71f35a50991f330",
+   "goal_fingerprint_sha256": "616527e13571e8d08bca4ff4f98bd3b84f700648bb094e301a6385a8d57c1939",
+   "acceptance_profile": {
+    "must_deliver": "活动策划方案",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "c81f43cc7cb5dc100822a02577617e65cdeb66de8c140f24ee767f6fe3553e25",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0196",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出人事入职材料，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "700b2de8c367485873cda389523e1d3f3911ca8ca93418cba1d54d417031b444",
+   "goal_fingerprint_sha256": "5624948e6f58dbf346ad309da26971dbc520196fbf65ecc665f84bb2263d017f",
+   "acceptance_profile": {
+    "must_deliver": "人事入职材料",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "f0c28b237256fae65254674a3ca45eb6f86628ba16ebec7292047d596ae48a86",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0197",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出运维告警快照，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "e3af3f96b5464977768e6dd874ae479abcaad793f1a5b9cc8ac5e5c4c4f2ebf1",
+   "goal_fingerprint_sha256": "578a17a40994e4e9f1b0c4193bf3e9f794aaa4a1de5cad993fde4d50fb00c400",
+   "acceptance_profile": {
+    "must_deliver": "运维告警快照",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "bbbf47000627e06ad9065c511995af214f292ba4859ab74d3c18da2392f456d0",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0198",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出课程作业集，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "f859123e04e57a84a616984a98ca74b30f0887d16a2dee55325f2bb4418d1fc4",
+   "goal_fingerprint_sha256": "0c511ede9ed343dba41f3622539297490d87406a9e75e94cb3a916aa321f2067",
+   "acceptance_profile": {
+    "must_deliver": "课程作业集",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "eb613e85b64b2adb87e490b57da502cc7085dc1fde7192e2475e7d30f766f04d",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0199",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出旅行行程单，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "d85c1309b0b5de67db074f39f5bb0cc789c9fb8e7d6419aaf6c304d96d22bc66",
+   "goal_fingerprint_sha256": "d391d7d0ae1439191d0b9132d1f16f0d777ff0abaa66ca348b94748dc3c1a24c",
+   "acceptance_profile": {
+    "must_deliver": "旅行行程单",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "21a8322433adcb66b1ca55ab4a13df2e88e62d01e6b4030f4decf0487b43b925",
+   "active_path": "DYNAMIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  },
+  {
+   "task_id": "p11t_0200",
+   "cohort": "LONG_TAIL",
+   "prompt": "清理敏感信息后输出图书借阅清单，标注缺失字段。",
+   "category": "sanitize",
+   "task_input_sha256": "c02319275db76d9a768259901795ab518c7b69e7bea2210857204fbf2855408e",
+   "goal_fingerprint_sha256": "daabdbbdd964426afc9ab76e6ff466fc955341ecd7b052d707211593581620c4",
+   "acceptance_profile": {
+    "must_deliver": "图书借阅清单",
+    "must_satisfy": "标注缺失字段",
+    "must_not_fabricate": true
+   },
+   "acceptance_profile_sha256": "96eb1b58d00e90c728003eaa498eb89cf6c572a9cf98ff0224593bd526a232e6",
+   "active_path": "STATIC",
+   "active_model_profile_note": "assigned at execution time from the four frozen provider/model/revision profiles (R03)"
+  }
+ ],
+ "fault_cases": [
+  {
+   "fault_case_id": "p11f_001",
+   "host_task_id": "p11t_0001",
+   "fault_kind": "source_revision_drift",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_002",
+   "host_task_id": "p11t_0002",
+   "fault_kind": "source_revision_drift",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_003",
+   "host_task_id": "p11t_0003",
+   "fault_kind": "source_revision_drift",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_004",
+   "host_task_id": "p11t_0004",
+   "fault_kind": "source_revision_drift",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_005",
+   "host_task_id": "p11t_0005",
+   "fault_kind": "tool_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_006",
+   "host_task_id": "p11t_0006",
+   "fault_kind": "tool_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_007",
+   "host_task_id": "p11t_0007",
+   "fault_kind": "tool_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_008",
+   "host_task_id": "p11t_0008",
+   "fault_kind": "tool_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_009",
+   "host_task_id": "p11t_0009",
+   "fault_kind": "misleading_experience",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_010",
+   "host_task_id": "p11t_0010",
+   "fault_kind": "misleading_experience",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_011",
+   "host_task_id": "p11t_0011",
+   "fault_kind": "misleading_experience",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_012",
+   "host_task_id": "p11t_0012",
+   "fault_kind": "misleading_experience",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_013",
+   "host_task_id": "p11t_0013",
+   "fault_kind": "permission_denied",
+   "injection_point": "pre_dispatch",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_014",
+   "host_task_id": "p11t_0014",
+   "fault_kind": "permission_denied",
+   "injection_point": "pre_dispatch",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_015",
+   "host_task_id": "p11t_0015",
+   "fault_kind": "permission_denied",
+   "injection_point": "pre_dispatch",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_016",
+   "host_task_id": "p11t_0016",
+   "fault_kind": "permission_denied",
+   "injection_point": "pre_dispatch",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_017",
+   "host_task_id": "p11t_0017",
+   "fault_kind": "provider_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_018",
+   "host_task_id": "p11t_0018",
+   "fault_kind": "provider_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_019",
+   "host_task_id": "p11t_0019",
+   "fault_kind": "provider_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_020",
+   "host_task_id": "p11t_0020",
+   "fault_kind": "schema_mismatch",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_021",
+   "host_task_id": "p11t_0021",
+   "fault_kind": "schema_mismatch",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_022",
+   "host_task_id": "p11t_0022",
+   "fault_kind": "schema_mismatch",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_023",
+   "host_task_id": "p11t_0023",
+   "fault_kind": "stale_manifest",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_024",
+   "host_task_id": "p11t_0024",
+   "fault_kind": "stale_manifest",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_025",
+   "host_task_id": "p11t_0025",
+   "fault_kind": "stale_manifest",
+   "injection_point": "pre_registration",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_026",
+   "host_task_id": "p11t_0026",
+   "fault_kind": "workspace_drift",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_027",
+   "host_task_id": "p11t_0027",
+   "fault_kind": "workspace_drift",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_028",
+   "host_task_id": "p11t_0028",
+   "fault_kind": "workspace_drift",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_029",
+   "host_task_id": "p11t_0029",
+   "fault_kind": "ambiguous_effect",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_030",
+   "host_task_id": "p11t_0030",
+   "fault_kind": "ambiguous_effect",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_031",
+   "host_task_id": "p11t_0031",
+   "fault_kind": "ambiguous_effect",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_032",
+   "host_task_id": "p11t_0032",
+   "fault_kind": "verifier_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_033",
+   "host_task_id": "p11t_0033",
+   "fault_kind": "verifier_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_034",
+   "host_task_id": "p11t_0034",
+   "fault_kind": "verifier_unavailable",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_035",
+   "host_task_id": "p11t_0035",
+   "fault_kind": "context_truncation",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_036",
+   "host_task_id": "p11t_0036",
+   "fault_kind": "context_truncation",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_037",
+   "host_task_id": "p11t_0037",
+   "fault_kind": "context_truncation",
+   "injection_point": "model_boundary",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_038",
+   "host_task_id": "p11t_0038",
+   "fault_kind": "interrupted_run",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_039",
+   "host_task_id": "p11t_0039",
+   "fault_kind": "interrupted_run",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  },
+  {
+   "fault_case_id": "p11f_040",
+   "host_task_id": "p11t_0040",
+   "fault_kind": "interrupted_run",
+   "injection_point": "in_flight",
+   "expected_containment": "fail_closed_no_partial_effect"
+  }
+ ],
+ "honesty": "This freezes the INPUT side of the P11 formal matrix only: 200 tasks and 40 fault scenarios, deterministically built with unique digests. Observations, model dimensions, metrics and the formal verdict require the four distinct provider/model/revision credentials (R03), source sign-off (R04) and independent review (R06). This file is NOT acceptance and never becomes one by itself."
+}
