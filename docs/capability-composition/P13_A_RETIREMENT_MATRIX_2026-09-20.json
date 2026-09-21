@@ -2,7 +2,7 @@
  "schema": "tiangong.p13.retirement-matrix.v1",
  "summary": {
   "surfaces_total": 20,
-  "retire_candidates_now": 2,
+  "retire_candidates_now": 1,
   "retained_modern": 4,
   "zero_production_use_proven": false,
   "note": "Inventory only: zero callers observed ≠ production zero use; P13-B's telemetry window remains the removal gate."
@@ -104,15 +104,17 @@
   },
   {
    "path": "src/life_service/life_learning_memory.py",
-   "kind": "retire_candidate",
-   "storage": "n/a (no callers found)",
-   "migration_target": "none observed",
+   "kind": "legacy_write_authority",
+   "storage": "in-memory policy constants",
+   "migration_target": "fold into memory_coordinator",
    "rollback_cost": "low",
-   "note": "zero authoritative callers at audit time",
+   "note": "P13-D deletion drill exposed the hidden consumer: memory_coordinator does `from . import life_learning_memory` (relative import the original grep missed). NOT a retire candidate.",
    "exists": true,
-   "callers": [],
+   "callers": [
+    "src/life_service/memory_coordinator.py"
+   ],
    "data_consumers": [],
-   "caller_count": 0
+   "caller_count": 1
   },
   {
    "path": "src/life_service/capability_learning.py",
