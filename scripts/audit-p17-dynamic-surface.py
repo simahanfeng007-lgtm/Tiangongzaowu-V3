@@ -25,6 +25,7 @@ TREES = ("src", "app/backend/tiangong-backend")
 MIRROR_SEGMENTS = ("runtime314", "site-packages", "bundled_skills",
                    "node_modules", "_internal")
 DEFAULT_OUTPUT = ROOT / "docs/capability-composition/P17_A_DYNAMIC_SURFACE_2026-09-20.json"
+VERIFIED_FILE = ROOT / "docs/capability-composition/P17_A_DYNAMIC_VERIFIED_2026-09-20.json"
 RETIREMENT_MATRIX = ROOT / "docs/capability-composition/P13_A_RETIREMENT_MATRIX_2026-09-20.json"
 SCHEMA = "tiangong.p17.dynamic-surface.v1"
 
@@ -139,6 +140,17 @@ def scan() -> dict:
             print(f"  {hit['path']}:{hit['line']} -> {hit['target']}",
                   file=sys.stderr)
 
+    # apply the manual verification ledger
+    verified: dict = {}
+    if VERIFIED_FILE.is_file():
+        ledger = json.loads(VERIFIED_FILE.read_text(encoding="utf-8"))
+        verified = ledger.get("annotations", {})
+    for hit in hits:
+        key = f"{hit['path']}:{hit['line']}"
+        if key in verified:
+            hit["classification"] = "verified"
+            hit["verified_category"] = verified[key]["category"]
+
     needs_review = [h for h in hits if h["classification"] == "needs_review"]
     return {
         "schema": SCHEMA,
@@ -149,7 +161,11 @@ def scan() -> dict:
             "reflective_getattrs": sum(
                 1 for h in hits if h["kind"] == "reflective_getattr"),
             "env_branches": sum(1 for h in hits if h["kind"] == "env_get"),
-            "explicit_feature_uses": len(hits) - len(needs_review),
+            "explicit_feature_uses": sum(
+                1 for h in hits
+                if h["classification"] == "explicit_feature_use"),
+            "verified": sum(
+                1 for h in hits if h["classification"] == "verified"),
             "needs_review": len(needs_review),
             "retire_candidates_as_dynamic_targets":
                 len(retire_dynamic_targets),
