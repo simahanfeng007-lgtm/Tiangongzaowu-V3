@@ -1,8 +1,4 @@
 """G5 gate evidence: capability lifecycle pointer CAS, vitality review, contract dual read."""
-# P13-D: capability_lifecycle deleted (batch E, PR #105)
-# This module no longer exists; entire file skipped.
-import pytest
-pytestmark = pytest.mark.skip(reason="capability_lifecycle deleted in P13-D")
 
 from __future__ import annotations
 
@@ -13,10 +9,19 @@ import pytest
 
 from contracts import PhaseNode, SkillDefinitionCore
 from contracts import canonical_sha256
-from life_service.capability_lifecycle import (
+try:
+    from life_service.capability_lifecycle import (
     CapabilityLifecycle,
     CapabilityLifecycleError,
 )
+    _LIFECYCLE_AVAILABLE = True
+except ImportError:
+    _LIFECYCLE_AVAILABLE = False
+
+import pytest
+pytestmark = pytest.mark.skipif(
+    not _LIFECYCLE_AVAILABLE,
+    reason="capability_lifecycle deleted in P13-D (batch E)")
 from life_service.store import LifeShadowStore
 
 
