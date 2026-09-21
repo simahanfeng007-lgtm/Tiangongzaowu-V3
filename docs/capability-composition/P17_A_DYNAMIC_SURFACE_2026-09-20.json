@@ -6,8 +6,8 @@
   "reflective_getattrs": 77,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 121,
-  "needs_review": 0,
+  "verified": 120,
+  "needs_review": 1,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -839,10 +839,9 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/store.py",
-   "line": 13277,
+   "line": 13278,
    "target": "<__import__>",
-   "classification": "verified",
-   "verified_category": "structural_field_access"
+   "classification": "needs_review"
   },
   {
    "kind": "dynamic_import",
