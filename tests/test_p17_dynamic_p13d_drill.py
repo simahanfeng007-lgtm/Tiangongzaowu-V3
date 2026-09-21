@@ -49,9 +49,11 @@ def test_p13d_drill_outcome_is_recorded():
     assert lifecycle["kind"] == "retire_candidate"
     assert lifecycle["caller_count"] == 0
     memory = by_path["src/life_service/life_learning_memory.py"]
-    assert memory["kind"] == "legacy_write_authority"
+    # P13-C deep pass reclassified it: the drill proved it is consumed, and
+    # reading the source proved it is the P15 M4 strategy library — modern.
+    assert memory["kind"] == "retained_modern"
     assert memory["caller_count"] >= 1
-    assert "NOT a retire candidate" in memory["note"]
+    assert "STRATEGY LIBRARY" in memory["note"]
 
 
 def test_retirement_matrix_rebuilds():
