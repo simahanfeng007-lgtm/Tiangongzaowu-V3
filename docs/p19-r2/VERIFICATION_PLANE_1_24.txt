@@ -1,0 +1,12 @@
+Verification Plane 1.24 — batch-A deep-audit fixes
+
+The admission materializer (a frozen member since 1.23) gains an upfront
+hash pre-check (result preparation and plan validity verified before any
+derivation) and a workspace-root derivation guard that names both ids on
+mismatch. The governed composition turn (not on the frozen surface, but
+under the v3 closed-world boundary) gains repair_call and clearer
+identity errors. Ten swallow sites in modules with existing
+diagnostic_log infrastructure now log the swallowed exception before
+continuing — semantics unchanged, observability gained.
+
+No prior member is removed; schema stays v33; no authority changes.
