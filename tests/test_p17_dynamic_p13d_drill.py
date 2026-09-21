@@ -31,7 +31,9 @@ def test_every_dynamic_hit_is_classified():
     snapshot = json.loads(DYNAMIC_SNAPSHOT.read_text(encoding="utf-8"))
     for hit in snapshot["hits"]:
         assert hit["classification"] in {
-            "explicit_feature_use", "needs_review"}
+            "explicit_feature_use", "needs_review", "verified"}
+        if hit["classification"] == "verified":
+            assert hit["verified_category"]
 
 
 def test_retire_candidates_never_appear_as_dynamic_targets():
@@ -66,3 +68,24 @@ def test_retire_candidate_stays_singleton_after_drill():
                   if e["kind"] == "retire_candidate"]
     assert len(candidates) == 1
     assert candidates[0]["path"].endswith("capability_lifecycle.py")
+
+
+def test_all_dynamic_hits_are_verified_or_classified():
+    """P17-A deep pass: every hit carries a verification category."""
+    snapshot = json.loads(DYNAMIC_SNAPSHOT.read_text(encoding="utf-8"))
+    assert snapshot["summary"]["needs_review"] == 0
+    assert snapshot["summary"]["verified"] == snapshot["summary"]["total_hits"]
+
+
+def test_verified_ledger_categories_are_known():
+    ledger = json.loads(
+        (ROOT / "docs/capability-composition/P17_A_DYNAMIC_VERIFIED_2026-09-20.json")
+        .read_text(encoding="utf-8"))
+    known = {"model_field_iteration", "structural_field_access",
+             "lazy_module_import", "handler_dispatch",
+             "optional_dependency", "inline_stdlib_import",
+             "patch_dispatch", "route_handler_dispatch",
+             "tool_handler_dispatch"}
+    for key, entry in ledger["annotations"].items():
+        assert entry["category"] in known, f"{key}: {entry['category']}"
+        assert entry["reason"]

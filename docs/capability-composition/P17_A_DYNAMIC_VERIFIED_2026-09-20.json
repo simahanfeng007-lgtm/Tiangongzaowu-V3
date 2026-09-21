@@ -1,0 +1,472 @@
+{
+ "schema": "tiangong.p17.dynamic-verified.v1",
+ "annotations": {
+  "app/backend/tiangong-backend/omni_body_skill/api/v1/v3/tools/omni_body.py:114": {
+   "category": "lazy_module_import",
+   "reason": "1 hit: importlib for lazy v3 module import"
+  },
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1099": {
+   "category": "tool_handler_dispatch",
+   "reason": "tool handler dispatch and plugin load"
+  },
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1773": {
+   "category": "tool_handler_dispatch",
+   "reason": "tool handler dispatch and plugin load"
+  },
+  "app/backend/tiangong-backend/v3/composition_turn.py:127": {
+   "category": "structural_field_access",
+   "reason": "1 hit: getattr(admission, 'registration_id') — the P12 turn result"
+  },
+  "app/backend/tiangong-backend/v3/desktop_daemon.py:66": {
+   "category": "lazy_module_import",
+   "reason": "1 hit: getattr for dynamic daemon component loading"
+  },
+  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4528": {
+   "category": "lazy_module_import",
+   "reason": "lazy import of the zongdiaodu orchestrator"
+  },
+  "app/backend/tiangong-backend/v3/fact_kernel/__init__.py:429": {
+   "category": "handler_dispatch",
+   "reason": "fact kernel handler-name dispatch"
+  },
+  "app/backend/tiangong-backend/v3/jinhua/yuanyu_yingshe.py:44": {
+   "category": "model_field_iteration",
+   "reason": "mapping field access"
+  },
+  "app/backend/tiangong-backend/v3/peizhi.py:31": {
+   "category": "lazy_module_import",
+   "reason": "__import__ for provider-specific config modules"
+  },
+  "app/backend/tiangong-backend/v3/repository_structure.py:1018": {
+   "category": "optional_dependency",
+   "reason": "5 hits: importlib for tree_sitter language packs — optional dependency, guarded by try/except at call site"
+  },
+  "app/backend/tiangong-backend/v3/repository_structure.py:376": {
+   "category": "optional_dependency",
+   "reason": "5 hits: importlib for tree_sitter language packs — optional dependency, guarded by try/except at call site"
+  },
+  "app/backend/tiangong-backend/v3/repository_structure.py:379": {
+   "category": "optional_dependency",
+   "reason": "5 hits: importlib for tree_sitter language packs — optional dependency, guarded by try/except at call site"
+  },
+  "app/backend/tiangong-backend/v3/repository_structure.py:380": {
+   "category": "optional_dependency",
+   "reason": "5 hits: importlib for tree_sitter language packs — optional dependency, guarded by try/except at call site"
+  },
+  "app/backend/tiangong-backend/v3/repository_structure.py:381": {
+   "category": "optional_dependency",
+   "reason": "5 hits: importlib for tree_sitter language packs — optional dependency, guarded by try/except at call site"
+  },
+  "app/backend/tiangong-backend/v3/shangxiawen_xujie.py:424": {
+   "category": "model_field_iteration",
+   "reason": "conversation-context field access"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2189": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2409": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2611": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2800": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:493": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:494": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:502": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:504": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:508": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5360": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5537": {
+   "category": "lazy_module_import",
+   "reason": "11 hits: lazy imports of v3.* modules to avoid circular imports in the orchestration layer; plus 2 getattr(x, name) for tool display"
+  },
+  "src/communication_service/feishu_outbound.py:641": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: getattr(x, field) for message field access"
+  },
+  "src/communication_service/wechat_file_outbound.py:309": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: same"
+  },
+  "src/communication_service/wechat_text_outbound.py:416": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: same"
+  },
+  "src/contracts/identities.py:64": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: getattr(model, field) iterating contract model fields for canonical hashing"
+  },
+  "src/contracts/identities.py:66": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: getattr(model, field) iterating contract model fields for canonical hashing"
+  },
+  "src/contracts/identities.py:71": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: getattr(model, field) iterating contract model fields for canonical hashing"
+  },
+  "src/contracts/identities.py:73": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: getattr(model, field) iterating contract model fields for canonical hashing"
+  },
+  "src/contracts/identities.py:76": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: getattr(model, field) iterating contract model fields for canonical hashing"
+  },
+  "src/contracts/life.py:431": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: contract model field hashing"
+  },
+  "src/contracts/life.py:888": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: contract model field hashing"
+  },
+  "src/contracts/readiness.py:372": {
+   "category": "model_field_iteration",
+   "reason": "contract model field hashing"
+  },
+  "src/contracts/shadow.py:352": {
+   "category": "model_field_iteration",
+   "reason": "2 hits: same"
+  },
+  "src/contracts/world_understanding/_base.py:85": {
+   "category": "model_field_iteration",
+   "reason": "contract base-class field iteration"
+  },
+  "src/contracts/write_evidence.py:91": {
+   "category": "model_field_iteration",
+   "reason": "evidence model field hashing"
+  },
+  "src/life_bootstrap/tiangong_life_runtime_fixes.py:1513": {
+   "category": "patch_dispatch",
+   "reason": "4 hits: getattr for named patch functions — a patch registry"
+  },
+  "src/life_bootstrap/tiangong_life_runtime_fixes.py:798": {
+   "category": "patch_dispatch",
+   "reason": "4 hits: getattr for named patch functions — a patch registry"
+  },
+  "src/life_bootstrap/tiangong_life_runtime_fixes.py:895": {
+   "category": "patch_dispatch",
+   "reason": "4 hits: getattr for named patch functions — a patch registry"
+  },
+  "src/life_bootstrap/tiangong_life_runtime_fixes.py:915": {
+   "category": "patch_dispatch",
+   "reason": "4 hits: getattr for named patch functions — a patch registry"
+  },
+  "src/life_service/agency.py:161": {
+   "category": "model_field_iteration",
+   "reason": "agency model field access"
+  },
+  "src/life_service/capability_learning.py:52": {
+   "category": "model_field_iteration",
+   "reason": "capability model field access"
+  },
+  "src/life_service/cutover.py:663": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: getattr(x, field) for config field access"
+  },
+  "src/life_service/cutover.py:789": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: getattr(x, field) for config field access"
+  },
+  "src/life_service/reflection.py:43": {
+   "category": "model_field_iteration",
+   "reason": "reflection model field access"
+  },
+  "src/life_service/store.py:3611": {
+   "category": "model_field_iteration",
+   "reason": "store row field access"
+  },
+  "src/omni_body_skill/api/v1/v3/tools/omni_body.py:114": {
+   "category": "lazy_module_import",
+   "reason": "lazy import of the v3 API layer"
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:1099": {
+   "category": "tool_handler_dispatch",
+   "reason": "2 hits: getattr for tool handler + one __import__ for plugin load"
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:1773": {
+   "category": "tool_handler_dispatch",
+   "reason": "2 hits: getattr for tool handler + one __import__ for plugin load"
+  },
+  "src/runtime_security/dpapi.py:49": {
+   "category": "optional_dependency",
+   "reason": "DPAPI optional Windows credential API (try/except)"
+  },
+  "src/total_gateway/composition_step_execution.py:160": {
+   "category": "structural_field_access",
+   "reason": "3 hits: getattr for store method dispatch — the required_store protocol; covered by P7D.1 tests"
+  },
+  "src/total_gateway/composition_step_execution.py:163": {
+   "category": "structural_field_access",
+   "reason": "3 hits: getattr for store method dispatch — the required_store protocol; covered by P7D.1 tests"
+  },
+  "src/total_gateway/composition_step_execution.py:168": {
+   "category": "structural_field_access",
+   "reason": "3 hits: getattr for store method dispatch — the required_store protocol; covered by P7D.1 tests"
+  },
+  "src/total_gateway/embedded_backend.py:1040": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1083": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1121": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1205": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1359": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1416": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1422": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1538": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:1551": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:196": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:201": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:202": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:217": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:501": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:527": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:561": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:572": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:583": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:597": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:612": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:623": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:681": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:719": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:810": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:937": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/embedded_backend.py:977": {
+   "category": "inline_stdlib_import",
+   "reason": "26 hits: __import__('hashlib').sha256 — inline stdlib digest calls in embedded mock responses; not a plugin or reflective dispatch"
+  },
+  "src/total_gateway/omni_grant_authority.py:1240": {
+   "category": "structural_field_access",
+   "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite"
+  },
+  "src/total_gateway/omni_grant_authority.py:277": {
+   "category": "structural_field_access",
+   "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite"
+  },
+  "src/total_gateway/omni_grant_authority.py:290": {
+   "category": "structural_field_access",
+   "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite"
+  },
+  "src/total_gateway/omni_grant_authority.py:958": {
+   "category": "structural_field_access",
+   "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite"
+  },
+  "src/total_gateway/regenerative_execution.py:161": {
+   "category": "structural_field_access",
+   "reason": "regenerative governance field access"
+  },
+  "src/total_gateway/regenerative_governance.py:83": {
+   "category": "structural_field_access",
+   "reason": "2 hits: getattr for governance field access"
+  },
+  "src/total_gateway/server.py:347": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/server.py:388": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/server.py:749": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/server.py:763": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/server.py:791": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/server.py:973": {
+   "category": "route_handler_dispatch",
+   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)"
+  },
+  "src/total_gateway/store.py:11593": {
+   "category": "structural_field_access",
+   "reason": "3 hits: getattr for row codecs and serializers"
+  },
+  "src/total_gateway/store.py:13277": {
+   "category": "structural_field_access",
+   "reason": "3 hits: getattr for row codecs and serializers"
+  },
+  "src/total_gateway/tickets.py:64": {
+   "category": "model_field_iteration",
+   "reason": "ticket model field access"
+  },
+  "src/total_gateway/windows_private_files.py:154": {
+   "category": "patch_dispatch",
+   "reason": "2 hits: getattr for named patch/cleanup functions"
+  },
+  "src/total_gateway/windows_private_files.py:172": {
+   "category": "patch_dispatch",
+   "reason": "2 hits: getattr for named patch/cleanup functions"
+  },
+  "src/world_understanding/cognition/bridge.py:53": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: same contract-model field iteration pattern"
+  },
+  "src/world_understanding/cognition/bridge.py:61": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: same contract-model field iteration pattern"
+  },
+  "src/world_understanding/cognition/bridge.py:62": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: same contract-model field iteration pattern"
+  },
+  "src/world_understanding/cognition/bridge.py:63": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: same contract-model field iteration pattern"
+  },
+  "src/world_understanding/cognition/bridge.py:87": {
+   "category": "model_field_iteration",
+   "reason": "5 hits: same contract-model field iteration pattern"
+  },
+  "src/world_understanding/cognition/store.py:192": {
+   "category": "model_field_iteration",
+   "reason": "cognition store field access"
+  },
+  "src/world_understanding/context_output/world_reference_context.py:49": {
+   "category": "model_field_iteration",
+   "reason": "reference-context entity field access (R1C2 suite)"
+  },
+  "src/world_understanding/semantic/admission.py:27": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: getattr(x, name) for semantic model fields"
+  },
+  "src/world_understanding/semantic/admission.py:43": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: getattr(x, name) for semantic model fields"
+  },
+  "src/world_understanding/semantic/admission.py:60": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: getattr(x, name) for semantic model fields"
+  },
+  "src/world_understanding/semantic/inputs.py:129": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: same pattern for semantic input construction"
+  },
+  "src/world_understanding/semantic/inputs.py:89": {
+   "category": "model_field_iteration",
+   "reason": "3 hits: same pattern for semantic input construction"
+  },
+  "src/world_understanding/skill_method_world/compiler.py:212": {
+   "category": "model_field_iteration",
+   "reason": "method-source model field hashing"
+  }
+ },
+ "summary": {
+  "annotated_hits": 113,
+  "categories": [
+   "handler_dispatch",
+   "inline_stdlib_import",
+   "lazy_module_import",
+   "model_field_iteration",
+   "optional_dependency",
+   "patch_dispatch",
+   "route_handler_dispatch",
+   "structural_field_access",
+   "tool_handler_dispatch"
+  ]
+ },
+ "honesty": "Per-hit manual verification of the dynamic-surface hits. Each category names the PATTERN, not a safety proof: model_field_iteration means contract-model field access for hashing/projection; structural_field_access means a documented protocol seam; lazy_module_import means circular-import avoidance; handler_dispatch means named-function routing; optional_dependency means try/except-guarded feature detection; inline_stdlib_import means __import__('stdlib') digest calls; patch_dispatch means a named patch registry; route_handler_dispatch means HTTP method routing. The final P17-A audit re-reviews every category against live dispatch, not just this ledger."
+}
