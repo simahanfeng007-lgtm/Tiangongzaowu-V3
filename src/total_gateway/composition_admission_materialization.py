@@ -32,6 +32,7 @@ from .composition_executable_plan import (
 )
 from .composition_registration_intake import VerificationIntentEvidenceV1
 from .composition_source_preparation import SourceCompositionResult
+from world_understanding.capability_composition import plan_has_valid_sha256
 from .verification_registry import VerifierRegistry
 
 ZERO = "0" * 64
@@ -183,13 +184,20 @@ def materialize_admission_inputs(
     objects) — this function neither parses model text nor guesses values.
     """
     from datetime import timezone  # noqa: F401  (kept for callers)
-    if not isinstance(result, SourceCompositionResult):
+    if not isinstance(result, SourceCompositionResult) \
+            or not result.preparation.has_valid_sha256() \
+            or not plan_has_valid_sha256(result.plan):
         raise AdmissionMaterializationError("admission.result_invalid")
     if not 0 <= issued_at_ms < expires_at_ms <= issued_at_ms + 60_000:
         raise AdmissionMaterializationError("admission.window_invalid")
     registry_snapshot = VerifierRegistry.with_defaults().snapshot(
         captured_at_ms=issued_at_ms)
     workspace = materialize_workspace(workspace_root)
+    if workspace.workspace_id != result.preparation.workspace_id:
+        raise AdmissionMaterializationError(
+            "admission.workspace_root_mismatch",
+            f"derived={workspace.workspace_id[:20]}… "
+            f"scoped={result.preparation.workspace_id[:20]}…")
     evidence = materialize_verifier_evidence(
         result, registry_snapshot, subject_identity=subject_identity)
     plan_inputs, step_bindings, aliases = materialize_step_bindings(
