@@ -1,0 +1,7 @@
+Verification Plane 1.27 — restored admission materializer guards
+
+Two guards originally added in 1.24 but lost during subsequent merges
+are restored on the frozen surface: the result hash pre-check
+(preparation and plan validity verified before any derivation) and the
+workspace-root derivation guard (naming both ids on mismatch). No other
+member changes; schema stays v33.
