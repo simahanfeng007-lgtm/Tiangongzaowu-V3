@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_permission_allowed, composition_profile_fields
+
 from contracts import (
     ActionIntent,
     ActionPermission,
@@ -49,6 +51,8 @@ def issue_omni_capability_grant(
     if composition_chain[0] is not None:
         binding = composition_chain[0]
         assert binding is not None
+        if binding.execution_profile_id is not None and not composition_permission_allowed(permission, **composition_profile_fields(binding)):
+            raise CapabilityGrantError("composition permission exceeds fixed profile")
         if (
             any(item != binding for item in composition_chain[1:])
             or not binding.has_valid_sha256()

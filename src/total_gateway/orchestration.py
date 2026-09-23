@@ -27,6 +27,7 @@ from contracts import (
     CapabilityAction,
     CapabilityManifest,
     ExecutionTicketPayload,
+    LifeSnapshot,
     ResourceEnvelope,
     ObjectGrant,
     OutboundPart,
@@ -224,7 +225,8 @@ from .effects import EffectClaim, EffectResult
 from .fact_ledger import FactLedger
 from .frozen_backend_compat import FrozenBackendCompatibilityTransport
 from .gateway_url import DEFAULT_GATEWAY_URL, normalize_gateway_url
-from .life_client import LifeClient, LifeJsonTransport, LifeProfileBindings, LoopbackLifeJsonTransport
+from .life_client import LifeClient, LifeJsonTransport, LifePlanningIdentity, LifeProfileBindings, LoopbackLifeJsonTransport
+from .composition_final_result import encode_composition_final_result
 from .object_store import ContentAddressedObjectStore
 from .outbox import OutboxIntent, derive_outbox_id
 from .release_manifest import (
@@ -440,6 +442,7 @@ class GatewayOrchestrationWorker:
         life_execution_learning_recovery: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
+        composition_planner: Callable[[ActiveRequestActivation, LifeSnapshot | LifePlanningIdentity], bool] | None = None,
         skill_selection: SkillSelectionService | None = None,
         skill_capabilities: CapabilityManifest | None = None,
         omni_registry: ActionRegistrySnapshot | None = None,
@@ -468,6 +471,7 @@ class GatewayOrchestrationWorker:
         self._life_execution_learning_recovery = life_execution_learning_recovery
         self._repository_evidence_provider = repository_evidence_provider
         self._knowledge_retriever = knowledge_retriever
+        self._composition_planner = composition_planner
         self._communication = (
             communication_control
             if communication_control is not None
@@ -488,6 +492,8 @@ class GatewayOrchestrationWorker:
             raise ValueError("production orchestration requires Omni registry and policy evidence")
         if omni_schema_catalog is None:
             raise ValueError("production orchestration requires Omni schema authority")
+        self._composition_registry = omni_registry
+        self._composition_schema_catalog = omni_schema_catalog
         self._policy_evidence = policy_evidence
         self._composition_capabilities = compile_composition_execution_manifest(
             skill_capabilities,
@@ -631,6 +637,7 @@ class GatewayOrchestrationWorker:
         life_execution_learning_recovery: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         repository_evidence_provider: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
         knowledge_retriever: Callable[[str], Mapping[str, Any]] | None = None,
+        composition_planner: Callable[[ActiveRequestActivation, LifeSnapshot | LifePlanningIdentity], bool] | None = None,
     ) -> "GatewayOrchestrationWorker":
         release_candidates = tuple(
             path
@@ -751,6 +758,7 @@ class GatewayOrchestrationWorker:
             life_execution_learning_recovery=life_execution_learning_recovery,
             repository_evidence_provider=repository_evidence_provider,
             knowledge_retriever=knowledge_retriever,
+            composition_planner=composition_planner,
             skill_selection=skill_selection,
             skill_capabilities=skill_capabilities,
             omni_registry=omni_registry,
@@ -887,6 +895,59 @@ class GatewayOrchestrationWorker:
         """Current execution manifest for registry-versioned composition Actions."""
 
         return self._composition_capabilities
+
+    @property
+    def composition_action_registry(self) -> ActionRegistrySnapshot:
+        return self._composition_registry
+
+    @property
+    def composition_schema_catalog(self) -> ActionSchemaCatalog:
+        return self._composition_schema_catalog
+
+    def validate_composition_parent_handoff(
+        self, *, request_id: str, run_id: str, generation: int,
+        registration_id: str, parent_ticket_id: str,
+        now_ms: int | None = None,
+    ) -> None:
+        """Validate the backend's inert handoff against live Gateway authority.
+
+        This is not a tool grant or task completion.  Child Actions still need
+        their own coordinator tickets, effects, facts and finalization.
+        """
+        observed_ms = time.time_ns() // 1_000_000 if now_ms is None else now_ms
+        record = self._store.get_active_executable_composition_plan(
+            registration_id, now_ms=observed_ms,
+        )
+        if record is None:
+            raise OrchestrationError("orchestration.composition.handoff_plan_missing")
+        plan = record.executable_plan
+        if (
+            (plan.request_id, plan.run_id, plan.generation, plan.registration_id)
+            != (request_id, run_id, generation, registration_id)
+            or type(generation) is not int
+        ):
+            raise OrchestrationError("orchestration.composition.handoff_scope_invalid")
+        active = self._omni_grants._composition_parent(
+            parent_ticket_id=parent_ticket_id, plan=plan, now_ms=observed_ms,
+        )
+        ticket = active.ticket
+        continuation = self._store.get_composition_continuation_for_plan(
+            plan.executable_plan_id, now_ms=observed_ms,
+            require_parent_success=False,
+        )
+        effect = self._store.get_effect(ticket.payload.effect_id)
+        if (
+            ticket.payload.channel != "desktop"
+            or continuation is None
+            or continuation.parent_ticket_id != ticket.payload.ticket_id
+            or continuation.parent_ticket_sha256
+            != canonical_sha256(ticket.model_dump(mode="json"))
+            or continuation.parent_effect_id != ticket.payload.effect_id
+            or effect is None
+            or effect.state != "SIDE_EFFECT_STARTED"
+            or effect.claim.claim_sha256 != ticket.payload.claim_sha256
+        ):
+            raise OrchestrationError("orchestration.composition.handoff_authority_invalid")
 
     @property
     def composition_step_executor(
@@ -2992,6 +3053,14 @@ class GatewayOrchestrationWorker:
             return
         observed_at_ms = max(time.time_ns() // 1_000_000, request.updated_at_ms)
         code = str(getattr(error, "code", None) or error.__class__.__name__)[:160]
+        # Planning can fail before any Effect exists. Preserve its own scoped
+        # diagnostic instead of making the desktop invent a generic error.
+        from .desktop_diagnostics import persist_desktop_request_error
+        try:
+            persist_desktop_request_error(store=self._store, objects=self._objects,
+                activation=activation, error=error, at_ms=observed_at_ms)
+        except Exception as diagnostic_error:
+            diagnostic_log(f"[REQUEST-ERROR-PERSIST] {type(diagnostic_error).__name__}")
         evidence = canonical_sha256(
             {
                 "code": code,
@@ -3911,6 +3980,98 @@ class GatewayOrchestrationWorker:
                 continue
         return produced
 
+    def _authorize_life_after_planning(
+        self, activation: ActiveRequestActivation, plan_record, planning_identity: LifePlanningIdentity,
+        profile: LifeProfileBindings, *, current_context_tokens: int,
+    ):
+        """Issue the run's sole Life authorization after potentially slow planning.
+
+        Admission binds the request/principal/world, not a Life authorization
+        lifetime. Planning consumes only a read-only identity. No parent Effect,
+        ticket or continuation has been created when this refresh runs.
+        """
+        envelope, generation = activation.envelope, activation.generation
+        plan = None if plan_record is None else plan_record.executable_plan
+        expected_scope = (
+            activation.entry.request_id, generation.run_id,
+            generation.generation, envelope.principal_scope_hash,
+        )
+        if plan is not None and (
+            not plan.has_valid_identity()
+            or (plan.request_id, plan.run_id, plan.generation, plan.principal_scope_hash)
+            != expected_scope
+        ):
+            raise OrchestrationError("orchestration.composition.life_refresh_plan_scope_invalid")
+        refreshed = self._acquire_life_snapshot(
+            envelope, profile, activation, time.time_ns() // 1_000_000,
+            current_context_tokens=current_context_tokens,
+        )
+        # Authorization may observe new memory/causal/viability revisions, but may
+        # never silently switch the Life identity (or its writer epoch) used
+        # for planning. The fresh revision vector is bound into the new parent
+        # policy decision, ticket and continuation below.
+        if (
+            refreshed.snapshot.context_authorization_id is None
+            or (refreshed.snapshot.identity_ref, refreshed.snapshot.identity_revision)
+            != (planning_identity.identity_ref, planning_identity.identity_revision)
+            or refreshed.writer_epoch != planning_identity.writer_epoch
+        ):
+            raise OrchestrationError("orchestration.composition.life_refresh_identity_mismatch")
+        if plan is None:
+            return refreshed
+        active = self._store.get_active_executable_composition_plan(
+            plan.registration_id, now_ms=time.time_ns() // 1_000_000,
+        )
+        if (
+            active is None
+            or active.executable_plan.executable_plan_id != plan.executable_plan_id
+            or active.executable_plan.executable_plan_sha256 != plan.executable_plan_sha256
+        ):
+            raise OrchestrationError("orchestration.composition.life_refresh_plan_inactive")
+        return refreshed
+
+    def _prepare_composition_plan(
+        self, activation: ActiveRequestActivation, life_snapshot: LifeSnapshot | LifePlanningIdentity,
+    ):
+        """Register a selected desktop plan before minting execution authority.
+
+        The optional production planner owns source preparation and admission,
+        but cannot return executable authority.  The Store is always reloaded
+        after planning.  Existing plans, including restart continuations, are
+        never planned a second time.  False is an explicit mode/routing bypass;
+        failed selected planning must raise rather than fall into old tools.
+        """
+        def read_plan():
+            return self._store.get_executable_composition_plan_for_request(
+                activation.entry.request_id,
+                run_id=activation.generation.run_id,
+                generation=activation.generation.generation,
+            )
+
+        record = read_plan()
+        planner = getattr(self, "_composition_planner", None)
+        if (
+            record is not None
+            or activation.envelope.channel != "desktop"
+            or planner is None
+        ):
+            return record
+        selected = planner(activation, life_snapshot)
+        if type(selected) is not bool:
+            raise OrchestrationError(
+                "orchestration.composition.planner_result_invalid"
+            )
+        record = read_plan()
+        if selected and record is None:
+            raise OrchestrationError(
+                "orchestration.composition.planner_registration_missing"
+            )
+        if not selected and record is not None:
+            raise OrchestrationError(
+                "orchestration.composition.planner_bypass_registered"
+            )
+        return record
+
     def process(self, activation: ActiveRequestActivation) -> None:
         envelope = activation.envelope
         generation = activation.generation
@@ -3920,9 +4081,7 @@ class GatewayOrchestrationWorker:
         run_sequence = generation.run_sequence
         composition_plan_record = (
             self._store.get_executable_composition_plan_for_request(
-                request_id,
-                run_id=run_id,
-                generation=generation.generation,
+                request_id, run_id=run_id, generation=generation.generation,
             )
         )
         if composition_plan_record is not None and envelope.channel != "desktop":
@@ -3990,34 +4149,34 @@ class GatewayOrchestrationWorker:
             self._components.manifest_sha256,
             generated_at_ms=self._components.generated_at_ms,
         )
-        skill_recommendation = (
-            None
-            if self._skill_authority is None
-            else self._skill_authority.system_recommend(
-                envelope.text,
-                request_id=request_id,
-                run_id=run_id,
-                generation=generation.generation,
-                decided_at_ms=now_ms,
-            )
-        )
         history = self._context_projector.project(
             session_scope_hash=activation.entry.session_scope_hash,
             before_sequence=activation.queue.sequence,
             current_request_id=request_id,
         )
         profile = LifeProfileBindings(user_callsign="用户")
+        planning_identity = None
         try:
-            life = self._acquire_life_snapshot(
-                envelope,
-                profile,
-                activation,
-                now_ms,
-                current_context_tokens=estimate_projected_context_tokens(
-                    history.messages,
-                    envelope.text,
-                ),
-            )
+            if (
+                composition_plan_record is None
+                and envelope.channel == "desktop"
+                and self._composition_planner is not None
+            ):
+                planning_identity = LifeClient(
+                    self._life_transport_for_execution(), self._objects,
+                ).acquire_planning_identity()
+                life = None
+            else:
+                life = self._acquire_life_snapshot(
+                    envelope,
+                    profile,
+                    activation,
+                    now_ms,
+                    current_context_tokens=estimate_projected_context_tokens(
+                        history.messages,
+                        envelope.text,
+                    ),
+                )
         except Exception as exc:
             # Life is the sole authority for identity, Soul, memory revision and
             # viability.  A synthetic snapshot would create facts that never
@@ -4031,6 +4190,24 @@ class GatewayOrchestrationWorker:
                 f"message={str(exc)[:500]}"
             )
             raise OrchestrationError("orchestration.life.snapshot_unavailable") from exc
+        if composition_plan_record is None:
+            composition_plan_record = self._prepare_composition_plan(
+                activation, planning_identity if planning_identity is not None else life.snapshot,
+            )
+            now_ms = time.time_ns() // 1_000_000
+        if composition_plan_record is not None and self._composition_steps is None:
+            raise OrchestrationError("orchestration.composition.executor_unavailable")
+        skill_recommendation = (
+            None
+            if self._skill_authority is None or composition_plan_record is not None
+            else self._skill_authority.system_recommend(
+                envelope.text,
+                request_id=request_id,
+                run_id=run_id,
+                generation=generation.generation,
+                decided_at_ms=now_ms,
+            )
+        )
         attachments = [
             {
                 "filename": item.filename,
@@ -4055,6 +4232,14 @@ class GatewayOrchestrationWorker:
                     "[ORCH-KNOWLEDGE-RETRIEVAL-FAIL] "
                     f"request_id={request_id} type={type(exc).__name__} message={str(exc)[:300]}"
                 )
+        if planning_identity is not None:
+            life = self._authorize_life_after_planning(
+                activation, composition_plan_record, planning_identity, profile,
+                current_context_tokens=estimate_projected_context_tokens(
+                    history.messages, envelope.text,
+                ),
+            )
+            now_ms = time.time_ns() // 1_000_000
         arguments: dict[str, object] = {
             "attachments": attachments,
             "channel_message_ref": envelope.channel_message_ref,
@@ -4071,6 +4256,13 @@ class GatewayOrchestrationWorker:
             "text": envelope.text,
             "user_callsign": profile.user_callsign,
         }
+        if composition_plan_record is not None:
+            # The signed parent arguments bind the handoff to the exact plan
+            # already admitted by Gateway.  Neither user text nor a backend
+            # model may manufacture this routing field.
+            arguments["composition_registration_id"] = (
+                composition_plan_record.executable_plan.registration_id
+            )
         arguments_hash = canonical_sha256(arguments)
         action = manifest.actions[0]
         effect_intent = canonical_sha256(
@@ -5128,14 +5320,11 @@ class GatewayOrchestrationWorker:
             # consumed by Completion, Life, and desktop delivery.  The parent
             # prose remains available, but can no longer stand in for (or hide)
             # the persisted final aliases.
-            reply = canonical_json_bytes(
-                {
-                    "composition_final_output_aliases": (
-                        composition_finalization.final_output_aliases
-                    ),
-                    "parent_reply": reply,
-                }
-            ).decode("utf-8")
+            reply = encode_composition_final_result(
+                composition_finalization.final_output_aliases,
+                parent_reply=reply,
+                execution_requirements_attestation=getattr(composition_finalization, "execution_requirements_attestation", None),
+            )
         if raw_artifacts:
             advance_tail(
                 "request",
@@ -5478,6 +5667,10 @@ class GatewayOrchestrationWorker:
                     object_store=self._objects,
                     fact_ledger=self._facts,
                     plan=active_plan,
+                    composition_projector=(
+                        None if self._composition_steps is None
+                        else self._composition_steps.project_plan
+                    ),
                     resume_evaluated_at_ms=(
                         composition_completion_at_ms
                         if composition_finalization is not None
@@ -5608,6 +5801,10 @@ class GatewayOrchestrationWorker:
                                 object_store=self._objects,
                                 fact_ledger=self._facts,
                                 plan=active_plan,
+                                composition_projector=(
+                                    None if self._composition_steps is None
+                                    else self._composition_steps.project_plan
+                                ),
                             )
                             return reverify_executor.execute(
                                 evaluated_at_ms=time.time_ns() // 1_000_000,

@@ -11134,6 +11134,26 @@ class GatewayStateStore:
             )
             return True
 
+    def list_system_statuses(self, request_id: str, *, run_id: str, generation: int) -> tuple[SystemStatusRecord, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM system_status WHERE request_id=? AND run_id=? AND generation=? ORDER BY created_at_ms, system_status_id",
+                (request_id, run_id, generation),
+            ).fetchall()
+            result = []
+            for row in rows:
+                try:
+                    status = SystemStatusRecord.model_validate_json(row["status_json"], strict=True)
+                except ValueError as exc:
+                    raise StoreCorruptionError("stored system status is invalid") from exc
+                payload, digest = _cutover_payload(status)
+                if (payload != row["status_json"] or digest != row["payload_sha256"]
+                        or status.system_status_sha256 != status.computed_status_sha256()
+                        or (status.request_id, status.run_id, status.generation) != (request_id, run_id, generation)):
+                    raise StoreCorruptionError("stored system status binding is invalid")
+                result.append(status)
+            return tuple(result)
+
     def put_system_status(self, status: SystemStatusRecord) -> bool:
         payload, payload_sha256 = _cutover_payload(status)
         refs_json = json.dumps(list(status.source_fact_refs), sort_keys=True, separators=(",", ":"))
@@ -15413,6 +15433,13 @@ class GatewayStateStore:
         """Persist a registry snapshot; returns True when newly created."""
         if not isinstance(snapshot, RegistrySnapshot):
             raise ValueError("registry snapshot payload has the wrong type")
+        if type(snapshot.captured_at_ms) is not int:
+            raise ValueError("registry snapshot capture time has the wrong type")
+        # model_copy can bypass the frozen contract's field validation. Validate
+        # metadata as well as the content-derived identity at this trust boundary.
+        snapshot = RegistrySnapshot.model_validate_json(
+            snapshot.model_dump_json(), strict=True
+        )
         # Trust boundary: derived identity must match the (valid) hash;
         # model_copy(update=...) payloads cannot rely on constructor checks.
         if not snapshot.has_valid_snapshot_sha256():
@@ -15430,15 +15457,34 @@ class GatewayStateStore:
         )
         with self._lock, self._write_transaction():
             existing = self._connection.execute(
-                "SELECT snapshot_json FROM verification_registry_snapshot"
+                "SELECT snapshot_json, snapshot_sha256, captured_at_ms"
+                " FROM verification_registry_snapshot"
                 " WHERE registry_snapshot_id = ?",
                 (snapshot.registry_snapshot_id,),
             ).fetchone()
             if existing is not None:
-                if existing["snapshot_json"] != payload_json:
+                try:
+                    retained = RegistrySnapshot.model_validate_json(
+                        existing["snapshot_json"], strict=True
+                    )
+                except ValueError as exc:
+                    raise StoreConflictError(
+                        "stored registry snapshot is invalid"
+                    ) from exc
+                if (
+                    not retained.has_valid_identity()
+                    or retained.registry_snapshot_id != snapshot.registry_snapshot_id
+                    or retained.snapshot_sha256 != existing["snapshot_sha256"]
+                    or retained.captured_at_ms != existing["captured_at_ms"]
+                    or retained.model_dump(mode="json", exclude={"captured_at_ms"})
+                    != snapshot.model_dump(mode="json", exclude={"captured_at_ms"})
+                ):
                     raise StoreConflictError(
                         "registry snapshot identity was reused for different content"
                     )
+                # RegistrySnapshot hashes deliberately exclude capture time:
+                # another request/restart can observe the same descriptor set.
+                # Keep the first observation and its recorded time unchanged.
                 return False
             self._connection.execute(
                 """

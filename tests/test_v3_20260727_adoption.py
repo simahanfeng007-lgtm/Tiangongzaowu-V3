@@ -244,8 +244,8 @@ def test_windows_gateway_a5_shell_preserves_utf8_and_cmd_metacharacters() -> Non
 
         assert result["success"] is True, result
         execution = result["execution"]
-        assert execution["containment"] == "gateway_a5_host_execution"
-        assert execution["timeout_disabled"] is True
+        assert execution["containment"] == "windows-appcontainer"
+        assert execution["network"] == "denied"
         assert execution["changed_files"] == ["utf8.txt"]
         text = (root / "utf8.txt").read_bytes().decode("utf-8").replace("\r", "")
         assert text.strip().split("\n") == [

@@ -24,6 +24,15 @@ from typing import Callable
 
 COMPOSITION_PLANNER_MODE_ENV = "TIANGONG_COMPOSITION_PLANNER_MODE"
 COMPOSITION_TOOL_SOURCE_PIN_ENV = "TIANGONG_COMPOSITION_TOOL_SOURCE_PIN"
+_GATEWAY_PLANNING_OWNER = False
+
+
+def set_gateway_planning_owner(enabled: bool) -> None:
+    """Only the installed in-process gateway binds the desktop planner owner."""
+    global _GATEWAY_PLANNING_OWNER
+    if type(enabled) is not bool:
+        raise TypeError("gateway planning owner must be boolean")
+    _GATEWAY_PLANNING_OWNER = enabled
 
 _PIN_FIELDS = (
     "repository", "bundle_path", "bundle_sha256", "base_commit",
@@ -45,7 +54,11 @@ class CompositionTurnError(RuntimeError):
 
 def composition_planner_mode() -> str:
     """Read the explicit opt-in; the default is the unchanged legacy planner."""
-
+    # The gateway has already routed this turn before creating its ticket.
+    # Its explicit trial tasks arrive through an inert verified handoff, while
+    # ordinary conversations retain their established backend behavior.
+    if _GATEWAY_PLANNING_OWNER:
+        return "off"
     value = os.environ.get(COMPOSITION_PLANNER_MODE_ENV, "off").strip().lower()
     return value if value in {"off", "controlled"} else "off"
 

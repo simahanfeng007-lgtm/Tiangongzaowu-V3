@@ -189,6 +189,7 @@ let serviceShutdownComplete = false;
 let workspaceCommittedRoot = "";
 let workspaceChangeRevision = 0;
 let workspaceChangePending = 0;
+let workspaceServiceStartInProgress = false;
 let workspaceChangeTail = Promise.resolve();
 let modelSettingsChangeTail = Promise.resolve();
 let resolvedRuntimeStateRoot = "";
@@ -243,7 +244,7 @@ const BACKEND_HEALTH_FAILURE_LIMIT = 3;
 // First launch is where Windows Defender and installer-origin scans are most
 // expensive.  Give each native service a full minute to become healthy before
 // declaring it unavailable; subsequent watchdog probes remain fast.
-const SERVICE_START_ATTEMPTS = 240;
+const SERVICE_START_ATTEMPTS = SOURCE_MODE ? 2400 : 240;
 const FRONTEND_DIR_NAME = ["frontend", "v" + "2"].join("-");
 const PRIMARY_FRONTEND_FILE = path.join(app.getAppPath(), FRONTEND_DIR_NAME, "index.html");
 const PRELOAD_FILE = path.join(app.getAppPath(), "preload.js");
@@ -1196,7 +1197,14 @@ async function stopServicesForWorkspaceChange(reason) {
 }
 
 async function startServicesForWorkspaceChange() {
-  await serviceSupervisor.start("total-gateway");
+  // A workspace transaction commits only after business readiness. Ordinary
+  // startup still adopts a healthy process immediately and monitors readiness.
+  workspaceServiceStartInProgress = true;
+  try {
+    await serviceSupervisor.start("total-gateway");
+  } finally {
+    workspaceServiceStartInProgress = false;
+  }
   const snapshot = serviceSupervisor.snapshot();
   const totalGatewayReady = snapshot["total-gateway"]?.ready === true;
   const backendReady = totalGatewayReady;
@@ -1204,6 +1212,38 @@ async function startServicesForWorkspaceChange() {
   const communicationReady = totalGatewayReady;
   if (mainWindow && !mainWindow.isDestroyed()) startBackendWatchdog();
   return { backendReady, lifeReady, totalGatewayReady, communicationReady, snapshot };
+}
+
+function gatewayRuntimeStateRoot() {
+  return path.join(runtimeStateRoot(), "gateway");
+}
+
+async function sourceTrialProfileCommand(operation, args = [], transaction = null) {
+  if (!SOURCE_MODE) throw new Error("source_profile_rebind_requires_source_mode");
+  const root = path.resolve(__dirname, "..");
+  const script = path.join(root, "scripts", "rebind-source-execution-profile.py");
+  return new Promise((resolve, reject) => {
+    const child = execFile(pythonCommand(), ["-B", "-X", "utf8", script, operation, ...args], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 30000,
+      maxBuffer: 65536,
+      env: { ...process.env, TIANGONG_SOURCE_MODE: "1", PYTHONDONTWRITEBYTECODE: "1" },
+    }, (error, stdout) => {
+      let result;
+      try { result = JSON.parse(String(stdout || "")); } catch {}
+      if (error || result?.ok !== true) {
+        reject(new Error("source_profile_rebind_failed"));
+      } else {
+        resolve(result);
+      }
+    });
+    // The transaction contains only the trial profile. Keep it off argv and
+    // diagnostic output, and let execFile's callback report early child exit.
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(transaction ? JSON.stringify(transaction) : "");
+  });
 }
 
 async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMode = "") {
@@ -1243,7 +1283,30 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
   process.env.TIANGONG_OMNI_BODY_WORKSPACE = workspace;
   process.env.TIANGONG_WORKSPACE_MODE = nextMode;
   let services = null;
+  let sourceProfileTransaction = null;
   try {
+    if (typeof SOURCE_MODE !== "undefined" && SOURCE_MODE) {
+      const stateRoot = gatewayRuntimeStateRoot();
+      const profilePath = path.join(stateRoot, "source-execution-profile.json");
+      let profilePresent = false;
+      try { fs.lstatSync(profilePath); profilePresent = true; } catch (profileError) {
+        if (profileError?.code !== "ENOENT") throw profileError;
+      }
+      if (profilePresent) {
+        const prepared = await sourceTrialProfileCommand("prepare", [
+          "--state-root", stateRoot,
+          "--previous-workspace", previousWorkspace,
+          "--workspace", workspace,
+        ]);
+        if (prepared.enabled === true) {
+          sourceProfileTransaction = prepared.transaction;
+          if (!sourceProfileTransaction || typeof sourceProfileTransaction !== "object") {
+            throw new Error("source_profile_transaction_missing");
+          }
+          await sourceTrialProfileCommand("apply", [], sourceProfileTransaction);
+        }
+      }
+    }
     services = await startServicesForWorkspaceChange();
     if (
       !services.backendReady
@@ -1275,20 +1338,30 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
     process.env.TIANGONG_OMNI_BODY_WORKSPACE = previousWorkspace;
     process.env.TIANGONG_WORKSPACE_MODE = previousMode;
     let rollbackServices;
+    let profileRollbackError = "";
     try {
-      rollbackServices = await startServicesForWorkspaceChange();
+      if (sourceProfileTransaction) {
+        try {
+          await sourceTrialProfileCommand("rollback", [], sourceProfileTransaction);
+        } catch (rollbackError) {
+          profileRollbackError = rollbackError?.message || "source_profile_rollback_failed";
+        }
+      }
+      // Do not start services with a mismatched authority if a concurrent
+      // operator change prevented exact restoration of the trial profile.
+      if (!profileRollbackError) rollbackServices = await startServicesForWorkspaceChange();
     } finally {
       // Restore the supervisor watchdog even when the rollback restart itself
       // fails; otherwise nothing will ever bring the gateway back up.
-      if (mainWindow && !mainWindow.isDestroyed()) startBackendWatchdog();
+      if (!profileRollbackError && mainWindow && !mainWindow.isDestroyed()) startBackendWatchdog();
     }
-    const rolledBack = sameWindowsPath(
+    const rolledBack = !profileRollbackError && sameWindowsPath(
       process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT || previousWorkspace,
       previousWorkspace,
     );
     writeDesktopDiagnostic(
       "workspace-root-change-failed",
-      JSON.stringify({ error: error?.message || String(error), rolledBack, rollbackServices }),
+      JSON.stringify({ error: error?.message || String(error), rolledBack, rollbackServices, profileRollbackError }),
     );
     return {
       ok: false,
@@ -1302,6 +1375,7 @@ async function applyWorkspaceRootChange(workspace, expectedRevision, workspaceMo
       // 而不是只有一个裸错误码（"设置静默未生效"主诉的一部分）。
       services,
       rollbackServices,
+      profileRollbackError,
     };
   }
 }
@@ -1387,7 +1461,7 @@ const OFFICIAL_MODEL_HOSTS = Object.freeze({
   minimax_m3: new Set(["api.minimaxi.com"]),
   minimax: new Set(["api.minimaxi.com"]),
   google: new Set(["generativelanguage.googleapis.com"]),
-  mimo: new Set(["api.xiaomimimo.com"]),
+  mimo: new Set(["api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com"]),
 });
 
 function canonicalModelOrigin(baseUrl) {
@@ -1673,7 +1747,7 @@ function modelRuntimeServiceName() {
 // credential. /ready collection takes 20-60s in source mode (HOTFIX-20260728),
 // so the restart budget must match the ready probe's 90s window; the old 45s
 // caused "保存中" rollback loops whenever a slow boot passed 45s.
-const CREDENTIAL_RESTART_TIMEOUT_MS = 90000;
+const CREDENTIAL_RESTART_TIMEOUT_MS = SOURCE_MODE ? 600000 : 90000;
 
 function withTimeout(promise, ms, message) {
   return new Promise((resolve, reject) => {
@@ -3477,7 +3551,7 @@ function totalGatewayEnvironment(entry) {
     TIANGONG_GATEWAY_ENVIRONMENT: entry.pythonPath ? "development" : "production",
     TIANGONG_GATEWAY_DEPLOYMENT_MODE: "embedded",
     TIANGONG_GATEWAY_PORT: DEFAULT_TOTAL_GATEWAY_PORT,
-    TIANGONG_GATEWAY_STATE_ROOT: path.join(runtimeStateRoot(), "gateway"),
+    TIANGONG_GATEWAY_STATE_ROOT: gatewayRuntimeStateRoot(),
     TIANGONG_GATEWAY_SHADOW_TOKEN: SHADOW_API_TOKEN,
     TIANGONG_GATEWAY_COMMUNICATION_TOKEN: COMMUNICATION_GATEWAY_TOKEN,
     TIANGONG_GATEWAY_LIFE_INTENT_TOKEN: LIFE_ACTION_INTENT_TOKEN,
@@ -3539,7 +3613,7 @@ function totalGatewayEnvironment(entry) {
   return env;
 }
 
-async function waitForTotalGateway(child = null, failed = null, timeoutMs = 120000) {
+async function waitForTotalGateway(child = null, failed = null, timeoutMs = SOURCE_MODE ? 600000 : 120000) {
   const deadline = Date.now() + timeoutMs;
   for (let i = 0; i < SERVICE_START_ATTEMPTS; i += 1) {
     if (failed?.value === true || (child && child.exitCode !== null)) return false;
@@ -3557,11 +3631,22 @@ async function waitForTotalGateway(child = null, failed = null, timeoutMs = 1200
 
 async function waitForTotalGatewayReadiness(timeoutMs = CREDENTIAL_RESTART_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
+  const child = totalGatewayProcess;
   while (Date.now() < deadline) {
-    if (await totalGatewayReadyCheck(3000)) return true;
+    if (child && child.exitCode !== null) return false;
+    const ready = await totalGatewayReadyCheck(3000);
+    if (child && child.exitCode !== null) return false;
+    if (Date.now() >= deadline) return false;
+    if (ready) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return false;
+}
+
+async function totalGatewayServiceReadyCheck() {
+  return workspaceServiceStartInProgress
+    ? waitForTotalGatewayReadiness()
+    : totalGatewayReadyCheck(3000);
 }
 
 async function startTotalGateway() {
@@ -4193,7 +4278,7 @@ const serviceSupervisor = new ServiceSupervisor({
       // /ready is now a bounded cached probe.  NOT_READY degrades the live
       // process and monitoring later converges it to RUNNING; it is never a
       // reason to destroy an otherwise healthy single-process gateway.
-      health: () => totalGatewayHealthCheck(3000), ready: () => totalGatewayReadyCheck(3000), stop: stopTotalGateway,
+      health: () => totalGatewayHealthCheck(3000), ready: totalGatewayServiceReadyCheck, stop: stopTotalGateway,
     },
   ],
   onTransition: (event) => {
@@ -4219,7 +4304,7 @@ async function createWindow() {
   applyWindowTheme("ink_teal");
 
   mainWindow = new BrowserWindow({
-    show: true,
+    show: !(SOURCE_MODE && process.env.TIANGONG_SOURCE_BACKGROUND === "1"),
     width: 1380,
     height: 840,
     minWidth: 1040,

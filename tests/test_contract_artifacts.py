@@ -37,6 +37,7 @@ from contracts.compatibility import (
     P7C1_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
     P7D2_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
     REVIEWED_SCHEMA_BASELINE_SHA256,
+    CONTROLLED_COMPOSITION_PROFILE_SCHEMA_BASELINE_SHA256,
     assert_schema_bundles_compatible,
     compare_schema_bundles,
 )
@@ -129,10 +130,10 @@ class ContractCompatibilityTests(unittest.TestCase):
             contract_schema_bundle_sha256(),
             REVIEWED_SCHEMA_BASELINE_SHA256,
         )
-        # Step 0: REVIEWED == P7D.2 (current stage).
+        # Step 0: fixed-profile additions -> exact retained P7D.2 schema.
         self.assertEqual(
             REVIEWED_SCHEMA_BASELINE_SHA256,
-            P7D2_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
+            CONTROLLED_COMPOSITION_PROFILE_SCHEMA_BASELINE_SHA256,
         )
         bundle = contract_schema_bundle()
 
@@ -172,6 +173,16 @@ class ContractCompatibilityTests(unittest.TestCase):
             elif isinstance(node, list):
                 for item in node:
                     _restore_v1(item)
+
+        profiled_schemas = [bundle["CompositionExecutionBindingV1"]]
+        profiled_schemas.extend(bundle[name]["$defs"]["CompositionExecutionBindingV1"]
+                                for name in ("ActionIntent", "PolicyDecision", "ExecutionTicket", "OmniCapabilityGrant"))
+        for schema in profiled_schemas:
+            for field in ("execution_profile_id", "execution_profile_sha256"):
+                self.assertNotIn(field, schema.get("required", []))
+                self.assertIn(field, schema["properties"])
+                schema["properties"].pop(field)
+        self.assertEqual(_sha(bundle), P7D2_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256)
 
         # Step 1: P7D.2 → P7C.1. Remove the optional continuation/predecessor
         # coordinates from the root and every signed-host local definition.

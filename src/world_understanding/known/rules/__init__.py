@@ -53,15 +53,22 @@ class EventOrderRule:
         return tuple(out)
 
 class SameSourceRootGroupingRule:
-    spec = RuleSpec("wu.rule.provenance.same-root", "v0.1", None, ())
+    # Membership is the exact shared-root representation. A complete clique of
+    # pairwise derivations adds no source evidence and grows quadratically.
+    # Each member has its own stable identity, so incremental arrival cannot
+    # replace a group anchor or leave obsolete anchor edges in the prior cut.
+    spec = RuleSpec("wu.rule.provenance.same-root", "v0.2", None, ())
     def apply(self, known: KnownSet, delta: tuple[KnownRecord, ...]):
-        out=[]; roots=sorted({ref.sha256 for record in delta if record.derivation_type=="DIRECT" for ref in record.provenance_refs})
-        for root in roots:
-            rows=sorted((r for r in known.by_provenance_root(root) if r.derivation_type=="DIRECT"),key=lambda r:(r.authority_domain,r.known_id,r.record_hash))
-            for i,left in enumerate(rows):
-                for right in rows[i+1:]:
-                    if left.authority_domain!=right.authority_domain: continue
-                    out.append(DerivedCandidate((left,right),"SHARES_SOURCE_ROOT",left.known_id,"provenance.same_root",WorldValue(kind="string",string_value=f"{right.known_id}:{root}")))
+        out=[]
+        for record in sorted(delta, key=lambda r: (r.known_id, r.record_hash)):
+            if record.derivation_type != "DIRECT":
+                continue
+            for root in sorted({ref.sha256 for ref in record.provenance_refs}):
+                out.append(DerivedCandidate(
+                    (record,), "SOURCE_ROOT_MEMBER", record.known_id,
+                    "provenance.source_root_member",
+                    WorldValue(kind="string", string_value=root),
+                ))
         return tuple(out)
 
 class GitStructuralNormalizationRule:

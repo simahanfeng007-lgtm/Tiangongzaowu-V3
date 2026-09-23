@@ -8,6 +8,9 @@ without an ExecutionTicket boundary.
 
 from __future__ import annotations
 
+from .composition_final_result import decode_composition_final_aliases, decode_composition_requirements_attestation
+from contracts.composition_profile import composition_completion_scope
+
 from .diagnostics import diagnostic_log
 
 import hmac
@@ -639,6 +642,20 @@ class DesktopApiRouter:
         request_snapshot = next((item for item in snapshots if item.machine == "request"), None)
         if request_snapshot is None:
             return {}
+        composition_reader = getattr(
+            self._runtime.store, "get_executable_composition_plan_for_request", None,
+        )
+        composition = (
+            None if not callable(composition_reader)
+            else composition_reader(
+                request_id, run_id=request_snapshot.run_id,
+                generation=request_snapshot.generation,
+            )
+        )
+        if composition is not None:
+            return self._desktop_composition_result_payload(
+                request_id, request_snapshot, composition.executable_plan,
+            )
         effects = self._runtime.store.list_effects_for_request(
             request_id,
             run_id=request_snapshot.run_id,
@@ -672,6 +689,120 @@ class DesktopApiRouter:
             raise StoreCorruptionError("desktop execution payload belongs to another request")
         return payload
 
+    def _desktop_composition_result_payload(
+        self, request_id: str, request_snapshot, plan,
+    ) -> dict[str, object]:
+        """Project the sealed final result, never the parent registration ACK."""
+        if request_snapshot.state != "COMPLETED":
+            return {}
+        scope = (request_id, request_snapshot.run_id, request_snapshot.generation)
+        if (
+            not plan.has_valid_identity()
+            or (plan.request_id, plan.run_id, plan.generation) != scope
+            or not plan.step_bindings
+        ):
+            raise StoreCorruptionError("desktop composition plan scope is invalid")
+        try:
+            completion_scope = composition_completion_scope(plan.step_bindings)
+        except ValueError as exc:
+            raise StoreCorruptionError("desktop composition plan scope is invalid") from exc
+        terminal = self._runtime.store.get_terminal_request_capsule(
+            request_id, run_id=scope[1], generation=scope[2],
+        )
+        if terminal is None:
+            raise StoreCorruptionError("completed desktop composition lacks terminal result")
+        capsule = terminal.capsule
+        if (
+            terminal.status != "TERMINAL"
+            or capsule.capsule_kind != "TERMINAL_RESULT"
+            or not capsule.has_valid_capsule_sha256()
+            or (capsule.request_id, capsule.run_id, capsule.generation) != scope
+            or not isinstance(capsule.final_result, str)
+            or not capsule.final_result
+        ):
+            raise StoreCorruptionError("desktop composition terminal result is invalid")
+        final_result = capsule.final_result
+        final_sha256 = hashlib.sha256(final_result.encode("utf-8")).hexdigest()
+        decisions = self._runtime.store.list_completion_decisions(
+            request_id, run_id=scope[1], generation=scope[2],
+        )
+        decision = None if not decisions else decisions[-1].decision
+        if (
+            decision is None
+            or not decision.has_valid_sha256()
+            or (decision.request_id, decision.run_id, decision.generation) != scope
+            or decision.outcome != "COMPLETED"
+            or not decision.can_transition_request_completed
+            or not decision.execution_ready
+            or not decision.text_ready
+            or not decision.verification_ready
+            or decision.verification_mode != "PLAN_BOUND"
+            or decision.verification_plan_sha256 != plan.verification_plan_sha256
+            or decision.candidate_text_sha256 != final_sha256
+            or not decision.supporting_fact_ids
+            or not set(decision.supporting_fact_ids).issubset(capsule.verified_fact_ids)
+        ):
+            raise StoreCorruptionError("desktop composition completion/result binding is invalid")
+        try:
+            result = json.loads(
+                final_result, object_pairs_hook=_reject_duplicate_pairs,
+                parse_constant=_reject_constant,
+            )
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise StoreCorruptionError("desktop composition final result is invalid JSON") from exc
+        if not isinstance(result, dict) or canonical_json_bytes(result).decode("utf-8") != final_result:
+            raise StoreCorruptionError("desktop composition final result is not canonical")
+        try:
+            aliases = decode_composition_final_aliases(result)
+        except (TypeError, ValueError, UnicodeError) as exc:
+            raise StoreCorruptionError("desktop composition final output binding is invalid") from exc
+        expected_aliases = {item.alias for item in plan.final_output_aliases}
+        if not isinstance(aliases, dict) or not aliases or set(aliases) != expected_aliases:
+            raise StoreCorruptionError("desktop composition final output aliases are incomplete")
+        requirements = None
+        if "execution_requirements_attestation" in result:
+            envelope = self._runtime.store.get_request_envelope(request_id)
+            if envelope is None:
+                raise StoreCorruptionError("desktop composition request requirements are missing")
+            try:
+                requirements = decode_composition_requirements_attestation(
+                    result, expected_request_id=request_id, expected_request_text=envelope.text,
+                    expected_plan_id=plan.executable_plan_id,
+                    expected_plan_sha256=plan.executable_plan_sha256,
+                    allowed_fact_ids=capsule.verified_fact_ids,
+                )
+            except (TypeError, ValueError) as exc:
+                raise StoreCorruptionError("desktop composition request requirements binding is invalid") from exc
+        requirements_verified = bool(requirements and requirements["execution_requirements_verified"])
+        scope_label = "只读步骤" if completion_scope == "read_only_terminal_execution" else "工作区操作"
+        lines = ["执行和文件交付要求已核验。结果如下。" if requirements_verified
+                 else f"{scope_label}已核验完成。以下为实际执行结果。"]
+        for ordinal, (alias, value) in enumerate(aliases.items(), 1):
+            action = value.get("action") if isinstance(value, dict) else None
+            label = str(action or alias)
+            # This is a deterministic display of authenticated tool values.
+            # No model is asked to interpret, replace, or assert these results.
+            rendered = json.dumps(value, ensure_ascii=False, indent=2)
+            # JSON escapes embedded newlines and quotes every string, so tool
+            # content cannot produce a standalone closing-fence line. Keep the
+            # three-backtick syntax supported by the desktop renderer.
+            lines.append(f"{ordinal}. {label}\n\n```json\n{rendered}\n```")
+        return {
+            "reply_text": "\n\n".join(lines),
+            "composition_final_output_aliases": aliases,
+            "completion_scope": completion_scope,
+            "read_only_execution_completed": completion_scope == "read_only_terminal_execution",
+            "execution_steps_verified": True,
+            "execution_requirements_verified": requirements_verified,
+            "execution_requirements_attestation_sha256": requirements["sha256"] if requirements else None,
+            "user_goal_status": "execution_requirements_verified" if requirements_verified else "not_verified",
+            "task_completed": False,
+            "business_outcome_verified": False,
+            "completion_decision_sha256": decision.decision_sha256,
+            "final_result_sha256": final_sha256,
+            "composition_executable_plan_id": plan.executable_plan_id,
+        }
+
     def _desktop_error_detail(self, request_id: str, snapshots) -> dict[str, str]:
         request_snapshot = next((item for item in snapshots if item.machine == "request"), None)
         if request_snapshot is None:
@@ -686,20 +817,53 @@ class DesktopApiRouter:
             run_id=request_snapshot.run_id,
             generation=request_snapshot.generation,
         )
-        execution = next(
+        # Earlier successful steps must not hide the actual failing step.
+        # These results are already scoped to this request/run/generation.
+        execution = max(
             (
                 item
                 for item in effects
                 if item.claim.effect_kind == "execution" and item.result is not None
+                and item.result.error_code
             ),
-            None,
+            key=lambda item: getattr(item.result, "observed_at_ms", 0),
+            default=None,
         )
         code = str(
             execution.result.error_code
             if execution is not None and execution.result is not None and execution.result.error_code
             else "gateway_request_failed"
         )
+        detail = ""
+        statuses = self._runtime.store.list_system_statuses(
+            request_id, run_id=request_snapshot.run_id, generation=request_snapshot.generation,
+        )
+        diagnostic = next((item for item in reversed(statuses)
+                           if item.source_component == "gateway.orchestration"
+                           and item.severity in {"error", "fatal"}), None)
+        if diagnostic is not None:
+            code = diagnostic.status_code
+            display = json.loads(self._runtime.objects.read_bytes(diagnostic.display_object_ref))
+            if not isinstance(display, dict) or display.get("code") != code:
+                raise StoreCorruptionError("desktop diagnostic binding is invalid")
+            detail = str(display.get("detail") or "")[:300]
         lowered = code.lower()
+        if lowered.startswith("desktop_composition."):
+            messages = {
+                "desktop_composition.unsupported_task": "当前字典执行范围无法完成这项请求。",
+                "desktop_composition.action_outside_rollout": "请求包含当前未开放的执行动作。",
+                "desktop_composition.model_call_failed": "字典规划时模型调用失败。",
+                "desktop_composition.model_json_invalid": "模型返回的计划格式无效，尚未执行。",
+                "desktop_composition.model_output_truncated": "模型生成的计划被截断，尚未执行。",
+                "desktop_composition.source_context_unavailable": "字典执行来源上下文未就绪，尚未调用规划模型或执行任务。",
+                "desktop_composition.source_initialization_failed": "系统工具来源初始化失败，尚未执行任务。",
+            }
+            return {"code": code, "service": "planner",
+                    "message": messages.get(code, "字典计划未通过执行校验。") + (" " + detail if detail else ""),
+                    "action": ("请查看来源初始化日志，修复运行环境后重新提交；本次失败记录已保留。"
+                               if code in {"desktop_composition.source_context_unavailable",
+                                           "desktop_composition.source_initialization_failed"}
+                               else "查看具体原因后调整请求；本次不会自动切换执行范围。")}
         if "identity" in lowered or lowered.startswith(("life.", "legacy.", "compat.life")):
             return {
                 "code": code,
@@ -727,6 +891,16 @@ class DesktopApiRouter:
                 "service": "backend",
                 "message": "后端执行链未能成功完成请求。",
                 "action": "请按错误码检查模型、联网工具或工作区权限；原始错误已保留。",
+            }
+        if lowered.startswith(("composition.runtime.", "composition.execution.")):
+            ambiguous = execution is not None and getattr(execution.result, "status", None) == "AMBIGUOUS"
+            return {
+                "code": code,
+                "service": "execution",
+                "message": ("字典动作结果尚未确认，实际回执已保留。" if ambiguous
+                            else "字典动作执行失败，实际失败回执已保留。"),
+                "action": ("请先核对该动作是否实际发生，再决定下一步。" if ambiguous
+                           else "请查看失败动作的执行记录后修复；已完成和未执行步骤以本次回执为准。"),
             }
         return {
             "code": code,
@@ -796,6 +970,15 @@ class DesktopApiRouter:
             structured_value = result_payload.get(structured_key)
             if structured_value not in (None, ""):
                 run[structured_key] = structured_value
+        for structured_key in (
+            "composition_final_output_aliases", "completion_scope",
+            "read_only_execution_completed", "execution_steps_verified", "user_goal_status", "task_completed",
+            "execution_requirements_verified", "execution_requirements_attestation_sha256",
+            "business_outcome_verified", "completion_decision_sha256",
+            "final_result_sha256", "composition_executable_plan_id",
+        ):
+            if structured_key in result_payload:
+                run[structured_key] = result_payload[structured_key]
         terminal_status = str(result_payload.get("simple_chain_status") or "").strip()
         if terminal_status:
             _lt = result_payload.get("last_transition") if isinstance(result_payload.get("last_transition"), dict) else {}

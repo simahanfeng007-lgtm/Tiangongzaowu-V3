@@ -51,6 +51,8 @@ from .sandbox_runtime import (
     SandboxRunner,
     _prepare_windows_utf8_shell_command,
     _snapshot as _sandbox_workspace_snapshot,
+    _run_portable,
+    _is_link_or_reparse,
     sanitized_environment,
 )
 from .portable_text import PortableTextError, decode_portable_bytes, subprocess_environment
@@ -600,9 +602,15 @@ class BodyRuntimeConfig:
     emergency_audit_dir: str = ".tiangong_emergency_audit"
     ffmpeg_path: Optional[str] = None
     ffprobe_path: Optional[str] = None
-    default_timeout_seconds: int = 0
+    default_timeout_seconds: int = 60
     allowed_shell_commands: List[str] = field(default_factory=list)
     sandbox_enabled: bool = False
+    sandbox_require_os_containment: bool = False
+    sandbox_allow_deletions: bool = True
+    cancel_check: object = None
+    execution_profile_id: Optional[str] = None
+    execution_profile_sha256: Optional[str] = None
+    target_snapshot_sha256: Optional[str] = None
     sandbox_max_workspace_mb: int = 2048
     sandbox_max_changed_mb: int = 512
     sandbox_max_output_mb: int = 4
@@ -828,7 +836,7 @@ def _run_windows_sapi_broker(
     }
 
 
-def _resolve_python_interpreter() -> str:
+def _resolve_python_interpreter(*, controlled: bool = False) -> str:
     """Resolve the interpreter used by python.run in source and frozen builds.
 
     In a PyInstaller build ``sys.executable`` is tiangong-backend.exe.  Reusing
@@ -837,7 +845,7 @@ def _resolve_python_interpreter() -> str:
     """
     candidates: List[Path] = []
     configured = str(os.environ.get("TIANGONG_PYTHON_EXECUTABLE") or "").strip()
-    if configured:
+    if configured and not controlled:
         candidates.append(Path(configured))
 
     executable = Path(sys.executable)
@@ -854,7 +862,7 @@ def _resolve_python_interpreter() -> str:
             candidates.append(parent / "life-service" / "runtime314" / "python.exe")
             break
 
-    for command in ("python", "python3"):
+    for command in (() if controlled else ("python", "python3")):
         discovered = shutil.which(command)
         if discovered:
             candidates.append(Path(discovered))
@@ -1557,12 +1565,15 @@ class BodyRuntime:
         shell: bool = False,
         cwd: Optional[Path] = None,
         op_id: str = "",
+        require_os_containment: bool = False,
+        expected_workspace_files: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         if shell:
             raise OmniBodyError("shell=True is forbidden; commands must be explicit argument vectors")
         timeout = self.config.default_timeout_seconds if timeout is None else timeout
+        timeout = max(1, min(600, int(timeout or 60)))
         run_cwd = Path(cwd) if cwd is not None else self.workspace
-        if not self.config.sandbox_enabled:
+        if not self.config.sandbox_enabled and not require_os_containment:
             before_files = (
                 _sandbox_workspace_snapshot(run_cwd)
                 if run_cwd.is_dir()
@@ -1574,23 +1585,23 @@ class BodyRuntime:
                 else cmd
             )
             started = time.monotonic()
-            completed = subprocess.run(
-                prepared,
-                cwd=str(run_cwd),
-                env=subprocess_environment(os.environ),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=False,
-                timeout=None,
-                check=False,
-            )
+            with tempfile.TemporaryDirectory(prefix=".tiangong-run-", dir=run_cwd) as process_temp:
+                env = subprocess_environment(sanitized_environment(os.environ, Path(process_temp)))
+                code, raw_stdout, raw_stderr, _ = _run_portable(
+                    prepared, run_cwd, env,
+                    SandboxLimits(timeout_seconds=timeout,
+                        max_output_bytes=max(1, self.config.sandbox_max_output_mb) * 1024 * 1024,
+                        max_memory_bytes=max(128, self.config.sandbox_max_memory_mb) * 1024 * 1024,
+                        max_processes=max(1, self.config.sandbox_max_processes)),
+                    cancel_check=self.config.cancel_check,
+                )
             stdout = decode_portable_bytes(
-                completed.stdout or b"",
+                raw_stdout,
                 source="host subprocess stdout",
                 allow_legacy_windows=True,
             )
             stderr = decode_portable_bytes(
-                completed.stderr or b"",
+                raw_stderr,
                 source="host subprocess stderr",
                 allow_legacy_windows=True,
             )
@@ -1605,7 +1616,7 @@ class BodyRuntime:
             )
             deleted_files = sorted(set(before_files).difference(after_files))
             return {
-                "returncode": int(completed.returncode),
+                "returncode": int(code),
                 "stdout": stdout.text,
                 "stderr": stderr.text,
                 "stdout_encoding": stdout.encoding,
@@ -1613,15 +1624,24 @@ class BodyRuntime:
                 "legacy_output_encoding": bool(
                     stdout.legacy_fallback or stderr.legacy_fallback
                 ),
-                "ok": int(completed.returncode) == 0,
+                "ok": int(code) == 0,
+                "receipt_role": "execution",
+                "execution_state": "completed",
+                "commit_state": "host_side_effects_possible",
+                "network": "not_os_enforced",
+                "outputs_truncated": False,
                 "containment": "gateway_a5_host_execution",
                 "elapsed_seconds": round(time.monotonic() - started, 3),
-                "timeout_disabled": True,
+                "timeout_disabled": False,
                 "changed_files": changed_files,
                 "deleted_files": deleted_files,
                 "changed_bytes": sum(after_files[path][0] for path in changed_files),
             }
-        result = self.sandbox.run(cmd, cwd=run_cwd, timeout_seconds=timeout, op_id=op_id)
+        result = self.sandbox.run(cmd, cwd=run_cwd, timeout_seconds=timeout, op_id=op_id,
+                                 require_os_containment=require_os_containment or self.config.sandbox_require_os_containment,
+                                 cancel_check=self.config.cancel_check,
+                                 allow_deletions=self.config.sandbox_allow_deletions,
+                                 expected_workspace_files=expected_workspace_files)
         result["stdout"] = _bounded_subprocess_text(result.get("stdout"))
         result["stderr"] = _bounded_subprocess_text(result.get("stderr"))
         return result
@@ -1985,11 +2005,14 @@ class BodyRuntime:
         return {"path": str(p), "size_chars": len(data), "content": data[:max_chars], "truncated": len(data) > max_chars, "evidence": self._file_evidence(p)}
 
     def _action_file_write(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
-        p = self._resolve(target)
+        p = self._controlled_write_target(target)
+        pre = self._write_observation(p)
         snapshots = self._snapshot(op_id, [p])
         p.parent.mkdir(parents=True, exist_ok=True)
         binary = bool(args.get("binary", False))
         if binary:
+            if self._controlled_write_profile():
+                raise OmniBodyError("workspace-write profile requires UTF-8 text")
             content_b64 = args.get("base64") or args.get("content")
             if content_b64 is None:
                 raise OmniBodyError("binary file.write requires args.base64 or args.content")
@@ -1997,8 +2020,69 @@ class BodyRuntime:
         else:
             content = args.get("content", "")
             self._canonical_text_encoding(args)
-            self._write_canonical_utf8(p, content)
-        return {"snapshots": snapshots, "evidence": self._file_evidence(p)}
+            if self._controlled_write_profile():
+                self._controlled_text_replace(p, content, pre)
+            else:
+                self._write_canonical_utf8(p, content)
+        return {"snapshots": snapshots, "evidence": self._file_evidence(p),
+                "write_evidence": self._write_receipt(p, pre, snapshots)}
+
+    def _controlled_write_profile(self) -> bool:
+        from contracts.composition_profile import composition_profile_valid
+        profile = self.config.execution_profile_id
+        if not composition_profile_valid(profile, self.config.execution_profile_sha256):
+            raise OmniBodyError("invalid system execution profile")
+        return profile is not None
+
+    def _controlled_write_target(self, target, *, must_exist=False) -> Path:
+        if self._controlled_write_profile():
+            from contracts import canonical_sha256
+            from runtime_security.composition_path import probe_composition_write_target
+            observed = probe_composition_write_target(str(target), self.workspace)
+            if canonical_sha256(observed) != self.config.target_snapshot_sha256:
+                raise OmniBodyError("workspace-write signed target snapshot changed")
+            raw = Path(str(target))
+            raw = raw if raw.is_absolute() else self.workspace / raw
+            if not self._is_inside(raw, self.workspace):
+                raise OmniBodyError("workspace-write target escaped workspace")
+            for item in (raw, *raw.parents):
+                if _is_link_or_reparse(item):
+                    raise OmniBodyError("workspace-write target contains link")
+                if item == self.workspace:
+                    break
+        return self._resolve(target, must_exist=must_exist)
+
+    def _write_observation(self, p: Path) -> Dict[str, Any]:
+        exists, is_dir = p.exists(), p.is_dir()
+        return {"path": str(p), "exists": exists, "is_dir": is_dir,
+                "sha256": self._sha256(p) if exists and not is_dir else None,
+                "bytes": p.stat().st_size if exists and not is_dir else None}
+
+    def _write_receipt(self, p: Path, pre, snapshots) -> Dict[str, Any]:
+        post = self._write_observation(p)
+        backup = next((s.get("backup_path") for s in snapshots if s.get("path") == str(p)), None)
+        return {"pre": pre, "post": post, "changed": pre != post,
+                "rollback": {"available": pre == post or not pre["exists"] or bool(backup and Path(backup).exists()),
+                             "backup_path": backup}}
+
+    def _controlled_text_replace(self, p: Path, content: str, pre) -> None:
+        if not isinstance(content, str):
+            raise OmniBodyError("workspace-write requires text content")
+        encoded = content.encode("utf-8", errors="strict")
+        if len(encoded) > 1048576:
+            raise OmniBodyError("workspace-write content exceeds limit")
+        fd, name = tempfile.mkstemp(prefix=".tg-write-", dir=p.parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._controlled_write_target(str(p))
+            if self._write_observation(p) != pre:
+                raise OmniBodyError("workspace-write target changed concurrently")
+            os.replace(name, p)
+        finally:
+            Path(name).unlink(missing_ok=True)
 
     def _action_file_append(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         p = self._resolve(target)
@@ -2060,10 +2144,17 @@ class BodyRuntime:
         )
 
     def _action_file_mkdir(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
-        p = self._resolve(target)
+        p = self._controlled_write_target(target)
+        pre = self._write_observation(p)
+        if self._controlled_write_profile() and pre["exists"]:
+            if not pre["is_dir"] or args.get("exist_ok", True) is not True:
+                raise OmniBodyError("workspace-write mkdir target already exists")
+            return {"snapshots": [], "evidence": self._file_evidence(p),
+                    "write_evidence": self._write_receipt(p, pre, [])}
         snapshots = self._snapshot(op_id, [p])
         p.mkdir(parents=True, exist_ok=bool(args.get("exist_ok", True)))
-        return {"snapshots": snapshots, "evidence": self._file_evidence(p)}
+        return {"snapshots": snapshots, "evidence": self._file_evidence(p),
+                "write_evidence": self._write_receipt(p, pre, snapshots)}
 
     def _action_file_delete_to_trash(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         p = self._resolve(target, must_exist=True)
@@ -2170,6 +2261,8 @@ class BodyRuntime:
         }.get(suffix.lower(), "text")
 
     def _action_code_write(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
+        if self._controlled_write_profile() and args.get("syntax_check") is not False:
+            raise OmniBodyError("workspace-write code.write requires syntax_check=false")
         res = self._action_file_write(op_id, target, args)
         p = self._resolve(target, must_exist=True)
         language = args.get("language") or self._language_from_suffix(p.suffix)
@@ -2190,7 +2283,7 @@ class BodyRuntime:
             return {"path": str(p), "ok": False, "type": "python_syntax", "line": e.lineno, "offset": e.offset, "message": e.msg}
 
     def _action_code_patch_replace(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
-        p = self._resolve(target, must_exist=True)
+        p = self._controlled_write_target(target, must_exist=True)
         if not p.is_file():
             raise OmniBodyError("code.patch_replace target must be an existing file")
         find = args.get("find")
@@ -2200,10 +2293,19 @@ class BodyRuntime:
         if not isinstance(replace, str):
             raise OmniBodyError("code.patch_replace args.replace must be a string")
         count = int(args.get("count", 0))
+        controlled = self._controlled_write_profile()
+        if controlled and (args.get("regex", False) is not False or args.get("allow_noop", False) is not False
+                           or type(args.get("count")) is not int or count <= 0):
+            raise OmniBodyError("workspace-write patch requires literal positive count and no noop")
         if count < 0:
             raise OmniBodyError("code.patch_replace args.count must be non-negative")
         self._canonical_text_encoding(args)
+        pre = self._write_observation(p)
         data = self._read_canonical_utf8(p)
+        if controlled and self._write_observation(p) != pre:
+            raise OmniBodyError("workspace-write patch target changed while reading")
+        if controlled and (data.count(find) < count or find == replace):
+            raise OmniBodyError("workspace-write patch has no matching change")
         if args.get("regex", False):
             new_data, n = re.subn(find, replace, data, count=count if count > 0 else 0)
         else:
@@ -2214,8 +2316,12 @@ class BodyRuntime:
         # Snapshot only the validated target file, after every parameter and
         # no-op check has passed but before the write begins.
         snapshots = self._snapshot(op_id, [p])
-        self._write_canonical_utf8(p, new_data)
-        return {"snapshots": snapshots, "replacements": n, "evidence": self._file_evidence(p)}
+        if controlled:
+            self._controlled_text_replace(p, new_data, pre)
+        else:
+            self._write_canonical_utf8(p, new_data)
+        return {"snapshots": snapshots, "replacements": n, "evidence": self._file_evidence(p),
+                "write_evidence": self._write_receipt(p, pre, snapshots)}
 
     def _compile_javascript_file(self, p: Path) -> Dict[str, Any]:
         node = shutil.which("node") or shutil.which("node.exe")
@@ -2264,18 +2370,43 @@ class BodyRuntime:
             shell=False,
             cwd=run_cwd,
             op_id=op_id,
+            require_os_containment=True,
         )
         return {"command": cmd_list, "cwd": str(run_cwd), "execution": res, "success": res["ok"]}
 
     def _action_python_run(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         if not self.config.allow_python:
             raise OmniBodyError("python.run requires BodyRuntimeConfig.allow_python=True")
+        controlled = self.config.execution_profile_id is not None
+        expected_workspace_files = None
+        if controlled:
+            from contracts.composition_profile import WORKSPACE_PYTHON_PROFILE_ID, validate_composition_arguments
+            if self.config.execution_profile_id != WORKSPACE_PYTHON_PROFILE_ID:
+                raise OmniBodyError("python.run requires the signed workspace-python profile")
+            validate_composition_arguments("python.run", args, profile_id=self.config.execution_profile_id,
+                                           profile_sha256=self.config.execution_profile_sha256)
+            if (not self.config.sandbox_enabled or not self.config.sandbox_require_os_containment
+                    or self.config.sandbox_allow_deletions
+                    or self.config.sandbox_max_changed_mb != 4
+                    or self.config.sandbox_max_output_mb != 4 or self.config.sandbox_max_memory_mb != 2048
+                    or self.config.sandbox_max_processes != 32):
+                raise OmniBodyError("python.run containment or resources differ from signed profile")
+            script = self._controlled_write_target(target, must_exist=True)
+            if not script.is_file() or script.suffix.lower() != ".py":
+                raise OmniBodyError("controlled python.run requires an existing Python script")
+            from contracts import canonical_sha256
+            from runtime_security.composition_path import probe_composition_write_target
+            state = probe_composition_write_target(str(script), self.workspace)
+            if canonical_sha256(state) != self.config.target_snapshot_sha256:
+                raise OmniBodyError("workspace-write signed target snapshot changed")
+            expected_workspace_files = {script.relative_to(self.workspace).as_posix(): state["content_sha256"]}
         timeout = int(args.get("timeout", self.config.default_timeout_seconds))
-        python_executable = _resolve_python_interpreter()
+        python_executable = _resolve_python_interpreter(controlled=controlled)
         if target:
             script = self._resolve(target, must_exist=True)
             cmd = [python_executable, str(script)] + list(args.get("argv", []))
-            res = self._run_subprocess(cmd, timeout=timeout, op_id=op_id)
+            res = self._run_subprocess(cmd, timeout=timeout, op_id=op_id, require_os_containment=True,
+                                       expected_workspace_files=expected_workspace_files)
             return {"command": cmd, "execution": res, "success": res["ok"]}
         code = args.get("code")
         if code is None:
@@ -2284,7 +2415,7 @@ class BodyRuntime:
             f.write(code)
             temp_name = f.name
         try:
-            res = self._run_subprocess([python_executable, temp_name], timeout=timeout, op_id=op_id)
+            res = self._run_subprocess([python_executable, temp_name], timeout=timeout, op_id=op_id, require_os_containment=True)
             return {"temp_script": temp_name, "execution": res, "success": res["ok"]}
         finally:
             try:
@@ -2329,7 +2460,7 @@ class BodyRuntime:
         if self.config.allowed_shell_commands:
             if executable not in self.config.allowed_shell_commands:
                 raise OmniBodyError(f"Shell command not in allowlist: {executable}")
-        res = self._run_subprocess(cmd_list, timeout=int(args.get("timeout", self.config.default_timeout_seconds)), shell=False, op_id=op_id)
+        res = self._run_subprocess(cmd_list, timeout=int(args.get("timeout", self.config.default_timeout_seconds)), shell=False, op_id=op_id, require_os_containment=True)
         return {"command": cmd_list, "execution": res, "success": res["ok"]}
 
     def _action_word_create(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:

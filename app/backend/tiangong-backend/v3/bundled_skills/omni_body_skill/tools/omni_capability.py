@@ -50,7 +50,7 @@ _COMPOSITION_PREDECESSOR_KEYS = {
     "supersedes_authorization_id", "supersedes_effect_id", "supersedes_claim_sha256",
 }
 _COMPOSITION_BINDING_OPTIONAL_KEYS = (
-    {"target_snapshot_sha256"}
+    {"target_snapshot_sha256", "execution_profile_id", "execution_profile_sha256"}
     | _COMPOSITION_CONTINUATION_KEYS
     | _COMPOSITION_PREDECESSOR_KEYS
 )
@@ -495,14 +495,15 @@ def verify_capability_grant(
             raise CapabilityGrantError("capability composition target binding is invalid")
         if composition.get("materialized_arguments_sha256") != _sha(dict(args)):
             raise CapabilityGrantError("capability composition argument binding is invalid")
-        if (
-            payload.get("risk_class") != "A0"
-            or any(item not in {"none", "read"} for item in side_effects)
-            or payload.get("allow_shell") is not False
-            or payload.get("allow_python") is not False
+        from contracts.composition_profile import composition_authority_allowed, composition_profile_fields
+        if not composition_authority_allowed(
+            action_id=action, risk_class=payload.get("risk_class"),
+            allowed_side_effects=side_effects,
+            allow_shell=payload.get("allow_shell"), allow_python=payload.get("allow_python"),
+            **composition_profile_fields(composition),
         ):
             raise CapabilityGrantError(
-                "composition capability exceeds the A0 read-only ceiling"
+                "composition capability exceeds the A0 read-only ceiling or signed execution profile"
             )
     if payload.get("risk_class") not in {"A0", "A1", "A2", "A3", "A4"}:
         raise CapabilityGrantError("A5 capability is forbidden")
@@ -548,8 +549,7 @@ def verify_capability_grant(
     except (ValueError, InvalidSignature) as exc:
         raise CapabilityGrantError("capability signature is invalid") from exc
     grant_sha256 = _sha(dict(grant))
-    _consume_nonce(nonce_root, payload, grant_sha256)
-    return {
+    verified = {
         "allow_absolute_paths": payload.get("allow_absolute_paths") is True,
         "allow_shell": payload.get("allow_shell") is True,
         "allow_python": payload.get("allow_python") is True,
@@ -557,6 +557,13 @@ def verify_capability_grant(
         "grant_id": str(payload.get("grant_id") or ""),
         "grant_sha256": grant_sha256,
     }
+    if payload_has_composition:
+        # Preserve the exact signed scope for the API wrapper's runtime policy.
+        # Detach it from caller-owned mappings after verification; the wrapper
+        # must never re-read raw/model metadata to recover these restrictions.
+        verified["composition_execution_binding"] = json.loads(_canonical(dict(composition)))
+    _consume_nonce(nonce_root, payload, grant_sha256)
+    return verified
 
 
 __all__ = [

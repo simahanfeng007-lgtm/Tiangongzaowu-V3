@@ -10,7 +10,7 @@ Architecture boundary: NOT a second Runtime, NOT a second Gate.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from contracts.canonical import canonical_sha256
 from contracts.verification import (
@@ -23,6 +23,10 @@ from total_gateway.outcome_oracles.effect_state import EffectStateOracle
 from total_gateway.outcome_oracles.repository_state import RepositoryStateOracle
 from total_gateway.verification_readiness import build_readiness
 from total_gateway.verification_recording import VerificationRecorder
+from total_gateway.composition_verification_subject import (
+    COMPOSITION_SUBJECT_PREFIX,
+    evaluate_read_composition_subject,
+)
 
 
 class VerificationPlanExecutorError(RuntimeError):
@@ -41,6 +45,7 @@ class VerificationPlanExecutor:
         fact_ledger,
         plan: VerificationPlan,
         resume_evaluated_at_ms: int | None = None,
+        composition_projector: Callable | None = None,
     ) -> None:
         if plan.registry_snapshot_sha256 != snapshot.snapshot_sha256:
             raise VerificationPlanExecutorError(
@@ -49,6 +54,7 @@ class VerificationPlanExecutor:
         self._snapshot = snapshot
         self._store = store
         self._plan = plan
+        self._composition_projector = composition_projector
         self._recorder = VerificationRecorder(snapshot=snapshot, store=store)
         self._artifact_oracle = ArtifactContentOracle(
             snapshot=snapshot, object_store=object_store, fact_ledger=fact_ledger,
@@ -202,11 +208,23 @@ class VerificationPlanExecutor:
                 evaluation_phase=entry.evaluation_phase,
             )
         elif kind == "effect":
-            record = self._effect_oracle.evaluate(
-                effective_subject, entry.predicate,
-                evaluated_at_ms=evaluated_at_ms,
-                evaluation_phase=entry.evaluation_phase,
-            )
+            if effective_subject.startswith(COMPOSITION_SUBJECT_PREFIX):
+                evaluated = evaluate_read_composition_subject(
+                    subject=effective_subject, entry=entry,
+                    verification_plan=self._plan, snapshot=self._snapshot,
+                    store=self._store, effect_oracle=self._effect_oracle,
+                    projector=self._composition_projector,
+                    evaluated_at_ms=evaluated_at_ms,
+                )
+                for child in evaluated.children:
+                    self._recorder.record(child, recorded_at_ms=evaluated_at_ms)
+                record = evaluated.aggregate
+            else:
+                record = self._effect_oracle.evaluate(
+                    effective_subject, entry.predicate,
+                    evaluated_at_ms=evaluated_at_ms,
+                    evaluation_phase=entry.evaluation_phase,
+                )
         elif kind == "repository":
             bindings = self._store.list_repository_bindings_for_subject(
                 effective_subject

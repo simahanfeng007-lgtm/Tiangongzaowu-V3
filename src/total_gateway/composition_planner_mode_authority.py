@@ -11,6 +11,8 @@ formal exit); the shipped production default stays exactly as it is.
 """
 from __future__ import annotations
 
+from contracts.composition_profile import composition_profile_valid, composition_profile_risk_ceiling
+
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -58,12 +60,21 @@ class PlannerModeConfigV1(ContractModel):
     config_version: int = Field(ge=1)
     mode: PlannerMode
     # Structural A0: no configuration value can widen the risk ceiling.
-    risk_ceiling: Literal["A0"] = "A0"
+    risk_ceiling: Literal["A0", "A3", "A4"] = "A0"
+    execution_profile_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    execution_profile_sha256: str | None = Field(default=None, exclude_if=lambda value: value is None)
     workspace_scope: tuple[str, ...] = Field(min_length=1, max_length=64)
     cooldown_ms: int = Field(ge=0)
     observation_window_ms: int = Field(ge=0)
     created_at_ms: int = Field(ge=0)
     config_sha256: str
+
+    @model_validator(mode="after")
+    def _fixed_execution_profile(self):
+        if (not composition_profile_valid(self.execution_profile_id, self.execution_profile_sha256)
+                or self.risk_ceiling != composition_profile_risk_ceiling(self.execution_profile_id, self.execution_profile_sha256)):
+            raise ValueError("mode risk ceiling requires a known fixed system execution profile")
+        return self
 
     @field_validator("workspace_scope")
     @classmethod

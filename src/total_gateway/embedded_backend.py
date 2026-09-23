@@ -185,6 +185,7 @@ class EmbeddedBackendRuntime:
         self._p15_memory_remember_provider: Any = None
         self._p15_memory_recall_provider: Any = None
         self._composition_dispatch_authorizer: Any = None
+        self._composition_handoff_validator: Any = None
         self._last_conversation_context: dict[str, Any] = {}
         self._last_user_name = ""
         self._last_user_text = ""
@@ -202,6 +203,7 @@ class EmbeddedBackendRuntime:
         scheduler_module = importlib.import_module("v3.zongdiaodu")
         self.qiaojie = self._module.QIAOJIE
         self.scheduler = scheduler_module.Zongdiaodu()
+        importlib.import_module("v3.composition_turn").set_gateway_planning_owner(False)
         # Reset the process-global dependency pointer before this GatewayRuntime
         # instance wires its own canonical store provider. This prevents test or
         # restart leakage while keeping one shared provider for concurrent runs.
@@ -371,6 +373,10 @@ class EmbeddedBackendRuntime:
         return result
 
     def _inbound(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        if "composition_registration_id" in body:
+            from .desktop_composition import composition_handoff_ack
+            return composition_handoff_ack(
+                body, getattr(self, "_composition_handoff_validator", None))
         data = dict(body)
         text = str(data.get("xiaoxi") or data.get("text") or data.get("message") or "")
         user = str(data.get("yonghu_ming") or "")
@@ -475,6 +481,17 @@ class EmbeddedBackendRuntime:
 
     def set_life_skill_overlay_provider(self, provider: Any) -> None:
         self._life_skill_overlay_provider = provider
+
+    def set_composition_handoff_validator(self, provider: Any) -> None:
+        """Bind the inert parent-stage handoff to current Gateway authority."""
+        if not callable(provider):
+            raise TypeError("composition handoff validator must be callable")
+        with self._lock:
+            existing = getattr(self, "_composition_handoff_validator", None)
+            if existing is not None and existing is not provider:
+                raise EmbeddedBackendError("embedded_backend.handoff_validator_already_bound")
+            self._composition_handoff_validator = provider
+            importlib.import_module("v3.composition_turn").set_gateway_planning_owner(True)
 
     def set_composition_dispatch_authorizer(self, provider: Any) -> None:
         """Bind the private Omni composition route to the one Gateway Store.
@@ -1251,6 +1268,7 @@ class EmbeddedBackendRuntime:
             verify_execution_ticket,
             verify_omni_capability_grant,
         )
+        from contracts.composition_profile import composition_authority_allowed, composition_profile_fields
 
         try:
             ticket = ExecutionTicket.model_validate_json(
@@ -1288,6 +1306,10 @@ class EmbeddedBackendRuntime:
         grant_payload = grant.payload
         ticket_binding = ticket_payload.composition_execution_binding
         grant_binding = grant_payload.composition_execution_binding
+        # Only the mutually bound, verified signed profile may extend A0.
+        # Missing profile keeps the original read-only ceiling; the shared
+        # policy allows only exact fixed workspace actions/risks/side effects.
+        profile = composition_profile_fields(ticket_binding)
         required_runtime = {
             "execution_ticket_id": ticket_payload.ticket_id,
             "request_id": ticket_payload.request_id,
@@ -1317,14 +1339,14 @@ class EmbeddedBackendRuntime:
             or runtime_meta.get("composition_binding_sha256")
             != ticket_binding.binding_sha256
             or any(runtime_meta.get(key) != expected for key, expected in required_runtime.items())
-            or ticket_payload.risk_class != "A0"
-            or grant_payload.risk_class != "A0"
-            or any(
-                item not in {"none", "read"}
-                for item in (*ticket_payload.allowed_side_effects, *grant_payload.allowed_side_effects)
-            )
-            or grant_payload.allow_shell
-            or grant_payload.allow_python
+            or not composition_authority_allowed(
+                action_id=ticket_payload.action_id, risk_class=ticket_payload.risk_class,
+                allowed_side_effects=ticket_payload.allowed_side_effects,
+                allow_shell=grant_payload.allow_shell, allow_python=grant_payload.allow_python, **profile)
+            or not composition_authority_allowed(
+                action_id=grant_payload.action_id, risk_class=grant_payload.risk_class,
+                allowed_side_effects=grant_payload.allowed_side_effects,
+                allow_shell=grant_payload.allow_shell, allow_python=grant_payload.allow_python, **profile)
             or action != ticket_payload.action_id
             or action != grant_payload.action_id
             or ticket_payload.action_version != grant_payload.action_version

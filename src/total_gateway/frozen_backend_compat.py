@@ -47,6 +47,7 @@ _SAFE_RUN_STATUS_PATH = re.compile(
 )
 _INITIAL_BACKEND_RESPONSE_TIMEOUT_SECONDS = 60.0
 _BACKEND_STATUS_POLL_SECONDS = 1.0
+_COMPOSITION_HANDOFF_SCHEMA = "tiangong.composition-parent-handoff.v1"
 
 
 class FrozenBackendCompatibilityError(RuntimeError):
@@ -205,6 +206,38 @@ def _first_text(data: Mapping[str, Any]) -> str:
             if text:
                 return text
     return ""
+
+
+def _composition_handoff_projection(
+    payload: Mapping[str, Any], *, ticket: ExecutionTicket,
+    registration_id: str, http_status: int,
+) -> dict[str, Any]:
+    """Accept only the exact inert handoff for this verified parent ticket."""
+    outer = ticket.payload
+    if (
+        http_status != 200
+        or payload.get("schema") != _COMPOSITION_HANDOFF_SCHEMA
+        or payload.get("ok") is not True
+        or payload.get("stage_success") is not True
+        or payload.get("task_completed") is not False
+        or payload.get("registration_id") != registration_id
+        or payload.get("request_id") != outer.request_id
+        or payload.get("run_id") != outer.run_id
+        or type(payload.get("generation")) is not int
+        or payload.get("generation") != outer.generation
+        or payload.get("parent_ticket_id") != outer.ticket_id
+        or not isinstance(payload.get("reply_text"), str)
+        or not payload["reply_text"].strip()
+    ):
+        raise FrozenBackendCompatibilityError("compat.composition.handoff_invalid")
+    return {
+        "classification": "SUCCEEDED",
+        "reason_code": "composition.parent_handoff_acknowledged",
+        "request_id": outer.request_id,
+        "registration_id": registration_id,
+        "task_completed": False,
+        "stage": "composition_parent_handoff",
+    }
 
 
 def _backend_terminal_projection(payload: Mapping[str, Any], request_id: str) -> dict[str, Any]:
@@ -937,6 +970,18 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                     "effect_id": ticket.payload.effect_id,
                 },
             }
+            composition_registration_id = arguments.get("composition_registration_id")
+            if composition_registration_id is not None:
+                if not isinstance(composition_registration_id, str) or not composition_registration_id:
+                    raise FrozenBackendCompatibilityError(
+                        "compat.composition.registration_invalid"
+                    )
+                # This field is covered by the verified parent argument hash.
+                # The embedded adapter must still resolve the admitted plan
+                # against request/run/generation before acknowledging handoff.
+                backend_request["composition_registration_id"] = composition_registration_id
+                backend_request["conversation_context"]["composition_registration_id"] = composition_registration_id
+                backend_request["metadata"]["composition_registration_id"] = composition_registration_id
             def mark_backend_started(marked_at_ms: int) -> None:
                 nonlocal backend_started
                 if self._on_backend_start is not None:
@@ -953,8 +998,21 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                     backend_started=True,
                     before_request=mark_backend_started,
                 )
-                backend_terminal = self._backend_terminal(ticket.payload.request_id)
+                if composition_registration_id is not None:
+                    backend_terminal = _composition_handoff_projection(
+                        backend_payload, ticket=ticket,
+                        registration_id=composition_registration_id,
+                        http_status=status,
+                    )
+                elif backend_payload.get("schema") == _COMPOSITION_HANDOFF_SCHEMA:
+                    raise FrozenBackendCompatibilityError("compat.composition.handoff_unexpected")
+                else:
+                    backend_terminal = self._backend_terminal(ticket.payload.request_id)
             except FrozenBackendCompatibilityError as exc:
+                if composition_registration_id is not None:
+                    # There is deliberately no legacy model Run to poll on
+                    # this lane.  Unknown handoff never permits child dispatch.
+                    raise
                 if exc.code != "compat.http.outcome_unknown" or not exc.backend_started:
                     raise
                 status, backend_payload, backend_body_sha, backend_terminal = self._wait_backend_terminal(
@@ -962,13 +1020,21 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                     deadline_monotonic=execution_deadline,
                 )
             finished_at_ms = time.time_ns() // 1_000_000
-            terminal = self._recover(ticket.payload.request_id, life_context["cycle_id"])
-            reply = _first_text(backend_payload) if status < 400 else ""
-            outputs, output_refs = self._capture_outputs(
-                ticket,
-                backend_payload,
-                created_at_ms=finished_at_ms,
-            )
+            if composition_registration_id is not None:
+                # The real task is finalized only after child Effect/Fact
+                # verification in Gateway.  An ack cannot export artifacts or
+                # claim that the user task or Life execution has completed.
+                terminal = {"stage": "composition_parent_handoff", "task_completed": False}
+                reply = backend_payload["reply_text"].strip()
+                outputs, output_refs = [], ()
+            else:
+                terminal = self._recover(ticket.payload.request_id, life_context["cycle_id"])
+                reply = _first_text(backend_payload) if status < 400 else ""
+                outputs, output_refs = self._capture_outputs(
+                    ticket,
+                    backend_payload,
+                    created_at_ms=finished_at_ms,
+                )
             # 工作指纹（机器提取，模型无权自报）：下一轮对话的终局/断点
             # 胶囊经 context_projection 读取 process_summary/key_facts——
             # 此前桥接层从不写这两个字段，投影插槽恒空，模型每轮失忆。
@@ -1034,6 +1100,13 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 "life_terminal": terminal,
                 "compatibility_boundary": "7184-ticket-gated-frozen-7174",
             }
+            if composition_registration_id is not None:
+                result_payload["composition_parent_handoff"] = {
+                    "schema": _COMPOSITION_HANDOFF_SCHEMA,
+                    "registration_id": composition_registration_id,
+                    "stage_success": True,
+                    "task_completed": False,
+                }
             if isinstance(backend_payload, dict):
                 for _structured_key in ("simple_chain_status", "terminal_reason", "last_transition", "origin"):
                     _structured_value = backend_payload.get(_structured_key)

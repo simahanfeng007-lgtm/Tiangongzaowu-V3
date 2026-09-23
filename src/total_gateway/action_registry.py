@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contracts.composition_profile import WORKSPACE_WRITE_ACTIONS
+
 import json
 import re
 from dataclasses import dataclass, field
@@ -379,6 +381,10 @@ _SHELL_ACTIONS = frozenset(
 _PYTHON_ACTIONS = frozenset(
     {"blender.python.run", "core.code.python.run", "python.run"}
 )
+# These native readers accept existing workspace paths, not object-store IDs.
+# Resolve aliases first, retain the A0/read ceiling, and let the existing
+# workspace path and exact argument validators enforce the sealed boundary.
+_WORKSPACE_READ_ACTIONS = frozenset({"file.list", "file.read", "file.hash"})
 
 
 def _strict_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -488,6 +494,12 @@ def compile_action_registry(
         effective_risk = _risk_max(registry_risk, floor)
         if effective_risk == "A5":
             raise ActionRegistryError("A5 registry action must not be executable")
+        workspace_reader = (
+            canonical_id in _WORKSPACE_READ_ACTIONS
+            and registry_risk == "A0"
+            and effective_risk == "A0"
+            and effect == "read"
+        )
         permission = ActionPermission(
             action_id=action_id,
             action_version="omni-registry-v1",
@@ -502,7 +514,7 @@ def compile_action_registry(
             # is elevated to A5 and rejected by the sovereign policy gate.
             # The workspace remains the default base for relative paths; it is
             # no longer an authority boundary for otherwise valid A1-A4 work.
-            path_policy="object_grant_only",
+            path_policy="workspace_only" if (workspace_reader or canonical_id in WORKSPACE_WRITE_ACTIONS or canonical_id == "python.run") else "object_grant_only",
             allow_absolute_paths=True,
             allow_shell=canonical_id in _SHELL_ACTIONS,
             allow_python=canonical_id in _PYTHON_ACTIONS,

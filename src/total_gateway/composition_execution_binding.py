@@ -217,6 +217,8 @@ def derive_composition_execution_binding(
         effect_id=effect_id,
         action_id=materialized.step.action_id,
         action_version=materialized.step.action_version,
+        execution_profile_id=materialized.step.execution_profile_id,
+        execution_profile_sha256=materialized.step.execution_profile_sha256,
         materialized_arguments_sha256=materialized_arguments_sha256,
         canonical_invocation_sha256=canonical_invocation_sha256,
         target_sha256=target_sha256,

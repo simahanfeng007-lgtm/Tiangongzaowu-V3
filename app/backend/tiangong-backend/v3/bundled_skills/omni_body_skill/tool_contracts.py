@@ -96,6 +96,20 @@ PATH_TARGET_ACTIONS = frozenset(
 )
 
 ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "file.read": {
+        "target": "existing workspace file path (required)",
+        "args": {"binary": "optional boolean; default false",
+                 "max_chars": "optional integer 1-2000000; maximum text characters or binary preview bytes",
+                 "encoding": "optional utf-8 or utf8; text files must be UTF-8 without BOM"},
+    },
+    "file.list": {
+        "target": "existing workspace directory path (required)",
+        "args": {"pattern": "optional non-empty glob string; default *",
+                 "recursive": "optional boolean; default false",
+                 "include_hidden": "optional boolean; default false",
+                 "max_results": "optional integer 1-10000; default 500"},
+    },
+    "file.hash": {"target": "existing workspace file path (required)", "args": {}},
     "life.body.state.query": {
         "target": "empty; reads this Life's current state",
         "args": {
@@ -138,6 +152,12 @@ ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
         "args": {"content": "string, or base64 when binary=true", "binary": "optional boolean", "encoding": "optional string"},
         "any_of": ["args.content", "args.base64"],
+    },
+    "code.write": {
+        "target": "workspace source file path (required)",
+        "args": {"content": "UTF-8 text (required)", "encoding": "optional utf-8", "binary": "optional false",
+                 "language": "optional string", "syntax_check": "boolean; fixed composition write profile requires false"},
+        "required": ["args.content"],
     },
     "file.append": {
         "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
@@ -380,12 +400,13 @@ def _runtime_success_schema(
     *,
     properties: Mapping[str, Any],
     required: Iterable[str],
+    risk_level: str = "A0",
 ) -> dict[str, Any]:
     merged = {
         "success": {"const": True},
         "op_id": {"type": "string", "minLength": 1, "maxLength": 200},
         "action": {"type": "string", "minLength": 1, "maxLength": 200},
-        "risk_level": {"const": "A0"},
+        "risk_level": {"const": risk_level},
         "elapsed_seconds": {"type": "number", "minimum": 0},
         **copy.deepcopy(dict(properties)),
     }
@@ -475,11 +496,105 @@ _SHA256_VALUE_SCHEMA: dict[str, Any] = {
     "pattern": r"^[0-9a-f]{64}$",
 }
 
+_FILE_READ_RUNTIME_SCHEMA = _runtime_success_schema(
+    "file.read",
+    properties={
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "truncated": {"type": "boolean"},
+        "content": {"type": "string"},
+        "size_chars": {"type": "integer", "minimum": 0},
+        "evidence": {"type": "object"},
+        "mime": {"type": ["string", "null"]},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "base64_preview": {"type": "string"},
+    }, required=("path", "truncated"))
+_FILE_READ_RUNTIME_SCHEMA["oneOf"] = [
+    {"required": ["content", "size_chars", "evidence"]},
+    {"required": ["base64_preview", "size_bytes", "mime"]},
+]
+_FILE_LIST_RUNTIME_SCHEMA = _runtime_success_schema(
+    "file.list",
+    properties={
+        "root": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "count": {"type": "integer", "minimum": 0},
+        "entries": {"type": "array", "items": {
+            "type": "object",
+            "required": ["name", "path", "rel_path", "type", "size_bytes", "modified"],
+            "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "rel_path": {"type": "string"},
+                "type": {"type": "string", "pattern": "^(file|dir)$"},
+                "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+                "modified": {"type": "number"},
+            }, "additionalProperties": True,
+        }},
+    }, required=("root", "count", "entries"))
+_FILE_HASH_RUNTIME_SCHEMA = _runtime_success_schema(
+    "file.hash",
+    properties={
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "sha256": copy.deepcopy(_SHA256_VALUE_SCHEMA),
+        "size_bytes": {"type": "integer", "minimum": 0},
+    }, required=("path", "sha256", "size_bytes"))
+
+_WRITE_STATE_SCHEMA = {
+    "type": "object", "required": ["path", "exists", "is_dir", "sha256", "bytes"],
+    "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "exists": {"type": "boolean"}, "is_dir": {"type": "boolean"},
+        "sha256": {"type": ["string", "null"], "pattern": r"^[0-9a-f]{64}$"},
+        "bytes": {"type": ["integer", "null"], "minimum": 0},
+    }, "additionalProperties": False,
+}
+_WRITE_EVIDENCE_SCHEMA = {
+    "type": "object", "required": ["pre", "post", "changed", "rollback"],
+    "properties": {
+        "pre": _WRITE_STATE_SCHEMA, "post": _WRITE_STATE_SCHEMA,
+        "changed": {"type": "boolean"},
+        "rollback": {"type": "object", "required": ["available", "backup_path"],
+            "properties": {"available": {"type": "boolean"},
+                "backup_path": {"type": ["string", "null"]}}, "additionalProperties": False},
+    }, "additionalProperties": False,
+}
+_WRITE_RUNTIME_SCHEMAS = {
+    action: _runtime_success_schema(action, risk_level="A2" if action == "file.mkdir" else "A3",
+        properties={"snapshots": {"type": "array", "items": {"type": "object"}},
+                    "evidence": {"type": "object"}, "write_evidence": _WRITE_EVIDENCE_SCHEMA,
+                    **({"replacements": {"type": "integer", "minimum": 1}}
+                       if action == "code.patch_replace" else {})},
+        required=("snapshots", "evidence", "write_evidence") +
+                 (("replacements",) if action == "code.patch_replace" else ()))
+    for action in ("file.write", "code.write", "code.patch_replace", "file.mkdir")
+}
+_PYTHON_RUNTIME_SCHEMA = _runtime_success_schema("python.run", risk_level="A4",
+    properties={
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "execution": {"type": "object", "required": ["returncode", "stdout", "stderr", "ok",
+            "receipt_role", "execution_state", "commit_state", "outputs_truncated", "containment",
+            "network", "changed_files", "deleted_files", "changed_bytes"],
+            "properties": {
+                "returncode": {"const": 0}, "stdout": {"type": "string"}, "stderr": {"type": "string"},
+                "ok": {"const": True}, "receipt_role": {"const": "execution"},
+                "execution_state": {"const": "completed"}, "commit_state": {"const": "committed"},
+                "outputs_truncated": {"const": False}, "containment": {"const": "windows-appcontainer"},
+                "network": {"const": "denied"},
+                "changed_files": {"type": "array", "items": {"type": "string"}},
+                "deleted_files": {"type": "array", "maxItems": 0},
+                "changed_bytes": {"type": "integer", "minimum": 0, "maximum": 4194304},
+            }, "additionalProperties": True},
+    }, required=("command", "execution"))
+
 
 # These are success-result contracts, not execution permissions.  The catalog
 # only publishes them as EXPLICIT when the canonical manifest Action is both A0
 # and read/verify.  All other Actions receive a hashed OPAQUE descriptor.
 ACTION_RESULT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "python.run": _successful_omni_schema("python.run", _PYTHON_RUNTIME_SCHEMA),
+    **{action: _successful_omni_schema(action, schema) for action, schema in _WRITE_RUNTIME_SCHEMAS.items()},
+    "file.read": _successful_omni_schema("file.read", _FILE_READ_RUNTIME_SCHEMA),
+    "file.list": _successful_omni_schema("file.list", _FILE_LIST_RUNTIME_SCHEMA),
+    "file.hash": _successful_omni_schema("file.hash", _FILE_HASH_RUNTIME_SCHEMA),
     "life.body.state.query": _successful_omni_schema(
         "life.body.state.query",
         _runtime_success_schema(
@@ -620,6 +735,32 @@ ACTION_RESULT_SCHEMAS: dict[str, dict[str, Any]] = {
 # The later DAG materializer may accept only these declared selectors/hashes;
 # it must not invent a schema from an observed value.
 ACTION_VALUE_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
+    "python.run": {"result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result", "value_schema": _PYTHON_RUNTIME_SCHEMA},
+                   "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA}},
+    **{action: {"result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result", "value_schema": schema},
+                 "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA}}
+       for action, schema in _WRITE_RUNTIME_SCHEMAS.items()},
+    "file.read": {
+        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
+                   "value_schema": _FILE_READ_RUNTIME_SCHEMA},
+        "content": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/content",
+                    "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"}},
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+    },
+    "file.list": {
+        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
+                   "value_schema": _FILE_LIST_RUNTIME_SCHEMA},
+        "entries": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/entries",
+                    "value_schema": _FILE_LIST_RUNTIME_SCHEMA["properties"]["entries"]},
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+    },
+    "file.hash": {
+        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
+                   "value_schema": _FILE_HASH_RUNTIME_SCHEMA},
+        "sha256": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/sha256",
+                   "value_schema": _SHA256_VALUE_SCHEMA},
+        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
+    },
     "life.body.state.query": {
         "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
         "state_sha256": {
@@ -880,6 +1021,20 @@ def _validate_json_schema_exact(
     *,
     path: str = "$",
 ) -> None:
+    if "oneOf" in schema:
+        choices = schema["oneOf"]
+        if type(choices) is not list or not choices or any(
+                not isinstance(choice, Mapping) for choice in choices):
+            raise ValueError(f"schema oneOf is invalid at {path}")
+        matches = 0
+        for choice in choices:
+            try:
+                _validate_json_schema_exact(choice, value, path=path)
+            except ValueError:
+                continue
+            matches += 1
+        if matches != 1:
+            raise ValueError(f"value must match exactly one schema variant at {path}")
     expected_type = schema.get("type")
     if isinstance(expected_type, str):
         expected_types = (expected_type,)
@@ -995,6 +1150,18 @@ def validate_tool_result_exact(
     runtime_result = result_payload.get("result")
     if not isinstance(runtime_result, dict) or runtime_result.get("action") != normalized:
         raise ValueError("runtime result identity mismatch")
+    if canonical in _WRITE_RUNTIME_SCHEMAS:
+        proof = runtime_result["write_evidence"]
+        pre, post = proof["pre"], proof["post"]
+        if pre["path"] != post["path"] or not post["exists"]:
+            raise ValueError("write result has no matching terminal artifact")
+        if canonical == "file.mkdir":
+            if not post["is_dir"]:
+                raise ValueError("mkdir result is not a directory")
+        elif post["is_dir"] or not isinstance(post["sha256"], str) or type(post["bytes"]) is not int:
+            raise ValueError("write result has no content hash and size")
+        if proof["changed"] != (pre != post):
+            raise ValueError("write result changed flag is inconsistent")
 
 
 def validate_value_exact(value_schema_sha256: str, value: Any) -> None:
@@ -1103,8 +1270,10 @@ def build_action_schema_catalog(
         effect = declared_effect or ("read" if risk == "A0" else "write")
         enable_explicit_result = (
             canonical in ACTION_RESULT_SCHEMAS
-            and risk == "A0"
-            and effect in {"read", "verify"}
+            and ((risk == "A0" and effect in {"read", "verify"})
+                 or (canonical in _WRITE_RUNTIME_SCHEMAS and effect == "write"
+                     and risk == ("A2" if canonical == "file.mkdir" else "A3"))
+                 or (canonical == "python.run" and risk == "A4" and effect == "write"))
         )
         result[action_id] = action_schema_descriptor(
             canonical,
@@ -1624,6 +1793,37 @@ def validate_tool_request(
             inside, resolved = _inside_workspace(str(raw), workspace)
             if not _contract_path_allowed(inside, resolved, user_roots):
                 issues.append(_issue(f"args.{field}", "outside_workspace", f"path resolves outside workspace: {resolved}"))
+
+    if normalized in {"file.read", "file.list", "file.hash"}:
+        supported = {
+            "file.read": {"binary", "max_chars", "encoding"},
+            "file.list": {"pattern", "recursive", "include_hidden", "max_results"},
+            "file.hash": set(),
+        }[normalized]
+        for field in sorted(set(payload) - supported):
+            issues.append(_issue(f"args.{field}", "unknown_argument",
+                                 f"{normalized} does not accept args.{field}"))
+        for field in ("binary", "recursive", "include_hidden"):
+            if field in payload and type(payload[field]) is not bool:
+                issues.append(_issue(f"args.{field}", "boolean", f"{field} must be a JSON boolean"))
+        for field, maximum in (("max_chars", 2_000_000), ("max_results", 10_000)):
+            if field in payload and (type(payload[field]) is not int
+                                     or not 1 <= payload[field] <= maximum):
+                issues.append(_issue(f"args.{field}", "bounded_positive_integer",
+                                     f"{field} must be an integer from 1 to {maximum}"))
+        if "pattern" in payload and (not isinstance(payload["pattern"], str)
+                or not payload["pattern"] or len(payload["pattern"]) > 1024):
+            issues.append(_issue("args.pattern", "bounded_nonempty_string",
+                                 "pattern must be a non-empty glob string up to 1024 characters"))
+        elif "pattern" in payload:
+            pattern = payload["pattern"]
+            if (pattern.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", pattern)
+                    or ".." in re.split(r"[\\/]", pattern) or "\x00" in pattern):
+                issues.append(_issue("args.pattern", "workspace_relative_glob",
+                                     "pattern must be relative and cannot traverse a parent directory"))
+        if "encoding" in payload and (not isinstance(payload["encoding"], str)
+                or payload["encoding"].strip().lower().replace("_", "-") not in {"utf-8", "utf8"}):
+            issues.append(_issue("args.encoding", "canonical_utf8", "encoding must be UTF-8"))
 
     if normalized in {"file.write", "code.write"} and "content" not in payload and "base64" not in payload:
         issues.append(_issue("args", "missing_content", f"{normalized} requires args.content or args.base64"))

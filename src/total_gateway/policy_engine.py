@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_permission_allowed, composition_profile_fields
+
 from typing import Any, Iterable, Mapping
 
 from contracts import (
@@ -206,15 +208,9 @@ class PolicyEngine:
             outcome = "REJECT"
             reasons.add("policy.composition_binding_missing")
         if expected_composition_binding is not None and (
-            permission.registry_risk != "A0"
-            or permission.effective_risk != "A0"
-            or computed_risk != "A0"
-            or permission.effect not in {"read", "verify"}
-            or not set(permission.allowed_side_effects).issubset({"none", "read"})
-            or not set(intent.requested_side_effects).issubset({"none", "read"})
-            or permission.allow_shell
-            or permission.allow_python
-            or permission.requires_confirmation
+            not composition_permission_allowed(permission, **composition_profile_fields(expected_composition_binding))
+            or computed_risk != permission.effective_risk
+            or not set(intent.requested_side_effects).issubset(permission.allowed_side_effects)
             or confirmation is not None
         ):
             outcome = "REJECT"

@@ -170,6 +170,7 @@ def _input_digest(workspace_root: Path, input_id: str, relative_path: str) -> Re
 
 def _tree_files(workspace_root: Path, roots: Iterable[str]) -> tuple[Path, ...]:
     files: dict[str, Path] = {}
+    declared_paths = []
     for relative_text in roots:
         relative = Path(relative_text)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
@@ -177,6 +178,18 @@ def _tree_files(workspace_root: Path, roots: Iterable[str]) -> tuple[Path, ...]:
         path = workspace_root / relative
         if not path.exists() or path.is_symlink():
             raise ReleaseManifestError(f"release tree root is missing or unsafe: {relative_text}")
+        if os.name == "nt":
+            _verify_windows_release_path(workspace_root, path)
+        elif workspace_root not in path.resolve(strict=True).parents and path.resolve(strict=True) != workspace_root:
+            raise ReleaseManifestError("release tree root escaped the workspace")
+        declared_paths.append(path)
+    traversal_roots = []
+    for path in sorted(declared_paths, key=lambda item: (len(item.parts), str(item))):
+        if not any(parent == path or parent in path.parents for parent in traversal_roots):
+            traversal_roots.append(path)
+    # Each declared root was checked above. Enumerate overlapping trees once,
+    # retaining per-file path checks and fresh byte hashing in every observation.
+    for path in traversal_roots:
         candidates = (path,) if path.is_file() else tuple(path.rglob("*"))
         for candidate in candidates:
             if candidate.is_symlink():
@@ -403,7 +416,6 @@ def _generate_release_manifest(root: Path) -> ReleaseManifest:
     except (KeyError, TypeError, ValueError) as exc:
         raise ReleaseManifestError("source snapshot timestamp is invalid") from exc
 
-    schema_sha256 = contract_schema_bundle_sha256()
     action_sha256 = _sha256_file(action_path)
     capability_sha256 = _sha256_file(capability_path)
     skill_index_sha256 = _sha256_file(skill_index_path)
@@ -419,6 +431,7 @@ def _generate_release_manifest(root: Path) -> ReleaseManifest:
     contract_documents = generate_contract_artifact_documents()
     contract_manifest_bytes = contract_documents["contract-artifacts.manifest.json"]
     contract_manifest = json.loads(contract_manifest_bytes)
+    schema_sha256 = str(contract_manifest["schema_bundle_sha256"])
     contract_manifest_sha256 = str(contract_manifest.get("manifest_sha256") or "")
 
     components = tuple(

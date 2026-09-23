@@ -1,4 +1,5 @@
 import { spokenBackendText } from "../core/formatters.mjs";
+import { cleanChatDisplayText } from "../core/text-presentation.mjs";
 import { classifyRunInput, decodeConfirmCardContent, CONFIRM_DECISION_LABELS } from "../core/actions.mjs";
 import { renderMediaAttachment, renderMessageContent } from "../core/message-renderer.mjs";
 import { terminalStatusLabel } from "../core/formatters.mjs";
@@ -1005,14 +1006,7 @@ export const conversationPanelPlugin = {
         : cleanChatText(item.content || ""));
     }
 
-    function cleanChatText(text) {
-      return String(text || "")
-        .replace(/<\s*system-reminder\b[^>]*>[\s\S]*?<\s*\/\s*system-reminder\s*>/gi, "")
-        .replace(/<\s*\/?\s*system-reminder\b[^>]*>/gi, "")
-        .replace(/[ \t]+\n/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-    }
+    const cleanChatText = cleanChatDisplayText;
 
     // ── 确认卡片（视觉对齐学习卡：标题 + 摘要行 + 操作按钮行）────────────
     function confirmRiskText(risk) {

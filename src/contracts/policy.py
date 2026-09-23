@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .composition_profile import composition_authority_allowed, composition_profile_fields
+
 from typing import Literal, Self
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -534,6 +536,11 @@ class OmniCapabilityGrantPayload(ContractModel):
         if binding is not None:
             if not binding.has_valid_sha256():
                 raise ValueError("capability composition binding digest is invalid")
+            if binding.execution_profile_id is not None and not composition_authority_allowed(action_id=self.action_id,
+                    risk_class=self.risk_class, allowed_side_effects=self.allowed_side_effects,
+                    allow_shell=self.allow_shell, allow_python=self.allow_python,
+                    **composition_profile_fields(binding)):
+                raise ValueError("capability exceeds fixed composition profile")
             if (
                 binding.request_id != self.request_id
                 or binding.run_id != self.run_id

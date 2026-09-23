@@ -749,7 +749,8 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
         self.assertIn("totalGatewayReadyCheck(3000)", readiness_wait)
         self.assertIn("CREDENTIAL_RESTART_TIMEOUT_MS", readiness_wait)
         self.assertIn("waitForTotalGatewayReadiness()", credential_restart)
-        self.assertIn("ready: () => totalGatewayReadyCheck(3000)", main)
+        self.assertIn("ready: totalGatewayServiceReadyCheck", main)
+        self.assertIn("async function totalGatewayServiceReadyCheck()", main)
 
         secure_start = main.index("async function secureModelSettingsUpdate")
         secure_end = main.index("function applyProviderApiKey", secure_start)

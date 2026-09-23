@@ -116,7 +116,10 @@ class DesktopGatewayApiTests(unittest.TestCase):
                 )
                 router = object.__new__(DesktopApiRouter)
                 router._runtime = SimpleNamespace(
-                    store=SimpleNamespace(list_effects_for_request=lambda *_args, **_kwargs: [effect])
+                    store=SimpleNamespace(
+                        list_effects_for_request=lambda *_args, **_kwargs: [effect],
+                        list_system_statuses=lambda *_args, **_kwargs: (),
+                    )
                 )
                 detail = router._desktop_error_detail("req_" + "a" * 64, snapshots)
                 self.assertEqual(detail["code"], code)

@@ -9,6 +9,8 @@ Runtime, runs a verifier, records PASS, or changes Completion.
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_profile_valid, composition_permission_allowed, composition_profile_risk_ceiling
+
 import re
 from typing import Literal, Self
 
@@ -200,6 +202,8 @@ class ShadowActivationDifferentialTraceV1(ContractModel):
     verification_bindings_complete: Literal[True] = True
     limited_production_eligible: bool
     limited_rejection_codes: tuple[OpaqueId, ...] = ()
+    execution_profile_id: OpaqueId | None = Field(default=None, exclude_if=lambda value: value is None)
+    execution_profile_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
     proposed_only: Literal[True] = True
     persisted: Literal[False] = False
     authorizes: Literal[False] = False
@@ -217,6 +221,8 @@ class ShadowActivationDifferentialTraceV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_differential(self) -> Self:
+        if not composition_profile_valid(self.execution_profile_id, self.execution_profile_sha256):
+            raise ValueError("shadow composition profile is invalid")
         planned = set(self.planned_action_ids)
         proposed = set(self.proposed_allowed_action_ids)
         legacy = set(self.legacy_allowed_action_ids)
@@ -448,6 +454,7 @@ def _validate_plan_and_registry(
 def _validate_validation(
     plan: CapabilityCompositionPlanV1,
     validation: CompositionValidationResultV1,
+    *, execution_profile_id=None, execution_profile_sha256=None,
 ) -> AcceptedValidationMode:
     if not validation_has_valid_sha256(validation):
         raise CompositionShadowActivationError(
@@ -461,6 +468,12 @@ def _validate_validation(
         raise CompositionShadowActivationError(
             "shadow.validation.plan_binding_mismatch"
         )
+    from .composition_profile_admission import require_profile_validation_binding
+    try:
+        require_profile_validation_binding(plan, validation,
+            execution_profile_id=execution_profile_id, execution_profile_sha256=execution_profile_sha256)
+    except ValueError as exc:
+        raise CompositionShadowActivationError("shadow.validation.profile_binding_invalid", str(exc)) from exc
     if validation.result == "PROVED_VALID":
         if validation.mandatory_verification:
             raise CompositionShadowActivationError(
@@ -570,12 +583,24 @@ def _limited_eligibility(
     plan: CapabilityCompositionPlanV1,
     action_registry: ActionRegistrySnapshot,
     verification_plan: VerificationPlan,
+    execution_profile_id=None, execution_profile_sha256=None,
 ) -> tuple[bool, tuple[str, ...]]:
     permission_by_action = {
         permission.action_id: permission
         for permission in action_registry.permissions
     }
     reasons: set[str] = set()
+    if execution_profile_id is not None:
+        if (not composition_profile_valid(execution_profile_id, execution_profile_sha256)
+                or plan.composition_risk > composition_profile_risk_ceiling(execution_profile_id, execution_profile_sha256)
+                or any(not composition_permission_allowed(permission_by_action[action],
+                    profile_id=execution_profile_id, profile_sha256=execution_profile_sha256)
+                    for action in plan.permission_requirements)):
+            reasons.add("limited.fixed_profile_exceeded")
+        if not verification_plan.entries or any(not item.required or not item.has_valid_identity()
+                                                for item in verification_plan.entries):
+            reasons.add("limited.verification_incomplete")
+        return not reasons, tuple(sorted(reasons))
     if plan.composition_risk not in {"A0", "A1"}:
         reasons.add("limited.composition_risk_not_a0_a1")
     for action_id in plan.permission_requirements:
@@ -610,9 +635,12 @@ def propose_shadow_composition_activation(
     issued_at_ms: int,
     expires_at_ms: int,
     legacy_allowed_action_ids: tuple[str, ...] = (),
+    execution_profile_id=None, execution_profile_sha256=None,
 ) -> ShadowCompositionActivationProposalV1:
     """Create a fully checked proposal without persistence or authority."""
 
+    if not composition_profile_valid(execution_profile_id, execution_profile_sha256):
+        raise CompositionShadowActivationError("shadow.execution_profile_invalid")
     _require_sha256(current_world_state_sha256, "current WorldState")
     _require_sha256(expected_principal_scope_hash, "principal scope")
     if plan.world_state_sha256 != current_world_state_sha256:
@@ -623,11 +651,21 @@ def propose_shadow_composition_activation(
         raise CompositionShadowActivationError(
             "shadow.principal_scope.mismatch"
         )
-    if not 0 <= issued_at_ms < expires_at_ms <= issued_at_ms + 60_000:
+    from .composition_admission_lifetime import composition_admission_lifetime_ms
+    try:
+        lifetime_ms = composition_admission_lifetime_ms(
+            (step.action_id for step in plan.steps),
+            execution_profile_id=execution_profile_id,
+            execution_profile_sha256=execution_profile_sha256)
+    except ValueError as exc:
+        raise CompositionShadowActivationError("shadow.activation.lifetime_invalid") from exc
+    if (type(issued_at_ms) is not int or type(expires_at_ms) is not int
+            or not 0 <= issued_at_ms < expires_at_ms <= issued_at_ms + lifetime_ms):
         raise CompositionShadowActivationError(
             "shadow.activation.lifetime_invalid"
         )
-    validation_mode = _validate_validation(plan, validation)
+    validation_mode = _validate_validation(plan, validation,
+        execution_profile_id=execution_profile_id, execution_profile_sha256=execution_profile_sha256)
     if issued_at_ms < max(
         plan.created_at_ms,
         validation.validated_at_ms,
@@ -652,6 +690,8 @@ def propose_shadow_composition_activation(
         plan=plan,
         action_registry=action_registry,
         verification_plan=verification_plan,
+        execution_profile_id=execution_profile_id,
+        execution_profile_sha256=execution_profile_sha256,
     )
 
     activation_identity = canonical_sha256(
@@ -715,6 +755,8 @@ def propose_shadow_composition_activation(
         removed_vs_legacy=tuple(sorted(legacy - proposed)),
         limited_production_eligible=limited_eligible,
         limited_rejection_codes=limited_reasons,
+        execution_profile_id=execution_profile_id,
+        execution_profile_sha256=execution_profile_sha256,
         trace_sha256="0" * 64,
     ).with_computed_sha256()
     proposal = ShadowCompositionActivationProposalV1(

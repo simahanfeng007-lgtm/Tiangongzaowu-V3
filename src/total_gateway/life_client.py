@@ -255,11 +255,22 @@ class LifeProfileBindings:
 
 
 @dataclass(frozen=True)
+class LifePlanningIdentity:
+    """A read-only identity observation; it grants no execution authority."""
+
+    identity_ref: str
+    identity_revision: int
+    writer_epoch: int
+    revision_vector_sha256: str
+
+
+@dataclass(frozen=True)
 class PinnedLifeSnapshot:
     snapshot: LifeSnapshot
     projection_anchor_sha256: str
     upstream_context_sha256: str
     object_reference_sha256: str
+    writer_epoch: int | None = None
 
     @property
     def context_authorization_id(self) -> str | None:
@@ -417,6 +428,33 @@ class LifeClient:
         self._transport = transport
         self._object_store = object_store
         self._max_context_bytes = max_context_bytes
+
+    def acquire_planning_identity(self) -> LifePlanningIdentity:
+        """Read the source-owned revision vector without issuing an authorization."""
+        state = _require_response(self._transport.get_json("/api/v1/v3/state"))
+        authority = _object(state.get("projection_authority"), "planning_authority")
+        try:
+            revisions = LifeRevisionVector.model_validate_json(
+                canonical_json_bytes(authority.get("revisions")), strict=True,
+            )
+        except Exception as exc:
+            raise LifeClientError("life.contract.planning_identity_invalid") from exc
+        identity = _object(state.get("identity"), "planning_identity")
+        if (
+            not revisions.has_valid_vector_sha256()
+            or authority.get("vector_sha256") != revisions.vector_sha256
+            or identity.get("life_id") != revisions.life_id
+            or identity.get("writer_epoch") != revisions.writer_epoch
+            or (identity.get("identity_revision") is not None
+                and identity["identity_revision"] != revisions.identity_revision)
+            or state.get("life_ready") is False
+            or (isinstance(state.get("life"), dict) and state["life"].get("ready") is False)
+        ):
+            raise LifeClientError("life.contract.planning_identity_binding_mismatch")
+        return LifePlanningIdentity(
+            identity_ref=revisions.life_id, identity_revision=revisions.identity_revision,
+            writer_epoch=revisions.writer_epoch, revision_vector_sha256=revisions.vector_sha256,
+        )
 
     def acquire_snapshot(
         self,
@@ -722,6 +760,7 @@ class LifeClient:
             projection_anchor_sha256=_stable_sha256(projection_authority),
             upstream_context_sha256=context_pack.pack_sha256,
             object_reference_sha256=stored.reference_sha256,
+            writer_epoch=revisions.writer_epoch,
         )
 
 
@@ -729,6 +768,7 @@ __all__ = [
     "LIFE_API_CONTRACT",
     "LifeClient",
     "LifeClientError",
+    "LifePlanningIdentity",
     "LifeJsonTransport",
     "LifeProfileBindings",
     "InProcessLifeJsonTransport",

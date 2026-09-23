@@ -326,6 +326,25 @@ function appendText(parent, value) {
   if (value) parent.appendChild(document.createTextNode(value));
 }
 
+// CommonMark underscore delimiters cannot emphasize the middle of a word.
+// Evaluate the whole run, so rejecting foo__bar cannot reinterpret its second _.
+function underscoreBoundary(source, offset) {
+  let end = offset;
+  while (source[end] === "_") end += 1;
+  let before = source[offset - 1] || "";
+  if (/[\uDC00-\uDFFF]/.test(before)) before = source.slice(offset - 2, offset);
+  const after = end < source.length ? String.fromCodePoint(source.codePointAt(end)) : "";
+  const whitespace = (char) => !char || /\s/u.test(char);
+  const punctuation = (char) => /[\p{P}\p{S}]/u.test(char);
+  const left = !whitespace(after) && (!punctuation(after) || whitespace(before) || punctuation(before));
+  const right = !whitespace(before) && (!punctuation(before) || whitespace(after) || punctuation(after));
+  return {
+    end,
+    canOpen: before !== "_" && left && (!right || punctuation(before)),
+    canClose: before !== "_" && right && (!left || punctuation(after)),
+  };
+}
+
 function appendInline(parent, text, context = {}) {
   const source = String(text || "");
   let index = 0;
@@ -398,6 +417,15 @@ function appendInline(parent, text, context = {}) {
       }
     }
 
+    if (source[index] === "_") {
+      const boundary = underscoreBoundary(source, index);
+      if (!boundary.canOpen) {
+        appendText(parent, source.slice(index, boundary.end));
+        index = boundary.end;
+        continue;
+      }
+    }
+
     const paired = [
       ["**", "strong"],
       ["__", "strong"],
@@ -407,7 +435,12 @@ function appendInline(parent, text, context = {}) {
     ].find(([token]) => source.startsWith(token, index));
     if (paired) {
       const [token, tag] = paired;
-      const end = source.indexOf(token, index + token.length);
+      let end = source.indexOf(token, index + token.length);
+      if (token[0] === "_") {
+        while (end >= 0 && !underscoreBoundary(source, end).canClose) {
+          end = source.indexOf(token, underscoreBoundary(source, end).end);
+        }
+      }
       if (end > index + token.length) {
         const node = document.createElement(tag);
         appendInline(node, source.slice(index + token.length, end), context);

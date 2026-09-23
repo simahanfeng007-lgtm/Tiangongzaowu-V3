@@ -2788,6 +2788,16 @@ class Zongdiaodu:
                     "本地操作通过 omni_body 执行；组合规划由系统上下文驱动。")
             else:
                 system_tishi = system_tishi.rstrip() + "\n\n" + _omni_body_skill_prompt(xiaoxi)
+                system_tishi += (
+                    "\n\n[程序执行与验收]\n"
+                    "Python 任务优先使用已授权的 python.run 或受控解释器直接运行脚本，"
+                    "已有 .py 文件直接调用 python.run(target=该文件,args={argv:[实际参数],timeout:时限})，测试脚本同理。"
+                    "不要给已保存的脚本再套内联 subprocess；不要把宿主绝对工作区写成子进程 cwd。"
+                    "受控沙箱内使用当前目录或基于 __file__ 的相对目录。"
+                    "先核对动作参数契约、工作目录与任务范围。运行测试和运行程序是分别需要真实回执的步骤。"
+                    "保留实际子进程退出码及测试框架摘要；不得在测试命令后追加 echo 等命令掩盖失败。"
+                    "0 tests 不能作为测试通过；已有正确产物可以保持不变，但仍需核实产物存在、内容与本轮执行结果。"
+                )
         dynamic_context = _simple_chain_with_current_image_observations(dynamic_context, xiaoxi)
         if dynamic_context:
             # Provider caches match an exact tools -> system -> message prefix.
@@ -3768,6 +3778,7 @@ class Zongdiaodu:
                             self, run_state, turn_loop, tool_name=tn, tool_args=ta,
                             user_message=xiaoxi, call_id=call_id, global_step=call_index,
                             attempted_action=_simple_chain_tool_action(tn, ta), update_frontier=False,
+                            cancel_check=getattr(run_control, "should_stop", None),
                         )
                     except Exception as exc:
                         raw = {"ok": False, "error": str(exc)}
@@ -4171,6 +4182,7 @@ class Zongdiaodu:
                     correction_stalled = _simple_chain_completion_correction_stalled(
                         correction_state,
                         current_blockers,
+                        run_state,
                     )
                     correction_state["last_blockers"] = current_blockers
                     if attempts_used >= _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS or correction_stalled:
@@ -4650,6 +4662,7 @@ class Zongdiaodu:
                         self, run_state, turn_loop, tool_name=tool_name, tool_args=tool_args,
                         user_message=xiaoxi, call_id=tool_call_id, global_step=gongju_cishu,
                         attempted_action=attempted_action, update_frontier=True,
+                        cancel_check=getattr(run_control, "should_stop", None),
                     ),
                     tool_name=tool_name,
                     tool_args=tool_args,
@@ -5291,6 +5304,7 @@ class Zongdiaodu:
         user_message: str = "",
         *,
         call_id: str = "",
+        cancel_check: Any = None,
     ) -> dict:
         """神经末梢工具执行"""
         yingshe = GUGE.duiying(tool_name)
@@ -5334,7 +5348,10 @@ class Zongdiaodu:
             tool_args = policy_decision["rewritten_args"]
 
         try:
-            result = JIROU.zhixing(yingshe, tool_args, call_id=call_id)
+            dispatch_kwargs = {"call_id": call_id}
+            if callable(cancel_check):
+                dispatch_kwargs["cancel_check"] = cancel_check
+            result = JIROU.zhixing(yingshe, tool_args, **dispatch_kwargs)
         except Exception as exc:
             return _gongju_yichang(tool_name, exc)
         if (
@@ -5347,6 +5364,7 @@ class Zongdiaodu:
                     yingshe,
                     tool_args,
                     call_id=(f"{call_id}:retry:1" if call_id else ""),
+                    **({"cancel_check": cancel_check} if callable(cancel_check) else {}),
                 )
             except Exception as exc:
                 result["retry_count"] = 1
@@ -5846,4 +5864,3 @@ class Zongdiaodu:
         except Exception:
             pass
         return None
-
