@@ -1534,6 +1534,13 @@ class GatewayRuntime:
                 backend_compat_client = CompatibilityJsonClient(runtime.backend_service)
                 life_compat_client = CompatibilityJsonClient(runtime.life_service)
             if config.execution_assembly_configured:
+                composition_planner = None
+                if runtime.backend_service is not None and config.release_source_root is not None:
+                    from .desktop_composition import InstalledDesktopCompositionPlanner
+                    composition_planner = InstalledDesktopCompositionPlanner(
+                        config=config, store=store, backend=runtime.backend_service,
+                        worker_provider=lambda: runtime.orchestration,
+                    )
                 runtime.orchestration = GatewayOrchestrationWorker.from_runtime_config(
                     config=config,
                     activator=runtime.active_requests,
@@ -1547,6 +1554,7 @@ class GatewayRuntime:
                     communication_control=communication_control,
                     backend_compat_client=backend_compat_client,
                     life_compat_client=life_compat_client,
+                    composition_planner=composition_planner,
                     life_execution_commit=(
                         None
                         if runtime.life_service is None
@@ -1575,6 +1583,8 @@ class GatewayRuntime:
                 ):
                     raise RuntimeError("source_launch.assembled_release_changed")
                 if runtime.backend_service is not None:
+                    runtime.backend_service.set_composition_handoff_validator(
+                        runtime.orchestration.validate_composition_parent_handoff)
                     runtime.backend_service.set_world_inquiry_dispatcher(
                         runtime.orchestration.submit_world_inquiry
                     )

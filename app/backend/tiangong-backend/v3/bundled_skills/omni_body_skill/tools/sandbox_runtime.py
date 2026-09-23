@@ -21,6 +21,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import uuid
 from typing import Any, Iterable, Mapping, Sequence
 
 from .portable_text import decode_portable_bytes, subprocess_environment
@@ -72,6 +73,7 @@ _SKIP_NAMES = {
     ".omni_trash",
     ".omni_workspace.lock",
     ".tiangong_sandboxes",
+    ".tiangong_emergency_audit",
 }
 _STATUS_DLL_INIT_FAILED = 0xC0000142
 WINDOWS_UTF8_SHELL_MARKER = "__tiangong_windows_utf8_cmd_v1__"
@@ -158,7 +160,12 @@ def _prepare_windows_utf8_shell_command(
         f"$command=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{command_payload}'));"
         + (
             f"$cwd=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{cwd_payload}'));"
-            "$command='cd /d \"'+$cwd+'\" && '+$command;"
+            "try{"
+            "Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop;"
+            "[Environment]::CurrentDirectory=$cwd;"
+            "$null=New-PSDrive -Name TiangongWorkspace -PSProvider FileSystem -Root $cwd -Scope Global -ErrorAction Stop;"
+            "Set-Location -LiteralPath 'TiangongWorkspace:\\' -ErrorAction Stop;"
+            "}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 125};"
             if cwd_payload
             else ""
         )
@@ -237,7 +244,7 @@ def _is_link_or_reparse(path: Path) -> bool:
 def _tree_size(root: Path, limit: int) -> int:
     total = 0
     for path in root.rglob("*"):
-        if any(part in _SKIP_NAMES for part in path.relative_to(root).parts):
+        if any(part.casefold() in _SKIP_NAMES for part in path.relative_to(root).parts):
             continue
         if _is_link_or_reparse(path):
             raise SandboxError(f"sandbox_link_forbidden:{path.relative_to(root)}")
@@ -253,7 +260,7 @@ def _copy_workspace(source: Path, destination: Path, limit: int) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     for path in source.rglob("*"):
         rel = path.relative_to(source)
-        if any(part in _SKIP_NAMES for part in rel.parts):
+        if any(part.casefold() in _SKIP_NAMES for part in rel.parts):
             continue
         if _is_link_or_reparse(path):
             raise SandboxError(f"sandbox_link_forbidden:{rel}")
@@ -277,7 +284,7 @@ def _snapshot(root: Path) -> dict[str, tuple[int, str]]:
     rows: dict[str, tuple[int, str]] = {}
     for path in root.rglob("*"):
         rel_path = path.relative_to(root)
-        if any(part in _SKIP_NAMES for part in rel_path.parts):
+        if any(part.casefold() in _SKIP_NAMES for part in rel_path.parts):
             continue
         if path.is_file() and not _is_link_or_reparse(path):
             rel = rel_path.as_posix()
@@ -304,13 +311,30 @@ def _merge_changes(
     *,
     max_changed_bytes: int,
     trash_root: Path,
+    allow_deletions: bool = True,
 ) -> dict[str, Any]:
+    _tree_size(sandbox_workspace, max_changed_bytes + sum(v[0] for v in before.values()))
     after = _snapshot(sandbox_workspace)
     changed = sorted(key for key, value in after.items() if before.get(key) != value)
     deleted = sorted(set(before).difference(after))
+    if deleted and not allow_deletions:
+        raise SandboxError("sandbox_deletion_forbidden")
     changed_bytes = sum(after[key][0] for key in changed)
     if changed_bytes > max_changed_bytes:
         raise SandboxError("sandbox_changed_output_size_limit")
+    # Never overwrite a host edit made while the private process was running.
+    # Validate all destinations before committing any of the private outputs.
+    for rel in (*changed, *deleted):
+        destination = real_workspace / Path(rel)
+        for parent in (destination, *destination.parents):
+            if _is_link_or_reparse(parent):
+                raise SandboxError(f"sandbox_destination_link_forbidden:{rel}")
+            if parent == real_workspace:
+                break
+        observed = ((destination.stat().st_size, _file_digest(destination))
+                    if destination.is_file() else None)
+        if observed != before.get(rel) or (destination.exists() and not destination.is_file()):
+            raise SandboxError(f"sandbox_destination_changed:{rel}")
     for rel in changed:
         source = sandbox_workspace / Path(rel)
         destination = real_workspace / Path(rel)
@@ -460,28 +484,48 @@ def _posix_preexec(limits: SandboxLimits):
 
 def _run_portable(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits,
+    *, cancel_check=None,
 ) -> tuple[int, bytes, bytes, str]:
-    process = subprocess.Popen(
-        command if isinstance(command, str) else list(command), cwd=str(cwd), env=dict(env), stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
-        start_new_session=False,
-        preexec_fn=_posix_preexec(limits) if os.name != "nt" else None,
-        creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW) if os.name == "nt" else 0,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=limits.timeout_seconds)
-    except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True)
-        else:
-            import signal
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except OSError:
+    if cancel_check is not None and cancel_check():
+        raise SandboxError("sandbox_cancelled")
+    # File-backed capture avoids communicate() allocating unbounded RAM.
+    with tempfile.TemporaryFile(dir=env.get("TEMP")) as out, tempfile.TemporaryFile(dir=env.get("TEMP")) as err:
+        process = subprocess.Popen(
+            command if isinstance(command, str) else list(command), cwd=str(cwd), env=dict(env), stdin=subprocess.DEVNULL,
+            stdout=out, stderr=err, shell=False,
+            preexec_fn=_posix_preexec(limits) if os.name != "nt" else None,
+            creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW) if os.name == "nt" else 0,
+        )
+        deadline = time.monotonic() + max(1, limits.timeout_seconds)
+        try:
+            while process.poll() is None:
+                if cancel_check is not None and cancel_check():
+                    raise SandboxError("sandbox_cancelled")
+                if time.monotonic() >= deadline:
+                    raise SandboxError("sandbox_timeout")
+                if os.fstat(out.fileno()).st_size + os.fstat(err.fileno()).st_size > limits.max_output_bytes:
+                    raise SandboxError("sandbox_process_output_limit")
+                time.sleep(0.025)
+        finally:
+            if os.name == "nt":
+                if process.poll() is None:
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True,
+                                   creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+            else:
+                import signal
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            if process.poll() is None:
                 process.kill()
-        stdout, stderr = process.communicate()
-        raise SandboxError("sandbox_timeout")
-    return process.returncode, stdout, stderr, "portable-resource-sandbox"
+            process.wait(timeout=10)
+        out.seek(0)
+        err.seek(0)
+        stdout, stderr = out.read(limits.max_output_bytes + 1), err.read(limits.max_output_bytes + 1)
+        if len(stdout) + len(stderr) > limits.max_output_bytes:
+            raise SandboxError("sandbox_process_output_limit")
+        return process.returncode, stdout, stderr, "portable-resource-sandbox"
 
 
 # Windows AppContainer launcher is isolated here so importing on other platforms
@@ -489,21 +533,25 @@ def _run_portable(
 def _run_windows_appcontainer(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits, sandbox_root: Path,
     *, require_os_containment: bool = False,
+    moniker: str = "TiangongV3.ToolSandbox", cancel_check=None,
 ) -> tuple[int, bytes, bytes, str]:
     if os.name != "nt":
         if require_os_containment:
             raise SandboxError("sandbox_os_containment_unavailable")
-        return _run_portable(command, cwd, env, limits)
+        return _run_portable(command, cwd, env, limits, cancel_check=cancel_check)
     compat = not require_os_containment and os.environ.get("TIANGONG_SANDBOX_COMPAT", "0").strip().lower() in {"1", "true", "yes", "on"}
     try:
         from .windows_appcontainer import run_appcontainer
-        result = run_appcontainer(command, cwd=cwd, env=env, limits=limits, sandbox_root=sandbox_root)
+        result = run_appcontainer(command, cwd=cwd, env=env, limits=limits, sandbox_root=sandbox_root,
+                                  moniker=moniker, cancel_check=cancel_check)
     except Exception as exc:
         # Fail closed by default. Compatibility mode is explicit and still
         # retains workspace-copy, secret-free environment and process-tree kill.
+        if getattr(exc, "execution_started", False):
+            raise SandboxError(str(exc)) from exc
         if not compat:
             raise SandboxError(f"windows_appcontainer_unavailable:{type(exc).__name__}:{exc}") from exc
-        code, stdout, stderr, _ = _run_portable(command, cwd, env, limits)
+        code, stdout, stderr, _ = _run_portable(command, cwd, env, limits, cancel_check=cancel_check)
         return code, stdout, stderr, "compat-workspace-job-sandbox"
     if result[0] == _STATUS_DLL_INIT_FAILED:
         # The AppContainer token was created, but Windows terminated the child
@@ -511,7 +559,7 @@ def _run_windows_appcontainer(
         # unavailable containment backend, not as a command failure.
         if not compat:
             raise SandboxError("windows_appcontainer_unavailable:STATUS_DLL_INIT_FAILED")
-        code, stdout, stderr, _ = _run_portable(command, cwd, env, limits)
+        code, stdout, stderr, _ = _run_portable(command, cwd, env, limits, cancel_check=cancel_check)
         return code, stdout, stderr, "compat-workspace-job-sandbox"
     return result
 
@@ -533,14 +581,21 @@ class SandboxRunner:
         timeout_seconds: int | None = None,
         op_id: str = "",
         require_os_containment: bool = False,
+        cancel_check=None,
+        allow_deletions: bool = True,
+        expected_workspace_files: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         # Source Candidate builds must never execute through a portable or
         # explicit compatibility fallback. Check BEFORE preparation/launch,
         # not after untrusted code has already run without OS containment.
         if type(require_os_containment) is not bool:
             raise SandboxError("sandbox_containment_requirement_invalid")
+        if type(allow_deletions) is not bool:
+            raise SandboxError("sandbox_commit_policy_invalid")
         if require_os_containment and os.name != "nt":
             raise SandboxError("sandbox_os_containment_unavailable")
+        if cancel_check is not None and (not callable(cancel_check) or cancel_check()):
+            raise SandboxError("sandbox_cancelled")
         if not command:
             raise SandboxError("sandbox_command_empty")
         # Retaining an input alias must not let a changed symlink/junction
@@ -556,12 +611,15 @@ class SandboxRunner:
         run_root = self.state_root / (run_id or f"run_{time.time_ns()}")
         sandbox_workspace = run_root / "workspace"
         temp_dir = run_root / "temp"
+        moniker = "TG3.Run." + uuid.uuid4().hex[:20]
+        cleanup_profile = None
         if os.name == "nt":
             try:
-                from .windows_appcontainer import appcontainer_storage_root
+                from .windows_appcontainer import appcontainer_storage_root, delete_appcontainer_profile
 
-                container_storage = appcontainer_storage_root()
-                container_runs = container_storage / "TiangongToolSandboxRuns"
+                container_storage = appcontainer_storage_root(moniker)
+                cleanup_profile = lambda: delete_appcontainer_profile(moniker)
+                container_runs = container_storage / "runs"
                 container_runs.mkdir(parents=True, exist_ok=True)
                 run_root = container_runs / (run_id or f"run_{time.time_ns()}")
                 # Windows rewrites a supplied LOCALAPPDATA base to
@@ -570,7 +628,7 @@ class SandboxRunner:
                 # process. Put the brokered workspace inside that effective
                 # TEMP. A sibling of it may carry the same DACL yet remain
                 # unreachable through the AppContainer namespace.
-                temp_dir = run_root / "environment"
+                temp_dir = run_root / "e"
                 effective_temp = (
                     temp_dir
                     / "Packages"
@@ -592,9 +650,13 @@ class SandboxRunner:
                     ) from exc
         if run_root.exists():
             shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
-        if require_os_containment:
+        shell_executable = (str(command[0]) if not isinstance(command, str) and command else "")
+        native_shell = shell_executable in {WINDOWS_UTF8_SHELL_MARKER, WINDOWS_POWERSHELL_SHELL_MARKER} or Path(shell_executable).name.casefold() in {"cmd.exe", "powershell.exe", "pwsh.exe"}
+        if require_os_containment and not native_shell:
             # Keep every path handed to the strict source-build interpreter
             # in the extended namespace too, including __file__/sys.path.
+            # CMD rejects that namespace as an UNC working directory. Its
+            # short, native private path has identical AppContainer authority.
             sandbox_workspace = _windows_long_path(sandbox_workspace)
         # Preparation failures (workspace copy, snapshot, shell rewrite) must
         # not leak run_root: the main try/finally below only covers execution.
@@ -602,6 +664,9 @@ class SandboxRunner:
             temp_dir.mkdir(parents=True, exist_ok=True)
             _copy_workspace(self.workspace, sandbox_workspace, self.limits.max_workspace_bytes)
             before = _snapshot(sandbox_workspace)
+            for relative, digest in (expected_workspace_files or {}).items():
+                if relative not in before or before[relative][1] != digest:
+                    raise SandboxError("sandbox_bound_input_changed")
             real_cwd = (cwd or self.workspace).expanduser().resolve(strict=False)
             sandbox_cwd = sandbox_workspace / _safe_rel(self.workspace, real_cwd)
             sandbox_cwd.mkdir(parents=True, exist_ok=True)
@@ -626,6 +691,8 @@ class SandboxRunner:
         except BaseException:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
                 shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
+            if cleanup_profile is not None:
+                cleanup_profile()
             raise
         started = time.monotonic()
         try:
@@ -633,15 +700,19 @@ class SandboxRunner:
                 code, stdout, stderr, containment = _run_windows_appcontainer(
                     rewritten, sandbox_cwd, env, limits, run_root,
                     require_os_containment=require_os_containment,
+                    moniker=moniker, cancel_check=cancel_check,
                 )
             else:
-                code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits)
-            if len(stdout) > limits.max_output_bytes or len(stderr) > limits.max_output_bytes:
+                code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits, cancel_check=cancel_check)
+            if len(stdout) + len(stderr) > limits.max_output_bytes:
                 raise SandboxError("sandbox_process_output_limit")
+            if cancel_check is not None and cancel_check():
+                raise SandboxError("sandbox_cancelled")
             merge = _merge_changes(
                 sandbox_workspace, self.workspace, before,
                 max_changed_bytes=limits.max_changed_bytes, trash_root=self.trash_root,
-            )
+                allow_deletions=allow_deletions,
+            ) if code == 0 else {"changed_files": [], "deleted_files": [], "changed_bytes": 0}
             decoded_stdout = decode_portable_bytes(
                 stdout, source="sandbox stdout", allow_legacy_windows=True
             )
@@ -650,14 +721,18 @@ class SandboxRunner:
             )
             return {
                 "returncode": int(code),
-                "stdout": decoded_stdout.text[-8000:],
-                "stderr": decoded_stderr.text[-8000:],
+                "stdout": decoded_stdout.text,
+                "stderr": decoded_stderr.text,
                 "stdout_encoding": decoded_stdout.encoding,
                 "stderr_encoding": decoded_stderr.encoding,
                 "legacy_output_encoding": bool(
                     decoded_stdout.legacy_fallback or decoded_stderr.legacy_fallback
                 ),
                 "ok": int(code) == 0,
+                "receipt_role": "execution",
+                "execution_state": "completed",
+                "commit_state": "committed" if code == 0 else "discarded",
+                "outputs_truncated": False,
                 "containment": containment,
                 "network": "denied" if containment == "windows-appcontainer" else "not_os_enforced",
                 "sandbox_root": str(run_root),
@@ -667,3 +742,5 @@ class SandboxRunner:
         finally:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
                 shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
+                if cleanup_profile is not None:
+                    cleanup_profile()

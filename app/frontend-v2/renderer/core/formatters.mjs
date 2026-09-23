@@ -1,3 +1,5 @@
+import { mapProse } from "./text-presentation.mjs";
+
 export const modeNames = {
   auto: "自动",
   chat: "聊天",
@@ -9,8 +11,6 @@ export const permissionNames = {
   workspace_write: "读写",
   workspace_full: "完全权限"
 };
-
-const MODEL_VISIBLE_OUTPUT_MAX_CONTENT = 15000;
 
 const labelNames = {
   provider: "模型服务",
@@ -155,11 +155,10 @@ export const STATUS_PAYLOAD_END = "TIANGONG_STATUS_JSON_END";
 export const STREAM_EVENT_PREFIX = "__TIANGONG_STREAM_EVENT__ ";
 
 export function stripStreamEvents(text) {
-  return String(text || "")
+  return mapProse(text, (part) => part
     .split(/\r?\n/)
     .filter((line) => !line.trim().startsWith(STREAM_EVENT_PREFIX))
-    .join("\n")
-    .trim();
+    .join("\n")).trim();
 }
 
 export function concisePath(value) {
@@ -412,38 +411,38 @@ function compactDisplayText(text) {
 }
 
 export function splitThinkBlocks(text) {
-  let spoken = stripStreamEvents(text);
   const thoughts = [];
-
-  spoken = spoken.replace(/```think(?:ing)?\s*([\s\S]*?)```/gi, (_match, body) => {
+  const spoken = mapProse(stripStreamEvents(text), (part) => {
+  let visible = part.replace(/```think(?:ing)?\s*([\s\S]*?)```/gi, (_match, body) => {
     const value = compactDisplayText(body);
     if (value) thoughts.push(value);
     return "";
   });
 
-  spoken = spoken.replace(/<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi, (_match, body) => {
+  visible = visible.replace(/<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi, (_match, body) => {
     const value = compactDisplayText(body);
     if (value) thoughts.push(value);
     return "";
   });
 
-  const openThink = spoken.search(/<think(?:ing)?\b[^>]*>/i);
+  const openThink = visible.search(/<think(?:ing)?\b[^>]*>/i);
   if (openThink >= 0) {
-    const before = spoken.slice(0, openThink);
-    const after = spoken.slice(openThink).replace(/^<think(?:ing)?\b[^>]*>/i, "");
+    const before = visible.slice(0, openThink);
+    const after = visible.slice(openThink).replace(/^<think(?:ing)?\b[^>]*>/i, "");
     const value = compactDisplayText(after);
     if (value) thoughts.push(value);
-    spoken = before;
+    visible = before;
   }
-
+  return visible.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  });
   return {
-    spoken: compactDisplayText(spoken),
+    spoken: spoken.trim(),
     thoughts: thoughts.join("\n\n")
   };
 }
 
 export function spokenBackendText(text) {
-  return splitThinkBlocks(text).spoken.slice(0, MODEL_VISIBLE_OUTPUT_MAX_CONTENT);
+  return splitThinkBlocks(text).spoken;
 }
 
 export function runtimeStatusText(result) {
@@ -546,11 +545,10 @@ const _RE_FUNCTION_CALL = /<function_?calls?\b[^>]*>[\s\S]*?(?:<\/function_?call
 
 export function sanitizeVisibleText(text) {
   if (!text || typeof text !== "string") return "";
-  return text
+  return mapProse(text, (part) => part
     .replace(_RE_BIAOXIAN_BLOCK, "")
     .replace(_RE_BIAOXIAN_TAG, "")
     .replace(_RE_TOOL_CALL, "")
     .replace(_RE_FUNCTION_CALL, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/\n{3,}/g, "\n\n")).trim();
 }

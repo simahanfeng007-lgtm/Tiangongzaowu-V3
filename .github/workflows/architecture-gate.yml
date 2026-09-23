@@ -203,6 +203,14 @@ jobs:
           python-version: "3.12"
       - name: Install unchanged source-runtime dependencies
         run: python -m pip install -r requirements-source.lock
+      - name: Install AppContainer compatibility into this CI interpreter
+        run: |
+          python scripts/install-python-appcontainer-compat.py --ci-current-runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/install-python-appcontainer-compat.py --ci-current-runtime --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import os, sitecustomize; import _tiangong_windows_python_compat; assert os.mkdir.__module__ == 'nt'; assert not getattr(os.mkdir, '_tiangong_appcontainer_private_acl', False)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Collect every test and execute assigned whole modules
         shell: python
         run: |

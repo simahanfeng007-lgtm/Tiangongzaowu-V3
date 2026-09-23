@@ -53,7 +53,9 @@ def test_semantic_values_flow_through_the_system_channel(intake):
         c['rc'].request_id, run_id=c['rc'].run_id, generation=1)
     binding = record.executable_plan.step_bindings[0]
     assert binding.args_skeleton == {"category": None}
-    assert record.executable_plan.plan_inputs[0].inline_value == "registry"
+    assert record.executable_plan.plan_inputs == ()
+    assert binding.argument_slots[0].value_binding.binding_kind == "LITERAL"
+    assert binding.argument_slots[0].value_binding.value == "registry"
 
 
 def test_invalid_window_is_refused_upfront(intake):
@@ -64,6 +66,10 @@ def test_invalid_window_is_refused_upfront(intake):
         materialize_admission_inputs(
             result, workspace_root=c['workspace_root'], user_inputs={},
             issued_at_ms=5200, expires_at_ms=5200 + 60_001)
+    inputs=materialize_admission_inputs(result,workspace_root=c['workspace_root'],user_inputs={},
+        issued_at_ms=5200,expires_at_ms=5800)
+    with pytest.raises(ValueError,match='intake.activation.lifetime_invalid'):
+        _register(c,result,**{**inputs,'expires_at_ms':5200+60_001})
 
 
 def test_non_result_input_is_refused():

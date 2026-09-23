@@ -3423,7 +3423,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
             const code = String(detail?.code || recovered.run?.error || recovered.run?.last_error || (phaseNotice ? `gateway_${terminalPhase}` : "gateway_request_failed"));
             const message = phaseNotice || String(detail?.message || "网关执行未成功完成");
             const action = String(detail?.action || "").trim();
-            streamError = `${message}${action ? `\n处理建议：${action}` : ""}\n错误码：${code}`;
+            streamError = `${message}${action ? `\n处理建议：${action}` : ""}\n错误码：\`${code.replace(/`/g, "")}\``;
           } else {
             terminalPhase = "finished";
           }

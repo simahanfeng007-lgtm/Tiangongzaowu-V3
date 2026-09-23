@@ -265,6 +265,7 @@ def test_p19_completion_processes_all_failures_once_without_repair(
         _store=store,
         _objects=object(),
         _facts=object(),
+        _composition_steps=None,
     )
 
     _run_completion(
@@ -278,6 +279,7 @@ def test_p19_completion_processes_all_failures_once_without_repair(
     )
 
     assert len([item for item in executor_calls if "execute" in item]) == 1
+    assert executor_calls[0]["init"]["composition_projector"] is None
     assert len(
         [item for item in process_calls if "process_readiness" in item]
     ) == 1
@@ -335,11 +337,15 @@ def test_p19_all_pass_composition_uses_empty_plural_authority_set(
     monkeypatch,
 ) -> None:
     captured: dict[str, Any] = {}
+    executor_inputs: dict[str, Any] = {}
     readiness = SimpleNamespace(verification_ready=True)
 
+    def project_plan(plan):
+        return plan
+
     class Executor:
-        def __init__(self, **_kwargs) -> None:
-            pass
+        def __init__(self, **kwargs) -> None:
+            executor_inputs.update(kwargs)
 
         def execute(self, **_kwargs):
             return readiness
@@ -357,6 +363,7 @@ def test_p19_all_pass_composition_uses_empty_plural_authority_set(
         _store=store,
         _objects=object(),
         _facts=object(),
+        _composition_steps=SimpleNamespace(project_plan=project_plan),
     )
 
     _run_completion(
@@ -369,6 +376,7 @@ def test_p19_all_pass_composition_uses_empty_plural_authority_set(
         ),
     )
 
+    assert executor_inputs["composition_projector"] is project_plan
     assert captured["verification_dispositions"] == ()
     assert captured["verification_failure_evidences"] == ()
     assert captured["readiness_authority_reader"](

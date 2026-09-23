@@ -103,6 +103,19 @@ try:
                 assert str(exc) == 'link_or_junction', str(exc)
                 report[label] = True
             else:raise AssertionError('container path observer followed a junction')
+        from runtime_security.path_identity import _appcontainer_private_root, _windows_private_root_final_path
+        private_root = _appcontainer_private_root()
+        assert _windows_private_root_final_path(private_root)
+        report['path_private_root_verified'] = True
+        # The actual interpreter is present and granted RX by the launcher,
+        # but remains outside this SID's OS-owned private-root observer scope.
+        outside = pathlib.Path(sys.executable)
+        assert outside.is_file()
+        try:_windows_private_root_final_path(outside)
+        except PathIdentityError as exc:
+            assert str(exc) == 'appcontainer_path_outside_private_root', str(exc)
+            report['path_outside_private_root_rejected'] = True
+        else:raise AssertionError('private-root observer accepted host interpreter path')
     store = ProtectedKeyStore(home/'private-keys')
     def create(kid):
         return store.create_key(kid=kid,purpose='execution_ticket',audience='omni_body',
@@ -203,6 +216,7 @@ _COMMON_OBSERVATIONS = (
 )
 _CONTAINER_OBSERVATIONS = (
     'path_target_readable', 'path_leaf_junction_rejected', 'path_ancestor_junction_rejected',
+    'path_private_root_verified', 'path_outside_private_root_rejected',
     'replace_read_cleanup', 'failed_write_injection_observed', 'failed_write_cleanup', 'other_package_fixture_prepared',
     'other_package_os_denied', 'other_package_denied',
 )
@@ -286,12 +300,12 @@ def _read_foreign_fixture(path, principal):
         assert data.raw[:count.value] == _FOREIGN_PAYLOAD
 
 
-def _prepare_foreign_fixture(workspace):
+def _prepare_foreign_fixture(workspace, *, moniker):
     from omni_body_skill.tools import windows_appcontainer
     from total_gateway import windows_private_files as private
     from total_gateway.tickets import _current_user_sid
     assert private.current_appcontainer_principal() is None, 'fixture requires host token'
-    sid = windows_appcontainer._appcontainer_sid('TiangongV3.ToolSandbox')
+    sid = windows_appcontainer._appcontainer_sid(moniker)
     try:
         reader_package = windows_appcontainer._sid_string(sid)
     finally:
@@ -318,12 +332,14 @@ def _prepare_foreign_fixture(workspace):
 
 
 def _launch_with_foreign_fixture(launcher, command, cwd, env, limits, sandbox_root,
-                                *, require_os_containment):
+                                *, require_os_containment,
+                                moniker='TiangongV3.ToolSandbox', cancel_check=None):
     # Test-only preparation at the existing launch boundary. It does not
     # replace the launcher, containment requirements, token or network policy.
-    foreign_principal = _prepare_foreign_fixture(cwd)
+    foreign_principal = _prepare_foreign_fixture(cwd, moniker=moniker)
     result = launcher(command, cwd, env, limits, sandbox_root,
-                      require_os_containment=require_os_containment)
+                      require_os_containment=require_os_containment,
+                      moniker=moniker, cancel_check=cancel_check)
     # A reader that repaired or replaced the fixture cannot satisfy this check.
     _read_foreign_fixture(cwd / 'different-package.bin', foreign_principal)
     return result
@@ -334,7 +350,7 @@ def _launch_with_foreign_fixture(launcher, command, cwd, env, limits, sandbox_ro
 def test_foreign_fixture_preparation_failure_never_counts_as_read_denial(monkeypatch, tmp_path, failure):
     launches = []
 
-    def fail_preparation(workspace):
+    def fail_preparation(workspace, *, moniker):
         raise failure
 
     monkeypatch.setattr(sys.modules[__name__], '_prepare_foreign_fixture', fail_preparation)
@@ -344,6 +360,38 @@ def test_foreign_fixture_preparation_failure_never_counts_as_read_denial(monkeyp
                                     require_os_containment=True)
     assert launches == []
     assert not (tmp_path / 'different-package-fixture.json').exists()
+
+
+def test_foreign_fixture_uses_actual_launch_profile_and_forwards_cancellation(monkeypatch, tmp_path):
+    events = []
+    principal = ('host-user', 'different-package')
+    moniker = 'TG3.Run.independent-fixture-profile'
+    cancel_check = lambda: False
+    expected_result = (0, b'worker-result', b'', 'windows-appcontainer')
+
+    def prepare(workspace, *, moniker):
+        events.append(('prepare', workspace, moniker))
+        return principal
+
+    def launch(command, cwd, env, limits, sandbox_root, *, require_os_containment,
+               moniker, cancel_check):
+        events.append(('launch', cwd, moniker, cancel_check, require_os_containment))
+        return expected_result
+
+    def recheck(path, observed_principal):
+        events.append(('recheck', path, observed_principal))
+
+    monkeypatch.setattr(sys.modules[__name__], '_prepare_foreign_fixture', prepare)
+    monkeypatch.setattr(sys.modules[__name__], '_read_foreign_fixture', recheck)
+    assert _launch_with_foreign_fixture(
+        launch, [], tmp_path, {}, None, tmp_path, require_os_containment=True,
+        moniker=moniker, cancel_check=cancel_check,
+    ) is expected_result
+    assert events == [
+        ('prepare', tmp_path, moniker),
+        ('launch', tmp_path, moniker, cancel_check, True),
+        ('recheck', tmp_path / 'different-package.bin', principal),
+    ]
 
 
 def _worker_function(name):

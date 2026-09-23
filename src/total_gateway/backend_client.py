@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from contracts import (
@@ -15,6 +16,7 @@ from contracts import (
     CompositionExecutionBindingV1,
     ExecutionResult,
     ExecutionTicket,
+    OmniCapabilityGrant,
     TrustBundle,
     authorize_execution_contract,
     canonical_json_bytes,
@@ -23,6 +25,7 @@ from contracts import (
 
 from .store import GatewayStateStore, StoreConflictError
 from .tickets import verify_execution_ticket
+from .composition_workspace_boundary import validate_composition_workspace_target
 
 
 BACKEND_EXECUTION_PATH = "/api/v1/gateway/internal/execute-ticket"
@@ -233,12 +236,14 @@ class BackendClient:
         nonce_store: GatewayStateStore,
         *,
         ticket_consumer_instance_id: str,
+        composition_workspace_root: Path | None = None,
     ) -> None:
         if not ticket_consumer_instance_id or len(ticket_consumer_instance_id) > 160:
             raise ValueError("ticket consumer instance ID is invalid")
         self._transport = transport
         self._nonce_store = nonce_store
         self._ticket_consumer_instance_id = ticket_consumer_instance_id
+        self._composition_workspace_root = composition_workspace_root
 
     def execute(
         self,
@@ -270,7 +275,19 @@ class BackendClient:
             raise ValueError("backend execution boundary time or generation is invalid")
         if transport_runner is not None and not callable(transport_runner):
             raise ValueError("backend transport runner is invalid")
-        _reject_host_paths(arguments)
+        workspace_composition = (
+            self._composition_workspace_root is not None
+            and expected_composition_binding is not None
+            and isinstance(grant, OmniCapabilityGrant)
+            and grant.payload.path_policy == "workspace_only"
+        )
+        # This selects a validation route, not permission. The target is
+        # admitted only after the signed chain and native workspace proof below.
+        # Keep the generic guard unchanged, including its legacy hotfix API.
+        _reject_host_paths(
+            {key: value for key, value in arguments.items() if key != "target"}
+            if workspace_composition else arguments
+        )
         argument_bytes = canonical_json_bytes(arguments)
         if len(argument_bytes) > 8 * 1024 * 1024:
             raise BackendClientError("backend.arguments.too_large")
@@ -318,6 +335,24 @@ class BackendClient:
                 actual_target_snapshot_sha256
             ),
         )
+        if workspace_composition:
+            try:
+                if any(value is None for value in (
+                    intent, decision, impact, claim,
+                    expected_fence_epoch, active_lease_epoch,
+                    expected_target_snapshot_sha256,
+                )):
+                    raise ValueError("complete composition authority required")
+                validate_composition_workspace_target(
+                    ticket=ticket, grant=grant, binding=expected_composition_binding,
+                    trust_bundle=trust_bundle, now_ms=now_ms,
+                    workspace_root=self._composition_workspace_root,
+                    target=arguments["target"],
+                )
+            except Exception as exc:
+                raise BackendClientError(
+                    "backend.composition.workspace_path_rejected"
+                ) from exc
         dispatch_boundary_crossed = False
         if before_dispatch is not None:
             before_dispatch(now_ms)

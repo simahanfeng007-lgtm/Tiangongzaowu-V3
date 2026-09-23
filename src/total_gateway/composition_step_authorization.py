@@ -7,6 +7,8 @@ handler, record verification, or make a completion decision.
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_authority_allowed, composition_profile_fields
+
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import json
@@ -1284,6 +1286,13 @@ class CompositionStepAuthorizationArtifacts:
         decision_binding = _composition_binding(decision, label="decision")
         ticket_binding = _composition_binding(ticket_payload, label="ticket")
         grant_binding = _composition_binding(grant_payload, label="grant")
+        profile = composition_profile_fields(intent_binding)
+        expected_risk = decision.get("computed_risk")
+        if not composition_authority_allowed(action_id=request.action_id,
+                risk_class=expected_risk, allowed_side_effects=grant_payload.get("allowed_side_effects"),
+                allow_shell=grant_payload.get("allow_shell"), allow_python=grant_payload.get("allow_python"),
+                **profile):
+            raise ValueError("signed authorization exceeds fixed composition profile")
         if not (
             intent_binding
             == decision_binding
@@ -1383,8 +1392,8 @@ class CompositionStepAuthorizationArtifacts:
             or impact.get("action_id") != request.action_id
             or impact.get("target_snapshot_sha256")
             != request.target_snapshot_sha256
-            or impact.get("dynamic_risk") not in {None, "A0"}
-            or impact.get("computed_risk") not in {None, "A0"}
+            or impact.get("dynamic_risk") not in {None, *tuple("A" + str(i) for i in range(int(expected_risk[1]) + 1))}
+            or impact.get("computed_risk") not in {None, expected_risk}
         ):
             raise ValueError("impact crossed composition authorization")
         if (
@@ -1395,7 +1404,7 @@ class CompositionStepAuthorizationArtifacts:
             != request.action_permission_sha256
             or decision.get("action_registry_sha256")
             != request.action_registry_sha256
-            or decision.get("computed_risk") != "A0"
+            or decision.get("computed_risk") != expected_risk
             or decision.get("outcome") != "ALLOW"
         ):
             raise ValueError("policy decision crossed composition authorization")
@@ -1421,15 +1430,15 @@ class CompositionStepAuthorizationArtifacts:
             or ticket_payload.get("workspace_id") != request.workspace_id
             or ticket_payload.get("object_grants_sha256")
             != request.object_grants_sha256
-            or ticket_payload.get("risk_class") != "A0"
+            or ticket_payload.get("risk_class") != expected_risk
             or ticket_payload.get("issued_at_ms") != request.issued_at_ms
             or ticket_payload.get("expires_at_ms") != request.expires_at_ms
         ):
             raise ValueError("execution ticket crossed composition authorization")
         ticket_side_effects = ticket_payload.get("allowed_side_effects")
-        if not isinstance(ticket_side_effects, list) or not set(
-            ticket_side_effects
-        ).issubset(_SAFE_A0_SIDE_EFFECTS):
+        if not isinstance(ticket_side_effects, list) or not composition_authority_allowed(
+            action_id=request.action_id, risk_class=expected_risk, allowed_side_effects=ticket_side_effects,
+            allow_python=grant_payload.get("allow_python"), **profile):
             raise ValueError("execution ticket exceeds the A0 side-effect ceiling")
 
         if (
@@ -1449,15 +1458,15 @@ class CompositionStepAuthorizationArtifacts:
             or grant_payload.get("workspace_id") != request.workspace_id
             or grant_payload.get("workspace_scope_hash")
             != request.workspace_scope_sha256
-            or grant_payload.get("risk_class") != "A0"
+            or grant_payload.get("risk_class") != expected_risk
             or grant_payload.get("issued_at_ms") != request.issued_at_ms
             or grant_payload.get("expires_at_ms") != request.expires_at_ms
         ):
             raise ValueError("capability grant crossed composition authorization")
         grant_side_effects = grant_payload.get("allowed_side_effects")
-        if not isinstance(grant_side_effects, list) or not set(
-            grant_side_effects
-        ).issubset(_SAFE_A0_SIDE_EFFECTS):
+        if not isinstance(grant_side_effects, list) or not composition_authority_allowed(
+            action_id=request.action_id, risk_class=expected_risk, allowed_side_effects=grant_side_effects,
+            allow_python=grant_payload.get("allow_python"), **profile):
             raise ValueError("capability grant exceeds the A0 side-effect ceiling")
 
         runtime = response.get("runtime")
@@ -1567,7 +1576,7 @@ class CompositionStepAuthorizationArtifacts:
             or runtime.get("user_path_roots") != []
             or summary.get("decision_id") != decision.get("decision_id")
             or summary.get("decision_sha256") != decision_sha256
-            or summary.get("risk_class") != "A0"
+            or summary.get("risk_class") != expected_risk
             or summary.get("reason_codes") != decision.get("reason_codes")
         ):
             raise ValueError("runtime response crossed composition authorization")

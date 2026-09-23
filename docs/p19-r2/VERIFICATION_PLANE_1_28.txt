@@ -1,0 +1,123 @@
+Verification Plane 1.28 — source execution profiles and actual-result evidence
+Date: 2026-09-23
+
+This explicitly declares the execution and verification authority changes in
+the source-installation integration. The inherited 1.27 manifest is not valid
+for these changes. Store schema remains v33, Golden trace version remains 1,
+and the original Golden corpus, CompletionGate and repair policy are unchanged.
+All 119 inherited authority paths remain covered; 34 newly covered paths bring
+the content-frozen surface to 153 unique paths.
+
+Source and planning boundary
+----------------------------
+Installed ToolCapability and SkillMethod descriptors are derived from archived
+installed source and the reviewed seed catalog. They do not impersonate P8/P9
+publication review. Source/workspace identities, checkout-change rejection,
+immutable source bundles and registry snapshots remain binding. Equal registry
+content with a different capture timestamp is idempotent; changed content under
+the same identity is still rejected. Versioned source-root membership avoids
+quadratic derived relations while preserving direct facts, provenance and
+incremental/full equivalence. Shared schema work is reused only within a build.
+
+The desktop source-trial planner receives one explicit executable candidate
+set and no legacy native-tool injection. At most one bounded pre-execution
+correction is available for the declared correctable failures. P4 findings and
+real primitive properties are retained. Only the two operational UNKNOWN
+findings for determinism/idempotency may receive a fixed-profile admission
+marker, with UNKNOWN and mandatory verification preserved. Intake recomputes
+the source validation and marker; activation verifies the sealed profile again.
+This is not a general UNKNOWN allowance or a replacement for completion proof.
+
+Execution authority
+-------------------
+Missing profile fields retain the prior A0 behavior. Explicit source trials
+use system-owned, versioned workspace-write or workspace-python profiles. Model
+fields cannot activate a profile. The write set is file.write, code.write,
+code.patch_replace and file.mkdir; the Python profile additionally permits an
+existing workspace .py target with bounded argv. Shell, network, deletion and
+arbitrary inline Python are not enabled by these composition profiles.
+
+Registry/policy, registration, private transport, the authorizer, verified grant
+consumer and Body all enforce the same sealed profile. Native workspace identity,
+protected runtime names, no-reparse/hardlink rules, target snapshots, signatures,
+single-use permits/nonces, generation/fencing and result schemas remain required.
+The Body returns a copied, already verified binding only after verification and
+nonce consumption. Its package-local policy/path consumers have parity tests;
+the leaf package does not import sibling Gateway/contracts/security modules.
+
+Native observation also handles DOS-namespace access denial inside a real
+AppContainer. Only for QueryDosDevice access-denied with freshly observed
+AppContainer identity may the observer use that process SID's OS-returned
+private-storage directory as a trust root; impersonating thread tokens are
+rejected. The root leaf is opened without following a reparse, must be a plain
+directory, and its opened/normalized native identities must agree. Every caller
+relative component is then opened with OBJ_DONT_REPARSE against that handle and
+must match the exact native root/suffix; the root identity is checked again.
+This trusts the OS-owned private root and does not claim to prove every ancestor
+above it individually. It uses no model/environment mapping or additional access
+grant. Host behavior and fail-closed rejection outside the private root, of UNC,
+short-name normalization and filesystem junction traversal remain in place.
+
+The immutable plan admission window is computed from validated actions: 60 seconds
+base, 30 seconds per step and 60 seconds per Python step, rejecting budgets above
+15 minutes. It is checked at preparation, materialization, intake and activation.
+There is no renewal, and legacy A0 remains 60 seconds. Per-step ticket/grant and
+process-runtime limits are independent and are not extended with the plan window.
+Life context is first acquired after planning so planning time cannot exhaust it.
+
+Contained execution and evidence
+-------------------------------
+Python, shell and test execution use the strict Windows AppContainer/Job path
+when required; a cwd or compatibility fallback is not isolation evidence. Fixed
+profile limits include denied network, filtered environment, 60-second process
+runtime, 4 MiB output/change budget, 2 GiB memory and 32 processes. Cancellation
+comes from the host, not model metadata. Failed, timed-out, cancelled, truncated
+or deletion-producing profile runs do not commit their staged outputs.
+
+Bundled-Python compatibility applies only to an observed AppContainer token and
+its private SID directory. It preserves private 0700 ACL protection while allowing
+that SID, and restores sibling imports inside the private script directory. It
+does not change host Python permissions or authorize host/network access.
+
+The installer also has an explicit CI-only current-runtime mode. It requires
+Windows GitHub Actions, the current non-venv Python 3.12 interpreter inside
+RUNNER_TOOL_CACHE, enabled site startup and an in-runtime startup directory on
+sys.path. Windows regression shards install and check the same source helper
+before tests and verify that host os.mkdir remains native. Default installation
+still targets only the bundled runtime; the CI environment alone never redirects
+it. Installer failures stop the CI step. Native tests are neither skipped nor
+weakened, and their concurrent-SID handshake deadline is unchanged.
+
+Write receipts carry before/after state, hashes, bytes, change and rollback
+evidence. Execution receipts preserve actual exit status and test output. Task
+completion consumes actual effects and current artifact evidence, not admission
+receipts, model assertions or stale read evidence. Requirements, terminal effects
+and attestations are bound to the plan; the one CompletionGate remains final.
+
+Failed-Fact projection uses EffectResult.model_copy when aligning the derived
+Pydantic result's observation timestamp with its persisted Effect, then recomputes
+the result digest. The previous dataclasses.replace call raised TypeError on that
+Pydantic model and prevented a real execution failure from being projected. This
+correction retains FAILED_FINAL and every existing Fact/result/hash comparison;
+it neither turns unavailable execution into success nor omits failure evidence.
+
+Host workspace changes rebind only an already enabled, valid source-trial profile
+at the actual Gateway state root. The bounded service-ready wait determines the
+final snapshot; failure restores the prior workspace/profile. This does not enable
+the formal planner default or remove the legacy route.
+
+Freeze maintenance and validation
+---------------------------------
+The 153-path list is declared in the existing P19 freeze guard. Original
+UPDATE_FREEZE=1 and UPDATE_FINGERPRINT=1 generators update only the freeze and
+drift manifests after all source/mirror generation has stopped. The hash algorithm
+remains SHA256 of actual file bytes. These covered text files use Git LF checkout
+bytes; Windows working-tree bytes must agree with Git's clean representation.
+UPDATE_GOLDEN and other calibration/baseline update switches are not used.
+
+Normal validation runs with update switches unset: the complete P19 Golden suite,
+the direct store/plane compatibility assertion, and the architecture/Body parity
+regressions. Native Windows containment/negative tests and real private-route and
+frontend task evidence are separate from portable Golden tests. A freeze refresh
+records reviewed source identity; it is not proof of deployment, business acceptance
+for arbitrary tasks, formal cutover, or permission to omit source/Life verification.

@@ -9,6 +9,8 @@ Ticket, Runtime invocation, verification result, or Completion decision.
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_profile_valid, composition_permission_allowed, composition_profile_fields, composition_profile_risk_ceiling
+
 from typing import Literal, Protocol, Self, runtime_checkable
 
 from pydantic import Field, field_validator, model_validator
@@ -103,11 +105,15 @@ class LimitedCompositionActivationRegistrationV1(ContractModel):
     changes_risk: Literal[False] = False
     may_execute: Literal[False] = False
     registration_sha256: Sha256
+    execution_profile_id: OpaqueId | None = Field(default=None, exclude_if=lambda value: value is None)
+    execution_profile_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
 
     _action_ids = field_validator("allowed_action_ids")(_sorted_unique)
 
     @model_validator(mode="after")
     def validate_registration(self) -> Self:
+        if not composition_profile_valid(self.execution_profile_id, self.execution_profile_sha256):
+            raise ValueError("registered composition profile is invalid")
         if len(self.allowed_action_ids) != len(self.allowed_action_versions):
             raise ValueError("registered action ids and versions differ in cardinality")
         if not self.issued_at_ms <= self.registered_at_ms < self.expires_at_ms:
@@ -288,6 +294,8 @@ def _rebuild_authoritative_shadow(
             legacy_allowed_action_ids=(
                 proposal.differential_trace.legacy_allowed_action_ids
             ),
+            execution_profile_id=proposal.differential_trace.execution_profile_id,
+            execution_profile_sha256=proposal.differential_trace.execution_profile_sha256,
         )
     except CompositionShadowActivationError as exc:
         raise LimitedActivationRegistrationError(
@@ -304,6 +312,7 @@ def _enforce_first_batch_a0(
     *,
     plan: CapabilityCompositionPlanV1,
     action_registry: ActionRegistrySnapshot,
+    execution_profile_id=None, execution_profile_sha256=None,
 ) -> None:
     """Apply the operational first-batch ceiling independently from P7A.
 
@@ -313,6 +322,16 @@ def _enforce_first_batch_a0(
     read/verify effects with no privileged side-effect family.
     """
 
+    if execution_profile_id is not None:
+        permissions = {item.action_id: item for item in action_registry.permissions}
+        if (not composition_profile_valid(execution_profile_id, execution_profile_sha256)
+                or plan.risk_floor > composition_profile_risk_ceiling(execution_profile_id, execution_profile_sha256)
+                or plan.composition_risk > composition_profile_risk_ceiling(execution_profile_id, execution_profile_sha256)
+                or any(action not in permissions or not composition_permission_allowed(
+                    permissions[action], profile_id=execution_profile_id,
+                    profile_sha256=execution_profile_sha256) for action in plan.permission_requirements)):
+            raise LimitedActivationRegistrationError("limited_registration.fixed_profile_exceeded")
+        return
     reasons: set[str] = set()
     if plan.risk_floor != "A0":
         reasons.add("plan_risk_floor_not_a0")
@@ -405,7 +424,9 @@ def compile_limited_activation_registration(
         raise LimitedActivationRegistrationError(
             "limited_registration.not_eligible"
         )
-    _enforce_first_batch_a0(plan=plan, action_registry=action_registry)
+    _enforce_first_batch_a0(plan=plan, action_registry=action_registry,
+        execution_profile_id=trace.execution_profile_id,
+        execution_profile_sha256=trace.execution_profile_sha256)
     if not all(
         (
             trace.exact_action_set,
@@ -442,6 +463,8 @@ def compile_limited_activation_registration(
         registration_id="car_" + "0" * 64,
         shadow_proposal_sha256=proposal.proposal_sha256,
         differential_trace_sha256=trace.trace_sha256,
+        execution_profile_id=trace.execution_profile_id,
+        execution_profile_sha256=trace.execution_profile_sha256,
         composition_activation_id=activation.composition_activation_id,
         composition_activation_sha256=activation.activation_sha256,
         composition_plan_id=activation.composition_plan_id,

@@ -57,3 +57,56 @@ def test_live_request_accepts_only_evidence_for_the_actual_target():
                     [{**_write_fact(target), "ok": False}],
                     [{**_write_fact(target), "tool_result_contract": {"ok": True}}]):
         assert integrity.execution_integrity_blockers(request, history)
+
+
+@pytest.mark.parametrize("verb,noun", [
+    ("创建一个", "文件"), ("生成一份", "报告"), ("新建", "文档"), ("保存", "产物"),
+])
+@pytest.mark.parametrize("target", [r"D:\workspace\proof.txt", "proof.txt"])
+def test_deliverable_noun_keeps_the_creation_target(verb, noun, target):
+    request = f"请{verb}交付{noun} {target}。"
+    obligations = integrity.build_action_obligations(request)
+    assert [(item["kind"], item["target_path"]) for item in obligations] == [("effect", target)]
+    assert integrity.request_target_bindings(request)[0]["kind"] == "effect"
+    assert integrity.execution_integrity_blockers(request, [_write_fact(target)]) == []
+    assert integrity.execution_integrity_blockers(request, [_write_fact("wrong.txt")])
+
+
+def test_multiple_deliverables_each_need_their_own_target_evidence():
+    request = "请创建一个交付文件 first.txt，然后生成一份交付报告 second.md。"
+    obligations = integrity.build_action_obligations(request)
+    assert {(item["kind"], item["target_path"]) for item in obligations} == {
+        ("effect", "first.txt"), ("effect", "second.md"),
+    }
+    assert integrity.execution_integrity_blockers(request, [_write_fact("first.txt")])
+    assert integrity.execution_integrity_blockers(request, [_write_fact("first.txt"), _write_fact("wrong.md")])
+    assert integrity.execution_integrity_blockers(request, [_write_fact("first.txt"), _write_fact("second.md")]) == []
+
+
+def test_later_explicit_delivery_does_not_take_the_creation_target():
+    request = "请创建一个交付文件 proof.txt，然后交付文件 existing.md。"
+    obligations = integrity.build_action_obligations(request)
+    assert {(item["kind"], item["target_path"]) for item in integrity.request_target_bindings(request)} == {
+        ("effect", "proof.txt"), ("delivery", "existing.md"),
+    }
+    assert [(item["kind"], item["target_path"]) for item in obligations if item["kind"] == "effect"] == [
+        ("effect", "proof.txt"),
+    ]
+    assert integrity.execution_integrity_blockers(request, [_write_fact("proof.txt")]) == [
+        "execution_obligation:delivery:missing_evidence",
+    ]
+    assert "execution_obligation:effect:missing_evidence" in integrity.execution_integrity_blockers(
+        request, [_write_fact("wrong.txt")]
+    )
+
+
+def test_negated_deliverable_creation_stays_preserved():
+    request = "不要创建交付文件 keep.txt，请创建交付文件 output.txt。"
+    bindings = integrity.request_target_bindings(request)
+    assert bindings[0]["target_path"] == "keep.txt"
+    assert bindings[0]["role"] == "preserved"
+    assert [(item["kind"], item["target_path"]) for item in integrity.build_action_obligations(request)] == [
+        ("effect", "output.txt"),
+    ]
+    assert integrity.execution_integrity_blockers(request, [_write_fact("keep.txt")])
+    assert integrity.execution_integrity_blockers(request, [_write_fact("output.txt")]) == []

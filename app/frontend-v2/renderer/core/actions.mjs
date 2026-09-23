@@ -34,7 +34,9 @@ function parseReplyPayload(value) {
   }
 }
 
-function claimsCompleted(result, displayText) {
+export function claimsCompleted(result, displayText) {
+  if (result?.ok === false || ["partial", "failed", "reconcile_required", "unknown", "incident"].includes(String(result?.phase || ""))) return false;
+  if (typeof result?.task_completed === "boolean") return result.task_completed;
   const payload = parseReplyPayload(result?.stdout);
   const status = String(
     result?.simple_chain_status
@@ -42,8 +44,7 @@ function claimsCompleted(result, displayText) {
     || payload?.zhuangtai
     || ""
   ).trim().toLowerCase();
-  return ["complete", "completed", "wancheng", "完成"].includes(status)
-    || /任务已根据工具执行证据完成|任务已完成/.test(String(displayText || ""));
+  return ["complete", "completed", "wancheng", "完成"].includes(status);
 }
 
 export function requiresDeterministicWebQa(rootGoal, projectRoot) {

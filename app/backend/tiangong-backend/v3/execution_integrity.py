@@ -14,9 +14,11 @@ Runtime owns factual execution integrity. The LLM still owns semantic
 understanding, planning, tool choice, replanning and answer quality.
 """
 
+import ast
 import hashlib
 import json
 import re
+import shlex
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -82,8 +84,8 @@ _LOCAL_OBSERVE_VERBS = (
     "检查", "扫描", "浏览", "打开",
 )
 _SEARCH_VERBS = ("搜索", "搜一下", "查询", "查一下", "帮我查", "帮我搜")
-_MUTATION_VERBS = ("修改", "改一下", "改下", "修复", "删除", "移除", "复制", "移动", "重命名")
-_ARTIFACT_VERBS = ("写入", "创建", "新建", "生成", "保存")
+_MUTATION_VERBS = ("修改", "改一下", "改下", "修复", "更新", "修补", "重写", "删除", "移除", "复制", "移动", "重命名")
+_ARTIFACT_VERBS = ("写入", "创建", "新建", "生成", "保存", "编写")
 _EXTERNAL_EFFECT_VERBS = ("下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压", "导出")
 _RUN_EXECUTION_VERBS = ("运行", "跑一下", "执行", "启动", "编译", "构建")
 _VERIFY_EXECUTION_VERBS = ("测试", "验证")
@@ -98,15 +100,15 @@ _COMPLETION_CLAIM_RE = re.compile(
 )
 _DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
 _LOCAL_PATH_RE = re.compile(
-    r'''(?:[A-Za-z]:[\\/]|(?:^|\s)(?:\.{0,2}[\\/]))[^\s`"'，。；,;！？!?]+'''
+    r'''(?:[A-Za-z]:[\\/]|(?:^|\s)(?:\.{0,2}[\\/]))[^\s`"'，。；、,;！？!?）)\]》]+'''
 )
 _QUOTED_LOCAL_PATH_RE = re.compile(
     r'''(?P<quote>[`"'])(?P<path>(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])[^\n]+?)(?P=quote)'''
 )
 _RELATIVE_FILE_PATH_RE = re.compile(
-    r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])"
+    r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 )
-_BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_.-])")
+_BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[》〉」』】）)\]}'\"，。；：,.;:！!？?])", re.IGNORECASE)
 _COMMON_FILE_SUFFIXES = frozenset({
@@ -120,7 +122,7 @@ _COMMON_FILE_SUFFIXES = frozenset({
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
 _NEGATION_PREFIXES = (
     "不要", "不得", "不许", "别", "先别", "先不要", "不用", "无需", "禁止", "严禁", "绝不", "暂不", "暂时不要",
-    "别再", "不要再", "不是让你", "不是叫你",
+    "别再", "不要再", "不是让你", "不是叫你", "不需要",
 )
 _EXTERNAL_EFFECT_TOKENS = frozenset({
     "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "fix", "export",
@@ -354,6 +356,12 @@ def _goal_fact_from_obligation(value: Any, index: int) -> dict[str, Any] | None:
         fact["evidence_predicate"] = str(value.get("evidence_predicate") or "").strip()[:64]
     if str(value.get("requires_prior_kind") or "").strip():
         fact["requires_prior_kind"] = str(value.get("requires_prior_kind") or "").strip()[:32]
+    for key in ("requirement_version", "minimum_test_count"):
+        if type(value.get(key)) is int:
+            fact[key] = value[key]
+    for key in ("target_state", "evidence_dependency_paths"):
+        if key in value:
+            fact[key] = value[key]
     return fact
 
 
@@ -700,6 +708,15 @@ def is_execution_discussion_only(user_text: object) -> bool:
     )
 
 
+def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
+    """Keep a deliverable noun from becoming the object's nearest action."""
+    return bool(
+        verb == "交付"
+        and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
+        and right.startswith(("文件", "文档", "报告", "产物"))
+    )
+
+
 def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     action_verbs = tuple(sorted(set(
         _LOCAL_OBSERVE_VERBS
@@ -713,11 +730,7 @@ def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     ), key=len, reverse=True))
     for match in re.finditer(re.escape(verb), compact):
         left = compact[max(0, match.start() - 14):match.start()]
-        if (
-            verb == "交付"
-            and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
-            and compact[match.end():].startswith(("文件", "文档", "报告", "产物"))
-        ):
+        if _verb_is_object_modifier(verb, left, compact[match.end():]):
             # The object of "create a deliverable file" is a noun, not a
             # second delivery command. A later explicit delivery still counts.
             continue
@@ -910,21 +923,24 @@ def _english_requested_fact_kinds(text: str) -> list[str]:
     anchors = set(tokens)
     fact_kinds: list[str] = []
     observation_words = {"read", "list", "inspect", "check", "scan", "browse", "open", "search", "query", "find"}
-    effect_words = {"modify", "edit", "fix", "delete", "remove", "copy", "move", "rename", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "export"}
+    effect_words = {"create", "write", "save", "update", "modify", "edit", "fix", "delete", "remove", "copy", "move", "rename", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "export"}
     execution_words = {"run", "execute", "test", "verify", "start", "compile", "build"}
     delivery_words = {"send", "upload", "submit", "deliver", "publish", "share"}
     artifact_words = {"file", "directory", "folder", "workspace", "attachment", "repo", "repository", "project", "report", "document", "pdf", "zip"}
 
     def has_standalone_action(words: set[str]) -> bool:
-        return any(
-            re.search(rf"(?<![a-z0-9_.-]){re.escape(word)}(?![a-z0-9_.-])", english)
-            for word in words
-        )
+        for word in words:
+            for match in re.finditer(rf"(?<![a-z0-9_.-]){re.escape(word)}(?![a-z0-9_.-])", english):
+                prefix = re.split(r"[,;.!?]", english[:match.start()])[-1]
+                if not re.search(r"(?:do\s+not|don't|must\s+not|never|without|no\s+need\s+to)\s+(?:\w+\s+){0,3}$", prefix):
+                    return True
+        return False
 
     if has_standalone_action(observation_words) and (
         explicit or first in observation_words
     ) and (
         bool(anchors.intersection(artifact_words)) or bool(anchors.intersection({"search", "query", "find"}))
+        or bool(_LOCAL_PATH_RE.search(text) or _BARE_ASCII_FILE_RE.search(text))
     ):
         fact_kinds.append("observation")
     if has_standalone_action(effect_words) and (explicit or first in effect_words):
@@ -1024,7 +1040,7 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
         if candidate.lower() in declared_actions:
             continue
         prefix = text[max(0, match.start(1) - 24):match.start(1)]
-        if re.search(
+        if suffix.lower() not in _COMMON_FILE_SUFFIXES and re.search(
             r"(?:(?:不得|不要|不许|禁止|严禁|别|无需|不用)\s*)?"
             r"(?:调用|执行|运行|使用|改用|call|invoke|execute|use)\s*$",
             prefix,
@@ -1041,6 +1057,150 @@ def _extract_explicit_targets(user_text: object) -> list[str]:
             seen.add(normalized)
             targets.append(value)
     return targets
+
+
+def _request_clauses(text: str) -> list[str]:
+    """Split prose, preserving punctuation inside explicitly quoted paths."""
+    surface = list(text)
+    for match in re.finditer(r'`[^`\n]+`|"[^"\n]+"|\'[^\'\n]+\'|《[^》\n]+》|“[^”\n]+”', text):
+        surface[match.start():match.end()] = " " * (match.end() - match.start())
+    cuts = [0]
+    for match in re.finditer(r"[，,；;。\n\r！？!?]+", "".join(surface)):
+        cuts.extend((match.start(), match.end()))
+    cuts.append(len(text))
+    return [text[cuts[i]:cuts[i + 1]].strip() for i in range(0, len(cuts) - 1, 2)
+            if text[cuts[i]:cuts[i + 1]].strip()]
+
+
+def _program_read_spans(text: str) -> set[tuple[int, int]]:
+    """Identify explicit program behavior, not an agent's independent read.
+
+    Keep the original paths and input roles. Only the scoped read verb loses
+    its independent observation meaning; a successful run is not read proof.
+    Unclear continuation clauses remain ordinary observation requirements.
+    """
+    declaration = re.compile(
+        r"(?:创建|新建|编写|开发|实现|修改|更新|写(?:一个|个)?)"
+        r"[^，,；;。\n]{0,80}?(?:程序|脚本|函数|代码|[\w./\\-]+\.(?:py|js|mjs|ts|go|rs|java|cpp)(?![A-Za-z0-9_]))", re.I)
+    subject = re.compile(
+        r"(?:程序|脚本|函数|代码)(?:\s|需(?:要)?|应(?:当|该)?|必须|负责|会|能(?:够)?|用于|将|要|只|先|自动|"
+        r"(?:用|使用|采用)[^，,；;。\n]{0,40})*$")
+    result: set[tuple[int, int]] = set()
+    cursor, previous_end = 0, 0
+    previous_program = False
+    for clause in _request_clauses(text):
+        offset = text.find(clause, cursor)
+        cursor = offset + len(clause)
+        continued = previous_program and not re.search(r"[；;。\n\r！？!?]", text[previous_end:offset])
+        definitions = list(declaration.finditer(clause))
+        internal = False
+        for match in re.finditer(r"读取|\bread\b", clause, re.I):
+            prefix = clause[:match.start()]
+            preceding = [item for item in definitions if item.end() <= match.start()]
+            tail = prefix[preceding[-1].end():] if preceding else prefix
+            # Agent sequencing/cues reset the subject even after code creation.
+            direct = re.search(r"(?:请|先|再|然后|接着|另外|你|帮我|替我|并且?|之后|随后|后)\s*(?:(?:用|使用)[^，,；;。\n]{0,40})?$", tail)
+            explicit_subject = subject.search(prefix)
+            relative_program = (re.search(r"(?:编写|开发|实现|创建|写)(?:一个|个)?(?:仅|只)?(?:用于)?\s*$", prefix)
+                                and re.search(r"^[^，,；;。\n]{0,60}的(?:程序|脚本|函数)", clause[match.end():]))
+            implementation = continued and re.search(r"^(?:仅|只)?(?:用|使用|采用|通过)[^，,；;。\n]{0,60}$", prefix.strip())
+            if explicit_subject or relative_program or (not direct and (preceding or implementation)):
+                result.add((offset + match.start(), offset + match.end()))
+                internal = True
+        previous_program = bool(definitions or internal)
+        previous_end = cursor
+    return result
+
+
+def _agent_observation_surface(text: str) -> str:
+    surface = list(text)
+    for start, end in _program_read_spans(text):
+        surface[start:end] = " " * (end - start)
+    return "".join(surface)
+
+
+def request_target_bindings(user_text: Any) -> list[dict[str, str]]:
+    """Bind local actions to objects once; a workspace/input is not an output.
+
+    These conservative factual requirements are not a tool plan. Unknown prose
+    retains the generic execution floor instead of distributing every verb to
+    every filename. The original clause is retained for review and diagnostics.
+    """
+    text = _user_request_surface(user_text)
+    groups = {
+        "observation": _LOCAL_OBSERVE_VERBS + _SEARCH_VERBS + ("阅读", "核对", "read", "inspect", "list", "check"),
+        "effect": _MUTATION_VERBS + _ARTIFACT_VERBS + _EXTERNAL_EFFECT_VERBS + ("create", "write", "save", "edit", "modify", "delete", "copy", "move", "update"),
+        "execution": _EXECUTION_VERBS + ("run", "execute", "test", "verify", "计算", "hash"),
+        "delivery": _DELIVERY_STRONG_VERBS + _DELIVERY_ARTIFACT_VERBS + ("send", "deliver", "upload"),
+    }
+    verbs = {verb: kind for kind, values in groups.items() for verb in values}
+    pattern = re.compile("|".join(re.escape(verb) for verb in sorted(verbs, key=len, reverse=True)), re.I)
+    bindings: list[dict[str, str]] = []
+    program_reads = _program_read_spans(text)
+    cursor = 0
+    for clause in _request_clauses(text):
+        offset = text.find(clause, cursor)
+        cursor = offset + len(clause)
+        targets = _extract_explicit_targets(clause)
+        # Bracketed Chinese filenames are data, not verbs in the request.
+        targets.extend(match.group(1) for match in re.finditer(r"[《“]([^》”\n]+\.[A-Za-z0-9]{1,8})[》”]", clause))
+        spans = [(clause.find(target), target) for target in dict.fromkeys(targets)]
+        surface = list(clause)
+        for start, target in spans:
+            if start >= 0:
+                surface[start:start + len(target)] = " " * len(target)
+        surface_text = "".join(surface)
+        hits = []
+        for match in pattern.finditer(surface_text):
+            verb = match.group().lower()
+            if verb.isascii() and ((match.start() and surface_text[match.start() - 1].isalnum())
+                                   or (match.end() < len(surface_text) and surface_text[match.end()].isalnum())):
+                continue
+            prefix = surface_text[:match.start()]
+            if _verb_is_object_modifier(verb, _compact(prefix), _compact(surface_text[match.end():])):
+                # Use both sides of this occurrence, just as the request floor
+                # does. A prefix truncated at "交付" loses its following noun
+                # and would steal the target from "创建", leaving a wildcard.
+                continue
+            negated = bool(re.search(r"(?:不要|不得|不许|别|不用|无需|禁止|严禁|不需要|暂不)[^，；。\n]{0,12}$", prefix)
+                           or re.search(r"(?:do\s+not|don't|must\s+not|never|without)\s+(?:\w+\s+){0,2}$", prefix, re.I))
+            # Preserve coordinated prohibitions, but an intervening object
+            # ends their scope ("do not delete a; read b").
+            if not verb.isascii() and not _verb_occurs_affirmatively(_compact(surface_text[:match.end()]), verb):
+                negated = True
+            kind = "program_input" if (offset + match.start(), offset + match.end()) in program_reads else verbs[verb]
+            hits.append((match.start(), match.end(), kind, negated))
+        for start, target in spans:
+            if start < 0:
+                continue
+            before = [hit for hit in hits if hit[1] <= start]
+            after = [hit for hit in hits if hit[0] >= start + len(target)]
+            hit = before[-1] if before else (after[0] if after else None)
+            prefix = clause[:start]
+            file_target = bool(re.search(r"\.[A-Za-z0-9]{1,8}$", target))
+            role, kind = "mentioned", ""
+            if not file_target and re.search(r"(?:工作目录|工作区|目录(?:是|为)?|\bworkspace|\bin)\s*[：:]?\s*$", prefix, re.I):
+                role = "workspace"
+            elif hit is not None:
+                _, _, action_kind, negated = hit
+                if negated:
+                    role = "preserved" if action_kind == "effect" else "mentioned"
+                elif action_kind == "program_input":
+                    role = "input"
+                else:
+                    kind = action_kind
+                    role = {"observation": "input", "effect": "output", "execution": "executable", "delivery": "output"}[kind]
+            elif re.search(r"(?:已有|现有|产物|保留|保持|existing|preserve)", clause, re.I):
+                role = "existing" if re.search(r"产物|输出|结果|deliverable|output", clause, re.I) else "input"
+            bindings.append({"target_path": target, "kind": kind, "role": role, "source_clause": clause})
+    return bindings
+
+
+def required_request_outputs(user_text: Any) -> list[str]:
+    """Explicit new or retained deliverables; never infer semantic acceptance."""
+    return list(dict.fromkeys(item["target_path"] for item in request_target_bindings(user_text)
+                             if item["role"] in {"output", "existing"}
+                             and re.search(r"\.[A-Za-z0-9]{1,8}$", item["target_path"])))
 
 
 def _extract_explicit_target(user_text: object) -> str:
@@ -1083,17 +1243,35 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     compact = _compact(text)
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
     explicit_targets = _extract_explicit_targets(text)
+    bindings = request_target_bindings(text)
     requires_sha256 = bool(re.search(r"sha\s*[-_]?\s*256|sha256|计算.{0,12}(?:哈希|hash)|(?:哈希|hash).{0,12}计算", text, re.IGNORECASE))
     obligations: list[dict[str, Any]] = []
     obligation_index = 0
     fact_kinds = _requested_fact_kinds(text)
+    observation_surface = _agent_observation_surface(text)
+    if "observation" in fact_kinds and "observation" not in _requested_fact_kinds(observation_surface):
+        fact_kinds.remove("observation")
     if requires_sha256 and "execution" not in fact_kinds:
         fact_kinds.append("execution")
     for fact_kind in fact_kinds:
         use_explicit_target = fact_kind in {"observation", "effect"} or (fact_kind == "execution" and requires_sha256)
-        targets = explicit_targets if use_explicit_target and explicit_targets else [""]
+        targets = list(dict.fromkeys(
+            item["target_path"] for item in bindings if item["kind"] == fact_kind
+        )) if use_explicit_target else []
+        # An explicit singular referent may carry into "read it back / hash
+        # it". Never broadcast an unbound action to an inventory of files.
+        if (not targets and use_explicit_target and len(explicit_targets) == 1
+                and fact_kind != "effect"
+                and re.search(r"读回|该文件|这个文件|其|\bit\b|sha\s*[-_]?\s*256", text, re.I)):
+            targets = explicit_targets
+        if not targets:
+            # The existing execution floor remains authoritative when the
+            # object is implicit (including conditional repair instructions).
+            targets = [""]
         for target in targets:
-            object_kind = _requested_object_kind(text, fact_kind, target)
+            local_request = " ".join(clause for clause in _request_clauses(observation_surface if fact_kind == "observation" else text)
+                                     if fact_kind in _requested_fact_kinds(clause))
+            object_kind = _requested_object_kind(local_request, fact_kind, target)
             obligation_index += 1
             obligation = {
                 "id": f"execution:{fact_kind}:{obligation_index}",
@@ -1105,11 +1283,31 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
                 "target_path": target,
                 "evidence_policy": "successful_real_tool_result",
                 "source": "current_user_message",
+                "requirement_version": 2,
             }
+            if fact_kind == "effect" and target:
+                clauses = [item["source_clause"] for item in bindings
+                           if item["target_path"] == target and item["kind"] == "effect"]
+                obligation["target_state"] = "absent" if any(re.search(r"删除|移除|\bdelete\b|\bremove\b", clause, re.I) for clause in clauses) else "present"
             if fact_kind == "execution" and requires_sha256:
                 obligation["evidence_predicate"] = "sha256_digest"
                 if "effect" in fact_kinds:
                     obligation["requires_prior_kind"] = "effect"
+            elif fact_kind == "execution" and re.search(r"单元测试|\bpytest\b|\bunittest\b", text, re.I):
+                obligation["evidence_predicate"] = "tests_passed"
+                obligation["evidence_dependency_paths"] = list(dict.fromkeys(
+                    item["target_path"] for item in bindings
+                    if item["role"] == "input" or re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", item["target_path"], re.I)
+                ))
+                count_match = re.search(r"([一二三四五六七八九十\d]+)\s*(?:项|个)?\s*(?:单元)?测试", text)
+                if count_match:
+                    count = count_match.group(1)
+                    obligation["minimum_test_count"] = int(count) if count.isdigit() else {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}.get(count, 1)
+            elif fact_kind == "execution" and (
+                _has_affirmative(_compact(text), _RUN_EXECUTION_VERBS)
+                or re.search(r"\b(?:run|execute|start|compile|build)\b", text, re.I)
+            ):
+                obligation["evidence_predicate"] = "command_execution"
             elif (
                 fact_kind == "observation"
                 and object_kind == "file"
@@ -1120,6 +1318,19 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
                 # requested file before accepting either exists=True or False.
                 obligation["evidence_predicate"] = "existence_resolved"
             obligations.append(obligation)
+    if any(item.get("evidence_predicate") == "tests_passed" for item in obligations) and re.search(
+        r"测试.{0,8}(?:和|及|与|并).{0,5}(?:脚本|程序)|(?:脚本|程序).{0,8}(?:和|及|与).{0,5}(?:单元)?测试", text,
+    ):
+        obligation_index += 1
+        obligations.append({
+            "id": f"execution:execution:{obligation_index}", "kind": "execution", "object_kind": "",
+            "floor": ACT_REQUIRED, "status": "pending", "actionable": True, "target_path": "",
+            "evidence_policy": "successful_real_tool_result", "source": "current_user_message",
+            "requirement_version": 2, "evidence_predicate": "program_execution",
+            "evidence_dependency_paths": list(dict.fromkeys(item["target_path"] for item in bindings
+                if item["role"] == "input" or (re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", item["target_path"], re.I)
+                    and not _is_test_script_path(item["target_path"])))),
+        })
     return obligations
 
 
@@ -1147,6 +1358,24 @@ def _payload_targets(payload: dict[str, Any]) -> list[str]:
                 if normalized and normalized not in seen:
                     seen.add(normalized)
                     targets.append(target)
+    contract = _contract(payload)
+    if contract.get("ok") is True and contract.get("write_effect") is True:
+        for value in contract.get("paths") or []:
+            if isinstance(value, str) and value.strip() and _normalize_path(value) not in seen:
+                seen.add(_normalize_path(value))
+                targets.append(value)
+    evidence = contract.get("write_evidence")
+    if isinstance(evidence, dict) and evidence.get("authoritative") is True:
+        witnessed = []
+        for key in ("changed_files", "deleted_files", "verified_unchanged_files", "post"):
+            values = evidence.get(key)
+            if isinstance(values, list):
+                witnessed.extend(values)
+        for item in witnessed:
+            value = item.get("path") if isinstance(item, dict) else item
+            if isinstance(value, str) and value.strip() and _normalize_path(value) not in seen:
+                seen.add(_normalize_path(value))
+                targets.append(value)
     return targets
 
 
@@ -1209,8 +1438,238 @@ def _contract(payload: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def execution_result_ok(payload: Any) -> bool:
+    """Actual execution evidence, never an admission/registration ACK.
+
+    Legacy observations retain their existing shape. Explicit receipt metadata
+    and nested handler/process failures always take precedence over outer ok.
+    Only known result-envelope fields are traversed; file content is not status.
+    """
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return False
+    if _execution_test_count(payload) == 0:
+        return False
+    pending = [payload]
+    seen: set[int] = set()
+    while pending:
+        value = pending.pop()
+        if not isinstance(value, dict) or id(value) in seen:
+            continue
+        seen.add(id(value))
+        if (str(value.get("receipt_role") or "").lower() in {"admission", "planning", "registration"}
+                or value.get("plan_only") is True
+                or value.get("stage") == "composition_parent_handoff"
+                or value.get("ok") is False or value.get("success") is False):
+            return False
+        state = str(value.get("execution_state") or "").lower()
+        if state and state not in {"completed", "succeeded"}:
+            return False
+        if str(value.get("commit_state") or "").lower() == "discarded":
+            return False
+        if str(value.get("status") or "").lower() in {
+            "failed", "failed_final", "error", "timeout", "timed_out", "ambiguous", "cancelled",
+        }:
+            return False
+        execution = value.get("execution")
+        if isinstance(execution, dict):
+            code = execution.get("returncode")
+            if type(code) is not int or code != 0 or execution.get("ok") is not True:
+                return False
+        for key in ("tool_result", "tool_result_contract", "result", "execution"):
+            nested = value.get(key)
+            if isinstance(nested, dict):
+                pending.append(nested)
+    return True
+
+
+def _is_test_script_path(value: Any) -> bool:
+    return re.fullmatch(r"(?:test[^/]*|[^/]+_test)\.py", _normalize_path(value).rsplit("/", 1)[-1]) is not None
+
+
+def _python_code_test_runner(code: Any) -> str | None:
+    """Recognize invoked test APIs/argv in inline Python without executing it."""
+    if not isinstance(code, str) or len(code) > 200000:
+        return None
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, RecursionError):
+        return None
+    if sum(1 for _ in ast.walk(tree)) > 20000:
+        return None
+    imports: dict[str, str] = {}
+    values: dict[str, ast.AST] = {}
+    instances: dict[str, str] = {}
+    runners: set[str] = set()
+
+    def name(node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return instances.get(node.id, imports.get(node.id, node.id))
+        if isinstance(node, ast.Attribute):
+            return name(node.value) + "." + node.attr
+        if isinstance(node, ast.Call):
+            return name(node.func) + "()"
+        return ""
+
+    def argv(node: ast.AST, depth: int = 0) -> list[str] | None:
+        if depth > 12:
+            return None
+        if isinstance(node, ast.Name) and node.id in values:
+            return argv(values[node.id], depth + 1)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = argv(node.left, depth + 1), argv(node.right, depth + 1)
+            return left + right if left is not None and right is not None else None
+        if not isinstance(node, (ast.List, ast.Tuple)):
+            return None
+        return [part.value if isinstance(part, ast.Constant) and isinstance(part.value, str)
+                else "python" if name(part) == "sys.executable" else "" for part in node.elts]
+
+    def inspect_call(node: ast.AST) -> None:
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            function = name(call.func)
+            if function in {"unittest.main", "unittest.TestProgram", "unittest.TextTestRunner().run"}:
+                runners.add("unittest")
+            elif function == "pytest.main":
+                runners.add("pytest")
+            elif function in {"subprocess.run", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "subprocess.Popen"}:
+                argument = call.args[0] if call.args else next((kw.value for kw in call.keywords if kw.arg == "args"), None)
+                arguments = argv(argument) if argument is not None else None
+                if arguments and len(arguments) >= 3:
+                    executable = _normalize_path(arguments[0]).rsplit("/", 1)[-1]
+                    if (re.fullmatch(r"(?:python(?:w|[0-9.]+)?|py)(?:\.exe)?", executable)
+                            and arguments[1] == "-m" and arguments[2] in {"unittest", "pytest"}):
+                        runners.add(arguments[2])
+
+    def statements(items: list[ast.stmt]) -> None:
+        for statement in items:
+            if isinstance(statement, ast.Import):
+                for entry in statement.names:
+                    imports[entry.asname or entry.name] = entry.name
+            elif isinstance(statement, ast.ImportFrom) and statement.module:
+                for entry in statement.names:
+                    imports[entry.asname or entry.name] = statement.module + "." + entry.name
+            elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                value = statement.value
+                if value is None:
+                    continue
+                inspect_call(value)
+                targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        values[target.id] = value
+                        if isinstance(value, ast.Call) and name(value.func) == "unittest.TextTestRunner":
+                            instances[target.id] = "unittest.TextTestRunner()"
+            elif isinstance(statement, ast.Expr):
+                inspect_call(statement.value)
+            elif (isinstance(statement, ast.If) and isinstance(statement.test, ast.Compare)
+                    and isinstance(statement.test.left, ast.Name) and statement.test.left.id == "__name__"
+                    and len(statement.test.ops) == 1 and isinstance(statement.test.ops[0], ast.Eq)
+                    and len(statement.test.comparators) == 1
+                    and isinstance(statement.test.comparators[0], ast.Constant)
+                    and statement.test.comparators[0].value == "__main__"):
+                statements(statement.body)
+    statements(tree.body)
+    return next(iter(runners)) if len(runners) == 1 else None
+
+
+def _execution_test_runner(payload: dict[str, Any]) -> str | None:
+    """Recognize actual executable/argv positions, never path or code text."""
+    def argv_runner(argv: list[str]) -> str | None:
+        if not argv or any(not isinstance(part, str) for part in argv):
+            return None
+        words = [part.strip("\"'") for part in argv]
+        executable = _normalize_path(words[0]).rsplit("/", 1)[-1]
+        if re.fullmatch(r"pytest(?:\.exe)?", executable):
+            return "pytest"
+        if not re.fullmatch(r"(?:python(?:w|[0-9.]+)?|py)(?:\.exe)?", executable):
+            return None
+        index = 1
+        while index < len(words):
+            argument = words[index]
+            if argument == "-m":
+                module = words[index + 1] if index + 1 < len(words) else ""
+                return module if module in {"unittest", "pytest"} else None
+            if argument in {"-c", "--", "-"} or not argument.startswith("-"):
+                return None
+            index += 2 if argument in {"-X", "-W"} else 1
+        return None
+
+    actual = _payload_result(payload).get("command")
+    if isinstance(actual, list) and actual:
+        if actual[0] == "__tiangong_windows_utf8_cmd_v1__" and len(actual) == 2:
+            command = actual[1]
+        else:
+            runner = argv_runner(actual)
+            if runner is not None:
+                return runner
+            if str(payload.get("tool_action") or payload.get("action") or "") == "python.run":
+                return _python_code_test_runner(_payload_nested_args(payload).get("code"))
+            return None
+    else:
+        # Legacy shell receipts retain their actual submitted command here.
+        # Python argv are script arguments, not interpreter/module arguments.
+        if str(payload.get("tool_action") or payload.get("action") or "") == "python.run":
+            return _python_code_test_runner(_payload_nested_args(payload).get("code"))
+        if str(payload.get("tool_action") or payload.get("action") or "") not in {"shell.run", "command.run", "run"}:
+            return None
+        command = _payload_nested_args(payload).get("command")
+    if not isinstance(command, str):
+        return None
+    try:
+        lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|\n")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        segments, current = [], []
+        for token in lexer:
+            if token and all(char in ";&|\n" for char in token):
+                if current:
+                    segments.append(current)
+                    current = []
+            else:
+                current.append(token)
+        if current:
+            segments.append(current)
+    except ValueError:
+        return None
+    runners = {runner for segment in segments if (runner := argv_runner(segment)) is not None}
+    return next(iter(runners)) if len(runners) == 1 else None
+
+
+def _execution_test_count(payload: dict[str, Any]) -> int | None:
+    """Strict framework summary from a real process result, not arbitrary text.
+
+    None means this is not a recognized test process. Zero means its summary
+    does not prove any passing tests (including failures hidden by shell echo).
+    """
+    result = _payload_result(payload)
+    execution = result.get("execution")
+    if not isinstance(execution, dict):
+        return None
+    runner = _execution_test_runner(payload)
+    output = str(execution.get("stderr") or "") + "\n" + str(execution.get("stdout") or "")
+    summaries = list(re.finditer(r"(?m)^Ran (\d+) tests? in [^\r\n]+[\r\n]+\s*(OK|FAILED(?:\s*\([^\r\n]*\))?)\s*(?:\r?\n|$)", output))
+    # The controlled Python profile executes an existing script directly and
+    # has no shell command to identify `python -m unittest`. Use its sealed
+    # target plus the actual framework summary, never a declaration field.
+    tool_args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
+    native_test_script = (
+        str(payload.get("tool_action") or payload.get("action") or "") == "python.run"
+        and _is_test_script_path(tool_args.get("target"))
+    )
+    if runner == "unittest" or (native_test_script and summaries):
+        summary = summaries[-1] if summaries else None
+        return int(summary.group(1)) if summary and summary.group(2) == "OK" else 0
+    if runner == "pytest":
+        summaries = re.findall(r"(?m)^=*[ \t]*(\d+ passed[^\r\n]*? in [0-9.]+s)[ \t=]*$", output)
+        if not summaries or re.search(r"\b\d+ (?:failed|error|errors)\b", summaries[-1]):
+            return 0
+        return int(re.match(r"\d+", summaries[-1]).group())
+    return None
+
+
 def _payload_fact_kinds(payload: Any) -> set[str]:
-    if not isinstance(payload, dict) or not bool(payload.get("ok")):
+    if not execution_result_ok(payload):
         return set()
     action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if not action or action in _PREPARATION_ACTIONS:
@@ -1241,9 +1700,7 @@ def _payload_fact_kinds(payload: Any) -> set[str]:
         facts.add("effect")
 
     action_tokens = set(part for part in re.split(r"[._-]+", action) if part)
-    if action in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or action_tokens.intersection(
-        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan", "open", "health", "status", "get", "show", "describe"}
-    ):
+    if action_has_observation_semantics(action):
         facts.add("observation")
     if action_tokens.intersection(_EXTERNAL_EFFECT_TOKENS):
         facts.add("effect")
@@ -1294,7 +1751,7 @@ def _payload_resolves_existence(payload: dict[str, Any], obligation: dict[str, A
     """Accept a positive or negative existence fact only when target-bound."""
 
     expected = _normalize_path(obligation.get("target_path"))
-    if not expected or not bool(payload.get("ok")):
+    if not expected or not execution_result_ok(payload):
         return False
     action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if action in {"file.read", "code.read", "sheet.read", "pdf.extract_text", "file.exists", "file.stat"}:
@@ -1340,6 +1797,28 @@ def _payload_has_evidence_predicate(
 ) -> bool:
     if predicate == "existence_resolved":
         return _payload_resolves_existence(payload, obligation)
+    if predicate == "tests_passed":
+        count = _execution_test_count(payload)
+        minimum = max(1, int(obligation.get("minimum_test_count") or 1))
+        if count is not None:
+            return count >= minimum
+        result = _payload_result(payload)
+        tests = result.get("test_results")
+        return (str(payload.get("tool_action") or "") == "quality.run_tests"
+                and isinstance(tests, dict) and type(tests.get("passed")) is int
+                and tests["passed"] >= minimum and tests.get("failed") == 0)
+    if predicate == "command_execution":
+        action = str(payload.get("tool_action") or "")
+        return bool(action.startswith(("quality.", "qc.")) or set(action.split(".")).intersection(
+            {"run", "execute", "start", "compile", "build", "test", "syntax", "lint"}
+        ))
+    if predicate == "program_execution":
+        execution = _payload_result(payload).get("execution")
+        action = str(payload.get("tool_action") or "")
+        return (action in {"python.run", "shell.run", "command.run", "run"}
+                and isinstance(execution, dict) and type(execution.get("returncode")) is int
+                and execution["returncode"] == 0 and execution.get("ok") is True
+                and _execution_test_count(payload) is None)
     if predicate != "sha256_digest":
         return True
     pending: list[Any] = [payload.get("tool_result"), payload.get("tool_result_contract")]
@@ -1369,6 +1848,8 @@ def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
         return False
     if required_kind not in _payload_fact_kinds(payload):
         return False
+    if obligation.get("target_state") == "present" and _target_was_removed(payload, obligation):
+        return False
     evidence_predicate = str(obligation.get("evidence_predicate") or "").strip()
     if (
         required_kind == "observation"
@@ -1392,19 +1873,132 @@ def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[di
         return False
     history = [item for item in (quality_history or []) if isinstance(item, dict)]
     prior_kind = str(obligation.get("requires_prior_kind") or "").strip().lower()
+    satisfied = False
     for index, payload in enumerate(history):
         if not _successful_fact(payload, obligation):
+            if satisfied and _obligation_evidence_invalidated(payload, obligation):
+                satisfied = False
             continue
         if not prior_kind:
-            return True
+            satisfied = True
+            continue
         prior_obligation = {
             "kind": prior_kind,
             "target_path": obligation.get("target_path"),
             "actionable": True,
         }
         if any(_successful_fact(prior, prior_obligation) for prior in history[:index]):
+            satisfied = True
+    return satisfied
+
+
+def _obligation_evidence_invalidated(payload: dict[str, Any], obligation: dict[str, Any]) -> bool:
+    """Do not reuse a prior target observation after mutation or contradiction."""
+    if obligation.get("evidence_predicate") in {"tests_passed", "program_execution", "command_execution"}:
+        count = _execution_test_count(payload)
+        if obligation.get("evidence_predicate") == "tests_passed" and count is not None and (not execution_result_ok(payload) or count < int(obligation.get("minimum_test_count") or 1)):
             return True
-    return False
+        if (obligation.get("evidence_predicate") in {"program_execution", "command_execution"}
+                and count is None and isinstance(_payload_result(payload).get("execution"), dict)
+                and not execution_result_ok(payload)):
+            return True
+        dependencies = obligation.get("evidence_dependency_paths") or []
+        evidence = _contract(payload).get("write_evidence")
+        if isinstance(evidence, dict) and evidence.get("authoritative") is True:
+            changed = [*list(evidence.get("changed_files") or []), *list(evidence.get("deleted_files") or [])]
+        elif _contract(payload).get("observed_write_effect"):
+            changed = _payload_targets(payload)
+        else:
+            changed = []
+        for path in changed:
+            value = path.get("path") if isinstance(path, dict) else path
+            actual = _normalize_path(value)
+            if any(actual == _normalize_path(target) or actual.endswith("/" + _normalize_path(target)) for target in dependencies):
+                return True
+            if not dependencies and re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", actual):
+                return True
+    if not obligation.get("target_path") or not _target_matches(payload, obligation):
+        return False
+    if obligation.get("target_state") == "present" and _target_was_removed(payload, obligation):
+        return True
+    kind = str(obligation.get("kind") or "")
+    contract = _contract(payload)
+    action = str(payload.get("tool_action") or payload.get("action") or "")
+    evidence = contract.get("write_evidence")
+    mutated = bool(contract.get("observed_write_effect")) or (
+        isinstance(evidence, dict) and evidence.get("authoritative") is True
+        and bool(evidence.get("changed_files") or evidence.get("deleted_files"))
+    )
+    if kind in {"observation", "execution"} and mutated:
+        return True
+    if not execution_result_ok(payload) and _action_fact_kind(action) == kind:
+        return True
+    return bool(not execution_result_ok(payload) and contract.get("may_mutate") is True)
+
+
+def _target_was_removed(payload: dict[str, Any], obligation: dict[str, Any]) -> bool:
+    evidence = _contract(payload).get("write_evidence")
+    if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
+        return False
+    removed = list(evidence.get("deleted_files") or [])
+    removed.extend(row.get("path") for row in evidence.get("post") or []
+                   if isinstance(row, dict) and row.get("exists") is False)
+    expected = _normalize_path(obligation.get("target_path"))
+    return bool(expected and any(_normalize_path(path) == expected or _normalize_path(path).endswith("/" + expected)
+                                 for path in removed if isinstance(path, str)))
+
+
+def reconcile_completion_evidence(contract: Any, obligations: Any, history: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Produce the same current evidence view for Life and the Runtime gate.
+
+    This reads existing observations; it neither executes a tool nor changes
+    the user's requirement set. Historical satisfied flags are not authority.
+    """
+    current = [dict(item) for item in obligations or [] if isinstance(item, dict)]
+    observations = [item for item in history or [] if isinstance(item, dict)]
+    for item in current:
+        if item.get("actionable", True):
+            satisfied = obligation_is_satisfied(item, observations)
+            item["status"] = "satisfied" if satisfied else "pending"
+            item["evidence_ok"] = satisfied
+    updated = dict(contract) if isinstance(contract, dict) else {}
+    if updated and isinstance(obligations, list):
+        updated["desired_facts"] = _sync_goal_facts_from_obligations(updated, current)
+        updated["completion_evidence"] = {
+            "schema": "tiangong.v3.completion-evidence.v1",
+            "required": len(current),
+            "satisfied": sum(item.get("status") == "satisfied" for item in current),
+            "requirements_sha256": hashlib.sha256(_canonical_json([
+                {key: item.get(key) for key in ("id", "kind", "target_path", "evidence_predicate", "status")}
+                for item in current
+            ]).encode("utf-8")).hexdigest(),
+        }
+        _refresh_task_contract_hash(updated)
+    return updated, current
+
+
+def completion_progress_fingerprint(run_state: Any) -> str:
+    """Content/condition progress for loop control, never proof of completion."""
+    if not isinstance(run_state, dict):
+        return ""
+    evidence = set()
+    for payload in run_state.get("observations") or []:
+        if not execution_result_ok(payload):
+            continue
+        contract = _contract(payload)
+        write = contract.get("write_evidence") or {}
+        result = _payload_result(payload)
+        digest = {
+            "action": payload.get("tool_action"), "targets": _payload_targets(payload),
+            "post": write.get("post") if isinstance(write, dict) else None,
+            "content": result.get("content"), "sha256": result.get("sha256"),
+            "stdout": (result.get("execution") or {}).get("stdout") if isinstance(result.get("execution"), dict) else result.get("stdout"),
+        }
+        evidence.add(_canonical_json(digest))
+    value = {"evidence": sorted(evidence), "obligations": [
+        (item.get("id"), item.get("status")) for item in run_state.get("obligations") or [] if isinstance(item, dict)
+    ]}
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def requires_evidence_safe_closeout(reasons: list[str] | None) -> bool:
@@ -1449,8 +2043,13 @@ def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict
     target = _payload_target(payload)
     fact_kinds = sorted(_payload_fact_kinds(payload))
     for obligation in obligations:
-        if not isinstance(obligation, dict) or obligation.get("status") == "satisfied":
+        if not isinstance(obligation, dict):
             continue
+        if obligation.get("status") == "satisfied":
+            if not _obligation_evidence_invalidated(payload, obligation):
+                continue
+            obligation["status"] = "pending"
+            obligation["evidence_ok"] = False
         if not bool(obligation.get("actionable", True)):
             continue
         prior_kind = str(obligation.get("requires_prior_kind") or "").strip().lower()
@@ -1479,12 +2078,19 @@ def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict
             obligation["last_attempt_ok"] = bool(payload.get("ok"))
 
 
+def action_has_observation_semantics(action: Any) -> bool:
+    """Classify an action only; this never authorizes it or proves a read."""
+    name = str(action or "").strip().lower()
+    tokens = set(part for part in re.split(r"[._-]+", name) if part)
+    return bool(name in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or tokens.intersection(
+        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan", "open", "health", "status", "get", "show", "describe"}
+    ))
+
+
 def _action_fact_kind(action: Any) -> str:
     name = str(action or "").strip().lower()
     tokens = set(part for part in re.split(r"[._-]+", name) if part)
-    if name in {"file.list", "file.read", "code.read", "sheet.read", "pdf.extract_text"} or tokens.intersection(
-        {"read", "list", "inspect", "search", "query", "find", "info", "browse", "scan", "open", "health", "status", "get", "show", "describe"}
-    ):
+    if action_has_observation_semantics(name):
         return "observation"
     if tokens.intersection({"send", "upload", "submit", "deliver", "export", "post", "publish", "share"}):
         return "delivery"
@@ -1529,13 +2135,19 @@ def build_task_contract_obligations(contract: Any) -> list[dict[str, Any]]:
             obligation["evidence_predicate"] = str(fact.get("evidence_predicate") or "").strip()
         if str(fact.get("requires_prior_kind") or "").strip():
             obligation["requires_prior_kind"] = str(fact.get("requires_prior_kind") or "").strip()
+        for key in ("requirement_version", "minimum_test_count"):
+            if type(fact.get(key)) is int:
+                obligation[key] = fact[key]
+        for key in ("target_state", "evidence_dependency_paths"):
+            if key in fact:
+                obligation[key] = fact[key]
         obligations.append(obligation)
     return obligations
 
 
 def merge_action_obligations(*groups: Any) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     for group in groups:
         for raw in group if isinstance(group, list) else []:
             if not isinstance(raw, dict):
@@ -1545,6 +2157,7 @@ def merge_action_obligations(*groups: Any) -> list[dict[str, Any]]:
                 str(item.get("kind") or "").strip().lower(),
                 _normalize_path(item.get("target_path")),
                 str(item.get("required_action") or "").strip().lower(),
+                str(item.get("evidence_predicate") or "").strip().lower(),
             )
             if key in seen:
                 continue

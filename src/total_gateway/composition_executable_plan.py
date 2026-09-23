@@ -13,6 +13,8 @@ issue one ordinary Policy -> Ticket -> Grant chain for every step.
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_permission_allowed, composition_profile_fields
+
 from collections.abc import Mapping, Sequence
 import os
 from pathlib import Path
@@ -492,6 +494,8 @@ class StepExecutionBindingV1(_CanonicalHashModel):
     result_schema_sha256: Sha256
     permission: ActionPermission
     permission_sha256: Sha256
+    execution_profile_id: OpaqueId | None = Field(default=None, exclude_if=lambda value: value is None)
+    execution_profile_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
     depends_on: tuple[OpaqueId, ...] = ()
     target_skeleton: str | None = Field(default=None, max_length=4096)
     target_slot: CompositionValueBindingV1 | None = None
@@ -557,11 +561,9 @@ class StepExecutionBindingV1(_CanonicalHashModel):
             raise ValueError("step output declarations duplicate one extraction point")
         if (
             self.permission_sha256 != self.permission.permission_sha256
-            or not _permission_is_safe_a0_binding(
-                self.permission,
-                action_id=self.action_id,
-                action_version=self.action_version,
-            )
+            or self.permission.action_id != self.action_id
+            or self.permission.action_version != self.action_version
+            or not composition_permission_allowed(self.permission, **composition_profile_fields(self))
         ):
             raise ValueError("step permission binding is not valid A0 read/verify")
         return self
@@ -1091,11 +1093,7 @@ def _validate_step_materialization(
             or permission is None
             or binding.permission != permission
             or binding.permission_sha256 != permission.permission_sha256
-            or not _permission_is_safe_a0_binding(
-                permission,
-                action_id=binding.action_id,
-                action_version=binding.action_version,
-            )
+            or not composition_permission_allowed(permission, **composition_profile_fields(binding))
             or binding.action_id != legacy_step.action_id
             or binding.action_version != legacy_step.action_version
             or binding.depends_on != proposed.depends_on
@@ -1115,10 +1113,10 @@ def _validate_step_materialization(
             item.casefold() for item in primitive.resource_scope
         }
         if (
-            primitive.risk_floor != "A0"
-            or primitive_effect not in {"read", "verify"}
-            or not primitive_side_effects.issubset(_SAFE_A0_SIDE_EFFECTS)
-            or primitive_resources & _FORBIDDEN_RESOURCE_CLASSES
+            primitive.risk_floor != permission.registry_risk
+            or primitive_effect != permission.effect
+            or not primitive_side_effects.issubset(set(permission.allowed_side_effects))
+            or primitive_resources & (_FORBIDDEN_RESOURCE_CLASSES - ({"python"} if permission.allow_python else set()))
         ):
             _error("executable_plan.step.not_a0_read_verify", binding.step_id)
         selected_actions.add((binding.action_id, binding.action_version))
@@ -1194,6 +1192,10 @@ def compile_executable_composition_plan(
     )
 
     registration = registration_record.registration
+    if any(composition_profile_fields(step) != composition_profile_fields(registration) for step in step_bindings):
+        _error("executable_plan.registration.execution_profile_mismatch")
+    from .composition_task_floor import validate_workspace_step_order
+    validate_workspace_step_order(step_bindings, workspace_root=Path(workspace.workspace_root))
     expected_actions = tuple(
         sorted({(item.action_id, item.action_version) for item in step_bindings})
     )

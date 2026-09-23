@@ -43,6 +43,10 @@ def _document_bytes(value: object) -> bytes:
 
 def openapi_contract_catalog() -> dict[str, object]:
     """Build a component-only catalog without claiming not-yet-implemented routes."""
+    return _openapi_contract_catalog(contract_schema_bundle_sha256())
+
+
+def _openapi_contract_catalog(bundle_sha256: str) -> dict[str, object]:
 
     _, definitions = models_json_schema(
         [(model, "validation") for model in CONTRACT_MODELS],
@@ -66,7 +70,7 @@ def openapi_contract_catalog() -> dict[str, object]:
         "x-tiangong-contract-catalog": {
             "artifact_set_id": ARTIFACT_SET_ID,
             "schema_version": SCHEMA_VERSION,
-            "schema_bundle_sha256": contract_schema_bundle_sha256(),
+            "schema_bundle_sha256": bundle_sha256,
             "root_contract_count": len(roots),
             "root_contracts": roots,
             "route_contract_phase": "P3.1",
@@ -76,9 +80,12 @@ def openapi_contract_catalog() -> dict[str, object]:
 
 def generate_contract_artifact_documents() -> dict[str, bytes]:
     bundle = contract_schema_bundle()
+    bundle_bytes = _document_bytes(bundle)
+    # Reuse this immutable build's bytes. Never cache across source observations.
+    bundle_sha256 = hashlib.sha256(bundle_bytes[:-1]).hexdigest()
     payloads = {
-        "openapi.json": _document_bytes(openapi_contract_catalog()),
-        "schema-bundle.json": _document_bytes(bundle),
+        "openapi.json": _document_bytes(_openapi_contract_catalog(bundle_sha256)),
+        "schema-bundle.json": bundle_bytes,
     }
     entries = tuple(
         {
@@ -96,7 +103,7 @@ def generate_contract_artifact_documents() -> dict[str, bytes]:
         "generator_id": "contracts.artifacts.v1",
         "root_contract_count": len(root_names),
         "root_contracts": root_names,
-        "schema_bundle_sha256": contract_schema_bundle_sha256(),
+        "schema_bundle_sha256": bundle_sha256,
         "artifacts": entries,
     }
     manifest = {

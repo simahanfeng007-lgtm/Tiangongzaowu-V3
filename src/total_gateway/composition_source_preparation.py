@@ -217,7 +217,8 @@ def prepare_source_composition(owner, *, query, reference_context, tool_source, 
                                request_id, run_id, generation, workspace_id, prepared_at_ms):
     """Resolve exact reference addresses and call the ORIGINAL P4 candidate builder."""
     from .method_source_run_binding import MethodRunSourceResolver
-    if (type(owner) is not MethodRunSourceResolver or type(tool_source) is not PlanningToolSource
+    from .installed_composition_sources import InstalledPlanningToolSource
+    if (type(owner) is not MethodRunSourceResolver or type(tool_source) not in (PlanningToolSource, InstalledPlanningToolSource)
             or type(reference_context) is not CapabilityContextPacketV1):
         raise TypeError("COMPOSITION_SOURCE_SYSTEM_INPUTS_REQUIRED")
     snapshot = _planning_snapshot(owner, query, request_id=request_id, run_id=run_id,

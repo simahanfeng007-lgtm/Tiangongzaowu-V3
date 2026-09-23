@@ -8,6 +8,9 @@ and Omni ``BodyRuntime`` remains the only action runtime.
 
 from __future__ import annotations
 
+from contracts.composition_profile import composition_permission_allowed, composition_profile_fields, validate_composition_arguments
+from .composition_workspace_boundary import probe_composition_target_state
+
 import hashlib
 import json
 import re
@@ -89,6 +92,7 @@ class CompositionExecutionFinalization:
     fact_ids: tuple[str, ...]
     final_output_aliases: dict[str, Any]
     completed_at_ms: int
+    execution_requirements_attestation: dict[str, Any] | None = None
 
 
 class CompositionStepExecutionCoordinator:
@@ -329,6 +333,8 @@ class CompositionStepExecutionCoordinator:
         """Resolve a completely committed DAG without reply/output fallbacks."""
 
         observations = self._observations_for_plan(plan)
+        floor_evidence = None
+        envelope = None
         try:
             projection = derive_composition_execution_projection(
                 plan,
@@ -373,6 +379,28 @@ class CompositionStepExecutionCoordinator:
                 validate_result=self._validate_result_exact,
                 resolve_value_schema=self._schemas.resolve_value_schema,
             )
+            if any(step.execution_profile_id is not None for step in plan.step_bindings):
+                # The original request is already immutable in Gateway Store.
+                # Reconcile its system requirements against authenticated Fact
+                # payloads after their full schema/lineage/hash checks.
+                from .composition_execution_projection import _validated_action_result
+                from .composition_task_floor import validate_request_plan_floor, validate_request_execution_floor
+                envelope = self._store.get_request_envelope(plan.request_id)
+                if envelope is None:
+                    raise CompositionExecutionProjectionError("composition.task_floor.request_missing")
+                try:
+                    validate_request_plan_floor(envelope.text, plan.step_bindings, workspace_root=self._workspace_root)
+                    rows = []
+                    for step in plan.step_bindings:
+                        observed = committed[step.step_id]
+                        authorization = self._store.get_composition_step_authorization_for_effect(observed.prebound_effect_id)
+                        if authorization is None:
+                            raise ValueError("composition.task_floor.authorization_missing")
+                        raw = _validated_action_result(observed, step=step, validate_result=self._validate_result_exact)
+                        rows.append((authorization.request, raw))
+                    floor_evidence = validate_request_execution_floor(envelope.text, rows, workspace_root=self._workspace_root)
+                except ValueError as exc:
+                    raise CompositionExecutionProjectionError(str(exc)) from exc
         except CompositionExecutionProjectionError as exc:
             raise CompositionStepExecutionError(exc.code, ambiguous=True) from exc
 
@@ -439,6 +467,13 @@ class CompositionStepExecutionCoordinator:
                 "composition.execution.final_lineage_invalid",
                 ambiguous=True,
             )
+        attestation = None
+        if floor_evidence is not None:
+            from .composition_task_floor import seal_execution_requirements_attestation
+            attestation = seal_execution_requirements_attestation(floor_evidence,
+                request_id=plan.request_id, user_text=envelope.text,
+                executable_plan_id=plan.executable_plan_id, executable_plan_sha256=plan.executable_plan_sha256,
+                supporting_fact_ids=fact_ids, execution_completed_at_ms=completed_at_ms)
         return CompositionExecutionFinalization(
             executable_plan_id=plan.executable_plan_id,
             parent_effect_id=parent_effect_id,
@@ -447,6 +482,7 @@ class CompositionStepExecutionCoordinator:
             fact_ids=fact_ids,
             final_output_aliases=deepcopy(aliases),
             completed_at_ms=completed_at_ms,
+            execution_requirements_attestation=attestation,
         )
 
     def _event(
@@ -494,15 +530,7 @@ class CompositionStepExecutionCoordinator:
             not permission.has_valid_sha256()
             or permission != step.permission
             or permission.permission_sha256 != step.permission_sha256
-            or permission.registry_risk != "A0"
-            or permission.effective_risk != "A0"
-            or permission.effect not in {"read", "verify"}
-            or not set(permission.allowed_side_effects).issubset(
-                _SAFE_SIDE_EFFECTS
-            )
-            or permission.allow_shell
-            or permission.allow_python
-            or permission.requires_confirmation
+            or not composition_permission_allowed(permission, **composition_profile_fields(step))
         ):
             raise CompositionStepExecutionError(
                 "composition.execution.a0_ceiling_exceeded"
@@ -754,6 +782,8 @@ class CompositionStepExecutionCoordinator:
         # policy has already rejected raw host paths; the runtime rechecks the
         # exact materialized target and current target snapshot below.
         permission = self._permission_for_step(self._registry, materialized.step)
+        validate_composition_arguments(permission.action_id, materialized.arguments,
+                                       **composition_profile_fields(materialized.step))
         try:
             schema = self._schemas.resolve(
                 permission.action_id,
@@ -784,9 +814,9 @@ class CompositionStepExecutionCoordinator:
                 "composition.execution.arguments_normalized"
             )
 
-        target_state = probe_target_state(
-            materialized.target, self._workspace_root
-        )
+        target_state = probe_composition_target_state(
+            materialized.target, self._workspace_root, action_id=permission.action_id,
+            **composition_profile_fields(materialized.step))
         target_snapshot_sha256 = (
             None if target_state is None else canonical_sha256(target_state)
         )
@@ -1177,6 +1207,7 @@ class CompositionStepExecutionCoordinator:
             ticket_consumer_instance_id=(
                 "composition-inprocess-" + self._instance_id
             ),
+            composition_workspace_root=self._workspace_root,
         )
         try:
             response = client.execute(

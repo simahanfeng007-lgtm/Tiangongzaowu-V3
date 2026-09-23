@@ -547,10 +547,13 @@ console.log(JSON.stringify({{ settings, stored }}));
 
     def test_corrupted_local_conversation_is_bounded_and_quota_failure_is_nonfatal(self):
         module_url = (ROOT / "app/frontend-v2/renderer/core/state.mjs").as_uri()
+        presentation_url = (ROOT / "app/frontend-v2/renderer/core/text-presentation.mjs").as_uri()
         script = f"""
+const {{ MESSAGE_MAX_CONTENT }} = await import({json.dumps(presentation_url)});
 const values = new Map();
 values.set("linyuanzhe.sessions", JSON.stringify([{{ id: "s", title: "x", messages: [
   {{ id: "good", role: "assistant", content: "a".repeat(20000) }},
+  {{ id: "oversized", role: "assistant", content: "c".repeat(MESSAGE_MAX_CONTENT + 1) }},
   {{ id: "bad", role: "assistant injected", content: "bad" }}
 ] }}]));
 values.set("linyuanzhe.activeSessionId", "s");
@@ -560,7 +563,18 @@ const {{ createState }} = await import({json.dumps(module_url)});
 const state = createState();
 const before = state.snapshot();
 const added = state.addMessage("invalid role", "b".repeat(20000));
-console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength: before.messages[0].content.length, role: added.role, addedLength: added.content.length }}));
+const addedOversized = state.addMessage("assistant", "d".repeat(MESSAGE_MAX_CONTENT + 1));
+console.log(JSON.stringify({{
+  limit: MESSAGE_MAX_CONTENT, beforeCount: before.messages.length,
+  beforeLength: before.messages[0].content.length,
+  beforeIntact: before.messages[0].content === "a".repeat(20000),
+  role: added.role, addedLength: added.content.length,
+  addedIntact: added.content === "b".repeat(20000),
+  restoredBoundedLength: before.messages[1].content.length,
+  restoredTail: before.messages[1].content.slice(-80),
+  addedBoundedLength: addedOversized.content.length,
+  addedTail: addedOversized.content.slice(-80)
+}}));
 """
         completed = subprocess.run(
             ["node", "--input-type=module", "-e", script], cwd=ROOT, check=False,
@@ -568,10 +582,18 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["beforeCount"], 1)
-        self.assertEqual(payload["beforeLength"], 15000)
+        self.assertEqual(payload["limit"], 1024 * 1024)
+        self.assertEqual(payload["beforeCount"], 2)
+        self.assertEqual(payload["beforeLength"], 20000)
+        self.assertTrue(payload["beforeIntact"])
         self.assertEqual(payload["role"], "assistant")
-        self.assertEqual(payload["addedLength"], 15000)
+        self.assertEqual(payload["addedLength"], 20000)
+        self.assertTrue(payload["addedIntact"])
+        self.assertEqual(payload["restoredBoundedLength"], 1024 * 1024)
+        self.assertEqual(payload["addedBoundedLength"], 1024 * 1024)
+        notice = "[消息较长，当前显示已截断；完整内容请查看本次运行记录或产物文件。]"
+        self.assertTrue(payload["restoredTail"].endswith(notice))
+        self.assertTrue(payload["addedTail"].endswith(notice))
 
     def test_life_cards_use_explicit_regions_and_wrap_long_content(self):
         panel = source("app/frontend-v2/renderer/plugins/life-panel.mjs")
@@ -749,7 +771,8 @@ console.log(JSON.stringify({{ beforeCount: before.messages.length, beforeLength:
         self.assertIn("totalGatewayReadyCheck(3000)", readiness_wait)
         self.assertIn("CREDENTIAL_RESTART_TIMEOUT_MS", readiness_wait)
         self.assertIn("waitForTotalGatewayReadiness()", credential_restart)
-        self.assertIn("ready: () => totalGatewayReadyCheck(3000)", main)
+        self.assertIn("ready: totalGatewayServiceReadyCheck", main)
+        self.assertIn("async function totalGatewayServiceReadyCheck()", main)
 
         secure_start = main.index("async function secureModelSettingsUpdate")
         secure_end = main.index("function applyProviderApiKey", secure_start)

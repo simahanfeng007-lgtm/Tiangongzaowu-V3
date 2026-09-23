@@ -137,6 +137,52 @@ def _admit_recalled_experience(entries):
     return tuple(admitted), rejected
 
 
+_NAMESPACE_TERMS = {
+    "file": ("文件", "目录", "读取", "保存", "写入", "报告", "csv", "json", "markdown", "file", "folder", "directory"),
+    "code": ("代码", "修复", "函数", "程序", "code", "repair", "bug", "project"),
+    "python": ("统计", "计算", "数据", "测试", "python", "csv", "calculate", "test"),
+    "shell": ("执行", "运行", "测试", "命令", "终端", "shell", "command", "run", "test"),
+    "web": ("网页", "搜索", "网站", "联网", "web", "search", "http", "url"),
+    "browser": ("浏览器", "网页", "网站", "browser", "website"),
+    "word": ("word", "docx", "文档", "合同"),
+    "ppt": ("ppt", "幻灯片", "演示", "presentation", "slides"),
+    "excel": ("excel", "xlsx", "表格", "工作簿", "spreadsheet"),
+    "pdf": ("pdf",),
+}
+_OPERATION_TERMS = {
+    "read": ("读", "查看", "检查", "分析", "read", "inspect"),
+    "list": ("目录", "列出", "文件夹", "list", "folder", "directory"),
+    "write": ("写", "保存", "生成", "创建", "输出", "write", "save", "create"),
+    "run": ("执行", "运行", "统计", "计算", "测试", "run", "execute", "test", "calculate"),
+    "patch": ("修复", "修改", "替换", "patch", "repair", "fix"),
+    "verify": ("验证", "检查", "核对", "verify", "check"),
+}
+
+
+def _reference_relevance(row, focus: str):
+    """Presentation retrieval only: rank existing verified rows, never grant one.
+
+    Exact action names retain priority. Ordinary words use descriptor tokens and
+    small namespace/operation language aliases so a Chinese file request does
+    not receive the first 30 unrelated capabilities in alphabetical order.
+    """
+    entity, source, _ref, attrs = row
+    semantic = source.semantic_id.casefold()
+    title = entity.canonical_name.casefold()
+    exact = semantic in focus or (len(title) > 2 and title in focus)
+    query_tokens = set(re.findall(r"[a-z0-9]+", focus))
+    description = " ".join((semantic, title, attrs.get("semantic_summary", "").casefold()))
+    overlap = len(query_tokens.intersection(re.findall(r"[a-z0-9]+", description)))
+    namespace, _, operation = semantic.partition(".")
+    namespace_match = any(term in focus for term in _NAMESPACE_TERMS.get(namespace, ()))
+    operation_match = any(term in focus for name, terms in _OPERATION_TERMS.items()
+                          if operation == name or operation.startswith(name + "_") for term in terms)
+    # Prefer the small general file/shell primitives within a matching namespace.
+    general = semantic in {"file.read", "file.list", "file.write", "python.run", "shell.run", "code.patch_replace"}
+    score = overlap * 4 + namespace_match * 12 + (namespace_match and operation_match) * 8 + (namespace_match and general) * 6
+    return (not exact, -score, semantic, entity.entity_id)
+
+
 def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, query: WorldQuery,
                                          *, token_estimator=conservative_token_estimate,
                                          procedural_experience=(), negative_evidence=()) -> CapabilityContextPacketV1 | None:
@@ -171,8 +217,7 @@ def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, qu
     if scope_workspace is not None and scope_workspace not in workspaces:
         raise ValueError("CAPABILITY_CONTEXT_SOURCE_WORKSPACE_MISMATCH")
     focus = query.focus.casefold()
-    rows.sort(key=lambda r: (not (r[1].semantic_id.casefold() in focus or r[0].canonical_name.casefold() in focus),
-                             r[1].semantic_id, r[0].entity_id))
+    rows.sort(key=lambda r: _reference_relevance(r, focus))
     methods = [r for r in rows if r[1].source_kind == "SKILL_METHOD"][:15]
     actions = [r for r in rows if r[1].source_kind == "TOOL_ACTION"][:30]
 

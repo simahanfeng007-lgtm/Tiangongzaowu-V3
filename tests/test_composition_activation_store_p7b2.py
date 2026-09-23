@@ -191,7 +191,8 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # at 1.20; R1E/R1F/R1G-prep extend the frozen surface at 1.21; the P15-A
     # tool-source invalidation preflight extends it at 1.22; admission
     # materialization and the experience-recall seam extend it at 1.23; the batch-A deep-audit fixes extend it at 1.24; the R1H logical retirement extends it at 1.25; the P13-D deletion of capability_lifecycle removes it at 1.26; restoring the lost admission guards extends it at 1.27.
-    assert VERIFICATION_PLANE_VERSION == "1.27"
+    # The source execution/containment and actual-evidence surfaces advance to 1.28.
+    assert VERIFICATION_PLANE_VERSION == "1.28"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

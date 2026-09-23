@@ -1903,7 +1903,7 @@ class JirouCeng:
                 return canshu.get(key)
         return ""
 
-    def zhixing(self, yingshe: GongjuYingshe, canshu: dict, *, call_id: str = "") -> dict[str, Any]:
+    def zhixing(self, yingshe: GongjuYingshe, canshu: dict, *, call_id: str = "", cancel_check: Any = None) -> dict[str, Any]:
         """执行工具。当前主链只允许 omni_body。"""
         mingcheng = yingshe.mingcheng
         if mingcheng != "omni_body":
@@ -1946,8 +1946,12 @@ class JirouCeng:
                 "args": dict(proposal.get("args") or {}),
                 "workspace": str(_workspace_root()),
                 "__capability_grant": authority["grant"],
-                "__runtime": authority["runtime"],
+                "__runtime": dict(authority["runtime"]),
             }
+            # Host RunControl callback only: inject after signing, and never
+            # put callables in the proposal, authority receipt or audit JSON.
+            if callable(cancel_check):
+                authorized["__runtime"]["cancel_check"] = cancel_check
             result = _normalise_tool_result(
                 mingcheng,
                 getattr(yingshe, "effect", "unknown"),

@@ -46,7 +46,7 @@ class ReleaseManifestTests(unittest.TestCase):
         )
         self.assertEqual(
             manifest.capability_manifest_sha256,
-            "0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d",
+            "f97a62d753f77b7c4fcccf5270322cf8aea4baf9cecb408b9ee2ab576a981577",
         )
         self.assertEqual(
             manifest.skill_index_sha256,

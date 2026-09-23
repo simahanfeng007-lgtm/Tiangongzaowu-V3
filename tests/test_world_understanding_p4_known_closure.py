@@ -157,13 +157,16 @@ def test_event_order_rule_orders_same_subject_events():
     result=default_engine().close((a,b))
     assert any(r.proposition_type=='EVENT_PRECEDES' for r in result.known.records())
 
-def test_same_source_root_grouping_is_pairwise_and_provenance_preserving():
+def test_same_source_root_grouping_is_versioned_membership_and_provenance_preserving():
     a=fact('r1',obj='same-payload'); b=fact('r2',obj='same-payload')
     result=default_engine().close((a,b))
-    grouped=[r for r in result.known.records() if r.proposition_type=='SHARES_SOURCE_ROOT']
-    assert grouped
+    grouped=[r for r in result.known.records() if r.proposition_type=='SOURCE_ROOT_MEMBER']
+    assert len(grouped)==2
     root=a.provenance_refs[0].sha256
-    assert root in {ref.sha256 for ref in grouped[0].provenance_refs}
+    assert {r.subject_ref for r in grouped} == {a.known_id,b.known_id}
+    assert all(r.object_value.string_value==root and r.transform_version=='v0.2' for r in grouped)
+    assert all(root in {ref.sha256 for ref in r.provenance_refs} for r in grouped)
+    assert not result.known.by_proposition('SHARES_SOURCE_ROOT')
 
 def test_git_structural_normalization_does_not_invent_semantic_role():
     e=env('GIT_CODE',native='git.import',payload={'text':'pkg.b'},t=1)

@@ -1,9 +1,9 @@
 import { projectMessageKind } from "./truth-projection.mjs";
+import { boundedMessageContent } from "./text-presentation.mjs";
 
 const MESSAGE_KEY = "linyuanzhe.messages";
 const SESSIONS_KEY = "linyuanzhe.sessions";
 const ACTIVE_SESSION_KEY = "linyuanzhe.activeSessionId";
-const MESSAGE_MAX_CONTENT = 15000;
 const MESSAGE_ATTACHMENT_LIMIT = 32;
 const MESSAGE_MAX_DATA_URL = 6 * 1024 * 1024;
 const PROGRESS_MAX_JSON = 32 * 1024;
@@ -249,7 +249,7 @@ function cleanMessages(messages, sessionId = "") {
     ? messages.map((item) => ({
         id: boundedText(item?.id || msgId(), 256),
         role: MESSAGE_ROLES.has(String(item?.role || "")) ? String(item.role) : "",
-        content: boundedText(item?.content || "", MESSAGE_MAX_CONTENT),
+        content: boundedMessageContent(item?.content),
         attachments: cleanAttachments(item?.attachments),
         error: Boolean(item?.error),
         at: Number(item?.at || Date.now()),
@@ -752,7 +752,7 @@ export function createState() {
     const message = {
       id: requestedId || msgId(),
       role,
-      content: String(content || "").slice(0, MESSAGE_MAX_CONTENT),
+      content: boundedMessageContent(content),
       attachments: cleanAttachments(options.attachments),
       error,
       at: Number.isFinite(parsedAt) ? parsedAt : Date.now(),
@@ -783,7 +783,7 @@ export function createState() {
     if (!messages.length) return;
     const last = messages[messages.length - 1];
     if (last.role !== "assistant") return;
-    last.content = String(last.content + text).slice(0, MESSAGE_MAX_CONTENT);
+    last.content = boundedMessageContent(last.content + text);
     data.sessions = data.sessions.map((session) => {
       if (session.id !== data.activeSessionId) return session;
       const sm = session.messages;
@@ -798,7 +798,7 @@ export function createState() {
     if (!messages.length) return;
     const last = messages[messages.length - 1];
     if (last.role !== "assistant") return;
-    last.content = String(text || "").slice(0, MESSAGE_MAX_CONTENT);
+    last.content = boundedMessageContent(text);
     data.sessions = data.sessions.map((session) => {
       if (session.id !== data.activeSessionId) return session;
       const sm = session.messages;
@@ -819,7 +819,7 @@ export function createState() {
     if (!delta) return;
     const msg = _findMsg(sessionId, messageId);
     if (!msg || msg.role !== "assistant") return;
-    msg.content = String(msg.content + delta).slice(0, MESSAGE_MAX_CONTENT);
+    msg.content = boundedMessageContent(msg.content + delta);
     // 同步到 data.messages
     const idx = data.messages.findIndex(m => m.id === messageId);
     if (idx >= 0) data.messages[idx] = { ...msg };
@@ -842,7 +842,7 @@ export function createState() {
   function replaceMessageById({ sessionId, messageId, text, error = false, attachments, meta }) {
     const msg = _findMsg(sessionId, messageId);
     if (!msg || msg.role !== "assistant") return;
-    msg.content = String(text || "").slice(0, MESSAGE_MAX_CONTENT);
+    msg.content = boundedMessageContent(text);
     if (typeof error !== "undefined") msg.error = Boolean(error);
     if (typeof attachments !== "undefined") msg.attachments = cleanAttachments(attachments);
     if (meta && typeof meta === "object") msg.meta = { ...(msg.meta || {}), ...meta };

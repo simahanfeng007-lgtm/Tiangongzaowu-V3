@@ -113,12 +113,16 @@ from ..execution_integrity import (
     build_action_obligations,
     build_task_contract_obligations,
     execution_integrity_blockers,
+    execution_result_ok,
+    completion_progress_fingerprint,
     extract_model_task_profile,
     initialize_task_contract,
     is_execution_discussion_only,
     merge_action_obligations,
     obligation_is_satisfied,
     reconcile_task_contract,
+    reconcile_completion_evidence,
+    request_target_bindings,
     requires_evidence_safe_closeout,
     task_contract_forbids_action,
     transition_task_contract_terminal,
@@ -951,10 +955,14 @@ def _simple_chain_regenerative_execute_tool(
     global_step: int,
     attempted_action: str,
     update_frontier: bool = True,
+    cancel_check: Any = None,
 ) -> Any:
+    execution_kwargs = {"call_id": call_id}
+    if callable(cancel_check):
+        execution_kwargs["cancel_check"] = cancel_check
     context = current_run_context()
     if not str(getattr(context, "outer_execution_ticket_id", "") or "").strip():
-        return owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)
+        return owner._jineng_zhixing(tool_name, tool_args, user_message, **execution_kwargs)
     descriptor = _simple_chain_tool_effect_descriptor(
         request_id=str(getattr(context, "request_id", "") or ""),
         run_id=str(getattr(context, "run_id", "") or ""),
@@ -1081,7 +1089,7 @@ def _simple_chain_regenerative_execute_tool(
     )
     handler_exception = False
     try:
-        raw = owner._jineng_zhixing(tool_name, tool_args, user_message, call_id=call_id)
+        raw = owner._jineng_zhixing(tool_name, tool_args, user_message, **execution_kwargs)
     except Exception as exc:
         handler_exception = True
         raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}
@@ -1516,7 +1524,7 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
     else:
         run_state["status"] = "observing"
         run_state["stage"] = "observing"
-    payload_ok = bool(payload.get("ok"))
+    payload_ok = execution_result_ok(payload)
     completion_ok = payload_ok
     if action.startswith("qc."):
         acceptance, _score = _simple_chain_qc_acceptance(payload)
@@ -2410,12 +2418,9 @@ def _simple_chain_requested_target_paths(user_message: str) -> list[str]:
     text = conversion_output if conversion_output is not None else source_text
     out: list[str] = []
 
-    abs_pattern = re.compile(
-        r"[A-Za-z]:[\\/](?:[^\\/:*?\"<>|\r\n`]+[\\/])*[^\\/:*?\"<>|\r\n`]+?\.[A-Za-z0-9]{1,8}"
-    )
-    for match in abs_pattern.finditer(text):
-        path = match.group(0).strip()
-        if _path_suffix(path) in _DELIVERABLE_SUFFIXES:
+    for binding in request_target_bindings(text):
+        path = binding["target_path"]
+        if re.match(r"[A-Za-z]:[\\/]", path) and _path_suffix(path) in _DELIVERABLE_SUFFIXES:
             out.append(path)
 
     filename_pattern = re.compile(
@@ -2487,7 +2492,22 @@ def _simple_chain_explicit_deliverable_paths(user_message: str) -> list[str]:
     )
     out.extend(_simple_chain_bracketed_deliverable_paths(text))
     out.extend(match.group(1) for match in token_pattern.finditer(text))
-    return _simple_chain_unique_paths(out)
+    bindings = request_target_bindings(text)
+    out.extend(item["target_path"] for item in bindings
+               if item["role"] in {"output", "existing"}
+               and re.search(r"\.[A-Za-z0-9]{1,8}$", item["target_path"]))
+    excluded = {
+        _path_key_for_qc(item["target_path"])
+        for item in bindings if item["role"] in {"input", "preserved", "executable", "workspace"}
+    }
+    required = {
+        _path_key_for_qc(item["target_path"])
+        for item in bindings if item["role"] in {"output", "existing"}
+    }
+    return _simple_chain_unique_paths([
+        path for path in out
+        if _path_key_for_qc(path) not in excluded or _path_key_for_qc(path) in required
+    ])
 
 def _simple_chain_is_read_only_request(user_message: str) -> bool:
     """Return whether the user asks for observation without a write effect.
@@ -2512,7 +2532,8 @@ def _simple_chain_is_read_only_request(user_message: str) -> bool:
 def _simple_chain_explicit_read_paths(user_message: str) -> list[str]:
     """Extract concrete file targets while preserving their read-only role."""
 
-    paths = list(_simple_chain_requested_target_paths(user_message))
+    paths = [item["target_path"] for item in request_target_bindings(user_message)
+             if item["role"] == "input"]
     if _simple_chain_is_read_only_request(user_message):
         # The broad token parser is appropriate here only because the request
         # has already been classified as read-only.  The same tokens must not
@@ -4927,6 +4948,12 @@ def _simple_chain_has_post_mutation_verification(
     quality_history: list[dict[str, Any]],
     user_message: str = "",
 ) -> bool:
+    test_goals = [item for item in build_action_obligations(user_message)
+                  if item.get("evidence_predicate") == "tests_passed"]
+    if test_goals:
+        # The shared evidence view owns test attempt and dependency freshness.
+        # A README write after passing tests is not a new code verification debt.
+        return all(obligation_is_satisfied(item, quality_history) for item in test_goals)
     verification_actions = {"run", "python.run", "quality.run_tests", "shell.run", "command.run"}
     test_markers = (
         "pytest", "unittest", "npm test", "npm run test", "pnpm test", "yarn test",
@@ -5132,13 +5159,20 @@ def _simple_chain_missing_deliverable_paths(
     expected = _simple_chain_explicit_deliverable_paths(user_message)
     if not expected:
         return []
+    retained = { _path_key_for_qc(item["target_path"]) for item in request_target_bindings(user_message)
+                if item["role"] == "existing" }
     observed: list[str] = []
     for payload in quality_history or []:
-        if isinstance(payload, dict) and bool(payload.get("ok")):
-            observed.extend(_simple_chain_payload_paths(payload))
+        if execution_result_ok(payload):
+            observed.extend(path for path in _simple_chain_payload_paths(payload)
+                            if not any(_simple_chain_paths_match_expected([path], [target])
+                                       for target in expected if _path_key_for_qc(target) in retained))
     for item in generated_attachments or []:
         if isinstance(item, dict) and item.get("path"):
-            observed.append(str(item.get("path")))
+            path = str(item.get("path"))
+            if not any(_simple_chain_paths_match_expected([path], [target])
+                       for target in expected if _path_key_for_qc(target) in retained):
+                observed.append(path)
     observed = _simple_chain_unique_paths(observed)
     base = _delivery_workspace_root()
     project_dir = _simple_chain_project_dir(user_message)
@@ -5382,7 +5416,7 @@ def _simple_chain_evidence_check(
         return (not reasons, "incomplete" if reasons else "complete", reasons)
 
     last_payload = quality_history[-1]
-    if not bool(last_payload.get("ok")):
+    if not execution_result_ok(last_payload):
         reasons.extend(_simple_chain_failure_text(last_payload) or ["last omni_body step failed"])
         return False, "failed", reasons
 
@@ -5391,7 +5425,7 @@ def _simple_chain_evidence_check(
         str(payload.get("tool_action") or "").strip().lower()
         for payload in quality_history
         if isinstance(payload, dict)
-        and bool(payload.get("ok"))
+        and execution_result_ok(payload)
         and (
             not str(payload.get("tool_action") or "").strip().lower().startswith("qc.")
             or _simple_chain_qc_acceptance(payload)[0] is True
@@ -5414,7 +5448,7 @@ def _simple_chain_evidence_check(
         observed_actions = [
             str(payload.get("tool_action") or "").strip().lower()
             for payload in quality_history
-            if isinstance(payload, dict) and bool(payload.get("ok"))
+            if execution_result_ok(payload)
         ]
         cursor = -1
         order_ok = True
@@ -5509,6 +5543,10 @@ def _simple_chain_life_completion_gate(
     final_reply: Any = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], bool, str, list[str]]:
+    if isinstance(task_obligations, list):
+        task_contract, task_obligations = reconcile_completion_evidence(
+            task_contract, task_obligations, quality_history,
+        )
     return decide_simple_chain_completion(
         user_message,
         quality_history,
@@ -5641,6 +5679,7 @@ def _simple_chain_completion_correction_state(
             if str(item).strip()
         ][:8],
         "exhausted": bool(current.get("exhausted")),
+        "last_progress_sha256": str(current.get("last_progress_sha256") or ""),
     }
     if isinstance(run_state, dict):
         run_state["completion_correction"] = normalized
@@ -5675,6 +5714,7 @@ def _simple_chain_completion_correction_payload(
 def _simple_chain_completion_correction_stalled(
     correction: dict[str, Any],
     reasons: list[str],
+    run_state: dict[str, Any] | None = None,
 ) -> bool:
     """Stop when one model correction produced no new route or evidence."""
 
@@ -5686,7 +5726,13 @@ def _simple_chain_completion_correction_stalled(
     ][:8]
     # bug-fix: stalled 改首轮比较——attempt=0 就对比 blockers（含跨 run 恢复的残留状态），
     # 无变化立即走模板，不再保底烧一次 correction 调用（2026-08-26，凌霜修 logic 类）
-    return bool(current and current == previous)
+    same_reasons = bool(current and current == previous)
+    if run_state is None:
+        return same_reasons  # compatibility for older callers/checkpoints
+    fingerprint = completion_progress_fingerprint(run_state)
+    previous_fingerprint = str(correction.get("last_progress_sha256") or "")
+    correction["last_progress_sha256"] = fingerprint
+    return same_reasons and bool(previous_fingerprint) and fingerprint == previous_fingerprint
 
 def _simple_chain_completion_fallback_reply(
     user_message: str,

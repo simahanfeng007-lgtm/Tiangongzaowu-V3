@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from .canonical import canonical_sha256
+from .composition_profile import composition_profile_valid, composition_authority_allowed, composition_profile_fields
 from .models import (
     ActionId,
     ContractModel,
@@ -194,8 +195,13 @@ class CompositionExecutionBindingV1(ContractModel):
     )
     binding_sha256: Sha256
 
+    execution_profile_id: OpaqueId | None = Field(default=None, exclude_if=lambda value: value is None)
+    execution_profile_sha256: Sha256 | None = Field(default=None, exclude_if=lambda value: value is None)
+
     @model_validator(mode="after")
     def validate_continuation_shape(self) -> Self:
+        if not composition_profile_valid(self.execution_profile_id, self.execution_profile_sha256):
+            raise ValueError("composition execution profile is unknown or incomplete")
         continuation = (
             self.attempt,
             self.continuation_delegation_id,
@@ -340,6 +346,11 @@ class ExecutionTicketPayload(ContractModel):
         if binding is not None:
             if not binding.has_valid_sha256():
                 raise ValueError("ticket composition binding digest is invalid")
+            if binding.execution_profile_id is not None and not composition_authority_allowed(action_id=self.action_id,
+                    risk_class=self.risk_class, allowed_side_effects=self.allowed_side_effects,
+                    allow_python=(self.action_id == "python.run" and binding.execution_profile_id is not None),
+                    **composition_profile_fields(binding)):
+                raise ValueError("ticket exceeds fixed composition profile")
             if (
                 binding.request_id != self.request_id
                 or binding.run_id != self.run_id

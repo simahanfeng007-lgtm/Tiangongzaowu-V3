@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from contextlib import contextmanager
+import hashlib
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from typing import Mapping, Sequence, Any
 
 
@@ -21,6 +24,7 @@ ole32 = ctypes.OleDLL("ole32")
 LPVOID = wintypes.LPVOID
 SIZE_T = ctypes.c_size_t
 PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 CREATE_UNICODE_ENVIRONMENT = 0x00000400
 CREATE_SUSPENDED = 0x00000004
@@ -31,6 +35,7 @@ WAIT_TIMEOUT = 0x00000102
 ERROR_ALREADY_EXISTS = 183
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 JobObjectExtendedLimitInformation = 9
 
@@ -80,6 +85,9 @@ class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
 # initialization before user code starts.
 kernel32.CreateFileW.restype = wintypes.HANDLE
 kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+kernel32.CreateMutexW.argtypes = [LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+kernel32.ReleaseMutex.argtypes = [wintypes.HANDLE]
 kernel32.LocalFree.restype = wintypes.HANDLE
 userenv.CreateAppContainerProfile.restype = ctypes.c_long
 userenv.DeriveAppContainerSidFromAppContainerName.restype = ctypes.c_long
@@ -145,15 +153,46 @@ def appcontainer_storage_root(moniker: str = "TiangongV3.ToolSandbox") -> Path:
         advapi32.FreeSid(sid)
 
 
+def delete_appcontainer_profile(moniker: str) -> None:
+    if not moniker.startswith("TG3.Run."):
+        raise ValueError("appcontainer_ephemeral_profile_required")
+    hr = userenv.DeleteAppContainerProfile(moniker)
+    if hr != 0 and ctypes.c_uint32(hr).value != 0x80070002:
+        raise OSError(ctypes.c_uint32(hr).value, "DeleteAppContainerProfile")
+
+
+@contextmanager
+def _acl_update_lock(path: Path):
+    # Different invocation SIDs share the interpreter directory. icacls does
+    # a read/modify/write: simultaneous grant/revoke can lose another SID's
+    # entry. Serialize only that update across threads AND host processes.
+    identity = os.path.normcase(str(path.resolve(strict=True))).encode("utf-8")
+    name = "Local\\Tiangong.RuntimeAcl." + hashlib.sha256(identity).hexdigest()
+    mutex = wintypes.HANDLE(kernel32.CreateMutexW(None, False, name))
+    _check(mutex, "CreateMutexW(runtime ACL)")
+    acquired = False
+    try:
+        status = kernel32.WaitForSingleObject(mutex, 30000)
+        if status not in (0, 0x80):
+            raise OSError("runtime_acl_update_lock_unavailable")
+        acquired = True
+        yield
+    finally:
+        if acquired: kernel32.ReleaseMutex(mutex)
+        kernel32.CloseHandle(mutex)
+
+
 def _grant(path: Path, sid_text: str, permission: str) -> None:
-    cp = subprocess.run(
-        ["icacls", str(path), "/grant", f"*{sid_text}:{permission}", "/C", "/Q"],
-        capture_output=True,
-        text=True,
-        encoding="oem",
-        errors="replace",
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    with _acl_update_lock(path):
+        cp = subprocess.run(
+            ["icacls", str(path), "/grant", f"*{sid_text}:{permission}", "/C", "/Q"],
+            capture_output=True,
+            text=True,
+            encoding="oem",
+            errors="replace",
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=20,
+        )
     if cp.returncode != 0:
         raise OSError(f"icacls_failed:{cp.stderr[-400:]}")
 
@@ -182,8 +221,8 @@ def _open_inheritable_null() -> wintypes.HANDLE:
     return handle
 
 
-def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[str, str], limits: Any, sandbox_root: Path):
-    moniker = "TiangongV3.ToolSandbox"
+def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[str, str], limits: Any, sandbox_root: Path,
+                     moniker: str = "TiangongV3.ToolSandbox", cancel_check=None):
     sid = _appcontainer_sid(moniker)
     sid_text = _sid_string(sid)
     # AppContainer receives explicit access only to this invocation workspace.
@@ -202,8 +241,12 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
     else:
         executable_text = str(command[0])
     executable = Path(executable_text).expanduser()
-    if executable.is_absolute() and executable.exists():
+    runtime_grant = None
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
+    if (executable.is_absolute() and executable.exists()
+            and not executable.resolve().is_relative_to(system_root)):
         _grant(executable.parent, sid_text, "(OI)(CI)RX")
+        runtime_grant = executable.parent
 
     stdout_path = sandbox_root / "stdout.bin"
     stderr_path = sandbox_root / "stderr.bin"
@@ -212,11 +255,14 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
     input_handle = _open_inheritable_null()
 
     attr_size = SIZE_T(0)
-    kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(attr_size))
+    kernel32.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(attr_size))
     attr_buffer = ctypes.create_string_buffer(attr_size.value)
-    _check(kernel32.InitializeProcThreadAttributeList(attr_buffer, 1, 0, ctypes.byref(attr_size)), "InitializeProcThreadAttributeList")
+    _check(kernel32.InitializeProcThreadAttributeList(attr_buffer, 2, 0, ctypes.byref(attr_size)), "InitializeProcThreadAttributeList")
     capabilities = SECURITY_CAPABILITIES(sid, None, 0, 0)
     _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None), "UpdateProcThreadAttribute")
+    inherited = (wintypes.HANDLE * 3)(input_handle, stdout_handle, stderr_handle)
+    _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+        inherited, ctypes.sizeof(inherited), None, None), "UpdateProcThreadAttribute(handles)")
 
     si = STARTUPINFOEXW()
     si.StartupInfo.cb = ctypes.sizeof(si)
@@ -234,9 +280,10 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
     job = kernel32.CreateJobObjectW(None, None)
     _check(job, "CreateJobObjectW")
     info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
     info.BasicLimitInformation.ActiveProcessLimit = max(1, int(limits.max_processes))
     info.ProcessMemoryLimit = max(128 * 1024 * 1024, int(limits.max_memory_bytes))
+    info.JobMemoryLimit = info.ProcessMemoryLimit
     _check(kernel32.SetInformationJobObject(job, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)), "SetInformationJobObject")
 
     try:
@@ -247,17 +294,50 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
         )
         _check(ok, "CreateProcessW(AppContainer)")
         _check(kernel32.AssignProcessToJobObject(job, pi.hProcess), "AssignProcessToJobObject")
-        kernel32.ResumeThread(pi.hThread)
-        wait = kernel32.WaitForSingleObject(pi.hProcess, max(1, int(limits.timeout_seconds)) * 1000)
-        if wait == WAIT_TIMEOUT:
-            kernel32.TerminateJobObject(job, 124)
-            raise TimeoutError("sandbox_timeout")
+        if cancel_check is not None and cancel_check():
+            raise RuntimeError("sandbox_cancelled")
+        if kernel32.ResumeThread(pi.hThread) == 0xFFFFFFFF:
+            raise OSError(ctypes.get_last_error(), "ResumeThread")
+        deadline = time.monotonic() + max(1, int(limits.timeout_seconds))
+        while True:
+            if cancel_check is not None and cancel_check():
+                raise RuntimeError("sandbox_cancelled")
+            if stdout_path.stat().st_size + stderr_path.stat().st_size > limits.max_output_bytes:
+                raise RuntimeError("sandbox_process_output_limit")
+            wait = kernel32.WaitForSingleObject(pi.hProcess, 25)
+            if wait == 0:
+                break
+            if wait != WAIT_TIMEOUT:
+                raise OSError(ctypes.get_last_error(), "WaitForSingleObject")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("sandbox_timeout")
         exit_code = wintypes.DWORD()
         _check(kernel32.GetExitCodeProcess(pi.hProcess, ctypes.byref(exit_code)), "GetExitCodeProcess")
+    except BaseException as exc:
+        # An execution/monitoring failure must never be retried without isolation.
+        if pi.hProcess:
+            exc.execution_started = True
+        raise
     finally:
+        if job:
+            kernel32.TerminateJobObject(job, 125)
+        if getattr(pi, "hProcess", None):
+            kernel32.WaitForSingleObject(pi.hProcess, 5000)
         for handle in (getattr(pi, "hThread", None), getattr(pi, "hProcess", None), input_handle, stdout_handle, stderr_handle, job):
             if handle:
                 kernel32.CloseHandle(handle)
         kernel32.DeleteProcThreadAttributeList(attr_buffer)
         advapi32.FreeSid(sid)
-    return int(exit_code.value), stdout_path.read_bytes(), stderr_path.read_bytes(), "windows-appcontainer"
+        if runtime_grant is not None and moniker.startswith("TG3.Run."):
+            with _acl_update_lock(runtime_grant):
+                subprocess.run(["icacls", str(runtime_grant), "/remove:g", "*" + sid_text, "/C", "/Q"],
+                    capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+    with stdout_path.open("rb") as stream:
+        stdout = stream.read(limits.max_output_bytes + 1)
+    with stderr_path.open("rb") as stream:
+        stderr = stream.read(limits.max_output_bytes + 1)
+    if len(stdout) + len(stderr) > limits.max_output_bytes:
+        exc = RuntimeError("sandbox_process_output_limit")
+        exc.execution_started = True
+        raise exc
+    return int(exit_code.value), stdout, stderr, "windows-appcontainer"

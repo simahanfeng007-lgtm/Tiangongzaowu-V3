@@ -15,14 +15,27 @@ from total_gateway.skill_selection import load_model_capability_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 H = "a" * 64
+CONTROLLED_EXPLICIT_ACTIONS = {
+    "code.patch_replace": ("A3", "write"), "code.write": ("A3", "write"),
+    "core.code.code.patch_replace": ("A3", "write"), "core.code.code.write": ("A3", "write"),
+    "core.code.python.run": ("A4", "write"), "core.filesystem.file.mkdir": ("A3", "write"),
+    "core.filesystem.file.write": ("A3", "write"), "file.mkdir": ("A2", "write"),
+    "file.patch_replace": ("A3", "execute"), "file.write": ("A3", "write"), "python.run": ("A4", "write"),
+}
 EXPLICIT_ACTIONS = {
+    "core.filesystem.file.read",
+    "core.filesystem.file.list",
+    "core.filesystem.file.hash",
+    "file.read",
+    "file.list",
+    "file.hash",
     "life.body.state.query",
     "pptx.read",
     "qc.ppt.delivery_check",
     "skill.get",
     "skill.list",
     "skill.read",
-}
+} | set(CONTROLLED_EXPLICIT_ACTIONS)
 
 
 def _manifest() -> dict:
@@ -111,8 +124,11 @@ def test_live_manifest_explicit_allowlist_is_closed() -> None:
         assert raw["result_schema_sha256"] == canonical_sha256(raw["result_schema"])
         assert raw["result_schema"]["kind"] == raw["result_schema_kind"]
         if action_id in EXPLICIT_ACTIONS:
-            assert raw["risk"] == "A0"
-            assert raw["effect"] in {"read", "verify"}
+            if action_id in CONTROLLED_EXPLICIT_ACTIONS:
+                assert (raw["risk"], raw["effect"]) == CONTROLLED_EXPLICIT_ACTIONS[action_id]
+            else:
+                assert raw["risk"] == "A0"
+                assert raw["effect"] in {"read", "verify"}
             assert raw["value_schema_kind"] == "EXPLICIT"
             assert raw["value_schemas"]
         else:

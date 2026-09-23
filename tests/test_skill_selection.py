@@ -247,7 +247,7 @@ class SkillSelectionTests(unittest.TestCase):
 class FilesystemSkillCatalogTests(unittest.TestCase):
     INDEX_SHA256 = "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45"
     CATALOG_SHA256 = "fec4b0709945b614edce5b80aa1a69381ba66b0df85f4bf8f253eb47127d5b35"
-    CAPABILITY_SHA256 = "0971fd04f760d4b491361fa3526b17d092c561ce224fb7f9b10446e0bcd5999d"
+    CAPABILITY_SHA256 = "f97a62d753f77b7c4fcccf5270322cf8aea4baf9cecb408b9ee2ab576a981577"
 
     @classmethod
     def source_root(cls) -> Path:

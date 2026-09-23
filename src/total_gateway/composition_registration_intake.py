@@ -242,8 +242,20 @@ def register_source_composition(
     ):
         raise CompositionRegistrationIntakeError("intake.bindings.required")
 
-    # Activation lifetime: the original P7A/P7B 60-second window, sealed at
-    # the Store's own recorded time inside the single registration UoW.
+    profiles = {(step.execution_profile_id, step.execution_profile_sha256) for step in step_bindings}
+    if len(profiles) != 1:
+        raise CompositionRegistrationIntakeError("intake.execution_profile_inconsistent")
+    execution_profile_id, execution_profile_sha256 = profiles.pop()
+    from .composition_admission_lifetime import composition_admission_lifetime_ms
+    try:
+        lifetime_ms = composition_admission_lifetime_ms(
+            (step.action_id for step in plan.steps),
+            execution_profile_id=execution_profile_id,
+            execution_profile_sha256=execution_profile_sha256)
+    except ValueError as exc:
+        raise CompositionRegistrationIntakeError("intake.activation.lifetime_invalid") from exc
+    # A0 keeps the original window; a fixed profile gets only its system
+    # budget. Store seals this deadline once and never renews it after effects.
     if (
         type(issued_at_ms) is not int
         or type(expires_at_ms) is not int
@@ -252,7 +264,7 @@ def register_source_composition(
         <= issued_at_ms
         < recorded_at_ms
         < expires_at_ms
-        <= issued_at_ms + 60_000
+        <= issued_at_ms + lifetime_ms
     ):
         raise CompositionRegistrationIntakeError(
             "intake.activation.lifetime_invalid"
@@ -271,6 +283,24 @@ def register_source_composition(
     )
 
     # Original P7A shadow compiler: pure recompute, no persistence, no grant.
+    # A self-consistent hash is not evidence of the system's admission policy.
+    # Recompute from actual retained source candidates and resolved verifiers;
+    # this also binds any profile-specific UNKNOWN disposition to the same
+    # profile that will be sealed in every executable step and registration.
+    from .composition_profile_admission import PROFILE_ADMISSION_CODE, resolve_profile_validation
+    expected_validation = resolve_profile_validation(
+        plan, result.parse_outcome.proposal, preparation.candidates, context, registry,
+        available_verifiers=frozenset(by_intent), validated_at_ms=validation.validated_at_ms,
+        execution_profile_id=execution_profile_id, execution_profile_sha256=execution_profile_sha256)
+    if expected_validation != validation:
+        raise CompositionRegistrationIntakeError("intake.validation.recompute_mismatch")
+    if any(item.code == PROFILE_ADMISSION_CODE for item in validation.findings):
+        if any(evidence.predicate.predicate_type != "effect.terminal_succeeded"
+               or evidence.predicate.subject_kind != "effect"
+               or evidence.predicate.params != ()
+               or evidence.subject_identity != "composition-plan:" + plan.plan_id
+               or evidence.evaluation_phase != "POST_EXECUTION" for evidence in by_intent.values()):
+            raise CompositionRegistrationIntakeError("intake.validation.profile_evidence_invalid")
     try:
         shadow = propose_shadow_composition_activation(
             plan,
@@ -282,6 +312,8 @@ def register_source_composition(
             expected_principal_scope_hash=context.principal_scope_hash,
             issued_at_ms=issued_at_ms,
             expires_at_ms=expires_at_ms,
+            execution_profile_id=execution_profile_id,
+            execution_profile_sha256=execution_profile_sha256,
         )
     except CompositionShadowActivationError as exc:
         raise CompositionRegistrationIntakeError(

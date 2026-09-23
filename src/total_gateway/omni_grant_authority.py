@@ -6,6 +6,9 @@ re-evaluated by PolicyEngine and receives a short-lived signed grant.
 """
 from __future__ import annotations
 
+from contracts.composition_profile import composition_permission_allowed, composition_profile_fields, validate_composition_arguments
+from .composition_workspace_boundary import probe_composition_target_state
+
 import json
 import hashlib
 import os
@@ -916,15 +919,7 @@ class OmniGrantAuthority:
                     not permission.has_valid_sha256()
                     or permission != step.permission
                     or permission.permission_sha256 != step.permission_sha256
-                    or permission.registry_risk != "A0"
-                    or permission.effective_risk != "A0"
-                    or permission.effect not in {"read", "verify"}
-                    or not set(permission.allowed_side_effects).issubset(
-                        _SAFE_COMPOSITION_SIDE_EFFECTS
-                    )
-                    or permission.allow_shell
-                    or permission.allow_python
-                    or permission.requires_confirmation
+                    or not composition_permission_allowed(permission, **composition_profile_fields(step))
                 ):
                     raise ValueError("unsafe composition permission")
                 catalog.resolve(
@@ -1624,15 +1619,7 @@ class OmniGrantAuthority:
             or permission != materialized.step.permission
             or permission.permission_sha256
             != materialized.step.permission_sha256
-            or permission.registry_risk != "A0"
-            or permission.effective_risk != "A0"
-            or permission.effect not in {"read", "verify"}
-            or not set(permission.allowed_side_effects).issubset(
-                _SAFE_COMPOSITION_SIDE_EFFECTS
-            )
-            or permission.allow_shell
-            or permission.allow_python
-            or permission.requires_confirmation
+            or not composition_permission_allowed(permission, **composition_profile_fields(materialized.step))
         ):
             raise OmniGrantAuthorityError(
                 "composition.authorization.a0_ceiling_exceeded", status=403
@@ -1652,6 +1639,8 @@ class OmniGrantAuthority:
             ) from exc
 
         self._validate_no_authority_fields(materialized.arguments)
+        validate_composition_arguments(permission.action_id, materialized.arguments,
+                                       **composition_profile_fields(materialized.step))
         if self._contains_destructive_overwrite(materialized.arguments):
             raise OmniGrantAuthorityError(
                 "composition.authorization.destructive_arguments_forbidden",
@@ -1810,7 +1799,8 @@ class OmniGrantAuthority:
             if materialized.target
             else None
         )
-        target_state = probe_target_state(materialized.target, self.workspace_root)
+        target_state = probe_composition_target_state(materialized.target, self.workspace_root,
+            action_id=permission.action_id, **composition_profile_fields(materialized.step))
         target_snapshot_sha256 = (
             None if target_state is None else canonical_sha256(target_state)
         )
@@ -2091,7 +2081,7 @@ class OmniGrantAuthority:
             authorization_source_refs=authorization_source_refs,
             expected_composition_binding=binding,
         )
-        if decision.outcome != "ALLOW" or decision.computed_risk != "A0":
+        if decision.outcome != "ALLOW" or decision.computed_risk != permission.effective_risk:
             raise OmniGrantAuthorityError(
                 "composition.authorization.policy_rejected", status=403
             )
@@ -2158,7 +2148,7 @@ class OmniGrantAuthority:
             claim_sha256=claim.claim_sha256,
             claim_revision=claim.claim_revision,
             claim_lease_epoch=claim.lease_epoch,
-            risk_class="A0",
+            risk_class=decision.computed_risk,
             action_id=permission.action_id,
             action_version=permission.action_version,
             argument_schema_sha256=schema.argument_schema_sha256,
@@ -2434,15 +2424,7 @@ class OmniGrantAuthority:
             or permission != materialized.step.permission
             or permission.permission_sha256
             != materialized.step.permission_sha256
-            or permission.registry_risk != "A0"
-            or permission.effective_risk != "A0"
-            or permission.effect not in {"read", "verify"}
-            or not set(permission.allowed_side_effects).issubset(
-                _SAFE_COMPOSITION_SIDE_EFFECTS
-            )
-            or permission.allow_shell
-            or permission.allow_python
-            or permission.requires_confirmation
+            or not composition_permission_allowed(permission, **composition_profile_fields(materialized.step))
         ):
             raise OmniGrantAuthorityError(
                 "composition.authorization.a0_ceiling_exceeded", status=403
@@ -2460,6 +2442,8 @@ class OmniGrantAuthority:
             ) from exc
 
         self._validate_no_authority_fields(materialized.arguments)
+        validate_composition_arguments(permission.action_id, materialized.arguments,
+                                       **composition_profile_fields(materialized.step))
         if self._contains_destructive_overwrite(materialized.arguments):
             raise OmniGrantAuthorityError(
                 "composition.authorization.destructive_arguments_forbidden",
@@ -2509,7 +2493,8 @@ class OmniGrantAuthority:
             if materialized.target
             else None
         )
-        target_state = probe_target_state(materialized.target, self.workspace_root)
+        target_state = probe_composition_target_state(materialized.target, self.workspace_root,
+            action_id=permission.action_id, **composition_profile_fields(materialized.step))
         target_snapshot_sha256 = (
             None if target_state is None else canonical_sha256(target_state)
         )
@@ -2751,7 +2736,7 @@ class OmniGrantAuthority:
             authorization_source_refs=authorization_source_refs,
             expected_composition_binding=binding,
         )
-        if decision.outcome != "ALLOW" or decision.computed_risk != "A0":
+        if decision.outcome != "ALLOW" or decision.computed_risk != permission.effective_risk:
             raise OmniGrantAuthorityError(
                 "composition.authorization.policy_rejected", status=403
             )
@@ -2818,7 +2803,7 @@ class OmniGrantAuthority:
             claim_sha256=claim.claim_sha256,
             claim_revision=claim.claim_revision,
             claim_lease_epoch=claim.lease_epoch,
-            risk_class="A0",
+            risk_class=decision.computed_risk,
             action_id=permission.action_id,
             action_version=permission.action_version,
             argument_schema_sha256=schema.argument_schema_sha256,
