@@ -558,3 +558,45 @@ in scope. Refresh the freeze and drift fingerprint through their existing explic
 generators after this declared bump. Native key lifecycle, readable-target junction
 negative controls, ABI failure paths and both platforms' full gates are required.
 UNC native acceptance remains separate; portable UNC tests are not network proof.
+
+Verification Plane 1.28 — source execution and actual-result authority (2026-09-23)
+
+The complete declaration is VERIFICATION_PLANE_1_28.txt. All 119 inherited frozen
+paths remain; 34 additional authority paths cover fixed profile definitions,
+native path consumers, installed-source preparation, profile-aware P4 admission,
+immutable plan lifetime, desktop/private execution dispatch, actual-result and
+requirement evidence, Windows containment and its bundled-Python compatibility,
+ordinary-chain evidence/cancellation, source-root closure, and host workspace
+profile rebinding. The resulting surface contains 153 unique source paths.
+
+Profiles constrain existing signed authority; they do not mint it. Absent profile
+fields preserve A0. Source-only trial activation requires an existing valid host
+configuration and is never inferred from a model proposal. Admission of the two
+declared operational UNKNOWN findings preserves UNKNOWN and mandatory verification;
+source intake recomputes the marker and activation binds the same fixed profile.
+No source authenticity, permission, signature, native target, nonce, generation,
+fence, effect or completion-evidence check is removed by that admission.
+
+The sealed multi-step plan deadline is bounded at 15 minutes and never renewed.
+Per-step authority and process time remain independently short. Actual Body
+execution uses the required OS containment, bounded resources, host cancellation
+and success-only staged writes. The consumer validates a copied verified binding;
+its package-local policy/path checks remain equivalent to the issuing contracts
+without creating a sibling dependency or another grant issuer. Completion still
+belongs to the one CompletionGate and requires real current evidence.
+
+When DOS mapping observation is denied in a real AppContainer, only the freshly
+observed process SID's OS-returned private-storage root can anchor native path
+observation. The root leaf is directory/non-reparse checked; all user relative
+components retain OBJ_DONT_REPARSE and exact native identity comparison. This
+trusts the OS root, not a claim that each upstream OS ancestor was independently
+proved. Impersonation, root escapes, UNC and changed native spellings fail closed;
+host observation is unchanged. There is no model/env mapping or extra access grant.
+
+Host workspace switching uses the actual Gateway state root, transactional profile
+rebinding and bounded readiness/rollback. Missing trial configuration does not turn
+the feature on. Formal planner default, Store v33, Golden corpus/trace version 1,
+CompletionGate and repair policy remain unchanged. Refresh only the original freeze
+and fingerprint generators after source generation; normal gates run without update
+switches and retain actual-byte hashing. Native acceptance and portable Golden
+results must continue to be reported as different evidence scopes.

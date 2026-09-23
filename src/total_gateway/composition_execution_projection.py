@@ -826,11 +826,10 @@ def derive_composition_execution_projection(
                         validate_result=validate_result,
                     )
                     expected = _effect_result_projection(fact)
-                    expected = replace(
-                        expected,
-                        observed_at_ms=effect.result.observed_at_ms,
-                        result_sha256="0" * 64,
-                    ).with_computed_sha256()
+                    expected = expected.model_copy(update={
+                        "observed_at_ms": effect.result.observed_at_ms,
+                        "result_sha256": "0" * 64,
+                    }).with_computed_sha256()
                     if (
                         batch_reason is not None
                         or expected.status != "FAILED_FINAL"

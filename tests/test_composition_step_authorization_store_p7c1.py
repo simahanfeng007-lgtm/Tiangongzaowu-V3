@@ -874,7 +874,7 @@ def test_ticket_and_grant_accept_only_a0_side_effect_classes(
     ("side_effect", "error"),
     (
         ("verify", "signed ticket contract is invalid"),
-        ("local_write", "side-effect ceiling"),
+        ("local_write", "^signed authorization exceeds fixed composition profile$"),
     ),
 )
 def test_ticket_and_grant_reject_non_side_effect_vocabulary_or_write(

@@ -2,7 +2,9 @@
 """Rebuild the bundled interpreter's AppContainer-only private-directory fix.
 
 Existing sitecustomize content is retained byte-for-byte outside our block.
-This installer only targets this source tree's app/runtime/python312.
+The default targets only this source tree's app/runtime/python312. An explicit
+CI option can target the current setup-python interpreter inside RUNNER_TOOL_CACHE;
+it never implicitly modifies a developer's system or user Python installation.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import sysconfig
 import tempfile
 
 BEGIN = b"# BEGIN TIANGONG APPCONTAINER PRIVATE DIRECTORY COMPAT\n"
@@ -36,8 +39,38 @@ def _atomic(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def install(root: Path, *, check: bool = False, backup_dir: Path | None = None) -> dict:
-    root = root.resolve(strict=True)
+def _ci_runtime_paths() -> tuple[Path, Path, Path]:
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or sys.platform != "win32"
+            or sys.version_info[:2] != (3, 12) or sys.flags.no_site):
+        raise ValueError("CI compatibility install requires active Windows setup-python 3.12 with site enabled")
+    cache_value = os.environ.get("RUNNER_TOOL_CACHE")
+    if not cache_value:
+        raise ValueError("CI compatibility install requires RUNNER_TOOL_CACHE")
+    cache = Path(cache_value).resolve(strict=True)
+    runtime = Path(sys.prefix).resolve(strict=True)
+    executable = Path(sys.executable).resolve(strict=True)
+    if (runtime == cache or not runtime.is_relative_to(cache)
+            or Path(sys.base_prefix).resolve(strict=True) != runtime
+            or executable.parent != runtime or executable.name.lower() != "python.exe"):
+        raise ValueError("CI compatibility install must target the current tool-cache interpreter")
+    site = Path(sysconfig.get_path("purelib")).resolve(strict=True)
+    if not site.is_dir() or not site.is_relative_to(runtime):
+        raise ValueError("CI site-packages is outside the current tool-cache runtime")
+    loaded = sys.modules.get("sitecustomize")
+    loaded_path = getattr(loaded, "__file__", None) if loaded is not None else None
+    if loaded is not None and not loaded_path:
+        raise ValueError("CI sitecustomize has no file-backed identity")
+    startup = Path(loaded_path) if loaded_path else site / "sitecustomize.py"
+    if not startup.resolve(strict=False).is_relative_to(runtime):
+        raise ValueError("CI sitecustomize is outside the current tool-cache runtime")
+    if startup.suffix != ".py" or not any(
+            Path(entry or os.getcwd()).resolve(strict=False) == startup.parent.resolve(strict=True)
+            for entry in sys.path):
+        raise ValueError("CI sitecustomize must be source in an active runtime import directory")
+    return runtime, startup, startup.parent / "_tiangong_windows_python_compat.py"
+
+
+def _bundled_runtime_paths(root: Path) -> tuple[Path, Path, Path]:
     runtime = root / "app/runtime/python312"
     settings = runtime / "python312._pth"
     entries = settings.read_text(encoding="utf-8-sig").splitlines()
@@ -49,8 +82,16 @@ def install(root: Path, *, check: bool = False, backup_dir: Path | None = None) 
     startup = existing[0] if existing else runtime / "sitecustomize.py"
     if not startup.resolve(strict=False).is_relative_to(runtime.resolve()):
         raise ValueError("existing sitecustomize is outside the bundled runtime")
-    if startup.is_symlink():
-        raise ValueError("sitecustomize must not be linked")
+    return runtime, startup, runtime / "_tiangong_windows_python_compat.py"
+
+
+def install(root: Path, *, check: bool = False, backup_dir: Path | None = None,
+            ci_current_runtime: bool = False) -> dict:
+    root = root.resolve(strict=True)
+    runtime, startup, helper = (_ci_runtime_paths() if ci_current_runtime
+                                else _bundled_runtime_paths(root))
+    if startup.is_symlink() or helper.is_symlink():
+        raise ValueError("runtime compatibility files must not be linked")
     old = startup.read_bytes() if startup.exists() else b""
     # Accept a block materialized with either native newline convention while
     # leaving any pre-existing application startup logic untouched.
@@ -68,7 +109,6 @@ def install(root: Path, *, check: bool = False, backup_dir: Path | None = None) 
     else:
         updated = old + (b"\n" if old and not old.endswith(b"\n") else b"") + BLOCK
     canonical = root / "src/omni_body_skill/tools/windows_python_compat.py"
-    helper = runtime / "_tiangong_windows_python_compat.py"
     payload = canonical.read_bytes()
     current_helper = helper.read_bytes() if helper.exists() else None
     matched = updated == old and current_helper == payload
@@ -83,15 +123,19 @@ def install(root: Path, *, check: bool = False, backup_dir: Path | None = None) 
         if updated != old: _atomic(startup, updated)
         matched = True
     return {"ok": matched, "runtime": str(runtime), "sitecustomize": str(startup),
-            "helper_sha256": hashlib.sha256(payload).hexdigest(), "check_only": check}
+            "helper_sha256": hashlib.sha256(payload).hexdigest(), "check_only": check,
+            "runtime_kind": "ci-current-tool-cache" if ci_current_runtime else "bundled"}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--backup-dir", type=Path)
+    parser.add_argument("--ci-current-runtime", action="store_true",
+                        help="explicitly install only into this Windows GitHub Actions tool-cache interpreter")
     args = parser.parse_args()
-    result = install(Path(__file__).resolve().parents[1], check=args.check, backup_dir=args.backup_dir)
+    result = install(Path(__file__).resolve().parents[1], check=args.check, backup_dir=args.backup_dir,
+                     ci_current_runtime=args.ci_current_runtime)
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return 0 if result["ok"] else 1
 

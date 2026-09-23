@@ -1,12 +1,12 @@
 {
  "schema": "tiangong.p17.dynamic-surface.v1",
  "summary": {
-  "total_hits": 122,
-  "dynamic_imports": 44,
-  "reflective_getattrs": 77,
+  "total_hits": 127,
+  "dynamic_imports": 46,
+  "reflective_getattrs": 80,
   "env_branches": 1,
   "explicit_feature_uses": 0,
-  "verified": 122,
+  "verified": 127,
   "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
@@ -22,7 +22,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1099,
+   "line": 1107,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -30,15 +30,23 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1773,
+   "line": 1793,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
   },
   {
    "kind": "reflective_getattr",
+   "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py",
+   "line": 79,
+   "target": "key",
+   "classification": "verified",
+   "verified_category": "structural_field_access"
+  },
+  {
+   "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/composition_turn.py",
-   "line": 127,
+   "line": 140,
    "target": "field",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -194,20 +202,20 @@
    "line": 2611,
    "target": "<__import__>",
    "classification": "verified",
-   "verified_category": "lazy_module_import"
+   "verified_category": "inline_stdlib_import"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2810,
+   "line": 2820,
    "target": "<__import__>",
    "classification": "verified",
-   "verified_category": "lazy_module_import"
+   "verified_category": "inline_stdlib_import"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5370,
+   "line": 5388,
    "target": "field.name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -215,7 +223,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5547,
+   "line": 5565,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -267,6 +275,14 @@
    "target": "field",
    "classification": "verified",
    "verified_category": "model_field_iteration"
+  },
+  {
+   "kind": "reflective_getattr",
+   "path": "src/contracts/composition_profile.py",
+   "line": 66,
+   "target": "key",
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -463,7 +479,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1099,
+   "line": 1107,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -471,10 +487,18 @@
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1773,
+   "line": 1793,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
+  },
+  {
+   "kind": "reflective_getattr",
+   "path": "src/omni_body_skill/tools/omni_capability.py",
+   "line": 79,
+   "target": "key",
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -495,7 +519,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/composition_step_execution.py",
-   "line": 160,
+   "line": 164,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -503,7 +527,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/composition_step_execution.py",
-   "line": 163,
+   "line": 167,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -511,7 +535,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/composition_step_execution.py",
-   "line": 168,
+   "line": 172,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -519,7 +543,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 196,
+   "line": 197,
    "target": "'v3.peizhi'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -527,7 +551,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 201,
+   "line": 202,
    "target": "'v3.duihua_qiaojie'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -535,7 +559,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 202,
+   "line": 203,
    "target": "'v3.zongdiaodu'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -543,7 +567,15 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 217,
+   "line": 206,
+   "target": "'v3.composition_turn'",
+   "classification": "verified",
+   "verified_category": "lazy_module_import"
+  },
+  {
+   "kind": "dynamic_import",
+   "path": "src/total_gateway/embedded_backend.py",
+   "line": 219,
    "target": "'v3.knowledge_store'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -551,7 +583,15 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 501,
+   "line": 494,
+   "target": "'v3.composition_turn'",
+   "classification": "verified",
+   "verified_category": "lazy_module_import"
+  },
+  {
+   "kind": "dynamic_import",
+   "path": "src/total_gateway/embedded_backend.py",
+   "line": 518,
    "target": "'v3.jineng.jirou_ceng'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -559,7 +599,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 527,
+   "line": 544,
    "target": "'v3.jineng.jirou_ceng'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -567,7 +607,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 561,
+   "line": 578,
    "target": "'v3.zongdiaodu'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -575,7 +615,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 572,
+   "line": 589,
    "target": "'v3.zongdiaodu'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -583,7 +623,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 583,
+   "line": 600,
    "target": "'v3.legacy_learning_telemetry'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -591,7 +631,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 597,
+   "line": 614,
    "target": "'v3.jineng.jirou_ceng'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -599,7 +639,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 612,
+   "line": 629,
    "target": "'v3.world_understanding_production'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -607,7 +647,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 623,
+   "line": 640,
    "target": "'v3.world_understanding_production'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -615,7 +655,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 681,
+   "line": 698,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -623,7 +663,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 719,
+   "line": 736,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -631,7 +671,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 810,
+   "line": 827,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -639,7 +679,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 937,
+   "line": 954,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -647,7 +687,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 977,
+   "line": 994,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -655,7 +695,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1040,
+   "line": 1057,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -663,7 +703,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1083,
+   "line": 1100,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -671,7 +711,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1121,
+   "line": 1138,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -679,7 +719,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1205,
+   "line": 1222,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -687,7 +727,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1359,
+   "line": 1381,
    "target": "'v3.jineng.jirou_ceng'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -695,7 +735,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1416,
+   "line": 1438,
    "target": "'v3.voice_output'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -703,7 +743,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1422,
+   "line": 1444,
    "target": "'v3.voice_output'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -711,7 +751,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1538,
+   "line": 1560,
    "target": "name",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -719,7 +759,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1551,
+   "line": 1573,
    "target": "'v3.knowledge_store'",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -727,7 +767,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 277,
+   "line": 280,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -735,7 +775,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 290,
+   "line": 293,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -743,7 +783,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 958,
+   "line": 953,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -751,7 +791,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 1240,
+   "line": 1235,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -831,7 +871,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/store.py",
-   "line": 11593,
+   "line": 11613,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -839,7 +879,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/store.py",
-   "line": 11593,
+   "line": 11613,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -847,7 +887,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/store.py",
-   "line": 13278,
+   "line": 13298,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "lazy_module_import"

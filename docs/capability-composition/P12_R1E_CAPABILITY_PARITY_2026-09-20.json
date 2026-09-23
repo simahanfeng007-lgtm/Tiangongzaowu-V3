@@ -8,7 +8,7 @@
   },
   "capability_manifest": {
    "path": "src/omni_body_skill/registry/capability_manifest.generated.json",
-   "manifest_blob": "f443737de830ad600c41792c8afbe30d9a7c4618",
+   "manifest_blob": "db2165889b8e10b36994b69e30bf02ef5808cc1e",
    "action_count": 790
   }
  },

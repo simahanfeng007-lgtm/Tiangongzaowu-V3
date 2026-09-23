@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.27"
+- the single Verification Plane version source exists and is "1.28"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.27")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.28")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.27"' in (
+            if '"1.28"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -204,15 +204,50 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # Every 1.27 execution, result-schema and verification authority
+            # Every 1.28 execution, result-schema and verification authority
             # file is content-hashed.  Semantic drift in the runtime chain,
             # store/binding/coordinator/executor/readiness/fencing/successor
             # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.27; all inherited 1.10 and earlier entries remain covered.
+    #: The authority surface frozen at 1.28; all inherited 1.10 and earlier entries remain covered.
     AUTHORITY_SURFACE_FILES = (
+        # 1.28 source-installation trial, fixed-profile authority and actual evidence.
+        "src/contracts/artifacts.py",
+        "src/contracts/compatibility.py",
+        "src/contracts/composition_profile.py",
+        "src/contracts/policy.py",
+        "src/runtime_security/composition_path.py",
+        "src/total_gateway/backend_client.py",
+        "src/total_gateway/grant_signer.py",
+        "src/total_gateway/policy_engine.py",
+        "src/total_gateway/life_client.py",
+        "src/total_gateway/composition_admission_lifetime.py",
+        "src/total_gateway/composition_final_result.py",
+        "src/total_gateway/composition_planner_mode_authority.py",
+        "src/total_gateway/composition_profile_admission.py",
+        "src/total_gateway/composition_source_trial.py",
+        "src/total_gateway/composition_task_floor.py",
+        "src/total_gateway/composition_verification_subject.py",
+        "src/total_gateway/composition_workspace_boundary.py",
+        "src/total_gateway/desktop_composition.py",
+        "src/total_gateway/desktop_api.py",
+        "src/total_gateway/installed_composition_sources.py",
+        "src/omni_body_skill/tools/omni_body_tool.py",
+        "src/omni_body_skill/tools/omni_body_v3.py",
+        "src/omni_body_skill/tools/windows_appcontainer.py",
+        "src/omni_body_skill/tools/windows_python_compat.py",
+        "src/omni_body_skill/tools/path_identity.py",
+        "src/omni_body_skill/tools/composition_path.py",
+        "app/backend/tiangong-backend/v3/composition_turn.py",
+        "app/backend/tiangong-backend/v3/execution_integrity.py",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py",
+        "src/world_understanding/known/rules/__init__.py",
+        "app/main.js",
+        "scripts/rebind-source-execution-profile.py",
+        "scripts/install-python-appcontainer-compat.py",
         "src/total_gateway/composition_source_preparation.py",
         # R1C3 plan-result admission intake; prior members remain covered.
         "src/total_gateway/composition_registration_intake.py",

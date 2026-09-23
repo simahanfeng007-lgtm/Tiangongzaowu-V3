@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import codecs
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,8 @@ from unittest import mock
 import pytest
 
 from contracts.reliability import compute_dynamic_timeout, decide_retry
+from omni_body_skill.tools import sandbox_runtime
+from omni_body_skill.tools.portable_text import PortableTextError
 from omni_body_skill.tools.omni_body_tool import (
     BodyRuntime,
     BodyRuntimeConfig,
@@ -430,42 +433,94 @@ def test_c16_write_read_roundtrip_preserves_crlf_and_non_bmp_text(tmp_path: Path
     assert result["content"] == content
 
 
+def _sandbox_output_from_test_bytes(tmp_path: Path, stdout: bytes, stderr: bytes = b"") -> dict:
+    """Exercise the real output pipeline without executing an uncontained process."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    runner = sandbox_runtime.SandboxRunner(workspace, tmp_path / "state", tmp_path / "trash")
+
+    def raw_output_launcher(command, cwd, env, limits, *, cancel_check=None):
+        assert command == ["test-only-raw-output"]
+        assert cwd.is_dir()
+        assert env["PYTHONUTF8"] == "1"
+        assert env["PYTHONIOENCODING"] == "utf-8"
+        return 0, stdout, stderr, "test-only-raw-output"
+
+    # Replace only this module's platform view; changing os.name globally also
+    # changes pathlib. The test launcher never creates a process or claims OS
+    # containment. Workspace preparation and output decoding remain real.
+    platform = SimpleNamespace(**{**vars(os), "name": "posix"})
+    with (
+        mock.patch.object(sandbox_runtime, "os", platform),
+        mock.patch.object(sandbox_runtime, "_run_portable", side_effect=raw_output_launcher) as launch,
+    ):
+        execution = runner.run(["test-only-raw-output"], require_os_containment=False)
+    launch.assert_called_once()
+    assert execution["containment"] == "test-only-raw-output"
+    assert execution["network"] == "not_os_enforced"
+    return execution
+
+
 def test_c17_python_sandbox_forces_canonical_utf8_output(tmp_path: Path) -> None:
-    runtime = runtime_at(tmp_path, allow_python=True)
-    result = runtime.run("python.run", "", {"code": "print('English 中文 😀')"})
-    assert result["success"] is True, result
-    execution = result["execution"]
-    assert "English 中文 😀" in execution["stdout"]
+    with mock.patch.dict(os.environ, {"PYTHONUTF8": "0", "PYTHONIOENCODING": "ascii"}):
+        execution = _sandbox_output_from_test_bytes(tmp_path, "English 中文 😀\n".encode("utf-8"))
+    assert execution["stdout"] == "English 中文 😀\n"
     assert execution["stdout_encoding"] == "utf-8"
+    assert execution["legacy_output_encoding"] is False
 
 
 def test_c18_python_sandbox_decodes_gb18030_without_replacement(tmp_path: Path) -> None:
-    runtime = runtime_at(tmp_path, allow_python=True)
-    code = "import sys; sys.stdout.buffer.write('控制台中文'.encode('gb18030'))"
-    result = runtime.run("python.run", "", {"code": code})
-    assert result["success"] is True, result
-    execution = result["execution"]
+    execution = _sandbox_output_from_test_bytes(tmp_path, "控制台中文".encode("gb18030"))
     assert execution["stdout"] == "控制台中文"
     assert execution["legacy_output_encoding"] is True
     assert "�" not in execution["stdout"]
 
 
 def test_c19_python_sandbox_decodes_utf16_bom_output(tmp_path: Path) -> None:
+    execution = _sandbox_output_from_test_bytes(tmp_path, codecs.BOM_UTF16_LE + "wide".encode("utf-16-le"))
+    assert execution["stdout"] == "wide"
+    assert execution["stdout_encoding"] == "utf-16-le"
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_c20_undecodable_process_output_fails_explicitly_not_with_corrupted_text(tmp_path: Path, stream: str) -> None:
+    output = {"stdout": b"", "stderr": b""}
+    output[stream] = b"\x81"
+    with pytest.raises(PortableTextError, match=f"sandbox {stream}: bytes are not valid") as failure:
+        _sandbox_output_from_test_bytes(tmp_path, **output)
+    assert "�" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "code, expected, encoding, legacy",
+    [
+        ("print('English 中文 😀')", "English 中文 😀", "utf-8", False),
+        ("import sys; sys.stdout.buffer.write('控制台中文'.encode('gb18030'))", "控制台中文", "gb18030", True),
+        ("import codecs,sys; sys.stdout.buffer.write(codecs.BOM_UTF16_LE + 'wide'.encode('utf-16-le'))", "wide", "utf-16-le", False),
+    ],
+    ids=["utf8", "gb18030", "utf16-bom"],
+)
+def test_python_encoding_platform_requires_real_containment(
+    tmp_path: Path, code: str, expected: str, encoding: str, legacy: bool,
+) -> None:
     runtime = runtime_at(tmp_path, allow_python=True)
-    code = "import codecs,sys; sys.stdout.buffer.write(codecs.BOM_UTF16_LE + 'wide'.encode('utf-16-le'))"
-    result = runtime.run("python.run", "", {"code": code})
+    with mock.patch.object(sandbox_runtime, "_run_portable", side_effect=AssertionError("production must not use portable execution")) as portable:
+        result = runtime.run("python.run", "", {"code": code})
+    portable.assert_not_called()
+    if os.name != "nt":
+        assert result["success"] is False, result
+        assert result["error_type"] == "SandboxError"
+        assert "sandbox_os_containment_unavailable" in result["message"]
+        return
     assert result["success"] is True, result
-    assert result["execution"]["stdout"] == "wide"
-    assert result["execution"]["stdout_encoding"] == "utf-16-le"
-
-
-def test_c20_undecodable_process_output_fails_explicitly_not_with_corrupted_text(tmp_path: Path) -> None:
-    runtime = runtime_at(tmp_path, allow_python=True)
-    code = "import sys; sys.stdout.buffer.write(bytes([0x81]))"
-    result = runtime.run("python.run", "", {"code": code})
-    assert result["success"] is False
-    assert result["error_type"] in {"PortableTextError", "SandboxError"}
-    assert "�" not in result.get("message", "")
+    execution = result["execution"]
+    assert execution["stdout"].rstrip("\r\n") == expected
+    assert execution["stdout_encoding"] == encoding
+    assert execution["legacy_output_encoding"] is legacy
+    assert execution["returncode"] == 0
+    assert execution["receipt_role"] == "execution"
+    assert execution["containment"] == "windows-appcontainer"
+    assert execution["network"] == "denied"
 
 
 def test_c21_outer_model_lease_supports_hour_long_deliverables() -> None:

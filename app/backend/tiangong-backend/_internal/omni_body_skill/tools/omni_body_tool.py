@@ -2028,7 +2028,7 @@ class BodyRuntime:
                 "write_evidence": self._write_receipt(p, pre, snapshots)}
 
     def _controlled_write_profile(self) -> bool:
-        from contracts.composition_profile import composition_profile_valid
+        from .omni_capability import composition_profile_valid
         profile = self.config.execution_profile_id
         if not composition_profile_valid(profile, self.config.execution_profile_sha256):
             raise OmniBodyError("invalid system execution profile")
@@ -2036,10 +2036,10 @@ class BodyRuntime:
 
     def _controlled_write_target(self, target, *, must_exist=False) -> Path:
         if self._controlled_write_profile():
-            from contracts import canonical_sha256
-            from runtime_security.composition_path import probe_composition_write_target
+            from .omni_capability import _sha as snapshot_sha256
+            from .composition_path import probe_composition_write_target
             observed = probe_composition_write_target(str(target), self.workspace)
-            if canonical_sha256(observed) != self.config.target_snapshot_sha256:
+            if snapshot_sha256(observed) != self.config.target_snapshot_sha256:
                 raise OmniBodyError("workspace-write signed target snapshot changed")
             raw = Path(str(target))
             raw = raw if raw.is_absolute() else self.workspace / raw
@@ -2380,7 +2380,7 @@ class BodyRuntime:
         controlled = self.config.execution_profile_id is not None
         expected_workspace_files = None
         if controlled:
-            from contracts.composition_profile import WORKSPACE_PYTHON_PROFILE_ID, validate_composition_arguments
+            from .omni_capability import WORKSPACE_PYTHON_PROFILE_ID, validate_composition_arguments
             if self.config.execution_profile_id != WORKSPACE_PYTHON_PROFILE_ID:
                 raise OmniBodyError("python.run requires the signed workspace-python profile")
             validate_composition_arguments("python.run", args, profile_id=self.config.execution_profile_id,
@@ -2394,10 +2394,10 @@ class BodyRuntime:
             script = self._controlled_write_target(target, must_exist=True)
             if not script.is_file() or script.suffix.lower() != ".py":
                 raise OmniBodyError("controlled python.run requires an existing Python script")
-            from contracts import canonical_sha256
-            from runtime_security.composition_path import probe_composition_write_target
+            from .omni_capability import _sha as snapshot_sha256
+            from .composition_path import probe_composition_write_target
             state = probe_composition_write_target(str(script), self.workspace)
-            if canonical_sha256(state) != self.config.target_snapshot_sha256:
+            if snapshot_sha256(state) != self.config.target_snapshot_sha256:
                 raise OmniBodyError("workspace-write signed target snapshot changed")
             expected_workspace_files = {script.relative_to(self.workspace).as_posix(): state["content_sha256"]}
         timeout = int(args.get("timeout", self.config.default_timeout_seconds))

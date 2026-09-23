@@ -708,6 +708,15 @@ def is_execution_discussion_only(user_text: object) -> bool:
     )
 
 
+def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
+    """Keep a deliverable noun from becoming the object's nearest action."""
+    return bool(
+        verb == "交付"
+        and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
+        and right.startswith(("文件", "文档", "报告", "产物"))
+    )
+
+
 def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     action_verbs = tuple(sorted(set(
         _LOCAL_OBSERVE_VERBS
@@ -721,11 +730,7 @@ def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
     ), key=len, reverse=True))
     for match in re.finditer(re.escape(verb), compact):
         left = compact[max(0, match.start() - 14):match.start()]
-        if (
-            verb == "交付"
-            and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
-            and compact[match.end():].startswith(("文件", "文档", "报告", "产物"))
-        ):
+        if _verb_is_object_modifier(verb, left, compact[match.end():]):
             # The object of "create a deliverable file" is a noun, not a
             # second delivery command. A later explicit delivery still counts.
             continue
@@ -1152,6 +1157,11 @@ def request_target_bindings(user_text: Any) -> list[dict[str, str]]:
                                    or (match.end() < len(surface_text) and surface_text[match.end()].isalnum())):
                 continue
             prefix = surface_text[:match.start()]
+            if _verb_is_object_modifier(verb, _compact(prefix), _compact(surface_text[match.end():])):
+                # Use both sides of this occurrence, just as the request floor
+                # does. A prefix truncated at "交付" loses its following noun
+                # and would steal the target from "创建", leaving a wildcard.
+                continue
             negated = bool(re.search(r"(?:不要|不得|不许|别|不用|无需|禁止|严禁|不需要|暂不)[^，；。\n]{0,12}$", prefix)
                            or re.search(r"(?:do\s+not|don't|must\s+not|never|without)\s+(?:\w+\s+){0,2}$", prefix, re.I))
             # Preserve coordinated prohibitions, but an intervening object

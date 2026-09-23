@@ -15,7 +15,7 @@ from runtime_security import path_identity as identity
 
 @pytest.fixture
 def native_api(monkeypatch):
-    state = SimpleNamespace(status=0, closed=0, calls=[], query_error=False,
+    state = SimpleNamespace(status=0, closed=0, calls=[], root_handles=[], query_error=False,
                             mapping=r"\Device\HarddiskVolume4", mapping_queries=[],
                             normalized=r"\Device\HarddiskVolume4\Users\runneradmin\file.txt",
                             opened=r"\Device\HarddiskVolume4\Users\RUNNER~1\file.txt")
@@ -23,6 +23,7 @@ def native_api(monkeypatch):
     def create(handle, access, attributes, io, size, file_attributes, share, disposition, options, ea, ea_size):
         item = attributes._obj
         state.calls.append((item.ObjectName.contents.Buffer, access, item.Attributes, share, disposition, options))
+        state.root_handles.append(item.RootDirectory)
         if state.status == 0:
             handle._obj.value = 123
         return state.status
@@ -64,7 +65,7 @@ def native_api(monkeypatch):
         error.winerror = args[0] if args else 5
         return error
     local_ctypes = SimpleNamespace(**{key: getattr(ctypes, key) for key in (
-        "create_unicode_buffer", "cast", "pointer", "sizeof", "byref",
+        "create_unicode_buffer", "cast", "pointer", "sizeof", "byref", "Structure", "c_int",
     )}, get_last_error=lambda: 5, WinError=winerror)
     monkeypatch.setattr(identity, "_windows_path_api", lambda: (local_ctypes, *api[1:]))
     monkeypatch.setattr(identity, "_effective_appcontainer", Mock(return_value=False))
@@ -183,21 +184,57 @@ def test_device_mapping_query_failure_does_not_open_or_fall_back(native_api):
 
 
 @pytest.fixture
-def container_namespace(native_api):
+def container_namespace(native_api, monkeypatch):
     state, kernel, native = native_api
     kernel.QueryDosDeviceW.side_effect = None
     kernel.QueryDosDeviceW.return_value = 0
     identity._effective_appcontainer.return_value = True
+    monkeypatch.setattr(identity, "_appcontainer_private_root", Mock(return_value=PureWindowsPath(r"C:\Users")))
+    state.normalized = state.opened
+    state.root_normalized = state.root_opened = r"\Device\HarddiskVolume4\Users"
+    state.root_closed = 0
+    state.root_attributes, state.root_tag = 0x10, 0
+    state.root_name_queries = 0
+    state.root_drift = False
+    state.fail_close = None
+    state.root_open_error = False
+    kernel.CreateFileW = Mock(side_effect=lambda *args: None if state.root_open_error else 456)
+
+    def attributes(handle, kind, value, size):
+        assert handle == 456 and kind == 9 and size == ctypes.sizeof(value._obj)
+        value._obj.FileAttributes, value._obj.ReparseTag = state.root_attributes, state.root_tag
+        return True
+
+    kernel.GetFileInformationByHandleEx = Mock(side_effect=attributes)
+    target_query = kernel.GetFinalPathNameByHandleW.side_effect
+    def query(handle, buffer, capacity, flags):
+        if handle == 456:
+            state.root_name_queries += 1
+            buffer.value = state.root_normalized if flags == 2 else state.root_opened
+            if state.root_drift and state.root_name_queries > 2:
+                buffer.value += "-moved"
+            return len(buffer.value)
+        return target_query(handle, buffer, capacity, flags)
+    kernel.GetFinalPathNameByHandleW.side_effect = query
+    target_close = kernel.CloseHandle.side_effect
+    def close(handle):
+        if handle == 456:
+            state.root_closed += 1
+            return state.fail_close != 456
+        result = target_close(handle)
+        return result and state.fail_close != handle.value
+    kernel.CloseHandle.side_effect = close
     return state, kernel, native
 
 
 def test_observed_container_uses_same_no_reparse_open_when_mapping_access_denied(container_namespace):
     state, kernel, _ = container_namespace
     assert identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt")) == PureWindowsPath(state.normalized)
-    assert state.calls == [(r"\??\C:\Users\RUNNER~1\file.txt", 0x80, 0x1040, 7, 1, 0x4000)]
-    assert state.closed == 1
+    assert state.calls == [(r"RUNNER~1\file.txt", 0x80, 0x1040, 7, 1, 0x4000)]
+    assert state.root_handles == [456]
+    assert state.closed == state.root_closed == 1
     assert kernel.QueryDosDeviceW.call_count == 1
-    kernel.CreateFileW.assert_not_called()
+    kernel.CreateFileW.assert_called_once_with(r"\\?\C:\Users", 0x80, 7, None, 3, 0x02200000, None)
     identity._effective_appcontainer.assert_called_once_with()
 
 
@@ -212,7 +249,7 @@ def test_container_rejects_volume_prefix_namespace_and_location_drift(container_
     state.normalized, state.opened = normalized, opened
     with pytest.raises(identity.PathIdentityError):
         identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
-    assert state.closed == 1
+    assert state.closed == state.root_closed == 1
 
 
 @pytest.mark.parametrize("status", [0xC000050B, 0xC0000022, 0xC0000034, 0x103])
@@ -222,22 +259,68 @@ def test_container_no_reparse_failure_is_not_retried(container_namespace, status
     with pytest.raises((OSError, identity.PathIdentityError)):
         identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
     assert native.NtCreateFile.call_count == 1
-    kernel.GetFinalPathNameByHandleW.assert_not_called()
+    assert kernel.GetFinalPathNameByHandleW.call_count == 2  # Root only; failed child is never queried.
     assert state.closed == 0
+    assert state.root_closed == 1
 
 
-def test_container_unc_preserves_server_share(container_namespace):
-    state, _, _ = container_namespace
-    state.opened = r"\Device\Mup\server\share\SHORT~1\file.txt"
-    state.normalized = r"\Device\Mup\server\share\long-directory\file.txt"
+def test_container_private_root_fallback_never_accepts_unc(container_namespace):
+    _, kernel, native = container_namespace
     path = PureWindowsPath(r"\\server\share\SHORT~1\file.txt")
-    assert identity._windows_final_path(path) == PureWindowsPath(state.normalized)
-    assert state.calls[0][0] == r"\??\UNC\server\share\SHORT~1\file.txt"
-    state.normalized = state.normalized.replace("server", "elsewhere")
-    state.opened = state.opened.replace("server", "elsewhere")
-    with pytest.raises(identity.PathIdentityError, match="physical_path_mismatch"):
+    with pytest.raises(identity.PathIdentityError, match="outside_private_root"):
         identity._windows_final_path(path)
-    assert state.closed == 2
+    kernel.CreateFileW.assert_not_called()
+    native.NtCreateFile.assert_not_called()
+    identity._appcontainer_private_root.assert_not_called()
+
+
+@pytest.mark.parametrize("path", [r"C:\Users-other\payload", r"D:\Users\payload",
+                                   r"C:\outside\payload", r"C:\Users\..\payload",
+                                   r"C:\Users\payload:stream"])
+def test_container_rejects_outside_and_unsafe_relative_names_before_open(container_namespace, path):
+    _, kernel, native = container_namespace
+    with pytest.raises(identity.PathIdentityError):
+        identity._windows_final_path(PureWindowsPath(path))
+    kernel.CreateFileW.assert_not_called()
+    native.NtCreateFile.assert_not_called()
+
+
+@pytest.mark.parametrize("field,value", [("root_attributes", 0), ("root_attributes", 0x410),
+    ("root_tag", 1), ("root_opened", r"\Device\HarddiskVolume5\Users"),
+    ("root_normalized", r"\Device\HarddiskVolume4\hidden\Users"),
+    ("root_opened", r"\??\C:\Users")])
+def test_container_invalid_root_evidence_never_opens_target(container_namespace, field, value):
+    state, _, native = container_namespace
+    setattr(state, field, value)
+    with pytest.raises(identity.PathIdentityError):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    native.NtCreateFile.assert_not_called()
+    assert state.root_closed == 1
+
+
+def test_container_unavailable_root_never_opens_target(container_namespace):
+    state, _, native = container_namespace
+    state.root_open_error = True
+    with pytest.raises(OSError):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert state.root_closed == 0
+    native.NtCreateFile.assert_not_called()
+
+
+def test_container_root_itself_is_the_already_verified_handle(container_namespace):
+    state, _, native = container_namespace
+    assert identity._windows_final_path(PureWindowsPath(r"C:\Users")) == PureWindowsPath(state.root_normalized)
+    assert state.root_closed == 1
+    native.NtCreateFile.assert_not_called()
+
+
+@pytest.mark.parametrize("field,value", [("root_drift", True), ("fail_close", 123), ("fail_close", 456)])
+def test_container_drift_or_handle_cleanup_failure_is_not_a_valid_observation(container_namespace, field, value):
+    state, _, _ = container_namespace
+    setattr(state, field, value)
+    with pytest.raises(identity.PathIdentityError):
+        identity._windows_final_path(PureWindowsPath(r"C:\Users\RUNNER~1\file.txt"))
+    assert state.closed == state.root_closed == 1
 
 
 def test_unobservable_container_identity_never_opens_path(container_namespace):

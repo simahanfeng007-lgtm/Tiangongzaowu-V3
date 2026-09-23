@@ -1,4 +1,4 @@
-"""Production file readers use the existing workspace authority, never fake grants."""
+"""Workspace path constraints do not grant fixed-profile execution authority."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -8,6 +8,11 @@ from pathlib import Path
 import pytest
 
 from contracts import canonical_sha256
+from contracts.composition_profile import (
+    WORKSPACE_WRITE_PROFILE_ID, WORKSPACE_WRITE_PROFILE_SHA256,
+    WORKSPACE_PYTHON_PROFILE_ID, WORKSPACE_PYTHON_PROFILE_SHA256,
+    composition_permission_allowed,
+)
 from omni_body_skill.tools.omni_body_tool import BodyRuntime, BodyRuntimeConfig
 from total_gateway.action_registry import compile_action_registry
 from total_gateway.omni_grant_authority import OmniGrantAuthorityError
@@ -15,7 +20,15 @@ from tests import test_composition_grant_authority_p7c1 as authority_support
 
 
 READERS = frozenset({"file.list", "file.read", "file.hash"})
-EXPECTED = READERS | {"core.filesystem." + action for action in READERS}
+EXPECTED_READERS = READERS | {"core.filesystem." + action for action in READERS}
+WRITERS = frozenset({"file.write", "code.write", "code.patch_replace", "file.mkdir"})
+EXPECTED_WRITER_RISKS = {
+    "file.write": "A3", "code.write": "A3", "code.patch_replace": "A3", "file.mkdir": "A2",
+    "core.filesystem.file.write": "A3", "core.filesystem.file.mkdir": "A3",
+    "core.code.code.write": "A3", "core.code.code.patch_replace": "A3", "file.patch_replace": "A3",
+}
+EXPECTED_PYTHON = frozenset({"python.run", "core.code.python.run"})
+EXPECTED_WORKSPACE = EXPECTED_READERS | set(EXPECTED_WRITER_RISKS) | EXPECTED_PYTHON
 
 
 @pytest.fixture(scope="module")
@@ -23,20 +36,49 @@ def manifest():
     return json.loads(authority_support.CAPABILITY_MANIFEST.read_text(encoding="utf-8"))
 
 
-def test_only_three_native_readers_and_their_real_aliases_get_workspace_policy(manifest):
+def test_only_supported_workspace_actions_and_their_real_aliases_get_workspace_policy(manifest):
     registry = compile_action_registry(manifest, generated_at_ms=1_250)
     allowed = {p.action_id for p in registry.permissions if p.path_policy == "workspace_only"}
-    assert allowed == EXPECTED
+    assert allowed == EXPECTED_WORKSPACE
     assert registry.has_valid_sha256()
     for permission in registry.permissions:
         assert permission.has_valid_sha256()
-        if permission.action_id in EXPECTED:
+        if permission.action_id in EXPECTED_READERS:
             assert permission.registry_risk == permission.effective_risk == "A0"
             assert permission.effect == "read"
             assert permission.allowed_side_effects == ("read",)
             assert not permission.allow_shell and not permission.allow_python
+        elif permission.action_id in EXPECTED_WRITER_RISKS:
+            assert permission.registry_risk == permission.effective_risk == EXPECTED_WRITER_RISKS[permission.action_id]
+            assert permission.effect == "write"
+            assert permission.allowed_side_effects == ("local_write", "read")
+            assert not permission.allow_shell and not permission.allow_python
+        elif permission.action_id in EXPECTED_PYTHON:
+            assert permission.registry_risk == permission.effective_risk == "A4"
+            assert permission.effect == "write"
+            assert permission.allowed_side_effects == ("local_write", "read")
+            assert not permission.allow_shell and permission.allow_python
         else:
             assert permission.path_policy == "object_grant_only"
+
+
+def test_workspace_path_policy_does_not_authorize_writes_or_python_without_exact_profile(manifest):
+    registry = compile_action_registry(manifest, generated_at_ms=1_250)
+    permissions = [p for p in registry.permissions if p.path_policy == "workspace_only"]
+    # Alias path constraints inherit the native target boundary, not permission
+    # to invoke an action outside the fixed profile's canonical action set.
+    assert {p.action_id for p in permissions if composition_permission_allowed(p)} == EXPECTED_READERS
+    for profile_id, profile_sha256, expected in (
+        (WORKSPACE_WRITE_PROFILE_ID, WORKSPACE_WRITE_PROFILE_SHA256, READERS | WRITERS),
+        (WORKSPACE_PYTHON_PROFILE_ID, WORKSPACE_PYTHON_PROFILE_SHA256, READERS | WRITERS | {"python.run"}),
+    ):
+        assert {p.action_id for p in permissions if composition_permission_allowed(
+            p, profile_id=profile_id, profile_sha256=profile_sha256)} == expected
+        for permission in permissions:
+            assert not composition_permission_allowed(
+                permission, profile_id=profile_id, profile_sha256="0" * 64)
+            assert not composition_permission_allowed(
+                permission, profile_id="model.allow-all", profile_sha256=profile_sha256)
 
 
 @pytest.mark.parametrize("change", ["risk", "effect", "alias_risk"])

@@ -978,6 +978,46 @@ def test_terminal_failure_blocks_other_ready_branches(tmp_path: Path) -> None:
         store.close()
 
 
+@pytest.mark.parametrize("tamper_effect", [False, True])
+def test_committed_failure_fact_projects_without_completion_or_rehashed_mismatch(tmp_path, tamper_effect):
+    store, plan = _plan(tmp_path)
+    try:
+        observation = _succeeded_observation(plan, "step.01", {
+            "ok": False, "result": {"success": False, "message": "sandbox_os_containment_unavailable"}})
+        payload = dict(observation.result_payload, omni_ok=False)
+        digest = canonical_sha256(payload)
+        original = observation.fact_batch
+        result = original.result.model_copy(update={
+            "status": "FAILED_FINAL", "error_code": "composition.runtime.action_failed",
+            "error_message": "sandbox_os_containment_unavailable", "result_payload_sha256": digest})
+        facts = tuple(fact.model_copy(update={"fact_type": "execution.failed", "payload_sha256": digest,
+            "fact_sha256": "0" * 64}).with_computed_sha256() for fact in original.facts)
+        batch = replace(original, result=result, facts=facts, result_payload_sha256=digest)
+        batch = replace(batch, batch_sha256=_batch_sha256(result, facts,
+            observed_at_ms=batch.observed_at_ms, tenant_id=batch.tenant_id,
+            link_account_id=batch.link_account_id, conversation_scope_hash=batch.conversation_scope_hash,
+            workspace_id=batch.workspace_id, max_output_bytes=batch.max_output_bytes,
+            result_payload_object_id=batch.result_payload_object_id, result_payload_sha256=digest,
+            response_sha256=batch.response_sha256))
+        terminal = CompositionStepExecutionCoordinator._effect_result_from_batch(
+            batch, observed_at_ms=batch.observed_at_ms + 37)
+        if tamper_effect:
+            terminal = terminal.model_copy(update={"error_code": "changed.failure"}).with_computed_sha256()
+        observation = replace(observation, result_payload=payload, fact_batch=batch,
+            effect=replace(observation.effect, state="FAILED_FINAL", result=terminal,
+                           completed_at_ms=terminal.observed_at_ms))
+        projected = derive_composition_execution_projection(plan, (observation,), validate_result=_accept_result)
+        assert projected.all_steps_succeeded is False and projected.next_step_id is None
+        if tamper_effect:
+            assert projected.reconcile_step_ids == ("step.01",)
+            assert projected.failed_step_ids == ()
+        else:
+            assert projected.failed_step_ids == ("step.01",)
+            assert projected.reconcile_step_ids == ()
+    finally:
+        store.close()
+
+
 def test_invalid_prestart_successor_chain_is_rejected(tmp_path: Path) -> None:
     store, plan = _plan(tmp_path)
     try:

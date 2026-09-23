@@ -6,6 +6,7 @@ desktop App, publication or production workspace is involved.
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +25,42 @@ from total_gateway.composition_step_execution import CompositionStepExecutionCoo
 PROFILE = dict(execution_profile_id=WORKSPACE_PYTHON_PROFILE_ID,
                execution_profile_sha256=WORKSPACE_PYTHON_PROFILE_SHA256)
 ZERO = "0" * 64
+
+
+def assert_unavailable_python_execution(harness, coordinator, outcome, step, receipt):
+    """The fixed Windows-only profile rejects before starting any program."""
+    assert step.action_id == "python.run"
+    assert outcome.status == "FAILED_FINAL"
+    assert receipt["action"] == "python.run" and receipt["ok"] is False
+    raw = receipt["result"]
+    assert raw["success"] is False and raw["error_type"] == "SandboxError"
+    assert raw["message"] == "sandbox_os_containment_unavailable"
+    assert "execution" not in raw  # No process/return-code receipt may be fabricated.
+    effect = harness.store.get_effect(outcome.effect_id)
+    assert effect.state == effect.result.status == "FAILED_FINAL"
+    assert effect.result.error_code == "composition.runtime.action_failed"
+    batch = harness.facts.get_batch_for_effect(outcome.effect_id, verify_payload=True)
+    assert batch is not None and batch.result.status == "FAILED_FINAL"
+    assert batch.result.error_code == "composition.runtime.action_failed"
+    assert tuple(fact.fact_id for fact in batch.facts) == outcome.fact_ids
+    persisted = json.loads(harness.objects.read_bytes(batch.result_payload_object_id))
+    assert json.loads(persisted["omni_result_json"]) == receipt
+    for fact in batch.facts:
+        assert fact.fact_type == "execution.failed"
+        assert (fact.request_id, fact.run_id, fact.generation, fact.effect_id, fact.action_id) == (
+            harness.plan.request_id, harness.plan.run_id, harness.plan.generation,
+            outcome.effect_id, "python.run")
+    projection = coordinator.project_plan(harness.plan)
+    assert projection.all_steps_succeeded is False
+    assert projection.failed_step_ids == (step.step_id,)
+    with pytest.raises(CompositionStepExecutionError, match="final_outputs_before_completion"):
+        coordinator.finalize_plan(harness.plan)
+    assert harness.store.list_completion_decisions(harness.plan.request_id,
+        run_id=harness.plan.run_id, generation=harness.plan.generation) == ()
+    failed_index = harness.plan.step_bindings.index(step)
+    for later in harness.plan.step_bindings[failed_index + 1:]:
+        assert harness.store.get_current_composition_step_authorization(
+            harness.plan.executable_plan_id, later.step_id) is None
 
 
 def material_for_calls(calls, *, source_worlds=None, admission_lifetime_ms=60_000):
@@ -194,12 +231,19 @@ def test_new_script_write_patch_run_read_are_real_signed_steps(tmp_path, monkeyp
                 assert record.request.target_snapshot["exists"] is True
                 assert record.request.target_snapshot["content_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
             result = coordinator.dispatch_record(record, now_ms=clock.value)
-            assert result.status == "SUCCEEDED", json.dumps({"step": step.step_id, "raw": executed[-1:]}, ensure_ascii=False)
-            assert harness.facts.get_batch_for_effect(result.effect_id, verify_payload=True) is not None
             sent = dispatched[-1]
             with pytest.raises(Exception, match="(?i)nonce|replay|consumed"):
                 capability.verify_capability_grant(sent["capability_grant"], action=step.action_id,
                     target=str(calls[i][1]), args=calls[i][2], workspace=str(root), runtime_meta=sent["runtime"])
+            if os.name != "nt" and step.action_id == "python.run":
+                assert len(executed) == len(dispatched) == i + 1
+                assert_unavailable_python_execution(harness, coordinator, result, step, executed[-1])
+                assert "'42'" in target.read_text("utf-8")  # Prior signed writes/patch really committed.
+                assert not (root / "answer.txt").exists()
+                assert not (target.parent / "answer.txt").exists()
+                return
+            assert result.status == "SUCCEEDED", json.dumps({"step": step.step_id, "raw": executed[-1:]}, ensure_ascii=False)
+            assert harness.facts.get_batch_for_effect(result.effect_id, verify_payload=True) is not None
         assert coordinator.project_plan(harness.plan).all_steps_succeeded
         assert len(executed) == len(calls)
         finalization = coordinator.finalize_plan(harness.plan)

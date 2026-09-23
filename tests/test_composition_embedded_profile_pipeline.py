@@ -8,6 +8,7 @@ from dataclasses import asdict
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import threading
 import time
@@ -15,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_composition_workspace_pipeline import material_for_calls, PROFILE
+from tests.test_composition_workspace_pipeline import material_for_calls, PROFILE, assert_unavailable_python_execution
 from tests import test_composition_grant_authority_p7c1 as p7c1
 from tests import test_composition_grant_authority_p7d2 as p7d2
 from total_gateway.composition_step_execution import CompositionStepExecutionCoordinator
@@ -121,14 +122,24 @@ def test_actual_signed_private_entry_writes_runs_and_finalizes(tmp_path,monkeypa
             if step.action_id=='file.read':
                 assert clock.value > harness.outer.payload.expires_at_ms
             outcome=coordinator.dispatch_record(record,now_ms=clock.value)
-            assert outcome.status=='SUCCEEDED',json.dumps({'step':step.step_id,'receipts':receipts[-1:]},ensure_ascii=False)
-            fact=harness.facts.get_batch_for_effect(outcome.effect_id,verify_payload=True)
-            assert fact is not None
             # The same signed request cannot cross the real private entry twice.
             count=len(receipts)
             method,path,wire=client.sent[-1]
             status,_,_=backend.request(method,path,wire)
             assert status>=400 and len(receipts)==count
+            if os.name!='nt' and step.action_id=='python.run':
+                assert len(receipts)==i+1==4
+                assert_unavailable_python_execution(harness,coordinator,outcome,step,receipts[-1])
+                assert (root/'worker.py').read_text('utf-8')==code
+                assert (root/'test_worker.py').read_text('utf-8')==tests
+                assert (root/'driver.py').read_text('utf-8')==driver
+                assert not (root/'answer.txt').exists()
+                assert not (root/'README.md').exists()
+                assert harness.store.get_composition_continuation_delegation(delegation)==original_delegation
+                return
+            assert outcome.status=='SUCCEEDED',json.dumps({'step':step.step_id,'receipts':receipts[-1:]},ensure_ascii=False)
+            fact=harness.facts.get_batch_for_effect(outcome.effect_id,verify_payload=True)
+            assert fact is not None
         assert len(receipts)==7 and (root/'answer.txt').read_text('utf-8')=='42'
         runs=[item for item in receipts if item.get('action')=='python.run']
         assert len(runs)==2
