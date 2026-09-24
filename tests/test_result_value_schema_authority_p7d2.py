@@ -108,8 +108,7 @@ def _skill_list_result(action_id: str = "skill.list") -> dict:
 def test_live_manifest_explicit_allowlist_is_closed() -> None:
     path = (
         ROOT
-        / "src"
-        / "omni_body_skill"
+        / "dictionaries"
         / "registry"
         / "capability_manifest.generated.json"
     )
@@ -223,8 +222,7 @@ def test_catalog_rejects_opaque_and_stale_result_authority() -> None:
 def test_model_projection_uses_exact_catalog_result_hash() -> None:
     path = (
         ROOT
-        / "src"
-        / "omni_body_skill"
+        / "dictionaries"
         / "registry"
         / "capability_manifest.generated.json"
     ).resolve()

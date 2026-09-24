@@ -3,6 +3,6 @@
   "mapping_id": "capability-dictionaries",
   "schema": "tiangong.generated-source-marker.v1",
   "source": "dictionaries",
-  "tree_sha256": "f1e89e87ce0508d20ad409873cd5b0e08ef76bcc7d0788a6ae600a3565b02024",
+  "tree_sha256": "fb73fabe009222539241e71d656cc4555d4fb8213b0f61e8c4edc93fbbe32770",
   "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
 }

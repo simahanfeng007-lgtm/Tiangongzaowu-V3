@@ -123,6 +123,44 @@ def test_partial_tool_arguments_prevent_blind_transport_retry(endpoint):
     assert client.sent == 1
 
 
+def test_uncommitted_network_turn_restarts_without_replaying_partial_tool(endpoint):
+    client = Client(lambda: iter(()))
+    resets = []
+    def lines():
+        if client.sent == 1:
+            yield event({"reasoning_content": "private draft"})
+            yield event({"tool_calls": [{"index": 0, "id": "discarded", "function": {
+                "name": "omni_body", "arguments": '{"action":"file.write"'}}]})
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+        yield event({"tool_calls": [{"index": 0, "id": "accepted", "function": {
+            "name": "omni_body", "arguments": json.dumps({"action": "file.read", "args": {}, "target": "input.txt"})}}]}, "tool_calls")
+        yield "data: [DONE]"
+    client.response.lines = lines
+    result = executor.execute_streaming_turn_with_repair(client=client, endpoint=endpoint, api_key="test",
+        canonical_payload={"messages": []}, retry_sleep_seconds=0, max_wall_clock_seconds=1,
+        on_repair=lambda: resets.append(True))
+    assert client.sent == 2 and result.retry_count == 1 and resets == [True]
+    assert [c["id"] for c in result.turn.tool_calls] == ["accepted"]
+    assert "discarded" not in json.dumps(result.turn.public_dict())
+    metrics = result.turn.stream_metadata["attempts"]
+    assert len(metrics) == 2 and metrics[0]["reasoning_chunks"] == 1
+    assert metrics[0]["tool_argument_bytes"] > 0
+    assert "private draft" not in json.dumps(metrics)
+
+
+def test_uncommitted_stream_retry_is_bounded_and_failure_metrics_survive(endpoint):
+    def lines():
+        yield event({"reasoning_content": "never log this"})
+        raise httpx.ReadError("dropped")
+    client = Client(lines)
+    with pytest.raises(executor.TransportExecutionError) as caught:
+        executor.execute_streaming_turn_with_repair(client=client, endpoint=endpoint, api_key="test",
+            canonical_payload={"messages": []}, retry_sleep_seconds=0, max_wall_clock_seconds=1)
+    assert client.sent == 3 and caught.value.retry_count == 2
+    assert len(caught.value.response_metrics["attempts"]) == 3
+    assert "never log this" not in json.dumps(caught.value.response_metrics)
+
+
 @pytest.mark.parametrize("encoding", ["outer_twice", "nested_args"])
 def test_complete_double_encoded_tool_arguments_keep_file_content(endpoint, encoding):
     arguments = {"action": "file.write", "target": "out.txt", "args": {"content": "real content\n中文"}}

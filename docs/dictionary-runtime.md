@@ -82,6 +82,17 @@ External upload/send requests still need delivery evidence. Model errors and
 incomplete responses cannot terminate as a successful chat reply. Model claims
 alone are not acceptance evidence.
 
+Uncommitted model responses may be retried within the same parent deadline after
+a broken stream. Discarded partial tool arguments cannot execute. JSON repair
+instructions follow native history in the actual provider request, and attempt
+metrics retain finish reasons and progress timings without private reasoning.
+
+Current continuity, explicit constraints and required stored memories are kept
+before optional history. History over budget is omitted with an explicit count;
+it cannot block a new task as an identity failure. Required context that cannot
+fit returns `life.context.budget_exceeded`. Recent memory selection uses timestamps
+so saving or restarting cannot change its meaning through JSON key order.
+
 ## Verification
 
 `tests/test_dictionary_model_lifecycle.py` injects stream termination, retry,
@@ -97,9 +108,9 @@ spreadsheets, HTML, and PPT. Acceptance requires independent checks of generated
 files; a terminal state or a model saying "completed" is insufficient. Live
 results are recorded separately from deterministic test results.
 
-Verification Plane 1.29 declares the changed authority surface: dictionary-backed
+Verification Plane 1.30 declares the changed authority surface: dictionary-backed
 capability loading, native installed Method provenance, optional Skill grants,
-and raw task context. Its freeze manifest is regenerated with the existing guard
+raw task context, bounded history selection, and the canonical CLI host. Its freeze manifest is regenerated with the existing guard
 after these changes; byte hashes do not substitute for the behavioral tests.
 The former `run-all-skills-smoke.py` is retired because it used synthetic learning
 receipts and compatibility execution, and cannot establish real acceptance.

@@ -29,7 +29,7 @@ def publication(source, tmp_path):
     git(source, "init", "--initial-branch=main")
     git(source, "config", "core.autocrlf", "false")
     _, baseline = prepare(source)
-    manifest = source / "src/omni_body_skill/registry/capability_manifest.generated.json"
+    manifest = source / "dictionaries/registry/capability_manifest.generated.json"
     before = baseline["build_artifact"]["gateway_manifest"]
     manifest.write_bytes(canonical_json_bytes(before) + b"\n")
     base = commit(source)

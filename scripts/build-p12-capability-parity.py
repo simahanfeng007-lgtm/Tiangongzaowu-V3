@@ -208,7 +208,7 @@ def main() -> int:
               f"{table['summary']['action_surface_covered_items']} covered")
         return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered, encoding="utf-8")
+    args.output.write_bytes(rendered.encode("utf-8"))
     print(f"parity table written: {args.output} "
           f"({table['summary']['items_total']} items)")
     return 0

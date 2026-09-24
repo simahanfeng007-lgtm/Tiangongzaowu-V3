@@ -2701,8 +2701,12 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
 
 def _is_explicit_recovery_continuation(text: str) -> bool:
     """Only a narrow continuation utterance may inherit a previous failed run."""
-    user_text = str(text or "").split("【连续执行契约】", 1)[0]
-    user_text = user_text.split("【本轮活跃项目根】", 1)[0]
+    user_text = str(text or "")
+    for marker in (
+        "【连续执行契约】", "【本轮活跃项目根】",
+        "【必须继承且仍未完成的原始总目标】", "【本轮唯一默认工作区】",
+    ):
+        user_text = user_text.split(marker, 1)[0]
     compact = re.sub(r"[\s，。！？,.!?]+", "", user_text).strip().lower()
     return compact in {
         "继续", "继续执行", "接着", "接着做", "接着执行", "往下做", "恢复", "恢复执行",

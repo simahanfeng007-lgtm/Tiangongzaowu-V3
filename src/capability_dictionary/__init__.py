@@ -103,7 +103,8 @@ class DictionaryRelease:
             raise DictionaryError("dictionary_published_views_missing")
 
     def action_metadata(self) -> dict[str, dict[str, Any]]:
-        return {name: {**row["runtime"], "execution_binding": dict(row["binding"])} for name, row in self.tools.items()}
+        return {name: {**row["runtime"], "effect": row["effect"],
+            "execution_binding": dict(row["binding"])} for name, row in self.tools.items()}
 
     def readiness(self, action: str, *, runtime=None) -> dict[str, Any]:
         row = self.tools.get(action)
@@ -158,6 +159,8 @@ def load_dictionary(root: Path | None = None) -> DictionaryRelease:
         app_ids.add(app["app_id"])
     for name, row in tools.items():
         binding = row.get("binding") or {}
+        if row.get("effect") not in {"read", "verify", "create", "write", "update", "execute"}:
+            raise DictionaryError("dictionary_effect_invalid:" + name)
         if row.get("budget", {}).get("profile") not in profiles:
             raise DictionaryError("dictionary_execution_profile_missing:" + name)
         if row.get("id") != name or binding.get("kind") not in {"method", "delivery", "alias"}:

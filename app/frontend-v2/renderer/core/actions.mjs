@@ -281,26 +281,21 @@ export function inferActiveProjectRoot(message = "", workspace = "", rootGoal = 
   // older task must not silently become the active root of a new task.
   const ignoredSuffixes = /\.(?:js|mjs|cjs|ts|py|html|css|md|bat|ps1|json|txt|vrm|zip|exe|dll|png|jpe?g|gif|mp3|mp4|wav|log|lock)$/i;
   const normalizedEvidence = String(evidenceText || "").replace(/\\\\/g, "\\");
-  const evidenceLower = normalizedEvidence.toLowerCase();
-  const baseLower = base.toLowerCase();
-  const evidenceCandidates = [];
-  let searchAt = 0;
-  while (searchAt < evidenceLower.length) {
-    const offset = evidenceLower.indexOf(baseLower, searchAt);
-    if (offset < 0) break;
-    const tail = normalizedEvidence.slice(offset + base.length).replace(/^[\\/]+/, "");
-    const child = (tail.match(/^([a-z0-9][a-z0-9._-]{1,80})(?=[\\/\s"'`]|$)/i) || [])[1];
-    if (child && !ignoredSuffixes.test(child)) evidenceCandidates.push(child);
-    searchAt = offset + base.length;
-  }
-  if (evidenceCandidates.length) return `${base}\\${evidenceCandidates[evidenceCandidates.length - 1]}`;
+  // Only a previously declared project root is continuation evidence. An
+  // arbitrary artifact path is not authority to change path coordinates.
+  const declaredRoots = [...normalizedEvidence.matchAll(/【本轮活跃项目根】\s*\r?\n([^\r\n]+)/g)];
+  const declared = String(declaredRoots.at(-1)?.[1] || "").trim();
+  if (declared && (declared.toLowerCase().startsWith(`${base.toLowerCase()}\\`)
+      || declared.toLowerCase().startsWith(`${base.toLowerCase()}/`))
+      && !/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(declared)
+      && !ignoredSuffixes.test(declared)) return declared;
   const text = `${String(message || "")}\n${String(rootGoal || "")}`;
   const candidates = [
-    ...text.matchAll(/\b([a-z0-9][a-z0-9._-]{1,80})\b\s*(?=项目|检查点|已存在|目录)/gi),
-    ...text.matchAll(/(?:项目|目录)(?:根)?\s*(?:是|为|[:：])?\s*[`“"']?([a-z0-9][a-z0-9._-]{1,80})\b/gi),
+    ...text.matchAll(/\b([a-z0-9][a-z0-9._-]{1,80})\s+(?=项目|检查点)/gi),
+    ...text.matchAll(/(?:项目根目录|项目根|项目目录)\s*(?:是|为|[:：])\s*[`“"']?([a-z0-9][a-z0-9._-]{1,80})(?=[\s`”"'，。；]|$)/gi),
   ];
   const name = candidates.map((match) => String(match[1] || "").trim())
-    .find((value) => value && !ignoredSuffixes.test(value) && value !== "." && value !== "..");
+    .find((value) => value && !ignoredSuffixes.test(value) && !/^[A-Z]{1,3}\d+$/i.test(value) && value !== "." && value !== "..");
   return name ? `${base}\\${name}` : "";
 }
 
@@ -1356,7 +1351,7 @@ export function createActions({ runtime, state, kernel = null }) {
       projectRootEvidence
     );
     const rawExecutionMessage = activeProjectRoot
-      ? `${workspaceExecutionMessage}\n\n【本轮活跃项目根】\n${activeProjectRoot}\n当前任务的所有相对路径都必须以这个目录为基准；调用工具时不得省略最后一级项目目录，不得退回其父级工作区。`
+      ? `${workspaceExecutionMessage}\n\n【本轮活跃项目根】\n${activeProjectRoot}\n这是本轮项目目录。工具的相对路径仍以工作区为基准，必须包含项目的相对路径；也可以使用该目录下的绝对路径。`
       : workspaceExecutionMessage;
     const sendMode = inferSendMode(message, settings, selectedSkills, runOptions);
     const executionContract = sendMode === "work"

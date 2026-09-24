@@ -30,6 +30,10 @@ class ContextBuildError(RuntimeError):
     pass
 
 
+class ContextBudgetExceeded(ContextBuildError):
+    """Required context cannot fit; optional history must not cause this."""
+
+
 @dataclass(frozen=True, slots=True)
 class ContextProjectionResult:
     active_pack: CausalContextPack | None
@@ -201,7 +205,7 @@ class CausalContextBuilder:
             canonical_json_bytes(continuity).decode("utf-8")
         )
         if continuity_tokens > budget.usable_budget_tokens:
-            raise ContextBuildError("hard continuity state exceeds the usable context budget")
+            raise ContextBudgetExceeded("hard continuity state exceeds the usable context budget")
 
         if (
             tuple(item.item_ref for item in external_items)
@@ -212,9 +216,14 @@ class CausalContextBuilder:
         used = continuity_tokens
         selected: list[CausalContextItem] = []
         selected_refs: set[str] = set()
+        optional_items: list[CausalContextItem] = []
+        external_refs = {item.item_ref for item in external_items}
         for item in external_items:
+            if item.item_kind not in {"goal", "constraint"} and item.item_ref not in continuity.verified_fact_ids:
+                optional_items.append(item)
+                continue
             if used + item.token_count > budget.usable_budget_tokens:
-                raise ContextBuildError("external continuity state exceeds the context budget")
+                raise ContextBudgetExceeded("required external context exceeds the context budget")
             selected.append(item)
             selected_refs.add(item.item_ref)
             used += item.token_count
@@ -253,10 +262,16 @@ class CausalContextBuilder:
                     -retention_priority(value),
                     value.memory_id,
                 ),
-            )[: self.max_candidates]
+            )
+        )
+        candidates = tuple(
+            assertion for index, assertion in enumerate(candidates)
+            if index < self.max_candidates or assertion.memory_id in required_ids
         )
 
         for assertion in candidates:
+            if assertion.memory_id in external_refs:
+                raise ContextBuildError("context item identity collision")
             assert assertion.protected_payload_id is not None
             try:
                 plaintext = self.store.read_protected_payload(
@@ -285,17 +300,25 @@ class CausalContextBuilder:
                 token_count=item_tokens,
                 supporting_event_ids=assertion.source_event_ids,
             )
-            if used + item_tokens > budget.usable_budget_tokens:
-                if assertion.memory_id in required_ids:
-                    raise ContextBuildError(
-                        "required goal or hard constraint exceeds the context budget"
-                    )
+            if assertion.memory_id not in required_ids:
+                optional_items.append(item)
                 continue
-            if item.item_ref in selected_refs:
-                raise ContextBuildError("context item identity collision")
+            if used + item_tokens > budget.usable_budget_tokens:
+                raise ContextBudgetExceeded(
+                    "required goal or hard constraint exceeds the context budget"
+                )
             selected.append(item)
             selected_refs.add(assertion.memory_id)
             used += item_tokens
+
+        # Reserve current continuity, explicit constraints and required stored
+        # memories first. Optional history competes only for the remaining space.
+        for item in sorted(optional_items, key=lambda value: (-value.priority, value.item_ref)):
+            if used + item.token_count > budget.usable_budget_tokens:
+                continue
+            selected.append(item)
+            selected_refs.add(item.item_ref)
+            used += item.token_count
 
         edges: list[CausalContextEdge] = []
         for hypothesis in self.store.list_latest_causal_hypotheses(continuity.life_id):
@@ -347,13 +370,8 @@ class CausalContextBuilder:
             edges=edge_tuple,
             token_budget=budget,
             selected_token_count=used,
-            omitted_item_count=max(
-                0,
-                len(assertions)
-                - len(
-                    selected_refs
-                    & {assertion.memory_id for assertion in assertions}
-                ),
+            omitted_item_count=len(
+                ({assertion.memory_id for assertion in assertions} | external_refs) - selected_refs
             ),
             visible_raw_tool_process_count=0,
             integrity_status="VERIFIED",
@@ -399,6 +417,7 @@ class CausalContextBuilder:
 __all__ = [
     "CausalContextBuilder",
     "ContextBuildError",
+    "ContextBudgetExceeded",
     "ContextProjectionResult",
     "TokenCounter",
     "build_token_budget",

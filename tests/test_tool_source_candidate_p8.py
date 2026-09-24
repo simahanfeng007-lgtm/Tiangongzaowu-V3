@@ -274,7 +274,7 @@ def test_git_archive_attributes_cannot_hide_source_inputs(repository):
 
 def test_manifest_reader_uses_committed_artifacts_not_dirty_checkout(repository):
     root, _ = repository
-    path = "src/omni_body_skill/registry/capability_manifest.generated.json"
+    path = "dictionaries/registry/capability_manifest.generated.json"
     write(root, path, '{"committed":true}')
     base = commit(root)
     write(root, "src/body/action.py", "changed = True\n")
@@ -292,7 +292,7 @@ def test_read_only_cli_never_imports_candidate_and_does_not_claim_build_or_publi
     metadata = {"file.read": {"risk": "A0", "effect": "read", "implemented": True}}
     manifest = compile_manifest(metadata, object, dynamic_actions=("file.read",),
                                 action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict()
-    write(root, "src/omni_body_skill/registry/capability_manifest.generated.json", json.dumps(manifest))
+    write(root, "dictionaries/registry/capability_manifest.generated.json", json.dumps(manifest))
     base = commit(root)
     marker = tmp_path / "must-never-import"
     write(root, "src/body/action.py", f"from pathlib import Path\nPath({str(marker)!r}).touch()\n")

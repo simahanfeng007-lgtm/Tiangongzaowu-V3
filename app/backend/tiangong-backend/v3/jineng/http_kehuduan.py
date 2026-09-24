@@ -1058,7 +1058,7 @@ class HttpKehuduan:
             )
         except TransportExecutionError as exc:
             api_status = "wall_clock_deadline" if exc.deadline_exceeded else (
-                "http_error" if exc.http_status is not None else "transport_error"
+                "http_error" if exc.error_code == "http_error" else exc.error_code
             )
             _jilu_l4_youhua_zhuizong(
                 optimization_trace,
@@ -1067,13 +1067,14 @@ class HttpKehuduan:
                 latency_ms=exc.latency_ms,
                 retry_count=exc.retry_count,
                 error_preview=exc.response_preview or exc.reason,
+                response_metrics=exc.response_metrics,
             )
             hint = (
                 # bug-fix: Kimi#14 墙钟超时/网络失败 hint 由英文改中文，用户不再看到英文提示（2026-08-26，凌霜）
                 "单次模型调用超过了平台墙钟时限；本轮已停止等待，而不是无限挂起，请稍后重试或切换模型。"
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
-                if exc.http_status is not None
+                if exc.error_code == "http_error"
                 else "模型输出不完整，已尝试一次拆分修复，本轮未执行不完整的工具调用。"
                 if exc.error_code in {"output_truncated", "invalid_tool_arguments"}
                 else "模型响应未正常完成；请结合错误码检查模型服务和连接。"
@@ -1440,6 +1441,7 @@ def _turn_response_metrics(turn: ProviderTurnEnvelope, pid: str | None = None) -
         "finish_reason": turn.finish_reason or "unknown",
         "protocol_family": turn.protocol_family,
         "provider_continuation_mode": turn.provider_continuation_mode,
+        "stream": dict(turn.stream_metadata or {}),
     }
     # DeepSeek/MiniMax legacy metrics only understand Chat-shaped responses;
     # native generic metrics above remain authoritative for other protocols.

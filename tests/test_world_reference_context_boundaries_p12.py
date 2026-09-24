@@ -76,7 +76,7 @@ def test_installed_manifest_scale_keeps_new_dependency_metadata_linear():
     from world_understanding.world_state import materialize_one_world_state
 
     root = Path(__file__).resolve().parents[1]
-    document = json.loads((root / 'src/omni_body_skill/registry/capability_manifest.generated.json').read_bytes())
+    document = json.loads((root / 'dictionaries/registry/capability_manifest.generated.json').read_bytes())
     registry = compile_action_registry(document, generated_at_ms=1)
     digest = canonical_sha256(document)
     tools = compile_tool_capability_world(

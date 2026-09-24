@@ -15,12 +15,14 @@ from contracts import (
     canonical_sha256,
 )
 
-from .context import CausalContextBuilder, ContextBuildError
+from .context import CausalContextBuilder, ContextBuildError, ContextBudgetExceeded
 from .store import LifeShadowStore, LifeShadowStoreError
 
 
 class LifeContextAuthorityError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, reason_code: str = "") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +131,10 @@ class LifeContextAuthority:
                 external_items=external_items,
             )
         except (ContextBuildError, LifeShadowStoreError, ValueError) as exc:
-            raise LifeContextAuthorityError("life context compilation failed") from exc
+            raise LifeContextAuthorityError(
+                "life context compilation failed",
+                reason_code=("life.context.budget_exceeded" if isinstance(exc, ContextBudgetExceeded) else ""),
+            ) from exc
         store_revisions = self.store.build_revision_vector(
             continuity.life_id,
             writer_epoch=writer_epoch,

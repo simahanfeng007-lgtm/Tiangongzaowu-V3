@@ -871,6 +871,16 @@ class DesktopApiRouter:
                                if code in {"desktop_composition.source_context_unavailable",
                                            "desktop_composition.source_initialization_failed"}
                                else "查看具体原因后调整请求；本次不会自动切换执行范围。")}
+        if lowered.startswith("life.context."):
+            budget_exceeded = lowered == "life.context.budget_exceeded"
+            return {
+                "code": code,
+                "service": "life",
+                "message": ("当前目标与必需约束超出上下文预算。" if budget_exceeded
+                            else "任务上下文编译或授权失败，尚未开始执行。"),
+                "action": ("请将本次目标分为独立阶段，已完成的结果和检查点会保留。" if budget_exceeded
+                           else "请查看上下文诊断并修复后重试；本次失败记录已保留。"),
+            }
         if "identity" in lowered or lowered.startswith(("life.", "legacy.", "compat.life")):
             return {
                 "code": code,

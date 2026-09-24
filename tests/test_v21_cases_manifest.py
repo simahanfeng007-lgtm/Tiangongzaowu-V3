@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_skill_case_manifest_is_complete_and_is_only_an_acceptance_input() -> None:
     cases = json.loads((ROOT / "tests" / "v21_cases.yaml").read_text(encoding="utf-8"))
-    catalog = json.loads((ROOT / "readable-python-source" / "omni_body_skill" / "registry" / "skill_router_index.json").read_text(encoding="utf-8"))
+    catalog = json.loads((ROOT / "dictionaries/skills/catalog.json").read_text(encoding="utf-8"))
     expected_ids = [item["id"] for item in catalog["skills"]]
     skill_cases = cases["skill_cases"]
     assert len(expected_ids) == 34

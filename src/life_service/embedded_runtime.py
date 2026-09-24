@@ -1657,7 +1657,16 @@ class EmbeddedLifeRuntime:
                 supporting_event_ids=(),
             )
         )
-        for index, record in enumerate(reversed(list(memory_rows.values()))):
+        # Persisted JSON sorts keys, so dictionary insertion order is not a
+        # chronology after restart. Select recent active records explicitly.
+        recent_memories = sorted(
+            (record for record in memory_rows.values()
+             if isinstance(record, dict) and str(record.get("status") or "active") == "active"),
+            key=lambda record: (str(record.get("updated_at") or record.get("created_at") or ""),
+                                str(record.get("memory_id") or "")),
+            reverse=True,
+        )
+        for index, record in enumerate(recent_memories):
             if index >= limit:
                 break
             # Context compilation follows the same default visibility rule as
@@ -1673,12 +1682,13 @@ class EmbeddedLifeRuntime:
             memory_id = str(record.get("memory_id") or "")
             if not _OPAQUE.fullmatch(memory_id):
                 continue
+            text = text[:20_000]
             items.append(
                 CausalContextItem(
                     item_ref=memory_id,
                     item_kind="memory",
                     source_revision=max(1, int(record.get("revision") or 1)),
-                    summary=text[:20_000],
+                    summary=text,
                     epistemic_status=str(record.get("epistemic_status") or "user_asserted"),
                     confidence_milli=max(0, min(1000, int(record.get("confidence_milli") or 800))),
                     priority=max(-3000, min(5000, int(record.get("priority") or 900))),

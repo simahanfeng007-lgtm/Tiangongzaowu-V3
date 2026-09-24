@@ -190,6 +190,8 @@ class LifeContextCompileAuthorizeApi:
         except LifeContextApiError:
             raise
         except (LifeContextAuthorityError, LifeShadowStoreError, TypeError, ValueError) as exc:
+            if getattr(exc, "reason_code", "") == "life.context.budget_exceeded":
+                raise LifeContextApiError("life.context.budget_exceeded") from exc
             # Keep the public failure code bounded and non-sensitive while
             # preserving the failing authority phase for callers that need to
             # distinguish an unavailable projection from a rejected binding.

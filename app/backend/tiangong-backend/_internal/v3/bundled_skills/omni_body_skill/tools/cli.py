@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from .omni_body_v3 import run_omni_body
+from ..api.v1.v3.tools.omni_body import run_omni_body
 
 
 def main() -> None:

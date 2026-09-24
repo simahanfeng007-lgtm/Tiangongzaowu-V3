@@ -145,6 +145,19 @@ def test_application_discovery_is_migrated_with_dictionary_references(dictionary
         load_dictionary(dictionary)
 
 
+def test_declared_effect_survives_projection_and_controls_gateway_floor(dictionary):
+    from v3.fact_kernel import compile_manifest
+    from total_gateway.action_registry import compile_action_registry
+    from omni_body_skill.tools.omni_body_tool import BodyRuntime, DELIVERY_ACTIONS
+    release = load_dictionary(dictionary)
+    metadata = release.action_metadata()
+    assert all(metadata[key]["effect"] == row["effect"] for key, row in release.tools.items())
+    manifest = compile_manifest(metadata, BodyRuntime, dynamic_actions=set(DELIVERY_ACTIONS)).to_gateway_dict()
+    registry = compile_action_registry(manifest, generated_at_ms=0)
+    row = next(x for x in registry.permissions if x.action_id == "adobe.photoshop.document.open")
+    assert row.effect == "execute" and row.registry_risk == "A0" and row.effective_risk == "A3"
+
+
 def test_adapter_schema_matches_dictionary_and_standalone_legacy_root_is_rejected(tmp_path, monkeypatch):
     from omni_body_skill.api.v1.v3.tools import omni_body as wrapper
     from v3.jineng.guge_ceng import OMNI_BODY_PARAMETERS
@@ -192,6 +205,31 @@ def test_native_observation_dedup_keeps_results_warnings_and_other_messages(endp
     assert compact_native_observations(messages, observations, other) == (messages, False)
     unmatched = [{**row, "tool_result": {"different": True}} for row in observations]
     assert compact_native_observations(messages, unmatched, validated) == (messages, False)
+
+
+@pytest.mark.parametrize("protocol", ["openai_chat_completions", "anthropic_messages", "openai_responses"])
+def test_repair_instruction_follows_complete_native_history(endpoint, protocol, monkeypatch):
+    from v3.jineng import model_transport_executor as executor
+    from tests.test_dictionary_model_lifecycle import Client
+    ep = dataclasses.replace(endpoint, protocol_family=protocol)
+    transport = get_model_transport(protocol)
+    state = StreamState(tool_items={"0": {"id": "call_prior", "provider_item_id": "item_prior",
+        "name": "omni_body", "arguments_text": '{"action":"file.read","args":{}}',
+        "sequence_index": 0}}, finish_reason="tool_calls")
+    payload = {"messages": [{"role": "user", "content": "original goal"}],
+        "__provider_history": [{"turn": transport.finalize_turn(ep, state), "results": [{"ok": True}]}],
+        "__turn_repair_instruction": "LATEST_REPAIR"}
+    captured = []
+    monkeypatch.setattr(executor, "_pinned_request", lambda url, binding: (url, {}, "example.test"))
+    monkeypatch.setattr(executor, "validate_model_endpoint", lambda *a, **k: None)
+    with pytest.raises(executor.TransportExecutionError):
+        executor.execute_streaming_turn(client=Client(lambda: iter(())), endpoint=ep, api_key="test",
+            canonical_payload=payload, on_request_built=captured.append)
+    wire = captured[0]
+    items = wire["input" if protocol == "openai_responses" else "messages"]
+    assert items[-1] == {"role": "user", "content": "LATEST_REPAIR"}
+    assert json.dumps(wire).count('"call_prior"') == 2
+    assert "__turn_repair_instruction" not in wire
 
 
 def test_absent_task_context_preserves_pre_upgrade_envelope_identity():
@@ -342,7 +380,11 @@ def test_ppt_notes_are_outputs_and_font_size_is_not_novel_length():
     assert request_target_bindings("读取 notes.txt，列出演讲要点")[0]["role"] == "input"
 
 
-def test_long_checkpoint_preserves_dictionary_and_continues_network_failure(tmp_path, monkeypatch):
+@pytest.mark.parametrize("message", [
+    "继续\n\n【本轮活跃项目根】\nD:/workspace",
+    "继续\n\n【必须继承且仍未完成的原始总目标】\n制作报告\n\n【本轮唯一默认工作区】\nD:/workspace",
+])
+def test_long_checkpoint_preserves_dictionary_and_continues_network_failure(tmp_path, monkeypatch, message):
     import os
     from v3 import duihua_qiaojie as bridge
     from v3.simple_chain.kernel import _simple_chain_recovery_checkpoint_from_context
@@ -361,13 +403,38 @@ def test_long_checkpoint_preserves_dictionary_and_continues_network_failure(tmp_
     monkeypatch.setattr(bridge.Path, "home", lambda: tmp_path)
     context = {"session_id": "same", "request_id": "current", "messages": [
         {"role": "assistant", "content": "old history" * 1000} for _ in range(31)]}
-    envelope = bridge._build_context_envelope(context, "继续\n\n【本轮活跃项目根】\nD:/workspace")
+    envelope = bridge._build_context_envelope(context, message)
     wire = bridge._render_context_envelope(envelope, context_limit=3000)
     checkpoint = _simple_chain_recovery_checkpoint_from_context(wire)
     assert checkpoint["original_user_goal"] == state["original_user_goal"]
     assert checkpoint["loaded_skill_ids"] == [skill_id]
     assert checkpoint["dictionary_sha256"] == release.sha256
+    assert bridge._latest_session_recovery_checkpoint(context, "继续制作另一份新的预算表") == {}
     newest = root / "newer.json"
     newest.write_text(json.dumps({**state, "request_id": "newer", "status": "complete"}), encoding="utf-8")
     os.utime(newest, (old.stat().st_mtime + 10, old.stat().st_mtime + 10))
     assert bridge._latest_session_recovery_checkpoint(context, "继续") == {}
+
+
+def test_system_health_preserves_lock_bound_cancellation_callback(tmp_path):
+    import threading
+    from omni_body_skill.tools.omni_body_tool import BodyRuntime, BodyRuntimeConfig
+    cancelled = threading.Event()
+    callback = cancelled.is_set
+    runtime = BodyRuntime(BodyRuntimeConfig(workspace=str(tmp_path), cancel_check=callback))
+    result = runtime.run("system.health", "", {})
+    assert result["success"], result
+    assert result["cancellation_enabled"] is True
+    assert "cancel_check" not in result["config"]
+    json.dumps(result, allow_nan=False)
+    assert runtime.config.cancel_check is callback
+    cancelled.set()
+    assert runtime.config.cancel_check()
+
+
+def test_retired_cli_wrapper_cannot_be_loaded_and_cli_uses_canonical_host():
+    from omni_body_skill.tools import cli
+    from omni_body_skill.api.v1.v3.tools.omni_body import run_omni_body
+    assert cli.run_omni_body is run_omni_body
+    for root in (ROOT / "src", ROOT / "readable-python-source", ROOT / "app/backend/tiangong-backend"):
+        assert not (root / "omni_body_skill/tools/omni_body_v3.py").exists()

@@ -3,6 +3,7 @@
     "ableton.live.arrangement.render": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -29,6 +30,7 @@
     "ableton.live.clip.import": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -55,6 +57,7 @@
     "ableton.live.device.add": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -81,6 +84,7 @@
     "ableton.live.midi.create": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -107,6 +111,7 @@
     "ableton.live.set.create": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -133,6 +138,7 @@
     "ableton.live.track.add": {
       "adapter": "ableton_remote_script",
       "app_id": "ableton.live",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -159,6 +165,7 @@
     "adobe.aftereffects.composition.create": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -185,6 +192,7 @@
     "adobe.aftereffects.effect.apply": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -211,6 +219,7 @@
     "adobe.aftereffects.export.mov": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -235,6 +244,7 @@
       "tool_group": "Adobe After Effects"
     },
     "adobe.aftereffects.jsx.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -246,6 +256,7 @@
     "adobe.aftereffects.keyframe.set": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -272,6 +283,7 @@
     "adobe.aftereffects.layer.add": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -298,6 +310,7 @@
     "adobe.aftereffects.project.create": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -324,6 +337,7 @@
     "adobe.aftereffects.render.queue": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -350,6 +364,7 @@
     "adobe.aftereffects.text.animate": {
       "adapter": "aftereffects_extend_script",
       "app_id": "adobe.aftereffects",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -376,6 +391,7 @@
     "adobe.audition.audio.open": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -402,6 +418,7 @@
     "adobe.audition.clip.concat": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -428,6 +445,7 @@
     "adobe.audition.clip.trim": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -454,6 +472,7 @@
     "adobe.audition.effect.apply": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -480,6 +499,7 @@
     "adobe.audition.mixdown.export": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -506,6 +526,7 @@
     "adobe.audition.noise.reduce": {
       "adapter": "audition_script",
       "app_id": "adobe.audition",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -532,6 +553,7 @@
     "adobe.illustrator.artboard.create": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -558,6 +580,7 @@
     "adobe.illustrator.document.create": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -584,6 +607,7 @@
     "adobe.illustrator.export.pdf": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -610,6 +634,7 @@
     "adobe.illustrator.export.png": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -636,6 +661,7 @@
     "adobe.illustrator.export.svg": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -662,6 +688,7 @@
     "adobe.illustrator.path.create": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -688,6 +715,7 @@
     "adobe.illustrator.style.apply": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -714,6 +742,7 @@
     "adobe.illustrator.text.add": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -740,6 +769,7 @@
     "adobe.illustrator.vector.import": {
       "adapter": "illustrator_script",
       "app_id": "adobe.illustrator",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -766,6 +796,7 @@
     "adobe.indesign.document.create": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -792,6 +823,7 @@
     "adobe.indesign.export.pdf": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -818,6 +850,7 @@
     "adobe.indesign.image.place": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -844,6 +877,7 @@
     "adobe.indesign.package.create": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -870,6 +904,7 @@
     "adobe.indesign.page.add": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -896,6 +931,7 @@
     "adobe.indesign.style.apply": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -922,6 +958,7 @@
     "adobe.indesign.textframe.add": {
       "adapter": "indesign_script",
       "app_id": "adobe.indesign",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -948,6 +985,7 @@
     "adobe.lightroom.batch.export": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -974,6 +1012,7 @@
     "adobe.lightroom.crop.set": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1000,6 +1039,7 @@
     "adobe.lightroom.export.jpg": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1026,6 +1066,7 @@
     "adobe.lightroom.photo.import": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1052,6 +1093,7 @@
     "adobe.lightroom.photo.rate": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1078,6 +1120,7 @@
     "adobe.lightroom.preset.apply": {
       "adapter": "lightroom_api",
       "app_id": "adobe.lightroom",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1103,6 +1146,7 @@
     },
     "adobe.photoshop.document.create": {
       "app_id": "adobe.photoshop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1129,6 +1173,7 @@
     },
     "adobe.photoshop.document.open": {
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1155,6 +1200,7 @@
     },
     "adobe.photoshop.export.png": {
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1182,6 +1228,7 @@
     "adobe.photoshop.export.psd": {
       "adapter": "photoshop_uxp_or_jsx",
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1208,6 +1255,7 @@
     "adobe.photoshop.filter.apply": {
       "adapter": "photoshop_uxp_or_jsx",
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1233,6 +1281,7 @@
     },
     "adobe.photoshop.image.crop": {
       "app_id": "adobe.photoshop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1259,6 +1308,7 @@
     },
     "adobe.photoshop.image.resize": {
       "app_id": "adobe.photoshop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1285,6 +1335,7 @@
     },
     "adobe.photoshop.layer.create": {
       "app_id": "adobe.photoshop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1311,6 +1362,7 @@
     },
     "adobe.photoshop.layer.update": {
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1338,6 +1390,7 @@
     "adobe.photoshop.mask.create": {
       "adapter": "photoshop_uxp_or_jsx",
       "app_id": "adobe.photoshop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1364,6 +1417,7 @@
     "adobe.photoshop.selection.make": {
       "adapter": "photoshop_uxp_or_jsx",
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1389,6 +1443,7 @@
     },
     "adobe.photoshop.text.add": {
       "app_id": "adobe.photoshop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1414,6 +1469,7 @@
       "tool_group": "Adobe Photoshop"
     },
     "adobe.photoshop.uxp.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1425,6 +1481,7 @@
     "adobe.premiere.audio.mix": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1451,6 +1508,7 @@
     "adobe.premiere.clip.move": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1477,6 +1535,7 @@
     "adobe.premiere.color.apply": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1503,6 +1562,7 @@
     "adobe.premiere.export.mp4": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1527,6 +1587,7 @@
       "tool_group": "Adobe Premiere Pro"
     },
     "adobe.premiere.jsx.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1538,6 +1599,7 @@
     "adobe.premiere.media.import": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1564,6 +1626,7 @@
     "adobe.premiere.project.create": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1590,6 +1653,7 @@
     "adobe.premiere.subtitle.add": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1616,6 +1680,7 @@
     "adobe.premiere.timeline.create": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1642,6 +1707,7 @@
     "adobe.premiere.timeline.cut": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1668,6 +1734,7 @@
     "adobe.premiere.transition.add": {
       "adapter": "premiere_extend_script",
       "app_id": "adobe.premiere",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1694,6 +1761,7 @@
     "airtable.base.list": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1720,6 +1788,7 @@
     "airtable.record.create": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1746,6 +1815,7 @@
     "airtable.record.delete": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1772,6 +1842,7 @@
     "airtable.record.update": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1798,6 +1869,7 @@
     "airtable.table.read": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1824,6 +1896,7 @@
     "airtable.view.read": {
       "adapter": "airtable_api",
       "app_id": "airtable",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1850,6 +1923,7 @@
     "anthropic_api.text.generate": {
       "adapter": "anthropic_adapter",
       "app_id": "anthropic_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1876,6 +1950,7 @@
     "anthropic_api.tool_use.run": {
       "adapter": "anthropic_adapter",
       "app_id": "anthropic_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1902,6 +1977,7 @@
     "anthropic_api.vision.analyze": {
       "adapter": "anthropic_adapter",
       "app_id": "anthropic_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1926,6 +2002,7 @@
       "tool_group": "Anthropic API"
     },
     "app.adapter.health": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1935,6 +2012,7 @@
       "summary": "Probe professional application adapters, executables, Python modules, environment credentials, and bridge readiness."
     },
     "app.adapter.matrix": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1944,6 +2022,7 @@
       "summary": "Return professional application action matrix: native, script bridge, API pack, portable fallback, or unavailable."
     },
     "app.bridge.pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1953,6 +2032,7 @@
       "summary": "Create a zip bridge pack containing native script, runbook, manifest, and adapter contract."
     },
     "app.bridge.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1962,6 +2042,7 @@
       "summary": "Generate a native bridge script for Playwright, Office, WPS, Adobe, Blender, Figma, Feishu, GitHub, Docker, or desktop automation."
     },
     "app.native.capability_probe": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -1973,6 +2054,7 @@
     "asana.comment.add": {
       "adapter": "asana_api",
       "app_id": "asana",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -1999,6 +2081,7 @@
     "asana.project.read": {
       "adapter": "asana_api",
       "app_id": "asana",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2025,6 +2108,7 @@
     "asana.task.create": {
       "adapter": "asana_api",
       "app_id": "asana",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2051,6 +2135,7 @@
     "asana.task.search": {
       "adapter": "asana_api",
       "app_id": "asana",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2077,6 +2162,7 @@
     "asana.task.update": {
       "adapter": "asana_api",
       "app_id": "asana",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2103,6 +2189,7 @@
     "audacity.audio.open": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2129,6 +2216,7 @@
     "audacity.audio.trim": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2155,6 +2243,7 @@
     "audacity.effect.apply": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2181,6 +2270,7 @@
     "audacity.export.mp3": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2207,6 +2297,7 @@
     "audacity.export.wav": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2233,6 +2324,7 @@
     "audacity.noise.reduce": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2259,6 +2351,7 @@
     "audacity.track.mix": {
       "adapter": "audacity_macro",
       "app_id": "audacity",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2283,6 +2376,7 @@
       "tool_group": "Audacity"
     },
     "audio.concat": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_audio_concat"
@@ -2292,6 +2386,7 @@
       "summary": "Concatenate audio files using ffmpeg concat demuxer."
     },
     "audio.tone": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_audio_tone"
@@ -2301,6 +2396,7 @@
       "summary": "Create a simple WAV tone/beep/music bed placeholder."
     },
     "audio.trim": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_audio_trim"
@@ -2310,6 +2406,7 @@
       "summary": "Trim audio using ffmpeg."
     },
     "audio.tts": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_audio_tts"
@@ -2319,6 +2416,7 @@
       "summary": "Create speech audio through local OS TTS engine if available; otherwise fail honestly."
     },
     "blender.python.run": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -2328,6 +2426,7 @@
       "summary": "Run Blender Python script through blender --background when Blender is installed; Runtime applies sandbox and A5 hard rejection."
     },
     "blender.python.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -2339,6 +2438,7 @@
     "browser.chrome.back": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2365,6 +2465,7 @@
     "browser.chrome.click": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2391,6 +2492,7 @@
     "browser.chrome.cookies.read": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2417,6 +2519,7 @@
     "browser.chrome.cookies.write": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2442,6 +2545,7 @@
     },
     "browser.chrome.download": {
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2468,6 +2572,7 @@
     },
     "browser.chrome.extract_dom": {
       "app_id": "browser.chrome",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2494,6 +2599,7 @@
     },
     "browser.chrome.extract_text": {
       "app_id": "browser.chrome",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2521,6 +2627,7 @@
     "browser.chrome.fill": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2547,6 +2654,7 @@
     "browser.chrome.forward": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2572,6 +2680,7 @@
     },
     "browser.chrome.goto": {
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2599,6 +2708,7 @@
     "browser.chrome.network.capture": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2624,6 +2734,7 @@
     },
     "browser.chrome.open": {
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2650,6 +2761,7 @@
     },
     "browser.chrome.pdf.print": {
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2677,6 +2789,7 @@
     "browser.chrome.reload": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2703,6 +2816,7 @@
     "browser.chrome.run_js": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2728,6 +2842,7 @@
     },
     "browser.chrome.screenshot": {
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2755,6 +2870,7 @@
     "browser.chrome.select": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2781,6 +2897,7 @@
     "browser.chrome.upload_file": {
       "adapter": "browser_driver",
       "app_id": "browser.chrome",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2807,6 +2924,7 @@
     "browser.edge.click": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2833,6 +2951,7 @@
     "browser.edge.download": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2859,6 +2978,7 @@
     "browser.edge.extract_dom": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2885,6 +3005,7 @@
     "browser.edge.extract_text": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2911,6 +3032,7 @@
     "browser.edge.fill": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2937,6 +3059,7 @@
     "browser.edge.goto": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2963,6 +3086,7 @@
     "browser.edge.open": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -2989,6 +3113,7 @@
     "browser.edge.pdf.print": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3015,6 +3140,7 @@
     "browser.edge.run_js": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3041,6 +3167,7 @@
     "browser.edge.screenshot": {
       "adapter": "browser_driver",
       "app_id": "browser.edge",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3067,6 +3194,7 @@
     "browser.firefox.click": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3093,6 +3221,7 @@
     "browser.firefox.download": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3119,6 +3248,7 @@
     "browser.firefox.extract_dom": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3145,6 +3275,7 @@
     "browser.firefox.extract_text": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3171,6 +3302,7 @@
     "browser.firefox.fill": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3197,6 +3329,7 @@
     "browser.firefox.goto": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3223,6 +3356,7 @@
     "browser.firefox.open": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3249,6 +3383,7 @@
     "browser.firefox.pdf.print": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3275,6 +3410,7 @@
     "browser.firefox.run_js": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3301,6 +3437,7 @@
     "browser.firefox.screenshot": {
       "adapter": "browser_driver",
       "app_id": "browser.firefox",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3325,6 +3462,7 @@
       "tool_group": "Mozilla Firefox"
     },
     "browser.open": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_browser_open"
@@ -3334,6 +3472,7 @@
       "summary": "Portable browser open/fetch fallback: downloads URL/file/data into a local snapshot."
     },
     "browser.playwright.extract_text": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3343,6 +3482,7 @@
       "summary": "Use Playwright to extract visible text when available; can use static fetch fallback for simple pages."
     },
     "browser.playwright.goto": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3352,6 +3492,7 @@
       "summary": "Use Playwright to open a URL and save HTML/screenshot when available; fails honestly if Playwright/browser missing."
     },
     "browser.playwright.pdf": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3361,6 +3502,7 @@
       "summary": "Use Playwright Chromium PDF export when available; generate bridge script otherwise."
     },
     "browser.playwright.screenshot": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3370,6 +3512,7 @@
       "summary": "Use Playwright to capture screenshot when available; can generate bridge script otherwise."
     },
     "browser.playwright.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3379,6 +3522,7 @@
       "summary": "Generate Playwright Python automation script; does not require browser runtime to be installed."
     },
     "browser.search_web": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_browser_search_web"
@@ -3388,6 +3532,7 @@
       "summary": "Portable web search fallback through a configured search endpoint or direct search URL snapshot."
     },
     "canva.api.request_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -3399,6 +3544,7 @@
     "canva.asset.upload": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3425,6 +3571,7 @@
     "canva.brandkit.apply": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3451,6 +3598,7 @@
     "canva.design.create": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3477,6 +3625,7 @@
     "canva.export.pdf": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3503,6 +3652,7 @@
     "canva.export.png": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3529,6 +3679,7 @@
     "canva.template.apply": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3555,6 +3706,7 @@
     "canva.text.update": {
       "adapter": "canva_api",
       "app_id": "canva",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3581,6 +3733,7 @@
     "capcut.cover.create": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3607,6 +3760,7 @@
     "capcut.effect.apply": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3633,6 +3787,7 @@
     "capcut.export.mp4": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3659,6 +3814,7 @@
     "capcut.media.import": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3685,6 +3841,7 @@
     "capcut.music.add": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3711,6 +3868,7 @@
     "capcut.project.create": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3737,6 +3895,7 @@
     "capcut.subtitle.add": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3763,6 +3922,7 @@
     "capcut.subtitle.auto": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3789,6 +3949,7 @@
     "capcut.template.apply": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3815,6 +3976,7 @@
     "capcut.timeline.cut": {
       "adapter": "capcut_adapter",
       "app_id": "capcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3841,6 +4003,7 @@
     "clickup.comment.add": {
       "adapter": "clickup_api",
       "app_id": "clickup",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3867,6 +4030,7 @@
     "clickup.space.read": {
       "adapter": "clickup_api",
       "app_id": "clickup",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3893,6 +4057,7 @@
     "clickup.task.create": {
       "adapter": "clickup_api",
       "app_id": "clickup",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3919,6 +4084,7 @@
     "clickup.task.search": {
       "adapter": "clickup_api",
       "app_id": "clickup",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3945,6 +4111,7 @@
     "clickup.task.update": {
       "adapter": "clickup_api",
       "app_id": "clickup",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -3969,6 +4136,7 @@
       "tool_group": "ClickUp"
     },
     "code.patch_replace": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_code_patch_replace"
@@ -3978,6 +4146,7 @@
       "summary": "Patch file by replacing literal or regex text with rollback snapshot."
     },
     "code.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_code_read"
@@ -3987,6 +4156,7 @@
       "summary": "Read source code file with metadata."
     },
     "code.write": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_code_write"
@@ -3998,6 +4168,7 @@
     "comfyui.image.generate": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4024,6 +4195,7 @@
     "comfyui.image.inpaint": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4050,6 +4222,7 @@
     "comfyui.image.outpaint": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4076,6 +4249,7 @@
     "comfyui.image.upscale": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4102,6 +4276,7 @@
     "comfyui.queue.status": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4128,6 +4303,7 @@
     "comfyui.workflow.run": {
       "adapter": "comfyui_api",
       "app_id": "comfyui",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -4152,6 +4328,7 @@
       "tool_group": "ComfyUI"
     },
     "content.calendar.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -4164,6 +4341,7 @@
       "adapter": "core_builtin",
       "alias_to": "zip.create",
       "app_id": "core.archive",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4189,6 +4367,7 @@
       "adapter": "core_builtin",
       "alias_to": "zip.extract",
       "app_id": "core.archive",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4214,6 +4393,7 @@
       "adapter": "core_builtin",
       "alias_to": "audio.concat",
       "app_id": "core.audio",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4239,6 +4419,7 @@
       "adapter": "core_builtin",
       "alias_to": "audio.tone",
       "app_id": "core.audio",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4264,6 +4445,7 @@
       "adapter": "core_builtin",
       "alias_to": "audio.trim",
       "app_id": "core.audio",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4289,6 +4471,7 @@
       "adapter": "core_builtin",
       "alias_to": "code.patch_replace",
       "app_id": "core.code",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4314,6 +4497,7 @@
       "adapter": "core_builtin",
       "alias_to": "code.read",
       "app_id": "core.code",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -4339,6 +4523,7 @@
       "adapter": "core_builtin",
       "alias_to": "code.write",
       "app_id": "core.code",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4364,6 +4549,7 @@
       "adapter": "core_builtin",
       "alias_to": "python.run",
       "app_id": "core.code",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4389,6 +4575,7 @@
       "adapter": "core_builtin",
       "alias_to": "quality.python_syntax",
       "app_id": "core.code",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4414,6 +4601,7 @@
       "adapter": "core_builtin",
       "alias_to": "quality.run_tests",
       "app_id": "core.code",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4439,6 +4627,7 @@
       "adapter": "core_builtin",
       "alias_to": "shell.run",
       "app_id": "core.code",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4464,6 +4653,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.append",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4489,6 +4679,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.copy",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4514,6 +4705,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.delete_to_trash",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4539,6 +4731,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.hash",
       "app_id": "core.filesystem",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -4564,6 +4757,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.list",
       "app_id": "core.filesystem",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -4589,6 +4783,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.mkdir",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4614,6 +4809,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.move",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4639,6 +4835,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.read",
       "app_id": "core.filesystem",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -4664,6 +4861,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.rename",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4689,6 +4887,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.search",
       "app_id": "core.filesystem",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -4714,6 +4913,7 @@
       "adapter": "core_builtin",
       "alias_to": "file.write",
       "app_id": "core.filesystem",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4739,6 +4939,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.add_text",
       "app_id": "core.image",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4764,6 +4965,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.compose",
       "app_id": "core.image",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4789,6 +4991,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.convert",
       "app_id": "core.image",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4814,6 +5017,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.create_canvas",
       "app_id": "core.image",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4839,6 +5043,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.crop",
       "app_id": "core.image",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4864,6 +5069,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.info",
       "app_id": "core.image",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -4889,6 +5095,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.resize",
       "app_id": "core.image",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4914,6 +5121,7 @@
       "adapter": "core_builtin",
       "alias_to": "image.rotate",
       "app_id": "core.image",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4939,6 +5147,7 @@
       "adapter": "core_builtin",
       "alias_to": "docx.create",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4964,6 +5173,7 @@
       "adapter": "core_builtin",
       "alias_to": "mindmap.create",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -4989,6 +5199,7 @@
       "adapter": "core_builtin",
       "alias_to": "pdf.create_from_text",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5014,6 +5225,7 @@
       "adapter": "core_builtin",
       "alias_to": "pdf.extract_text",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5039,6 +5251,7 @@
       "adapter": "core_builtin",
       "alias_to": "pptx.create",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5064,6 +5277,7 @@
       "adapter": "core_builtin",
       "alias_to": "sheet.create",
       "app_id": "core.office",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5089,6 +5303,7 @@
       "adapter": "core_builtin",
       "alias_to": "sheet.read",
       "app_id": "core.office",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -5114,6 +5329,7 @@
       "adapter": "core_builtin",
       "alias_to": "rollback.apply",
       "app_id": "core.rollback",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5139,6 +5355,7 @@
       "adapter": "core_builtin",
       "alias_to": "rollback.list",
       "app_id": "core.rollback",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -5164,6 +5381,7 @@
       "adapter": "core_builtin",
       "alias_to": "video.add_audio",
       "app_id": "core.video",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5189,6 +5407,7 @@
       "adapter": "core_builtin",
       "alias_to": "video.cut",
       "app_id": "core.video",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5214,6 +5433,7 @@
       "adapter": "core_builtin",
       "alias_to": "video.extract_audio",
       "app_id": "core.video",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -5239,6 +5459,7 @@
       "adapter": "core_builtin",
       "alias_to": "video.info",
       "app_id": "core.video",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -5264,6 +5485,7 @@
       "adapter": "core_builtin",
       "alias_to": "video.slideshow",
       "app_id": "core.video",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -5286,6 +5508,7 @@
       "tool_group": "Portable Video Core"
     },
     "course.lesson_plan.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -5297,6 +5520,7 @@
     "davinci.resolve.color.grade": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5323,6 +5547,7 @@
     "davinci.resolve.deliver.render": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5349,6 +5574,7 @@
     "davinci.resolve.fusion.apply": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5375,6 +5601,7 @@
     "davinci.resolve.media.import": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5401,6 +5628,7 @@
     "davinci.resolve.project.create": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5427,6 +5655,7 @@
     "davinci.resolve.subtitle.add": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5453,6 +5682,7 @@
     "davinci.resolve.timeline.create": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5479,6 +5709,7 @@
     "davinci.resolve.timeline.cut": {
       "adapter": "resolve_python_api",
       "app_id": "davinci.resolve",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5505,6 +5736,7 @@
     "deepseek_api.code.generate": {
       "adapter": "deepseek_adapter",
       "app_id": "deepseek_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5531,6 +5763,7 @@
     "deepseek_api.embedding.create": {
       "adapter": "deepseek_adapter",
       "app_id": "deepseek_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5557,6 +5790,7 @@
     "deepseek_api.reasoning.run": {
       "adapter": "deepseek_adapter",
       "app_id": "deepseek_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5583,6 +5817,7 @@
     "deepseek_api.text.generate": {
       "adapter": "deepseek_adapter",
       "app_id": "deepseek_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5607,6 +5842,7 @@
       "tool_group": "DeepSeek API"
     },
     "deliverable.package": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -5616,6 +5852,7 @@
       "summary": "Package final deliverables, QC reports, source notes, and manifests into a zip archive."
     },
     "delivery.kernel.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -5625,6 +5862,7 @@
       "summary": "Inspect v3.2 delivery kernel standards, rubrics, and available quality gates."
     },
     "delivery.v33.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -5634,6 +5872,7 @@
       "summary": "Inspect v3.3 expanded delivery pack actions, rubrics, and skill groups."
     },
     "desktop.click": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_desktop_click"
@@ -5643,6 +5882,7 @@
       "summary": "Desktop click through pyautogui; requires OMNI_DESKTOP_ENABLE=1 or args.enable_desktop=true."
     },
     "desktop.hotkey": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_desktop_hotkey"
@@ -5652,6 +5892,7 @@
       "summary": "Desktop hotkey through pyautogui; requires OMNI_DESKTOP_ENABLE=1 or args.enable_desktop=true."
     },
     "desktop.screenshot": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_desktop_screenshot"
@@ -5661,6 +5902,7 @@
       "summary": "Capture desktop screenshot through PIL ImageGrab/pyautogui when host display is available."
     },
     "desktop.type": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_desktop_type"
@@ -5672,6 +5914,7 @@
     "dingtalk.docs.doc.create": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5698,6 +5941,7 @@
     "dingtalk.docs.doc.read": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5724,6 +5968,7 @@
     "dingtalk.docs.doc.update": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5750,6 +5995,7 @@
     "dingtalk.docs.export.pdf": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5776,6 +6022,7 @@
     "dingtalk.docs.permission.set": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5802,6 +6049,7 @@
     "dingtalk.docs.sheet.create": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5828,6 +6076,7 @@
     "dingtalk.docs.sheet.read": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.docs",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5854,6 +6103,7 @@
     "dingtalk.im.file.upload": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.im",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5880,6 +6130,7 @@
     "dingtalk.im.group.list": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.im",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5906,6 +6157,7 @@
     "dingtalk.im.message.create_draft": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.im",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5932,6 +6184,7 @@
     "dingtalk.im.message.read": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.im",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5958,6 +6211,7 @@
     "dingtalk.im.message.send_confirmed": {
       "adapter": "dingtalk_api",
       "app_id": "dingtalk.im",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -5982,6 +6236,7 @@
       "tool_group": "钉钉消息"
     },
     "docker.compose.config": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -5993,6 +6248,7 @@
     "docker.compose.down": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6019,6 +6275,7 @@
     "docker.compose.up": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6045,6 +6302,7 @@
     "docker.container.logs": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6071,6 +6329,7 @@
     "docker.container.run": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6097,6 +6356,7 @@
     "docker.container.stop": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6121,6 +6381,7 @@
       "tool_group": "Docker"
     },
     "docker.health": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -6132,6 +6393,7 @@
     "docker.image.build": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6156,6 +6418,7 @@
       "tool_group": "Docker"
     },
     "docker.ps": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -6167,6 +6430,7 @@
     "docker.volume.list": {
       "adapter": "docker_cli",
       "app_id": "docker",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6191,6 +6455,7 @@
       "tool_group": "Docker"
     },
     "docx.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_docx_create"
@@ -6201,6 +6466,7 @@
     },
     "elevenlabs.tts.create": {
       "app_id": "elevenlabs",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6228,6 +6494,7 @@
     "elevenlabs.voice.clone_authorized": {
       "adapter": "elevenlabs_adapter",
       "app_id": "elevenlabs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6254,6 +6521,7 @@
     "elevenlabs.voice.list": {
       "adapter": "elevenlabs_adapter",
       "app_id": "elevenlabs",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6278,6 +6546,7 @@
       "tool_group": "ElevenLabs"
     },
     "feishu.api.request_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -6289,6 +6558,7 @@
     "feishu.docs.comment.add": {
       "adapter": "feishu_api",
       "app_id": "feishu.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6314,6 +6584,7 @@
     },
     "feishu.docs.doc.create": {
       "app_id": "feishu.docs",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6340,6 +6611,7 @@
     },
     "feishu.docs.doc.read": {
       "app_id": "feishu.docs",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6366,6 +6638,7 @@
     },
     "feishu.docs.doc.update": {
       "app_id": "feishu.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6392,6 +6665,7 @@
     },
     "feishu.docs.export.docx": {
       "app_id": "feishu.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6418,6 +6692,7 @@
     },
     "feishu.docs.export.pdf": {
       "app_id": "feishu.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6445,6 +6720,7 @@
     "feishu.docs.permission.set": {
       "adapter": "feishu_api",
       "app_id": "feishu.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6471,6 +6747,7 @@
     "feishu.im.file.upload": {
       "adapter": "feishu_api",
       "app_id": "feishu.im",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6497,6 +6774,7 @@
     "feishu.im.group.list": {
       "adapter": "feishu_api",
       "app_id": "feishu.im",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6523,6 +6801,7 @@
     "feishu.im.message.create_draft": {
       "adapter": "feishu_api",
       "app_id": "feishu.im",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6549,6 +6828,7 @@
     "feishu.im.message.read": {
       "adapter": "feishu_api",
       "app_id": "feishu.im",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6575,6 +6855,7 @@
     "feishu.im.message.send_confirmed": {
       "adapter": "feishu_api",
       "app_id": "feishu.im",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6601,6 +6882,7 @@
     "feishu.sheets.export.xlsx": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6627,6 +6909,7 @@
     "feishu.sheets.formula.set": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6653,6 +6936,7 @@
     "feishu.sheets.permission.set": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6679,6 +6963,7 @@
     "feishu.sheets.sheet.create": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6705,6 +6990,7 @@
     "feishu.sheets.sheet.read": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6731,6 +7017,7 @@
     "feishu.sheets.sheet.update_cells": {
       "adapter": "feishu_api",
       "app_id": "feishu.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6757,6 +7044,7 @@
     "feishu.wiki.page.create": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6783,6 +7071,7 @@
     "feishu.wiki.page.read": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6809,6 +7098,7 @@
     "feishu.wiki.page.update": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6835,6 +7125,7 @@
     "feishu.wiki.permission.set": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6861,6 +7152,7 @@
     "feishu.wiki.search": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6887,6 +7179,7 @@
     "feishu.wiki.space.list": {
       "adapter": "feishu_api",
       "app_id": "feishu.wiki",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -6914,6 +7207,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "audio.concat",
       "app_id": "ffmpeg",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -6939,6 +7233,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "audio.trim",
       "app_id": "ffmpeg",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -6964,6 +7259,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "video.add_audio",
       "app_id": "ffmpeg",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -6989,6 +7285,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "video.cut",
       "app_id": "ffmpeg",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -7014,6 +7311,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "video.extract_audio",
       "app_id": "ffmpeg",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -7039,6 +7337,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "video.info",
       "app_id": "ffmpeg",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -7064,6 +7363,7 @@
       "adapter": "ffmpeg_cli",
       "alias_to": "video.slideshow",
       "app_id": "ffmpeg",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -7086,6 +7386,7 @@
       "tool_group": "FFmpeg"
     },
     "figma.api.request_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7097,6 +7398,7 @@
     "figma.comment.add": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7123,6 +7425,7 @@
     "figma.component.create": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7149,6 +7452,7 @@
     "figma.export.png": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7175,6 +7479,7 @@
     "figma.export.svg": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7201,6 +7506,7 @@
     "figma.file.read": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7227,6 +7533,7 @@
     "figma.frame.create": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7253,6 +7560,7 @@
     "figma.image.place": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7279,6 +7587,7 @@
     "figma.text.update": {
       "adapter": "figma_api",
       "app_id": "figma",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7303,6 +7612,7 @@
       "tool_group": "Figma"
     },
     "file.append": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_append"
@@ -7312,6 +7622,7 @@
       "summary": "Append text to a file with rollback snapshot."
     },
     "file.copy": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_copy"
@@ -7321,6 +7632,7 @@
       "summary": "Copy a file or directory with overwrite protection and rollback snapshot."
     },
     "file.delete_to_trash": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_delete_to_trash"
@@ -7330,6 +7642,7 @@
       "summary": "Move file/directory into workspace trash; never permanent delete."
     },
     "file.hash": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_hash"
@@ -7339,6 +7652,7 @@
       "summary": "Calculate SHA-256 for a file."
     },
     "file.list": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_list"
@@ -7348,6 +7662,7 @@
       "summary": "List files/directories under a target directory."
     },
     "file.mkdir": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_mkdir"
@@ -7357,6 +7672,7 @@
       "summary": "Create a directory."
     },
     "file.move": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_move"
@@ -7367,6 +7683,7 @@
     },
     "file.patch_replace": {
       "alias_to": "code.patch_replace",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "code.patch_replace"
@@ -7376,6 +7693,7 @@
       "summary": "Compatibility alias for code.patch_replace."
     },
     "file.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_read"
@@ -7385,6 +7703,7 @@
       "summary": "Read text or base64-encoded binary file preview."
     },
     "file.rename": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_rename"
@@ -7394,6 +7713,7 @@
       "summary": "Rename a file or directory in place with rollback snapshot."
     },
     "file.search": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_search"
@@ -7403,6 +7723,7 @@
       "summary": "Search filenames and/or text content within workspace."
     },
     "file.write": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_file_write"
@@ -7414,6 +7735,7 @@
     "finalcut.event.create": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7440,6 +7762,7 @@
     "finalcut.export.mp4": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7466,6 +7789,7 @@
     "finalcut.library.open": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7492,6 +7816,7 @@
     "finalcut.media.import": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7518,6 +7843,7 @@
     "finalcut.music.add": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7544,6 +7870,7 @@
     "finalcut.timeline.cut": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7570,6 +7897,7 @@
     "finalcut.title.add": {
       "adapter": "fcp_xml_or_automation",
       "app_id": "finalcut",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7596,6 +7924,7 @@
     "flstudio.channel.add": {
       "adapter": "flstudio_midi_or_bridge",
       "app_id": "flstudio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7622,6 +7951,7 @@
     "flstudio.midi.import": {
       "adapter": "flstudio_midi_or_bridge",
       "app_id": "flstudio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7648,6 +7978,7 @@
     "flstudio.mixdown.export": {
       "adapter": "flstudio_midi_or_bridge",
       "app_id": "flstudio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7674,6 +8005,7 @@
     "flstudio.pattern.create": {
       "adapter": "flstudio_midi_or_bridge",
       "app_id": "flstudio",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7700,6 +8032,7 @@
     "flstudio.project.create": {
       "adapter": "flstudio_midi_or_bridge",
       "app_id": "flstudio",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7726,6 +8059,7 @@
     "gemini_api.embedding.create": {
       "adapter": "gemini_adapter",
       "app_id": "gemini_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7752,6 +8086,7 @@
     "gemini_api.text.generate": {
       "adapter": "gemini_adapter",
       "app_id": "gemini_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7778,6 +8113,7 @@
     "gemini_api.video.analyze": {
       "adapter": "gemini_adapter",
       "app_id": "gemini_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7804,6 +8140,7 @@
     "gemini_api.vision.analyze": {
       "adapter": "gemini_adapter",
       "app_id": "gemini_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7828,6 +8165,7 @@
       "tool_group": "Gemini API"
     },
     "git.add": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7839,6 +8177,7 @@
     "git.branch.create": {
       "adapter": "git_cli",
       "app_id": "git",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7865,6 +8204,7 @@
     "git.checkout": {
       "adapter": "git_cli",
       "app_id": "git",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7899,6 +8239,7 @@
       "summary": "Clone a public GitHub HTTPS repository into a new local directory through a governed network-read capability; generic shell/python remain network-denied."
     },
     "git.commit": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7908,6 +8249,7 @@
       "summary": "Run git commit inside the workspace when git is installed; Runtime rejects A5 operations."
     },
     "git.diff": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7917,6 +8259,7 @@
       "summary": "Run git diff safely in workspace if git is installed."
     },
     "git.log": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7928,6 +8271,7 @@
     "git.merge": {
       "adapter": "git_cli",
       "app_id": "git",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7954,6 +8298,7 @@
     "git.stash": {
       "adapter": "git_cli",
       "app_id": "git",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -7978,6 +8323,7 @@
       "tool_group": "Git"
     },
     "git.status": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -7989,6 +8335,7 @@
     "git.tag": {
       "adapter": "git_cli",
       "app_id": "git",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8015,6 +8362,7 @@
     "github.issue.create": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8041,6 +8389,7 @@
     "github.issue.update": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8067,6 +8416,7 @@
     "github.pull_request.create": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8093,6 +8443,7 @@
     "github.pull_request.review": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8119,6 +8470,7 @@
     "github.release.create": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8145,6 +8497,7 @@
     "github.repo.search": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8171,6 +8524,7 @@
     "github.workflow.run": {
       "adapter": "github_api",
       "app_id": "github",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8197,6 +8551,7 @@
     "gitlab.issue.create": {
       "adapter": "gitlab_api",
       "app_id": "gitlab",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8223,6 +8578,7 @@
     "gitlab.merge_request.create": {
       "adapter": "gitlab_api",
       "app_id": "gitlab",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8249,6 +8605,7 @@
     "gitlab.pipeline.run": {
       "adapter": "gitlab_api",
       "app_id": "gitlab",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8275,6 +8632,7 @@
     "gitlab.project.search": {
       "adapter": "gitlab_api",
       "app_id": "gitlab",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8301,6 +8659,7 @@
     "gitlab.release.create": {
       "adapter": "gitlab_api",
       "app_id": "gitlab",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8327,6 +8686,7 @@
     "gmail.attachment.download": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8353,6 +8713,7 @@
     "gmail.label.apply": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8379,6 +8740,7 @@
     "gmail.mail.create_draft": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8405,6 +8767,7 @@
     "gmail.mail.read": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8431,6 +8794,7 @@
     "gmail.mail.search": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8457,6 +8821,7 @@
     "gmail.mail.send_confirmed": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8483,6 +8848,7 @@
     "gmail.thread.read": {
       "adapter": "gmail_api",
       "app_id": "gmail",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8509,6 +8875,7 @@
     "google.docs.comment.add": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8535,6 +8902,7 @@
     "google.docs.document.create": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8561,6 +8929,7 @@
     "google.docs.document.read": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8587,6 +8956,7 @@
     "google.docs.document.update": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8613,6 +8983,7 @@
     "google.docs.export.docx": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8639,6 +9010,7 @@
     "google.docs.export.pdf": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8665,6 +9037,7 @@
     "google.docs.share.set_permission": {
       "adapter": "google_api",
       "app_id": "google.docs",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8691,6 +9064,7 @@
     "google.drive.file.copy": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8717,6 +9091,7 @@
     "google.drive.file.delete_to_trash": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8743,6 +9118,7 @@
     "google.drive.file.download": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8769,6 +9145,7 @@
     "google.drive.file.list": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8795,6 +9172,7 @@
     "google.drive.file.move": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8821,6 +9199,7 @@
     "google.drive.file.upload": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8847,6 +9226,7 @@
     "google.drive.folder.create": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8873,6 +9253,7 @@
     "google.drive.permission.set": {
       "adapter": "google_api",
       "app_id": "google.drive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8899,6 +9280,7 @@
     "google.sheets.chart.create": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8925,6 +9307,7 @@
     "google.sheets.export.xlsx": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8951,6 +9334,7 @@
     "google.sheets.formula.set": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -8977,6 +9361,7 @@
     "google.sheets.share.set_permission": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9003,6 +9388,7 @@
     "google.sheets.sheet.create": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9029,6 +9415,7 @@
     "google.sheets.sheet.read": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9055,6 +9442,7 @@
     "google.sheets.sheet.update_cells": {
       "adapter": "google_api",
       "app_id": "google.sheets",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9081,6 +9469,7 @@
     "google.slides.deck.create": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9107,6 +9496,7 @@
     "google.slides.export.pdf": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9133,6 +9523,7 @@
     "google.slides.export.pptx": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9159,6 +9550,7 @@
     "google.slides.share.set_permission": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9185,6 +9577,7 @@
     "google.slides.slide.add": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9211,6 +9604,7 @@
     "google.slides.slide.update": {
       "adapter": "google_api",
       "app_id": "google.slides",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9235,6 +9629,7 @@
       "tool_group": "Google Slides"
     },
     "http.get": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_http_get"
@@ -9246,6 +9641,7 @@
     "hubspot.contact.create": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9272,6 +9668,7 @@
     "hubspot.contact.search": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9298,6 +9695,7 @@
     "hubspot.deal.create": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9324,6 +9722,7 @@
     "hubspot.deal.update": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9350,6 +9749,7 @@
     "hubspot.email.create_draft": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9376,6 +9776,7 @@
     "hubspot.task.create": {
       "adapter": "hubspot_api",
       "app_id": "hubspot",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9400,6 +9801,7 @@
       "tool_group": "HubSpot"
     },
     "image.add_text": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_add_text"
@@ -9409,6 +9811,7 @@
       "summary": "Add simple text overlay to image."
     },
     "image.compose": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_compose"
@@ -9418,6 +9821,7 @@
       "summary": "Overlay one image on another."
     },
     "image.convert": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_convert"
@@ -9427,6 +9831,7 @@
       "summary": "Convert image format."
     },
     "image.create_canvas": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_create_canvas"
@@ -9436,6 +9841,7 @@
       "summary": "Create a blank image canvas."
     },
     "image.crop": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_crop"
@@ -9445,6 +9851,7 @@
       "summary": "Crop image with Pillow."
     },
     "image.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_info"
@@ -9454,6 +9861,7 @@
       "summary": "Inspect image size/mode/format."
     },
     "image.resize": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_resize"
@@ -9463,6 +9871,7 @@
       "summary": "Resize image with Pillow."
     },
     "image.rotate": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_image_rotate"
@@ -9474,6 +9883,7 @@
     "jetbrains.idea.edit.apply": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9500,6 +9910,7 @@
     "jetbrains.idea.file.search": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9526,6 +9937,7 @@
     "jetbrains.idea.inspection.read": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9552,6 +9964,7 @@
     "jetbrains.idea.project.open": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9578,6 +9991,7 @@
     "jetbrains.idea.run.config": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9604,6 +10018,7 @@
     "jetbrains.idea.test.run": {
       "adapter": "jetbrains_plugin",
       "app_id": "jetbrains.idea",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9629,6 +10044,7 @@
     },
     "jianying.cover.create": {
       "app_id": "jianying",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9656,6 +10072,7 @@
     "jianying.effect.apply": {
       "adapter": "jianying_adapter",
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9681,6 +10098,7 @@
     },
     "jianying.export.mp4": {
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9707,6 +10125,7 @@
     },
     "jianying.media.import": {
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9733,6 +10152,7 @@
     },
     "jianying.music.add": {
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9759,6 +10179,7 @@
     },
     "jianying.project.create": {
       "app_id": "jianying",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9785,6 +10206,7 @@
     },
     "jianying.subtitle.add": {
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9812,6 +10234,7 @@
     "jianying.subtitle.auto": {
       "adapter": "jianying_adapter",
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9838,6 +10261,7 @@
     "jianying.template.apply": {
       "adapter": "jianying_adapter",
       "app_id": "jianying",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9863,6 +10287,7 @@
     },
     "jianying.timeline.cut": {
       "app_id": "jianying",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9890,6 +10315,7 @@
     "jira.comment.add": {
       "adapter": "jira_api",
       "app_id": "jira",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9916,6 +10342,7 @@
     "jira.issue.create": {
       "adapter": "jira_api",
       "app_id": "jira",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9942,6 +10369,7 @@
     "jira.issue.search": {
       "adapter": "jira_api",
       "app_id": "jira",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9968,6 +10396,7 @@
     "jira.issue.transition": {
       "adapter": "jira_api",
       "app_id": "jira",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -9994,6 +10423,7 @@
     "jira.issue.update": {
       "adapter": "jira_api",
       "app_id": "jira",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10020,6 +10450,7 @@
     "jupyter.cell.add": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10046,6 +10477,7 @@
     "jupyter.cell.run": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10072,6 +10504,7 @@
     "jupyter.export.html": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10098,6 +10531,7 @@
     "jupyter.export.ipynb": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10124,6 +10558,7 @@
     "jupyter.kernel.restart": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10150,6 +10585,7 @@
     "jupyter.notebook.create": {
       "adapter": "jupyter_api",
       "app_id": "jupyter",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10174,6 +10610,7 @@
       "tool_group": "Jupyter Notebook"
     },
     "kb.ingestion_manifest.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -10185,6 +10622,7 @@
     "kingdee.customer.search": {
       "adapter": "kingdee_api",
       "app_id": "kingdee",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10211,6 +10649,7 @@
     "kingdee.export.xlsx": {
       "adapter": "kingdee_api",
       "app_id": "kingdee",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10237,6 +10676,7 @@
     "kingdee.inventory.read": {
       "adapter": "kingdee_api",
       "app_id": "kingdee",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10263,6 +10703,7 @@
     "kingdee.report.run": {
       "adapter": "kingdee_api",
       "app_id": "kingdee",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10289,6 +10730,7 @@
     "kingdee.voucher.create_draft": {
       "adapter": "kingdee_api",
       "app_id": "kingdee",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10315,6 +10757,7 @@
     "kubernetes.deployment.apply": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10341,6 +10784,7 @@
     "kubernetes.logs.read": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10367,6 +10811,7 @@
     "kubernetes.namespace.create": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10393,6 +10838,7 @@
     "kubernetes.pod.list": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10419,6 +10865,7 @@
     "kubernetes.rollout.status": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10445,6 +10892,7 @@
     "kubernetes.service.apply": {
       "adapter": "kubectl",
       "app_id": "kubernetes",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10470,6 +10918,7 @@
     },
     "learning.ingest": {
       "allowed_effect": "create_pending_learning_card_only",
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_learning_ingest"
@@ -10481,6 +10930,7 @@
       "summary": "Create a pending learning card from a host-verified explicit user learning request; never compiles, activates, registers, or releases tools."
     },
     "life.activity.query": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_life_activity_query"
@@ -10502,6 +10952,7 @@
     "linear.comment.add": {
       "adapter": "linear_api",
       "app_id": "linear",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10528,6 +10979,7 @@
     "linear.cycle.read": {
       "adapter": "linear_api",
       "app_id": "linear",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10554,6 +11006,7 @@
     "linear.issue.create": {
       "adapter": "linear_api",
       "app_id": "linear",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10580,6 +11033,7 @@
     "linear.issue.search": {
       "adapter": "linear_api",
       "app_id": "linear",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10606,6 +11060,7 @@
     "linear.issue.update": {
       "adapter": "linear_api",
       "app_id": "linear",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10631,6 +11086,7 @@
     },
     "linux.desktop.click": {
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10658,6 +11114,7 @@
     "linux.desktop.clipboard.read": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10684,6 +11141,7 @@
     "linux.desktop.clipboard.write": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10710,6 +11168,7 @@
     "linux.desktop.drag": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10735,6 +11194,7 @@
     },
     "linux.desktop.hotkey": {
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10762,6 +11222,7 @@
     "linux.desktop.ocr": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10787,6 +11248,7 @@
     },
     "linux.desktop.screenshot": {
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10813,6 +11275,7 @@
     },
     "linux.desktop.type": {
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10840,6 +11303,7 @@
     "linux.desktop.window.focus": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10866,6 +11330,7 @@
     "linux.desktop.window.list": {
       "adapter": "xdotool_or_pyautogui",
       "app_id": "linux.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10891,6 +11356,7 @@
     },
     "macos.desktop.click": {
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10918,6 +11384,7 @@
     "macos.desktop.clipboard.read": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10944,6 +11411,7 @@
     "macos.desktop.clipboard.write": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10970,6 +11438,7 @@
     "macos.desktop.drag": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -10995,6 +11464,7 @@
     },
     "macos.desktop.hotkey": {
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11022,6 +11492,7 @@
     "macos.desktop.ocr": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11047,6 +11518,7 @@
     },
     "macos.desktop.screenshot": {
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11073,6 +11545,7 @@
     },
     "macos.desktop.type": {
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11100,6 +11573,7 @@
     "macos.desktop.window.focus": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11126,6 +11600,7 @@
     "macos.desktop.window.list": {
       "adapter": "apple_script_or_accessibility",
       "app_id": "macos.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11150,6 +11625,7 @@
       "tool_group": "macOS Desktop"
     },
     "mcp.servers.list": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11159,6 +11635,7 @@
       "summary": "List user-configured MCP servers from ~/.tiangong/v3/mcp_servers.json (read-only, no env values)."
     },
     "mcp.tool.call": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11168,6 +11645,7 @@
       "summary": "Call one tool on a configured MCP server; A3 confirmation chain applies because MCP tools can have arbitrary side effects."
     },
     "mcp.tools.list": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11177,6 +11655,7 @@
       "summary": "Connect to a configured MCP server and list its tools with input schemas."
     },
     "meeting.minutes.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11186,6 +11665,7 @@
       "summary": "Create structured meeting minutes with decisions, action items, owners, deadlines, risks, and follow-up."
     },
     "microsoft.excel.native.chart.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11198,6 +11678,7 @@
       "adapter": "office_com_or_openpyxl",
       "alias_to": "sheet.create",
       "app_id": "microsoft.excel",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -11223,6 +11704,7 @@
       "adapter": "office_com_or_openpyxl",
       "alias_to": "sheet.read",
       "app_id": "microsoft.excel",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -11245,6 +11727,7 @@
       "tool_group": "Microsoft Excel"
     },
     "microsoft.graph.request_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11254,6 +11737,7 @@
       "summary": "Create Microsoft Graph request pack for OneDrive/SharePoint/Excel/DriveItem workflows; does not execute without token."
     },
     "microsoft.office.com.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11265,6 +11749,7 @@
     "microsoft.onedrive.file.copy": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11291,6 +11776,7 @@
     "microsoft.onedrive.file.delete_to_trash": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11317,6 +11803,7 @@
     "microsoft.onedrive.file.download": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11343,6 +11830,7 @@
     "microsoft.onedrive.file.list": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11369,6 +11857,7 @@
     "microsoft.onedrive.file.move": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11395,6 +11884,7 @@
     "microsoft.onedrive.file.upload": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11421,6 +11911,7 @@
     "microsoft.onedrive.permission.set": {
       "adapter": "graph_api",
       "app_id": "microsoft.onedrive",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11447,6 +11938,7 @@
     "microsoft.onenote.export.pdf": {
       "adapter": "graph_api",
       "app_id": "microsoft.onenote",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11473,6 +11965,7 @@
     "microsoft.onenote.notebook.list": {
       "adapter": "graph_api",
       "app_id": "microsoft.onenote",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11499,6 +11992,7 @@
     "microsoft.onenote.page.create": {
       "adapter": "graph_api",
       "app_id": "microsoft.onenote",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11525,6 +12019,7 @@
     "microsoft.onenote.page.read": {
       "adapter": "graph_api",
       "app_id": "microsoft.onenote",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11551,6 +12046,7 @@
     "microsoft.onenote.page.update": {
       "adapter": "graph_api",
       "app_id": "microsoft.onenote",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11577,6 +12073,7 @@
     "microsoft.outlook.attachment.download": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11603,6 +12100,7 @@
     "microsoft.outlook.calendar.create_event": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11629,6 +12127,7 @@
     "microsoft.outlook.calendar.search": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11655,6 +12154,7 @@
     "microsoft.outlook.mail.create_draft": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11681,6 +12181,7 @@
     "microsoft.outlook.mail.read": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11707,6 +12208,7 @@
     "microsoft.outlook.mail.search": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11733,6 +12235,7 @@
     "microsoft.outlook.mail.send_confirmed": {
       "adapter": "graph_api_or_com",
       "app_id": "microsoft.outlook",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11757,6 +12260,7 @@
       "tool_group": "Microsoft Outlook"
     },
     "microsoft.powerpoint.native.export_pdf": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -11769,6 +12273,7 @@
       "adapter": "office_com_or_pptx",
       "alias_to": "pptx.create",
       "app_id": "microsoft.powerpoint",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -11793,6 +12298,7 @@
     "microsoft.sharepoint.file.download": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11819,6 +12325,7 @@
     "microsoft.sharepoint.file.list": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11845,6 +12352,7 @@
     "microsoft.sharepoint.file.upload": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11871,6 +12379,7 @@
     "microsoft.sharepoint.list.read": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11897,6 +12406,7 @@
     "microsoft.sharepoint.list.update_item": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11923,6 +12433,7 @@
     "microsoft.sharepoint.page.create": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11949,6 +12460,7 @@
     "microsoft.sharepoint.site.search": {
       "adapter": "graph_api",
       "app_id": "microsoft.sharepoint",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -11975,6 +12487,7 @@
     "microsoft.teams.channel.list": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12001,6 +12514,7 @@
     "microsoft.teams.chat.read": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12027,6 +12541,7 @@
     "microsoft.teams.file.upload": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12053,6 +12568,7 @@
     "microsoft.teams.meeting.create": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12079,6 +12595,7 @@
     "microsoft.teams.message.create_draft": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12105,6 +12622,7 @@
     "microsoft.teams.message.send_confirmed": {
       "adapter": "graph_api",
       "app_id": "microsoft.teams",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12131,6 +12649,7 @@
     "microsoft.visio.connector.add": {
       "adapter": "office_com",
       "app_id": "microsoft.visio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12157,6 +12676,7 @@
     "microsoft.visio.diagram.create": {
       "adapter": "office_com",
       "app_id": "microsoft.visio",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12183,6 +12703,7 @@
     "microsoft.visio.export.pdf": {
       "adapter": "office_com",
       "app_id": "microsoft.visio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12209,6 +12730,7 @@
     "microsoft.visio.export.svg": {
       "adapter": "office_com",
       "app_id": "microsoft.visio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12235,6 +12757,7 @@
     "microsoft.visio.shape.add": {
       "adapter": "office_com",
       "app_id": "microsoft.visio",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12262,6 +12785,7 @@
       "adapter": "office_com_or_docx",
       "alias_to": "docx.create",
       "app_id": "microsoft.word",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -12284,6 +12808,7 @@
       "tool_group": "Microsoft Word"
     },
     "microsoft.word.native.export_pdf": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12296,6 +12821,7 @@
       "adapter": "office_com_or_docx",
       "alias_to": "pdf.create_from_text",
       "app_id": "microsoft.word",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -12318,6 +12844,7 @@
       "tool_group": "Microsoft Word"
     },
     "mindmap.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_mindmap_create"
@@ -12327,6 +12854,7 @@
       "summary": "Create Mermaid mindmap markdown and optional OPML."
     },
     "model.adapter.detect": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12336,6 +12864,7 @@
       "summary": "Detect adapter profile from provider/model/endpoint/payload shape."
     },
     "model.adapter.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12345,6 +12874,7 @@
       "summary": "Inspect v3.5 model protocol adapter layer."
     },
     "model.adapter.list": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12354,6 +12884,7 @@
       "summary": "List supported model/provider profiles and protocol styles."
     },
     "model.adapter.parse_tool_call": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12363,6 +12894,7 @@
       "summary": "Parse provider-native tool calls into CanonicalOmniCall records."
     },
     "model.adapter.render_tool_result": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12372,6 +12904,7 @@
       "summary": "Render omni_body result back into provider-native tool result format."
     },
     "model.adapter.render_tool_schema": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12381,6 +12914,7 @@
       "summary": "Render omni_body as provider-native tool/function declaration."
     },
     "model.adapter.roundtrip_test": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12392,6 +12926,7 @@
     "mysql.backup.create": {
       "adapter": "mysql_driver",
       "app_id": "mysql",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12418,6 +12953,7 @@
     "mysql.query.run": {
       "adapter": "mysql_driver",
       "app_id": "mysql",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12444,6 +12980,7 @@
     "mysql.schema.read": {
       "adapter": "mysql_driver",
       "app_id": "mysql",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12470,6 +13007,7 @@
     "mysql.table.export_csv": {
       "adapter": "mysql_driver",
       "app_id": "mysql",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12496,6 +13034,7 @@
     "mysql.table.import_csv": {
       "adapter": "mysql_driver",
       "app_id": "mysql",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12522,6 +13061,7 @@
     "notion.database.insert": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12548,6 +13088,7 @@
     "notion.database.query": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12574,6 +13115,7 @@
     "notion.export.markdown": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12600,6 +13142,7 @@
     "notion.page.create": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12626,6 +13169,7 @@
     "notion.page.read": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12652,6 +13196,7 @@
     "notion.page.update": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12678,6 +13223,7 @@
     "notion.search": {
       "adapter": "notion_api",
       "app_id": "notion",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12702,6 +13248,7 @@
       "tool_group": "Notion"
     },
     "novel.blueprint.assist": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12711,6 +13258,7 @@
       "summary": "Calculate dependency-ordered repair batches, error energy, ages, and reference suggestions."
     },
     "novel.blueprint.compile": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12720,6 +13268,7 @@
       "summary": "Validate the whole story graph and freeze the immutable original blueprint."
     },
     "novel.blueprint.patch": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12729,6 +13278,7 @@
       "summary": "Merge one staged blueprint object or selected item without replacing its whole section."
     },
     "novel.blueprint.update": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12738,6 +13288,7 @@
       "summary": "Replace one strongly typed staged blueprint section before compilation."
     },
     "novel.blueprint.upsert_many": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12747,6 +13298,7 @@
       "summary": "Merge a batch of blueprint list items by canonical id or chapter number without dropping existing items."
     },
     "novel.chapter.checkout": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12756,6 +13308,7 @@
       "summary": "Issue a state-hash-bound chapter lease and compiled writing context."
     },
     "novel.chapter.submit": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12765,6 +13318,7 @@
       "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta."
     },
     "novel.context.query": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12774,6 +13328,7 @@
       "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context."
     },
     "novel.mobility.align_initial_many": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12783,6 +13338,7 @@
       "summary": "Atomically align multiple character initial locations to their calculated first physical scenes."
     },
     "novel.plan.rebase": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12792,6 +13348,7 @@
       "summary": "Replan future events and chapters against accepted facts while preserving protected anchors."
     },
     "novel.project.audit": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12801,6 +13358,7 @@
       "summary": "Audit blueprint integrity, state hashes, event deadlines, and accepted chapter files."
     },
     "novel.project.create": {
+      "effect": "create",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12810,6 +13368,7 @@
       "summary": "Create a managed long-form novel project and its canonical state directories."
     },
     "novel.project.recover": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12819,6 +13378,7 @@
       "summary": "Finish idempotent prepared chapter transactions after interruption."
     },
     "novel.project.status": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12828,6 +13388,7 @@
       "summary": "Read canonical novel progress, open event debt, and emotional triggers."
     },
     "novel.reference.resolve": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12837,6 +13398,7 @@
       "summary": "Resolve human labels to exact canonical ids or ranked non-authoritative suggestions."
     },
     "novel.scene.design": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12846,6 +13408,7 @@
       "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter."
     },
     "novel.timeline.calculate": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12855,6 +13418,7 @@
       "summary": "Calculate age, earliest route arrival, or interval overlap without changing the story."
     },
     "novel.timeline.normalize": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12864,6 +13428,7 @@
       "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts."
     },
     "novel.timeline.shift_suffix": {
+      "effect": "update",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -12875,6 +13440,7 @@
     "obsidian.graph.export": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12901,6 +13467,7 @@
     "obsidian.link.create": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12927,6 +13494,7 @@
     "obsidian.note.create": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12953,6 +13521,7 @@
     "obsidian.note.read": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -12979,6 +13548,7 @@
     "obsidian.note.update": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13005,6 +13575,7 @@
     "obsidian.search": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13031,6 +13602,7 @@
     "obsidian.vault.list": {
       "adapter": "filesystem_or_plugin",
       "app_id": "obsidian",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13057,6 +13629,7 @@
     "openai_api.audio.transcribe": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13083,6 +13656,7 @@
     "openai_api.embedding.create": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13109,6 +13683,7 @@
     "openai_api.image.edit": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13135,6 +13710,7 @@
     "openai_api.image.generate": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13161,6 +13737,7 @@
     "openai_api.text.generate": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13187,6 +13764,7 @@
     "openai_api.tts.create": {
       "adapter": "openai_adapter",
       "app_id": "openai_api",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13211,6 +13789,7 @@
       "tool_group": "OpenAI API"
     },
     "pdf.create_from_text": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_pdf_create_from_text"
@@ -13220,6 +13799,7 @@
       "summary": "Create a simple PDF from text via reportlab."
     },
     "pdf.extract_text": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_pdf_extract_text"
@@ -13232,6 +13812,7 @@
       "adapter": "pillow",
       "alias_to": "image.add_text",
       "app_id": "pillow",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -13257,6 +13838,7 @@
       "adapter": "pillow",
       "alias_to": "image.compose",
       "app_id": "pillow",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -13282,6 +13864,7 @@
       "adapter": "pillow",
       "alias_to": "image.convert",
       "app_id": "pillow",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -13307,6 +13890,7 @@
       "adapter": "pillow",
       "alias_to": "image.create_canvas",
       "app_id": "pillow",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -13332,6 +13916,7 @@
       "adapter": "pillow",
       "alias_to": "image.crop",
       "app_id": "pillow",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -13357,6 +13942,7 @@
       "adapter": "pillow",
       "alias_to": "image.info",
       "app_id": "pillow",
+      "effect": "execute",
       "evidence": [
         "ok",
         "path",
@@ -13382,6 +13968,7 @@
       "adapter": "pillow",
       "alias_to": "image.resize",
       "app_id": "pillow",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -13407,6 +13994,7 @@
       "adapter": "pillow",
       "alias_to": "image.rotate",
       "app_id": "pillow",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -13429,6 +14017,7 @@
       "tool_group": "Pillow"
     },
     "poster.brief.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13440,6 +14029,7 @@
     "postgresql.backup.create": {
       "adapter": "postgres_driver",
       "app_id": "postgresql",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13466,6 +14056,7 @@
     "postgresql.query.run": {
       "adapter": "postgres_driver",
       "app_id": "postgresql",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13492,6 +14083,7 @@
     "postgresql.schema.read": {
       "adapter": "postgres_driver",
       "app_id": "postgresql",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13518,6 +14110,7 @@
     "postgresql.table.export_csv": {
       "adapter": "postgres_driver",
       "app_id": "postgresql",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13544,6 +14137,7 @@
     "postgresql.table.import_csv": {
       "adapter": "postgres_driver",
       "app_id": "postgresql",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13570,6 +14164,7 @@
     "powerbi.dashboard.read": {
       "adapter": "powerbi_api",
       "app_id": "powerbi",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13596,6 +14191,7 @@
     "powerbi.dataset.refresh": {
       "adapter": "powerbi_api",
       "app_id": "powerbi",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13622,6 +14218,7 @@
     "powerbi.query.execute": {
       "adapter": "powerbi_api",
       "app_id": "powerbi",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13648,6 +14245,7 @@
     "powerbi.report.export": {
       "adapter": "powerbi_api",
       "app_id": "powerbi",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13672,6 +14270,7 @@
       "tool_group": "Power BI"
     },
     "pptx.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_pptx_create"
@@ -13681,6 +14280,7 @@
       "summary": "Create a PowerPoint .pptx deck from structured slide specs."
     },
     "pptx.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_pptx_read"
@@ -13690,6 +14290,7 @@
       "summary": "Inspect PowerPoint slide text, dimensions, placeholders, fonts, and meaningful visual evidence."
     },
     "preview.generate": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13699,6 +14300,7 @@
       "summary": "Generate lightweight preview/summary evidence for docx/pptx/xlsx/image/video/text deliverables."
     },
     "python.run": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_python_run"
@@ -13708,6 +14310,7 @@
       "summary": "Run Python code or a Python script in workspace; requires allow_python=True."
     },
     "qc.code.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13717,6 +14320,7 @@
       "summary": "Check code deliverables for syntax, tests, README, structure, security smells, and maintainability evidence."
     },
     "qc.content.calendar_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13726,6 +14330,7 @@
       "summary": "Check content calendar for cadence, channel fit, objective alignment, owner/date clarity, asset requirements, and measurement."
     },
     "qc.course.plan_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13735,6 +14340,7 @@
       "summary": "Check lesson/course plan for measurable objectives, sequence, practice, assessment, timing, materials, and learner fit."
     },
     "qc.docx.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13744,6 +14350,7 @@
       "summary": "Check business-grade Word/document deliverables for structure, clarity, evidence, actionability, and openability."
     },
     "qc.image.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13753,6 +14360,7 @@
       "summary": "Check image/poster deliverables for dimensions, readability, text overflow risk, contrast proxy, and export readiness."
     },
     "qc.kb.ingestion_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13762,6 +14370,7 @@
       "summary": "Check knowledge-base ingestion plan for source traceability, chunking, metadata, permissions, QA coverage, and retrieval validation."
     },
     "qc.meeting.minutes_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13771,6 +14380,7 @@
       "summary": "Check meeting minutes for agenda, decisions, action items, owners, deadlines, risks, and follow-up readiness."
     },
     "qc.novel.chapter_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13780,6 +14390,7 @@
       "summary": "Check web-novel chapter delivery for hook, POV, conflict, scene beats, emotional escalation, payoff, cliffhanger, and AI tone."
     },
     "qc.poster.commercial_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13789,6 +14400,7 @@
       "summary": "Check poster/image campaign delivery for hierarchy, readability, CTA, brand consistency, export specs, and image technical readiness."
     },
     "qc.ppt.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13798,6 +14410,7 @@
       "summary": "Check executive-grade PPT deliverables for storyline, slide density, title quality, structure, evidence, and CTA."
     },
     "qc.research.evidence_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13807,6 +14420,7 @@
       "summary": "Check research/literature deliverables for search strategy, inclusion/exclusion, citations, evidence table, limitations, and uncertainty."
     },
     "qc.sales.script_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13816,6 +14430,7 @@
       "summary": "Check sales script for ICP fit, pain diagnosis, consultative flow, proof, objections, next step, and compliance."
     },
     "qc.seo.people_first_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13825,6 +14440,7 @@
       "summary": "Check SEO/web content for people-first helpfulness, scannability, evidence, credibility, originality, and anti-fluff."
     },
     "qc.sheet.analysis_report_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13834,6 +14450,7 @@
       "summary": "Check spreadsheet analysis deliverables for data dictionary, cleaning log, formulas, summary, insights, and decisions."
     },
     "qc.sheet.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13843,6 +14460,7 @@
       "summary": "Check spreadsheets for headers, empty cells, duplicate rows, numeric consistency, formulas, and delivery readiness."
     },
     "qc.video.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13852,6 +14470,7 @@
       "summary": "Check short-video deliverables for playability, duration, aspect ratio, audio/subtitle evidence, hook/CTA metadata, and package readiness."
     },
     "qc.voice_authorized.delivery_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13861,6 +14480,7 @@
       "summary": "Check authorized voice/audio delivery for consent, speaker identity, usage scope, transcript, quality, watermark/disclosure, and risk controls."
     },
     "qc.writing.ai_tone_check": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -13870,6 +14490,7 @@
       "summary": "Heuristically check writing for generic AI tone, repetition, vague claims, and weak specificity."
     },
     "quality.javascript_syntax": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_quality_javascript_syntax"
@@ -13879,6 +14500,7 @@
       "summary": "Run node --check on JavaScript files without a free-form shell."
     },
     "quality.python_syntax": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "method",
         "target": "_action_quality_python_syntax"
@@ -13888,6 +14510,7 @@
       "summary": "Compile Python files to detect syntax errors."
     },
     "quality.run_tests": {
+      "effect": "verify",
       "execution_binding": {
         "kind": "method",
         "target": "_action_quality_run_tests"
@@ -13899,6 +14522,7 @@
     "reaper.fx.apply": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13925,6 +14549,7 @@
     "reaper.item.trim": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13951,6 +14576,7 @@
     "reaper.media.import": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -13977,6 +14603,7 @@
     "reaper.project.create": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14003,6 +14630,7 @@
     "reaper.render.mp3": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14029,6 +14657,7 @@
     "reaper.render.wav": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14055,6 +14684,7 @@
     "reaper.track.add": {
       "adapter": "reaper_script",
       "app_id": "reaper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14081,6 +14711,7 @@
     "redis.info.read": {
       "adapter": "redis_driver",
       "app_id": "redis",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14107,6 +14738,7 @@
     "redis.key.delete": {
       "adapter": "redis_driver",
       "app_id": "redis",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14133,6 +14765,7 @@
     "redis.key.get": {
       "adapter": "redis_driver",
       "app_id": "redis",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14159,6 +14792,7 @@
     "redis.key.set": {
       "adapter": "redis_driver",
       "app_id": "redis",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14185,6 +14819,7 @@
     "redis.scan": {
       "adapter": "redis_driver",
       "app_id": "redis",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14209,6 +14844,7 @@
       "tool_group": "Redis"
     },
     "repair.plan": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14218,6 +14854,7 @@
       "summary": "Write a repair plan file from QC issues; does not autonomously modify deliverables."
     },
     "research.evidence_table.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14227,6 +14864,7 @@
       "summary": "Create a structured research evidence table CSV/Markdown from supplied sources."
     },
     "rollback.apply": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_rollback_apply"
@@ -14236,6 +14874,7 @@
       "summary": "Restore snapshots for a previous mutating operation."
     },
     "rollback.list": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_rollback_list"
@@ -14245,6 +14884,7 @@
       "summary": "List rollback-capable operations."
     },
     "rubric.evaluate": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14254,6 +14894,7 @@
       "summary": "Evaluate supplied content or target file against a named delivery rubric."
     },
     "sales.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14265,6 +14906,7 @@
     "salesforce.account.update": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14291,6 +14933,7 @@
     "salesforce.lead.create": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14317,6 +14960,7 @@
     "salesforce.lead.search": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14343,6 +14987,7 @@
     "salesforce.opportunity.create": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14369,6 +15014,7 @@
     "salesforce.report.run": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14395,6 +15041,7 @@
     "salesforce.task.create": {
       "adapter": "salesforce_api",
       "app_id": "salesforce",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14421,6 +15068,7 @@
     "sap.export.xlsx": {
       "adapter": "sap_api",
       "app_id": "sap",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14447,6 +15095,7 @@
     "sap.record.read": {
       "adapter": "sap_api",
       "app_id": "sap",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14473,6 +15122,7 @@
     "sap.record.search": {
       "adapter": "sap_api",
       "app_id": "sap",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14499,6 +15149,7 @@
     "sap.report.run": {
       "adapter": "sap_api",
       "app_id": "sap",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14525,6 +15176,7 @@
     "sap.workflow.create_draft": {
       "adapter": "sap_api",
       "app_id": "sap",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14550,6 +15202,7 @@
     },
     "search_web": {
       "alias_to": "browser.search_web",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.search_web"
@@ -14559,6 +15212,7 @@
       "summary": "Alias to browser.search_web."
     },
     "seo.content.brief.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14568,6 +15222,7 @@
       "summary": "Create people-first SEO/web content brief with audience intent, experience, evidence, structure, helpfulness, and credibility signals."
     },
     "sheet.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_sheet_create"
@@ -14577,6 +15232,7 @@
       "summary": "Create an .xlsx workbook from structured sheets."
     },
     "sheet.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_sheet_read"
@@ -14586,6 +15242,7 @@
       "summary": "Read preview rows from .xlsx or .csv."
     },
     "shell.run": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_shell_run"
@@ -14597,6 +15254,7 @@
     "shopify.inventory.update": {
       "adapter": "shopify_api",
       "app_id": "shopify",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14623,6 +15281,7 @@
     "shopify.order.fulfillment_update": {
       "adapter": "shopify_api",
       "app_id": "shopify",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14649,6 +15308,7 @@
     "shopify.order.search": {
       "adapter": "shopify_api",
       "app_id": "shopify",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14675,6 +15335,7 @@
     "shopify.product.create": {
       "adapter": "shopify_api",
       "app_id": "shopify",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14701,6 +15362,7 @@
     "shopify.product.search": {
       "adapter": "shopify_api",
       "app_id": "shopify",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14727,6 +15389,7 @@
     "sketch.artboard.create": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14753,6 +15416,7 @@
     "sketch.document.open": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14779,6 +15443,7 @@
     "sketch.export.png": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14805,6 +15470,7 @@
     "sketch.export.svg": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14831,6 +15497,7 @@
     "sketch.symbol.create": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14857,6 +15524,7 @@
     "sketch.text.update": {
       "adapter": "sketch_plugin",
       "app_id": "sketch",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14881,6 +15549,7 @@
       "tool_group": "Sketch"
     },
     "skill.get": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14890,6 +15559,7 @@
       "summary": "Resolve and activate one exact Skill through the Gateway authority."
     },
     "skill.list": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14899,6 +15569,7 @@
       "summary": "List the Gateway authority's pinned Skill catalog."
     },
     "skill.progress.report": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14908,6 +15579,7 @@
       "summary": "Alias of fact-derived Skill step status; model claims are ignored."
     },
     "skill.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14917,6 +15589,7 @@
       "summary": "Resolve and activate one exact Skill through the Gateway authority."
     },
     "skill.route": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14926,6 +15599,7 @@
       "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog."
     },
     "skill.step.check": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14935,6 +15609,7 @@
       "summary": "Read workflow progress computed by Gateway from machine facts."
     },
     "spreadsheet.analysis.plan.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14946,6 +15621,7 @@
     "sqlite.backup.create": {
       "adapter": "sqlite3",
       "app_id": "sqlite",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -14970,6 +15646,7 @@
       "tool_group": "SQLite"
     },
     "sqlite.query": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -14981,6 +15658,7 @@
     "sqlite.query.run": {
       "adapter": "sqlite3",
       "app_id": "sqlite",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15007,6 +15685,7 @@
     "sqlite.schema.read": {
       "adapter": "sqlite3",
       "app_id": "sqlite",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15033,6 +15712,7 @@
     "sqlite.table.export_csv": {
       "adapter": "sqlite3",
       "app_id": "sqlite",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15059,6 +15739,7 @@
     "sqlite.table.import_csv": {
       "adapter": "sqlite3",
       "app_id": "sqlite",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15085,6 +15766,7 @@
     "stable_diffusion_webui.image.generate": {
       "adapter": "sd_webui_api",
       "app_id": "stable_diffusion_webui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15111,6 +15793,7 @@
     "stable_diffusion_webui.image.img2img": {
       "adapter": "sd_webui_api",
       "app_id": "stable_diffusion_webui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15137,6 +15820,7 @@
     "stable_diffusion_webui.image.inpaint": {
       "adapter": "sd_webui_api",
       "app_id": "stable_diffusion_webui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15163,6 +15847,7 @@
     "stable_diffusion_webui.image.upscale": {
       "adapter": "sd_webui_api",
       "app_id": "stable_diffusion_webui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15189,6 +15874,7 @@
     "stable_diffusion_webui.model.switch": {
       "adapter": "sd_webui_api",
       "app_id": "stable_diffusion_webui",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15213,6 +15899,7 @@
       "tool_group": "Stable Diffusion WebUI"
     },
     "system.action_schema": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_system_action_schema"
@@ -15222,6 +15909,7 @@
       "summary": "Return metadata for a single action, including aliases and adapter requirements."
     },
     "system.app_registry": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_system_app_registry"
@@ -15231,6 +15919,7 @@
       "summary": "List mounted application tool groups and their action names."
     },
     "system.capabilities": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_system_capabilities"
@@ -15240,6 +15929,7 @@
       "summary": "List supported actions, schemas, risk levels, and adapter-only capabilities."
     },
     "system.health": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_system_health"
@@ -15251,6 +15941,7 @@
     "tableau.dashboard.read": {
       "adapter": "tableau_api",
       "app_id": "tableau",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15277,6 +15968,7 @@
     "tableau.extract.refresh": {
       "adapter": "tableau_api",
       "app_id": "tableau",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15303,6 +15995,7 @@
     "tableau.view.export": {
       "adapter": "tableau_api",
       "app_id": "tableau",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15329,6 +16022,7 @@
     "tableau.workbook.publish": {
       "adapter": "tableau_api",
       "app_id": "tableau",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15353,6 +16047,7 @@
       "tool_group": "Tableau"
     },
     "template.apply": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -15362,6 +16057,7 @@
       "summary": "Apply a template skeleton and create a structured draft markdown/json file."
     },
     "template.list": {
+      "effect": "read",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -15373,6 +16069,7 @@
     "trello.board.list": {
       "adapter": "trello_api",
       "app_id": "trello",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15399,6 +16096,7 @@
     "trello.card.create": {
       "adapter": "trello_api",
       "app_id": "trello",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15425,6 +16123,7 @@
     "trello.card.move": {
       "adapter": "trello_api",
       "app_id": "trello",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15451,6 +16150,7 @@
     "trello.checklist.add": {
       "adapter": "trello_api",
       "app_id": "trello",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15477,6 +16177,7 @@
     "trello.comment.add": {
       "adapter": "trello_api",
       "app_id": "trello",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15503,6 +16204,7 @@
     "tts.edge.tts.create": {
       "adapter": "edge_tts_adapter",
       "app_id": "tts.edge",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15529,6 +16231,7 @@
     "tts.edge.voice.list": {
       "adapter": "edge_tts_adapter",
       "app_id": "tts.edge",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15553,6 +16256,7 @@
       "tool_group": "Edge TTS"
     },
     "v34.professional_apps.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -15562,6 +16266,7 @@
       "summary": "Inspect v3.4 professional app adapter layer and native/fallback execution modes."
     },
     "video.add_audio": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_video_add_audio"
@@ -15571,6 +16276,7 @@
       "summary": "Mux/replace audio track using ffmpeg."
     },
     "video.cut": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_video_cut"
@@ -15580,6 +16286,7 @@
       "summary": "Cut a video segment using ffmpeg."
     },
     "video.extract_audio": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_video_extract_audio"
@@ -15589,6 +16296,7 @@
       "summary": "Extract audio track using ffmpeg."
     },
     "video.info": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_video_info"
@@ -15598,6 +16306,7 @@
       "summary": "Inspect video metadata using ffprobe."
     },
     "video.slideshow": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_video_slideshow"
@@ -15608,6 +16317,7 @@
     },
     "voice.clone_authorized": {
       "adapter": "voice_backend_with_consent",
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_voice_clone_authorized"
@@ -15617,6 +16327,7 @@
       "summary": "Only for owned/consented voices; disabled by default and requires explicit external consent gate."
     },
     "voice.consent_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -15628,6 +16339,7 @@
     "vscode.diagnostics.read": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15654,6 +16366,7 @@
     "vscode.edit.apply": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15680,6 +16393,7 @@
     "vscode.extension.install": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15706,6 +16420,7 @@
     "vscode.file.open": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15732,6 +16447,7 @@
     "vscode.file.search": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15758,6 +16474,7 @@
     "vscode.terminal.run": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15784,6 +16501,7 @@
     "vscode.workspace.open": {
       "adapter": "vscode_extension_or_cli",
       "app_id": "vscode",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15808,6 +16526,7 @@
       "tool_group": "Visual Studio Code"
     },
     "web.download": {
+      "effect": "execute",
       "execution_binding": {
         "kind": "method",
         "target": "_action_web_download"
@@ -15818,6 +16537,7 @@
     },
     "web.fetch": {
       "alias_to": "browser.open",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
@@ -15828,6 +16548,7 @@
     },
     "web.read": {
       "alias_to": "browser.open",
+      "effect": "read",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
@@ -15838,6 +16559,7 @@
     },
     "web.readability_extract": {
       "alias_to": "browser.open",
+      "effect": "read",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
@@ -15848,6 +16570,7 @@
     },
     "web.search": {
       "alias_to": "browser.search_web",
+      "effect": "read",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.search_web"
@@ -15858,6 +16581,7 @@
     },
     "web_readability_extract": {
       "alias_to": "browser.open",
+      "effect": "write",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
@@ -15869,6 +16593,7 @@
     "wechat.desktop.contact.search_visible": {
       "adapter": "desktop_automation",
       "app_id": "wechat.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15895,6 +16620,7 @@
     "wechat.desktop.file.send_confirmed": {
       "adapter": "desktop_automation",
       "app_id": "wechat.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15921,6 +16647,7 @@
     "wechat.desktop.message.create_draft": {
       "adapter": "desktop_automation",
       "app_id": "wechat.desktop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15947,6 +16674,7 @@
     "wechat.desktop.message.read_visible": {
       "adapter": "desktop_automation",
       "app_id": "wechat.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15973,6 +16701,7 @@
     "wechat.desktop.message.send_confirmed": {
       "adapter": "desktop_automation",
       "app_id": "wechat.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -15999,6 +16728,7 @@
     "wechat_work.calendar.create_event": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16025,6 +16755,7 @@
     "wechat_work.contact.search": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16051,6 +16782,7 @@
     "wechat_work.file.upload": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16077,6 +16809,7 @@
     "wechat_work.message.create_draft": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16103,6 +16836,7 @@
     "wechat_work.message.read": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16129,6 +16863,7 @@
     "wechat_work.message.send_confirmed": {
       "adapter": "wecom_api",
       "app_id": "wechat_work",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16153,6 +16888,7 @@
       "tool_group": "企业微信"
     },
     "wechat_work.webhook.request_pack.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -16164,6 +16900,7 @@
     "whisper.audio.transcribe": {
       "adapter": "whisper_adapter",
       "app_id": "whisper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16190,6 +16927,7 @@
     "whisper.audio.translate": {
       "adapter": "whisper_adapter",
       "app_id": "whisper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16216,6 +16954,7 @@
     "whisper.segments.export_srt": {
       "adapter": "whisper_adapter",
       "app_id": "whisper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16242,6 +16981,7 @@
     "whisper.segments.export_txt": {
       "adapter": "whisper_adapter",
       "app_id": "whisper",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16267,6 +17007,7 @@
     },
     "windows.desktop.click": {
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16294,6 +17035,7 @@
     "windows.desktop.clipboard.read": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16320,6 +17062,7 @@
     "windows.desktop.clipboard.write": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16346,6 +17089,7 @@
     "windows.desktop.drag": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16371,6 +17115,7 @@
     },
     "windows.desktop.hotkey": {
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16398,6 +17143,7 @@
     "windows.desktop.ocr": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16423,6 +17169,7 @@
     },
     "windows.desktop.screenshot": {
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16449,6 +17196,7 @@
     },
     "windows.desktop.type": {
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16476,6 +17224,7 @@
     "windows.desktop.window.focus": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16502,6 +17251,7 @@
     "windows.desktop.window.list": {
       "adapter": "windows_ui_automation",
       "app_id": "windows.desktop",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16528,6 +17278,7 @@
     "windows.powershell.command.run": {
       "adapter": "powershell_cli",
       "app_id": "windows.powershell",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16554,6 +17305,7 @@
     "windows.powershell.process.list": {
       "adapter": "powershell_cli",
       "app_id": "windows.powershell",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16580,6 +17332,7 @@
     "windows.powershell.registry.read": {
       "adapter": "powershell_cli",
       "app_id": "windows.powershell",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16606,6 +17359,7 @@
     "windows.powershell.script.run": {
       "adapter": "powershell_cli",
       "app_id": "windows.powershell",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16632,6 +17386,7 @@
     "windows.powershell.service.list": {
       "adapter": "powershell_cli",
       "app_id": "windows.powershell",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16656,6 +17411,7 @@
       "tool_group": "PowerShell"
     },
     "word.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_word_create"
@@ -16665,6 +17421,7 @@
       "summary": "Alias for docx.create — create a Word document."
     },
     "word.read": {
+      "effect": "read",
       "execution_binding": {
         "kind": "method",
         "target": "_action_word_read"
@@ -16676,6 +17433,7 @@
     "wordpress.comment.moderate": {
       "adapter": "wordpress_api",
       "app_id": "wordpress",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16702,6 +17460,7 @@
     "wordpress.media.upload": {
       "adapter": "wordpress_api",
       "app_id": "wordpress",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16728,6 +17487,7 @@
     "wordpress.page.create": {
       "adapter": "wordpress_api",
       "app_id": "wordpress",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16754,6 +17514,7 @@
     "wordpress.post.create": {
       "adapter": "wordpress_api",
       "app_id": "wordpress",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16780,6 +17541,7 @@
     "wordpress.post.update": {
       "adapter": "wordpress_api",
       "app_id": "wordpress",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16804,6 +17566,7 @@
       "tool_group": "WordPress"
     },
     "wps.native.script.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -16816,6 +17579,7 @@
       "adapter": "wps_automation_or_pptx",
       "alias_to": "pptx.create",
       "app_id": "wps.presentation",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -16841,6 +17605,7 @@
       "adapter": "wps_automation_or_openpyxl",
       "alias_to": "sheet.create",
       "app_id": "wps.spreadsheet",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -16866,6 +17631,7 @@
       "adapter": "wps_automation_or_openpyxl",
       "alias_to": "sheet.read",
       "app_id": "wps.spreadsheet",
+      "effect": "read",
       "evidence": [
         "ok",
         "path",
@@ -16891,6 +17657,7 @@
       "adapter": "wps_automation_or_docx",
       "alias_to": "docx.create",
       "app_id": "wps.writer",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -16916,6 +17683,7 @@
       "adapter": "wps_automation_or_docx",
       "alias_to": "pdf.create_from_text",
       "app_id": "wps.writer",
+      "effect": "write",
       "evidence": [
         "ok",
         "path",
@@ -16938,6 +17706,7 @@
       "tool_group": "WPS Writer"
     },
     "writing.chapter.plan.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -16947,6 +17716,7 @@
       "summary": "Create a web-novel chapter beat plan with hook/conflict/payoff/end-cliffhanger."
     },
     "writing.outline.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
@@ -16958,6 +17728,7 @@
     "yonyou.customer.search": {
       "adapter": "yonyou_api",
       "app_id": "yonyou",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -16984,6 +17755,7 @@
     "yonyou.export.xlsx": {
       "adapter": "yonyou_api",
       "app_id": "yonyou",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17010,6 +17782,7 @@
     "yonyou.inventory.read": {
       "adapter": "yonyou_api",
       "app_id": "yonyou",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17036,6 +17809,7 @@
     "yonyou.report.run": {
       "adapter": "yonyou_api",
       "app_id": "yonyou",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17062,6 +17836,7 @@
     "yonyou.voucher.create_draft": {
       "adapter": "yonyou_api",
       "app_id": "yonyou",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17088,6 +17863,7 @@
     "yuque.doc.create": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17114,6 +17890,7 @@
     "yuque.doc.read": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17140,6 +17917,7 @@
     "yuque.doc.update": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17166,6 +17944,7 @@
     "yuque.export.markdown": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17192,6 +17971,7 @@
     "yuque.permission.set": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17218,6 +17998,7 @@
     "yuque.repo.search": {
       "adapter": "yuque_api",
       "app_id": "yuque",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17242,6 +18023,7 @@
       "tool_group": "语雀"
     },
     "zip.create": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_zip_create"
@@ -17251,6 +18033,7 @@
       "summary": "Create a zip archive from files/directories."
     },
     "zip.extract": {
+      "effect": "write",
       "execution_binding": {
         "kind": "method",
         "target": "_action_zip_extract"
@@ -17262,6 +18045,7 @@
     "zoho.crm.deal.create": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17288,6 +18072,7 @@
     "zoho.crm.deal.update": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "execute",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17314,6 +18099,7 @@
     "zoho.crm.lead.create": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17340,6 +18126,7 @@
     "zoho.crm.lead.search": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "read",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17366,6 +18153,7 @@
     "zoho.crm.report.run": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",
@@ -17392,6 +18180,7 @@
     "zoho.crm.task.create": {
       "adapter": "zoho_api",
       "app_id": "zoho.crm",
+      "effect": "write",
       "evidence": [
         "adapter_result",
         "state_after",

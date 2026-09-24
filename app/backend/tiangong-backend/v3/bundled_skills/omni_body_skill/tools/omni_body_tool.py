@@ -1608,13 +1608,18 @@ class BodyRuntime:
             except Exception:
                 deps[mod] = False
         healthy = bool(self.capability_integrity.get("healthy")) and bool(deps.get("pptx"))
+        # Cancellation callbacks can own locks and must never be deep-copied or
+        # exposed as configuration data. Copy only the serializable settings.
+        config = asdict(replace(self.config, cancel_check=None))
+        config.pop("cancel_check", None)
         return {
             "healthy": healthy,
             "workspace": str(self.workspace),
             "audit_dir": str(self.audit_dir),
             "backup_dir": str(self.backup_dir),
             "trash_dir": str(self.trash_dir),
-            "config": asdict(self.config),
+            "config": config,
+            "cancellation_enabled": callable(self.config.cancel_check),
             "dependencies": deps,
             "ffmpeg": self.ffmpeg,
             "ffprobe": self.ffprobe,

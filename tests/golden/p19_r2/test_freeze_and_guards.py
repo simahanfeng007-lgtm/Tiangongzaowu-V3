@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.29"
+- the single Verification Plane version source exists and is "1.30"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.29")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.30")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.29"' in (
+            if '"1.30"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -204,16 +204,16 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
             ),
             "golden_corpus_sha256": self._corpus_sha(),
             "golden_trace_version": "1",
-            # Every 1.29 execution, result-schema and verification authority
+            # Every 1.30 execution, result-schema and verification authority
             # file is content-hashed.  Semantic drift in the runtime chain,
             # store/binding/coordinator/executor/readiness/fencing/successor
             # trips the freeze even when the schema version is unchanged.
             "authority_surface_sha256": self._authority_surface(),
         }
 
-    #: The authority surface frozen at 1.29; all inherited 1.10 and earlier entries remain covered.
+    #: The authority surface frozen at 1.30; all inherited 1.10 and earlier entries remain covered.
     AUTHORITY_SURFACE_FILES = (
-        # 1.29 dictionary authority; inherited installation and execution guards.
+        # 1.30 dictionary authority; inherited installation and execution guards.
         "src/capability_dictionary/__init__.py",
         "src/contracts/artifacts.py",
         "src/contracts/compatibility.py",
@@ -236,7 +236,6 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/desktop_api.py",
         "src/total_gateway/installed_composition_sources.py",
         "src/omni_body_skill/tools/omni_body_tool.py",
-        "src/omni_body_skill/tools/omni_body_v3.py",
         "src/omni_body_skill/tools/windows_appcontainer.py",
         "src/omni_body_skill/tools/windows_python_compat.py",
         "src/omni_body_skill/tools/path_identity.py",
@@ -288,6 +287,9 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "app/backend/tiangong-backend/v3/l0_ability_projection.py",
         "app/backend/tiangong-backend/v3/zhili/nengli_zhuche.py",
         "src/life_service/embedded_runtime.py",
+        "src/life_service/context.py",
+        "src/life_service/context_api.py",
+        "src/life_service/context_authority.py",
         "src/life_service/embedded_runtime_wiring.py",
         "src/total_gateway/learning_output_preparation.py",
         "src/total_gateway/learning_output_binding.py",
@@ -305,6 +307,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/omni_body_skill/tool_contracts.py",
         "src/omni_body_skill/tools/omni_capability.py",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py",
+        "src/omni_body_skill/tools/cli.py",
         "src/total_gateway/action_registry.py",
         "src/total_gateway/store.py",
         "src/total_gateway/store_unit_of_work.py",

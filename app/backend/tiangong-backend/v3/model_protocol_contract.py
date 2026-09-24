@@ -9,7 +9,8 @@ from __future__ import annotations
 def model_turn_failure(value: object) -> str:
     """Inspect provider status before its str-compatible legacy representation."""
     stop = str(getattr(value, "stop_semantics", "") or "")
-    if stop in {"error", "failed", "cancelled", "deadline_exceeded", "output_truncated", "invalid_tool_arguments", "incomplete"}:
+    if stop in {"error", "failed", "cancelled", "deadline_exceeded", "output_truncated", "invalid_tool_arguments", "incomplete",
+                "transport_error", "http_error", "provider_error", "stream_unexpected_eof", "invalid_stream", "empty_response"}:
         return stop
     head = str(value or "").lstrip()[:60].casefold()
     if head.startswith(("[llm错误", "[backend_error]", "[唤醒异常]", "[terminal_model_error]")):

@@ -296,7 +296,7 @@ class EmbeddedBackendRuntime:
             "tools": [
                 f"{tools.get('summary', {}).get('toolCount', 0)} registered tools",
                 "omni_body-only model-visible tool surface",
-                "deliverable_skills routed through skill.route/get/read",
+                "published dictionary Skills routed through skill.route/get/read",
             ],
             "body": ["voice settings", "reply read-aloud", "character profile"],
             "lifecycle": ["embedded LifeKernel", "memory", "experience", "self-healing recovery"],

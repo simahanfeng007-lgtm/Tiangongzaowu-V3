@@ -48,8 +48,7 @@ from total_gateway.policy_engine import (
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = (
     ROOT
-    / "readable-python-source"
-    / "omni_body_skill"
+    / "dictionaries"
     / "registry"
     / "capability_manifest.generated.json"
 )
