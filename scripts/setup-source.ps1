@@ -72,6 +72,9 @@ if (-not $SkipNpm) {
     }
 }
 
+& $VenvPython (Join-Path $Root "scripts\install-python-appcontainer-compat.py")
+if ($LASTEXITCODE -ne 0) { throw "Failed to prepare isolated Python runtime" }
+
 Write-Host "[4/4] Verifying source tree"
 & $VenvPython (Join-Path $Root "scripts\verify_source.py") --quick
 if ($LASTEXITCODE -ne 0) { throw "Source tree verification failed" }

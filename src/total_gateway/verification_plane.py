@@ -10,8 +10,8 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-# 1.30 retains the dictionary authority and native Method source bindings,
-# budgets optional history after required context, and retires the last CLI copy.
-VERIFICATION_PLANE_VERSION = "1.30"
+# 1.31 preserves dictionary/context authority and provisions the shared native
+# runtime through a path-specific read-only capability, without per-run ACL churn.
+VERIFICATION_PLANE_VERSION = "1.31"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

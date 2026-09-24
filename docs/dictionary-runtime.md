@@ -108,9 +108,26 @@ spreadsheets, HTML, and PPT. Acceptance requires independent checks of generated
 files; a terminal state or a model saying "completed" is insufficient. Live
 results are recorded separately from deterministic test results.
 
-Verification Plane 1.30 declares the changed authority surface: dictionary-backed
+Verification Plane 1.31 declares the changed authority surface: dictionary-backed
 capability loading, native installed Method provenance, optional Skill grants,
 raw task context, bounded history selection, and the canonical CLI host. Its freeze manifest is regenerated with the existing guard
 after these changes; byte hashes do not substitute for the behavioral tests.
 The former `run-all-skills-smoke.py` is retired because it used synthetic learning
 receipts and compatibility execution, and cannot establish real acceptance.
+
+## Windows runtime access
+
+Source setup/startup and the explicit Windows CI bootstrap provision one
+path-specific AppContainer capability with read/execute access to the interpreter.
+Every task retains its own package SID, writable private workspace and Job Object,
+and receives only that runtime capability, with no network capability. A receipt
+records completed inheritance propagation; actual ACL readback is required before
+reuse. Normal tasks never grant/revoke permissions across the shared runtime tree.
+A newly registered executable can provision once within the existing execution
+deadline; lock waits and ACL helpers honor cancellation. Failed preparation never
+starts user code, and process cleanup cannot mask success with a runtime ACL revoke.
+
+Native tests cover parallel first provisioning, stale receipts, repeated parallel
+execution with zero shared ACL mutations, denied runtime writes, peer workspace
+isolation, network denial and cancellation. This removes the observed 20/15-second
+per-task `icacls` grant/revoke failures rather than extending those timeouts.

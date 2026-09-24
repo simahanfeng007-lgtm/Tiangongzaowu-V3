@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.30",
+ "verification_plane_version": "1.31",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -35,7 +35,7 @@
   "src/total_gateway/desktop_api.py": "a6e3c98efa3c3584a3832e5f405dd31f651f18e9e48c26a9a13d80c0ba78772f",
   "src/total_gateway/installed_composition_sources.py": "60b2798bf83a9fa6ee71195a528732616b399f1033ce96fa7a536cff2f9f6497",
   "src/omni_body_skill/tools/omni_body_tool.py": "79c57cf6edba1587cd1853833ffe1e5761ecf187665e2648f26e6f21c4ed4b38",
-  "src/omni_body_skill/tools/windows_appcontainer.py": "59c67d73483886951fc55429cb1e356efa506363090728030686f48fabc290ba",
+  "src/omni_body_skill/tools/windows_appcontainer.py": "70ab16e9d7c1266a5037761b5cb57eb2cb7a94f591708fe9b6421bd2b7f76f04",
   "src/omni_body_skill/tools/windows_python_compat.py": "f86fa7ddb4dd708b3fa8c6aef2dda4614a670b735b4bca899af202f6824b14c5",
   "src/omni_body_skill/tools/path_identity.py": "761a921a44237e8668597435c37775f094467a25f4f7cc01258cedd45cc98747",
   "src/omni_body_skill/tools/composition_path.py": "78d24a97edc9e06fa12c738396dbc6ce97eff03773f0e113f10b6efd5165e5a1",
@@ -46,7 +46,7 @@
   "src/world_understanding/known/rules/__init__.py": "d1236ff1fad812804d24a9733886a9bf669f6a43fc7c77ea6fbd17a983845dd5",
   "app/main.js": "f1252b5960763c1bf05f41b967c3b8a23c9dcf609b065bc87c4ea4904b7e89bb",
   "scripts/rebind-source-execution-profile.py": "0766f13bfaa792ea9e3ba4d9a457d6b706f502451ea5e7026eae06793e0c7947",
-  "scripts/install-python-appcontainer-compat.py": "f537fc211524dced1badfe3a29c9d31f8500e2d7fcd5efa843126f6b8d61ad41",
+  "scripts/install-python-appcontainer-compat.py": "d0bfba0ff50fa0eb464b55af2fe82306b3c9f169f79d3fa16ff12c56859f1705",
   "src/total_gateway/composition_source_preparation.py": "a520a5f5b9435b1ff04f0539f393f07f6dec2a3944775aa0b70d328394f491d1",
   "src/total_gateway/composition_registration_intake.py": "c0e391835019781adf3b45ecc9d7dec2a60a48bba0cfed3501b9ccc6d186154e",
   "src/world_understanding/capability_composition/composition_experience_bridge.py": "8f37e6777c66f1e7c2a37f15defe26eb28943ecc3f0177a2f9fc864a380f962e",
@@ -141,7 +141,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "4a75aa79c659b15f4347ac3e4b6c9c532c04a1336755c7f5b4c60286f6f105bb",
+  "src/total_gateway/verification_plane.py": "52a523371a1d969f4410b925a07fecdb0b8380f31f8289498ac040a1dd6e8d17",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

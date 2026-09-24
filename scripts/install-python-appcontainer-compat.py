@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -136,6 +137,15 @@ def main() -> int:
     args = parser.parse_args()
     result = install(Path(__file__).resolve().parents[1], check=args.check, backup_dir=args.backup_dir,
                      ci_current_runtime=args.ci_current_runtime)
+    if os.name == "nt":
+        # Bootstrap the standalone native helper before the Body/backend import
+        # graph is available; no alternative runtime implementation is loaded.
+        source = Path(__file__).resolve().parents[1] / "src/omni_body_skill/tools/windows_appcontainer.py"
+        spec = importlib.util.spec_from_file_location("_tg_runtime_access_setup", source)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        result["sandbox_runtime_access"] = helper.prepare_runtime_access(Path(result["runtime"]), check=args.check)
+        result["ok"] = result["ok"] and result["sandbox_runtime_access"]["ok"]
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return 0 if result["ok"] else 1
 

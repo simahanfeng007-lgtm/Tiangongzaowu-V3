@@ -57,7 +57,8 @@ _ACTION_SPECS = (
 
 def _legacy_static_context_tokens() -> int:
     repository_root = Path(__file__).resolve().parents[1]
-    skill_root = repository_root / "src" / "omni_body_skill"
+    # Keep the all-procedures-at-once baseline without reviving retired files.
+    skill_root = repository_root / "dictionaries"
     index, _index_sha256, _source_hashes = _production_inputs()
     parts = []
     for raw in index["skills"]:

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -17,6 +18,7 @@ if os.name != "nt":  # pragma: no cover
     raise ImportError("windows_appcontainer is Windows-only")
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernelbase = ctypes.WinDLL("KernelBase", use_last_error=True)
 userenv = ctypes.WinDLL("userenv", use_last_error=True)
 advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
 ole32 = ctypes.OleDLL("ole32")
@@ -38,6 +40,8 @@ JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
 JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 JobObjectExtendedLimitInformation = 9
+RUNTIME_READ_EXECUTE = 0x1200A9
+RUNTIME_ACCESS_RECEIPT = ".tiangong-runtime-reader.json"
 
 
 class SECURITY_ATTRIBUTES(ctypes.Structure):
@@ -65,6 +69,10 @@ class SID_AND_ATTRIBUTES(ctypes.Structure):
 class SECURITY_CAPABILITIES(ctypes.Structure):
     _fields_ = [("AppContainerSid", LPVOID), ("Capabilities", ctypes.POINTER(SID_AND_ATTRIBUTES)), ("CapabilityCount", wintypes.DWORD), ("Reserved", wintypes.DWORD)]
 
+class ACL(ctypes.Structure):
+    _fields_ = [("revision", wintypes.BYTE), ("padding", wintypes.BYTE),
+                ("size", wintypes.WORD), ("count", wintypes.WORD), ("reserved", wintypes.WORD)]
+
 class IO_COUNTERS(ctypes.Structure):
     _fields_ = [(name, ctypes.c_ulonglong) for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount", "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
 
@@ -89,6 +97,24 @@ kernel32.CreateMutexW.argtypes = [LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.ReleaseMutex.argtypes = [wintypes.HANDLE]
 kernel32.LocalFree.restype = wintypes.HANDLE
+kernel32.LocalFree.argtypes = [LPVOID]
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
+kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernelbase.DeriveCapabilitySidsFromName.argtypes = [wintypes.LPCWSTR,
+    ctypes.POINTER(ctypes.POINTER(LPVOID)), ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(ctypes.POINTER(LPVOID)), ctypes.POINTER(wintypes.DWORD)]
+kernelbase.DeriveCapabilitySidsFromName.restype = wintypes.BOOL
+advapi32.GetNamedSecurityInfoW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+    ctypes.POINTER(LPVOID), ctypes.POINTER(LPVOID), ctypes.POINTER(LPVOID),
+    ctypes.POINTER(LPVOID), ctypes.POINTER(LPVOID)]
+advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+advapi32.GetAce.argtypes = [LPVOID, wintypes.DWORD, ctypes.POINTER(LPVOID)]
+advapi32.EqualSid.argtypes = [LPVOID, LPVOID]
 userenv.CreateAppContainerProfile.restype = ctypes.c_long
 userenv.DeriveAppContainerSidFromAppContainerName.restype = ctypes.c_long
 userenv.GetAppContainerFolderPath.restype = ctypes.c_long
@@ -161,20 +187,31 @@ def delete_appcontainer_profile(moniker: str) -> None:
         raise OSError(ctypes.c_uint32(hr).value, "DeleteAppContainerProfile")
 
 
+def _check_budget(deadline, cancel_check=None):
+    if cancel_check is not None and cancel_check():
+        raise RuntimeError("sandbox_cancelled")
+    if time.monotonic() >= deadline:
+        raise TimeoutError("sandbox_timeout")
+
+
 @contextmanager
-def _acl_update_lock(path: Path):
-    # Different invocation SIDs share the interpreter directory. icacls does
-    # a read/modify/write: simultaneous grant/revoke can lose another SID's
-    # entry. Serialize only that update across threads AND host processes.
+def _acl_update_lock(path: Path, *, deadline=None, cancel_check=None):
+    # Only cold provisioning writes shared ACLs. Serialize across host processes
+    # as well as threads, and allow cancellation while another installer owns it.
+    deadline = time.monotonic() + 30 if deadline is None else deadline
     identity = os.path.normcase(str(path.resolve(strict=True))).encode("utf-8")
     name = "Local\\Tiangong.RuntimeAcl." + hashlib.sha256(identity).hexdigest()
     mutex = wintypes.HANDLE(kernel32.CreateMutexW(None, False, name))
     _check(mutex, "CreateMutexW(runtime ACL)")
     acquired = False
     try:
-        status = kernel32.WaitForSingleObject(mutex, 30000)
-        if status not in (0, 0x80):
-            raise OSError("runtime_acl_update_lock_unavailable")
+        while True:
+            _check_budget(deadline, cancel_check)
+            status = kernel32.WaitForSingleObject(mutex, 50)
+            if status in (0, 0x80):
+                break
+            if status != WAIT_TIMEOUT:
+                raise OSError("runtime_acl_update_lock_unavailable")
         acquired = True
         yield
     finally:
@@ -182,19 +219,131 @@ def _acl_update_lock(path: Path):
         kernel32.CloseHandle(mutex)
 
 
-def _grant(path: Path, sid_text: str, permission: str) -> None:
-    with _acl_update_lock(path):
-        cp = subprocess.run(
-            ["icacls", str(path), "/grant", f"*{sid_text}:{permission}", "/C", "/Q"],
-            capture_output=True,
-            text=True,
-            encoding="oem",
-            errors="replace",
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            timeout=20,
-        )
-    if cp.returncode != 0:
-        raise OSError(f"icacls_failed:{cp.stderr[-400:]}")
+def _run_acl_update(path, sid_text, permission, *, deadline, cancel_check=None):
+    _check_budget(deadline, cancel_check)
+    with subprocess.Popen(
+        ["icacls", str(path), "/grant:r", f"*{sid_text}:{permission}", "/C", "/Q"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW,
+    ) as process:
+        try:
+            while True:
+                _check_budget(deadline, cancel_check)
+                try:
+                    _, stderr = process.communicate(timeout=min(0.1, max(0.001, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        except BaseException:
+            process.kill()
+            process.communicate()
+            raise
+        if process.returncode != 0:
+            raise OSError(f"icacls_failed:{stderr[-400:].decode('oem', errors='replace')}")
+
+
+def _grant(path: Path, sid_text: str, permission: str, *, deadline, cancel_check=None) -> None:
+    with _acl_update_lock(path, deadline=deadline, cancel_check=cancel_check):
+        _run_acl_update(path, sid_text, permission, deadline=deadline, cancel_check=cancel_check)
+
+
+@contextmanager
+def _runtime_read_capability(runtime: Path):
+    identity = os.path.normcase(str(runtime.resolve(strict=True))).encode("utf-8")
+    name = "tiangong.runtime.read." + hashlib.sha256(identity).hexdigest()
+    groups, capabilities = ctypes.POINTER(LPVOID)(), ctypes.POINTER(LPVOID)()
+    group_count, capability_count = wintypes.DWORD(), wintypes.DWORD()
+    try:
+        _check(kernelbase.DeriveCapabilitySidsFromName(name, ctypes.byref(groups),
+            ctypes.byref(group_count), ctypes.byref(capabilities), ctypes.byref(capability_count)),
+            "DeriveCapabilitySidsFromName(runtime read)")
+        if capability_count.value != 1:
+            raise OSError("runtime_read_capability_count_invalid")
+        yield LPVOID(capabilities[0])
+    finally:
+        # Each SID and both arrays have independent LocalAlloc lifetimes.
+        for array, count in ((groups, group_count.value), (capabilities, capability_count.value)):
+            if array:
+                for index in range(count): kernel32.LocalFree(array[index])
+                kernel32.LocalFree(array)
+
+
+def _has_runtime_read_acl(runtime: Path, sid) -> bool:
+    dacl, descriptor = LPVOID(), LPVOID()
+    error = advapi32.GetNamedSecurityInfoW(str(runtime), 1, 4, None, None,
+        ctypes.byref(dacl), None, ctypes.byref(descriptor))
+    if error:
+        raise OSError(error, "GetNamedSecurityInfoW(runtime read)")
+    try:
+        if not dacl:
+            return False
+        found = False
+        for index in range(ctypes.cast(dacl, ctypes.POINTER(ACL)).contents.count):
+            ace = LPVOID()
+            _check(advapi32.GetAce(dacl, index, ctypes.byref(ace)), "GetAce(runtime read)")
+            header = (ctypes.c_ubyte * 4).from_address(ace.value)
+            if header[0] not in (0, 1):
+                continue
+            if not advapi32.EqualSid(LPVOID(ace.value + 8), sid):
+                continue
+            mask = wintypes.DWORD.from_address(ace.value + 4).value
+            # Never accept an unexpectedly broader grant or an explicit deny.
+            if header[0] == 1 or mask & ~RUNTIME_READ_EXECUTE:
+                return False
+            if mask == RUNTIME_READ_EXECUTE and header[1] & 3 == 3 and not header[1] & 8:
+                found = True
+        return found
+    finally:
+        if descriptor: kernel32.LocalFree(descriptor)
+
+
+def _ensure_runtime_access(runtime, sid, *, deadline, cancel_check=None, check=False):
+    receipt = runtime / RUNTIME_ACCESS_RECEIPT
+    expected = {"schema": "tiangong.runtime-reader.v1", "runtime": os.path.normcase(str(runtime)),
+                "capability_sid": _sid_string(sid), "access_mask": RUNTIME_READ_EXECUTE}
+
+    def ready():
+        # A receipt proves propagation finished; current ACL readback prevents a
+        # stale marker from authorizing a changed directory. No in-memory cache.
+        try:
+            matched = not receipt.is_symlink() and json.loads(receipt.read_bytes()) == expected
+        except (OSError, ValueError):
+            return False
+        return matched and _has_runtime_read_acl(runtime, sid)
+
+    if ready():
+        return {"ok": True, "reused": True, **expected}
+    if check:
+        return {"ok": False, "reused": False, **expected}
+    with _acl_update_lock(runtime, deadline=deadline, cancel_check=cancel_check):
+        if ready():
+            return {"ok": True, "reused": True, **expected}
+        receipt.unlink(missing_ok=True)
+        _run_acl_update(runtime, expected["capability_sid"], "(OI)(CI)RX",
+            deadline=deadline, cancel_check=cancel_check)
+        _check_budget(deadline, cancel_check)
+        if not _has_runtime_read_acl(runtime, sid):
+            raise OSError("runtime_read_acl_verification_failed")
+        fd, name = tempfile.mkstemp(prefix=".tg-runtime-reader-", dir=runtime)
+        temporary = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write((json.dumps(expected, sort_keys=True) + "\n").encode("utf-8"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, receipt)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {"ok": True, "reused": False, **expected}
+
+
+def prepare_runtime_access(runtime: Path, *, check=False, timeout_seconds=120):
+    """Provision one path-specific RX capability during installation/startup."""
+    runtime = runtime.resolve(strict=True)
+    if not runtime.is_dir():
+        raise ValueError("runtime_directory_required")
+    with _runtime_read_capability(runtime) as sid:
+        return _ensure_runtime_access(runtime, sid, check=check,
+            deadline=time.monotonic() + max(1, timeout_seconds))
 
 
 def _open_inheritable_file(path: Path) -> wintypes.HANDLE:
@@ -223,70 +372,84 @@ def _open_inheritable_null() -> wintypes.HANDLE:
 
 def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[str, str], limits: Any, sandbox_root: Path,
                      moniker: str = "TiangongV3.ToolSandbox", cancel_check=None):
-    sid = _appcontainer_sid(moniker)
-    sid_text = _sid_string(sid)
-    # AppContainer receives explicit access only to this invocation workspace.
-    storage_root = _storage_root_for_sid(sid_text)
-    try:
-        sandbox_root.resolve(strict=False).relative_to(storage_root)
-    except ValueError as exc:
-        raise OSError("appcontainer_sandbox_root_outside_private_storage") from exc
-    _grant(sandbox_root, sid_text, "(OI)(CI)M")
-    if isinstance(command, str):
-        stripped = command.lstrip()
-        if stripped.startswith('"') and '"' in stripped[1:]:
-            executable_text = stripped[1:stripped.find('"', 1)]
-        else:
-            executable_text = stripped.split(None, 1)[0]
-    else:
-        executable_text = str(command[0])
-    executable = Path(executable_text).expanduser()
-    runtime_grant = None
-    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
-    if (executable.is_absolute() and executable.exists()
-            and not executable.resolve().is_relative_to(system_root)):
-        _grant(executable.parent, sid_text, "(OI)(CI)RX")
-        runtime_grant = executable.parent
-
-    stdout_path = sandbox_root / "stdout.bin"
-    stderr_path = sandbox_root / "stderr.bin"
-    stdout_handle = _open_inheritable_file(stdout_path)
-    stderr_handle = _open_inheritable_file(stderr_path)
-    input_handle = _open_inheritable_null()
-
-    attr_size = SIZE_T(0)
-    kernel32.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(attr_size))
-    attr_buffer = ctypes.create_string_buffer(attr_size.value)
-    _check(kernel32.InitializeProcThreadAttributeList(attr_buffer, 2, 0, ctypes.byref(attr_size)), "InitializeProcThreadAttributeList")
-    capabilities = SECURITY_CAPABILITIES(sid, None, 0, 0)
-    _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None), "UpdateProcThreadAttribute")
-    inherited = (wintypes.HANDLE * 3)(input_handle, stdout_handle, stderr_handle)
-    _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-        inherited, ctypes.sizeof(inherited), None, None), "UpdateProcThreadAttribute(handles)")
-
-    si = STARTUPINFOEXW()
-    si.StartupInfo.cb = ctypes.sizeof(si)
-    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES
-    si.StartupInfo.hStdInput = input_handle
-    si.StartupInfo.hStdOutput = stdout_handle
-    si.StartupInfo.hStdError = stderr_handle
-    si.lpAttributeList = ctypes.cast(attr_buffer, LPVOID)
+    # Preparation is part of the same deadline; a blocked ACL operation can
+    # no longer outlive cancellation or start a fresh execution timeout.
+    deadline = time.monotonic() + max(1, int(limits.timeout_seconds))
+    resources = ExitStack()
+    sid = input_handle = stdout_handle = stderr_handle = job = None
+    attributes_initialized = False
     pi = PROCESS_INFORMATION()
-    env_block = _environment_block(env)
-    command_line = ctypes.create_unicode_buffer(
-        command if isinstance(command, str) else subprocess.list2cmdline(list(command))
-    )
-
-    job = kernel32.CreateJobObjectW(None, None)
-    _check(job, "CreateJobObjectW")
-    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-    info.BasicLimitInformation.ActiveProcessLimit = max(1, int(limits.max_processes))
-    info.ProcessMemoryLimit = max(128 * 1024 * 1024, int(limits.max_memory_bytes))
-    info.JobMemoryLimit = info.ProcessMemoryLimit
-    _check(kernel32.SetInformationJobObject(job, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)), "SetInformationJobObject")
-
     try:
+        _check_budget(deadline, cancel_check)
+        sid = _appcontainer_sid(moniker)
+        sid_text = _sid_string(sid)
+        # AppContainer receives explicit access only to this invocation workspace.
+        storage_root = _storage_root_for_sid(sid_text)
+        try:
+            sandbox_root.resolve(strict=False).relative_to(storage_root)
+        except ValueError as exc:
+            raise OSError("appcontainer_sandbox_root_outside_private_storage") from exc
+        _grant(sandbox_root, sid_text, "(OI)(CI)M", deadline=deadline, cancel_check=cancel_check)
+        if isinstance(command, str):
+            stripped = command.lstrip()
+            if stripped.startswith('"') and '"' in stripped[1:]:
+                executable_text = stripped[1:stripped.find('"', 1)]
+            else:
+                executable_text = stripped.split(None, 1)[0]
+        else:
+            executable_text = str(command[0])
+        executable = Path(executable_text).expanduser()
+        capability_entries = None
+        system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
+        if (executable.is_absolute() and executable.exists()
+                and not executable.resolve().is_relative_to(system_root)
+                and not executable.resolve().is_relative_to(sandbox_root.resolve())):
+            runtime = executable.resolve(strict=True).parent
+            reader_sid = resources.enter_context(_runtime_read_capability(runtime))
+            # Normal startup provisions this once. A newly installed native tool may
+            # cold-provision within this invocation's existing deadline.
+            _ensure_runtime_access(runtime, reader_sid, deadline=deadline, cancel_check=cancel_check)
+            capability_entries = (SID_AND_ATTRIBUTES * 1)(SID_AND_ATTRIBUTES(reader_sid, 4))
+
+        stdout_path = sandbox_root / "stdout.bin"
+        stderr_path = sandbox_root / "stderr.bin"
+        stdout_handle = _open_inheritable_file(stdout_path)
+        stderr_handle = _open_inheritable_file(stderr_path)
+        input_handle = _open_inheritable_null()
+
+        attr_size = SIZE_T(0)
+        kernel32.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(attr_size))
+        attr_buffer = ctypes.create_string_buffer(attr_size.value)
+        _check(kernel32.InitializeProcThreadAttributeList(attr_buffer, 2, 0, ctypes.byref(attr_size)), "InitializeProcThreadAttributeList")
+        attributes_initialized = True
+        capabilities = SECURITY_CAPABILITIES(sid, capability_entries, 1 if capability_entries is not None else 0, 0)
+        _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None), "UpdateProcThreadAttribute")
+        inherited = (wintypes.HANDLE * 3)(input_handle, stdout_handle, stderr_handle)
+        _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            inherited, ctypes.sizeof(inherited), None, None), "UpdateProcThreadAttribute(handles)")
+
+        si = STARTUPINFOEXW()
+        si.StartupInfo.cb = ctypes.sizeof(si)
+        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+        si.StartupInfo.hStdInput = input_handle
+        si.StartupInfo.hStdOutput = stdout_handle
+        si.StartupInfo.hStdError = stderr_handle
+        si.lpAttributeList = ctypes.cast(attr_buffer, LPVOID)
+        env_block = _environment_block(env)
+        command_line = ctypes.create_unicode_buffer(
+            command if isinstance(command, str) else subprocess.list2cmdline(list(command))
+        )
+
+        job = kernel32.CreateJobObjectW(None, None)
+        _check(job, "CreateJobObjectW")
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        info.BasicLimitInformation.ActiveProcessLimit = max(1, int(limits.max_processes))
+        info.ProcessMemoryLimit = max(128 * 1024 * 1024, int(limits.max_memory_bytes))
+        info.JobMemoryLimit = info.ProcessMemoryLimit
+        _check(kernel32.SetInformationJobObject(job, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)), "SetInformationJobObject")
+
+        _check_budget(deadline, cancel_check)
         ok = kernel32.CreateProcessW(
             None, command_line, None, None, True,
             EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED | CREATE_NO_WINDOW,
@@ -298,7 +461,6 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
             raise RuntimeError("sandbox_cancelled")
         if kernel32.ResumeThread(pi.hThread) == 0xFFFFFFFF:
             raise OSError(ctypes.get_last_error(), "ResumeThread")
-        deadline = time.monotonic() + max(1, int(limits.timeout_seconds))
         while True:
             if cancel_check is not None and cancel_check():
                 raise RuntimeError("sandbox_cancelled")
@@ -322,16 +484,17 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
         if job:
             kernel32.TerminateJobObject(job, 125)
         if getattr(pi, "hProcess", None):
+            # Also covers failure to assign the newly created suspended process
+            # to the Job Object. Such a child must never be orphaned.
+            kernel32.TerminateProcess(pi.hProcess, 125)
             kernel32.WaitForSingleObject(pi.hProcess, 5000)
         for handle in (getattr(pi, "hThread", None), getattr(pi, "hProcess", None), input_handle, stdout_handle, stderr_handle, job):
             if handle:
                 kernel32.CloseHandle(handle)
-        kernel32.DeleteProcThreadAttributeList(attr_buffer)
-        advapi32.FreeSid(sid)
-        if runtime_grant is not None and moniker.startswith("TG3.Run."):
-            with _acl_update_lock(runtime_grant):
-                subprocess.run(["icacls", str(runtime_grant), "/remove:g", "*" + sid_text, "/C", "/Q"],
-                    capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        if attributes_initialized:
+            kernel32.DeleteProcThreadAttributeList(attr_buffer)
+        if sid: advapi32.FreeSid(sid)
+        resources.close()
     with stdout_path.open("rb") as stream:
         stdout = stream.read(limits.max_output_bytes + 1)
     with stderr_path.open("rb") as stream:
