@@ -3,7 +3,7 @@
  "generated_from": {
   "skill_router_index": {
    "path": "dictionaries/skills/catalog.json",
-   "index_blob": "0bcbd37d4e6822df03bce48373bf502e96010967",
+   "index_blob": "dd482e6ddee2b32588b198f5a8d9554e837cf775",
    "item_count": 34
   },
   "capability_manifest": {
@@ -195,7 +195,7 @@
    "mingcheng": "PowerPoint 演示制作",
    "category": "executive_presentation",
    "file": "skills/30_skill_ppt_executive_report_worldclass.md",
-   "file_blob": "d2cf492466effa1e4c134b392a3e567f5e2cb0a6",
+   "file_blob": "c8152df3c63bfe8e8395b8bf0b7889f91483a10b",
    "task_intents": [
     "PowerPoint 演示制作"
    ],
@@ -446,7 +446,7 @@
    "mingcheng": "本地图片与海报制作",
    "category": "visual_design",
    "file": "skills/35_skill_poster_visual_delivery_worldclass.md",
-   "file_blob": "1994e6bdaa2672e53be9c87a7aa46e1868f2ee65",
+   "file_blob": "c2f6d71bb56bb7c11a6445e1f03e43eaf2573cc6",
    "task_intents": [
     "本地图片与海报制作"
    ],
