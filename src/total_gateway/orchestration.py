@@ -703,14 +703,7 @@ class GatewayOrchestrationWorker:
         omni_schema_catalog = None
         skill_root = getattr(config, "skill_root", None)
         if skill_root is None and config.release_source_root is not None:
-            skill_root = (
-                config.release_source_root
-                / "app"
-                / "backend"
-                / "tiangong-backend"
-                / "_internal"
-                / "omni_body_skill"
-            )
+            skill_root = config.release_source_root / "dictionaries"
         if skill_root is None:
             raise OrchestrationError("orchestration.skill_catalog.missing")
         else:
@@ -4201,13 +4194,36 @@ class GatewayOrchestrationWorker:
             None
             if self._skill_authority is None or composition_plan_record is not None
             else self._skill_authority.system_recommend(
-                envelope.text,
+                ((envelope.task_context.raw_user_text + "\n" + envelope.task_context.root_goal).strip()
+                 if envelope.task_context is not None else envelope.text),
                 request_id=request_id,
                 run_id=run_id,
                 generation=generation.generation,
                 decided_at_ms=now_ms,
+                limit=8,
             )
         )
+        recommendation_view = None
+        loaded_skills = []
+        if skill_recommendation is not None:
+            recommendation_view = skill_recommendation.model_dump(mode="json")
+            for item in recommendation_view["candidates"]:
+                definition = self._skill_authority.selection.catalog.get(item["skill_id"])
+                item.update(title=definition.title, summary=definition.summary,
+                            optional_actions=list(definition.optional_actions))
+        if envelope.task_context is not None and self._skill_authority is not None:
+            for skill_id in envelope.task_context.selected_skill_ids:
+                authorized = self._skill_authority.model_request(
+                    "skill.get", request_id=request_id, run_id=run_id,
+                    generation=generation.generation, principal_scope_hash=envelope.principal_scope_hash,
+                    decided_at_ms=now_ms, skill_id=skill_id,
+                )
+                if authorized.activation is None or not authorized.resolution.content:
+                    raise OrchestrationError("dictionary.explicit_skill_unavailable:" + skill_id)
+                loaded_skills.append({"skill_id": skill_id,
+                    "sha256": authorized.activation.skill_sha256,
+                    "content": authorized.resolution.content,
+                    "catalog_sha256": self._skill_authority.catalog_sha256})
         attachments = [
             {
                 "filename": item.filename,
@@ -4248,11 +4264,8 @@ class GatewayOrchestrationWorker:
             "life_snapshot": life.snapshot.model_dump(mode="json"),
             "recent_messages": [dict(item) for item in history.messages],
             "conversation_projection": history.metadata(),
-            "skill_recommendation": (
-                None
-                if skill_recommendation is None
-                else skill_recommendation.model_dump(mode="json")
-            ),
+            "skill_recommendation": recommendation_view,
+            "loaded_skills": loaded_skills,
             "text": envelope.text,
             "user_callsign": profile.user_callsign,
         }

@@ -10,6 +10,8 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-VERIFICATION_PLANE_VERSION = "1.28"
+# 1.29 moves capability authority to the published dictionary, preserves exact
+# native method source bindings, and passes raw task context through Gateway.
+VERIFICATION_PLANE_VERSION = "1.29"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

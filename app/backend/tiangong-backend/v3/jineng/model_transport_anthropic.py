@@ -12,6 +12,7 @@ from .model_transport_contract import (
     content_text,
     drop_last_role_messages,
     extract_native_roundtrip_context,
+    extract_native_roundtrip_history,
     json_output,
 )
 from .model_transport_openai_chat import _legacy_wire
@@ -80,13 +81,15 @@ class AnthropicMessagesTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         canonical = dict(canonical_payload)
-        native = extract_native_roundtrip_context(canonical, endpoint)
+        observations_compacted = canonical.pop("__native_observations_compacted", False)
+        history = extract_native_roundtrip_history(canonical, endpoint)
         source_messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
-        if native is not None:
-            source_messages = drop_last_role_messages(source_messages, role="assistant", count=len(native.results))
+        if history:
+            source_messages = drop_last_role_messages(source_messages, role="assistant",
+                count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
         system, messages = self._convert_messages(source_messages)
 
-        if native is not None:
+        for native in history:
             opaque = native.turn.provider_continuation_state.opaque_payload
             opaque = opaque if isinstance(opaque, Mapping) else {}
             replay_blocks = opaque.get("assistant_content_blocks") if isinstance(opaque.get("assistant_content_blocks"), list) else []

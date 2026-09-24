@@ -383,6 +383,12 @@ class InstalledDesktopCompositionPlanner:
         self._sources, self._bridge = sources, bridge
 
     def __call__(self, activation, life_snapshot) -> bool:
+        # Normal messages and the former [字典执行] prefix use the same dynamic
+        # dictionary loop. A full static DAG is optional, never a prerequisite
+        # for discovering tools or observing the result of a previous step.
+        task_context = getattr(getattr(activation, "envelope", None), "task_context", None)
+        if task_context is None or task_context.execution_strategy != "static":
+            return False
         from .composition_mode_runtime import current_turn_policy, load_mode_config
         from .composition_planner_mode_authority import resolve_turn_policy, TurnPolicyV1
         from .composition_source_trial import is_dictionary_request, load_source_trial_profile
@@ -446,8 +452,7 @@ class InstalledDesktopCompositionPlanner:
                                 "action_id": primitive.action_id, "schema": schema.body()})
             methods = [{"candidate_id": c.candidate_id, "method_id": c.primitive.method_id,
                         "summary": c.primitive.semantic_summary}
-                       for c in prepared.candidates.method_candidates
-                       if c.primitive.method_id == "acceptance_review"]
+                       for c in prepared.candidates.method_candidates]
             if not actions:
                 raise DesktopCompositionError("desktop_composition.no_executable_candidates")
             if not methods:

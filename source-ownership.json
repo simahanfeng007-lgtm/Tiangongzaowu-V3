@@ -1,11 +1,12 @@
 {
   "schema": "tiangong.source-ownership.v2",
-  "principle": "Human-editable production authorities are converged under src/ except the existing v3 backend main tree, tiangong_kernel, and frozen compatibility authorities. v3 is a closed-world authority: every immediate child is explicitly implementation, generated, compatibility-only, or non-runtime. readable-python-source/ is compatibility-mirror only. Targets are deterministic generated mirrors checked before release.",
+  "principle": "Human-editable capability definitions live only in dictionaries/. Production code authorities are converged under src/ except the existing v3 backend main tree, tiangong_kernel, and frozen compatibility authorities. v3 is a closed-world authority: every immediate child is explicitly implementation, generated, compatibility-only, or non-runtime. readable-python-source/ is compatibility-mirror only. Targets are deterministic generated mirrors checked before release.",
   "authority_policy": {
     "editable_roots": [
       "src",
       "app/backend/tiangong-backend/v3",
-      "app/backend/tiangong-backend/tiangong_kernel"
+      "app/backend/tiangong-backend/tiangong_kernel",
+      "dictionaries"
     ],
     "frozen_roots": [
       "app/backend/tiangong-backend/_internal/frozen_modules"
@@ -249,6 +250,22 @@
       "source_role": "authoritative",
       "targets": [],
       "note": "事实 single-source（l0_primitives、l4_action_grounding 等）。"
+    },
+    {
+      "id": "capability-dictionary-runtime",
+      "source": "src/capability_dictionary",
+      "source_role": "authoritative",
+      "targets": [
+        "app/runtime/python312/Lib/site-packages/capability_dictionary"
+      ]
+    },
+    {
+      "id": "capability-dictionaries",
+      "source": "dictionaries",
+      "source_role": "authoritative",
+      "targets": [
+        "app/dictionaries"
+      ]
     }
   ]
 }

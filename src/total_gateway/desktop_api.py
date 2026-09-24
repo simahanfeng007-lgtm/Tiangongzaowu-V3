@@ -503,8 +503,14 @@ class DesktopApiRouter:
         if self._runtime.orchestration is None:
             raise DesktopApiError(503, "desktop_api.orchestration.not_configured")
         payload = _strict_json_object(body)
-        if set(payload) != _DESKTOP_INGRESS_KEYS:
+        if set(payload) not in (_DESKTOP_INGRESS_KEYS, _DESKTOP_INGRESS_KEYS | {"task_context"}):
             raise DesktopApiError(400, "desktop_api.desktop_ingress.fields.invalid")
+        from contracts.models import TaskInputContext
+        try:
+            task_context = (TaskInputContext.model_validate_json(json.dumps(payload["task_context"]))
+                            if payload.get("task_context") is not None else None)
+        except (ValueError, TypeError) as exc:
+            raise DesktopApiError(400, "desktop_api.desktop_ingress.task_context.invalid") from exc
         presentation_request_id = self._required_opaque(payload, "presentation_request_id")
         session_id = self._required_opaque(payload, "session_id")
         message_id = self._required_opaque(payload, "message_id")
@@ -602,6 +608,7 @@ class DesktopApiRouter:
                 }
             ),
             text=text,
+            task_context=task_context,
             attachments=tuple(accepted_attachments),
         )
         try:

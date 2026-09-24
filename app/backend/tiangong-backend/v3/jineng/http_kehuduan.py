@@ -52,7 +52,7 @@ from .deepseek_zhuanshu import (
 )
 from .guge_ceng import GUGE
 from .minimax_m3_adapter import MINIMAX_M3
-from .model_transport_executor import TransportExecutionError, execute_streaming_turn
+from .model_transport_executor import TransportExecutionError, execute_streaming_turn_with_repair as execute_streaming_turn
 from .moxing_shipei import MOXING_SHIPEI
 
 
@@ -431,23 +431,11 @@ def _allowed_tools_from_system_prompt(system_tishi: str) -> set[str] | None:
 
 
 def _omni_body_skill_root_for_model_adapter() -> Path | None:
-    candidates: list[Path] = []
-    forced = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-    if forced:
-        candidates.append(Path(forced).expanduser())
-    candidates.extend([
-        Path.home() / ".tiangong" / "v3" / "omni_body_skill",
-        Path(__file__).resolve().parents[1] / "omni_body_skill",
-        Path(__file__).resolve().parents[1] / "bundled_skills" / "omni_body_skill",
-    ])
-    for candidate in candidates:
-        try:
-            root = candidate.resolve(strict=False)
-            if (root / "model_adapters" / "core.py").exists():
-                return root
-        except Exception:
-            continue
-    return None
+    # Reuse the installed, source-verified protocol implementation. Never probe
+    # a user-home Skill copy or a retired bundled Skill as a capability source.
+    import omni_body_skill
+    root = Path(omni_body_skill.__file__).resolve().parent
+    return root if (root / "model_adapters/core.py").is_file() else None
 
 
 def _model_adapter_core() -> Any | None:
@@ -661,6 +649,11 @@ def _llm_error_text(
 
 def _effective_llm_deadline_seconds() -> float:
     """Resolve the Runtime call ceiling against the current Gateway effect deadline."""
+    from .model_call_lifecycle import current_model_call
+
+    active = current_model_call()
+    if active is not None:
+        return active.remaining
     effective_llm_max_seconds = _LLM_CALL_MAX_SECONDS
     try:
         from contracts.reliability import current_execution_deadline_ms
@@ -673,7 +666,7 @@ def _effective_llm_deadline_seconds() -> float:
             if remaining <= 3600.0:
                 effective_llm_max_seconds = min(
                     effective_llm_max_seconds,
-                    max(5.0, remaining - 2.0),
+                    max(0.0, remaining - 2.0),
                 )
     except Exception:
         pass
@@ -724,6 +717,7 @@ def _error_turn(
     protocol_family: str,
     optimization_family: str,
     model_name: str,
+    error_code: str = "error",
 ) -> ProviderTurnEnvelope:
     return ProviderTurnEnvelope(
         value,
@@ -735,7 +729,7 @@ def _error_turn(
         visible_text="",
         provider_id=optimization_family,
         finish_reason="error",
-        stop_semantics="error",
+        stop_semantics=error_code,
     )
 
 
@@ -749,6 +743,18 @@ class HttpKehuduan:
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
+        self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
+        self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
+
+    @contextmanager
+    def scoped_native_history(self, history, observations=()):
+        token = self._native_history.set(history)
+        observation_token = self._native_observations.set(observations)
+        try:
+            yield
+        finally:
+            self._native_history.reset(token)
+            self._native_observations.reset(observation_token)
 
     @contextmanager
     def scoped_tools(self, allowed_tool_names: list[str] | set[str] | tuple[str, ...] | None = None, disable_tools: bool = False):
@@ -903,6 +909,13 @@ class HttpKehuduan:
                         "当前端点未证明原生 function calling 能力；不得伪装 native tool。"
                     )
 
+            from .model_transport_contract import compact_native_observations, extract_native_roundtrip_history
+            history = self._native_history.get(())
+            native_observations_compacted = False
+            if history and prior_assistant_messages:
+                verified_history = extract_native_roundtrip_history({"__provider_history": history}, endpoint)
+                prior_assistant_messages, native_observations_compacted = compact_native_observations(
+                    prior_assistant_messages, self._native_observations.get(()), verified_history)
             payload = MOXING_SHIPEI.goujian_qingqiu(
                 pid,
                 effective_system_tishi,
@@ -920,6 +933,10 @@ class HttpKehuduan:
                 payload["__provider_tool_results"] = [
                     dict(item) for item in provider_tool_results if isinstance(item, dict)
                 ]
+            if history:
+                payload["__provider_history"] = list(history)
+            if native_observations_compacted:
+                payload["__native_observations_compacted"] = True
             audio_paths = self._native_audio_paths.get(())
             if endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value:
                 native_audio_receipt = _inject_native_audio_input(payload, audio_paths)
@@ -982,13 +999,57 @@ class HttpKehuduan:
         # bug-fix: 多次思考路径根治 - 接通流式 think 过滤器（原为 dead code）：
         # 本次 llm_diaoyong 独立一个过滤器实例，流式 chunk 先滤掉内联思考块再回调。
         liushi_on_chunk, liushi_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
+
+        def _record_dictionary_wire(payload: Mapping[str, Any]) -> None:
+            # Record exact outbound context coverage, without storing messages,
+            # private reasoning, or authentication headers in diagnostics.
+            from capability_dictionary import load_dictionary
+            from ..run_context import current_run_context
+            import hashlib
+            release = load_dictionary()
+            serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            calls, results = 0, 0
+            pending = list(payload.get("messages") or payload.get("input") or [])
+            while pending:
+                item = pending.pop()
+                if isinstance(item, dict):
+                    calls += len(item.get("tool_calls") or [])
+                    calls += int(item.get("type") in {"tool_use", "function_call"})
+                    results += int(item.get("role") == "tool" or item.get("type") in {"tool_result", "function_call_output"})
+                    pending.extend(value for key, value in item.items() if key != "tool_calls" and isinstance(value, (dict, list)))
+                elif isinstance(item, list):
+                    pending.extend(item)
+            receipts = optimization_trace.setdefault("dictionary_wire", [])
+            receipts.append({"dictionary_version": release.version, "dictionary_sha256": release.sha256,
+                "observed_at_ms": int(time.time() * 1000),
+                "request_id": current_run_context().request_id,
+                "run_id": current_run_context().run_id,
+                "request_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+                "skill_ids_present": [key for key in release.skill_bodies if key in serialized],
+                "full_skill_sha256": {key: hashlib.sha256(body.encode("utf-8")).hexdigest()
+                    for key, body in release.skill_bodies.items()
+                    if json.dumps(body, ensure_ascii=False)[1:-1] in serialized},
+                "native_tool_call_count": calls, "native_tool_result_count": results})
+
+        def _restart_visible_stream() -> None:
+            nonlocal liushi_on_chunk, liushi_flush
+            # A rejected response may end inside an unclosed <think> tag. The
+            # repair is a new response and must not inherit that parser state.
+            liushi_on_chunk, liushi_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
+
+        def _emit_visible_chunk(chunk: str) -> None:
+            if liushi_on_chunk is not None:
+                liushi_on_chunk(chunk)
+
         try:
             executed = execute_streaming_turn(
                 client=self._kehuduan,
                 endpoint=endpoint,
                 api_key=miyao,
                 canonical_payload=payload,
-                on_text_chunk=liushi_on_chunk,
+                on_text_chunk=_emit_visible_chunk if on_text_chunk is not None else None,
+                on_repair=_restart_visible_stream,
+                on_request_built=_record_dictionary_wire,
                 on_reasoning_chunk=on_reasoning_chunk,
                 retry_limit=HTTP_RETRY_LIMIT,
                 retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
@@ -1013,7 +1074,9 @@ class HttpKehuduan:
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
                 if exc.http_status is not None
-                else "网络/代理/DNS 连接失败，或 Base URL 指向的不是 API 服务；请检查网络与 Base URL 配置。"
+                else "模型输出不完整，已尝试一次拆分修复，本轮未执行不完整的工具调用。"
+                if exc.error_code in {"output_truncated", "invalid_tool_arguments"}
+                else "模型响应未正常完成；请结合错误码检查模型服务和连接。"
             )
             error = _error_turn(
                 _llm_error_text(
@@ -1032,6 +1095,7 @@ class HttpKehuduan:
                 protocol_family=endpoint.protocol_family,
                 optimization_family=pid,
                 model_name=model_name,
+                error_code=exc.error_code,
             )
             return _with_native_audio(
                 error,
@@ -1045,37 +1109,7 @@ class HttpKehuduan:
             liushi_flush()
         turn = _canonicalize_provider_turn(executed.turn)
 
-        # MiniMax legacy safety rescue is retained, but only after a turn with
-        # no tool call/effect, so it cannot duplicate a committed side effect.
-        if (
-            pid == "minimax_m3"
-            and turn.finish_reason == "length"
-            and not turn.visible_text.strip()
-            and not turn.tool_calls
-        ):
-            rescue_payload = _minimax_empty_length_rescue_payload(payload)
-            # bug-fix: 多次思考路径根治 - rescue 是一次全新模型调用：新建独立过滤器，
-            # 避免沿用上一次可能停留在思考块内的状态把 rescue 正文整段丢掉。
-            rescue_on_chunk, rescue_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
-            try:
-                rescue = execute_streaming_turn(
-                    client=self._kehuduan,
-                    endpoint=endpoint,
-                    api_key=miyao,
-                    canonical_payload=rescue_payload,
-                    on_text_chunk=rescue_on_chunk,
-                    on_reasoning_chunk=on_reasoning_chunk,
-                    retry_limit=HTTP_RETRY_LIMIT,
-                    retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
-                    transient_status_codes=TRANSIENT_STATUS_CODES,
-                    max_wall_clock_seconds=effective_llm_max_seconds,
-                )
-                if rescue_flush:
-                    rescue_flush()
-                turn = _canonicalize_provider_turn(rescue.turn)
-                optimization_trace["empty_length_rescue"] = True
-            except TransportExecutionError:
-                pass
+        optimization_trace["output_repaired"] = bool(executed.output_repaired)
 
         usage = dict(turn.usage or {})
         usage_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
@@ -1322,7 +1356,8 @@ def _jilu_l4_youhua_zhuizong(
 ) -> None:
     if not trace:
         return
-    if not trace.get("l4_profile_consumed") and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1":
+    if (not trace.get("l4_profile_consumed") and not trace.get("dictionary_wire")
+            and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1"):
         return
     row = dict(trace)
     row.update({

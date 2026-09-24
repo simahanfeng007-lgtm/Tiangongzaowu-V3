@@ -1,0 +1,25 @@
+# PowerPoint 演示制作
+
+适用：报告、提案、教学等 PPTX 演示文件。
+1. 按听众和目标组织内容，再调用 pptx.create 或 Python python-pptx 脚本。
+2. 使用明确页面尺寸、中文字体、字号和对齐；图表和文字可编辑。
+3. python-pptx 的部分图表模板会生成负数轴 ID，违反 OOXML unsignedInt；保存原始交付文件前同时规范化轴 ID 和引用（不要只修改诊断副本）：
+   ```python
+   for slide in prs.slides:
+       for shape in slide.shapes:
+           if shape.has_chart:
+               for node in shape.chart._chartSpace.xpath('.//c:axId | .//c:crossAx'):
+                   node.set('val', str(int(node.get('val')) % (2**32)))
+   prs.save(output_path)
+   ```
+4. 用 pptx.read 或 python-pptx 重新加载核对页数、标题、正文、备注和元素边界；有渲染器时检查截图。
+5. 只修复具体问题，不能因缺少外部发送回执否认本地 PPTX 已生成。
+6. 交付真实 PPTX；如无法渲染，应说明结构检查与视觉检查的区别。
+
+执行规则：
+- 通过当前字典的 omni_body 协议调用 action/target/args；系统负责权限，规程不能扩大权限。
+- 先观察输入，再决定依赖输入的下一步。不要一次猜出整条流程的参数。
+- 遇到不确定参数时调用 system.action_schema，仅查询需要的动作；不要反复查询已知模式。
+- 大文件按章节或模块写入，单次工具参数保持较小；截断的 JSON 不能执行。
+- 最终核对磁盘上的结果和用户要求，返回实际路径；不需要额外模型自我评分或发布审批。
+- 本地文件交付只需验证文件，不调用外部发送操作，不假称已上传或已发布。

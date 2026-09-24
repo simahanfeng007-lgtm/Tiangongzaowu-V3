@@ -29,7 +29,7 @@ from .tool_source_candidate import (
 
 
 _SCHEMA = "tiangong.tool-source-inputs.v1"
-_MANIFEST = "src/omni_body_skill/registry/capability_manifest.generated.json"
+_MANIFEST = "dictionaries/registry/capability_manifest.generated.json"
 _BUILD_INPUTS = frozenset({"source-ownership.json", "pyproject.toml", "requirements-source.lock"})
 _MAX_FILE_BYTES = 32 * 1024 * 1024
 _MAX_TOTAL_BYTES = 256 * 1024 * 1024

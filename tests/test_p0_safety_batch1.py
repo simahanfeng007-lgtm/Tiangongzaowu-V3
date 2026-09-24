@@ -294,7 +294,7 @@ def test_execute_streaming_turn_sends_to_pinned_ip(monkeypatch: pytest.MonkeyPat
             return None
 
         def iter_lines(self):
-            return iter([])
+            return iter(['data: {"ok": true}', "data: [DONE]"])
 
         # bug-fix: httpx 0.28 取消 client.send(stream=True) context manager 协议，
         # 凌霜在 model_transport_executor.py 改为 try/finally 显式 response.close()。
@@ -329,10 +329,13 @@ def test_execute_streaming_turn_sends_to_pinned_ip(monkeypatch: pytest.MonkeyPat
             )
 
         def consume_stream_event(self, state, event):
-            return "", ""
+            state.finish_reason = "stop"
+            state.visible_parts.append("OK")
+            return "OK", ""
 
         def finalize_turn(self, endpoint, state):
-            return {"finish_reason": "stop"}
+            from v3.model_protocol_contract import ProviderTurnEnvelope
+            return ProviderTurnEnvelope("OK", finish_reason="stop")
 
     monkeypatch.setattr(executor, "get_model_transport", lambda family: _StubTransport())
     monkeypatch.setattr(

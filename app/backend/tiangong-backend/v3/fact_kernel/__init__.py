@@ -424,6 +424,19 @@ def compile_manifest(
             return result
 
         handler_name = "_action_" + name.replace(".", "_").replace("-", "_")
+        binding = metadata.get("execution_binding")
+        if isinstance(binding, dict):
+            kind, target = binding.get("kind"), str(binding.get("target") or "")
+            if kind == "alias":
+                alias_ok, _handler, reason = resolve_route(target, trail + (name,))
+                result = (alias_ok, f"alias:{target}" if alias_ok else "", reason)
+            elif kind == "method":
+                executable = callable(getattr(runtime_class, target, None))
+                result = (executable, target if executable else "", "" if executable else "dictionary binding unavailable")
+            else:
+                result = (name in dynamic, "dynamic" if name in dynamic else "", "" if name in dynamic else "dictionary delivery binding unavailable")
+            route_state[name] = result
+            return result
         if name in dynamic:
             result = (True, "dynamic", "")
         elif callable(getattr(runtime_class, handler_name, None)):

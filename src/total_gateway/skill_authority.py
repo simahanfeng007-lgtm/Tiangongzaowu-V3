@@ -187,7 +187,7 @@ class SkillAuthority:
                 skill_id=candidate.skill_id,
                 skill_version=candidate.version,
                 skill_sha256=candidate.sha256,
-                allowed_action_ids=candidate.required_actions,
+                allowed_action_ids=tuple(sorted(set(candidate.required_actions) | set(candidate.available_optional_actions))),
                 issued_at_ms=decided_at_ms,
                 expires_at_ms=decided_at_ms + 3_600_000,
                 activation_sha256="0" * 64,
@@ -226,7 +226,10 @@ class SkillAuthority:
             definition is None
             or definition.version != grant.skill_version
             or definition.sha256 != grant.skill_sha256
-            or definition.required_actions != grant.allowed_action_ids
+            or tuple(sorted(set(definition.required_actions) | {
+                item.action_id for item in self.capability_manifest.actions
+                if item.available and item.model_visible and item.action_id in definition.optional_actions
+            })) != grant.allowed_action_ids
         ):
             raise SkillAuthorityError("Skill catalog drifted after activation")
 
@@ -250,10 +253,10 @@ class SkillAuthority:
             sorted(action for action, value in latest.items() if value[2] in success_types)
         )
         failed = tuple(
-            sorted(action for action, value in latest.items() if value[2] not in success_types)
+            sorted(action for action, value in latest.items() if value[2] not in success_types and action in definition.required_actions)
         )
         pending = tuple(
-            action for action in grant.allowed_action_ids if action not in set(completed)
+            action for action in definition.required_actions if action not in set(completed)
         )
         if failed:
             stage = "repair"

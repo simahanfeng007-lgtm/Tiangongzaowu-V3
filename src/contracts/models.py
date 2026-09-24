@@ -177,6 +177,16 @@ class AttachmentRef(ContractModel):
         return validate_safe_filename(value)
 
 
+class TaskInputContext(ContractModel):
+    """User intent and UI hints, never filesystem or execution authority."""
+
+    raw_user_text: str = Field(max_length=100_000)
+    root_goal: str = Field(default="", max_length=100_000)
+    project_root_hint: str = Field(default="", max_length=4096)
+    selected_skill_ids: tuple[OpaqueId, ...] = Field(default=(), max_length=16)
+    execution_strategy: Literal["auto", "dynamic", "static"] = "auto"
+
+
 class InboundEnvelope(ContractModel):
     """A durable, de-duplicated channel event presented to the total gateway."""
 
@@ -205,6 +215,8 @@ class InboundEnvelope(ContractModel):
     idempotency_key: Sha256
     channel_metadata_hash: Sha256
     text: str = Field(default="", max_length=100_000)
+    # Preserve the canonical bytes of persisted envelopes predating this field.
+    task_context: TaskInputContext | None = Field(default=None, exclude_if=lambda value: value is None)
     attachments: tuple[AttachmentRef, ...] = Field(default=(), max_length=20)
     reply_to_message_ref: OpaqueId | None = None
     root_message_ref: OpaqueId | None = None
@@ -308,13 +320,19 @@ class SkillCandidate(ContractModel):
     version: OpaqueId
     sha256: Sha256
     source_ref: OpaqueId
+    title: str = Field(default="", max_length=512, exclude_if=lambda value: not value)
+    summary: str = Field(default="", max_length=4096, exclude_if=lambda value: not value)
     score_millis: int = Field(ge=0, le=1000)
     required_actions: tuple[ActionId, ...] = Field(default=(), max_length=256)
+    # Omit an empty extension to preserve stored pre-upgrade selection digests.
+    available_optional_actions: tuple[ActionId, ...] = Field(
+        default=(), max_length=256, exclude_if=lambda value: not value
+    )
     missing_actions: tuple[ActionId, ...] = Field(default=(), max_length=256)
     incompatible_reasons: tuple[ReasonCode, ...] = Field(default=(), max_length=32)
     compatible: bool
 
-    @field_validator("required_actions", "missing_actions", "incompatible_reasons")
+    @field_validator("required_actions", "available_optional_actions", "missing_actions", "incompatible_reasons")
     @classmethod
     def validate_sorted_unique_values(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if tuple(sorted(set(value))) != value:

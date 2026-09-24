@@ -575,21 +575,14 @@ def _load_novel_tool_module() -> Any:
 
 
 def _omni_body_skill_root() -> Path:
-    forced = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-    candidates = []
-    if forced:
-        candidates.append(Path(forced).expanduser())
-    candidates.extend([
-        _backend_root() / "omni_body_skill",
-        Path(__file__).resolve().parents[1] / "bundled_skills" / "omni_body_skill",
-    ])
-    if str(os.environ.get("TIANGONG_ALLOW_USER_SKILL_OVERRIDE") or "").strip().lower() in {"1", "true", "yes", "on"}:
-        candidates.insert(1 if forced else 0, Path.home() / ".tiangong" / "v3" / "omni_body_skill")
-    for candidate in candidates:
-        root = candidate.resolve(strict=False)
-        if (root / "api" / "v1" / "v3" / "tools" / "omni_body.py").exists() and (root / "tools" / "omni_body_tool.py").exists():
-            return root
-    raise FileNotFoundError("omni_body_skill_not_found")
+    # Execution implementation comes from the verified installed package. Old
+    # per-user Skill overrides cannot replace the dictionary-bound adapter.
+    _activate_bundled_runtime()
+    import omni_body_skill
+    root = Path(omni_body_skill.__file__).resolve().parent
+    if not (root / "api/v1/v3/tools/omni_body.py").is_file():
+        raise FileNotFoundError("dictionary_execution_adapter_missing")
+    return root
 
 
 def _load_omni_body_module() -> Any:

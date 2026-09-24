@@ -24,6 +24,8 @@ from .models import (
     LegacySkillMethodEvidenceV1,
     MethodMigrationBindingV1,
     ReviewedMethodSourceBindingV1,
+    InstalledMethodSourceBindingV1,
+    _SKILL_METHOD_WORLD_INSTALLED_SCHEMA,
     validate_native_method_path,
     SkillMethodRelationV1,
     SkillMethodWorldError,
@@ -73,7 +75,7 @@ def observe_legacy_skill_method_corpus(
         "actions",
         "tool_boundary",
     }
-    if set(index) != expected_root or index.get("schema") != _LEGACY_SKILL_SCHEMA:
+    if set(index) != expected_root or index.get("schema") not in {_LEGACY_SKILL_SCHEMA, "tiangong.skill-dictionary.v1"}:
         raise SkillMethodWorldError("legacy Skill index schema is incompatible")
     actions = _string_list(index, "actions")
     if not {"skill.route", "skill.list", "skill.get", "skill.read"}.issubset(actions):
@@ -109,13 +111,13 @@ def observe_legacy_skill_method_corpus(
             or "\\" in source_path
             or ".." in posix.parts
             or len(posix.parts) != 2
-            or posix.parts[0] != "deliverable_skills"
+            or posix.parts[0] not in {"deliverable_skills", "skills"}
             or posix.suffix.casefold() != ".md"
             or source_path in seen_paths
         ):
             raise SkillMethodWorldError("legacy Skill source path is unsafe or duplicated")
         seen_paths.add(source_path)
-        authoritative_source_path = f"src/omni_body_skill/{source_path}"
+        authoritative_source_path = ("dictionaries/" if index.get("schema") == "tiangong.skill-dictionary.v1" else "src/omni_body_skill/") + source_path
         source_sha256 = skill_source_hashes.get(authoritative_source_path)
         if not isinstance(source_sha256, str) or _SHA256.fullmatch(source_sha256) is None:
             raise SkillMethodWorldError(
@@ -282,13 +284,14 @@ def _validate_primitive(
 def compile_skill_method_world(
     primitives: tuple[SkillSourcePrimitiveV1, ...],
     *,
-    corpus: LegacySkillMethodCorpusV1,
+    corpus: LegacySkillMethodCorpusV1 | None,
     migration_bindings: tuple[MethodMigrationBindingV1, ...],
     reviewed_source_bindings: tuple[ReviewedMethodSourceBindingV1, ...] = (),
+    installed_source_bindings: tuple[InstalledMethodSourceBindingV1, ...] = (),
 ) -> SkillMethodWorldSnapshotV1:
     """Compile reusable method semantics without creating execution authority."""
 
-    if not corpus.has_valid_sha256():
+    if (corpus is None and migration_bindings) or (corpus is not None and not corpus.has_valid_sha256()):
         raise SkillMethodWorldError("legacy Skill corpus hash is invalid")
     ordered_primitives = tuple(sorted(primitives, key=lambda item: item.method_id))
     method_ids = tuple(item.method_id for item in ordered_primitives)
@@ -297,7 +300,8 @@ def compile_skill_method_world(
 
     ordered_bindings = tuple(sorted(migration_bindings, key=lambda item: item.method_id))
     ordered_native = tuple(sorted(reviewed_source_bindings, key=lambda item: item.method_id))
-    all_binding_ids = tuple(item.method_id for item in ordered_bindings + ordered_native)
+    ordered_installed = tuple(sorted(installed_source_bindings, key=lambda item: item.method_id))
+    all_binding_ids = tuple(item.method_id for item in ordered_bindings + ordered_native + ordered_installed)
     if (tuple(sorted(all_binding_ids)) != method_ids
             or len(set(all_binding_ids)) != len(all_binding_ids)):
         raise SkillMethodWorldError(
@@ -306,10 +310,10 @@ def compile_skill_method_world(
     if any(not item.has_valid_sha256() for item in ordered_bindings):
         raise SkillMethodWorldError("method migration binding hash is invalid")
 
-    evidence_by_id = {item.legacy_skill_id: item for item in corpus.evidence}
+    evidence_by_id = {item.legacy_skill_id: item for item in corpus.evidence} if corpus is not None else {}
     binding_by_method = {item.method_id: item for item in ordered_bindings}
-    native_by_method = {item.method_id: item for item in ordered_native}
-    if ordered_native:
+    native_by_method = {item.method_id: item for item in ordered_native + ordered_installed}
+    if ordered_native or ordered_installed:
         steps = tuple(step for item in ordered_primitives for step in item.method_steps)
         if len(steps) != len(set(steps)):
             raise SkillMethodWorldError("method step identities collide across methods")
@@ -398,9 +402,12 @@ def compile_skill_method_world(
         SkillMethodRelationV1(*item) for item in sorted(relations)
     )
     snapshot = SkillMethodWorldSnapshotV1(
-        schema=(_SKILL_METHOD_WORLD_REVIEWED_SCHEMA if ordered_native else _SKILL_METHOD_WORLD_SCHEMA),
+        schema=(_SKILL_METHOD_WORLD_INSTALLED_SCHEMA if ordered_installed else
+                _SKILL_METHOD_WORLD_REVIEWED_SCHEMA if ordered_native else _SKILL_METHOD_WORLD_SCHEMA),
         reviewed_source_bindings=ordered_native,
-        legacy_corpus_sha256=corpus.corpus_sha256,
+        installed_source_bindings=ordered_installed,
+        legacy_corpus_sha256=(corpus.corpus_sha256 if corpus is not None else
+                             canonical_sha256({"domain": "tiangong.method-world.no-legacy-corpus.v1"})),
         method_sources_sha256=method_sources_sha256,
         primitives=ordered_primitives,
         migration_bindings=ordered_bindings,

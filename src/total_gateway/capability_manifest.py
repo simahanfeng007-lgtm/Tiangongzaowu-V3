@@ -163,6 +163,8 @@ def load_model_capability_manifest(
             raise SkillSelectionError(
                 "model capability schema binding is invalid"
             ) from exc
+        from capability_dictionary import load_dictionary
+        readiness = load_dictionary().readiness(action_id)
         actions.append(
             CapabilityAction(
                 action_id=action_id,
@@ -176,7 +178,8 @@ def load_model_capability_manifest(
                 max_runtime_ms=3_600_000,
                 max_output_bytes=536_870_912,
                 max_tool_calls=10_000,
-                available=True,
+                available=readiness["ready"],
+                unavailable_reason=None if readiness["ready"] else ";".join(readiness["reasons"]),
                 model_visible=True,
             )
         )

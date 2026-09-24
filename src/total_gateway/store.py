@@ -15702,7 +15702,7 @@ class GatewayStateStore:
             if (
                 selected is None
                 or not selected.compatible
-                or selected.required_actions != grant.allowed_action_ids
+                or tuple(sorted(set(selected.required_actions) | set(selected.available_optional_actions))) != grant.allowed_action_ids
             ):
                 raise StoreConflictError("Skill activation actions do not match the compatible candidate")
             existing = self._connection.execute(

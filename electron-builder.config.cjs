@@ -165,6 +165,7 @@ function nativeResources() {
   return [
     resource(path.join(runtimeRoot, "total-gateway"), "total-gateway"),
     resource(path.join(stageRoot, "release"), "release"),
+    resource(path.join(appRoot, "dictionaries"), "dictionaries"),
     // pip-generated launchers bind the publisher machine's absolute Python
     // path. Product code invokes modules through python.exe -m instead.
     resource(path.join(appRoot, "runtime", "python312"), "python", ["!Scripts/**"]),

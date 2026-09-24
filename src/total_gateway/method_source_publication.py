@@ -91,6 +91,7 @@ def _snapshot_payload(snapshot: SkillMethodWorldSnapshotV1) -> dict:
 
 
 def _snapshot_load(value: dict) -> SkillMethodWorldSnapshotV1:
+    from world_understanding.skill_method_world.models import InstalledMethodSourceBindingV1
     fields = dict(value)
     fields["primitives"] = tuple(SkillSourcePrimitiveV1.model_validate_json(canonical_json_bytes(p)) for p in fields["primitives"])
     fields["migration_bindings"] = tuple(MethodMigrationBindingV1(**{
@@ -101,6 +102,10 @@ def _snapshot_load(value: dict) -> SkillMethodWorldSnapshotV1:
     fields["reviewed_source_bindings"] = tuple(ReviewedMethodSourceBindingV1(**{
         k: v for k, v in b.items() if k != "schema"
     }) for b in natives)
+    installed = fields.pop("installed_source_bindings", ())
+    fields["installed_source_bindings"] = tuple(InstalledMethodSourceBindingV1(**{
+        k: v for k, v in b.items() if k != "schema"
+    }) for b in installed)
     snapshot = SkillMethodWorldSnapshotV1(**fields)
     if canonical_json_bytes(_snapshot_payload(snapshot)) != canonical_json_bytes(value):
         raise MethodSourceReviewError("method archive snapshot fields drifted")

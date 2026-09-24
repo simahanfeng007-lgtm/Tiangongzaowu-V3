@@ -23,8 +23,8 @@ EXPECTED_METHOD_IDS = (
 
 def _production_inputs() -> tuple[dict, str, dict[str, str]]:
     repository_root = Path(__file__).resolve().parents[1]
-    skill_root = repository_root / "src" / "omni_body_skill"
-    index_path = skill_root / "registry" / "skill_router_index.json"
+    skill_root = repository_root / "dictionaries"
+    index_path = skill_root / "skills" / "catalog.json"
     index_bytes = index_path.read_bytes()
     index = json.loads(index_bytes.decode("utf-8", errors="strict"))
     source_hashes: dict[str, str] = {}

@@ -40,8 +40,8 @@ from .skill_selection import load_filesystem_skill_catalog
 RELEASE_MANIFEST_FILENAME = "release-manifest.json"
 MAX_RELEASE_MANIFEST_BYTES = 4 * 1024 * 1024
 _BACKEND_ROOT = Path("app/backend/tiangong-backend")
-_REGISTRY_ROOT = _BACKEND_ROOT / "_internal/omni_body_skill/registry"
-_SKILL_ROOT = _BACKEND_ROOT / "_internal/omni_body_skill"
+_REGISTRY_ROOT = Path("dictionaries/registry")
+_SKILL_ROOT = Path("dictionaries")
 
 
 class ReleaseManifestError(RuntimeError):
@@ -380,7 +380,7 @@ def _generate_release_manifest(root: Path) -> ReleaseManifest:
     )
     skill_index_path = _safe_file(
         root,
-        (_REGISTRY_ROOT / "skill_router_index.json").as_posix(),
+        (_SKILL_ROOT / "skills/catalog.json").as_posix(),
     )
 
     package = _strict_json(package_path)

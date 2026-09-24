@@ -45,7 +45,7 @@ def source_copy(tmp_path_factory):
             elif original.is_file():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(original.read_bytes())
-    manifest = "src/omni_body_skill/registry/capability_manifest.generated.json"
+    manifest = "dictionaries/registry/capability_manifest.generated.json"
     (root / manifest).write_bytes((production / manifest).read_bytes())
     for command in (("init", "-q"), ("add", "."), ("commit", "-qm", "Frozen production source bytes for integration QA")):
         subprocess.run(["git", "-C", str(root), "-c", "core.autocrlf=false",
@@ -56,7 +56,7 @@ def source_copy(tmp_path_factory):
 
 def _installed_for_root(tmp_path, monkeypatch, root):
     from v3 import world_understanding_production as production
-    authority = load_action_authority(root / "src/omni_body_skill/registry/capability_manifest.generated.json", generated_at_ms=0)
+    authority = load_action_authority(root / "dictionaries/registry/capability_manifest.generated.json", generated_at_ms=0)
     gateway = GatewayStateStore.open(tmp_path / "gateway.sqlite3", now_ms=1000)
     inbound = _envelope("installed-dictionaries").model_copy(update={"text": "读取目录里的订单 CSV 文件，统计数据并保存汇总报告，然后验证结果"})
     request = gateway.register_request(inbound, ingress_sha256="b" * 64, created_at_ms=1100).entry.request_id

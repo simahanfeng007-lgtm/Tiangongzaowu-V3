@@ -1443,6 +1443,12 @@ export function createActions({ runtime, state, kernel = null }) {
         // message so hidden auto-continuations do not lose the root goal,
         // workspace/project boundary, or tool-batch contract at the 7184 edge.
         message: executionMessage,
+        taskContext: {
+          raw_user_text: message,
+          root_goal: inheritedRootGoal,
+          project_root_hint: activeProjectRoot || "",
+          selected_skill_ids: selectedSkills.map((item) => item.id).filter(Boolean),
+        },
         rootGoal: inheritedRootGoal,
         projectRoot: activeProjectRoot,
         continuation: continuationRequest,

@@ -180,7 +180,7 @@ def test_rehashed_malformed_input_records_are_not_valid_evidence(source, mode):
             "bool_size": {"size_bytes": True}, "negative_size": {"size_bytes": -1},
             "oversize": {"size_bytes": 33 * 1024 * 1024}, "bad_hash": {"content_sha256": "A" * 64},
             "unsafe_path": {"path": "src/../escape.py"},
-            "generated_manifest": {"path": "src/omni_body_skill/registry/capability_manifest.generated.json"},
+            "generated_manifest": {"path": "dictionaries/registry/capability_manifest.generated.json"},
         }[mode]
         modified = replace(inputs, files=tuple(sorted(
             (replace(row, **fields) if row == entry else row for row in rows), key=lambda row: row.path,

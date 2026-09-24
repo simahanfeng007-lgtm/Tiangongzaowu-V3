@@ -126,107 +126,14 @@ def detect_profile(provider: str | None = None, model: str | None = None, endpoi
 
 
 def _omni_parameters_schema(strict: bool = False) -> Dict[str, Any]:
-    schema: Dict[str, Any] = {
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "description": "要执行的 Omni Body 动作。直接从已实现 action 中选择，例如 file.write/file.read/file.list/code.read/code.write/code.patch_replace/shell.run/quality.run_tests/qc.*/deliverable.package/docx.create/pptx.create/sheet.create/pdf.extract_text/web.search/mcp.servers.list/mcp.tools.list/mcp.tool.call。优先直接调用生产 action。"},
-            "target": {"type": "string", "description": "主目标：文件路径、URL、对象ID、输出路径或空字符串。"},
-            "args": {
-                "type": "object",
-                "description": (
-                    "动作专用参数。例如 content(文件内容)、query(搜索词)、command(shell命令)、job(任务描述)等。"
-                ),
-            },
-            "_task_profile": {
-                "type": "object",
-                "description": "可选的任务理解建议。轻量任务可省略；Runtime 会在工具执行前移除，并只把用户目标与真实证据作为验收权威。",
-                "properties": {
-                    "schema": {"type": "string", "enum": ["tiangong.v3.task_profile.v2"]},
-                    "proposed_level": {"type": "string", "enum": ["L1", "L2", "L3"]},
-                    "desired_facts": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "fact_id": {"type": "string"},
-                                "kind": {"type": "string", "enum": ["observation", "effect", "execution", "delivery"]},
-                                "target": {"type": "string"},
-                                "success_condition": {"type": "string"},
-                            },
-                            "required": ["fact_id", "kind"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "plan_hint": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "step_id": {"type": "string"},
-                                "action": {"type": "string"},
-                                "target": {"type": "string"},
-                                "depends_on": {"type": "array", "items": {"type": "string"}},
-                                "acceptance": {"type": "array", "items": {"type": "string"}},
-                            },
-                            "required": ["step_id", "action"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "constraints": {
-                        "type": "object",
-                        "properties": {
-                            "forbidden_tools": {"type": "array", "items": {"type": "string"}},
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "required": ["schema", "proposed_level"],
-                "additionalProperties": False,
-            },
-        },
-        "required": ["action"],
-        "additionalProperties": True,
-    }
-    schema["properties"]["action"]["minLength"] = 1
-    schema["properties"]["action"]["description"] += (
-        " 规范补丁动作是 code.patch_replace；file.patch_replace 仅为兼容别名。"
-        " 受托管小说专用动作不属于通用动作集，只能由已经实际读取的受托管全书 Skill 提供。"
-        " 单章、少量章节、一次性小说协作包、大纲、人物表、线索表或审校文档必须遵循匹配到的交付 Skill，使用 file.write/docx.create 和对应 qc，禁止自行虚构全书规模后升级为整书工程。"
-    )
-    schema["properties"]["target"]["description"] += (
-        " 所有 file/code/quality 路径动作必须提供非空且位于工作区内的 target；不得用空值暗示工作区根。"
-    )
-    schema["properties"]["args"]["description"] += (
-        " code.patch_replace 要求 find，file.copy/move 要求 destination；非法结构会在任何副作用前被拒绝。"
-    )
-    schema["required"] = ["action"]
-    schema["additionalProperties"] = False
-    if strict:
-        schema["additionalProperties"] = False
-    return schema
+    from capability_dictionary import load_dictionary
+    import copy
+    return copy.deepcopy(load_dictionary().host_protocol["parameters"])
 
 
 def _tool_description() -> str:
-    return (
-        "强类型契约：Windows shell.run 使用 cmd.exe，禁止 head/cat/grep/bash/mkdir -p；文件操作与语法检查优先使用结构化 action。"
-        "路径类 action 的 target 必须非空且位于工作区内；code.patch_replace 必须提供 args.find。参数错误后禁止原样重试。\n"
-        "天工 Omni Body 唯一工具入口。只传 action/target/args；风险等级由 Runtime 独立裁决。"
-        "可在顶层 _task_profile 提供建议级别、目标事实和可变 plan_hint；轻量任务可省略。"
-        "Runtime 只从用户目标建立硬事实义务，计划不会成为额外验收项。\n"
-        "可用 action 及能力：\n"
-        "文件: file.read(读文本)/file.write(写文件)/file.list(列目录)/file.mkdir(建目录)/file.copy/file.move/file.delete_to_trash/file.search/file.hash.\n"
-        "文档: docx.create(生成Word)/pptx.create(生成PPT)/pptx.read(检查PPT结构与视觉证据)/sheet.create(生成Excel)/sheet.read(读Excel)/pdf.extract_text(提取PDF文字)/pdf.create_from_text(文字转PDF)/mindmap.create(思维导图).\n"
-        "代码: python.run(运行Python脚本)/shell.run(运行Shell命令)/code.read/code.write/code.patch_replace/quality.python_syntax/quality.run_tests.\n"
-        "压缩: zip.create/zip.extract.\n"
-        "图片: image.info/image.create_canvas/image.resize/image.crop/image.rotate/image.add_text/image.compose/image.convert.\n"
-        "音视频: audio.tone/audio.trim/audio.concat/video.info/video.cut/video.extract_audio/video.add_audio/video.slideshow.\n"
-        "搜索: browser.search_web(网页搜索)/web.search/http.get(读URL)/browser.open.\n"
-        "质检交付: qc.*(质量检查)/deliverable.package(交付打包).\n"
-        "系统: life.body.state.query/life.activity.query/system.capabilities/system.health/rollback.list/rollback.apply.\n"
-        "扩展: mcp.servers.list(列出用户配置的 MCP 服务器)/mcp.tools.list(列出某服务器的工具)/mcp.tool.call(调用 MCP 工具，A3 需用户确认；服务器只能引用用户已配置的名字，不可自造命令)。\n"
-        "受托管小说能力采用最小暴露：通用工具说明不公布其动作名。只有用户明确要求全书/长期多章工程或续作已有托管项目，并且模型实际读取对应受托管 Skill 后，才按该 Skill 公布的动作执行。单章、少量章节、一次性协作资料包不得升级为整书项目。\n"
-        "技能选择有双通道：系统已提供 active/related Skill 时直接读取该 Skill；没有匹配且任务需要专用流程时，模型可调用 skill.route 再 skill.get/skill.read。选定后以具体 Skill 的作用域和工作流为准，通用动作说明不得覆盖它。\n"
-    )
+    from capability_dictionary import load_dictionary
+    return load_dictionary().host_protocol["description"]
 
 
 def render_tool_schema(profile_id: str | None = None, provider: str | None = None, model: str | None = None, style: str | None = None) -> Dict[str, Any]:
@@ -246,7 +153,7 @@ def render_tool_schema(profile_id: str | None = None, provider: str | None = Non
                 "name": TOOL_NAME,
                 "description": _tool_description(),
                 "parameters": params,
-                "strict": bool(prof.get("supports_strict_schema")),
+                "strict": False,
             }],
         }
     if schema_style == "gemini_function_declarations":

@@ -153,6 +153,24 @@ class SkillAuthorityP9Tests(unittest.TestCase):
         self.assertEqual(len(records), 2)
         self.assertEqual({item.record.origin for item in records}, {"system_recommendation", "model_request"})
 
+    def test_available_optional_actions_survive_activation_store_and_progress(self) -> None:
+        definition = skill_catalog().get("skill_word_p9").model_copy(update={"optional_actions": ("file.read", "missing.optional")})
+        self.authority = SkillAuthority(SkillSelectionService(SkillCatalog((definition,))),
+            routing_manifest("docx.create", "file.read"), self.store, self.facts)
+        resolved = self.authority.model_request("skill.get", **self.scope,
+            principal_scope_hash=self.inbound.principal_scope_hash, decided_at_ms=1_400,
+            skill_id="skill_word_p9")
+        grant = resolved.activation
+        self.assertEqual(grant.allowed_action_ids, ("docx.create", "file.read"))
+        self.assertEqual(resolved.resolution.record.candidates[0].available_optional_actions, ("file.read",))
+        status = self.authority.step_check(**self.scope,
+            principal_scope_hash=self.inbound.principal_scope_hash, skill_id=grant.skill_id,
+            activation_sha256=grant.activation_sha256, checked_at_ms=1_500)
+        self.assertEqual(status.pending_actions, ("docx.create",))
+        forged = grant.model_copy(update={"allowed_action_ids": ("docx.create", "file.read", "file.write")}).with_computed_sha256()
+        with self.assertRaisesRegex(StoreConflictError, "actions do not match"):
+            self.store.record_skill_activation(forged)
+
     def test_activation_is_selection_bound_and_fact_ledger_alone_controls_completion(self) -> None:
         resolved = self.authority.model_request(
             "skill.get",

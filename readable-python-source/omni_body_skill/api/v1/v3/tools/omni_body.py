@@ -9,6 +9,9 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any
+from copy import deepcopy
+
+from capability_dictionary import load_dictionary
 
 TOOL_SCHEMA = "tiangong.v3.omni_body.v1"
 TOOL_NAME = "omni_body"
@@ -19,28 +22,7 @@ _BODY_STATE_QUERY_PROVIDER: Any = None
 _LEARNING_INGEST_PROVIDER: Any = None
 
 TOOL_DESCRIPTION: dict[str, Any] = {
-    "name": "omni_body",
-    "description": "统一身体工具入口 / 应用能力总线 / Skill分发器 / 专业应用桥接层 / 模型协议适配层。必须传 action；target 与 args 按动作需要提供，宿主会将缺失值规范化为空字符串和空对象；可用 skill.route/skill.get/skill.read 返回模型可执行Skill，也可执行文件、文档、表格、图片、音视频、质量门、打包、专业应用桥接。learning.ingest 只有在宿主提供验证 token 时才可创建待确认学习卡；该动作不会编译、激活或发布工具。它是工具，不是智能体；不跑隐藏工作流。",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "minLength": 1,
-                "description": "明确动作名，如 life.body.state.query / life.activity.query / skill.route / skill.get / skill.read / file.read / docx.create / pptx.create / pptx.read / qc.ppt.delivery_check / app.adapter.health / deliverable.package / learning.ingest"
-            },
-            "target": {
-                "type": "string",
-                "description": "主操作对象路径、资源ID、应用对象或输出路径"
-            },
-            "args": {
-                "type": "object",
-                "description": "动作专用参数；不得用 goal 代替 action"
-            },
-        },
-        "required": ["action"],
-        "additionalProperties": False
-    },
+    **{key: deepcopy(load_dictionary().host_protocol[key]) for key in ("name", "description", "parameters")},
     "risk": "A4",
     "toolKind": "executable",
     "effect": "execute",
@@ -65,15 +47,9 @@ def _find_skill_root() -> Path | None:
             if root.resolve() == root and (root / "tools" / "omni_body_tool.py").is_file():
                 return root
             return None  # A missing pinned version never falls back to another.
-        # A deployed wrapper belongs to its enclosing skill package even when
-        # the host's default already names the next version. Standalone legacy
-        # wrappers may use the explicit host/user-root fallback once.
+        # A deployed wrapper belongs only to its enclosing verified package.
+        # Standalone legacy wrappers and per-user roots are retired.
         candidates = list(Path(__file__).resolve().parents)
-        env_root = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-        if env_root:
-            candidates.append(Path(env_root).expanduser())
-        if str(os.environ.get("TIANGONG_OMNI_BODY_ALLOW_USER_ROOT") or "").strip().lower() in {"1", "true", "yes", "on"}:
-            candidates.append(Path.home() / ".tiangong" / "v3" / "omni_body_skill")
         for candidate in candidates:
             root = candidate.resolve()
             if (root / "tools" / "omni_body_tool.py").is_file():

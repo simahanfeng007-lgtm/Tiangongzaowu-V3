@@ -12,6 +12,7 @@ from .model_transport_contract import (
     content_text,
     drop_last_role_messages,
     extract_native_roundtrip_context,
+    extract_native_roundtrip_history,
     json_output,
 )
 
@@ -27,10 +28,12 @@ class OpenAIChatTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         payload = dict(canonical_payload)
-        native = extract_native_roundtrip_context(payload, endpoint)
-        if native is not None:
-            messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
-            messages = drop_last_role_messages(messages, role="assistant", count=len(native.results))
+        observations_compacted = payload.pop("__native_observations_compacted", False)
+        history = extract_native_roundtrip_history(payload, endpoint)
+        messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+        messages = drop_last_role_messages(messages, role="assistant",
+            count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
+        for native in history:
             opaque = native.turn.provider_continuation_state.opaque_payload
             opaque = opaque if isinstance(opaque, Mapping) else {}
             replay_calls = opaque.get("assistant_tool_calls") if isinstance(opaque.get("assistant_tool_calls"), list) else []

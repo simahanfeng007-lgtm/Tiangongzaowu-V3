@@ -122,10 +122,10 @@ def frozen_input_result() -> dict[str, Any]:
 
 
 def catalog_baseline_result() -> dict[str, Any]:
-    authority = ROOT / "readable-python-source/omni_body_skill/registry/skill_router_index.json"
-    mirror = ROOT / "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/registry/skill_router_index.json"
-    manifest = ROOT / "readable-python-source/omni_body_skill/registry/capability_manifest.generated.json"
-    manifest_mirror = ROOT / "app/backend/tiangong-backend/v3/bundled_skills/omni_body_skill/registry/capability_manifest.generated.json"
+    authority = ROOT / "dictionaries/skills/catalog.json"
+    mirror = ROOT / "app/dictionaries/skills/catalog.json"
+    manifest = ROOT / "dictionaries/registry/capability_manifest.generated.json"
+    manifest_mirror = ROOT / "app/dictionaries/registry/capability_manifest.generated.json"
     current = {
         "skill_router_authority_sha256": sha256(authority),
         "skill_router_mirror_sha256": sha256(mirror),
@@ -413,7 +413,7 @@ def issue_ledger_result(work: Path) -> dict[str, Any]:
 
 def skill_case_manifest_result() -> dict[str, Any]:
     document = json.loads((ROOT / "tests/v21_cases.yaml").read_text(encoding="utf-8"))
-    catalog = json.loads((ROOT / "readable-python-source/omni_body_skill/registry/skill_router_index.json").read_text(encoding="utf-8"))
+    catalog = json.loads((ROOT / "dictionaries/skills/catalog.json").read_text(encoding="utf-8"))
     expected_ids = [item["id"] for item in catalog["skills"]]
     cases = document.get("skill_cases", [])
     actual_ids = [item.get("skill_id") for item in cases]

@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/build-p12-capability-parity.py"
 TABLE = ROOT / "docs/capability-composition/P12_R1E_CAPABILITY_PARITY_2026-09-20.json"
-INDEX = ROOT / "src/omni_body_skill/registry/skill_router_index.json"
-MANIFEST = ROOT / "src/omni_body_skill/registry/capability_manifest.generated.json"
-SKILLS = ROOT / "src/omni_body_skill"
+INDEX = ROOT / "dictionaries/skills/catalog.json"
+MANIFEST = ROOT / "dictionaries/registry/capability_manifest.generated.json"
+SKILLS = ROOT / "dictionaries"
 
 
 def _table():

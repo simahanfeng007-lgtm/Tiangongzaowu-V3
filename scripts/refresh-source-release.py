@@ -40,6 +40,8 @@ def main() -> int:
     import sys
 
     sys.path.insert(0, str(root / "src"))
+    from capability_dictionary import load_dictionary
+    load_dictionary(root / "dictionaries").verify_published()
     from total_gateway.release_manifest import generate_release_manifest, release_manifest_bytes
 
     manifest = generate_release_manifest(root)

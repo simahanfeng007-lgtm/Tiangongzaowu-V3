@@ -46,7 +46,9 @@ if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     throw "Python environment is unavailable: $VenvPython"
 }
 
-Write-Host "[2/4] Synchronizing generated source mirrors"
+Write-Host "[2/4] Building dictionaries and synchronizing generated source mirrors"
+& $VenvPython (Join-Path $Root "scripts\build-dictionary.py")
+if ($LASTEXITCODE -ne 0) { throw "Dictionary validation failed" }
 & $VenvPython (Join-Path $Root "scripts\sync-generated-sources.py") --write
 if ($LASTEXITCODE -ne 0) { throw "Failed to generate source mirrors" }
 & $VenvPython (Join-Path $Root "scripts\sync-generated-sources.py") --check

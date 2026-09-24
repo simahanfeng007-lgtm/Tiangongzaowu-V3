@@ -37,13 +37,17 @@ def parse_sse_data_line(raw_line: str) -> dict[str, Any] | None:
     if not line.startswith("data:"):
         return None
     data = line[5:].strip()
-    if not data or data == "[DONE]":
+    if not data:
         return None
+    if data == "[DONE]":
+        return {"__stream_done": True}
     try:
         parsed = json.loads(data)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError as exc:
+        raise ValueError("invalid_stream_json") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("invalid_stream_event")
+    return parsed
 
 
 def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, timeout: float = 20.0) -> dict[str, Any]:

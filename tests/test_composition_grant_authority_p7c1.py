@@ -72,7 +72,7 @@ from total_gateway.tickets import TicketSigner
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPABILITY_MANIFEST = (
-    ROOT / "src" / "omni_body_skill" / "registry" / "capability_manifest.generated.json"
+    ROOT / "dictionaries" / "registry" / "capability_manifest.generated.json"
 )
 ZERO = "0" * 64
 COMPONENT_MANIFEST_SHA256 = "c" * 64

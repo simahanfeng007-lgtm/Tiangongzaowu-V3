@@ -245,20 +245,16 @@ class SkillSelectionTests(unittest.TestCase):
 
 
 class FilesystemSkillCatalogTests(unittest.TestCase):
-    INDEX_SHA256 = "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45"
-    CATALOG_SHA256 = "fec4b0709945b614edce5b80aa1a69381ba66b0df85f4bf8f253eb47127d5b35"
-    CAPABILITY_SHA256 = "f97a62d753f77b7c4fcccf5270322cf8aea4baf9cecb408b9ee2ab576a981577"
-
     @classmethod
     def source_root(cls) -> Path:
-        return (
-            Path(__file__).resolve().parents[1]
-            / "app"
-            / "backend"
-            / "tiangong-backend"
-            / "_internal"
-            / "omni_body_skill"
-        )
+        return Path(__file__).resolve().parents[1] / "dictionaries"
+
+    @classmethod
+    def setUpClass(cls):
+        root = cls.source_root()
+        cls.INDEX_SHA256 = hashlib.sha256((root / "skills/catalog.json").read_bytes()).hexdigest()
+        cls.CATALOG_SHA256 = load_filesystem_skill_catalog(root, expected_index_sha256=cls.INDEX_SHA256).catalog.sha256
+        cls.CAPABILITY_SHA256 = hashlib.sha256((root / "registry/capability_manifest.generated.json").read_bytes()).hexdigest()
 
     def test_loads_actual_34_skill_sources_and_pins_content_and_actions(self) -> None:
         loaded = load_filesystem_skill_catalog(
@@ -273,26 +269,26 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
         self.assertEqual(word.version, "v1")
         self.assertEqual(
             word.sha256,
-            "f42c07e0234df77cfc10a7fc45b077d4b0344ad89fef3477b2ebfe63181f13a6",
+            "a0d14acd04b55b3e01a1db3a4f928de495a1caa9138e803520f0ba01aa51c4b4",
         )
         self.assertIn("docx.create", word.required_actions)
-        self.assertIn("qc.docx.delivery_check", word.required_actions)
-        self.assertIn("deliverable.package", word.required_actions)
+        self.assertIn("qc.docx.delivery_check", word.optional_actions)
+        self.assertIn("deliverable.package", word.optional_actions)
         ppt = loaded.catalog.get("skill_ppt_executive_report_worldclass_v1")
         self.assertIsNotNone(ppt)
-        self.assertIn("pptx.read", ppt.required_actions)
+        self.assertIn("pptx.read", ppt.optional_actions)
         mindmap = loaded.catalog.get("skill_mindmap_knowledge_architecture_worldclass_v1")
         self.assertIsNotNone(mindmap)
         self.assertIn("mindmap.create", mindmap.required_actions)
-        self.assertIn("file.read", mindmap.required_actions)
+        self.assertIn("file.read", mindmap.optional_actions)
         long_document = loaded.catalog.get("skill_managed_long_document_worldclass_v1")
         self.assertIsNotNone(long_document)
         self.assertEqual(
             long_document.sha256,
-            "bcdd56d27cbe81c59584f776b5174b3014527b0b0990099fcbfacdb55d591398",
+            "238e0188d09fb6a0afbe9fc4123d44fc453d0242bb1eab57c75765bdbfc89c2f",
         )
         self.assertIn("docx.create", long_document.required_actions)
-        self.assertIn("qc.docx.delivery_check", long_document.required_actions)
+        self.assertIn("qc.docx.delivery_check", long_document.optional_actions)
 
     def test_system_matching_uses_the_pinned_model_action_surface(self) -> None:
         root = self.source_root()
@@ -307,7 +303,7 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
             component_manifest_hash=HASH_C,
             generated_at_ms=100,
         )
-        self.assertEqual(model_capabilities.executable_count, 290)
+        self.assertEqual(model_capabilities.executable_count, 291)
         recommendation = SkillSelectionService(loaded.catalog).system_recommend(
             "\u8bf7\u5236\u4f5c\u5546\u4e1a\u65b9\u6848 Word\u6587\u6863",
             request_id=REQUEST_ID,
@@ -338,7 +334,7 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
         )
         self.assertTrue(managed.candidates[0].compatible)
         self.assertEqual(managed.candidates[0].missing_actions, ())
-        self.assertIn("novel.project.status", managed.candidates[0].required_actions)
+        self.assertIn("novel.project.status", loaded.catalog.get(managed.selected_skill_id).optional_actions)
 
         long_document = SkillSelectionService(loaded.catalog).system_recommend(
             "创建一个二十万字超长文档工程，按章节断点续写并最终交付 DOCX",
@@ -416,7 +412,7 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             copied = Path(temporary) / "skills"
             shutil.copytree(self.source_root(), copied)
-            word_path = copied / "deliverable_skills" / "29_skill_word_business_proposal_worldclass.md"
+            word_path = copied / "skills" / "29_skill_word_business_proposal_worldclass.md"
             word_path.write_bytes(word_path.read_bytes() + b"\nsource drift\n")
             with self.assertRaisesRegex(SkillSelectionError, "catalog digest"):
                 load_filesystem_skill_catalog(

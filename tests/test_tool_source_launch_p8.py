@@ -49,7 +49,7 @@ def installation(source, tmp_path):
 def config(root, tmp_path):
     return GatewayConfig(environment="test", port=0, deployment_mode="embedded",
                          state_root=tmp_path / "state", release_source_root=root,
-                         skill_root=root / "src/omni_body_skill")
+                         skill_root=root / "dictionaries")
 
 
 @pytest.mark.parametrize("actual", [r"\Device\HarddiskVolume4\source\module.py",

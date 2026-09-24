@@ -20,7 +20,7 @@ from .tool_source_candidate import SourceCandidateError, _strict_pairs, _invalid
 from .tool_source_inputs import compile_tool_source_inputs, _read_input
 
 
-_MANIFEST = "src/omni_body_skill/registry/capability_manifest.generated.json"
+_MANIFEST = "dictionaries/registry/capability_manifest.generated.json"
 _MARKER = ".tiangong-generated-source.json"
 
 
@@ -207,9 +207,9 @@ def verify_source_revision(root: Path, *, source_inputs_sha256: str, capability_
     policy = json.loads(policy_raw, object_pairs_hook=_strict_pairs, parse_constant=_invalid_constant)
     retained_bytecode = _verify_bytecode_inventory(policy, inputs)
     if skill_root is not None:
-        allowed = {root / "src/omni_body_skill"}
+        allowed = {root / "dictionaries"}
         for mapping in policy["mappings"]:
-            if mapping["source"] == "src/omni_body_skill":
+            if mapping["source"] == "dictionaries":
                 allowed.update(root / name for name in mapping["targets"])
         if skill_root not in allowed:
             raise SourceLaunchError("source_launch.skill_root_not_owned")
@@ -273,7 +273,7 @@ def preflight_source_revision(config) -> dict[str, object] | None:
                 raise SourceLaunchError("source_launch.skill_manifest_mismatch")
         result = verify_source_revision(root, source_inputs_sha256=payload["source_inputs_sha256"],
                                         capability_sha256=release.capability_manifest_sha256,
-                                        skill_root=(config.skill_root or root / "app/backend/tiangong-backend/_internal/omni_body_skill"))
+                                        skill_root=(config.skill_root or root / "dictionaries"))
         result["release_manifest_sha256"] = release.release_manifest_sha256
         return result
     except SourceLaunchError:

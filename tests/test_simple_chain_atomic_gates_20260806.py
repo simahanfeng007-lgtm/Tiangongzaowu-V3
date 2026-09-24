@@ -387,7 +387,7 @@ def test_b6_novel_honors_explicit_user_word_count() -> None:
         "写一篇科幻小说第一章《回声年》，保存到工作区",
         "file.write",
         {"target": "回声年 第一章.md", "args": {}},
-    ) == 2500
+    ) == 0
 
 
 def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:

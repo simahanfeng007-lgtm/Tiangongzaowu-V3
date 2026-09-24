@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tests" / "v21_cases.yaml"
-CATALOG = ROOT / "readable-python-source" / "omni_body_skill" / "registry" / "skill_router_index.json"
+CATALOG = ROOT / "dictionaries" / "skills" / "catalog.json"
 
 
 def main() -> int:

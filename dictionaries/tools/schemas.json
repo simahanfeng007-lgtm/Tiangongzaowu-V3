@@ -1,0 +1,4091 @@
+{
+  "aliases": {
+    "code.patch": "code.patch_replace",
+    "file.patch": "code.patch_replace",
+    "file.patch_replace": "code.patch_replace"
+  },
+  "arguments": {
+    "code.patch_replace": {
+      "aliases": [
+        "file.patch_replace",
+        "file.patch",
+        "code.patch"
+      ],
+      "args": {
+        "allow_noop": "optional boolean",
+        "count": "optional non-negative integer",
+        "encoding": "optional string",
+        "find": "non-empty literal or regex string (required)",
+        "regex": "optional boolean",
+        "replace": "replacement string (optional; empty deletes the match)"
+      },
+      "required": [
+        "args.find"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) existing file path (required, never a directory)"
+    },
+    "code.write": {
+      "args": {
+        "binary": "optional false",
+        "content": "UTF-8 text (required)",
+        "encoding": "optional utf-8",
+        "language": "optional string",
+        "syntax_check": "boolean; fixed composition write profile requires false"
+      },
+      "required": [
+        "args.content"
+      ],
+      "target": "workspace source file path (required)"
+    },
+    "docx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.sections"
+      ],
+      "args": {
+        "content": "optional inline Markdown/plain text",
+        "sections": "optional array of {heading, level, paragraphs, bullets, table}",
+        "source": "optional existing workspace .md or .txt source; preferred for long documents",
+        "subtitle": "optional subtitle",
+        "title": "optional document title for structured mode"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)"
+    },
+    "file.append": {
+      "args": {
+        "content": "string (required)",
+        "encoding": "optional string"
+      },
+      "required": [
+        "args.content"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)"
+    },
+    "file.copy": {
+      "args": {
+        "destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.destination"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "file.hash": {
+      "args": {},
+      "target": "existing workspace file path (required)"
+    },
+    "file.list": {
+      "args": {
+        "include_hidden": "optional boolean; default false",
+        "max_results": "optional integer 1-10000; default 500",
+        "pattern": "optional non-empty glob string; default *",
+        "recursive": "optional boolean; default false"
+      },
+      "target": "existing workspace directory path (required)"
+    },
+    "file.mkdir": {
+      "args": {
+        "exist_ok": "optional boolean"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) directory path (required)"
+    },
+    "file.move": {
+      "args": {
+        "destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.destination"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "file.read": {
+      "args": {
+        "binary": "optional boolean; default false",
+        "encoding": "optional utf-8 or utf8; text files must be UTF-8 without BOM",
+        "max_chars": "optional integer 1-2000000; maximum text characters or binary preview bytes"
+      },
+      "target": "existing workspace file path (required)"
+    },
+    "file.rename": {
+      "args": {
+        "new_name": "new basename only (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.new_name"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "file.write": {
+      "any_of": [
+        "args.content",
+        "args.base64"
+      ],
+      "args": {
+        "binary": "optional boolean",
+        "content": "string, or base64 when binary=true",
+        "encoding": "optional string"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)"
+    },
+    "git.clone": {
+      "args": {
+        "destination": "new workspace-relative or granted local directory path (required; must not already exist)",
+        "timeout": "optional integer seconds from 10 to 600; default 300"
+      },
+      "note": "Typed network-read capability. Public GitHub HTTPS only; no arbitrary git flags, credentials, submodule recursion, LFS smudge, or shell network access.",
+      "required": [
+        "args.destination"
+      ],
+      "target": "public https://github.com/<owner>/<repo>[.git] repository URL (required; no credentials/query/fragment)"
+    },
+    "image.info": {
+      "args": {},
+      "note": "Returns format, width, height, mode and file evidence after decoding.",
+      "target": "existing PNG/JPEG/image path inside workspace (required)"
+    },
+    "life.body.state.query": {
+      "args": {
+        "recent_limit": "optional integer from 0 to 50",
+        "sections": "optional array: identity|health|emotion|drives|lifecycle|autonomy|environment|evolution|memory|recent_actions|body|context|summary"
+      },
+      "target": "empty; reads this Life's current state"
+    },
+    "mindmap.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.tree"
+      ],
+      "args": {
+        "content": "optional inline indented outline",
+        "opml": "optional boolean; also emit .opml",
+        "source": "optional existing workspace .md or .txt indented outline",
+        "title": "map root title",
+        "tree": "optional nested object/array tree"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .md path (required)"
+    },
+    "novel.blueprint.assist": {
+      "args": {
+        "batch_size": "optional integer 1-20",
+        "previous_energy": "optional non-negative integer"
+      },
+      "target": "managed novel project directory (required)"
+    },
+    "novel.blueprint.compile": {
+      "args": {},
+      "target": "managed novel project directory (required)"
+    },
+    "novel.blueprint.patch": {
+      "args": {
+        "changes": "non-empty merge object",
+        "create_if_missing": "optional boolean",
+        "expected_revision": "optional non-negative integer",
+        "section": "supported section",
+        "selector": "{} for object sections; exactly {id: ...} or chapters {number: ...} for list sections"
+      },
+      "required": [
+        "args.section",
+        "args.selector",
+        "args.changes"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.blueprint.update": {
+      "args": {
+        "data": "direct JSON array for list sections; JSON object for story/calendar/settings; never wrap arrays in item/items",
+        "expected_revision": "optional non-negative integer",
+        "replace_all": "must be omitted for list sections; destructive whole-list replacement is forbidden",
+        "section": "supported blueprint section"
+      },
+      "required": [
+        "args.section",
+        "args.data"
+      ],
+      "section_contracts": {
+        "calendar": {
+          "start_tick": "integer",
+          "tick_unit": "minute|hour|day|month|year",
+          "ticks_per_year": "positive integer"
+        },
+        "chapters[]": {
+          "duration_ticks": "positive integer",
+          "event_ids": "non-empty ids bound to this chapter",
+          "locations": "non-empty ids",
+          "number": "every integer from 1 through project.planned_chapters",
+          "participants": "non-empty ids",
+          "required_outcomes": "non-empty tags",
+          "start_tick": "integer",
+          "theme_tags": "non-empty tags",
+          "title": "string"
+        },
+        "characters[]": {
+          "age_at_start": "non-negative integer consistent with calendar",
+          "birth_tick": "integer",
+          "id": "unique string",
+          "initial": "object with location and realm",
+          "name": "string"
+        },
+        "plot_events[]": {
+          "chapter": "planned chapter number",
+          "duration_ticks": "positive integer",
+          "evidence_terms": "1-3 concrete prose terms",
+          "id": "unique string",
+          "location": "declared location id",
+          "participants": "non-empty character id array",
+          "phase": "setup|develop|turn|close",
+          "start_tick": "integer"
+        },
+        "story": {
+          "core_conflict": "non-empty central conflict",
+          "ending": "non-empty ending direction",
+          "protected_anchors": "non-empty immutable anchor id array",
+          "soul": "non-empty story soul",
+          "themes": "non-empty string array"
+        }
+      },
+      "target": "managed novel project directory (required)"
+    },
+    "novel.blueprint.upsert_many": {
+      "args": {
+        "expected_revision": "optional non-negative integer",
+        "items": "non-empty array; at most 15 chapters or 30 objects for other sections; chapters require number, other sections may omit id for backend allocation",
+        "section": "list section only"
+      },
+      "required": [
+        "args.section",
+        "args.items"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.chapter.checkout": {
+      "args": {
+        "chapter_number": "positive integer"
+      },
+      "required": [
+        "args.chapter_number"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.chapter.submit": {
+      "args": {
+        "actual": {
+          "convergence_proof": {
+            "maintained_anchor_ids": [
+              "protected anchor id"
+            ],
+            "reason": "required only for high deviation"
+          },
+          "emotional_transactions": [
+            {
+              "account_id": "declared id",
+              "evidence_terms": [
+                "exact prose term"
+              ],
+              "factors": "0..1 factor object",
+              "kind": "deposit|withdraw",
+              "related_event_ids": [
+                "event id"
+              ]
+            }
+          ],
+          "events": [
+            {
+              "duration_ticks": "positive integer",
+              "evidence_terms": [
+                "exact prose term"
+              ],
+              "id": "planned event id",
+              "location": "location id",
+              "participants": [
+                "character id"
+              ],
+              "start_tick": "integer",
+              "status": "progressed|turned|closed"
+            }
+          ],
+          "foreshadow_ops": [
+            {
+              "id": "id",
+              "note": "string",
+              "op": "planted|reinforced|revealed|resolved"
+            }
+          ],
+          "relationship_changes": [
+            {
+              "character_ids": [
+                "id"
+              ],
+              "delta": "number",
+              "relationship_id": "declared id",
+              "state": "string"
+            }
+          ],
+          "state_changes": [
+            {
+              "character_id": "id",
+              "field": "alive|location|realm|injuries|inventory|knowledge",
+              "from": "optional current value",
+              "op": "optional set|add|remove",
+              "to": "new value"
+            }
+          ],
+          "summary": "required factual summary string",
+          "theme_tags": [
+            "string"
+          ]
+        },
+        "chapter_number": "positive integer",
+        "content": "final prose string",
+        "lease_id": "checkout lease id",
+        "title": "non-empty string"
+      },
+      "required": [
+        "args.lease_id",
+        "args.chapter_number",
+        "args.title",
+        "args.content",
+        "args.actual"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.context.query": {
+      "args": {
+        "entity_ids": "array of stable ids",
+        "entity_type": "character|event|foreshadow|relationship|chapter|emotion"
+      },
+      "required": [
+        "args.entity_type",
+        "args.entity_ids"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.mobility.align_initial_many": {
+      "args": {
+        "expected_revision": "optional non-negative integer",
+        "items": "1-30 objects with character_id and declared first physical location"
+      },
+      "required": [
+        "args.items"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.plan.rebase": {
+      "args": {
+        "chapter_updates": "future-only update array",
+        "event_updates": "future-only update array",
+        "expected_state_hash": "current canonical state hash",
+        "maintained_anchor_ids": "all protected anchor ids",
+        "reason": "non-empty explanation"
+      },
+      "required": [
+        "args.expected_state_hash",
+        "args.reason",
+        "args.event_updates",
+        "args.chapter_updates",
+        "args.maintained_anchor_ids"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.project.audit": {
+      "args": {
+        "scope": "optional all|timeline|events|emotion|files"
+      },
+      "target": "managed novel project directory (required)"
+    },
+    "novel.project.create": {
+      "args": {
+        "genre": "non-empty string",
+        "planned_chapters": "full-book count, integer >= ceil(target_words/5000), never a writing checkpoint",
+        "target_words": "integer >= 1000",
+        "title": "non-empty string"
+      },
+      "required": [
+        "args.title",
+        "args.genre",
+        "args.planned_chapters",
+        "args.target_words"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) new or empty novel project directory (required)"
+    },
+    "novel.project.recover": {
+      "args": {},
+      "target": "managed novel project directory (required)"
+    },
+    "novel.project.status": {
+      "args": {},
+      "target": "managed novel project directory (required)"
+    },
+    "novel.reference.resolve": {
+      "args": {
+        "entity_type": "character|location|event|chapter",
+        "queries": "non-empty label array"
+      },
+      "required": [
+        "args.entity_type",
+        "args.queries"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.scene.design": {
+      "args": {
+        "candidates": "array of 2-3 structured candidates",
+        "trigger_id": "pending emotion trigger id"
+      },
+      "required": [
+        "args.trigger_id",
+        "args.candidates"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.timeline.calculate": {
+      "args": {
+        "operation": "age|arrival|overlap",
+        "operation_fields": "see action schema and repair errors"
+      },
+      "required": [
+        "args.operation"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.timeline.normalize": {
+      "args": {
+        "expected_revision": "optional non-negative integer",
+        "max_shifts": "optional integer 1-256; default 128",
+        "reason": "non-empty explanation"
+      },
+      "required": [
+        "args.reason"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "novel.timeline.shift_suffix": {
+      "args": {
+        "delta_ticks": "positive integer gap to insert before the pivot and its chronological suffix",
+        "event_id": "canonical pivot event id",
+        "expected_revision": "optional non-negative integer",
+        "reason": "non-empty explanation"
+      },
+      "required": [
+        "args.event_id",
+        "args.delta_ticks",
+        "args.reason"
+      ],
+      "target": "managed novel project directory (required)"
+    },
+    "pptx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.slides"
+      ],
+      "args": {
+        "content": "optional inline slide Markdown",
+        "design_spec": "optional workspace .json path or compact design object returned by template.apply",
+        "slides": "optional array of {title, bullets|body, notes, chart, table, image}",
+        "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
+        "style": "optional named preset or compact design override object",
+        "subtitle": "optional title slide subtitle",
+        "template_id": "optional shipped design template id; defaults to executive_ppt",
+        "title": "optional title slide title"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)"
+    },
+    "pptx.read": {
+      "args": {
+        "max_chars_per_slide": "optional integer from 200 to 20000"
+      },
+      "target": "existing workspace .pptx path (required)"
+    },
+    "python.run": {
+      "any_of": [
+        "target",
+        "args.code"
+      ],
+      "args": {
+        "argv": "optional array",
+        "code": "Python source string required when target is empty",
+        "timeout": "optional positive integer"
+      },
+      "note": "Uses the installed Python runtime, independent of shell PATH. target is an existing .py script; argv are script arguments, not interpreter flags. Use file.write/code.write for script source; the script may generate requested files within its granted workspace. Short checks may use args.code.",
+      "target": "optional workspace-relative (or absolute when allowed) existing .py script"
+    },
+    "qc.ppt.delivery_check": {
+      "args": {
+        "min_slides": "optional positive integer",
+        "min_visual_coverage": "optional ratio from 0 to 1"
+      },
+      "target": "existing workspace .pptx path (required)"
+    },
+    "quality.javascript_syntax": {
+      "args": {
+        "recursive": "optional boolean"
+      },
+      "target": "workspace-relative (or absolute when allowed) .js/.mjs/.cjs file or directory (required)"
+    },
+    "shell.run": {
+      "args": {
+        "command": "string or argv array (required)",
+        "timeout": "optional positive integer"
+      },
+      "required": [
+        "args.command"
+      ],
+      "target": "empty; execution cwd is the backend-owned workspace",
+      "windows_note": "Windows cmd.exe semantics; do not assume python/ffmpeg aliases exist on PATH. Prefer python.run for Python and dedicated video actions for encoding. Read system.health for installed adapters."
+    },
+    "skill.get": {
+      "any_of": [
+        "target",
+        "args.skill_id"
+      ],
+      "args": {
+        "skill_id": "exact skill id"
+      },
+      "target": "exact skill_id (required unless args.skill_id is provided)"
+    },
+    "skill.list": {
+      "args": {
+        "category": "optional exact category",
+        "intent": "optional intent filter"
+      },
+      "target": "optional intent filter"
+    },
+    "skill.read": {
+      "any_of": [
+        "target",
+        "args.skill_id"
+      ],
+      "args": {
+        "skill_id": "exact skill id"
+      },
+      "target": "exact skill_id (required unless args.skill_id is provided)"
+    },
+    "skill.route": {
+      "any_of": [
+        "target",
+        "args.job",
+        "args.context",
+        "args.skill_id"
+      ],
+      "args": {
+        "context": "optional routing context object",
+        "job": "task description",
+        "skill_id": "optional exact skill id"
+      },
+      "target": "optional explicit skill_id; normally empty"
+    },
+    "template.apply": {
+      "args": {
+        "design_output": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) machine-readable design output .json path",
+        "template_id": "template id such as executive_ppt",
+        "variables": "optional content variables object"
+      },
+      "target": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) story/outline output path"
+    },
+    "video.info": {
+      "args": {
+        "timeout": "optional positive integer"
+      },
+      "note": "Read metadata using ffprobe when present or the installed imageio_ffmpeg adapter.",
+      "target": "existing video path inside workspace (required)"
+    },
+    "video.slideshow": {
+      "args": {
+        "audio": "optional false; slideshow produces silent video",
+        "codec": "optional libx264 (default), libx265, or mpeg4",
+        "fps": "alias for frame_rate; values must agree if both given",
+        "frame_rate": "optional positive number up to 240; 24 means 24 frames per second",
+        "images": "non-empty array of existing image paths, in playback order; use the same image format",
+        "output": "optional output path when target is empty",
+        "pix_fmt": "optional yuv420p (default), yuv444p, or rgb24",
+        "seconds_per_image": "optional positive duration per still image; default 2; exclusive with frame_rate/fps",
+        "size": "optional WIDTHxHEIGHT such as 640x360",
+        "timeout": "optional positive integer; capped by media execution profile"
+      },
+      "note": "For a 3-second animation at 24fps provide 72 actual image frames and frame_rate=24. Unknown parameters are rejected rather than ignored.",
+      "required": [
+        "args.images"
+      ],
+      "target": "output .mp4 path inside workspace (or args.output)"
+    }
+  },
+  "results": {
+    "code.patch_replace": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "replacements": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence",
+            "replacements"
+          ],
+          "runtime_action": "code.patch_replace",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "code.patch_replace",
+      "type": "object"
+    },
+    "code.write": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "code.write",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "code.write",
+      "type": "object"
+    },
+    "file.hash": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "schema": "tiangong.omni-action-value-schema.v1",
+              "type": "string"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "path",
+            "sha256",
+            "size_bytes"
+          ],
+          "runtime_action": "file.hash",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "file.hash",
+      "type": "object"
+    },
+    "file.list": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "entries": {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "modified": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "path": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rel_path": {
+                    "type": "string"
+                  },
+                  "size_bytes": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "pattern": "^(file|dir)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "path",
+                  "rel_path",
+                  "type",
+                  "size_bytes",
+                  "modified"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "root": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "root",
+            "count",
+            "entries"
+          ],
+          "runtime_action": "file.list",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "file.list",
+      "type": "object"
+    },
+    "file.mkdir": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A2"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "file.mkdir",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "file.mkdir",
+      "type": "object"
+    },
+    "file.read": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "oneOf": [
+            {
+              "required": [
+                "content",
+                "size_chars",
+                "evidence"
+              ]
+            },
+            {
+              "required": [
+                "base64_preview",
+                "size_bytes",
+                "mime"
+              ]
+            }
+          ],
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "base64_preview": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "mime": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "size_chars": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "success": {
+              "const": true
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "path",
+            "truncated"
+          ],
+          "runtime_action": "file.read",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "file.read",
+      "type": "object"
+    },
+    "file.write": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "file.write",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "file.write",
+      "type": "object"
+    },
+    "life.body.state.query": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "authority": {
+              "type": "object"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "life": {
+              "type": "object"
+            },
+            "ok": {
+              "const": true
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "read_only": {
+              "const": true
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "runtime_body": {
+              "type": "object"
+            },
+            "schema": {
+              "const": "tiangong.gateway.self-body-state.v1"
+            },
+            "selected_sections": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "state_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "schema": "tiangong.omni-action-value-schema.v1",
+              "type": "string"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "ok",
+            "read_only",
+            "schema",
+            "selected_sections",
+            "authority",
+            "life",
+            "runtime_body",
+            "state_sha256"
+          ],
+          "runtime_action": "life.body.state.query",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "life.body.state.query",
+      "type": "object"
+    },
+    "pptx.read": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "inspection": {
+              "additionalProperties": true,
+              "properties": {
+                "slide_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "slides": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "slides",
+                "slide_count"
+              ],
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "path",
+            "inspection",
+            "evidence"
+          ],
+          "runtime_action": "pptx.read",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "pptx.read",
+      "type": "object"
+    },
+    "python.run": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "command": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "execution": {
+              "additionalProperties": true,
+              "properties": {
+                "changed_bytes": {
+                  "maximum": 4194304,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "changed_files": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "commit_state": {
+                  "const": "committed"
+                },
+                "containment": {
+                  "const": "windows-appcontainer"
+                },
+                "deleted_files": {
+                  "maxItems": 0,
+                  "type": "array"
+                },
+                "execution_state": {
+                  "const": "completed"
+                },
+                "network": {
+                  "const": "denied"
+                },
+                "ok": {
+                  "const": true
+                },
+                "outputs_truncated": {
+                  "const": false
+                },
+                "receipt_role": {
+                  "const": "execution"
+                },
+                "returncode": {
+                  "const": 0
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "stdout": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "returncode",
+                "stdout",
+                "stderr",
+                "ok",
+                "receipt_role",
+                "execution_state",
+                "commit_state",
+                "outputs_truncated",
+                "containment",
+                "network",
+                "changed_files",
+                "deleted_files",
+                "changed_bytes"
+              ],
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A4"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "command",
+            "execution"
+          ],
+          "runtime_action": "python.run",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "python.run",
+      "type": "object"
+    },
+    "qc.ppt.delivery_check": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": true,
+              "properties": {
+                "acceptance": {
+                  "type": "boolean"
+                },
+                "grade": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "issues": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "score": {
+                  "maximum": 100,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "executive_ppt_delivery"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "type",
+                "score",
+                "grade",
+                "issues",
+                "warnings",
+                "acceptance"
+              ],
+              "type": "object"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "result",
+            "evidence"
+          ],
+          "runtime_action": "qc.ppt.delivery_check",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "qc.ppt.delivery_check",
+      "type": "object"
+    },
+    "skill.get": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "activation": {
+              "type": "object"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "activation": {
+                  "type": "object"
+                },
+                "markdown": {
+                  "type": "string"
+                },
+                "selection": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "markdown",
+                "selection",
+                "activation"
+              ],
+              "type": "object"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "result",
+            "activation",
+            "evidence"
+          ],
+          "runtime_action": "skill.get",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "skill.get",
+      "type": "object"
+    },
+    "skill.list": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "items": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "compatible": {
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "incompatible_reasons": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "missing_actions": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "required_actions": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "score_millis": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "source_ref": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "sha256",
+                      "source_ref",
+                      "score_millis",
+                      "required_actions",
+                      "missing_actions",
+                      "compatible",
+                      "incompatible_reasons"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "selection": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "items",
+                "selection"
+              ],
+              "type": "object"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "result",
+            "evidence"
+          ],
+          "runtime_action": "skill.list",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "skill.list",
+      "type": "object"
+    },
+    "skill.read": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "gongju": {
+          "const": "omni_body"
+        },
+        "llm_brief": {
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "ok": {
+          "const": true
+        },
+        "result": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "activation": {
+              "type": "object"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "activation": {
+                  "type": "object"
+                },
+                "markdown": {
+                  "type": "string"
+                },
+                "selection": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "markdown",
+                "selection",
+                "activation"
+              ],
+              "type": "object"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "result",
+            "activation",
+            "evidence"
+          ],
+          "runtime_action": "skill.read",
+          "type": "object"
+        },
+        "schema": {
+          "const": "tiangong.v3.omni_body.v1"
+        },
+        "target": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "zhuangtai": {
+          "const": "wancheng"
+        }
+      },
+      "required": [
+        "schema",
+        "ok",
+        "zhuangtai",
+        "gongju",
+        "action",
+        "target",
+        "result",
+        "llm_brief",
+        "evidence"
+      ],
+      "result_action": "skill.read",
+      "type": "object"
+    }
+  },
+  "values": {
+    "code.patch_replace": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "replacements": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence",
+            "replacements"
+          ],
+          "runtime_action": "code.patch_replace",
+          "type": "object"
+        }
+      }
+    },
+    "code.write": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "code.write",
+          "type": "object"
+        }
+      }
+    },
+    "file.hash": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "schema": "tiangong.omni-action-value-schema.v1",
+              "type": "string"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "path",
+            "sha256",
+            "size_bytes"
+          ],
+          "runtime_action": "file.hash",
+          "type": "object"
+        }
+      },
+      "sha256": {
+        "json_pointer": "/result/sha256",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "pattern": "^[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      }
+    },
+    "file.list": {
+      "entries": {
+        "json_pointer": "/result/entries",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "modified": {
+                "type": "number"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "rel_path": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "type": {
+                "pattern": "^(file|dir)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "path",
+              "rel_path",
+              "type",
+              "size_bytes",
+              "modified"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "entries": {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "modified": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "path": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rel_path": {
+                    "type": "string"
+                  },
+                  "size_bytes": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "pattern": "^(file|dir)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "path",
+                  "rel_path",
+                  "type",
+                  "size_bytes",
+                  "modified"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "root": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "root",
+            "count",
+            "entries"
+          ],
+          "runtime_action": "file.list",
+          "type": "object"
+        }
+      }
+    },
+    "file.mkdir": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A2"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "file.mkdir",
+          "type": "object"
+        }
+      }
+    },
+    "file.read": {
+      "content": {
+        "json_pointer": "/result/content",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "oneOf": [
+            {
+              "required": [
+                "content",
+                "size_chars",
+                "evidence"
+              ]
+            },
+            {
+              "required": [
+                "base64_preview",
+                "size_bytes",
+                "mime"
+              ]
+            }
+          ],
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "base64_preview": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "mime": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A0"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "size_chars": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "success": {
+              "const": true
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "path",
+            "truncated"
+          ],
+          "runtime_action": "file.read",
+          "type": "object"
+        }
+      }
+    },
+    "file.write": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A3"
+            },
+            "snapshots": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "success": {
+              "const": true
+            },
+            "write_evidence": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "post": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "pre": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bytes": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "is_dir",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "type": "object"
+                },
+                "rollback": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "backup_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "backup_path"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "pre",
+                "post",
+                "changed",
+                "rollback"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "snapshots",
+            "evidence",
+            "write_evidence"
+          ],
+          "runtime_action": "file.write",
+          "type": "object"
+        }
+      }
+    },
+    "life.body.state.query": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "life": {
+        "json_pointer": "/result/life",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "runtime_body": {
+        "json_pointer": "/result/runtime_body",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "state_sha256": {
+        "json_pointer": "/result/state_sha256",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "pattern": "^[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      }
+    },
+    "pptx.read": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "inspection": {
+        "json_pointer": "/result/inspection",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "path": {
+        "json_pointer": "/result/path",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      }
+    },
+    "python.run": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "result": {
+        "json_pointer": "/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "command": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "elapsed_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "execution": {
+              "additionalProperties": true,
+              "properties": {
+                "changed_bytes": {
+                  "maximum": 4194304,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "changed_files": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "commit_state": {
+                  "const": "committed"
+                },
+                "containment": {
+                  "const": "windows-appcontainer"
+                },
+                "deleted_files": {
+                  "maxItems": 0,
+                  "type": "array"
+                },
+                "execution_state": {
+                  "const": "completed"
+                },
+                "network": {
+                  "const": "denied"
+                },
+                "ok": {
+                  "const": true
+                },
+                "outputs_truncated": {
+                  "const": false
+                },
+                "receipt_role": {
+                  "const": "execution"
+                },
+                "returncode": {
+                  "const": 0
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "stdout": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "returncode",
+                "stdout",
+                "stderr",
+                "ok",
+                "receipt_role",
+                "execution_state",
+                "commit_state",
+                "outputs_truncated",
+                "containment",
+                "network",
+                "changed_files",
+                "deleted_files",
+                "changed_bytes"
+              ],
+              "type": "object"
+            },
+            "op_id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_level": {
+              "const": "A4"
+            },
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "success",
+            "op_id",
+            "action",
+            "risk_level",
+            "elapsed_seconds",
+            "command",
+            "execution"
+          ],
+          "runtime_action": "python.run",
+          "type": "object"
+        }
+      }
+    },
+    "qc.ppt.delivery_check": {
+      "acceptance": {
+        "json_pointer": "/result/result/acceptance",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "boolean"
+        }
+      },
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "report": {
+        "json_pointer": "/result/result",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "score": {
+        "json_pointer": "/result/result/score",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "maximum": 100,
+          "minimum": 0,
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "integer"
+        }
+      }
+    },
+    "skill.get": {
+      "activation": {
+        "json_pointer": "/result/result/activation",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "markdown": {
+        "json_pointer": "/result/result/markdown",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "selection": {
+        "json_pointer": "/result/result/selection",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      }
+    },
+    "skill.list": {
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "items": {
+        "json_pointer": "/result/result/items",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "compatible": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "incompatible_reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "missing_actions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "required_actions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "score_millis": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "sha256",
+              "source_ref",
+              "score_millis",
+              "required_actions",
+              "missing_actions",
+              "compatible",
+              "incompatible_reasons"
+            ],
+            "type": "object"
+          },
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "array"
+        }
+      },
+      "selection": {
+        "json_pointer": "/result/result/selection",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      }
+    },
+    "skill.read": {
+      "activation": {
+        "json_pointer": "/result/result/activation",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      },
+      "fact_id": {
+        "source_kind": "FACT_ID",
+        "value_schema": {
+          "pattern": "^fact_[0-9a-f]{64}$",
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "markdown": {
+        "json_pointer": "/result/result/markdown",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "string"
+        }
+      },
+      "selection": {
+        "json_pointer": "/result/result/selection",
+        "source_kind": "RESULT_PAYLOAD",
+        "value_schema": {
+          "schema": "tiangong.omni-action-value-schema.v1",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

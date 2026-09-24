@@ -8,6 +8,8 @@ rollback snapshots.
 """
 from __future__ import annotations
 
+from capability_dictionary import load_dictionary
+
 import copy
 import difflib
 import hashlib
@@ -19,11 +21,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-CANONICAL_ACTION_ALIASES: dict[str, str] = {
-    "file.patch_replace": "code.patch_replace",
-    "file.patch": "code.patch_replace",
-    "code.patch": "code.patch_replace",
-}
+CANONICAL_ACTION_ALIASES = load_dictionary().schemas['aliases']
 
 NOVEL_ACTIONS = frozenset(
     {
@@ -95,300 +93,7 @@ PATH_TARGET_ACTIONS = frozenset(
     }
 )
 
-ACTION_ARGUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
-    "file.read": {
-        "target": "existing workspace file path (required)",
-        "args": {"binary": "optional boolean; default false",
-                 "max_chars": "optional integer 1-2000000; maximum text characters or binary preview bytes",
-                 "encoding": "optional utf-8 or utf8; text files must be UTF-8 without BOM"},
-    },
-    "file.list": {
-        "target": "existing workspace directory path (required)",
-        "args": {"pattern": "optional non-empty glob string; default *",
-                 "recursive": "optional boolean; default false",
-                 "include_hidden": "optional boolean; default false",
-                 "max_results": "optional integer 1-10000; default 500"},
-    },
-    "file.hash": {"target": "existing workspace file path (required)", "args": {}},
-    "life.body.state.query": {
-        "target": "empty; reads this Life's current state",
-        "args": {
-            "sections": "optional array: identity|health|emotion|drives|lifecycle|autonomy|environment|evolution|memory|recent_actions|body|context|summary",
-            "recent_limit": "optional integer from 0 to 50",
-        },
-    },
-    "template.apply": {
-        "target": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) story/outline output path",
-        "args": {
-            "template_id": "template id such as executive_ppt",
-            "variables": "optional content variables object",
-            "design_output": "optional workspace-relative (or absolute path when the user enabled absolute-path permission) machine-readable design output .json path",
-        },
-    },
-    "qc.ppt.delivery_check": {
-        "target": "existing workspace .pptx path (required)",
-        "args": {"min_slides": "optional positive integer", "min_visual_coverage": "optional ratio from 0 to 1"},
-    },
-    "skill.route": {
-        "target": "optional explicit skill_id; normally empty",
-        "args": {"job": "task description", "context": "optional routing context object", "skill_id": "optional exact skill id"},
-        "any_of": ["target", "args.job", "args.context", "args.skill_id"],
-    },
-    "skill.list": {
-        "target": "optional intent filter",
-        "args": {"intent": "optional intent filter", "category": "optional exact category"},
-    },
-    "skill.get": {
-        "target": "exact skill_id (required unless args.skill_id is provided)",
-        "args": {"skill_id": "exact skill id"},
-        "any_of": ["target", "args.skill_id"],
-    },
-    "skill.read": {
-        "target": "exact skill_id (required unless args.skill_id is provided)",
-        "args": {"skill_id": "exact skill id"},
-        "any_of": ["target", "args.skill_id"],
-    },
-    "file.write": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
-        "args": {"content": "string, or base64 when binary=true", "binary": "optional boolean", "encoding": "optional string"},
-        "any_of": ["args.content", "args.base64"],
-    },
-    "code.write": {
-        "target": "workspace source file path (required)",
-        "args": {"content": "UTF-8 text (required)", "encoding": "optional utf-8", "binary": "optional false",
-                 "language": "optional string", "syntax_check": "boolean; fixed composition write profile requires false"},
-        "required": ["args.content"],
-    },
-    "file.append": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)",
-        "args": {"content": "string (required)", "encoding": "optional string"},
-        "required": ["args.content"],
-    },
-    "file.mkdir": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) directory path (required)",
-        "args": {"exist_ok": "optional boolean"},
-    },
-    "file.copy": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
-        "args": {"destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)", "overwrite": "optional boolean"},
-        "required": ["args.destination"],
-    },
-    "file.move": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
-        "args": {"destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)", "overwrite": "optional boolean"},
-        "required": ["args.destination"],
-    },
-    "file.rename": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)",
-        "args": {"new_name": "new basename only (required)", "overwrite": "optional boolean"},
-        "required": ["args.new_name"],
-    },
-    "code.patch_replace": {
-        "aliases": ["file.patch_replace", "file.patch", "code.patch"],
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) existing file path (required, never a directory)",
-        "args": {
-            "find": "non-empty literal or regex string (required)",
-            "replace": "replacement string (optional; empty deletes the match)",
-            "regex": "optional boolean",
-            "count": "optional non-negative integer",
-            "allow_noop": "optional boolean",
-            "encoding": "optional string",
-        },
-        "required": ["args.find"],
-    },
-    "quality.javascript_syntax": {
-        "target": "workspace-relative (or absolute when allowed) .js/.mjs/.cjs file or directory (required)",
-        "args": {"recursive": "optional boolean"},
-    },
-    "git.clone": {
-        "target": "public https://github.com/<owner>/<repo>[.git] repository URL (required; no credentials/query/fragment)",
-        "args": {
-            "destination": "new workspace-relative or granted local directory path (required; must not already exist)",
-            "timeout": "optional integer seconds from 10 to 600; default 300",
-        },
-        "required": ["args.destination"],
-        "note": "Typed network-read capability. Public GitHub HTTPS only; no arbitrary git flags, credentials, submodule recursion, LFS smudge, or shell network access.",
-    },
-    "shell.run": {
-        "target": "empty; execution cwd is the backend-owned workspace",
-        "args": {"command": "string or argv array (required)", "timeout": "optional positive integer"},
-        "required": ["args.command"],
-        "windows_note": "cmd.exe semantics; prefer typed file/code actions",
-    },
-    "python.run": {
-        "target": "optional workspace-relative (or absolute when allowed) existing .py script",
-        "args": {"code": "Python source string required when target is empty", "argv": "optional array", "timeout": "optional positive integer"},
-        "any_of": ["target", "args.code"],
-        "note": "Use file.write/code.write for file creation; python.run is not a file-writing substitute.",
-    },
-    "docx.create": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)",
-        "args": {
-            "source": "optional existing workspace .md or .txt source; preferred for long documents",
-            "content": "optional inline Markdown/plain text",
-            "title": "optional document title for structured mode",
-            "subtitle": "optional subtitle",
-            "sections": "optional array of {heading, level, paragraphs, bullets, table}",
-        },
-        "any_of": ["args.source", "args.content", "args.title", "args.sections"],
-    },
-    "pptx.create": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)",
-        "args": {
-            "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
-            "content": "optional inline slide Markdown",
-            "title": "optional title slide title",
-            "subtitle": "optional title slide subtitle",
-            "slides": "optional array of {title, bullets|body, notes, chart, table, image}",
-            "template_id": "optional shipped design template id; defaults to executive_ppt",
-            "design_spec": "optional workspace .json path or compact design object returned by template.apply",
-            "style": "optional named preset or compact design override object",
-        },
-        "any_of": ["args.source", "args.content", "args.title", "args.slides"],
-    },
-    "pptx.read": {
-        "target": "existing workspace .pptx path (required)",
-        "args": {"max_chars_per_slide": "optional integer from 200 to 20000"},
-    },
-    "mindmap.create": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .md path (required)",
-        "args": {
-            "source": "optional existing workspace .md or .txt indented outline",
-            "content": "optional inline indented outline",
-            "title": "map root title",
-            "tree": "optional nested object/array tree",
-            "opml": "optional boolean; also emit .opml",
-        },
-        "any_of": ["args.source", "args.content", "args.tree"],
-    },
-    "novel.project.create": {
-        "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) new or empty novel project directory (required)",
-        "args": {"title": "non-empty string", "genre": "non-empty string", "planned_chapters": "full-book count, integer >= ceil(target_words/5000), never a writing checkpoint", "target_words": "integer >= 1000"},
-        "required": ["args.title", "args.genre", "args.planned_chapters", "args.target_words"],
-    },
-    "novel.project.status": {"target": "managed novel project directory (required)", "args": {}},
-    "novel.project.recover": {"target": "managed novel project directory (required)", "args": {}},
-    "novel.blueprint.update": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "section": "supported blueprint section",
-            "data": "direct JSON array for list sections; JSON object for story/calendar/settings; never wrap arrays in item/items",
-            "expected_revision": "optional non-negative integer",
-            "replace_all": "must be omitted for list sections; destructive whole-list replacement is forbidden",
-        },
-        "required": ["args.section", "args.data"],
-        "section_contracts": {
-            "story": {"soul": "non-empty story soul", "core_conflict": "non-empty central conflict", "ending": "non-empty ending direction", "themes": "non-empty string array", "protected_anchors": "non-empty immutable anchor id array"},
-            "calendar": {"tick_unit": "minute|hour|day|month|year", "ticks_per_year": "positive integer", "start_tick": "integer"},
-            "characters[]": {"id": "unique string", "name": "string", "birth_tick": "integer", "age_at_start": "non-negative integer consistent with calendar", "initial": "object with location and realm"},
-            "plot_events[]": {"id": "unique string", "chapter": "planned chapter number", "phase": "setup|develop|turn|close", "start_tick": "integer", "duration_ticks": "positive integer", "participants": "non-empty character id array", "location": "declared location id", "evidence_terms": "1-3 concrete prose terms"},
-            "chapters[]": {"number": "every integer from 1 through project.planned_chapters", "title": "string", "event_ids": "non-empty ids bound to this chapter", "participants": "non-empty ids", "locations": "non-empty ids", "start_tick": "integer", "duration_ticks": "positive integer", "required_outcomes": "non-empty tags", "theme_tags": "non-empty tags"},
-        },
-    },
-    "novel.blueprint.compile": {"target": "managed novel project directory (required)", "args": {}},
-    "novel.blueprint.patch": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "section": "supported section",
-            "selector": "{} for object sections; exactly {id: ...} or chapters {number: ...} for list sections",
-            "changes": "non-empty merge object",
-            "expected_revision": "optional non-negative integer",
-            "create_if_missing": "optional boolean",
-        },
-        "required": ["args.section", "args.selector", "args.changes"],
-    },
-    "novel.blueprint.upsert_many": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "section": "list section only",
-            "items": "non-empty array; at most 15 chapters or 30 objects for other sections; chapters require number, other sections may omit id for backend allocation",
-            "expected_revision": "optional non-negative integer",
-        },
-        "required": ["args.section", "args.items"],
-    },
-    "novel.blueprint.assist": {
-        "target": "managed novel project directory (required)",
-        "args": {"previous_energy": "optional non-negative integer", "batch_size": "optional integer 1-20"},
-    },
-    "novel.reference.resolve": {
-        "target": "managed novel project directory (required)",
-        "args": {"entity_type": "character|location|event|chapter", "queries": "non-empty label array"},
-        "required": ["args.entity_type", "args.queries"],
-    },
-    "novel.timeline.calculate": {
-        "target": "managed novel project directory (required)",
-        "args": {"operation": "age|arrival|overlap", "operation_fields": "see action schema and repair errors"},
-        "required": ["args.operation"],
-    },
-    "novel.timeline.shift_suffix": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "event_id": "canonical pivot event id",
-            "delta_ticks": "positive integer gap to insert before the pivot and its chronological suffix",
-            "reason": "non-empty explanation",
-            "expected_revision": "optional non-negative integer",
-        },
-        "required": ["args.event_id", "args.delta_ticks", "args.reason"],
-    },
-    "novel.timeline.normalize": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "reason": "non-empty explanation",
-            "max_shifts": "optional integer 1-256; default 128",
-            "expected_revision": "optional non-negative integer",
-        },
-        "required": ["args.reason"],
-    },
-    "novel.mobility.align_initial_many": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "items": "1-30 objects with character_id and declared first physical location",
-            "expected_revision": "optional non-negative integer",
-        },
-        "required": ["args.items"],
-    },
-    "novel.plan.rebase": {
-        "target": "managed novel project directory (required)",
-        "args": {"expected_state_hash": "current canonical state hash", "reason": "non-empty explanation", "event_updates": "future-only update array", "chapter_updates": "future-only update array", "maintained_anchor_ids": "all protected anchor ids"},
-        "required": ["args.expected_state_hash", "args.reason", "args.event_updates", "args.chapter_updates", "args.maintained_anchor_ids"],
-    },
-    "novel.chapter.checkout": {
-        "target": "managed novel project directory (required)",
-        "args": {"chapter_number": "positive integer"},
-        "required": ["args.chapter_number"],
-    },
-    "novel.chapter.submit": {
-        "target": "managed novel project directory (required)",
-        "args": {
-            "lease_id": "checkout lease id",
-            "chapter_number": "positive integer",
-            "title": "non-empty string",
-            "content": "final prose string",
-            "actual": {
-                "summary": "required factual summary string",
-                "theme_tags": ["string"],
-                "events": [{"id": "planned event id", "status": "progressed|turned|closed", "start_tick": "integer", "duration_ticks": "positive integer", "participants": ["character id"], "location": "location id", "evidence_terms": ["exact prose term"]}],
-                "state_changes": [{"character_id": "id", "field": "alive|location|realm|injuries|inventory|knowledge", "from": "optional current value", "to": "new value", "op": "optional set|add|remove"}],
-                "relationship_changes": [{"relationship_id": "declared id", "character_ids": ["id"], "delta": "number", "state": "string"}],
-                "foreshadow_ops": [{"id": "id", "op": "planted|reinforced|revealed|resolved", "note": "string"}],
-                "emotional_transactions": [{"account_id": "declared id", "kind": "deposit|withdraw", "evidence_terms": ["exact prose term"], "factors": "0..1 factor object", "related_event_ids": ["event id"]}],
-                "convergence_proof": {"reason": "required only for high deviation", "maintained_anchor_ids": ["protected anchor id"]},
-            },
-        },
-        "required": ["args.lease_id", "args.chapter_number", "args.title", "args.content", "args.actual"],
-    },
-    "novel.scene.design": {
-        "target": "managed novel project directory (required)",
-        "args": {"trigger_id": "pending emotion trigger id", "candidates": "array of 2-3 structured candidates"},
-        "required": ["args.trigger_id", "args.candidates"],
-    },
-    "novel.context.query": {
-        "target": "managed novel project directory (required)",
-        "args": {"entity_type": "character|event|foreshadow|relationship|chapter|emotion", "entity_ids": "array of stable ids"},
-        "required": ["args.entity_type", "args.entity_ids"],
-    },
-    "novel.project.audit": {"target": "managed novel project directory (required)", "args": {"scope": "optional all|timeline|events|emotion|files"}},
-}
+ACTION_ARGUMENT_SCHEMAS = load_dictionary().schemas['arguments']
 
 
 RESULT_SCHEMA_ID = "tiangong.omni-action-result-schema.v1"
@@ -589,277 +294,13 @@ _PYTHON_RUNTIME_SCHEMA = _runtime_success_schema("python.run", risk_level="A4",
 # These are success-result contracts, not execution permissions.  The catalog
 # only publishes them as EXPLICIT when the canonical manifest Action is both A0
 # and read/verify.  All other Actions receive a hashed OPAQUE descriptor.
-ACTION_RESULT_SCHEMAS: dict[str, dict[str, Any]] = {
-    "python.run": _successful_omni_schema("python.run", _PYTHON_RUNTIME_SCHEMA),
-    **{action: _successful_omni_schema(action, schema) for action, schema in _WRITE_RUNTIME_SCHEMAS.items()},
-    "file.read": _successful_omni_schema("file.read", _FILE_READ_RUNTIME_SCHEMA),
-    "file.list": _successful_omni_schema("file.list", _FILE_LIST_RUNTIME_SCHEMA),
-    "file.hash": _successful_omni_schema("file.hash", _FILE_HASH_RUNTIME_SCHEMA),
-    "life.body.state.query": _successful_omni_schema(
-        "life.body.state.query",
-        _runtime_success_schema(
-            "life.body.state.query",
-            properties={
-                "ok": {"const": True},
-                "read_only": {"const": True},
-                "schema": {"const": "tiangong.gateway.self-body-state.v1"},
-                "selected_sections": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "authority": {"type": "object"},
-                "life": {"type": "object"},
-                "runtime_body": {"type": "object"},
-                "state_sha256": copy.deepcopy(_SHA256_VALUE_SCHEMA),
-            },
-            required=(
-                "ok",
-                "read_only",
-                "schema",
-                "selected_sections",
-                "authority",
-                "life",
-                "runtime_body",
-                "state_sha256",
-            ),
-        ),
-    ),
-    "pptx.read": _successful_omni_schema(
-        "pptx.read",
-        _runtime_success_schema(
-            "pptx.read",
-            properties={
-                "path": {"type": "string", "minLength": 1, "maxLength": 4096},
-                "inspection": {
-                    "type": "object",
-                    "required": ["slides", "slide_count"],
-                    "properties": {
-                        "slides": {"type": "array", "items": {"type": "object"}},
-                        "slide_count": {"type": "integer", "minimum": 0},
-                    },
-                    "additionalProperties": True,
-                },
-                "evidence": {"type": "object"},
-            },
-            required=("path", "inspection", "evidence"),
-        ),
-    ),
-    "qc.ppt.delivery_check": _successful_omni_schema(
-        "qc.ppt.delivery_check",
-        _runtime_success_schema(
-            "qc.ppt.delivery_check",
-            properties={
-                "result": {
-                    "type": "object",
-                    "required": ["type", "score", "grade", "issues", "warnings", "acceptance"],
-                    "properties": {
-                        "type": {"const": "executive_ppt_delivery"},
-                        "score": {"type": "integer", "minimum": 0, "maximum": 100},
-                        "grade": {"type": "string", "minLength": 1},
-                        "issues": {"type": "array", "items": {"type": "object"}},
-                        "warnings": {"type": "array", "items": {"type": "object"}},
-                        "acceptance": {"type": "boolean"},
-                    },
-                    "additionalProperties": True,
-                },
-                "evidence": {"type": "object"},
-            },
-            required=("result", "evidence"),
-        ),
-    ),
-    "skill.list": _successful_omni_schema(
-        "skill.list",
-        _runtime_success_schema(
-            "skill.list",
-            properties={
-                "result": {
-                    "type": "object",
-                    "required": ["items", "selection"],
-                    "properties": {
-                        "items": {"type": "array", "items": copy.deepcopy(_SKILL_CANDIDATE_SCHEMA)},
-                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
-                    },
-                    "additionalProperties": False,
-                },
-                "evidence": {"type": "object"},
-            },
-            required=("result", "evidence"),
-        ),
-    ),
-    "skill.get": _successful_omni_schema(
-        "skill.get",
-        _runtime_success_schema(
-            "skill.get",
-            properties={
-                "result": {
-                    "type": "object",
-                    "required": ["markdown", "selection", "activation"],
-                    "properties": {
-                        "markdown": {"type": "string"},
-                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
-                        "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
-                    },
-                    "additionalProperties": False,
-                },
-                "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
-                "evidence": {"type": "object"},
-            },
-            required=("result", "activation", "evidence"),
-        ),
-    ),
-    "skill.read": _successful_omni_schema(
-        "skill.read",
-        _runtime_success_schema(
-            "skill.read",
-            properties={
-                "result": {
-                    "type": "object",
-                    "required": ["markdown", "selection", "activation"],
-                    "properties": {
-                        "markdown": {"type": "string"},
-                        "selection": copy.deepcopy(_SKILL_SELECTION_SCHEMA),
-                        "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
-                    },
-                    "additionalProperties": False,
-                },
-                "activation": copy.deepcopy(_ACTIVATION_SCHEMA),
-                "evidence": {"type": "object"},
-            },
-            required=("result", "activation", "evidence"),
-        ),
-    ),
-}
+ACTION_RESULT_SCHEMAS = load_dictionary().schemas['results']
 
 
 # Each stable id binds a source selector to one immutable value-schema body.
 # The later DAG materializer may accept only these declared selectors/hashes;
 # it must not invent a schema from an observed value.
-ACTION_VALUE_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
-    "python.run": {"result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result", "value_schema": _PYTHON_RUNTIME_SCHEMA},
-                   "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA}},
-    **{action: {"result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result", "value_schema": schema},
-                 "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA}}
-       for action, schema in _WRITE_RUNTIME_SCHEMAS.items()},
-    "file.read": {
-        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
-                   "value_schema": _FILE_READ_RUNTIME_SCHEMA},
-        "content": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/content",
-                    "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"}},
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-    },
-    "file.list": {
-        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
-                   "value_schema": _FILE_LIST_RUNTIME_SCHEMA},
-        "entries": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/entries",
-                    "value_schema": _FILE_LIST_RUNTIME_SCHEMA["properties"]["entries"]},
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-    },
-    "file.hash": {
-        "result": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result",
-                   "value_schema": _FILE_HASH_RUNTIME_SCHEMA},
-        "sha256": {"source_kind": "RESULT_PAYLOAD", "json_pointer": "/result/sha256",
-                   "value_schema": _SHA256_VALUE_SCHEMA},
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-    },
-    "life.body.state.query": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "state_sha256": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/state_sha256",
-            "value_schema": _SHA256_VALUE_SCHEMA,
-        },
-        "life": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/life",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-        "runtime_body": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/runtime_body",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-    "pptx.read": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "path": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/path",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string", "minLength": 1, "maxLength": 4096},
-        },
-        "inspection": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/inspection",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-    "qc.ppt.delivery_check": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "acceptance": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/acceptance",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "boolean"},
-        },
-        "score": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/score",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "integer", "minimum": 0, "maximum": 100},
-        },
-        "report": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-    "skill.list": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "items": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/items",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "array", "items": _SKILL_CANDIDATE_SCHEMA},
-        },
-        "selection": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/selection",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-    "skill.get": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "markdown": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/markdown",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"},
-        },
-        "selection": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/selection",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-        "activation": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/activation",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-    "skill.read": {
-        "fact_id": {"source_kind": "FACT_ID", "value_schema": _FACT_ID_SCHEMA},
-        "markdown": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/markdown",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "string"},
-        },
-        "selection": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/selection",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-        "activation": {
-            "source_kind": "RESULT_PAYLOAD",
-            "json_pointer": "/result/result/activation",
-            "value_schema": {"schema": VALUE_SCHEMA_ID, "type": "object"},
-        },
-    },
-}
+ACTION_VALUE_SCHEMAS = load_dictionary().schemas['values']
 
 
 def canonical_action(action: Any) -> str:
@@ -1654,6 +1095,30 @@ def validate_tool_request(
     payload = dict(args) if isinstance(args, Mapping) else {}
     argument_aliases: list[str] = []
     available = sorted({canonical_action(item) for item in available_actions if str(item).strip()})
+
+    if normalized == "video.slideshow":
+        supported = {"images", "output", "frame_rate", "fps", "seconds_per_image", "size", "codec", "pix_fmt", "audio", "timeout"}
+        for key in sorted(set(payload) - supported):
+            issues.append(_issue("args." + key, "unknown_parameter", "Use the published video.slideshow parameter names."))
+        images = payload.get("images")
+        if not isinstance(images, list) or not images or any(not isinstance(item, str) or not item.strip() for item in images):
+            issues.append(_issue("args.images", "required", "A non-empty array of existing image paths is required."))
+        for key in ("frame_rate", "fps", "seconds_per_image"):
+            value = payload.get(key)
+            if key in payload and (isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 240):
+                issues.append(_issue("args." + key, "invalid_number", "Use a finite positive number no greater than 240."))
+        if "frame_rate" in payload and "fps" in payload and payload["frame_rate"] != payload["fps"]:
+            issues.append(_issue("args.fps", "conflicting_alias", "fps and frame_rate must agree when both are supplied."))
+        if "seconds_per_image" in payload and ("fps" in payload or "frame_rate" in payload):
+            issues.append(_issue("args.seconds_per_image", "conflicting_rate", "Supply frame_rate/fps or seconds_per_image, not both."))
+        if payload.get("size") and not re.fullmatch(r"[1-9][0-9]{0,3}x[1-9][0-9]{0,3}", str(payload["size"])):
+            issues.append(_issue("args.size", "invalid_size", "Use WIDTHxHEIGHT, for example 640x360."))
+        if payload.get("codec", "libx264") not in {"libx264", "libx265", "mpeg4"}:
+            issues.append(_issue("args.codec", "unsupported_codec", "Supported codecs: libx264, libx265, mpeg4."))
+        if payload.get("pix_fmt", "yuv420p") not in {"yuv420p", "yuv444p", "rgb24"}:
+            issues.append(_issue("args.pix_fmt", "unsupported_pixel_format", "Supported pixel formats: yuv420p, yuv444p, rgb24."))
+        if payload.get("audio") not in (None, False):
+            issues.append(_issue("args.audio", "unsupported_audio", "This action makes a silent video; use the audio merge action when needed."))
 
     if normalized in {"docx.create", "pptx.create", "mindmap.create"} and "source" not in payload:
         for alias in ("source_path", "markdown_path", "markdown_file", "input"):

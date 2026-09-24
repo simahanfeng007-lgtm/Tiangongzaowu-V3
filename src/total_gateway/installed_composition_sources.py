@@ -25,7 +25,7 @@ from contracts.world_understanding.world_cut import SourceWatermark, WorldCut, d
 from world_understanding.domain_contribution import compile_skill_method_contribution, compile_tool_capability_contribution
 from world_understanding.production import ProductionWorldUnderstandingRuntime
 from world_understanding.skill_method_world.production_catalog import (
-    PRODUCTION_METHOD_SEEDS_SHA256, compile_production_skill_method_world,
+    compile_dictionary_skill_method_world,
 )
 from world_understanding.skill_method_world.publication import method_marker
 from world_understanding.software_world import SoftwareWorldFrame, SparseWorldGraph
@@ -41,7 +41,7 @@ from .tool_source_inputs import compile_tool_source_inputs
 
 SCHEMA = "tiangong.installed-composition-sources.v1"
 ARCHIVE_MARKER = "installed-composition.archive"
-_INDEX = "src/omni_body_skill/registry/skill_router_index.json"
+_INDEX = "dictionaries/skills/catalog.json"
 _ENTRY = "src/omni_body_skill/tools/omni_body_tool.py"
 _MAX_ARCHIVE = 128 * 1024 * 1024
 
@@ -170,16 +170,11 @@ class InstalledCompositionSources:
         files = {item.path: (source_root / item.path).read_bytes() for item in inputs.files}
         if any(hashlib.sha256(files[item.path]).hexdigest() != item.content_sha256 for item in inputs.files):
             raise ValueError("INSTALLED_SOURCE_CHANGED_DURING_ARCHIVE")
-        index_raw = files[_INDEX]
-        index = json.loads(index_raw)
-        methods = compile_production_skill_method_world(index,
-            index_source_sha256=hashlib.sha256(index_raw).hexdigest(),
-            skill_source_hashes={"src/omni_body_skill/" + item["file"]:
-                hashlib.sha256(files["src/omni_body_skill/" + item["file"]]).hexdigest()
-                for item in index["skills"]})
+        methods = compile_dictionary_skill_method_world(files, observation_sha256=inputs.source_inputs_sha256)
         payload = {"schema": SCHEMA, "provenance": "INSTALLED_SOURCE_OBSERVATION",
             "source_inputs": asdict(inputs), "manifest": authority.manifest,
-            "methods": _snapshot_payload(methods), "method_seeds_sha256": PRODUCTION_METHOD_SEEDS_SHA256,
+            "methods": _snapshot_payload(methods), "method_seeds_sha256": canonical_sha256({p: hashlib.sha256(raw).hexdigest()
+                for p, raw in files.items() if p.startswith("dictionaries/skills/methods/")}),
             "repository_identity": observation.identity.model_dump(mode="json"),
             "repository_revision": {"branch": observation.revision.branch,
                 "head_commit": observation.revision.head_commit,

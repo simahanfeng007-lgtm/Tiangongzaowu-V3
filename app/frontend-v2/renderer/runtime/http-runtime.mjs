@@ -3362,6 +3362,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
           submitted_at_ms: Date.now(),
           text,
           attachments,
+          ...(payload.taskContext ? { task_context: payload.taskContext } : {}),
           }),
         });
         gatewayRequestId = String(acceptance?.gateway_request_id || "");

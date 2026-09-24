@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "src/omni_body_skill/registry/skill_router_index.json"
-MANIFEST_PATH = ROOT / "src/omni_body_skill/registry/capability_manifest.generated.json"
-SKILLS_ROOT = ROOT / "src/omni_body_skill"
+INDEX_PATH = ROOT / "dictionaries/skills/catalog.json"
+MANIFEST_PATH = ROOT / "dictionaries/registry/capability_manifest.generated.json"
+SKILLS_ROOT = ROOT / "dictionaries"
 DEFAULT_OUTPUT = ROOT / "docs/capability-composition/P12_R1E_CAPABILITY_PARITY_2026-09-20.json"
 
 ACTION_FIELDS = (

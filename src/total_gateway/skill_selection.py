@@ -57,6 +57,7 @@ class SkillDefinition(BaseModel):
     keywords: tuple[str, ...] = Field(default=(), max_length=256)
     task_intents: tuple[str, ...] = Field(default=(), max_length=128)
     required_actions: tuple[str, ...] = Field(default=(), max_length=256)
+    optional_actions: tuple[str, ...] = Field(default=(), max_length=256)
     content: str = Field(min_length=1, max_length=1_048_576)
 
     @field_validator("title", "summary", "category", "content")
@@ -110,6 +111,7 @@ class SkillCatalog:
                         "sha256": item.sha256,
                         "source_ref": item.source_ref,
                         "required_actions": list(item.required_actions),
+                        "optional_actions": list(item.optional_actions),
                     }
                     for item in definitions
                 ],
@@ -161,7 +163,7 @@ def load_filesystem_skill_catalog(
     if expected_catalog_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", expected_catalog_sha256):
         raise ValueError("expected Skill catalog digest is invalid")
     root_resolved = resolve_existing_path(root)
-    index_path = root / "registry" / "skill_router_index.json"
+    index_path = root / "skills" / "catalog.json"
     if (
         not index_path.is_file()
         or index_path.is_symlink()
@@ -190,7 +192,7 @@ def load_filesystem_skill_catalog(
     if not isinstance(payload, dict):
         raise SkillSelectionError("Skill index root must be an object")
     expected_root_keys = {"schema", "version", "principle", "skill_count", "skills", "actions", "tool_boundary"}
-    if set(payload) != expected_root_keys or payload.get("schema") != "tiangong.v3.omni_body.skill_router_index.v1":
+    if set(payload) != expected_root_keys or payload.get("schema") != "tiangong.skill-dictionary.v1":
         raise SkillSelectionError("Skill index schema or root fields are incompatible")
     actions = _string_list(payload.get("actions"), "actions")
     if not {"skill.route", "skill.list", "skill.get", "skill.read"}.issubset(actions):
@@ -220,7 +222,7 @@ def load_filesystem_skill_catalog(
             posix.is_absolute()
             or ".." in posix.parts
             or len(posix.parts) != 2
-            or posix.parts[0] != "deliverable_skills"
+            or posix.parts[0] != "skills"
             or posix.suffix.lower() != ".md"
             or relative in seen_paths
         ):
@@ -242,23 +244,12 @@ def load_filesystem_skill_catalog(
         except UnicodeDecodeError as exc:
             raise SkillSelectionError("Skill source is not UTF-8") from exc
         source_sha256 = hashlib.sha256(source_bytes).hexdigest()
-        required_actions = tuple(
-            sorted(
-                set().union(
-                    *(
-                        set(_string_list(raw.get(field), field))
-                        for field in (
-                            "starter_actions",
-                            "production_actions",
-                            "inspection_actions",
-                            "quality_gates",
-                            "repair_actions",
-                            "final_actions",
-                        )
-                    )
-                )
-            )
-        )
+        required_actions = tuple(sorted(set(_string_list(raw.get("required_actions"), "required_actions"))))
+        referenced_actions = set(re.findall(r'"action"\s*:\s*"([A-Za-z0-9_.]+)"', content))
+        from capability_dictionary import load_dictionary
+        dictionary = load_dictionary(root)
+        if (referenced_actions | set(required_actions) | set(raw.get("optional_actions", []))) - dictionary.tools.keys():
+            raise SkillSelectionError("Skill procedure references an unknown dictionary action")
         definitions.append(
             SkillDefinition(
                 skill_id=skill_id,
@@ -266,13 +257,14 @@ def load_filesystem_skill_catalog(
                 sha256=source_sha256,
                 source_ref="skill_source_" + source_sha256,
                 title=title,
-                summary=str(raw.get("category")),
+                summary=str(raw.get("summary") or raw.get("category")),
                 category=category,
                 keywords=tuple(sorted(set(_normalize_text(item) for item in _string_list(raw.get("keywords"), "keywords")))),
                 task_intents=tuple(
                     sorted(set(_normalize_text(item) for item in _string_list(raw.get("taskIntents"), "taskIntents")))
                 ),
                 required_actions=required_actions,
+                optional_actions=tuple(sorted(set(_string_list(raw.get("optional_actions"), "optional_actions")))),
                 content=content,
             )
         )
@@ -322,7 +314,8 @@ def _score(definition: SkillDefinition, query: str) -> int:
     score = 0
     for keyword in definition.keywords:
         if _contains_term(normalized, keyword):
-            score += min(240, 70 + len(keyword) * 12)
+            score += (25 if keyword in {"文件", "制作", "创建", "保存", "执行"}
+                      else min(240, 70 + len(keyword) * 12))
     for intent in definition.task_intents:
         if _contains_term(normalized, intent):
             score += min(300, 110 + len(intent) * 14)
@@ -362,8 +355,11 @@ def _candidate(
         version=definition.version,
         sha256=definition.sha256,
         source_ref=definition.source_ref,
+        title=definition.title,
+        summary=definition.summary,
         score_millis=score_millis,
         required_actions=definition.required_actions,
+        available_optional_actions=tuple(sorted(set(definition.optional_actions) & available_actions)),
         missing_actions=missing,
         incompatible_reasons=reasons,
         compatible=not missing and bool(definition.required_actions),

@@ -171,57 +171,10 @@ def max_task_level(*levels: Any) -> str:
     return max(normalized, key=lambda item: _TASK_LEVEL_RANK[item], default="L0")
 
 
-def _registry_payloads() -> list[dict[str, Any]]:
-    registry_root = Path(__file__).resolve().parents[1] / "omni_body_skill" / "registry"
-    payloads: list[dict[str, Any]] = []
-    for name in (
-        "actions.json",
-        "actions.appbus.merged.json",
-        "app_actions.json",
-        "professional_app_actions.json",
-    ):
-        try:
-            payload = json.loads((registry_root / name).read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if isinstance(payload, dict):
-            payloads.append(payload)
-    return payloads
-
-
 @lru_cache(maxsize=1)
 def declared_action_metadata() -> dict[str, dict[str, Any]]:
-    """Return a compact authoritative action view from the existing registries."""
-
-    metadata: dict[str, dict[str, Any]] = {}
-    container_keys = (
-        "actions", "capabilities", "base_plus_app_actions", "skill_router_actions",
-        "v34_professional_app_actions",
-    )
-    for payload in _registry_payloads():
-        containers: list[Any] = [payload]
-        containers.extend(payload.get(key) for key in container_keys)
-        for container in containers:
-            if isinstance(container, dict):
-                iterator = container.items()
-            elif isinstance(container, list):
-                iterator = (
-                    (item.get("id") or item.get("action") or item.get("name"), item)
-                    for item in container
-                    if isinstance(item, dict)
-                )
-            else:
-                continue
-            for raw_name, raw_meta in iterator:
-                name = str(raw_name or "").strip().lower()
-                if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", name):
-                    continue
-                meta = raw_meta if isinstance(raw_meta, dict) else {}
-                current = metadata.setdefault(name, {})
-                for key in ("risk", "effect", "allowed_effect", "summary", "implemented"):
-                    if key in meta and key not in current:
-                        current[key] = meta[key]
-    return metadata
+    from capability_dictionary import load_dictionary
+    return load_dictionary().action_metadata()
 
 
 def action_minimum_task_level(action: Any, metadata: dict[str, Any] | None = None) -> tuple[str, list[str]]:
@@ -961,6 +914,12 @@ def _requested_fact_kinds(user_text: object) -> list[str]:
     return kinds
 
 
+def _local_artifact_delivery(text: str) -> bool:
+    """Local handoff is distinct from sending/uploading to an outside party."""
+    external = r"上传|发布到|发邮件|发微信|发消息|提交到|(?:发送|分享|发给).{0,12}(?:客户|同事|群|邮箱|平台|https?://)|\b(?:upload|publish|email|slack|webhook|submit)\b"
+    return not bool(re.search(external, text, re.I))
+
+
 def runtime_execution_floor(user_text: object) -> str:
     """Conservative pre-LLM execution floor.
 
@@ -1183,6 +1142,17 @@ def request_target_bindings(user_text: Any) -> list[dict[str, str]]:
                 role = "workspace"
             elif hit is not None:
                 _, _, action_kind, negated = hit
+                # "notes.txt 逐页列出演讲要点" specifies output contents in a
+                # creation request. It does not ask us to read an existing file.
+                # Keep explicit "读取 notes.txt" and read-only lists unchanged.
+                creates_document = any(_verb_occurs_affirmatively(_compact(text), verb)
+                                       for verb in _MUTATION_VERBS + _ARTIFACT_VERBS)
+                describes_output = (not before and action_kind == "observation"
+                    and creates_document and bool(re.match(
+                        r"\s*(?:逐页|按页|分别)?\s*(?:列出|列明|写出|记录)",
+                        clause[start + len(target):])))
+                if describes_output:
+                    action_kind = "effect"
                 if negated:
                     role = "preserved" if action_kind == "effect" else "mentioned"
                 elif action_kind == "program_input":
@@ -1331,6 +1301,9 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
                 if item["role"] == "input" or (re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", item["target_path"], re.I)
                     and not _is_test_script_path(item["target_path"])))),
         })
+    for obligation in obligations:
+        if obligation.get("kind") == "delivery":
+            obligation["delivery_mode"] = "local_artifact" if _local_artifact_delivery(text) else "external"
     return obligations
 
 
@@ -1657,7 +1630,7 @@ def _execution_test_count(payload: dict[str, Any]) -> int | None:
         str(payload.get("tool_action") or payload.get("action") or "") == "python.run"
         and _is_test_script_path(tool_args.get("target"))
     )
-    if runner == "unittest" or (native_test_script and summaries):
+    if runner == "unittest" or native_test_script:
         summary = summaries[-1] if summaries else None
         return int(summary.group(1)) if summary and summary.group(2) == "OK" else 0
     if runner == "pytest":
@@ -1842,6 +1815,13 @@ def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
     required_kind = str(obligation.get("kind") or "action").strip().lower() or "action"
+    if (required_kind == "delivery" and obligation.get("delivery_mode") == "local_artifact"
+            and "delivery" not in _payload_fact_kinds(payload)):
+        # A successful local mutation must still carry artifact paths. The
+        # final delivery gate reopens/checks those artifacts before completion.
+        if not _contract(payload).get("paths"):
+            return False
+        required_kind = "effect"
     required_action = str(obligation.get("required_action") or "").strip().lower()
     actual_action = str(payload.get("tool_action") or payload.get("action") or "").strip().lower()
     if required_action and actual_action != required_action:
@@ -1874,13 +1854,15 @@ def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[di
     history = [item for item in (quality_history or []) if isinstance(item, dict)]
     prior_kind = str(obligation.get("requires_prior_kind") or "").strip().lower()
     satisfied = False
+    evidence_obligation = dict(obligation)
     for index, payload in enumerate(history):
         if not _successful_fact(payload, obligation):
-            if satisfied and _obligation_evidence_invalidated(payload, obligation):
+            if satisfied and _obligation_evidence_invalidated(payload, evidence_obligation):
                 satisfied = False
             continue
         if not prior_kind:
             satisfied = True
+            evidence_obligation["llm_submission_target"] = _payload_target(payload)
             continue
         prior_obligation = {
             "kind": prior_kind,
@@ -1889,6 +1871,7 @@ def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[di
         }
         if any(_successful_fact(prior, prior_obligation) for prior in history[:index]):
             satisfied = True
+            evidence_obligation["llm_submission_target"] = _payload_target(payload)
     return satisfied
 
 
@@ -1901,7 +1884,13 @@ def _obligation_evidence_invalidated(payload: dict[str, Any], obligation: dict[s
         if (obligation.get("evidence_predicate") in {"program_execution", "command_execution"}
                 and count is None and isinstance(_payload_result(payload).get("execution"), dict)
                 and not execution_result_ok(payload)):
-            return True
+            # A failing helper/test is not a contradiction of an earlier,
+            # different program execution. File mutations below still revoke
+            # evidence when an actual dependency changed.
+            prior_target = _normalize_path(obligation.get("llm_submission_target"))
+            attempt_target = _normalize_path(_payload_target(payload))
+            if not prior_target or not attempt_target or prior_target == attempt_target:
+                return True
         dependencies = obligation.get("evidence_dependency_paths") or []
         evidence = _contract(payload).get("write_evidence")
         if isinstance(evidence, dict) and evidence.get("authoritative") is True:
