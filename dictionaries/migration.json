@@ -1,6 +1,6 @@
 {
   "base_commit": "de04d244a3a1d17e00bac99827f30c1e8825ad48",
-  "dictionary_version": "2026.09.24.8",
+  "dictionary_version": "2026.09.24.9",
   "note": "Inventory only. Migrated implementations still require runtime readiness, authorization, and workflow validation.",
   "schema": "tiangong.dictionary-migration.v1",
   "skills": [

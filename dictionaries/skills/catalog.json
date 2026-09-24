@@ -2309,5 +2309,5 @@
     }
   ],
   "tool_boundary": "skill router only returns skill cards; model executes flow",
-  "version": "2026.09.24.4"
+  "version": "2026.09.24.9"
 }
