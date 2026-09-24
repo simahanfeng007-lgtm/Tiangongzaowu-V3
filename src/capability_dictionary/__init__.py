@@ -180,22 +180,9 @@ def load_dictionary(root: Path | None = None) -> DictionaryRelease:
                 raise DictionaryError("dictionary_alias_cycle:" + name)
             visited.add(target)
             current = tools[target]
-    seen = set()
-    skill_bodies = {}
-    for row in skills["skills"]:
-        if row["id"] in seen:
-            raise DictionaryError("dictionary_skill_duplicate")
-        seen.add(row["id"])
-        raw = _read(root, row["file"])
-        raws[row["file"]] = raw
-        skill_bodies[row["id"]] = raw.decode("utf-8")
-        refs = set(re.findall(r'"action"\s*:\s*"([A-Za-z0-9_.]+)"', raw.decode("utf-8")))
-        declared = {action for key, actions in row.items()
-                    if key.endswith("_actions") and isinstance(actions, list)
-                    for action in actions}
-        missing = (refs | declared) - tools.keys()
-        if missing:
-            raise DictionaryError("dictionary_skill_unknown_actions:" + row["id"] + ":" + ",".join(sorted(missing)))
+    if skills.get("skills") != [] or skills.get("skill_count") != 0:
+        raise DictionaryError("dictionary_fixed_skills_retired")
+    skill_bodies = {}  # Empty compatibility projection, never loaded procedures.
     for path in sorted((root / "skills/methods").glob("*.json")):
         relative = path.relative_to(root).as_posix()
         raws[relative] = _read(root, relative)

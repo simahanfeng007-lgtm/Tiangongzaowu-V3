@@ -113,8 +113,10 @@ class _Identity:
 class RegenerativeExecutionAuthority:
     """Thin request dispatcher backed by one existing GatewayStateStore."""
 
-    def __init__(self, store: GatewayStateStore) -> None:
+    def __init__(self, store: GatewayStateStore, *, workspace_root=None, require_compositions=False) -> None:
         self._store = store
+        self._workspace_root = workspace_root
+        self._require_compositions = require_compositions
 
     def __call__(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -122,6 +124,7 @@ class RegenerativeExecutionAuthority:
         operation = _text(payload.get("operation"), label="operation")
         handlers = {
             "initialize": self._initialize,
+            "register_composition": self._register_composition,
             "append_event": self._append_event,
             "prepare_effect": self._prepare_effect,
             "start_effect": self._start_effect,
@@ -239,6 +242,78 @@ class RegenerativeExecutionAuthority:
             "event_hash": event.event_hash,
         }
 
+    def _register_composition(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        from capability_dictionary import load_dictionary
+        from capability_dictionary.composition import compile_task_composition
+        from omni_body_skill.tool_contracts import validate_tool_request
+
+        identity, contract = self._bound_identity(payload)
+        release = load_dictionary()
+        release.verify_published()
+        program = compile_task_composition(payload.get("proposal"), release=release)
+        if self._workspace_root is not None:
+            for leaf in program["leaves"]:
+                call = leaf["invocation"]
+                checked = validate_tool_request(call["action"], call["target"], call["args"],
+                    workspace=self._workspace_root, available_actions=tuple(release.tools))
+                if not checked.get("ok"):
+                    raise ValueError("composition.argument_schema_invalid:" + call["action"])
+        composition_id = "cmp_" + canonical_sha256({
+            "request_id": identity.request_id, "run_id": identity.run_id,
+            "generation": identity.generation, "program_sha256": program["program_sha256"],
+            "root_goal_hash": contract["root_goal_hash"],
+        })
+        event, created = self._store.append_execution_event(
+            event_key="composition.registered:" + composition_id,
+            request_id=identity.request_id, run_id=identity.run_id, generation=identity.generation,
+            epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
+            event_type="composition.registered", created_at_ms=_integer(payload.get("now_ms"), label="now_ms"),
+            payload={"composition_id": composition_id,
+                     "program_json": json.dumps(program, ensure_ascii=False, sort_keys=True,
+                                                separators=(",", ":"), allow_nan=False),
+                     "root_goal_hash": contract["root_goal_hash"], "may_authorize": False},
+        )
+        return {"composition_id": composition_id, "program_sha256": program["program_sha256"],
+                "dictionary_sha256": program["dictionary_sha256"], "created": created,
+                "ledger_seq": event.ledger_seq, "event_hash": event.event_hash}
+
+    def _validate_composition_effect(self, payload, identity):
+        from capability_dictionary import load_dictionary
+        from capability_dictionary.composition import DISCOVERY_ACTIONS
+        from v3.runtime_regenerative_boundary import tool_effect_descriptor
+
+        reference = payload.get("composition_ref")
+        if reference is None:
+            if self._require_compositions and payload.get("effect_namespace") not in {
+                    "omni_body:" + action for action in DISCOVERY_ACTIONS}:
+                raise StoreConflictError("composition.registration_required")
+            return
+        if type(reference) is not dict or set(reference) != {"composition_id", "program_sha256", "leaf_id"}:
+            raise StoreConflictError("composition.reference_invalid")
+        event = next((event for event in self._store.list_execution_events(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation)
+            if event.event_type == "composition.registered"
+            and event.payload["composition_id"] == reference["composition_id"]), None)
+        if event is None:
+            raise StoreConflictError("composition.registration_missing")
+        program = json.loads(event.payload["program_json"])
+        if (reference["program_sha256"] != program["program_sha256"]
+                or program["dictionary_sha256"] != load_dictionary().sha256):
+            raise StoreConflictError("composition.source_changed")
+        for leaf in program["leaves"]:
+            call = leaf["invocation"]
+            descriptor = tool_effect_descriptor(request_id=identity.request_id, run_id=identity.run_id,
+                generation=identity.generation, tool_name="omni_body", tool_args=call,
+                attempted_action=call["action"])
+            if leaf["id"] == reference["leaf_id"]:
+                if any(payload.get(key) != value for key, value in descriptor.items()):
+                    raise StoreConflictError("composition.invocation_changed")
+                return
+            disposition, _ = self._logical_effect_disposition(identity, descriptor["logical_effect_id"])
+            if disposition != "already_committed":
+                raise StoreConflictError("composition.predecessor_not_committed")
+        raise StoreConflictError("composition.leaf_missing")
+
     def _effect_identity(self, payload: Mapping[str, Any]) -> tuple[_Identity, dict[str, Any], str, str, str, int, int, str, str]:
         identity, contract = self._bound_identity(payload)
         logical_effect_id = _text(payload.get("logical_effect_id"), label="logical_effect_id")
@@ -343,6 +418,7 @@ class RegenerativeExecutionAuthority:
             identity, _contract, logical_effect_id, effect_id, intent_sha,
             run_sequence, ordinal, attempt_id, step_id,
         ) = self._effect_identity(payload)
+        self._validate_composition_effect(payload, identity)
         now_ms = _integer(payload.get("now_ms"), label="now_ms")
         attempt = _integer(payload.get("attempt", 1), label="attempt", minimum=1)
         prior_disposition, prior_event = self._logical_effect_disposition(identity, logical_effect_id)
@@ -362,6 +438,7 @@ class RegenerativeExecutionAuthority:
                     "effect_namespace": payload.get("effect_namespace"),
                     "normalized_target": payload.get("normalized_target"),
                     "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
+                    "composition_ref": payload.get("composition_ref"),
                 },
                 logical_effect_id=logical_effect_id, attempt_id=attempt_id,
                 step_id=step_id, effect_id=prior_effect_id,
@@ -409,6 +486,7 @@ class RegenerativeExecutionAuthority:
                 "effect_namespace": payload.get("effect_namespace"),
                 "normalized_target": payload.get("normalized_target"),
                 "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
+                "composition_ref": payload.get("composition_ref"),
             },
             logical_effect_id=logical_effect_id, attempt_id=attempt_id,
             step_id=step_id, effect_id=effect_id,

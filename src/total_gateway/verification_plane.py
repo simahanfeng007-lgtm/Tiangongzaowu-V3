@@ -10,8 +10,8 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-# 1.31 preserves dictionary/context authority and provisions the shared native
-# runtime through a path-specific read-only capability, without per-run ACL churn.
-VERIFICATION_PLANE_VERSION = "1.31"
+# 1.32 binds task-generated Tool/Skill programs to the existing execution ledger
+# and fences every leaf before effect preparation; fixed Skill bodies are retired.
+VERIFICATION_PLANE_VERSION = "1.32"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

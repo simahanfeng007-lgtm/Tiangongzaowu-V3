@@ -1328,6 +1328,9 @@ def validate_tool_request(
             command_text = command if isinstance(command, str) else " ".join(str(item) for item in command)
             issues.extend(_command_hard_deny_issues(command_text))
     if normalized == "python.run":
+        if "argv" in payload and (type(payload["argv"]) is not list
+                or any(type(item) is not str or "\x00" in item for item in payload["argv"])):
+            issues.append(_issue("args.argv", "string_array", "python.run argv must be an array of strings"))
         code = payload.get("code")
         if normalized_target:
             inside, resolved = _inside_workspace(normalized_target, workspace)

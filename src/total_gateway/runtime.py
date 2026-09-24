@@ -1418,7 +1418,8 @@ class GatewayRuntime:
                     execution_epoch_checkpoint
                 )
                 runtime.backend_service.set_regenerative_execution_provider(
-                    RegenerativeExecutionAuthority(runtime.store)
+                    RegenerativeExecutionAuthority(runtime.store, workspace_root=config.workspace_root,
+                                                   require_compositions=True)
                 )
 
                 def pending_learning_ingest(arguments: object) -> dict[str, object]:

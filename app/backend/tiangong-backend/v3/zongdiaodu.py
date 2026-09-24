@@ -442,7 +442,7 @@ Two modes: chat or work.
 
 Work mode rules:
 - Before each `omni_body` call, write one short user-facing progress sentence.
-- Choose Skills, actions, ordering, retries, and verification steps from the task and observations.
+- Generate Tools and a Skill by composing dictionary actions for the current task and observations.
 - Do not claim completion beyond successful recorded evidence; Runtime checks facts only at completion.
 - You may include an optional top-level `_task_profile` on any `omni_body` call:
   schema=`tiangong.v3.task_profile.v2`, proposed_level (`L1`, `L2`, or `L3`),
@@ -1020,20 +1020,9 @@ def _recent_local_artifact_context(max_runs: int = 24, max_items: int = 8) -> st
 def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> str:
     from capability_dictionary import load_dictionary
     release = load_dictionary()
-    return (
-        "[Tool / Skill 字典协议]\n"
-        f"当前字典版本：{release.version}；摘要：{release.sha256}。\n"
-        "所有能力定义来自当前字典。omni_body 是发现、加载和调用字典条目的宿主协议。\n"
-        "简单操作直接调用字典 action；复杂文件/代码/内容/媒体任务，先阅读匹配的 Skill 规程再执行。\n"
-        "候选的用途在当前上下文中；用 skill.get(target=skill_id) 加载完整规程，"
-        "必要时用 skill.route(query) 或 skill.list 扩大检索；纯聊天无需工具。\n"
-        "动作参数不确定时用 system.action_schema(target=action_id)。\n"
-        "观察返回结果后再选择下一步。有依赖的读写必须分开，不要猜测读取结果。\n"
-        "生成文件、写代码、运行程序必须实际执行并检查产物，不能仅回复完成。\n"
-        "大型正文或代码分章节/模块写入；单次工具参数尽量不超过 6000 字符。\n"
-        "只有实际有需要才检验或修复；本地成果交付不需要外部上传/发送回执。\n"
-        "Office 文件是二进制，用对应读取动作或 Python 库读取。\n"
-    )
+    from capability_dictionary.composition import composition_prompt
+    return composition_prompt(release)
+
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -2784,16 +2773,9 @@ class Zongdiaodu:
         run_state["dictionary_sha256"] = dictionary_release.sha256
         run_state["dictionary_version"] = dictionary_release.version
         run_state["original_user_goal"] = xiaoxi
-        loaded_skills = (dictionary_context or {}).get("loaded_skills") or []
-        selected_ids = set(recovery_checkpoint.get("loaded_skill_ids") or [])
-        for item in loaded_skills:
-            skill_id = str(item.get("skill_id") or "")
-            body = dictionary_release.skill_bodies.get(skill_id)
-            if body is None or __import__("hashlib").sha256(body.encode("utf-8")).hexdigest() != item.get("sha256"):
-                raise RuntimeError("dictionary_loaded_skill_version_mismatch")
-            selected_ids.add(skill_id)
-        run_state["loaded_skill_ids"] = sorted(selected_ids)
-        run_state["skill_loaded"] = bool(selected_ids)
+        run_state["loaded_skill_ids"] = []  # Historical checkpoint field; no fixed Skill activation.
+        run_state["skill_loaded"] = False
+        run_state["generated_compositions"] = []
         if recovery_checkpoint:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
@@ -2819,11 +2801,12 @@ class Zongdiaodu:
         ]
         run_state.setdefault("delivery", {})["requested_actions"] = requested_actions
         run_state["delivery"]["missing_requested_actions"] = list(requested_actions)
-        run_state["status"] = "skill_loading"
-        run_state["stage"] = "skill_loading"
+        run_state["status"] = "composing"
+        run_state["stage"] = "composing"
         _simple_chain_save_run_state(run_state)
 
         native_history: list[dict[str, Any]] = []
+        composition_cursor = None
 
         def _dictionary_system_prompt():
             from capability_dictionary import load_dictionary
@@ -2831,13 +2814,7 @@ class Zongdiaodu:
             pinned = run_state.setdefault("dictionary_sha256", release.sha256)
             if pinned != release.sha256:
                 raise RuntimeError("dictionary_version_migration_required")
-            selected = set(run_state.get("loaded_skill_ids") or [])
-            procedures = []
-            for row in release.skills["skills"]:
-                if row["id"] in selected:
-                    body = release.skill_bodies[row["id"]]
-                    procedures.append(f"[已加载 Skill {row['id']}]\n{body}")
-            return system_tishi + ("\n\n" + "\n\n".join(procedures) if procedures else "")
+            return system_tishi
 
         def _run_scoped_model(call):
             from .jineng.http_kehuduan import _effective_llm_deadline_seconds
@@ -2894,7 +2871,28 @@ class Zongdiaodu:
             payload: Any, on_chunk=None, on_reasoning_chunk=None,
             provider_turn: Any = None, provider_tool_results: list[dict[str, Any]] | None = None,
         ) -> tuple[ShentiZhuangtai, str]:
+            nonlocal composition_cursor
             from .model_protocol_contract import ProviderTurnEnvelope
+            if composition_cursor is not None:
+                cursor = composition_cursor
+                raw = provider_tool_results[0] if provider_tool_results else payload
+                if isinstance(raw, dict) and raw.get("schema") == "tiangong.v3.simple_chain.repeat_observation.v1":
+                    raw = raw.get("last_result")
+                success = bool(provider_tool_results) and _gongju_jieguo_chenggong(raw)
+                if isinstance(payload, dict) and payload.get("schema") == "tiangong.v3.simple_chain.repeat_observation.v1":
+                    success = _gongju_jieguo_chenggong(raw)
+                more = cursor.observe(raw, success=success)
+                run_state["generated_compositions"][-1].update(
+                    completed_leaves=cursor.index, status="running" if more else "succeeded" if success else "failed")
+                run_state.pop("active_composition_ref", None)
+                _simple_chain_save_run_state(run_state)
+                if more:
+                    # Execute the next already-compiled leaf, without pretending
+                    # the model generated a new call or inventing provider IDs.
+                    return shenti, cursor.provider_turn
+                payload = cursor.result()
+                provider_turn, provider_tool_results = cursor.provider_turn, [payload]
+                composition_cursor = None
             if isinstance(provider_turn, ProviderTurnEnvelope) and provider_tool_results:
                 if not any(item["turn"].turn_id == provider_turn.turn_id for item in native_history):
                     native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
@@ -3211,7 +3209,7 @@ class Zongdiaodu:
                     quality_history,
                     generated_attachments,
                 ),
-                _simple_chain_natural_reply_text(huifu),
+                "" if composition_cursor is not None else _simple_chain_natural_reply_text(huifu),
             )
             if stuck:
                 final_guard_exhausted = True
@@ -3360,6 +3358,42 @@ class Zongdiaodu:
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     tools = self.gutong.jiexi_duogongju(huifu)
+            tools = [(name, _simple_chain_accept_task_profile(run_state, xiaoxi, name, args)) for name, args in tools]
+            if composition_cursor is not None:
+                tools = [("omni_body", composition_cursor.leaf["invocation"])]
+                run_state["active_composition_ref"] = composition_cursor.reference()
+            elif tools:
+                from capability_dictionary.composition import (
+                    CompositionCursor, DISCOVERY_ACTIONS, compile_task_composition,
+                )
+                from .simple_chain.kernel import _simple_chain_regenerative_call
+                try:
+                    if len(tools) == 1 and tools[0][0] == "omni_body" and set(tools[0][1]) == {"composition"}:
+                        proposal = tools[0][1]["composition"]
+                        program = compile_task_composition(proposal, release=dictionary_release)
+                        registered = _simple_chain_regenerative_call(run_state, "register_composition",
+                            proposal=proposal, epoch_index=int(turn_loop.epoch_index))
+                        if not registered or registered.get("program_sha256") != program["program_sha256"]:
+                            raise RuntimeError("composition.gateway_registration_required")
+                        composition_cursor = CompositionCursor(program, registered, huifu)
+                        run_state["generated_compositions"].append({
+                            **registered, "generated_tool_ids": [item["id"] for item in proposal["tools"]],
+                            "generated_skill_id": proposal["skill"]["id"],
+                            "leaf_count": len(program["leaves"]), "completed_leaves": 0, "status": "registered"})
+                        run_state["active_composition_ref"] = composition_cursor.reference()
+                        _simple_chain_save_run_state(run_state)
+                        tools = [("omni_body", composition_cursor.leaf["invocation"])]
+                    elif not all(name == "omni_body" and isinstance(args, dict)
+                            and set(args) <= {"action", "target", "args"}
+                            and args.get("action") in DISCOVERY_ACTIONS for name, args in tools):
+                        raise ValueError("composition.required_for_task_execution")
+                except (ValueError, TypeError) as exc:
+                    blocked = {"ok": False, "error": str(exc)[:300],
+                        "instruction": "请通过 composition 生成 Tool 和 Skill；仅能力发现可直接调用。整份组合未登记、未执行。修正后返回一个完整组合调用。"}
+                    shenti, huifu = _llm_jixu_scoped(blocked,
+                        on_chunk=_on_text_chunk, on_reasoning_chunk=_on_reasoning_chunk,
+                        provider_turn=huifu, provider_tool_results=[blocked for _ in tools])
+                    continue
             if not tools:
                 tool_name, tool_args = "", {}
             elif len(tools) == 1:
@@ -4823,6 +4857,12 @@ class Zongdiaodu:
                     )
                 QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_continue_after_tool", "cuowu", str(exc)[:500])
                 break
+            if composition_cursor is not None:
+                huifu = next_huifu
+                run_state["status"] = "executing_composition"
+                run_state["stage"] = "executing_composition"
+                _simple_chain_save_run_state(run_state)
+                continue
             if not str(next_huifu or "").strip() and not tool_ok:
                 final_guard_exhausted = True
                 final_chain_status = "failed"

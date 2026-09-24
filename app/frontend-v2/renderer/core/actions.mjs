@@ -1323,7 +1323,8 @@ export function createActions({ runtime, state, kernel = null }) {
       return { ok: false, code: setupRequired ? "life_setup_required" : "runtime_not_ready", stdout: "", stderr: error };
     }
     const { settings } = beforeSend;
-    const selectedSkills = Array.isArray(beforeSend.selectedSkills) ? beforeSend.selectedSkills : [];
+    // Historical fixed-Skill selections cannot constrain task-generated programs.
+    const selectedSkills = [];
     const continuationRequest = isAutoContinuation || isContinuationRequest(message);
     const inheritedRootGoal = String(
       runOptions.rootGoal
@@ -1358,12 +1359,7 @@ export function createActions({ runtime, state, kernel = null }) {
       ? "\n\n【连续执行契约】\nA1-A4 工作在平台执行预算内连续执行（轮次、时长、工具数有硬上限）。复用已有 source_text_map 和成功工具证据，不重复副作用；在预算内持续执行到结果检查通过、用户主动停止或命中 A5；达到预算仍未完成时，保留已完成产物并如实给出未完成清单，不得谎报完成。"
       : "";
     const executionMessageBase = normalizeBackendDeliveryIntent(`${rawExecutionMessage}${executionContract}`);
-    // FE-01: the selected skills from the Skills page must reach the execution
-    // chain as an explicit routing hint (the simple chain routes through the
-    // model), not just sit in a payload field the backend drops.
-    const executionMessageWithSkills = selectedSkills.length
-      ? `${executionMessageBase}\n\n【用户指定技能】${selectedSkills.map((item) => item.name || item.id).filter(Boolean).join("、")} —— 请优先按该技能执行；若不适用，请明确说明原因后再改用通用工具。`
-      : executionMessageBase;
+    const executionMessageWithSkills = executionMessageBase;
     // 确认重放：授权标记只附加在传输层执行消息上，用户气泡保持原始指令文本
     const confirmGrantId = String(runOptions.__confirmGrantId || "").trim();
     const executionMessage = confirmGrantId

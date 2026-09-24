@@ -15554,8 +15554,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "Resolve and activate one exact Skill through the Gateway authority."
     },
     "skill.list": {
@@ -15564,8 +15565,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "List the Gateway authority's pinned Skill catalog."
     },
     "skill.progress.report": {
@@ -15574,8 +15576,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "Alias of fact-derived Skill step status; model claims are ignored."
     },
     "skill.read": {
@@ -15584,8 +15587,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "Resolve and activate one exact Skill through the Gateway authority."
     },
     "skill.route": {
@@ -15594,8 +15598,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog."
     },
     "skill.step.check": {
@@ -15604,8 +15609,9 @@
         "kind": "delivery",
         "target": "delivery_kernel"
       },
-      "implemented": true,
+      "implemented": false,
       "risk": "A0",
+      "status": "retired_fixed_skill",
       "summary": "Read workflow progress computed by Gateway from machine facts."
     },
     "spreadsheet.analysis.plan.create": {

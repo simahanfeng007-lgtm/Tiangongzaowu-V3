@@ -1,119 +1,99 @@
-# Tool / Skill dictionary runtime
+# Dictionary-driven task composition
 
-`dictionaries/` is the editable capability source. The model-facing action list,
-parameter contracts, Skill procedures, execution bindings, dependency readiness,
-and generated Gateway views derive from this package. Retained `omni_body_skill`
-Python modules implement adapters; their former registry and Skill directories
-are retired and are not startup dependencies.
+The dictionary defines atomic capabilities, argument/result contracts, execution
+bindings, dependencies and budgets. **It contains no fixed business Skill
+procedures.** The LLM interprets the user request and generates task-local Tools
+(ordered action compositions) and a Skill (a graph of those generated Tools).
+Neither a generated name nor a model claim creates a new permission.
 
-## Publish and run
+## Normal execution
 
-1. Edit `tools/catalog.json`, `tools/schemas.json`, `tools/apps.json`,
-   `skills/catalog.json`, the referenced procedure, `host-protocol.json`, or
-   `execution-profiles.json`.
-2. Run `python scripts/build-dictionary.py`. It validates identifiers, required
-   references, aliases, dependency declarations, and actual execution bindings.
-3. Run `python scripts/sync-generated-sources.py --write`, then `--check`.
-4. Restart the source application. `scripts/start-source.ps1 -ProfileRoot D:\...`
-   keeps the profile on the selected drive; its default is beside the checkout.
+The ordinary frontend message enters the existing model/observation loop. The
+native `omni_body` protocol accepts one `composition` containing `tools` and a
+`skill`. Only capability discovery (`system.capabilities`, `system.action_schema`,
+`system.health`) can be called directly. Task actions must belong to a registered
+composition; the runtime does not wrap legacy direct calls and call that generation.
 
-`build-dictionary.py --check` verifies published bytes without changing them.
-The release marker is written last and binds generated views. The source release
-also binds the actual executor source. A running process retains its loaded
-dictionary and procedure bytes. An interrupted task whose saved dictionary hash
-differs must be migrated explicitly; it must not silently replay on new bindings.
+1. The model creates Tool definitions and a Skill from the current request and
+   actual observations. Unknown file content requires an observation composition
+   first, followed by a new model decision.
+2. `capability_dictionary.composition` validates the complete declaration, action
+   availability, unique identities and dependencies and compiles ordered leaves.
+   The Gateway checks argument contracts and pins the actual dictionary digest.
+3. `RegenerativeExecutionAuthority` records the exact program in the existing
+   Gateway execution ledger under `composition.registered`, bound to the active
+   Request/Run/Generation and original goal. It creates no Grant or permission.
+4. Each leaf is checked against that registration before effect preparation.
+   Changing its arguments, skipping an unfinished predecessor, using another
+   request's registration or directly executing an uncomposed task action fails.
+   Existing Policy, one-time signed Grants, workspace containment, deadlines,
+   effect deduplication and verification remain in force.
+5. A failed/blocked leaf stops the remaining composition. Actual results are
+   aggregated into the original provider call's result; provider call IDs are
+   never fabricated for internal leaves. The model can then generate a corrected
+   composition. Each successful action retains its own factual evidence.
+6. Completion still requires the original task's evidence. Registration or one
+   successful composition does not mark the user task complete.
 
-## Execution
+Compositions can include several generated Tools and actions; generation is not
+one model call per primitive. The first implementation materializes graph leaves
+serially to preserve dependencies and avoid speculative writes. Arguments are
+concrete JSON values, not interpolated expressions. A change needing new facts
+occurs in another model turn. This supports observation-driven work without
+requiring a complete, predetermined task DAG.
 
-Ordinary conversation and the former `[字典执行]` prefix use the same dynamic
-dictionary loop. Tool results feed the next decision. Simple actions can execute
-directly; complex tasks can load a matching Skill with `skill.get` / `skill.read`.
-These commands now resolve only the dictionary through Gateway. A candidate is
-not an activated Skill. Explicit frontend selection loads and pins the complete
-procedure through the same authority before inference.
+The pre-existing P4/P7 whole-plan planner remains the explicit static strategy.
+Incremental task programs use the existing P18 execution ledger/effect authority;
+they do not pretend to be P7 whole-task admission receipts. The legacy planner
+mode flag controls that static path, not normal task-composition generation.
 
-Raw user text, inherited goal, project hint, and selected Skill IDs travel in
-`task_context`; a project hint is not filesystem authorization. Static DAG
-planning remains an optional strategy (`execution_strategy: "static"`) under
-the existing admission policy. It is not required to discover or use a Tool.
+The empty `skills/catalog.json` is retained only for historical release contract
+compatibility. Runtime loading rejects a nonempty fixed-Skill catalog. Its 34
+former business procedure files and reference document are removed. Generic
+method-source primitives under `skills/methods` remain source semantics for the
+static compiler; they are not executable business Skills. No `skill.get` content
+is injected into normal prompts, even from a historical context envelope.
 
-Readiness distinguishes a definition from an available implementation. Required
-dependencies block an action; optional dependencies are reported without
-blocking it. `system.action_schema` returns both the contract and readiness.
-Counts of definitions, compiled bindings, and actually tested capabilities have
-different meanings and must not be presented as interchangeable.
+## Publication and continuation
 
-Application discovery metadata is migrated in `tools/apps.json`; an application
-entry alone does not prove its external adapter is configured. The former
-standalone installer, per-user implementation overrides, nested V3 registries,
-and alternate model-tool schema files are retired. Only the installed adapter
-package can implement a dictionary binding. The migration inventory records
-stable IDs and distinguishes retained implementations from unavailable adapters.
+Edit `tools/catalog.json`, `tools/schemas.json`, `tools/apps.json`,
+`host-protocol.json` or `execution-profiles.json`, then run:
 
-## Budgets and completion
+- `python scripts/build-dictionary.py`
+- `python scripts/sync-generated-sources.py --write`
+- `python scripts/build-dictionary.py --check`
+- `python scripts/sync-generated-sources.py --check`
 
-Each model call has one monotonic deadline shared by HTTP retries, format repair,
-and cancellation. The normal ceiling remains 300 seconds and the parent's
-remaining budget can shorten it. There is no independent 180-second join.
-There are at most two transient retries and one truncated/invalid-output repair.
-Tool argument fragments never execute. `[DONE]`, terminal reasons, usage tails,
-HTTP-200 error events, malformed JSON, and unexpected EOF have explicit handling.
-Closing the local response does not prove remote billing stopped.
+Restart after publication. The release marker binds all generated views; the
+application release binds executor code. Source startup keeps installation,
+profile, temporary data and workspace on the selected drive.
 
-Native call/result pairs remain associated with provider, protocol, model, and
-call ID. Compaction removes whole pairs; full loaded Skill text is re-injected
-independently of the bounded observation history. Recovery uses saved facts and
-observations; uncertain effects must be inspected before retrying.
+Task records and continuation projections preserve the original goal, dictionary
+version, generated composition receipts and per-leaf observations. Programs remain
+in the Gateway ledger across restart. A changed dictionary requires explicit
+migration; an ambiguous effect requires reconciliation before repeat execution.
+The model regenerates remaining work from the checkpoint and actual artifacts.
 
-When complete native pairs are present, their duplicate textual observations
-become compact host-check summaries. Warnings and unpaired observations remain;
-cross-provider/model changes retain the textual fallback. Full facts stay in the
-Gateway. Explicit continuation also restores the original goal and pinned Skill
-IDs after a network/format failure, not only after a timeout. A newer completed
-request in the same conversation supersedes an earlier failed task.
+Native call/result groups are retained together across model turns and compacted
+as complete groups. Each model call has a shared deadline for transport retries,
+format correction and cancellation. Text/code, Office, image and media budgets
+separate process logs from artifact sizes. Runtime budgets never grant new access.
 
-Text/code, Office, image, and media profiles separate process log limits from
-artifact size limits. They narrow existing host resources and never grant new
-filesystem, network, Python, or shell permissions. Static composition retains its
-separately signed execution profile constraints.
+## Verification status and limits
 
-Local handoff is validated using actual artifact evidence and final inspection.
-External upload/send requests still need delivery evidence. Model errors and
-incomplete responses cannot terminate as a successful chat reply. Model claims
-alone are not acceptance evidence.
+`test_task_generated_composition.py` exercises actual dictionary compilation,
+durable program registration, real file mutation/read/hash, altered arguments,
+missing dependencies, failed leaves, duplicate execution and fixed-Skill rejection.
+`test_dictionary_runtime.py` covers release consistency, transport history,
+continuation context and native bindings. Verification Plane 1.32 adds the program
+compiler and Gateway ledger/effect binding to the frozen authority surface.
 
-Uncommitted model responses may be retried within the same parent deadline after
-a broken stream. Discarded partial tool arguments cannot execute. JSON repair
-instructions follow native history in the actual provider request, and attempt
-metrics retain finish reasons and progress timings without private reasoning.
-
-Current continuity, explicit constraints and required stored memories are kept
-before optional history. History over budget is omitted with an explicit count;
-it cannot block a new task as an identity failure. Required context that cannot
-fit returns `life.context.budget_exceeded`. Recent memory selection uses timestamps
-so saving or restarting cannot change its meaning through JSON key order.
-
-## Verification
-
-`tests/test_dictionary_model_lifecycle.py` injects stream termination, retry,
-cancellation, delayed result, and shared-deadline faults. A virtual 215-second
-valid generation checks removal of the former 180-second cutoff.
-`tests/test_dictionary_runtime.py` checks publication drift, missing dependencies,
-bad aliases/references, procedure preservation, historical envelope compatibility,
-three native transport rounds, and a real dictionary-bound file mutation.
-
-The live acceptance matrix uses the hidden source frontend form and the saved
-provider configuration. It covers file/code tasks, novels, video, images,
-spreadsheets, HTML, and PPT. Acceptance requires independent checks of generated
-files; a terminal state or a model saying "completed" is insufficient. Live
-results are recorded separately from deterministic test results.
-
-Verification Plane 1.31 declares the changed authority surface: dictionary-backed
-capability loading, native installed Method provenance, optional Skill grants,
-raw task context, bounded history selection, and the canonical CLI host. Its freeze manifest is regenerated with the existing guard
-after these changes; byte hashes do not substitute for the behavioral tests.
-The former `run-all-skills-smoke.py` is retired because it used synthetic learning
-receipts and compatibility execution, and cannot establish real acceptance.
+Earlier live artifact tests that selected or loaded fixed Skills do **not** prove
+this corrected architecture works. New live acceptance must show an ordinary user
+message leading to model-authored Tools and Skill, `composition.registered` in the
+Gateway ledger, bound leaf effects and independently verified output. Seven work
+categories, failure recovery and long-task restart remain separate acceptance
+items; neither action counts nor a COMPLETED label substitutes for those tests.
 
 ## Windows runtime access
 

@@ -712,7 +712,9 @@ class GatewayOrchestrationWorker:
                 expected_index_sha256=release.skill_index_sha256,
                 expected_catalog_sha256=release.skill_catalog_sha256,
             )
-            skill_selection = SkillSelectionService(loaded.catalog)
+            # The compatibility release index may be empty after fixed Skill
+            # retirement. Model-generated task compositions use the dictionary.
+            skill_selection = SkillSelectionService(loaded.catalog) if loaded.source_file_count else None
             capability_path = skill_root / "registry" / "capability_manifest.generated.json"
             loaded_capabilities = load_model_capability_manifest(
                 capability_path,

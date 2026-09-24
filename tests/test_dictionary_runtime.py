@@ -39,11 +39,9 @@ def test_release_marker_rejects_partial_publication(dictionary):
         release.verify_published()
 
 
-def test_skill_unknown_action_blocks_dictionary_load(dictionary):
-    row = json.loads((dictionary / "skills/catalog.json").read_text(encoding="utf-8"))["skills"][0]
-    path = dictionary / row["file"]
-    path.write_text(path.read_text(encoding="utf-8") + '\n{"action":"missing.action"}', encoding="utf-8")
-    with pytest.raises(DictionaryError, match="unknown_actions"):
+def test_fixed_skill_catalog_cannot_be_reintroduced(dictionary):
+    update_json(dictionary / "skills/catalog.json", lambda doc: doc.update(skills=[{"id": "fixed"}], skill_count=1))
+    with pytest.raises(DictionaryError, match="fixed_skills_retired"):
         load_dictionary(dictionary)
 
 
@@ -70,22 +68,19 @@ def test_required_dependency_disables_action_with_reason(dictionary):
     assert "missing:python:tiangong_missing_test_module" in readiness["reasons"]
 
 
-def test_running_release_keeps_loaded_procedure_bytes(dictionary):
+def test_running_release_keeps_pinned_protocol_bytes(dictionary):
     release = load_dictionary(dictionary)
-    row = release.skills["skills"][0]
-    before = release.skill_bodies[row["id"]]
-    (dictionary / row["file"]).write_text("new version", encoding="utf-8")
-    assert release.skill_bodies[row["id"]] == before
+    before = dict(release.host_protocol)
+    update_json(dictionary / "host-protocol.json", lambda doc: doc.update(description="new protocol"))
+    assert release.host_protocol == before
     load_dictionary.cache_clear()
     assert load_dictionary(dictionary).sha256 != release.sha256
 
 
-def test_full_selected_procedure_survives_context_compaction():
-    content = "procedure-step\n" * 1000 + "LAST_PROCEDURE_STEP"
+def test_historical_fixed_procedures_are_not_reinjected():
     wire = _render_context_envelope({"current_user_text": "do this", "skill_routing": {
-        "loaded_skills": [{"skill_id": "skill.test", "content": content}]},
-        "summary": "old context " * 5000}, context_limit=4000)
-    assert "LAST_PROCEDURE_STEP" in wire
+        "loaded_skills": [{"skill_id": "retired", "content": "RETIRED_PROCEDURE"}]}}, context_limit=4000)
+    assert "RETIRED_PROCEDURE" not in wire
     assert "do this" in wire
 
 
@@ -391,11 +386,11 @@ def test_long_checkpoint_preserves_dictionary_and_continues_network_failure(tmp_
     root = tmp_path / ".tiangong/v3/simple_chain_run_state"
     root.mkdir(parents=True)
     release = load_dictionary()
-    skill_id = release.skills["skills"][0]["id"]
+    generated = {"composition_id": "cmp_previous", "generated_skill_id": "task_generated", "status": "failed"}
     state = {"request_id": "old", "session_id": "same", "status": "failed",
         "terminal_reason": "[terminal_model_error] transport_error", "round": 31,
         "original_user_goal": "制作报告" + "保留明确条件" * 120,
-        "loaded_skill_ids": [skill_id], "dictionary_sha256": release.sha256,
+        "loaded_skill_ids": [], "generated_compositions": [generated], "dictionary_sha256": release.sha256,
         "dictionary_version": release.version,
         "completed_actions": [{"round": i} for i in range(31)]}
     old = root / "old.json"
@@ -407,7 +402,7 @@ def test_long_checkpoint_preserves_dictionary_and_continues_network_failure(tmp_
     wire = bridge._render_context_envelope(envelope, context_limit=3000)
     checkpoint = _simple_chain_recovery_checkpoint_from_context(wire)
     assert checkpoint["original_user_goal"] == state["original_user_goal"]
-    assert checkpoint["loaded_skill_ids"] == [skill_id]
+    assert checkpoint["generated_compositions"] == [generated]
     assert checkpoint["dictionary_sha256"] == release.sha256
     assert bridge._latest_session_recovery_checkpoint(context, "继续制作另一份新的预算表") == {}
     newest = root / "newer.json"

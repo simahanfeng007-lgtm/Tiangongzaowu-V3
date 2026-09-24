@@ -93,8 +93,8 @@ class SkillCatalog:
     """Immutable catalog snapshot; routing never silently falls back to a default Skill."""
 
     def __init__(self, definitions: tuple[SkillDefinition, ...]) -> None:
-        if not definitions:
-            raise ValueError("Skill catalog cannot be empty")
+        # An empty catalog represents retirement of fixed business Skills.
+        # Task-generated compositions do not belong to this compatibility index.
         if definitions != tuple(sorted(definitions, key=lambda item: item.skill_id)):
             raise ValueError("Skill catalog must be sorted by skill_id")
         if len({item.skill_id for item in definitions}) != len(definitions):
@@ -195,14 +195,14 @@ def load_filesystem_skill_catalog(
     if set(payload) != expected_root_keys or payload.get("schema") != "tiangong.skill-dictionary.v1":
         raise SkillSelectionError("Skill index schema or root fields are incompatible")
     actions = _string_list(payload.get("actions"), "actions")
-    if not {"skill.route", "skill.list", "skill.get", "skill.read"}.issubset(actions):
+    if payload.get("skills") and not {"skill.route", "skill.list", "skill.get", "skill.read"}.issubset(actions):
         raise SkillSelectionError("Skill index does not expose the complete model query surface")
     skills = payload.get("skills")
     if (
         not isinstance(skills, list)
         or isinstance(payload.get("skill_count"), bool)
         or payload.get("skill_count") != len(skills)
-        or not 1 <= len(skills) <= 10_000
+        or not 0 <= len(skills) <= 10_000
     ):
         raise SkillSelectionError("Skill index count is invalid")
 

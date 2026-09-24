@@ -428,6 +428,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "loaded_skill_ids": list(run_state.get("loaded_skill_ids") or [])[:8],
         "dictionary_sha256": run_state.get("dictionary_sha256"),
         "dictionary_version": run_state.get("dictionary_version"),
+        "generated_compositions": list(run_state.get("generated_compositions") or [])[-32:],
         "completed_actions": list(run_state.get("completed_actions") or [])[-24:],
         "obligations": [item for item in (run_state.get("obligations") or []) if isinstance(item, dict)][-12:],
         "delivery": run_state.get("delivery") if isinstance(run_state.get("delivery"), dict) else {},
@@ -976,6 +977,7 @@ def _simple_chain_regenerative_execute_tool(
             "global_step": int(global_step),
             "tool_name": tool_name,
             "attempted_action": attempted_action,
+            "composition_ref": run_state.get("active_composition_ref"),
             **descriptor,
         },
         logical_effect_id=descriptor["logical_effect_id"],
@@ -986,6 +988,7 @@ def _simple_chain_regenerative_execute_tool(
         epoch_index=int(turn_loop.epoch_index),
         global_step=int(global_step),
         attempt=max(1, int(global_step)),
+        composition_ref=run_state.get("active_composition_ref"),
         **descriptor,
     )
     if not isinstance(prepared, dict):
@@ -1508,6 +1511,8 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
     run_state["round"] = int(run_state.get("round") or 0) + 1
+    if run_state.get("active_composition_ref"):
+        payload["composition_ref"] = dict(run_state["active_composition_ref"])
     action = str(payload.get("tool_action") or "")
     if action == "skill.route":
         run_state["status"] = "skill_routing"

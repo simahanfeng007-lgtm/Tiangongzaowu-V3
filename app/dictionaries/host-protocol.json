@@ -1,67 +1,125 @@
 {
   "schema": "tiangong.dictionary.host-protocol.v1",
   "name": "omni_body",
-  "description": "Tool / Skill 字典统一调用协议。简单动作可直接执行；复杂制作任务先用 skill.get 读取候选规程，再观察工具结果持续执行。只传 action/target/args；权限由宿主独立裁决。完整 JSON 参数通过校验后才会执行。",
+  "description": "根据用户语义组合字典原子能力，生成本轮 Tool 与 Skill 并执行。任务动作须放入 composition：Tool 的 actions 顺序执行，Skill 的 steps 组合 Tool。需要未知信息时先生成观察组合，收到结果后再生成后续组合。每次只提交一个组合。仅 system.capabilities、system.action_schema、system.health 可直接发现能力。没有预置业务 Skill。",
   "parameters": {
     "type": "object",
     "properties": {
+      "composition": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "args"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "description",
+                "actions"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "skill": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "tool": {
+                      "type": "string"
+                    },
+                    "depends_on": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tool",
+                    "depends_on"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "description",
+              "steps"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "tools",
+          "skill"
+        ],
+        "additionalProperties": false
+      },
       "action": {
         "type": "string",
-        "description": "当前 Tool 字典中的动作 ID。能力发现用 system.capabilities，参数查询用 system.action_schema，Skill 规程用 skill.get。实际执行必须对应已发布字典绑定。",
-        "minLength": 1
+        "enum": [
+          "system.capabilities",
+          "system.action_schema",
+          "system.health"
+        ]
       },
       "target": {
-        "type": "string",
-        "description": "动作的主目标，例如工作区相对文件路径或 Skill ID；无目标的动作可省略。工作区和权限由系统绑定。"
+        "type": "string"
       },
       "args": {
         "type": "object",
-        "description": "动作专用参数，必须是 JSON 对象。写文件使用 args.content；运行现有脚本使用 target 和 args.argv。示例：{\"action\":\"file.write\",\"target\":\"out.txt\",\"args\":{\"content\":\"正文\"}}。只填写该动作需要的字段。",
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "file.write/code.write/file.append 的完整文本内容。"
-          },
-          "base64": {
-            "type": "string",
-            "description": "二进制文件的 base64 内容。"
-          },
-          "encoding": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string",
-            "description": "python.run 短检查的 Python 源码。"
-          },
-          "argv": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "传给 target 脚本的参数。"
-          },
-          "timeout": {
-            "type": "number"
-          },
-          "query": {
-            "type": "string"
-          },
-          "command": {
-            "type": "string"
-          },
-          "images": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "output": {
-            "type": "string"
-          },
-          "frame_rate": {
-            "type": "number"
-          }
-        },
         "additionalProperties": true
       },
       "_task_profile": {
@@ -167,10 +225,6 @@
         "additionalProperties": false
       }
     },
-    "required": [
-      "action",
-      "args"
-    ],
     "additionalProperties": false
   }
 }

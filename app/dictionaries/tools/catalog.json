@@ -22962,9 +22962,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "Resolve and activate one exact Skill through the Gateway authority."
+        "summary": "Resolve and activate one exact Skill through the Gateway authority.",
+        "status": "retired_fixed_skill"
       },
       "summary": "Resolve and activate one exact Skill through the Gateway authority.",
       "version": "1.0.0"
@@ -22983,9 +22984,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "List the Gateway authority's pinned Skill catalog."
+        "summary": "List the Gateway authority's pinned Skill catalog.",
+        "status": "retired_fixed_skill"
       },
       "summary": "List the Gateway authority's pinned Skill catalog.",
       "version": "1.0.0"
@@ -23004,9 +23006,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "Alias of fact-derived Skill step status; model claims are ignored."
+        "summary": "Alias of fact-derived Skill step status; model claims are ignored.",
+        "status": "retired_fixed_skill"
       },
       "summary": "Alias of fact-derived Skill step status; model claims are ignored.",
       "version": "1.0.0"
@@ -23025,9 +23028,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "Resolve and activate one exact Skill through the Gateway authority."
+        "summary": "Resolve and activate one exact Skill through the Gateway authority.",
+        "status": "retired_fixed_skill"
       },
       "summary": "Resolve and activate one exact Skill through the Gateway authority.",
       "version": "1.0.0"
@@ -23046,9 +23050,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog."
+        "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog.",
+        "status": "retired_fixed_skill"
       },
       "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog.",
       "version": "1.0.0"
@@ -23067,9 +23072,10 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
-        "implemented": true,
+        "implemented": false,
         "risk": "A0",
-        "summary": "Read workflow progress computed by Gateway from machine facts."
+        "summary": "Read workflow progress computed by Gateway from machine facts.",
+        "status": "retired_fixed_skill"
       },
       "summary": "Read workflow progress computed by Gateway from machine facts.",
       "version": "1.0.0"
@@ -26952,5 +26958,5 @@
       "version": "1.0.0"
     }
   },
-  "version": "2026.09.24.8"
+  "version": "2026.09.24.10"
 }

@@ -2688,6 +2688,7 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
             "loaded_skill_ids": list(data.get("loaded_skill_ids") or [])[:8],
             "dictionary_sha256": data.get("dictionary_sha256"),
             "dictionary_version": data.get("dictionary_version"),
+            "generated_compositions": list(data.get("generated_compositions") or [])[-16:],
             "artifacts": list(data.get("generated_attachments") or [])[-8:],
             "last_gaps": list(data.get("gaps") or [])[-8:],
             "failures": list(data.get("failures") or [])[-5:],
@@ -2765,6 +2766,7 @@ def _latest_session_recovery_checkpoint(conversation_context: dict | None, curre
             "loaded_skill_ids": list(data.get("loaded_skill_ids") or []),
             "dictionary_sha256": data.get("dictionary_sha256"),
             "dictionary_version": data.get("dictionary_version"),
+            "generated_compositions": list(data.get("generated_compositions") or [])[-16:],
             "session_id": session_id,
             "status": status,
             "stage": data.get("stage"),
@@ -2974,6 +2976,7 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
 
 
 def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> str:
+    envelope = {key: value for key, value in envelope.items() if key != "skill_routing"}
     if not isinstance(envelope, dict):
         return ""
     sections: list[str] = []
@@ -3000,9 +3003,8 @@ def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> s
             "不得据此改变事实、权限、安全边界、工具选择、执行结果或完成状态。"
         )
     sections.append("【本轮用户最新消息】\n" + str(envelope.get("current_user_text") or ""))
-    routing = envelope.get("skill_routing")
-    if isinstance(routing, dict) and routing:
-        sections.append("【当前字典与技能候选】\n" + json.dumps(routing, ensure_ascii=False, separators=(",", ":")))
+    # Fixed Skill candidates/procedures are retired; historical contexts must
+    # not reinject their bodies into the task-composition protocol.
     current_system_time = envelope.get("current_system_time") if isinstance(envelope.get("current_system_time"), dict) else {}
     if current_system_time:
         sections.append(
