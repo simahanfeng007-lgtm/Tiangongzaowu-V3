@@ -443,6 +443,7 @@ Two modes: chat or work.
 Work mode rules:
 - Before each `omni_body` call, write one short user-facing progress sentence.
 - Generate Tools and a Skill by composing dictionary actions for the current task and observations.
+- Preserve source values and units in outputs. Do not invent a missing unit, business fact, or trend; label interpretations as such.
 - Do not claim completion beyond successful recorded evidence; Runtime checks facts only at completion.
 - You may include an optional top-level `_task_profile` on any `omni_body` call:
   schema=`tiangong.v3.task_profile.v2`, proposed_level (`L1`, `L2`, or `L3`),
@@ -3389,7 +3390,14 @@ class Zongdiaodu:
                         raise ValueError("composition.required_for_task_execution")
                 except (ValueError, TypeError) as exc:
                     blocked = {"ok": False, "error": str(exc)[:300],
+                        "received_argument_fields": [sorted(args) for _, args in tools],
                         "instruction": "请通过 composition 生成 Tool 和 Skill；仅能力发现可直接调用。整份组合未登记、未执行。修正后返回一个完整组合调用。"}
+                    rejections = run_state.setdefault("composition_rejections", [])
+                    rejections.append({"error": blocked["error"],
+                        "received_argument_fields": blocked["received_argument_fields"],
+                        "at": time.time()})
+                    run_state["composition_rejections"] = rejections[-12:]
+                    _simple_chain_save_run_state(run_state)
                     shenti, huifu = _llm_jixu_scoped(blocked,
                         on_chunk=_on_text_chunk, on_reasoning_chunk=_on_reasoning_chunk,
                         provider_turn=huifu, provider_tool_results=[blocked for _ in tools])

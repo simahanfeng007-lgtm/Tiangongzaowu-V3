@@ -302,14 +302,12 @@ def _load_learning_runtime() -> tuple[Any | None, Any | None, str]:
 
 
 # ---------- v3.2 delivery kernel actions ----------
-# These are the compact action names used by the PPT Skill through the single
-# externally visible omni_body tool.  They must never disappear from validation
+# These are delivery primitives available to model-generated compositions.
+# Retired fixed Skill loaders are not runtime health requirements.
+# The retained primitives must never disappear from validation
 # merely because a dynamic submodule failed to import: that converts a precise
 # capability fault into the misleading `unknown_action` symptom.
 _REQUIRED_SINGLE_TOOL_ACTIONS: Dict[str, Dict[str, Any]] = {
-    "skill.route": {"risk": "A0", "summary": "Route a task to a compact executable Skill."},
-    "skill.get": {"risk": "A0", "summary": "Get compact Skill metadata."},
-    "skill.read": {"risk": "A0", "summary": "Read the selected Skill procedure."},
     "template.apply": {"risk": "A2", "summary": "Apply a delivery template and emit its machine-readable design contract."},
     "qc.ppt.delivery_check": {"risk": "A0", "summary": "Run the PowerPoint delivery quality gate."},
     "repair.plan": {"risk": "A2", "summary": "Create a repair plan from quality-gate findings."},

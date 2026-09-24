@@ -1553,7 +1553,12 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
         "ok": payload_ok,
         "completion_ok": completion_ok,
     })
-    run_state.setdefault("observations", []).append(_run_state_safe_value(payload, limit=5000))
+    saved_observation = _run_state_safe_value(payload, limit=5000)
+    if run_state.get("active_composition_ref"):
+        # General result compaction caps dictionary fields. Preserve the small
+        # execution binding even when a rich tool result fills that cap.
+        saved_observation["composition_ref"] = dict(run_state["active_composition_ref"])
+    run_state.setdefault("observations", []).append(saved_observation)
     update_run_state_obligations(run_state, payload)
     if isinstance(run_state.get("task_contract"), dict):
         run_state["task_contract"] = update_task_contract_evidence(

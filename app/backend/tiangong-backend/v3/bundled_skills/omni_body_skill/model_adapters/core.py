@@ -162,10 +162,12 @@ def render_tool_schema(profile_id: str | None = None, provider: str | None = Non
             "tool_schema": {"functionDeclarations": [{"name": TOOL_NAME, "description": _tool_description(), "parameters": params}]},
         }
     if schema_style == "xml_prompt_contract":
+        from capability_dictionary import load_dictionary
+        from capability_dictionary.composition import composition_prompt
         prompt = (
             "可用工具：omni_body。按以下 XML 输出工具调用：\n"
-            "<tool_call><name>omni_body</name><arguments>{\"action\":\"file.write\",\"target\":\"output.txt\",\"args\":{\"content\":\"...\"}}</arguments></tool_call>\n"
-            "arguments 必须是 JSON；不要把完整交付流程藏在一个请求里。"
+            "<tool_call><name>omni_body</name><arguments>完整 JSON 参数对象</arguments></tool_call>\n"
+            + composition_prompt(load_dictionary()) + "\n"
             "可选在顶层 _task_profile 给出 schema、proposed_level、desired_facts、"
             "可变 plan_hint 与 constraints；轻量任务可省略，计划不参与硬验收。"
         )

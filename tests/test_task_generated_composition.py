@@ -59,6 +59,39 @@ def test_task_program_is_generated_with_no_fixed_skills():
     assert compile_task_composition(proposal("different goal output"))["program_sha256"] != program["program_sha256"]
 
 
+@pytest.mark.parametrize("protocol", ["openai_chat_completions", "openai_responses", "anthropic_messages"])
+@pytest.mark.parametrize("empty_defaults", [False, True])
+def test_model_program_survives_native_adapter_parser_and_gateway(protocol, empty_defaults, gateway):
+    from v3.jineng.http_kehuduan import _canonicalize_provider_turn
+    from v3.gutong.gutong_ceng import GutongCeng
+    from v3.model_protocol_contract import ProviderTurnEnvelope, ToolCallBinding
+    envelope = {"composition": proposal()}
+    wire_envelope = {**envelope, "action": "", "target": "", "args": {}} if empty_defaults else envelope
+    binding = ToolCallBinding(canonical_call_id="native-call", provider_call_id="provider-call",
+        tool_name="omni_body", protocol_family=protocol, binding_type="native")
+    native = ProviderTurnEnvelope("", protocol_family=protocol, visible_text="Creating the requested file.",
+        tool_calls=[{"id": "native-call", "name": "omni_body", "arguments": wire_envelope}],
+        tool_call_bindings=[binding], finish_reason="tool_calls")
+    adapted = _canonicalize_provider_turn(native)
+    assert adapted.tool_calls[0]["arguments"] == envelope
+    assert adapted.tool_call_bindings == native.tool_call_bindings
+    parsed = GutongCeng.jiexi_duogongju(adapted)
+    assert parsed == [("omni_body", envelope)]
+    registered = register(gateway, parsed[0][1]["composition"])
+    assert registered["program_sha256"] == compile_task_composition(proposal())["program_sha256"]
+
+
+def test_observation_compaction_retains_generated_program_binding(monkeypatch):
+    from v3.simple_chain import kernel
+    monkeypatch.setattr(kernel, "_simple_chain_save_run_state", lambda state: None)
+    reference = {"composition_id": "cmp_test", "program_sha256": "a" * 64, "leaf_id": "read.1"}
+    state = {"active_composition_ref": reference}
+    rich_result = {f"detail_{i}": "value" for i in range(30)}
+    rich_result.update(ok=True, tool_action="file.read", tool_name="omni_body")
+    kernel._simple_chain_record_observation(state, rich_result)
+    assert state["observations"][0]["composition_ref"] == reference
+
+
 @pytest.mark.parametrize("change,code", [
     (lambda p: p["tools"][0]["actions"][0].update(action="skill.get"), "fixed_skill"),
     (lambda p: p["tools"][0]["actions"][0].update(action="unavailable.fake"), "unavailable"),

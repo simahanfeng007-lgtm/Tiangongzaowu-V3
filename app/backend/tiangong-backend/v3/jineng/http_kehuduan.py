@@ -540,6 +540,20 @@ def _json_loads_maybe(value: Any) -> Any:
 def _canonical_to_omni_arguments(call: dict[str, Any], raw_args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Strip model-authored authority fields before the Gate sees a tool call."""
     raw = raw_args if isinstance(raw_args, dict) else {}
+    if "composition" in raw:
+        # A generated program is already a host-protocol envelope. The legacy
+        # action normalizer used to bury it inside args and invent an empty
+        # action, so even a correct model program could never be registered.
+        # Preserve every field for the composition boundary to validate;
+        # unknown/authority fields must be rejected there, not silently hidden.
+        envelope = dict(raw)
+        # Compatible providers sometimes fill unused optional properties with
+        # their empty defaults. They convey no second invocation. Nonempty
+        # mixed-mode fields stay present and fail envelope validation.
+        for field, empty in (("action", ""), ("target", ""), ("args", {})):
+            if field in envelope and envelope[field] == empty:
+                envelope.pop(field)
+        return envelope
     known = {
         "action", "command", "operation", "op", "target", "path", "url", "resource",
         "args", "payload", "confirm", "confirmed",
