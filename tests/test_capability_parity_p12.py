@@ -58,10 +58,12 @@ def test_every_required_action_is_covered_by_the_current_manifest():
 
 def test_retained_shared_actions_are_pinned():
     table = _table()
+    capabilities = json.loads(MANIFEST.read_text(encoding="utf-8"))["capabilities"]
     retained = {row["action"]: row for row in table["retained_shared_actions"]}
     assert set(retained) == {"skill.step.check", "skill.progress.report"}
     for action, row in retained.items():
         assert row["present_in_current_manifest"] is True, action
+        assert row["implemented"] == bool(capabilities[action].get("implemented"))
 
 
 def test_honesty_contract_no_item_claims_task_parity():
@@ -71,6 +73,10 @@ def test_honesty_contract_no_item_claims_task_parity():
     for item in table["items"]:
         assert item["task_parity"] == "REQUIRES_TASK_PARITY"
     assert "NOT behavioural parity" in table["honesty"]
+    assert table["summary"]["task_execution_proven"] is False
+    if not table["items"]:
+        assert table["summary"]["catalog_status"] == "FIXED_SKILLS_RETIRED"
+        assert "zero items prove no task execution" in table["honesty"]
 
 
 def test_high_risk_items_are_flagged_not_hidden():
