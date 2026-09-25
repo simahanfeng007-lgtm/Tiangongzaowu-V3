@@ -530,7 +530,7 @@ def test_success_fact_materializes_step_output_for_downstream_v2_receipt(
             now_ms=1_703,
         )
         assert second is not None and second.request.attempt == 1
-        assert second.request.materialized_arguments == {"skill_id": "a" * 64}
+        assert second.request.materialized_arguments == {"pattern": "a" * 64}
         assert len(second.request.dependency_evidence) == 1
         evidence = second.request.dependency_evidence[0]
         assert evidence["producer_step_id"] == "step.01"

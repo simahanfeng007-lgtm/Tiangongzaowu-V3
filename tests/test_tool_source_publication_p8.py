@@ -32,6 +32,7 @@ def publication(source, tmp_path):
     manifest = source / "dictionaries/registry/capability_manifest.generated.json"
     before = baseline["build_artifact"]["gateway_manifest"]
     manifest.write_bytes(canonical_json_bytes(before) + b"\n")
+    requested_actions = tuple(sorted(before["capabilities"]))
     base = commit(source)
     marker = tmp_path / "candidate-must-not-execute"
     (source / "src/omni_body_skill/tools/handler.py").write_text(
@@ -39,7 +40,7 @@ def publication(source, tmp_path):
     )
     head = commit(source)
     candidate = inspect_tool_source_candidate(
-        source, base_commit=base, candidate_commit=head, requested_action_ids=("skill.list",),
+        source, base_commit=base, candidate_commit=head, requested_action_ids=requested_actions,
     )
     official = _load_module()
 
@@ -57,7 +58,7 @@ def publication(source, tmp_path):
             trusted_static_checks={"python_ast_files": 1, "source_topology_valid": True},
             committed_manifest_matches_build=False,
             manifest_review=asdict(review_manifest_evolution(
-                before, report["build_artifact"]["gateway_manifest"], requested_action_ids=("skill.list",),
+                before, report["build_artifact"]["gateway_manifest"], requested_action_ids=requested_actions,
             )),
         )
         mutate(report)

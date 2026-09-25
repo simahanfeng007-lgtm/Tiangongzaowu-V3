@@ -156,7 +156,7 @@ def test_refresh_precedes_signed_parent_arguments_effect_and_ticket():
     source = Path(__file__).resolve().parents[1] / "src/total_gateway/orchestration.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     owner = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GatewayOrchestrationWorker")
-    process = next(n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "process")
+    process = next(n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "_process")
     def line(name):
         return min(n.lineno for n in ast.walk(process) if isinstance(n, ast.Call) and ast.unparse(n.func) == name)
     refresh = line("self._authorize_life_after_planning")

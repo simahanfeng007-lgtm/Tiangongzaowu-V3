@@ -86,7 +86,14 @@ class P18M2RuntimeIntegrationTests(unittest.TestCase):
         runtime_source = (ROOT / "src" / "total_gateway" / "runtime.py").read_text(encoding="utf-8")
         embedded_source = (ROOT / "src" / "total_gateway" / "embedded_backend.py").read_text(encoding="utf-8")
         provider_source = (ROOT / "src" / "total_gateway" / "regenerative_provider.py").read_text(encoding="utf-8")
-        self.assertIn("RegenerativeExecutionAuthority(runtime.store)", runtime_source)
+        import ast
+        calls = [node for node in ast.walk(ast.parse(runtime_source))
+                 if isinstance(node, ast.Call) and ast.unparse(node.func) == "RegenerativeExecutionAuthority"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(ast.unparse(calls[0].args[0]), "runtime.store")
+        keywords = {item.arg: ast.unparse(item.value) for item in calls[0].keywords}
+        self.assertEqual(keywords["require_compositions"], "True")
+        self.assertEqual(keywords["experience_service"], "runtime.composition_experiences")
         self.assertIn("set_regenerative_execution_provider", embedded_source)
         self.assertIn("set_simple_chain_regenerative_execution_provider", embedded_source)
         self.assertNotIn("GatewayStateStore.open", provider_source)

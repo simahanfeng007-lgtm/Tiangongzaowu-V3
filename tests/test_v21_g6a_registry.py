@@ -14,9 +14,9 @@ LEDGER = ROOT / "v21-work/v21-g0-20260802T100346Z-dbc48aae2392/ledgers/issue-clo
 
 
 def _load() -> tuple[dict, dict]:
-    registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    return registry, manifest
+    fixture = json.loads((ROOT / "tests/fixtures/legacy-skill-migration-input.json").read_text(encoding="utf-8"))
+    assert json.loads(REGISTRY.read_text(encoding="utf-8"))["skills"] == []
+    return fixture["index"], {"capabilities": fixture["legacy_capabilities"]}
 
 
 def test_t29_registry_34_unique_cards_12_acceptances_action_closure_orphan() -> None:
@@ -53,7 +53,8 @@ def test_t29_registry_34_unique_cards_12_acceptances_action_closure_orphan() -> 
     assert search["acceptance"]["source_links_required"] is True
     assert search["acceptance"]["must_pass"] == ["web.search.current_sources"]
     assert not NON_SKILL_REFS.exists(), "legacy non-skill registry is retired"
-    assert all((ROOT / "dictionaries" / item["file"]).is_file() for item in skills)
+    fixture = json.loads((ROOT / "tests/fixtures/legacy-skill-migration-input.json").read_text(encoding="utf-8"))
+    assert all(len(fixture["source_hashes"]["dictionaries/" + item["file"]]) == 64 for item in skills)
     assert not any("delivery_kernel_global" in (item.get("file") or "") for item in skills)
     voice = next(item for item in skills if item["id"] == "skill_authorized_voice_audio_worldclass_v1")
     assert voice["quality_gates"] == ["qc.voice_authorized.delivery_check"]

@@ -26,7 +26,7 @@
   "src/total_gateway/regenerative_provider.py": "cee70f83f168c2fd8d8398183077b4be3655a12fa1f25f42f0cd9786a4f753d6",
   "src/total_gateway/regenerative_execution.py": "95c693250d2e62e79d8599eb134854d6383dfe080cdb28237bcb4ccc07d5c0e1",
   "src/contracts/artifacts.py": "9236c96f4d951c3b15ee0c12a031bf2716b6033b2c61698668f4fc896ffcd8da",
-  "src/contracts/compatibility.py": "4ec9b2a2bb96214e1aa6a2d28d0a935d2633550d5fef77008eac5d315459080f",
+  "src/contracts/compatibility.py": "9ac1756125811ab64ccb105715cd599118d8052eef51f2c6e4081a73a19c3ecf",
   "src/contracts/composition_profile.py": "2424ff5039af0da588af6654c815d567d41adda5f4afc42fa97900fe37f2a80f",
   "src/contracts/policy.py": "81ae0e17f79ca13fd70af097b338d6f3d36fd91c18f0003d26c0b15ceb08081e",
   "src/runtime_security/composition_path.py": "78d24a97edc9e06fa12c738396dbc6ce97eff03773f0e113f10b6efd5165e5a1",

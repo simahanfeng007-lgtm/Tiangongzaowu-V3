@@ -43,22 +43,24 @@ def execution(monkeypatch, intake_factory, tmp_path):
     class FloatBackend(original_backend):
         def request(self, *args, **kwargs):
             status, value, _digest = super().request(*args, **kwargs)
-            value["result"]["result"]["selection"] = {"id": "native_0", "elapsed_seconds": 0.125}
+            value["result"]["count"] = 1
+            value["result"]["entries"] = [{"name": "native_0", "path": value["target"] + "/native_0",
+                "rel_path": "native_0", "type": "file", "size_bytes": 1, "modified": 0.125}]
             raw = json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True,
                              separators=(",", ":")).encode("utf-8")
             return status, value, hashlib.sha256(raw).hexdigest()
 
     def aggregate_inputs(c, result):
         values = original(c, result)
-        # The original dispatch-only fixture used an intentionally unresolved
-        # output hash. Finalization needs the actual sealed extraction schema.
+        # Bind aggregate verification to the explicit published entries schema,
+        # including its native floating-point timestamp representation.
         with zipfile.ZipFile(c["tool_source"].bundle_path) as bundle:
             manifest = json.loads(bundle.read("build-report.json"))["build_artifact"]["gateway_manifest"]
         authority = compile_action_authority(manifest, generated_at_ms=0)
         step = values["step_bindings"][0]
         schema = authority.schema_catalog.resolve(step.action_id, step.action_version)
         selectors = [item for item in schema.value_schemas if item.source_kind == "RESULT_PAYLOAD"]
-        selected = next(item for item in selectors if item.json_pointer == "/result/result/selection")
+        selected = next(item for item in selectors if item.json_pointer == "/result/entries")
         output = _hashed(step.output_declarations[0].model_copy(update={
             "json_pointer": selected.json_pointer,
             "value_schema_sha256": selected.value_schema_sha256,

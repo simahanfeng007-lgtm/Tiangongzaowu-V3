@@ -38,6 +38,7 @@ from contracts.compatibility import (
     P7D2_COMPOSITION_EXECUTION_SCHEMA_BASELINE_SHA256,
     REVIEWED_SCHEMA_BASELINE_SHA256,
     CONTROLLED_COMPOSITION_PROFILE_SCHEMA_BASELINE_SHA256,
+    DICTIONARY_TASK_CONTEXT_SCHEMA_BASELINE_SHA256,
     assert_schema_bundles_compatible,
     compare_schema_bundles,
 )
@@ -130,10 +131,12 @@ class ContractCompatibilityTests(unittest.TestCase):
             contract_schema_bundle_sha256(),
             REVIEWED_SCHEMA_BASELINE_SHA256,
         )
-        # Step 0: fixed-profile additions -> exact retained P7D.2 schema.
+        # Remove only the reviewed optional dictionary task/selection metadata
+        # and recover the exact retained fixed-profile baseline before walking
+        # the complete older compatibility chain.
         self.assertEqual(
             REVIEWED_SCHEMA_BASELINE_SHA256,
-            CONTROLLED_COMPOSITION_PROFILE_SCHEMA_BASELINE_SHA256,
+            DICTIONARY_TASK_CONTEXT_SCHEMA_BASELINE_SHA256,
         )
         bundle = contract_schema_bundle()
 
@@ -174,6 +177,28 @@ class ContractCompatibilityTests(unittest.TestCase):
                 for item in node:
                     _restore_v1(item)
 
+        def _restore_pre_dictionary(node):
+            if isinstance(node, dict):
+                fields = {
+                    "InboundEnvelope": ("task_context",),
+                    "SkillCandidate": ("title", "summary", "available_optional_actions"),
+                }.get(node.get("title"), ())
+                for field in fields:
+                    self.assertNotIn(field, node.get("required", []))
+                    self.assertIn(field, node["properties"])
+                    node["properties"].pop(field)
+                if "$defs" in node:
+                    node["$defs"].pop("TaskInputContext", None)
+                for value in node.values():
+                    _restore_pre_dictionary(value)
+            elif isinstance(node, list):
+                for value in node:
+                    _restore_pre_dictionary(value)
+
+        _restore_pre_dictionary(bundle)
+        self.assertEqual(_sha(bundle), CONTROLLED_COMPOSITION_PROFILE_SCHEMA_BASELINE_SHA256)
+
+        # Step 0: fixed-profile additions -> exact retained P7D.2 schema.
         profiled_schemas = [bundle["CompositionExecutionBindingV1"]]
         profiled_schemas.extend(bundle[name]["$defs"]["CompositionExecutionBindingV1"]
                                 for name in ("ActionIntent", "PolicyDecision", "ExecutionTicket", "OmniCapabilityGrant"))

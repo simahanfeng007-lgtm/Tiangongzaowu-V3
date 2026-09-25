@@ -109,6 +109,9 @@ def test_signed_consumer_and_dynamic_body_package_run_without_gateway_siblings(t
                 if fullname.split('.')[0] in forbidden:
                     raise AssertionError('forbidden sibling import: ' + fullname)
         sys.meta_path.insert(0, NoGatewaySiblings())
+        # Dictionary definitions are an explicit Body dependency; execution
+        # authorities below remain forbidden even though src is discoverable.
+        sys.path.insert(0, str(root / 'src'))
         sys.path.insert(0, str(root / 'app' / 'backend' / 'tiangong-backend'))
         skill = root / 'src' / 'omni_body_skill'
         spec = importlib.util.spec_from_file_location('standalone_verifier', skill / 'tools' / 'omni_capability.py')

@@ -2350,5 +2350,2388 @@
     "dictionaries/skills/56_skill_vrm_optimization.md": "d13b35aab382a7a2871e60497d15e72409be3af0d5dc587237d6f0ebd209be29",
     "dictionaries/skills/59_skill_mindmap_knowledge_architecture_worldclass.md": "12a6f5186718e1160c77fc3c45ecfbd9ccc12165ce4a2c0df3864eee601316ad",
     "dictionaries/skills/51_skill_omni_body_reference.md": "ddbd552c79537d275d4f5b76e804932df6259bf69e8b001c688af72616a85a72"
+  },
+  "legacy_context_baseline": {
+    "source_commit": "3a95e155e741bf18284ff5c468096876da611888",
+    "source_file_count": 34,
+    "text_sha256": "81f72470dcb2259186adf62358c34682bf8a1ca92117be7372fc2016f07fbd9a",
+    "characters": 47768,
+    "conservative_tokens": 24715
+  },
+  "legacy_capability_manifest_sha256": "beccf4b667d03485f9dc6da5a3327fbb0551d3bc0e966f32cd9aba3aadd36031",
+  "legacy_capabilities": {
+    "ableton.live.arrangement.render": {
+      "executable": false
+    },
+    "ableton.live.clip.import": {
+      "executable": false
+    },
+    "ableton.live.device.add": {
+      "executable": false
+    },
+    "ableton.live.midi.create": {
+      "executable": false
+    },
+    "ableton.live.set.create": {
+      "executable": false
+    },
+    "ableton.live.track.add": {
+      "executable": false
+    },
+    "adobe.aftereffects.composition.create": {
+      "executable": false
+    },
+    "adobe.aftereffects.effect.apply": {
+      "executable": false
+    },
+    "adobe.aftereffects.export.mov": {
+      "executable": false
+    },
+    "adobe.aftereffects.jsx.script.create": {
+      "executable": true
+    },
+    "adobe.aftereffects.keyframe.set": {
+      "executable": false
+    },
+    "adobe.aftereffects.layer.add": {
+      "executable": false
+    },
+    "adobe.aftereffects.project.create": {
+      "executable": false
+    },
+    "adobe.aftereffects.render.queue": {
+      "executable": false
+    },
+    "adobe.aftereffects.text.animate": {
+      "executable": false
+    },
+    "adobe.audition.audio.open": {
+      "executable": false
+    },
+    "adobe.audition.clip.concat": {
+      "executable": false
+    },
+    "adobe.audition.clip.trim": {
+      "executable": false
+    },
+    "adobe.audition.effect.apply": {
+      "executable": false
+    },
+    "adobe.audition.mixdown.export": {
+      "executable": false
+    },
+    "adobe.audition.noise.reduce": {
+      "executable": false
+    },
+    "adobe.illustrator.artboard.create": {
+      "executable": false
+    },
+    "adobe.illustrator.document.create": {
+      "executable": false
+    },
+    "adobe.illustrator.export.pdf": {
+      "executable": false
+    },
+    "adobe.illustrator.export.png": {
+      "executable": false
+    },
+    "adobe.illustrator.export.svg": {
+      "executable": false
+    },
+    "adobe.illustrator.path.create": {
+      "executable": false
+    },
+    "adobe.illustrator.style.apply": {
+      "executable": false
+    },
+    "adobe.illustrator.text.add": {
+      "executable": false
+    },
+    "adobe.illustrator.vector.import": {
+      "executable": false
+    },
+    "adobe.indesign.document.create": {
+      "executable": false
+    },
+    "adobe.indesign.export.pdf": {
+      "executable": false
+    },
+    "adobe.indesign.image.place": {
+      "executable": false
+    },
+    "adobe.indesign.package.create": {
+      "executable": false
+    },
+    "adobe.indesign.page.add": {
+      "executable": false
+    },
+    "adobe.indesign.style.apply": {
+      "executable": false
+    },
+    "adobe.indesign.textframe.add": {
+      "executable": false
+    },
+    "adobe.lightroom.batch.export": {
+      "executable": false
+    },
+    "adobe.lightroom.crop.set": {
+      "executable": false
+    },
+    "adobe.lightroom.export.jpg": {
+      "executable": false
+    },
+    "adobe.lightroom.photo.import": {
+      "executable": false
+    },
+    "adobe.lightroom.photo.rate": {
+      "executable": false
+    },
+    "adobe.lightroom.preset.apply": {
+      "executable": false
+    },
+    "adobe.photoshop.document.create": {
+      "executable": true
+    },
+    "adobe.photoshop.document.open": {
+      "executable": true
+    },
+    "adobe.photoshop.export.png": {
+      "executable": true
+    },
+    "adobe.photoshop.export.psd": {
+      "executable": false
+    },
+    "adobe.photoshop.filter.apply": {
+      "executable": false
+    },
+    "adobe.photoshop.image.crop": {
+      "executable": true
+    },
+    "adobe.photoshop.image.resize": {
+      "executable": true
+    },
+    "adobe.photoshop.layer.create": {
+      "executable": true
+    },
+    "adobe.photoshop.layer.update": {
+      "executable": true
+    },
+    "adobe.photoshop.mask.create": {
+      "executable": false
+    },
+    "adobe.photoshop.selection.make": {
+      "executable": false
+    },
+    "adobe.photoshop.text.add": {
+      "executable": true
+    },
+    "adobe.photoshop.uxp.script.create": {
+      "executable": true
+    },
+    "adobe.premiere.audio.mix": {
+      "executable": false
+    },
+    "adobe.premiere.clip.move": {
+      "executable": false
+    },
+    "adobe.premiere.color.apply": {
+      "executable": false
+    },
+    "adobe.premiere.export.mp4": {
+      "executable": false
+    },
+    "adobe.premiere.jsx.script.create": {
+      "executable": true
+    },
+    "adobe.premiere.media.import": {
+      "executable": false
+    },
+    "adobe.premiere.project.create": {
+      "executable": false
+    },
+    "adobe.premiere.subtitle.add": {
+      "executable": false
+    },
+    "adobe.premiere.timeline.create": {
+      "executable": false
+    },
+    "adobe.premiere.timeline.cut": {
+      "executable": false
+    },
+    "adobe.premiere.transition.add": {
+      "executable": false
+    },
+    "airtable.base.list": {
+      "executable": false
+    },
+    "airtable.record.create": {
+      "executable": false
+    },
+    "airtable.record.delete": {
+      "executable": false
+    },
+    "airtable.record.update": {
+      "executable": false
+    },
+    "airtable.table.read": {
+      "executable": false
+    },
+    "airtable.view.read": {
+      "executable": false
+    },
+    "anthropic_api.text.generate": {
+      "executable": false
+    },
+    "anthropic_api.tool_use.run": {
+      "executable": false
+    },
+    "anthropic_api.vision.analyze": {
+      "executable": false
+    },
+    "app.adapter.health": {
+      "executable": true
+    },
+    "app.adapter.matrix": {
+      "executable": true
+    },
+    "app.bridge.pack.create": {
+      "executable": true
+    },
+    "app.bridge.script.create": {
+      "executable": true
+    },
+    "app.native.capability_probe": {
+      "executable": true
+    },
+    "asana.comment.add": {
+      "executable": false
+    },
+    "asana.project.read": {
+      "executable": false
+    },
+    "asana.task.create": {
+      "executable": false
+    },
+    "asana.task.search": {
+      "executable": false
+    },
+    "asana.task.update": {
+      "executable": false
+    },
+    "audacity.audio.open": {
+      "executable": false
+    },
+    "audacity.audio.trim": {
+      "executable": false
+    },
+    "audacity.effect.apply": {
+      "executable": false
+    },
+    "audacity.export.mp3": {
+      "executable": false
+    },
+    "audacity.export.wav": {
+      "executable": false
+    },
+    "audacity.noise.reduce": {
+      "executable": false
+    },
+    "audacity.track.mix": {
+      "executable": false
+    },
+    "audio.concat": {
+      "executable": true
+    },
+    "audio.tone": {
+      "executable": true
+    },
+    "audio.trim": {
+      "executable": true
+    },
+    "audio.tts": {
+      "executable": true
+    },
+    "blender.python.run": {
+      "executable": true
+    },
+    "blender.python.script.create": {
+      "executable": true
+    },
+    "browser.chrome.back": {
+      "executable": false
+    },
+    "browser.chrome.click": {
+      "executable": false
+    },
+    "browser.chrome.cookies.read": {
+      "executable": false
+    },
+    "browser.chrome.cookies.write": {
+      "executable": false
+    },
+    "browser.chrome.download": {
+      "executable": true
+    },
+    "browser.chrome.extract_dom": {
+      "executable": true
+    },
+    "browser.chrome.extract_text": {
+      "executable": true
+    },
+    "browser.chrome.fill": {
+      "executable": false
+    },
+    "browser.chrome.forward": {
+      "executable": false
+    },
+    "browser.chrome.goto": {
+      "executable": true
+    },
+    "browser.chrome.network.capture": {
+      "executable": false
+    },
+    "browser.chrome.open": {
+      "executable": true
+    },
+    "browser.chrome.pdf.print": {
+      "executable": true
+    },
+    "browser.chrome.reload": {
+      "executable": false
+    },
+    "browser.chrome.run_js": {
+      "executable": false
+    },
+    "browser.chrome.screenshot": {
+      "executable": true
+    },
+    "browser.chrome.select": {
+      "executable": false
+    },
+    "browser.chrome.upload_file": {
+      "executable": false
+    },
+    "browser.edge.click": {
+      "executable": false
+    },
+    "browser.edge.download": {
+      "executable": false
+    },
+    "browser.edge.extract_dom": {
+      "executable": false
+    },
+    "browser.edge.extract_text": {
+      "executable": false
+    },
+    "browser.edge.fill": {
+      "executable": false
+    },
+    "browser.edge.goto": {
+      "executable": false
+    },
+    "browser.edge.open": {
+      "executable": false
+    },
+    "browser.edge.pdf.print": {
+      "executable": false
+    },
+    "browser.edge.run_js": {
+      "executable": false
+    },
+    "browser.edge.screenshot": {
+      "executable": false
+    },
+    "browser.firefox.click": {
+      "executable": false
+    },
+    "browser.firefox.download": {
+      "executable": false
+    },
+    "browser.firefox.extract_dom": {
+      "executable": false
+    },
+    "browser.firefox.extract_text": {
+      "executable": false
+    },
+    "browser.firefox.fill": {
+      "executable": false
+    },
+    "browser.firefox.goto": {
+      "executable": false
+    },
+    "browser.firefox.open": {
+      "executable": false
+    },
+    "browser.firefox.pdf.print": {
+      "executable": false
+    },
+    "browser.firefox.run_js": {
+      "executable": false
+    },
+    "browser.firefox.screenshot": {
+      "executable": false
+    },
+    "browser.open": {
+      "executable": true
+    },
+    "browser.playwright.extract_text": {
+      "executable": true
+    },
+    "browser.playwright.goto": {
+      "executable": true
+    },
+    "browser.playwright.pdf": {
+      "executable": true
+    },
+    "browser.playwright.screenshot": {
+      "executable": true
+    },
+    "browser.playwright.script.create": {
+      "executable": true
+    },
+    "browser.search_web": {
+      "executable": true
+    },
+    "canva.api.request_pack.create": {
+      "executable": true
+    },
+    "canva.asset.upload": {
+      "executable": false
+    },
+    "canva.brandkit.apply": {
+      "executable": false
+    },
+    "canva.design.create": {
+      "executable": false
+    },
+    "canva.export.pdf": {
+      "executable": false
+    },
+    "canva.export.png": {
+      "executable": false
+    },
+    "canva.template.apply": {
+      "executable": false
+    },
+    "canva.text.update": {
+      "executable": false
+    },
+    "capcut.cover.create": {
+      "executable": false
+    },
+    "capcut.effect.apply": {
+      "executable": false
+    },
+    "capcut.export.mp4": {
+      "executable": false
+    },
+    "capcut.media.import": {
+      "executable": false
+    },
+    "capcut.music.add": {
+      "executable": false
+    },
+    "capcut.project.create": {
+      "executable": false
+    },
+    "capcut.subtitle.add": {
+      "executable": false
+    },
+    "capcut.subtitle.auto": {
+      "executable": false
+    },
+    "capcut.template.apply": {
+      "executable": false
+    },
+    "capcut.timeline.cut": {
+      "executable": false
+    },
+    "clickup.comment.add": {
+      "executable": false
+    },
+    "clickup.space.read": {
+      "executable": false
+    },
+    "clickup.task.create": {
+      "executable": false
+    },
+    "clickup.task.search": {
+      "executable": false
+    },
+    "clickup.task.update": {
+      "executable": false
+    },
+    "code.patch_replace": {
+      "executable": true
+    },
+    "code.read": {
+      "executable": true
+    },
+    "code.write": {
+      "executable": true
+    },
+    "comfyui.image.generate": {
+      "executable": false
+    },
+    "comfyui.image.inpaint": {
+      "executable": false
+    },
+    "comfyui.image.outpaint": {
+      "executable": false
+    },
+    "comfyui.image.upscale": {
+      "executable": false
+    },
+    "comfyui.queue.status": {
+      "executable": false
+    },
+    "comfyui.workflow.run": {
+      "executable": false
+    },
+    "content.calendar.create": {
+      "executable": true
+    },
+    "core.archive.zip.create": {
+      "executable": true
+    },
+    "core.archive.zip.extract": {
+      "executable": true
+    },
+    "core.audio.audio.concat": {
+      "executable": true
+    },
+    "core.audio.audio.tone": {
+      "executable": true
+    },
+    "core.audio.audio.trim": {
+      "executable": true
+    },
+    "core.code.code.patch_replace": {
+      "executable": true
+    },
+    "core.code.code.read": {
+      "executable": true
+    },
+    "core.code.code.write": {
+      "executable": true
+    },
+    "core.code.python.run": {
+      "executable": true
+    },
+    "core.code.quality.python_syntax": {
+      "executable": true
+    },
+    "core.code.quality.run_tests": {
+      "executable": true
+    },
+    "core.code.shell.run": {
+      "executable": true
+    },
+    "core.filesystem.file.append": {
+      "executable": true
+    },
+    "core.filesystem.file.copy": {
+      "executable": true
+    },
+    "core.filesystem.file.delete_to_trash": {
+      "executable": true
+    },
+    "core.filesystem.file.hash": {
+      "executable": true
+    },
+    "core.filesystem.file.list": {
+      "executable": true
+    },
+    "core.filesystem.file.mkdir": {
+      "executable": true
+    },
+    "core.filesystem.file.move": {
+      "executable": true
+    },
+    "core.filesystem.file.read": {
+      "executable": true
+    },
+    "core.filesystem.file.rename": {
+      "executable": true
+    },
+    "core.filesystem.file.search": {
+      "executable": true
+    },
+    "core.filesystem.file.write": {
+      "executable": true
+    },
+    "core.image.image.add_text": {
+      "executable": true
+    },
+    "core.image.image.compose": {
+      "executable": true
+    },
+    "core.image.image.convert": {
+      "executable": true
+    },
+    "core.image.image.create_canvas": {
+      "executable": true
+    },
+    "core.image.image.crop": {
+      "executable": true
+    },
+    "core.image.image.info": {
+      "executable": true
+    },
+    "core.image.image.resize": {
+      "executable": true
+    },
+    "core.image.image.rotate": {
+      "executable": true
+    },
+    "core.office.docx.create": {
+      "executable": true
+    },
+    "core.office.mindmap.create": {
+      "executable": true
+    },
+    "core.office.pdf.create_from_text": {
+      "executable": true
+    },
+    "core.office.pdf.extract_text": {
+      "executable": true
+    },
+    "core.office.pptx.create": {
+      "executable": true
+    },
+    "core.office.sheet.create": {
+      "executable": true
+    },
+    "core.office.sheet.read": {
+      "executable": true
+    },
+    "core.rollback.rollback.apply": {
+      "executable": true
+    },
+    "core.rollback.rollback.list": {
+      "executable": true
+    },
+    "core.video.video.add_audio": {
+      "executable": true
+    },
+    "core.video.video.cut": {
+      "executable": true
+    },
+    "core.video.video.extract_audio": {
+      "executable": true
+    },
+    "core.video.video.info": {
+      "executable": true
+    },
+    "core.video.video.slideshow": {
+      "executable": true
+    },
+    "course.lesson_plan.create": {
+      "executable": true
+    },
+    "davinci.resolve.color.grade": {
+      "executable": false
+    },
+    "davinci.resolve.deliver.render": {
+      "executable": false
+    },
+    "davinci.resolve.fusion.apply": {
+      "executable": false
+    },
+    "davinci.resolve.media.import": {
+      "executable": false
+    },
+    "davinci.resolve.project.create": {
+      "executable": false
+    },
+    "davinci.resolve.subtitle.add": {
+      "executable": false
+    },
+    "davinci.resolve.timeline.create": {
+      "executable": false
+    },
+    "davinci.resolve.timeline.cut": {
+      "executable": false
+    },
+    "deepseek_api.code.generate": {
+      "executable": false
+    },
+    "deepseek_api.embedding.create": {
+      "executable": false
+    },
+    "deepseek_api.reasoning.run": {
+      "executable": false
+    },
+    "deepseek_api.text.generate": {
+      "executable": false
+    },
+    "deliverable.package": {
+      "executable": true
+    },
+    "delivery.kernel.info": {
+      "executable": true
+    },
+    "delivery.v33.info": {
+      "executable": true
+    },
+    "desktop.click": {
+      "executable": true
+    },
+    "desktop.hotkey": {
+      "executable": true
+    },
+    "desktop.screenshot": {
+      "executable": true
+    },
+    "desktop.type": {
+      "executable": true
+    },
+    "dingtalk.docs.doc.create": {
+      "executable": false
+    },
+    "dingtalk.docs.doc.read": {
+      "executable": false
+    },
+    "dingtalk.docs.doc.update": {
+      "executable": false
+    },
+    "dingtalk.docs.export.pdf": {
+      "executable": false
+    },
+    "dingtalk.docs.permission.set": {
+      "executable": false
+    },
+    "dingtalk.docs.sheet.create": {
+      "executable": false
+    },
+    "dingtalk.docs.sheet.read": {
+      "executable": false
+    },
+    "dingtalk.im.file.upload": {
+      "executable": false
+    },
+    "dingtalk.im.group.list": {
+      "executable": false
+    },
+    "dingtalk.im.message.create_draft": {
+      "executable": false
+    },
+    "dingtalk.im.message.read": {
+      "executable": false
+    },
+    "dingtalk.im.message.send_confirmed": {
+      "executable": false
+    },
+    "docker.compose.config": {
+      "executable": true
+    },
+    "docker.compose.down": {
+      "executable": false
+    },
+    "docker.compose.up": {
+      "executable": false
+    },
+    "docker.container.logs": {
+      "executable": false
+    },
+    "docker.container.run": {
+      "executable": false
+    },
+    "docker.container.stop": {
+      "executable": false
+    },
+    "docker.health": {
+      "executable": true
+    },
+    "docker.image.build": {
+      "executable": false
+    },
+    "docker.ps": {
+      "executable": true
+    },
+    "docker.volume.list": {
+      "executable": false
+    },
+    "docx.create": {
+      "executable": true
+    },
+    "elevenlabs.tts.create": {
+      "executable": true
+    },
+    "elevenlabs.voice.clone_authorized": {
+      "executable": false
+    },
+    "elevenlabs.voice.list": {
+      "executable": false
+    },
+    "feishu.api.request_pack.create": {
+      "executable": true
+    },
+    "feishu.docs.comment.add": {
+      "executable": false
+    },
+    "feishu.docs.doc.create": {
+      "executable": true
+    },
+    "feishu.docs.doc.read": {
+      "executable": true
+    },
+    "feishu.docs.doc.update": {
+      "executable": true
+    },
+    "feishu.docs.export.docx": {
+      "executable": true
+    },
+    "feishu.docs.export.pdf": {
+      "executable": true
+    },
+    "feishu.docs.permission.set": {
+      "executable": false
+    },
+    "feishu.im.file.upload": {
+      "executable": false
+    },
+    "feishu.im.group.list": {
+      "executable": false
+    },
+    "feishu.im.message.create_draft": {
+      "executable": false
+    },
+    "feishu.im.message.read": {
+      "executable": false
+    },
+    "feishu.im.message.send_confirmed": {
+      "executable": false
+    },
+    "feishu.sheets.export.xlsx": {
+      "executable": false
+    },
+    "feishu.sheets.formula.set": {
+      "executable": false
+    },
+    "feishu.sheets.permission.set": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.create": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.read": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.update_cells": {
+      "executable": false
+    },
+    "feishu.wiki.page.create": {
+      "executable": false
+    },
+    "feishu.wiki.page.read": {
+      "executable": false
+    },
+    "feishu.wiki.page.update": {
+      "executable": false
+    },
+    "feishu.wiki.permission.set": {
+      "executable": false
+    },
+    "feishu.wiki.search": {
+      "executable": false
+    },
+    "feishu.wiki.space.list": {
+      "executable": false
+    },
+    "ffmpeg.audio.concat": {
+      "executable": true
+    },
+    "ffmpeg.audio.trim": {
+      "executable": true
+    },
+    "ffmpeg.video.add_audio": {
+      "executable": true
+    },
+    "ffmpeg.video.cut": {
+      "executable": true
+    },
+    "ffmpeg.video.extract_audio": {
+      "executable": true
+    },
+    "ffmpeg.video.info": {
+      "executable": true
+    },
+    "ffmpeg.video.slideshow": {
+      "executable": true
+    },
+    "figma.api.request_pack.create": {
+      "executable": true
+    },
+    "figma.comment.add": {
+      "executable": false
+    },
+    "figma.component.create": {
+      "executable": false
+    },
+    "figma.export.png": {
+      "executable": false
+    },
+    "figma.export.svg": {
+      "executable": false
+    },
+    "figma.file.read": {
+      "executable": false
+    },
+    "figma.frame.create": {
+      "executable": false
+    },
+    "figma.image.place": {
+      "executable": false
+    },
+    "figma.text.update": {
+      "executable": false
+    },
+    "file.append": {
+      "executable": true
+    },
+    "file.copy": {
+      "executable": true
+    },
+    "file.delete_to_trash": {
+      "executable": true
+    },
+    "file.hash": {
+      "executable": true
+    },
+    "file.list": {
+      "executable": true
+    },
+    "file.mkdir": {
+      "executable": true
+    },
+    "file.move": {
+      "executable": true
+    },
+    "file.patch_replace": {
+      "executable": true
+    },
+    "file.read": {
+      "executable": true
+    },
+    "file.rename": {
+      "executable": true
+    },
+    "file.search": {
+      "executable": true
+    },
+    "file.write": {
+      "executable": true
+    },
+    "finalcut.event.create": {
+      "executable": false
+    },
+    "finalcut.export.mp4": {
+      "executable": false
+    },
+    "finalcut.library.open": {
+      "executable": false
+    },
+    "finalcut.media.import": {
+      "executable": false
+    },
+    "finalcut.music.add": {
+      "executable": false
+    },
+    "finalcut.timeline.cut": {
+      "executable": false
+    },
+    "finalcut.title.add": {
+      "executable": false
+    },
+    "flstudio.channel.add": {
+      "executable": false
+    },
+    "flstudio.midi.import": {
+      "executable": false
+    },
+    "flstudio.mixdown.export": {
+      "executable": false
+    },
+    "flstudio.pattern.create": {
+      "executable": false
+    },
+    "flstudio.project.create": {
+      "executable": false
+    },
+    "gemini_api.embedding.create": {
+      "executable": false
+    },
+    "gemini_api.text.generate": {
+      "executable": false
+    },
+    "gemini_api.video.analyze": {
+      "executable": false
+    },
+    "gemini_api.vision.analyze": {
+      "executable": false
+    },
+    "git.add": {
+      "executable": true
+    },
+    "git.branch.create": {
+      "executable": false
+    },
+    "git.checkout": {
+      "executable": false
+    },
+    "git.clone": {
+      "executable": true
+    },
+    "git.commit": {
+      "executable": true
+    },
+    "git.diff": {
+      "executable": true
+    },
+    "git.log": {
+      "executable": true
+    },
+    "git.merge": {
+      "executable": false
+    },
+    "git.stash": {
+      "executable": false
+    },
+    "git.status": {
+      "executable": true
+    },
+    "git.tag": {
+      "executable": false
+    },
+    "github.issue.create": {
+      "executable": false
+    },
+    "github.issue.update": {
+      "executable": false
+    },
+    "github.pull_request.create": {
+      "executable": false
+    },
+    "github.pull_request.review": {
+      "executable": false
+    },
+    "github.release.create": {
+      "executable": false
+    },
+    "github.repo.search": {
+      "executable": false
+    },
+    "github.workflow.run": {
+      "executable": false
+    },
+    "gitlab.issue.create": {
+      "executable": false
+    },
+    "gitlab.merge_request.create": {
+      "executable": false
+    },
+    "gitlab.pipeline.run": {
+      "executable": false
+    },
+    "gitlab.project.search": {
+      "executable": false
+    },
+    "gitlab.release.create": {
+      "executable": false
+    },
+    "gmail.attachment.download": {
+      "executable": false
+    },
+    "gmail.label.apply": {
+      "executable": false
+    },
+    "gmail.mail.create_draft": {
+      "executable": false
+    },
+    "gmail.mail.read": {
+      "executable": false
+    },
+    "gmail.mail.search": {
+      "executable": false
+    },
+    "gmail.mail.send_confirmed": {
+      "executable": false
+    },
+    "gmail.thread.read": {
+      "executable": false
+    },
+    "google.docs.comment.add": {
+      "executable": false
+    },
+    "google.docs.document.create": {
+      "executable": false
+    },
+    "google.docs.document.read": {
+      "executable": false
+    },
+    "google.docs.document.update": {
+      "executable": false
+    },
+    "google.docs.export.docx": {
+      "executable": false
+    },
+    "google.docs.export.pdf": {
+      "executable": false
+    },
+    "google.docs.share.set_permission": {
+      "executable": false
+    },
+    "google.drive.file.copy": {
+      "executable": false
+    },
+    "google.drive.file.delete_to_trash": {
+      "executable": false
+    },
+    "google.drive.file.download": {
+      "executable": false
+    },
+    "google.drive.file.list": {
+      "executable": false
+    },
+    "google.drive.file.move": {
+      "executable": false
+    },
+    "google.drive.file.upload": {
+      "executable": false
+    },
+    "google.drive.folder.create": {
+      "executable": false
+    },
+    "google.drive.permission.set": {
+      "executable": false
+    },
+    "google.sheets.chart.create": {
+      "executable": false
+    },
+    "google.sheets.export.xlsx": {
+      "executable": false
+    },
+    "google.sheets.formula.set": {
+      "executable": false
+    },
+    "google.sheets.share.set_permission": {
+      "executable": false
+    },
+    "google.sheets.sheet.create": {
+      "executable": false
+    },
+    "google.sheets.sheet.read": {
+      "executable": false
+    },
+    "google.sheets.sheet.update_cells": {
+      "executable": false
+    },
+    "google.slides.deck.create": {
+      "executable": false
+    },
+    "google.slides.export.pdf": {
+      "executable": false
+    },
+    "google.slides.export.pptx": {
+      "executable": false
+    },
+    "google.slides.share.set_permission": {
+      "executable": false
+    },
+    "google.slides.slide.add": {
+      "executable": false
+    },
+    "google.slides.slide.update": {
+      "executable": false
+    },
+    "http.get": {
+      "executable": true
+    },
+    "hubspot.contact.create": {
+      "executable": false
+    },
+    "hubspot.contact.search": {
+      "executable": false
+    },
+    "hubspot.deal.create": {
+      "executable": false
+    },
+    "hubspot.deal.update": {
+      "executable": false
+    },
+    "hubspot.email.create_draft": {
+      "executable": false
+    },
+    "hubspot.task.create": {
+      "executable": false
+    },
+    "image.add_text": {
+      "executable": true
+    },
+    "image.compose": {
+      "executable": true
+    },
+    "image.convert": {
+      "executable": true
+    },
+    "image.create_canvas": {
+      "executable": true
+    },
+    "image.crop": {
+      "executable": true
+    },
+    "image.info": {
+      "executable": true
+    },
+    "image.resize": {
+      "executable": true
+    },
+    "image.rotate": {
+      "executable": true
+    },
+    "jetbrains.idea.edit.apply": {
+      "executable": false
+    },
+    "jetbrains.idea.file.search": {
+      "executable": false
+    },
+    "jetbrains.idea.inspection.read": {
+      "executable": false
+    },
+    "jetbrains.idea.project.open": {
+      "executable": false
+    },
+    "jetbrains.idea.run.config": {
+      "executable": false
+    },
+    "jetbrains.idea.test.run": {
+      "executable": false
+    },
+    "jianying.cover.create": {
+      "executable": true
+    },
+    "jianying.effect.apply": {
+      "executable": false
+    },
+    "jianying.export.mp4": {
+      "executable": true
+    },
+    "jianying.media.import": {
+      "executable": true
+    },
+    "jianying.music.add": {
+      "executable": true
+    },
+    "jianying.project.create": {
+      "executable": true
+    },
+    "jianying.subtitle.add": {
+      "executable": true
+    },
+    "jianying.subtitle.auto": {
+      "executable": false
+    },
+    "jianying.template.apply": {
+      "executable": false
+    },
+    "jianying.timeline.cut": {
+      "executable": true
+    },
+    "jira.comment.add": {
+      "executable": false
+    },
+    "jira.issue.create": {
+      "executable": false
+    },
+    "jira.issue.search": {
+      "executable": false
+    },
+    "jira.issue.transition": {
+      "executable": false
+    },
+    "jira.issue.update": {
+      "executable": false
+    },
+    "jupyter.cell.add": {
+      "executable": false
+    },
+    "jupyter.cell.run": {
+      "executable": false
+    },
+    "jupyter.export.html": {
+      "executable": false
+    },
+    "jupyter.export.ipynb": {
+      "executable": false
+    },
+    "jupyter.kernel.restart": {
+      "executable": false
+    },
+    "jupyter.notebook.create": {
+      "executable": false
+    },
+    "kb.ingestion_manifest.create": {
+      "executable": true
+    },
+    "kingdee.customer.search": {
+      "executable": false
+    },
+    "kingdee.export.xlsx": {
+      "executable": false
+    },
+    "kingdee.inventory.read": {
+      "executable": false
+    },
+    "kingdee.report.run": {
+      "executable": false
+    },
+    "kingdee.voucher.create_draft": {
+      "executable": false
+    },
+    "kubernetes.deployment.apply": {
+      "executable": false
+    },
+    "kubernetes.logs.read": {
+      "executable": false
+    },
+    "kubernetes.namespace.create": {
+      "executable": false
+    },
+    "kubernetes.pod.list": {
+      "executable": false
+    },
+    "kubernetes.rollout.status": {
+      "executable": false
+    },
+    "kubernetes.service.apply": {
+      "executable": false
+    },
+    "learning.ingest": {
+      "executable": true
+    },
+    "life.activity.query": {
+      "executable": true
+    },
+    "life.body.state.query": {
+      "executable": true
+    },
+    "linear.comment.add": {
+      "executable": false
+    },
+    "linear.cycle.read": {
+      "executable": false
+    },
+    "linear.issue.create": {
+      "executable": false
+    },
+    "linear.issue.search": {
+      "executable": false
+    },
+    "linear.issue.update": {
+      "executable": false
+    },
+    "linux.desktop.click": {
+      "executable": true
+    },
+    "linux.desktop.clipboard.read": {
+      "executable": false
+    },
+    "linux.desktop.clipboard.write": {
+      "executable": false
+    },
+    "linux.desktop.drag": {
+      "executable": false
+    },
+    "linux.desktop.hotkey": {
+      "executable": true
+    },
+    "linux.desktop.ocr": {
+      "executable": false
+    },
+    "linux.desktop.screenshot": {
+      "executable": true
+    },
+    "linux.desktop.type": {
+      "executable": true
+    },
+    "linux.desktop.window.focus": {
+      "executable": false
+    },
+    "linux.desktop.window.list": {
+      "executable": false
+    },
+    "macos.desktop.click": {
+      "executable": true
+    },
+    "macos.desktop.clipboard.read": {
+      "executable": false
+    },
+    "macos.desktop.clipboard.write": {
+      "executable": false
+    },
+    "macos.desktop.drag": {
+      "executable": false
+    },
+    "macos.desktop.hotkey": {
+      "executable": true
+    },
+    "macos.desktop.ocr": {
+      "executable": false
+    },
+    "macos.desktop.screenshot": {
+      "executable": true
+    },
+    "macos.desktop.type": {
+      "executable": true
+    },
+    "macos.desktop.window.focus": {
+      "executable": false
+    },
+    "macos.desktop.window.list": {
+      "executable": false
+    },
+    "mcp.servers.list": {
+      "executable": true
+    },
+    "mcp.tool.call": {
+      "executable": true
+    },
+    "mcp.tools.list": {
+      "executable": true
+    },
+    "meeting.minutes.create": {
+      "executable": true
+    },
+    "microsoft.excel.native.chart.create": {
+      "executable": true
+    },
+    "microsoft.excel.sheet.create": {
+      "executable": true
+    },
+    "microsoft.excel.sheet.read": {
+      "executable": true
+    },
+    "microsoft.graph.request_pack.create": {
+      "executable": true
+    },
+    "microsoft.office.com.script.create": {
+      "executable": true
+    },
+    "microsoft.onedrive.file.copy": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.delete_to_trash": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.download": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.list": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.move": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.upload": {
+      "executable": false
+    },
+    "microsoft.onedrive.permission.set": {
+      "executable": false
+    },
+    "microsoft.onenote.export.pdf": {
+      "executable": false
+    },
+    "microsoft.onenote.notebook.list": {
+      "executable": false
+    },
+    "microsoft.onenote.page.create": {
+      "executable": false
+    },
+    "microsoft.onenote.page.read": {
+      "executable": false
+    },
+    "microsoft.onenote.page.update": {
+      "executable": false
+    },
+    "microsoft.outlook.attachment.download": {
+      "executable": false
+    },
+    "microsoft.outlook.calendar.create_event": {
+      "executable": false
+    },
+    "microsoft.outlook.calendar.search": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.create_draft": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.read": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.search": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.send_confirmed": {
+      "executable": false
+    },
+    "microsoft.powerpoint.native.export_pdf": {
+      "executable": true
+    },
+    "microsoft.powerpoint.pptx.create": {
+      "executable": true
+    },
+    "microsoft.sharepoint.file.download": {
+      "executable": false
+    },
+    "microsoft.sharepoint.file.list": {
+      "executable": false
+    },
+    "microsoft.sharepoint.file.upload": {
+      "executable": false
+    },
+    "microsoft.sharepoint.list.read": {
+      "executable": false
+    },
+    "microsoft.sharepoint.list.update_item": {
+      "executable": false
+    },
+    "microsoft.sharepoint.page.create": {
+      "executable": false
+    },
+    "microsoft.sharepoint.site.search": {
+      "executable": false
+    },
+    "microsoft.teams.channel.list": {
+      "executable": false
+    },
+    "microsoft.teams.chat.read": {
+      "executable": false
+    },
+    "microsoft.teams.file.upload": {
+      "executable": false
+    },
+    "microsoft.teams.meeting.create": {
+      "executable": false
+    },
+    "microsoft.teams.message.create_draft": {
+      "executable": false
+    },
+    "microsoft.teams.message.send_confirmed": {
+      "executable": false
+    },
+    "microsoft.visio.connector.add": {
+      "executable": false
+    },
+    "microsoft.visio.diagram.create": {
+      "executable": false
+    },
+    "microsoft.visio.export.pdf": {
+      "executable": false
+    },
+    "microsoft.visio.export.svg": {
+      "executable": false
+    },
+    "microsoft.visio.shape.add": {
+      "executable": false
+    },
+    "microsoft.word.docx.create": {
+      "executable": true
+    },
+    "microsoft.word.native.export_pdf": {
+      "executable": true
+    },
+    "microsoft.word.pdf.create_from_text": {
+      "executable": true
+    },
+    "mindmap.create": {
+      "executable": true
+    },
+    "model.adapter.detect": {
+      "executable": true
+    },
+    "model.adapter.info": {
+      "executable": true
+    },
+    "model.adapter.list": {
+      "executable": true
+    },
+    "model.adapter.parse_tool_call": {
+      "executable": true
+    },
+    "model.adapter.render_tool_result": {
+      "executable": true
+    },
+    "model.adapter.render_tool_schema": {
+      "executable": true
+    },
+    "model.adapter.roundtrip_test": {
+      "executable": true
+    },
+    "mysql.backup.create": {
+      "executable": false
+    },
+    "mysql.query.run": {
+      "executable": false
+    },
+    "mysql.schema.read": {
+      "executable": false
+    },
+    "mysql.table.export_csv": {
+      "executable": false
+    },
+    "mysql.table.import_csv": {
+      "executable": false
+    },
+    "notion.database.insert": {
+      "executable": false
+    },
+    "notion.database.query": {
+      "executable": false
+    },
+    "notion.export.markdown": {
+      "executable": false
+    },
+    "notion.page.create": {
+      "executable": false
+    },
+    "notion.page.read": {
+      "executable": false
+    },
+    "notion.page.update": {
+      "executable": false
+    },
+    "notion.search": {
+      "executable": false
+    },
+    "novel.blueprint.assist": {
+      "executable": true
+    },
+    "novel.blueprint.compile": {
+      "executable": true
+    },
+    "novel.blueprint.patch": {
+      "executable": true
+    },
+    "novel.blueprint.update": {
+      "executable": true
+    },
+    "novel.blueprint.upsert_many": {
+      "executable": true
+    },
+    "novel.chapter.checkout": {
+      "executable": true
+    },
+    "novel.chapter.submit": {
+      "executable": true
+    },
+    "novel.context.query": {
+      "executable": true
+    },
+    "novel.mobility.align_initial_many": {
+      "executable": true
+    },
+    "novel.plan.rebase": {
+      "executable": true
+    },
+    "novel.project.audit": {
+      "executable": true
+    },
+    "novel.project.create": {
+      "executable": true
+    },
+    "novel.project.recover": {
+      "executable": true
+    },
+    "novel.project.status": {
+      "executable": true
+    },
+    "novel.reference.resolve": {
+      "executable": true
+    },
+    "novel.scene.design": {
+      "executable": true
+    },
+    "novel.timeline.calculate": {
+      "executable": true
+    },
+    "novel.timeline.normalize": {
+      "executable": true
+    },
+    "novel.timeline.shift_suffix": {
+      "executable": true
+    },
+    "obsidian.graph.export": {
+      "executable": false
+    },
+    "obsidian.link.create": {
+      "executable": false
+    },
+    "obsidian.note.create": {
+      "executable": false
+    },
+    "obsidian.note.read": {
+      "executable": false
+    },
+    "obsidian.note.update": {
+      "executable": false
+    },
+    "obsidian.search": {
+      "executable": false
+    },
+    "obsidian.vault.list": {
+      "executable": false
+    },
+    "openai_api.audio.transcribe": {
+      "executable": false
+    },
+    "openai_api.embedding.create": {
+      "executable": false
+    },
+    "openai_api.image.edit": {
+      "executable": false
+    },
+    "openai_api.image.generate": {
+      "executable": false
+    },
+    "openai_api.text.generate": {
+      "executable": false
+    },
+    "openai_api.tts.create": {
+      "executable": false
+    },
+    "pdf.create_from_text": {
+      "executable": true
+    },
+    "pdf.extract_text": {
+      "executable": true
+    },
+    "pillow.image.add_text": {
+      "executable": true
+    },
+    "pillow.image.compose": {
+      "executable": true
+    },
+    "pillow.image.convert": {
+      "executable": true
+    },
+    "pillow.image.create_canvas": {
+      "executable": true
+    },
+    "pillow.image.crop": {
+      "executable": true
+    },
+    "pillow.image.info": {
+      "executable": true
+    },
+    "pillow.image.resize": {
+      "executable": true
+    },
+    "pillow.image.rotate": {
+      "executable": true
+    },
+    "poster.brief.create": {
+      "executable": true
+    },
+    "postgresql.backup.create": {
+      "executable": false
+    },
+    "postgresql.query.run": {
+      "executable": false
+    },
+    "postgresql.schema.read": {
+      "executable": false
+    },
+    "postgresql.table.export_csv": {
+      "executable": false
+    },
+    "postgresql.table.import_csv": {
+      "executable": false
+    },
+    "powerbi.dashboard.read": {
+      "executable": false
+    },
+    "powerbi.dataset.refresh": {
+      "executable": false
+    },
+    "powerbi.query.execute": {
+      "executable": false
+    },
+    "powerbi.report.export": {
+      "executable": false
+    },
+    "pptx.create": {
+      "executable": true
+    },
+    "pptx.read": {
+      "executable": true
+    },
+    "preview.generate": {
+      "executable": true
+    },
+    "python.run": {
+      "executable": true
+    },
+    "qc.code.delivery_check": {
+      "executable": true
+    },
+    "qc.content.calendar_check": {
+      "executable": true
+    },
+    "qc.course.plan_check": {
+      "executable": true
+    },
+    "qc.docx.delivery_check": {
+      "executable": true
+    },
+    "qc.image.delivery_check": {
+      "executable": true
+    },
+    "qc.kb.ingestion_check": {
+      "executable": true
+    },
+    "qc.meeting.minutes_check": {
+      "executable": true
+    },
+    "qc.novel.chapter_check": {
+      "executable": true
+    },
+    "qc.poster.commercial_check": {
+      "executable": true
+    },
+    "qc.ppt.delivery_check": {
+      "executable": true
+    },
+    "qc.research.evidence_check": {
+      "executable": true
+    },
+    "qc.sales.script_check": {
+      "executable": true
+    },
+    "qc.seo.people_first_check": {
+      "executable": true
+    },
+    "qc.sheet.analysis_report_check": {
+      "executable": true
+    },
+    "qc.sheet.delivery_check": {
+      "executable": true
+    },
+    "qc.video.delivery_check": {
+      "executable": true
+    },
+    "qc.voice_authorized.delivery_check": {
+      "executable": true
+    },
+    "qc.writing.ai_tone_check": {
+      "executable": true
+    },
+    "quality.javascript_syntax": {
+      "executable": true
+    },
+    "quality.python_syntax": {
+      "executable": true
+    },
+    "quality.run_tests": {
+      "executable": true
+    },
+    "reaper.fx.apply": {
+      "executable": false
+    },
+    "reaper.item.trim": {
+      "executable": false
+    },
+    "reaper.media.import": {
+      "executable": false
+    },
+    "reaper.project.create": {
+      "executable": false
+    },
+    "reaper.render.mp3": {
+      "executable": false
+    },
+    "reaper.render.wav": {
+      "executable": false
+    },
+    "reaper.track.add": {
+      "executable": false
+    },
+    "redis.info.read": {
+      "executable": false
+    },
+    "redis.key.delete": {
+      "executable": false
+    },
+    "redis.key.get": {
+      "executable": false
+    },
+    "redis.key.set": {
+      "executable": false
+    },
+    "redis.scan": {
+      "executable": false
+    },
+    "repair.plan": {
+      "executable": true
+    },
+    "research.evidence_table.create": {
+      "executable": true
+    },
+    "rollback.apply": {
+      "executable": true
+    },
+    "rollback.list": {
+      "executable": true
+    },
+    "rubric.evaluate": {
+      "executable": true
+    },
+    "sales.script.create": {
+      "executable": true
+    },
+    "salesforce.account.update": {
+      "executable": false
+    },
+    "salesforce.lead.create": {
+      "executable": false
+    },
+    "salesforce.lead.search": {
+      "executable": false
+    },
+    "salesforce.opportunity.create": {
+      "executable": false
+    },
+    "salesforce.report.run": {
+      "executable": false
+    },
+    "salesforce.task.create": {
+      "executable": false
+    },
+    "sap.export.xlsx": {
+      "executable": false
+    },
+    "sap.record.read": {
+      "executable": false
+    },
+    "sap.record.search": {
+      "executable": false
+    },
+    "sap.report.run": {
+      "executable": false
+    },
+    "sap.workflow.create_draft": {
+      "executable": false
+    },
+    "search_web": {
+      "executable": true
+    },
+    "seo.content.brief.create": {
+      "executable": true
+    },
+    "sheet.create": {
+      "executable": true
+    },
+    "sheet.read": {
+      "executable": true
+    },
+    "shell.run": {
+      "executable": true
+    },
+    "shopify.inventory.update": {
+      "executable": false
+    },
+    "shopify.order.fulfillment_update": {
+      "executable": false
+    },
+    "shopify.order.search": {
+      "executable": false
+    },
+    "shopify.product.create": {
+      "executable": false
+    },
+    "shopify.product.search": {
+      "executable": false
+    },
+    "sketch.artboard.create": {
+      "executable": false
+    },
+    "sketch.document.open": {
+      "executable": false
+    },
+    "sketch.export.png": {
+      "executable": false
+    },
+    "sketch.export.svg": {
+      "executable": false
+    },
+    "sketch.symbol.create": {
+      "executable": false
+    },
+    "sketch.text.update": {
+      "executable": false
+    },
+    "skill.get": {
+      "executable": true
+    },
+    "skill.list": {
+      "executable": true
+    },
+    "skill.progress.report": {
+      "executable": true
+    },
+    "skill.read": {
+      "executable": true
+    },
+    "skill.route": {
+      "executable": true
+    },
+    "skill.step.check": {
+      "executable": true
+    },
+    "spreadsheet.analysis.plan.create": {
+      "executable": true
+    },
+    "sqlite.backup.create": {
+      "executable": false
+    },
+    "sqlite.query": {
+      "executable": true
+    },
+    "sqlite.query.run": {
+      "executable": false
+    },
+    "sqlite.schema.read": {
+      "executable": false
+    },
+    "sqlite.table.export_csv": {
+      "executable": false
+    },
+    "sqlite.table.import_csv": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.generate": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.img2img": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.inpaint": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.upscale": {
+      "executable": false
+    },
+    "stable_diffusion_webui.model.switch": {
+      "executable": false
+    },
+    "system.action_schema": {
+      "executable": true
+    },
+    "system.app_registry": {
+      "executable": true
+    },
+    "system.capabilities": {
+      "executable": true
+    },
+    "system.health": {
+      "executable": true
+    },
+    "tableau.dashboard.read": {
+      "executable": false
+    },
+    "tableau.extract.refresh": {
+      "executable": false
+    },
+    "tableau.view.export": {
+      "executable": false
+    },
+    "tableau.workbook.publish": {
+      "executable": false
+    },
+    "template.apply": {
+      "executable": true
+    },
+    "template.list": {
+      "executable": true
+    },
+    "trello.board.list": {
+      "executable": false
+    },
+    "trello.card.create": {
+      "executable": false
+    },
+    "trello.card.move": {
+      "executable": false
+    },
+    "trello.checklist.add": {
+      "executable": false
+    },
+    "trello.comment.add": {
+      "executable": false
+    },
+    "tts.edge.tts.create": {
+      "executable": false
+    },
+    "tts.edge.voice.list": {
+      "executable": false
+    },
+    "v34.professional_apps.info": {
+      "executable": true
+    },
+    "video.add_audio": {
+      "executable": true
+    },
+    "video.cut": {
+      "executable": true
+    },
+    "video.extract_audio": {
+      "executable": true
+    },
+    "video.info": {
+      "executable": true
+    },
+    "video.slideshow": {
+      "executable": true
+    },
+    "voice.clone_authorized": {
+      "executable": false
+    },
+    "voice.consent_pack.create": {
+      "executable": true
+    },
+    "vscode.diagnostics.read": {
+      "executable": false
+    },
+    "vscode.edit.apply": {
+      "executable": false
+    },
+    "vscode.extension.install": {
+      "executable": false
+    },
+    "vscode.file.open": {
+      "executable": false
+    },
+    "vscode.file.search": {
+      "executable": false
+    },
+    "vscode.terminal.run": {
+      "executable": false
+    },
+    "vscode.workspace.open": {
+      "executable": false
+    },
+    "web.download": {
+      "executable": true
+    },
+    "web.fetch": {
+      "executable": true
+    },
+    "web.read": {
+      "executable": true
+    },
+    "web.readability_extract": {
+      "executable": true
+    },
+    "web.search": {
+      "executable": true
+    },
+    "web_readability_extract": {
+      "executable": true
+    },
+    "wechat.desktop.contact.search_visible": {
+      "executable": false
+    },
+    "wechat.desktop.file.send_confirmed": {
+      "executable": false
+    },
+    "wechat.desktop.message.create_draft": {
+      "executable": false
+    },
+    "wechat.desktop.message.read_visible": {
+      "executable": false
+    },
+    "wechat.desktop.message.send_confirmed": {
+      "executable": false
+    },
+    "wechat_work.calendar.create_event": {
+      "executable": false
+    },
+    "wechat_work.contact.search": {
+      "executable": false
+    },
+    "wechat_work.file.upload": {
+      "executable": false
+    },
+    "wechat_work.message.create_draft": {
+      "executable": false
+    },
+    "wechat_work.message.read": {
+      "executable": false
+    },
+    "wechat_work.message.send_confirmed": {
+      "executable": false
+    },
+    "wechat_work.webhook.request_pack.create": {
+      "executable": true
+    },
+    "whisper.audio.transcribe": {
+      "executable": false
+    },
+    "whisper.audio.translate": {
+      "executable": false
+    },
+    "whisper.segments.export_srt": {
+      "executable": false
+    },
+    "whisper.segments.export_txt": {
+      "executable": false
+    },
+    "windows.desktop.click": {
+      "executable": true
+    },
+    "windows.desktop.clipboard.read": {
+      "executable": false
+    },
+    "windows.desktop.clipboard.write": {
+      "executable": false
+    },
+    "windows.desktop.drag": {
+      "executable": false
+    },
+    "windows.desktop.hotkey": {
+      "executable": true
+    },
+    "windows.desktop.ocr": {
+      "executable": false
+    },
+    "windows.desktop.screenshot": {
+      "executable": true
+    },
+    "windows.desktop.type": {
+      "executable": true
+    },
+    "windows.desktop.window.focus": {
+      "executable": false
+    },
+    "windows.desktop.window.list": {
+      "executable": false
+    },
+    "windows.powershell.command.run": {
+      "executable": false
+    },
+    "windows.powershell.process.list": {
+      "executable": false
+    },
+    "windows.powershell.registry.read": {
+      "executable": false
+    },
+    "windows.powershell.script.run": {
+      "executable": false
+    },
+    "windows.powershell.service.list": {
+      "executable": false
+    },
+    "word.create": {
+      "executable": true
+    },
+    "word.read": {
+      "executable": true
+    },
+    "wordpress.comment.moderate": {
+      "executable": false
+    },
+    "wordpress.media.upload": {
+      "executable": false
+    },
+    "wordpress.page.create": {
+      "executable": false
+    },
+    "wordpress.post.create": {
+      "executable": false
+    },
+    "wordpress.post.update": {
+      "executable": false
+    },
+    "wps.native.script.create": {
+      "executable": true
+    },
+    "wps.presentation.pptx.create": {
+      "executable": true
+    },
+    "wps.spreadsheet.sheet.create": {
+      "executable": true
+    },
+    "wps.spreadsheet.sheet.read": {
+      "executable": true
+    },
+    "wps.writer.docx.create": {
+      "executable": true
+    },
+    "wps.writer.pdf.create_from_text": {
+      "executable": true
+    },
+    "writing.chapter.plan.create": {
+      "executable": true
+    },
+    "writing.outline.create": {
+      "executable": true
+    },
+    "yonyou.customer.search": {
+      "executable": false
+    },
+    "yonyou.export.xlsx": {
+      "executable": false
+    },
+    "yonyou.inventory.read": {
+      "executable": false
+    },
+    "yonyou.report.run": {
+      "executable": false
+    },
+    "yonyou.voucher.create_draft": {
+      "executable": false
+    },
+    "yuque.doc.create": {
+      "executable": false
+    },
+    "yuque.doc.read": {
+      "executable": false
+    },
+    "yuque.doc.update": {
+      "executable": false
+    },
+    "yuque.export.markdown": {
+      "executable": false
+    },
+    "yuque.permission.set": {
+      "executable": false
+    },
+    "yuque.repo.search": {
+      "executable": false
+    },
+    "zip.create": {
+      "executable": true
+    },
+    "zip.extract": {
+      "executable": true
+    },
+    "zoho.crm.deal.create": {
+      "executable": false
+    },
+    "zoho.crm.deal.update": {
+      "executable": false
+    },
+    "zoho.crm.lead.create": {
+      "executable": false
+    },
+    "zoho.crm.lead.search": {
+      "executable": false
+    },
+    "zoho.crm.report.run": {
+      "executable": false
+    },
+    "zoho.crm.task.create": {
+      "executable": false
+    }
   }
 }

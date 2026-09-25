@@ -36,7 +36,7 @@ def test_parent_ticket_binds_the_persisted_effect_claim(
         state_root=tmp_path / "gateway", min_free_bytes=1_048_576,
         backend_internal_token="parent-claim-test-" + "x" * 40,
         release_source_root=ROOT, workspace_root=workspace,
-        skill_root=ROOT / "src/omni_body_skill",
+        skill_root=ROOT / "dictionaries",
     )
     # The real embedded Gateway installs process-global providers. Record the
     # surrounding identities before startup and restore them via fixture teardown,

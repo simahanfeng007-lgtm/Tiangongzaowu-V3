@@ -78,16 +78,18 @@ def test_existing_wrapper_and_verifier_remain_on_x_after_y_is_selected(versions,
     assert verify(new_wrapper) == {"fixture_revision": "Y"}
 
 
-def test_standalone_wrapper_pins_first_host_root_and_does_not_hot_reload(versions, tmp_path, monkeypatch):
+def test_standalone_wrapper_cannot_select_an_unowned_host_root(versions, tmp_path, monkeypatch):
     old, new = versions
     standalone = tmp_path / "standalone.py"
     standalone.write_bytes(WRAPPER.read_bytes())
     wrapper = load(standalone)
-    monkeypatch.setenv("TIANGONG_OMNI_BODY_ROOT", str(old))
-    assert wrapper._import_runtime()[0].revision == "X"
-    monkeypatch.setenv("TIANGONG_OMNI_BODY_ROOT", str(new))
-    assert wrapper._import_runtime()[0].revision == "X"
-    assert verify(wrapper) == {"fixture_revision": "X"}
+    for root in (old, new):
+        monkeypatch.setenv("TIANGONG_OMNI_BODY_ROOT", str(root))
+        runtime, config, error = wrapper._import_runtime()
+        assert runtime is config is None
+        assert "root not found" in error
+        with pytest.raises(ValueError, match="root not found"):
+            verify(wrapper)
 
 
 def test_missing_pinned_source_does_not_fall_back_to_new_default(versions, monkeypatch):

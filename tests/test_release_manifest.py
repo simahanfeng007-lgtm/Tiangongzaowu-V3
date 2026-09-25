@@ -42,19 +42,19 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(manifest.contract_schema_bundle_sha256, contract_schema_bundle_sha256())
         self.assertEqual(
             manifest.action_registry_sha256,
-            "c915c5c33292e632ccde754753167fc24854d9e304912469877a1634b39af78d",
+            "1a67ef7330c2fb87cac9f3d91b8baa132191b0ce4aabdfad6252d5fe5c6b7d25",
         )
         self.assertEqual(
             manifest.capability_manifest_sha256,
-            "f97a62d753f77b7c4fcccf5270322cf8aea4baf9cecb408b9ee2ab576a981577",
+            "1896cb6ed93df0dbe4e66609901371e1e321f2f22d0fd7f076c6b75268f1d4c1",
         )
         self.assertEqual(
             manifest.skill_index_sha256,
-            "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45",
+            "490cc2e0ddb59bf3def7b1bc84b4dd3c99e56fa449b183586d3e904475ff3407",
         )
         self.assertEqual(
             manifest.skill_catalog_sha256,
-            "fec4b0709945b614edce5b80aa1a69381ba66b0df85f4bf8f253eb47127d5b35",
+            "0ded552730884e3dbb45bafc8ba4ad1b89d018640ac40ebc794f61c49e60f118",
         )
         self.assertEqual(
             [item.component_id for item in manifest.component_manifest.components],

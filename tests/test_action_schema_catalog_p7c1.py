@@ -392,16 +392,16 @@ def test_model_capability_projection_uses_manifest_schema_hash() -> None:
         generated_at_ms=1,
     )
     action = next(
-        item for item in loaded.manifest.actions if item.action_id == "skill.list"
+        item for item in loaded.manifest.actions if item.action_id == "file.list"
     )
     assert action.argument_schema_sha256 == document["capabilities"][
-        "skill.list"
+        "file.list"
     ]["argument_schema_sha256"]
     assert loaded.action_authority.schema_catalog.resolve(
-        "skill.list", "omni-registry-v1"
+        "file.list", "omni-registry-v1"
     ).argument_schema_sha256 == action.argument_schema_sha256
     assert action.result_schema_sha256 == document["capabilities"][
-        "skill.list"
+        "file.list"
     ]["result_schema_sha256"]
     assert (
         loaded.action_authority.registry.source_manifest_sha256

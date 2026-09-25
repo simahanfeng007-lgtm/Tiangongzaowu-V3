@@ -29,7 +29,7 @@ def test_existing_embedded_startup_survives_dos_resolution_denial(tmp_path, monk
         state_root=tmp_path / "gateway", workspace_root=workspace,
         min_free_bytes=1_048_576, backend_internal_token="p8-local-path-contract-" + "0" * 48,
         release_source_root=ROOT,
-        skill_root=ROOT / "app/backend/tiangong-backend/_internal/omni_body_skill",
+        skill_root=ROOT / "dictionaries",
     )
     original_resolve = Path.resolve
 

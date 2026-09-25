@@ -223,7 +223,7 @@ def _planner(tmp_path, monkeypatch, replies, *, empty_methods=False, registratio
     monkeypatch.setattr("total_gateway.composition_task_floor.validate_request_plan_floor", lambda *a, **k: None)
     monkeypatch.setattr("total_gateway.composition_task_floor.validate_workspace_step_order", lambda *a, **k: None)
     monkeypatch.setattr("total_gateway.diagnostics.diagnostic_log", lambda *a, **k: None)
-    activation = SimpleNamespace(envelope=SimpleNamespace(text="字典任务：read input", principal_scope_hash="b"*64,
+    activation = SimpleNamespace(envelope=SimpleNamespace(text="字典任务：read input", task_context=SimpleNamespace(execution_strategy="static"), principal_scope_hash="b"*64,
         conversation_scope_hash="c"*64),generation=SimpleNamespace(run_id="run_"+"d"*64,generation=1),
         entry=SimpleNamespace(request_id="req_"+"e"*64))
     return planner, activation, SimpleNamespace(identity_ref="life.test"), client, counters, source_prompt

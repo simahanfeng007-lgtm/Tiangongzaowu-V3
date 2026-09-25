@@ -227,11 +227,12 @@
    "note": "the sole memory write authority",
    "exists": true,
    "callers": [
+    "src/life_service/composition_memory.py",
     "src/life_service/embedded_runtime.py",
     "src/total_gateway/learning_experience_writeback.py"
    ],
    "data_consumers": [],
-   "caller_count": 2
+   "caller_count": 3
   },
   {
    "path": "src/life_service/memory_invalidation.py",

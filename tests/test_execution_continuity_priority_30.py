@@ -340,8 +340,10 @@ def test_c06_a5_remains_hard_blocked_under_execution_first_policy(tmp_path: Path
     runtime = runtime_at(tmp_path)
     result = runtime.run("voice.clone_authorized", "voice.wav", {})
     assert result["success"] is False
-    assert result["risk_level"] == "A5"
-    assert "hard-gate" in result["reason"]
+    assert result["error_type"] == "DictionaryCapabilityUnavailable"
+    assert result["readiness"]["ready"] is False
+    assert "execution_binding_unavailable" in result["readiness"]["reasons"]
+    assert runtime.capability_manifest.capabilities["voice.clone_authorized"].risk == "A5"
 
 
 def test_c07_read_only_observation_of_hardlink_is_allowed(tmp_path: Path) -> None:
@@ -405,15 +407,15 @@ def test_c12_empty_tool_args_remain_executable(tmp_path: Path) -> None:
 def test_c13_unknown_action_returns_structured_error_instead_of_crashing(tmp_path: Path) -> None:
     result = runtime_at(tmp_path).run("unknown.action", "", {})
     assert result["success"] is False
-    assert result["status"] == "INVALID_TOOL_ARGUMENTS"
-    assert result["executed"] is False
-    assert result["retryable"] is False
+    assert result["error_type"] == "DictionaryCapabilityUnavailable"
+    assert result["readiness"] == {"ready": False, "status": "unknown", "reasons": ["not_in_dictionary"]}
 
 
 def test_c14_missing_optional_adapter_returns_actionable_structured_result(tmp_path: Path) -> None:
     result = runtime_at(tmp_path).run("browser.edge.click", "button", {})
     assert result["success"] is False
-    assert result.get("requires_adapter") or "adapter" in result.get("message", "").lower()
+    assert result["error_type"] == "DictionaryCapabilityUnavailable"
+    assert "execution_binding_unavailable" in result["readiness"]["reasons"]
 
 
 def test_c15_cross_platform_unicode_workspace_path_executes_normally(tmp_path: Path) -> None:
@@ -538,13 +540,13 @@ def test_c22_outer_model_capability_is_internal_not_model_self_authority() -> No
 
 
 def test_c23_model_tool_schema_does_not_expose_confirmation_or_privilege_switches() -> None:
-    tool_source = (ROOT / "readable-python-source/omni_body_skill/api/v1/v3/tools/omni_body.py").read_text(encoding="utf-8")
-    contract = json.loads((ROOT / "readable-python-source/omni_body_skill/api/v1/v3/tools/omni_body.tool.json").read_text(encoding="utf-8"))
-    adapter = (ROOT / "readable-python-source/omni_body_skill/model_adapters/core.py").read_text(encoding="utf-8")
-    assert '"required": ["action"]' in tool_source
-    assert contract["parameters"]["required"] == ["action"]
-    assert 'schema["required"] = ["action"]' in adapter
-    schema_text = json.dumps(contract["parameters"], ensure_ascii=False)
+    from capability_dictionary import load_dictionary
+    from omni_body_skill.model_adapters.core import render_tool_schema
+    from omni_body_skill.api.v1.v3.tools.omni_body import TOOL_DESCRIPTION
+    parameters = load_dictionary().host_protocol["parameters"]
+    assert TOOL_DESCRIPTION["parameters"] == parameters
+    assert render_tool_schema(profile_id="mimo_openai")["tool_schema"][0]["function"]["parameters"] == parameters
+    schema_text = json.dumps(parameters, ensure_ascii=False)
     for forbidden in ("allow_shell", "allow_python", "allow_absolute_paths", "confirmed", "confirm"):
         assert forbidden not in schema_text
 

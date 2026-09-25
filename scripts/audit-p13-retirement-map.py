@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -136,15 +135,16 @@ def _callers(module: str) -> list[str]:
     # relative imports (`from . import X`), which hid a real consumer of
     # life_learning_memory inside memory_coordinator.
     pattern = rf"(from {re.escape(module)} import|import {re.escape(module)}\b|from \. import .*\b{re.escape(short)}\b|from \.{re.escape(short)} import|from \.\. import .*\b{re.escape(short)}\b)"
-    result = subprocess.run(
-        ["grep", "-rEl", pattern, "src", "app/backend/tiangong-backend", "--include=*.py"],
-        cwd=ROOT, capture_output=True, text=True)
+    matcher = re.compile(pattern, re.MULTILINE)
     found = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line or "/test" in line or "conftest" in line or not _authoritative(line):
-            continue
-        found.append(str(Path(line).as_posix()))
+    # The inventory must run on source-installed Windows too, without grep.
+    for root in AUTHORITATIVE_ROOTS:
+        for path in (ROOT / root).rglob("*.py"):
+            relative = path.relative_to(ROOT).as_posix()
+            if "/test" in relative or "conftest" in relative or not _authoritative(relative):
+                continue
+            if matcher.search(path.read_text(encoding="utf-8")):
+                found.append(relative)
     return sorted(set(found))
 
 

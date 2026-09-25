@@ -42,8 +42,10 @@ def source(tmp_path):
 
 def prepare(source):
     inputs = compile_tool_source_inputs(source)
-    metadata = {"skill.list": {"risk": "A0", "effect": "read", "implemented": True}}
-    manifest = compile_manifest(metadata, object, dynamic_actions=("skill.list",),
+    marker = source / "src/omni_body_skill/fixture-action.txt"
+    action = marker.read_text(encoding="utf-8").strip() if marker.is_file() else "skill.list"
+    metadata = {action: {"risk": "A0", "effect": "read", "implemented": True}}
+    manifest = compile_manifest(metadata, object, dynamic_actions=(action,),
                                 action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict(
         source_inputs_sha256=inputs.source_inputs_sha256,
     )
