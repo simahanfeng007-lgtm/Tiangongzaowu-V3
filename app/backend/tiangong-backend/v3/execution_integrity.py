@@ -312,7 +312,7 @@ def _goal_fact_from_obligation(value: Any, index: int) -> dict[str, Any] | None:
     for key in ("requirement_version", "minimum_test_count"):
         if type(value.get(key)) is int:
             fact[key] = value[key]
-    for key in ("target_state", "evidence_dependency_paths"):
+    for key in ("target_state", "evidence_dependency_paths", "delivery_mode"):
         if key in value:
             fact[key] = value[key]
     return fact
@@ -663,6 +663,12 @@ def is_execution_discussion_only(user_text: object) -> bool:
 
 def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
     """Keep a deliverable noun from becoming the object's nearest action."""
+    # "生成可正常打开的 report.pptx" describes the output's usability;
+    # "生成后打开 report.pptx" is a separate action and remains required.
+    if right.startswith("的") and re.search(
+        r"(?:可(?:以)?|能(?:够)?)(?:正常|直接|正确|成功|安全|顺利)?$", left
+    ):
+        return True
     return bool(
         verb == "交付"
         and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
@@ -1816,15 +1822,40 @@ def _payload_has_evidence_predicate(
     return False
 
 
+def _local_delivery_artifact_paths(payload: dict[str, Any]) -> list[str]:
+    """Read output locations from the host receipt, never from code or stdout."""
+    contract = _contract(payload)
+    evidence = contract.get("write_evidence")
+    if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
+        return [path for path in contract.get("paths") or [] if isinstance(path, str) and path.strip()]
+    candidates = list(evidence.get("changed_files") or []) + list(evidence.get("verified_unchanged_files") or [])
+    removed = {_normalize_path(path) for path in evidence.get("deleted_files") or [] if isinstance(path, str)}
+    for row in evidence.get("post") or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("exists") is False:
+            removed.add(_normalize_path(row.get("path")))
+        elif row.get("exists") is True:
+            candidates.append(row)
+    paths = [item.get("path") if isinstance(item, dict) else item for item in candidates]
+    return [path for path in paths if isinstance(path, str) and path.strip() and _normalize_path(path) not in removed]
+
+
 def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
     required_kind = str(obligation.get("kind") or "action").strip().lower() or "action"
     if (required_kind == "delivery" and obligation.get("delivery_mode") == "local_artifact"
             and "delivery" not in _payload_fact_kinds(payload)):
-        # A successful local mutation must still carry artifact paths. The
-        # final delivery gate reopens/checks those artifacts before completion.
-        if not _contract(payload).get("paths"):
+        # Inline execution may have no tool target/contract.paths while the
+        # sandbox receipt proves which output files were committed. The final
+        # delivery gate still reopens/checks the requested artifacts.
+        paths = _local_delivery_artifact_paths(payload)
+        expected = _normalize_path(obligation.get("target_path"))
+        if not paths or (expected and not any(
+            _normalize_path(path) == expected or _normalize_path(path).endswith("/" + expected)
+            for path in paths
+        )):
             return False
         required_kind = "effect"
     required_action = str(obligation.get("required_action") or "").strip().lower()
@@ -2157,7 +2188,7 @@ def build_task_contract_obligations(contract: Any) -> list[dict[str, Any]]:
         for key in ("requirement_version", "minimum_test_count"):
             if type(fact.get(key)) is int:
                 obligation[key] = fact[key]
-        for key in ("target_state", "evidence_dependency_paths"):
+        for key in ("target_state", "evidence_dependency_paths", "delivery_mode"):
             if key in fact:
                 obligation[key] = fact[key]
         obligations.append(obligation)
@@ -2239,6 +2270,7 @@ def update_task_contract_evidence(
                 "target_path": fact.get("target_path"),
                 "actionable": fact.get("actionable", True),
                 "evidence_predicate": fact.get("evidence_predicate"),
+                "delivery_mode": fact.get("delivery_mode"),
             }
             prior_kind = str(fact.get("requires_prior_kind") or "").strip().lower()
             prior_round_ok = not prior_kind or any(

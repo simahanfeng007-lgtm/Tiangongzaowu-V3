@@ -28,6 +28,19 @@ The full-dictionary code representation is still an external experiment, not the
 production default. Verification uses regression failures reproduced from the real
 eight-family comparison, including negative cases for missing or corrupt outputs.
 
+The follow-up A/C comparison exposed another delivery mismatch: inline Python
+successfully committed a playable video, but its contract had no `paths` because
+the invocation had no script target. Local delivery now reads the authoritative
+sandbox `changed_files`/verified output receipt as well. Removed files, discarded
+executions, program text, stdout claims and external delivery are not substitutes
+for a committed local artifact. The local/external delivery mode also survives
+projection between Runtime obligations and Life desired facts. Verification Plane
+1.36 records this correction; the original failed task remains in the benchmark.
+The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
+instruction to read an input PPT. Capability modifiers now stay attached to the
+output noun. Explicit sequences such as creating a file and then opening it keep
+their independent observation requirement.
+
 DeepSeek V4's auxiliary world-semantic request now uses non-thinking mode within
 its existing 2048-token/15-second budget. A real pilot otherwise exhausted the
 short budget before returning valid semantic JSON. Main task thinking settings
