@@ -40,6 +40,14 @@ The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
 instruction to read an input PPT. Capability modifiers now stay attached to the
 output noun. Explicit sequences such as creating a file and then opening it keep
 their independent observation requirement.
+Finally, error-name keywords in the final reply no longer veto an otherwise
+verified task. A repair report or an error-log explanation may legitimately say
+`PermissionError`; unsuccessful reads/executions still fail through their actual
+receipts and unsatisfied obligations.
+Input-reading steps in creation or repair tasks also no longer require the final
+summary to repeat the input text. Substantive-answer checks remain scoped to tasks
+whose requested result is an observation, while write/delivery tasks rely on their
+actual effects and artifact evidence.
 
 DeepSeek V4's auxiliary world-semantic request now uses non-thinking mode within
 its existing 2048-token/15-second budget. A real pilot otherwise exhausted the

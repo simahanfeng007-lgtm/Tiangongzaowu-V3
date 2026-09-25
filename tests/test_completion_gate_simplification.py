@@ -186,3 +186,29 @@ def test_output_capability_modifier_does_not_become_an_input_command(instruction
 def test_explicit_open_command_still_requires_observation(prompt):
     goals = integrity.build_action_obligations(prompt)
     assert any(item["kind"] == "observation" and item["target_path"] == "report.pptx" for item in goals)
+
+
+def test_repaired_execution_can_explain_a_prior_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请读取 input.txt，再运行程序，生成 result.json。"
+    read = observation("file.read", str(tmp_path / "input.txt"),
+        result={"content": "PermissionError from an absolute input path"},
+        contract={"ok": True, "paths": [str(tmp_path / "input.txt")], "write_effect": False})
+    generated = inline_output_receipt(tmp_path)
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, [read, generated],
+        [{"path": str(tmp_path / "result.json")}],
+        final_reply="此前出现 PermissionError，现已修复路径并生成 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+
+
+@pytest.mark.parametrize("read_ok", [True, False])
+def test_error_log_answer_is_judged_by_actual_read_evidence(read_ok):
+    prompt = "请读取 error.log 并说明 PermissionError。"
+    read = observation("file.read", "error.log", ok=read_ok,
+        result={"content": "PermissionError: access denied"} if read_ok else {},
+        contract={"ok": read_ok, "paths": ["error.log"], "write_effect": False, "may_mutate": False})
+    allowed, _, _ = kernel._simple_chain_evidence_check(prompt, [read], [],
+        final_reply="日志中的 PermissionError 表示 access denied。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed is read_ok

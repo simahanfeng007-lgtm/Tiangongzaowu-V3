@@ -13,7 +13,7 @@ from __future__ import annotations
 # 1.33 preserves task-generated composition fencing and records the reviewed
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
-# 1.36 recognizes broker-committed local artifacts across Runtime/Life evidence.
+# 1.36 aligns output evidence and removes prose-keyword completion vetoes.
 VERIFICATION_PLANE_VERSION = "1.36"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
