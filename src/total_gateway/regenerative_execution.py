@@ -24,6 +24,7 @@ EXECUTION_EVENT_TYPES = frozenset({
     "chain.started",
     "epoch.started",
     "composition.registered",
+    "composition.feedback_received",
     "step.planned",
     "step.prepared",
     "step.dispatched",

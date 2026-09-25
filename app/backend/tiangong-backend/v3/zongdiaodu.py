@@ -177,7 +177,6 @@ from .simple_chain.kernel import (
     _simple_chain_progress_blocking_reasons,
     _simple_chain_progress_fingerprint,
     _simple_chain_project_dir,
-    _simple_chain_project_dir_block,
     _simple_chain_protect_paths,
     _simple_chain_protected_artifact_payload,
     _simple_chain_protected_block,
@@ -3497,7 +3496,7 @@ class Zongdiaodu:
                             reuse_prior_fact=(
                                 call_key in tool_call_results
                                 and _simple_chain_should_replay_cached_call(
-                                    tool_call_results.get(call_key)
+                                    tool_call_results.get(call_key), tool_name=tn, tool_args=ta
                                 )
                             ),
                             artifact_guard_hits=tuple(
@@ -3962,7 +3961,7 @@ class Zongdiaodu:
                         })
                     qp = _simple_chain_quality_gate_payload(request_id, xiaoxi, tn, ta, raw,
                         (tool_call_counts[call_key]
-                         if _simple_chain_should_replay_cached_call(shangci_jieguo)
+                         if _simple_chain_should_replay_cached_call(shangci_jieguo, tool_name=tn, tool_args=ta)
                          else 1), run_state)
                     preflight_issues = parallel_preflight.get(call_key) or []
                     if preflight_issues:
@@ -4460,7 +4459,7 @@ class Zongdiaodu:
             tool_label = _gongju_xianshi_ming(tool_name)
             tool_call_key = _gongju_diaoyong_key(tool_name, tool_args)
             if tool_call_key in tool_call_results and _simple_chain_should_replay_cached_call(
-                tool_call_results.get(tool_call_key)
+                tool_call_results.get(tool_call_key), tool_name=tool_name, tool_args=tool_args
             ):
                 repeat_count = turn_loop.bump_repeat(tool_call_key)
                 repeat_action = _simple_chain_tool_action(tool_name, tool_args)
@@ -4771,7 +4770,7 @@ class Zongdiaodu:
                 gongju_jieguo,
                 (
                     tool_call_counts[tool_call_key]
-                    if _simple_chain_should_replay_cached_call(shangci_jieguo)
+                    if _simple_chain_should_replay_cached_call(shangci_jieguo, tool_name=tool_name, tool_args=tool_args)
                     else 1
                 ),
                 run_state,

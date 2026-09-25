@@ -55,6 +55,11 @@
                       "target": {
                         "type": "string"
                       },
+                      "repair_of": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "description": "可选：正在修正的失败回执 execution_evidence.event_hash。宿主核对同一任务、同一动作的真实失败；允许纠正 target，不代表用户认可或因果已证实。"
+                      },
                       "args": {
                         "type": "object",
                         "additionalProperties": true

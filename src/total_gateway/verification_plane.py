@@ -12,6 +12,8 @@ from __future__ import annotations
 
 # 1.33 preserves task-generated composition fencing and records the reviewed
 # experience-memory, native world-observation and inquiry identity boundaries.
-VERIFICATION_PLANE_VERSION = "1.33"
+# 1.34 versions mutable execution receipts and ordered composition feedback.
+# 1.35 removes unsolicited quality gates while retaining current factual evidence.
+VERIFICATION_PLANE_VERSION = "1.35"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

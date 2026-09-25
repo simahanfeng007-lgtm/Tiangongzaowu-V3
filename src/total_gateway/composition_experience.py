@@ -15,6 +15,7 @@ from contracts import canonical_sha256
 from capability_dictionary import load_dictionary
 from capability_dictionary.composition import digest
 from life_service.composition_memory import SCHEMA, read_experiences
+from .composition_receipts import composition_outcomes
 
 
 def terms(text):
@@ -97,15 +98,7 @@ class CompositionExperienceService:
         envelope, snapshot, events = self._task(request_id)
         if snapshot.state != "COMPLETED":
             raise ValueError("composition_experience.task_not_completed")
-        prepared = {event.effect_id: event.payload.get("composition_ref") for event in events
-                    if event.event_type == "step.prepared" and event.payload.get("composition_ref")}
-        outcomes = {}
-        for event in events:
-            reference = prepared.get(event.effect_id)
-            if reference and event.event_type in {"step.committed", "step.failed", "step.ambiguous"}:
-                outcomes[(reference["composition_id"], reference["leaf_id"])] = {
-                    "status": event.event_type, "evidence_hash": event.event_hash,
-                    "result": redact(event.payload.get("result_summary", {}))}
+        outcomes = {key: redact(value) for key, value in composition_outcomes(events).items()}
         episodes = []
         for event in events:
             if event.event_type != "composition.registered":
@@ -176,12 +169,41 @@ class CompositionExperienceService:
         text = str(payload.get("user_text") or "")
         if len(text) > 8000:
             raise ValueError("composition_experience.feedback_too_large")
+        event_id = str(payload.get("event_id") or "")
+        receipt = None
+        if mode != "inspect":
+            if not re.fullmatch(r"[A-Za-z0-9_-]{8,160}", event_id):
+                raise ValueError("composition_experience.event_invalid")
+            # Reserve order BEFORE a potentially slow classifier. The ledger
+            # retains that order across retry/restart; a retry gets the same seq.
+            with self.lock:
+                _, snapshot, _ = self._task(request_id)
+                receipt, _ = self.runtime.store.append_execution_event(
+                    event_key="composition.feedback_received:" + event_id,
+                    request_id=request_id, run_id=snapshot.run_id, generation=snapshot.generation,
+                    epoch_index=0, event_type="composition.feedback_received",
+                    created_at_ms=time.time_ns() // 1_000_000,
+                    payload={"event_id": event_id, "mode": mode,
+                             "user_text_sha256": canonical_sha256(text),
+                             "result_version": payload.get("result_version")})
         interpretation = self.interpret(text) if mode == "interpret" else {
             "decision": mode, "scope": "whole", "feedback_only": True}
         if interpretation["decision"] == "none" or interpretation["scope"] != "whole":
             return {"ok": True, "saved": False, "reason": "feedback_not_whole_endorsement", **interpretation}
         with self.lock:
             saved = next((row for row, _ in self._rows() if row["source"]["request_id"] == request_id), None)
+            if saved and event_id in saved["event_ids"]:
+                return {"ok": True, "saved": True, "experience_id": saved["experience_id"],
+                        "status": saved["status"], "duplicate": True,
+                        "feedback_only": interpretation.get("feedback_only") is True}
+            if receipt is not None:
+                _, snapshot, events = self._task(request_id)
+                latest = next((event for event in reversed(events)
+                               if event.event_type == "composition.feedback_received"), None)
+                if ((snapshot.run_id, snapshot.generation) != (receipt.run_id, receipt.generation)
+                        or latest is None or latest.event_id != receipt.event_id):
+                    return {"ok": True, "saved": False, "reason": "feedback_superseded",
+                            "feedback_only": interpretation.get("feedback_only") is True}
             episode = saved["source"] if saved and (mode == "inspect" or interpretation["decision"] == "withdraw") else self.capture(request_id)
             eid = "cex_" + canonical_sha256({"scope": self._scope(), "source": request_id, "version": episode["result_version"]})
             existing = next((row for row, _ in self._rows() if row["experience_id"] == eid), None)
@@ -190,9 +212,6 @@ class CompositionExperienceService:
                     "status": existing["status"] if existing else "not_saved"}
             if payload.get("result_version") and payload["result_version"] != episode["result_version"]:
                 raise ValueError("composition_experience.result_changed")
-            event_id = str(payload.get("event_id") or "")
-            if not re.fullmatch(r"[A-Za-z0-9_-]{8,160}", event_id):
-                raise ValueError("composition_experience.event_invalid")
             if existing and event_id in existing["event_ids"]:
                 return {"ok": True, "saved": True, "experience_id": eid, "status": existing["status"], "duplicate": True,
                     "feedback_only": interpretation.get("feedback_only") is True}
@@ -267,12 +286,14 @@ class CompositionExperienceService:
 
     def recall(self, query):
         self.recover()
-        lessons = self.lessons.recall(query)
         with self.lock:
-            pending = {use["request_id"] for row, _ in (*self._rows(), *self.lessons.rows()) for use in row["uses"].values() if use["status"] == "pending"}
+            pending = {use["request_id"] for row, _ in (*self._rows(), *self.lessons.rows())
+                       for use in row["uses"].values()
+                       if use["status"] == "pending" or use.get("attribution_version") != 2}
             for request_id in pending:
                 self.observe_terminal(request_id)
             candidates = self.candidates(query)
+            lessons = self.lessons.recall(query)
         if not candidates:
             return lessons
         selected, used = [], 0
@@ -321,18 +342,10 @@ class CompositionExperienceService:
                 return
             self.lessons.observe(request_id)
             events = self.runtime.store.list_execution_events(request_id, run_id=snapshot.run_id, generation=snapshot.generation)
-            references = {e.effect_id: e.payload.get("composition_ref") for e in events
-                          if e.event_type == "step.prepared" and e.payload.get("composition_ref")}
-            outcomes = {}
-            for event in events:
-                ref = references.get(event.effect_id)
-                if ref and event.event_type in {"step.committed", "step.failed", "step.ambiguous"}:
-                    outcomes[(ref["composition_id"], ref["leaf_id"])] = {
-                        "status": event.event_type, "evidence_hash": event.event_hash,
-                        "result": redact(event.payload.get("result_summary", {}))}
+            outcomes = {key: redact(value) for key, value in composition_outcomes(events).items()}
             for row, _ in (*self._rows(), *self.lessons.rows()):
                 for key, use in row["uses"].items():
-                    if use["request_id"] != request_id or use["status"] != "pending":
+                    if use["request_id"] != request_id or (use["status"] != "pending" and use.get("attribution_version") == 2):
                         continue
                     if use["run_id"] != snapshot.run_id or use["generation"] != snapshot.generation:
                         continue  # a later generation cannot certify an older use
@@ -347,11 +360,20 @@ class CompositionExperienceService:
                                 for leaf in program["leaves"])
                     use["outcomes"] = actual
                     use["request_status"] = snapshot.state
-                    if snapshot.state == "CANCELLED":
-                        use["status"] = "cancelled"
-                    elif snapshot.state == "FAILED" or any(item["status"] in {"step.failed", "step.ambiguous"} for item in actual):
+                    use["attribution_version"] = 2
+                    # Attribute only the referenced program's actual receipts.
+                    # A cancellation cannot erase an already observed failure;
+                    # unrelated task failure cannot quarantine a good example.
+                    if any(item["status"] in {"step.failed", "step.ambiguous"} for item in actual):
+                        use["execution_status"] = "failed"
                         use["status"] = "failed"
                     else:
-                        use["status"] = "succeeded" if actual and all(item["status"] == "step.committed" for item in actual) else "not_executed"
+                        complete = bool(actual) and all(item["status"] == "step.committed" for item in actual)
+                        use["execution_status"] = "succeeded" if complete else "not_executed"
+                        use["status"] = (
+                            "succeeded" if complete and snapshot.state == "COMPLETED" else
+                            "unattributed" if snapshot.state == "FAILED" else
+                            "cancelled" if snapshot.state == "CANCELLED" else "not_executed")
                     use["terminal_event"] = snapshot.last_event_id
-                    self._write(row, "outcome_" + canonical_sha256({"use": key, "terminal": snapshot.last_event_id}))
+                    self._write(row, "outcome_" + canonical_sha256({"use": key, "terminal": snapshot.last_event_id,
+                                                                "attribution_version": 2}))

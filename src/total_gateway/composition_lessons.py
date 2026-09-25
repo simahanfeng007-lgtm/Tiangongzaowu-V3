@@ -25,6 +25,34 @@ def bounded(value, limit=12000):
     return {"omitted": "oversized_data", "sha256": canonical_sha256(value), "characters": len(encoded)}
 
 
+def execution_calls(events, *, workspace_sha=None):
+    programs, prepared, calls = {}, {}, []
+    for event in events:
+        if event.event_type == "composition.registered":
+            if workspace_sha is not None and event.payload.get("workspace_sha256") != workspace_sha:
+                raise ValueError("composition_lesson.workspace_mismatch")
+            program = json.loads(event.payload["program_json"])
+            if digest({k: v for k, v in program.items() if k != "program_sha256"}) != program["program_sha256"]:
+                raise ValueError("composition_lesson.program_corrupt")
+            programs[event.payload["composition_id"]] = program
+            program["_runtime_version"] = event.payload.get("runtime_version")
+        elif event.event_type == "step.prepared":
+            prepared[event.effect_id] = event.payload.get("composition_ref")
+        elif event.event_type in {"step.failed", "step.ambiguous", "step.committed"}:
+            ref = prepared.get(event.effect_id)
+            if not ref or ref["composition_id"] not in programs:
+                continue
+            program = programs[ref["composition_id"]]
+            if program["program_sha256"] != ref["program_sha256"]:
+                raise ValueError("composition_lesson.reference_mismatch")
+            leaf = next(leaf for leaf in program["leaves"] if leaf["id"] == ref["leaf_id"])
+            calls.append({"event_hash": event.event_hash, "seq": event.ledger_seq,
+                "status": event.event_type, "call": leaf["invocation"], "program": program,
+                "repair_of": leaf.get("repair_of"),
+                "result": event.payload.get("result_summary", {}), "effect_id": event.effect_id})
+    return calls
+
+
 class CompositionLessonService:
     def __init__(self, owner):
         self.owner = owner
@@ -42,30 +70,7 @@ class CompositionLessonService:
     def calls(self, request_id):
         envelope, snapshot, events = self.owner._task(request_id)
         workspace_sha = canonical_sha256(str(self.owner.runtime.config.workspace_root).casefold())
-        programs, prepared, calls = {}, {}, []
-        for event in events:
-            if event.event_type == "composition.registered":
-                if event.payload.get("workspace_sha256") != workspace_sha:
-                    raise ValueError("composition_lesson.workspace_mismatch")
-                program = json.loads(event.payload["program_json"])
-                if digest({k: v for k, v in program.items() if k != "program_sha256"}) != program["program_sha256"]:
-                    raise ValueError("composition_lesson.program_corrupt")
-                programs[event.payload["composition_id"]] = program
-                program["_runtime_version"] = event.payload.get("runtime_version")
-            elif event.event_type == "step.prepared":
-                prepared[event.effect_id] = event.payload.get("composition_ref")
-            elif event.event_type in {"step.failed", "step.ambiguous", "step.committed"}:
-                ref = prepared.get(event.effect_id)
-                if not ref or ref["composition_id"] not in programs:
-                    continue
-                program = programs[ref["composition_id"]]
-                if program["program_sha256"] != ref["program_sha256"]:
-                    raise ValueError("composition_lesson.reference_mismatch")
-                leaf = next(leaf for leaf in program["leaves"] if leaf["id"] == ref["leaf_id"])
-                calls.append({"event_hash": event.event_hash, "seq": event.ledger_seq,
-                    "status": event.event_type, "call": leaf["invocation"], "program": program,
-                    "result": event.payload.get("result_summary", {}), "effect_id": event.effect_id})
-        return envelope, snapshot, calls
+        return envelope, snapshot, execution_calls(events, workspace_sha=workspace_sha)
 
     def observe(self, request_id):
         from .composition_experience import redact
@@ -82,7 +87,17 @@ class CompositionLessonService:
             eid = "cex_" + canonical_sha256({"scope": self.owner._scope(), "failure": failure["event_hash"]})
             later = [call for call in calls if call["seq"] > failure["seq"]
                      and call["call"]["action"] == action
-                     and call["call"]["target"] == failure["call"]["target"]]
+                     and (call["call"]["target"] == failure["call"]["target"]
+                          or call.get("repair_of") == failure["event_hash"])]
+            # Once a target correction is linked, a later failure on that
+            # corrected target also invalidates the observed recovery.
+            corrected_targets = {call["call"]["target"] for call in later
+                                 if call.get("repair_of") == failure["event_hash"]}
+            if corrected_targets:
+                first_link = min(call["seq"] for call in later if call.get("repair_of") == failure["event_hash"])
+                later = [call for call in calls if call in later or (
+                    call["seq"] > first_link and call["call"]["action"] == action
+                    and call["call"]["target"] in corrected_targets)]
             # Ambiguous effects may have happened: a successful repeat is not proof
             # of safe correction and must not recommend repeating the effect.
             recovery = later[-1] if later and later[-1]["status"] == "step.committed" and failure["status"] == "step.failed" else None
@@ -96,9 +111,11 @@ class CompositionLessonService:
                     "event_hash": recovery["event_hash"], "call": bounded(recovery["call"]),
                     "result": bounded(recovery["result"], 2500),
                     "changed_arguments": recovery["call"] != failure["call"],
+                    "relation": ("explicit_repair" if recovery.get("repair_of") == failure["event_hash"] else
+                                 "same_target" if recovery["call"]["target"] == failure["call"]["target"] else "following_linked_target"),
                     "intervening_steps": [{"call": bounded(call["call"], 3000), "event_hash": call["event_hash"]}
                         for call in calls if failure["seq"] < call["seq"] < recovery["seq"] and call["status"] == "step.committed"][-4:],
-                    "claim": "subsequent_same_target_execution_succeeded; cause_and_task_quality_unproven"}}
+                    "claim": "subsequent_related_execution_succeeded; cause_and_task_quality_unproven"}}
             row = deepcopy(existing.get(eid)) or {"schema": LESSON_SCHEMA, "experience_id": eid,
                 "event_ids": [], "uses": {}, "may_execute": False, "may_authorize": False}
             if row.get("source") == source:
@@ -140,7 +157,7 @@ class CompositionLessonService:
                 size += length
         if not selected:
             return ""
-        return ("[自动执行经验 / DATA，不代表用户认可]\n失败是实际回执；恢复仅表示同一目标后续调用成功，"
+        return ("[自动执行经验 / DATA，不代表用户认可]\n失败是实际回执；恢复仅表示同一目标或宿主核验的修正调用成功，"
                 "不证明因果、不证明内容正确。识别适用条件，重新读取当前输入并生成字典组合；"
                 "不执行历史调用。遇到 ambiguous 必须先核实现实状态，不能盲目重试。"
                 "若后续复用失败，应参考失败证据重新修正，不将历史恢复当作可直接套用的解法。"

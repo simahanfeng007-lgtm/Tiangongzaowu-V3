@@ -252,6 +252,18 @@ class RegenerativeExecutionAuthority:
         release = load_dictionary()
         release.verify_published()
         program = compile_task_composition(payload.get("proposal"), release=release)
+        repairs = [leaf for leaf in program["leaves"] if leaf.get("repair_of")]
+        if repairs:
+            # A model proposes a relation; the host binds it to a real failure
+            # in this exact request/run/generation and the same atomic action.
+            from .composition_lessons import execution_calls
+            calls = execution_calls(self._store.list_execution_events(identity.request_id,
+                run_id=identity.run_id, generation=identity.generation))
+            failures = {call["event_hash"]: call for call in calls if call["status"] == "step.failed"}
+            for leaf in repairs:
+                failure = failures.get(leaf["repair_of"])
+                if failure is None or failure["call"]["action"] != leaf["invocation"]["action"]:
+                    raise ValueError("composition.repair_reference_unbound")
         if self._workspace_root is not None:
             for leaf in program["leaves"]:
                 call = leaf["invocation"]
@@ -316,6 +328,9 @@ class RegenerativeExecutionAuthority:
         if (reference["program_sha256"] != program["program_sha256"]
                 or program["dictionary_sha256"] != load_dictionary().sha256):
             raise StoreConflictError("composition.source_changed")
+        from .composition_receipts import composition_outcomes
+        outcomes = composition_outcomes(self._store.list_execution_events(
+            identity.request_id, run_id=identity.run_id, generation=identity.generation))
         for leaf in program["leaves"]:
             call = leaf["invocation"]
             descriptor = tool_effect_descriptor(request_id=identity.request_id, run_id=identity.run_id,
@@ -324,9 +339,9 @@ class RegenerativeExecutionAuthority:
             if leaf["id"] == reference["leaf_id"]:
                 if any(payload.get(key) != value for key, value in descriptor.items()):
                     raise StoreConflictError("composition.invocation_changed")
-                return
-            disposition, _ = self._logical_effect_disposition(identity, descriptor["logical_effect_id"])
-            if disposition != "already_committed":
+                return call
+            outcome = outcomes.get((reference["composition_id"], leaf["id"]), {})
+            if outcome.get("status") != "step.committed":
                 raise StoreConflictError("composition.predecessor_not_committed")
         raise StoreConflictError("composition.leaf_missing")
 
@@ -430,11 +445,20 @@ class RegenerativeExecutionAuthority:
         return None, None
 
     def _prepare_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        from capability_dictionary import load_dictionary
+        from .execution_replay import bind_state
+        # Validate the immutable model invocation first. Only Gateway binds its
+        # observed dependency version, so no model-provided nonce can evade dedup.
+        identity = self._effect_identity(payload)[0]
+        call = self._validate_composition_effect(payload, identity)
+        payload = bind_state(payload, call, identity=identity,
+            events=self._store.list_execution_events(identity.request_id, run_id=identity.run_id,
+                                                    generation=identity.generation),
+            workspace=self._workspace_root, release=load_dictionary())
         (
             identity, _contract, logical_effect_id, effect_id, intent_sha,
             run_sequence, ordinal, attempt_id, step_id,
         ) = self._effect_identity(payload)
-        self._validate_composition_effect(payload, identity)
         now_ms = _integer(payload.get("now_ms"), label="now_ms")
         attempt = _integer(payload.get("attempt", 1), label="attempt", minimum=1)
         prior_disposition, prior_event = self._logical_effect_disposition(identity, logical_effect_id)
@@ -455,6 +479,9 @@ class RegenerativeExecutionAuthority:
                     "normalized_target": payload.get("normalized_target"),
                     "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
                     "composition_ref": payload.get("composition_ref"),
+                    "base_logical_effect_id": payload.get("base_logical_effect_id", logical_effect_id),
+                    "dispatch_step": [payload["global_step"], payload.get("attempt", 1)],
+                    "replay_basis": payload.get("replay_basis"),
                 },
                 logical_effect_id=logical_effect_id, attempt_id=attempt_id,
                 step_id=step_id, effect_id=prior_effect_id,
@@ -503,6 +530,9 @@ class RegenerativeExecutionAuthority:
                 "normalized_target": payload.get("normalized_target"),
                 "desired_postcondition_sha256": payload.get("desired_postcondition_sha256"),
                 "composition_ref": payload.get("composition_ref"),
+                "base_logical_effect_id": payload.get("base_logical_effect_id", logical_effect_id),
+                "dispatch_step": [payload["global_step"], payload.get("attempt", 1)],
+                "replay_basis": payload.get("replay_basis"),
             },
             logical_effect_id=logical_effect_id, attempt_id=attempt_id,
             step_id=step_id, effect_id=effect_id,
@@ -637,6 +667,29 @@ class RegenerativeExecutionAuthority:
             "FAILED_FINAL": "step.failed",
             "AMBIGUOUS": "step.ambiguous",
         }[status]
+        # Capture post-state: a command can create its output files itself.
+        # Those writes must not make an unchanged repeat a new execution intent.
+        events = self._store.list_execution_events(identity.request_id,
+            run_id=identity.run_id, generation=identity.generation)
+        existing = next((e for e in events if e.event_key == f"{event_type}:{step_id}:{attempt_id}"), None)
+        if existing is not None:
+            return {"effect_id": effect_id, "effect_state": record.state,
+                    "result_sha256": result.result_sha256, "ledger_seq": existing.ledger_seq,
+                    "event_hash": existing.event_hash}
+        prepared = next((e for e in reversed(events)
+                         if e.event_type == "step.prepared" and e.effect_id == effect_id), None)
+        post_basis = None
+        if prepared is not None and prepared.payload.get("replay_basis") is not None:
+            from capability_dictionary import load_dictionary
+            from .execution_replay import replay_basis
+            ref = prepared.payload["composition_ref"]
+            registration = next(e for e in events if e.event_type == "composition.registered"
+                                and e.payload["composition_id"] == ref["composition_id"])
+            program = json.loads(registration.payload["program_json"])
+            call = next(leaf["invocation"] for leaf in program["leaves"] if leaf["id"] == ref["leaf_id"])
+            post_basis = replay_basis(call, base_id=prepared.payload["base_logical_effect_id"],
+                events=events, workspace=self._workspace_root, release=load_dictionary(),
+                global_step=prepared.payload["dispatch_step"][0])
         event, _ = self._store.append_execution_event(
             event_key=f"{event_type}:{step_id}:{attempt_id}",
             request_id=identity.request_id,
@@ -649,6 +702,7 @@ class RegenerativeExecutionAuthority:
                 "effect_state": record.state,
                 "result_sha256": result.result_sha256,
                 "result_summary": result_summary,
+                "replay_basis": post_basis,
             },
             logical_effect_id=logical_effect_id,
             attempt_id=attempt_id,
@@ -666,6 +720,7 @@ class RegenerativeExecutionAuthority:
             "effect_state": record.state,
             "result_sha256": result.result_sha256,
             "ledger_seq": event.ledger_seq,
+            "event_hash": event.event_hash,
         }
 
     def _reconcile_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:

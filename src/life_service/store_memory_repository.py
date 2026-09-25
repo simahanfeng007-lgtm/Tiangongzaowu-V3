@@ -1221,6 +1221,10 @@ class LifeMemoryRepository:
             *,
             life_id: str | None = None,
             principal_ref: str | None = None,
+            layer: str | None = None,
+            claim_prefix: str | None = None,
+            after_claim_key: str | None = None,
+            limit: int | None = None,
         ) -> tuple[MemoryDerivationV1, ...]:
             clauses: list[str] = []
             values: list[object] = []
@@ -1230,6 +1234,19 @@ class LifeMemoryRepository:
             if principal_ref is not None:
                 clauses.append("h.principal_ref = ?")
                 values.append(principal_ref)
+            if layer is not None:
+                clauses.append("h.layer = ?")
+                values.append(layer)
+            if claim_prefix is not None:
+                clauses.append("substr(h.claim_key, 1, ?) = ?")
+                values.extend((len(claim_prefix), claim_prefix))
+            if after_claim_key is not None:
+                if life_id is None or principal_ref is None or layer is None:
+                    raise ValueError("memory head cursor requires one life, principal and layer")
+                clauses.append("h.claim_key > ?")
+                values.append(after_claim_key)
+            if limit is not None and (type(limit) is not int or not 1 <= limit <= 4096):
+                raise ValueError("memory head list limit is invalid")
             clauses.append(
                 "NOT EXISTS (SELECT 1 FROM memory_derivation_invalidations AS i "
                 "WHERE i.derivation_id = h.derivation_id)"
@@ -1243,8 +1260,9 @@ class LifeMemoryRepository:
                   ON d.derivation_id = h.derivation_id
                 {where}
                 ORDER BY h.life_id, h.principal_ref, h.claim_key, h.layer
+                {"LIMIT ?" if limit is not None else ""}
                 """,
-                values,
+                values + ([limit] if limit is not None else []),
             ).fetchall()
             return tuple(self._derivation_from_row(row) for row in rows)
 

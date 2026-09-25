@@ -130,7 +130,7 @@ def test_source_drift_and_workspace_isolation(service, monkeypatch):
     assert svc.recall("销售汇总") == ""
 
 
-def test_new_program_use_and_failed_outcome_are_durable(service):
+def test_unexecuted_reference_is_not_blamed_for_failed_task(service):
     svc, case, _, snapshot = service
     result = approve(svc, case)
     value = proposal("new input, new result")
@@ -144,8 +144,9 @@ def test_new_program_use_and_failed_outcome_are_durable(service):
     svc.observe_terminal(case.request_id)
     row = svc._rows()[0][0]
     assert len(row["uses"]) == 1
-    assert next(iter(row["uses"].values()))["status"] == "failed"
-    assert svc.recall("销售汇总") == ""
+    use = next(iter(row["uses"].values()))
+    assert use["status"] == "unattributed" and use["execution_status"] == "not_executed"
+    assert svc.candidates("销售汇总")
 
 
 def test_feedback_interpretation_is_bound_to_actual_user_words(service):

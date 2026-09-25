@@ -1177,8 +1177,11 @@ class LifeShadowStore:
     def get_active_memory_head(self, *, life_id: str, principal_ref: str, claim_key: str, layer: str) -> MemoryDerivationV1 | None:
         return self._memory_repository.get_active_memory_head(life_id=life_id, principal_ref=principal_ref, claim_key=claim_key, layer=layer)
 
-    def list_active_memory_heads(self, *, life_id: str | None=None, principal_ref: str | None=None) -> tuple[MemoryDerivationV1, ...]:
-        return self._memory_repository.list_active_memory_heads(life_id=life_id, principal_ref=principal_ref)
+    def list_active_memory_heads(self, *, life_id: str | None=None, principal_ref: str | None=None,
+                                 layer: str | None=None, claim_prefix: str | None=None,
+                                 after_claim_key: str | None=None, limit: int | None=None) -> tuple[MemoryDerivationV1, ...]:
+        return self._memory_repository.list_active_memory_heads(life_id=life_id, principal_ref=principal_ref,
+            layer=layer, claim_prefix=claim_prefix, after_claim_key=after_claim_key, limit=limit)
 
     def get_memory_consumer_offset(self, consumer_id: str, life_id: str) -> int:
         return self._memory_repository.get_memory_consumer_offset(consumer_id, life_id)
