@@ -376,7 +376,9 @@ class CognitionConsolidator:
                     transitions.append("CONFIRM")
                 return ConsolidationResult(proposal.cognition_id, head, bool(transitions), tuple(transitions), report, "reverified")
 
-            if challenge_is_material(report, current_level=head.stability_level):
+            # A C0 candidate has no established belief to challenge. Retain the
+            # counterevidence in C0; CHALLENGED requires prior C1+ support.
+            if head.stability_level != "C0" and challenge_is_material(report, current_level=head.stability_level):
                 challenged = self._statement(
                     proposal=proposal, previous=head, value=head.value, status="CHALLENGED", level=head.stability_level,
                     confidence_milli=report.net_milli, support_ids=support_ids, counter_ids=counter_ids,

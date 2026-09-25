@@ -1287,6 +1287,20 @@ export function createActions({ runtime, state, kernel = null }) {
     };
   }
 
+  async function rememberComposition(item, mode = "accept") {
+    if (!runtime?.compositionFeedback || !item?.meta?.gatewayRequestId) return { ok: false, error: "没有可保存的执行记录" };
+    const sessionId = item.sessionId || state.snapshot().activeSessionId;
+    const request_id = item.meta.gatewayRequestId;
+    const inspected = await runtime.compositionFeedback({ request_id, mode: "inspect" });
+    const result = await runtime.compositionFeedback({ request_id, mode,
+      result_version: inspected.result_version, event_id: `feedback_${crypto.randomUUID()}` });
+    if (result.ok && result.saved) {
+      state.replaceMessageById({ sessionId, messageId: item.id, text: item.content, error: item.error,
+        meta: { ...item.meta, compositionRemembered: result.status === "accepted", compositionExperienceId: result.experience_id } });
+    }
+    return result;
+  }
+
   async function sendMessage(text, attachments = [], runOptions = {}) {
     const cleanAttachments = Array.isArray(attachments) ? attachments.slice() : [];
     const message = String(text || "").trim() || (cleanAttachments.length ? "请阅读我上传的文件。" : "");
@@ -1296,6 +1310,33 @@ export function createActions({ runtime, state, kernel = null }) {
     const isDequeuedTurn = Boolean(runOptions.__dequeuedTurn);
     if (beforeSend.busy && !isAutoContinuation && !isDequeuedTurn) {
       return enqueueUserTurn(message, cleanAttachments, runOptions);
+    }
+    const feedbackTarget = [...(beforeSend.messages || [])].reverse().find(item => item.role === "assistant" && item.meta?.gatewayRequestId);
+    if (!isAutoContinuation && !cleanAttachments.length && feedbackTarget && runtime?.compositionFeedback
+        && /记住|记下|认可|满意|以后|今后|复用|撤销|别再|不要再|remember|reuse|approve/i.test(message)) {
+      state.setBusy(beforeSend.activeSessionId, true);
+      try {
+        const feedback = await runtime.compositionFeedback({ request_id: feedbackTarget.meta.gatewayRequestId,
+          mode: "interpret", user_text: message, event_id: `feedback_${crypto.randomUUID()}` });
+        if (feedback.saved) {
+          state.replaceMessageById({ sessionId: beforeSend.activeSessionId, messageId: feedbackTarget.id, text: feedbackTarget.content, error: feedbackTarget.error,
+            meta: { ...feedbackTarget.meta, compositionRemembered: feedback.status === "accepted", compositionExperienceId: feedback.experience_id } });
+          if (feedback.feedback_only) {
+            if (state.snapshot().activeSessionId === beforeSend.activeSessionId) {
+              if (!isDequeuedTurn) state.addMessage("user", message);
+              state.addMessage("assistant", feedback.message, false, { meta: { origin: "composition_feedback" } });
+            }
+            queueMicrotask(() => { void drainPendingUserTurns(); });
+            return feedback;
+          }
+        }
+      } catch (error) {
+        if (state.snapshot().activeSessionId === beforeSend.activeSessionId)
+          state.addMessage("assistant", "这次做法尚未保存，可以使用结果旁的“认可并记住”重试。", true);
+      } finally {
+        state.setBusy(beforeSend.activeSessionId, false);
+      }
+      if (state.snapshot().activeSessionId !== beforeSend.activeSessionId) return { ok: false, error: "会话已切换，请在目标会话重发指令。" };
     }
     // GF 门（草案 §8）：上一轮结果待对账时，禁止"继续/重发"类操作。
     // 全新指令不受限；续作类输入（含隐藏的自动续作）一律拒绝并提示等待对账。
@@ -1372,7 +1413,12 @@ export function createActions({ runtime, state, kernel = null }) {
     const userMessage = isAutoContinuation
       ? null
       : queuedUserMessage || state.addMessage("user", message, false, { attachments: cleanAttachments });
-    const recordCompletedTurn = (assistantText) => {
+    const recordCompletedTurn = (assistantText, runResult = {}) => {
+      if (runResult.gatewayRequestId && runResult.ok) {
+        // The user may have switched conversations while this task ran.
+        state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: assistantText, error: false,
+          meta: { gatewayRequestId: runResult.gatewayRequestId } });
+      }
       if (isAutoContinuation || typeof runtime?.recordConversationTurn !== "function") return;
       const response = String(assistantText || "").trim();
       if (!response) return;
@@ -1648,7 +1694,7 @@ export function createActions({ runtime, state, kernel = null }) {
             meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
           });
         }
-        recordCompletedTurn(displayText);
+        recordCompletedTurn(displayText, streamResult);
         // 派发最终渲染事件（独立于进度条状态）
         try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
         if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, Boolean(streamResult.ok));
@@ -1760,7 +1806,7 @@ export function createActions({ runtime, state, kernel = null }) {
       if (!nonStreamAlready) {
         state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error && !nonStreamExpected, attachments: finalAttachments, meta: { origin: String(result?.origin || "model"), runId: requestId } });
       }
-      recordCompletedTurn(displayText);
+      recordCompletedTurn(displayText, result);
       try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
     } catch (error) {
       const message = error.message || String(error);
@@ -1961,6 +2007,7 @@ export function createActions({ runtime, state, kernel = null }) {
     guideRun,
     handleRunInput,
     sendMessage,
+    rememberComposition,
     clearConversation
   };
 }

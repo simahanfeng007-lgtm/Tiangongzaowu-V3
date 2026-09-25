@@ -123,6 +123,16 @@ def test_partial_tool_arguments_prevent_blind_transport_retry(endpoint):
     assert client.sent == 1
 
 
+def test_auxiliary_interpretation_does_not_trigger_tool_output_repair(endpoint):
+    client = Client(lambda: iter([event({"content": '{"hypotheses":['}, "length"), "data: [DONE]"]))
+    with pytest.raises(executor.TransportExecutionError) as caught:
+        executor.execute_streaming_turn_with_repair(client=client, endpoint=endpoint, api_key="test",
+            canonical_payload={"messages": []}, allow_output_repair=False, retry_limit=1,
+            max_wall_clock_seconds=1)
+    assert caught.value.error_code == "output_truncated"
+    assert client.sent == 1
+
+
 def test_uncommitted_network_turn_restarts_without_replaying_partial_tool(endpoint):
     client = Client(lambda: iter(()))
     resets = []

@@ -94,6 +94,7 @@ class ActionContextEntryV1:
     effect_class: str
     risk_floor: str
     availability: str
+    summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +120,24 @@ class NegativeEvidenceContextEntryV1:
 
 
 @dataclass(frozen=True, slots=True)
+class CompositionMemoryContextEntryV1:
+    experience_id: str
+    source_sha256: str
+    status: str
+    summary: str
+    successful_reuses: int
+    failed_reuses: int
+
+    def __post_init__(self):
+        import re
+        if (not re.fullmatch(r"cex_[0-9a-f]{64}", self.experience_id)
+                or not re.fullmatch(r"[0-9a-f]{64}", self.source_sha256)
+                or self.status not in {"USER_APPROVED", "QUARANTINED", "FAILURE_OBSERVED", "RECOVERY_OBSERVED"}
+                or len(self.summary) > 1200 or min(self.successful_reuses, self.failed_reuses) < 0):
+            raise ValueError("COMPOSITION_MEMORY_CONTEXT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class CapabilityContextPacketV1:
     schema: str
     world_state_ref: WorldRecordRef
@@ -137,10 +156,13 @@ class CapabilityContextPacketV1:
     confirms: bool = False
     changes_risk: bool = False
     may_execute: bool = False
+    composition_memory: tuple[CompositionMemoryContextEntryV1, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema != "tiangong.capability-context-packet.v1":
             raise ValueError("CAPABILITY_CONTEXT_SCHEMA_INVALID")
+        if len(self.composition_memory) > 3 or any(type(item) is not CompositionMemoryContextEntryV1 for item in self.composition_memory):
+            raise ValueError("COMPOSITION_MEMORY_CONTEXT_INVALID")
         if (
             not self.context_only
             or self.authorization_source
@@ -192,6 +214,7 @@ class CapabilityContextPacketV1:
             "confirms": self.confirms,
             "changes_risk": self.changes_risk,
             "may_execute": self.may_execute,
+            "composition_memory": [asdict(item) for item in self.composition_memory],
         }
 
     def computed_sha256(self) -> str:
@@ -410,6 +433,11 @@ def _identity_lines(packet: CapabilityContextPacketV1) -> list[str]:
                 )
             )
         )
+    if packet.composition_memory:
+        lines.extend(("", "[USER_APPROVED_COMPOSITION_MEMORY / DATA]",
+            "User endorsement is not L5 stable cognition or execution permission. Re-read current inputs; quarantined examples are avoidance evidence."))
+        for item in packet.composition_memory:
+            lines.append(f"experience_ref={item.experience_id}@{item.source_sha256} status={item.status} successful_reuses={item.successful_reuses} failed_reuses={item.failed_reuses} summary={_display_text(item.summary)}")
     lines.extend(("", "[NEGATIVE_EVIDENCE]"))
     for item in packet.negative_evidence:
         lines.append(
@@ -455,7 +483,8 @@ def _summary_lines(packet: CapabilityContextPacketV1) -> list[str]:
     return [
         f"method_summary candidate_id={item.candidate_id} title={_display_text(item.title)} summary={_display_text(item.summary)}"
         for item in packet.method_candidates
-    ]
+    ] + [f"action_summary candidate_id={item.candidate_id} summary={_display_text(item.summary)}"
+         for item in packet.action_candidates if item.summary]
 
 
 def _build_result(

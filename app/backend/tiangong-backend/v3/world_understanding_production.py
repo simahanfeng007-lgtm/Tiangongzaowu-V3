@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import os
+import json
 import platform
 import re
 import threading
+import logging
+import time
 from pathlib import Path
 
 from contracts.canonical import canonical_sha256
@@ -30,6 +33,7 @@ from world_understanding.context_output import (
     WorldContextRequestHandler,
 )
 from world_understanding.production import ProductionWorldUnderstandingRuntime
+from world_understanding.semantic import SemanticPipeline
 from world_understanding.active_cognition import ActiveWorldCognitionCoordinator
 from world_understanding.software_world import SoftwareWorldFrame
 from world_understanding.software_world.git_observation import repository_frame_identity
@@ -39,6 +43,7 @@ from world_understanding.world_state.store import MaterializedWorldSnapshot
 
 from .run_context import current_run_context
 from .context_compactor import estimate_tokens
+from .world_semantic_binding import ConfiguredWorldSemanticModel
 
 _OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$")
 _runtime_lock = threading.Lock()
@@ -47,6 +52,33 @@ _context_output: ContextOutputPort | None = None
 _active_dispatcher = None
 _active_coordinator: ActiveWorldCognitionCoordinator | None = None
 _method_run_resolver = None
+_composition_memory_provider = None
+
+
+def set_world_composition_memory_provider(provider) -> None:
+    global _composition_memory_provider
+    if provider is not None and not callable(provider):
+        raise TypeError("world composition memory provider must be callable")
+    _composition_memory_provider = provider
+
+
+def _composition_memory(query, snapshot):
+    provider = _composition_memory_provider
+    return () if provider is None else provider(query, snapshot, current_run_context())
+
+
+def _semantic_diagnostic(envelope, trace):
+    """Persist only bounded telemetry, never source text, prompts or credentials."""
+    from total_gateway.diagnostics import diagnostic_log
+    model = None if _runtime is None else _runtime._semantic.model
+    diagnostic_log(json.dumps({
+        "event": "world_semantic", "request_id": current_run_context().request_id,
+        "source_kind": envelope.source_kind, "status": trace.status,
+        "reason": trace.failure_type or trace.admission_reason_code,
+        "binding_status": getattr(model, "last_status", None),
+        "model_ref": trace.model_ref, "hypotheses": len(trace.hypothesis_refs),
+        "latency_ms": trace.latency_ms,
+    }, ensure_ascii=True), filename="world_semantic.log")
 
 
 def set_world_inquiry_dispatcher(dispatcher) -> None:
@@ -67,6 +99,24 @@ def _state_root() -> Path:
     if configured:
         return Path(configured).expanduser().resolve(strict=False)
     return (Path.home() / ".tiangong" / "v3" / "world_understanding" / "world_state").resolve(strict=False)
+
+
+def production_inquiry_context(value):
+    from contracts.world_understanding.inquiry import WorldInquiry
+    from world_understanding.inquiry.observation import file_observation_context
+    try:
+        inquiry = WorldInquiry.model_validate(value, strict=False)
+    except ValueError:
+        return None
+    if not inquiry.has_valid_hash() or inquiry.source_world_state_ref is None:
+        return None
+    store = production_world_understanding_runtime().store
+    record = store.active_cognition_record(inquiry.inquiry_id)
+    if record is None or record.get("status") == "CLOSED" or record.get("inquiry") != inquiry.model_dump(mode="json"):
+        return None
+    snapshot = store.get(inquiry.source_world_state_ref.record_id)
+    context = file_observation_context(inquiry, snapshot)
+    return None if context is None else {**context, "origin_request_id": record.get("origin_request_id")}
 
 
 def _identity(event: NativePostCommitEvent) -> dict[str, str]:
@@ -167,6 +217,9 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
         if _runtime is None:
             store = WorldStateStore(root=_state_root())
             output = ContextOutputPort(max_pending=256)
+            from world_understanding.cognition.facade import WorldCognitionFacade
+            from world_understanding.cognition.runtime import RuntimeCognitionConsolidation
+            cognition = RuntimeCognitionConsolidation(WorldCognitionFacade(enabled=True, root=_state_root().parent / "world_cognition"))
 
             def resolve_state(query):
                 basis = query.basis_world_state_ref
@@ -183,7 +236,9 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
                 runtime = _runtime
                 if runtime is None:
                     return ()
-                return runtime.repository_context_candidates(query, snapshot)
+                from world_understanding.context_output.runtime_facts import runtime_context_candidates
+                return (*runtime.repository_context_candidates(query, snapshot), *runtime_context_candidates(query, snapshot),
+                        *cognition.context_candidates(query, snapshot))
 
             handler = WorldContextRequestHandler(
                 state_resolver=resolve_state,
@@ -191,15 +246,23 @@ def production_world_understanding_runtime() -> ProductionWorldUnderstandingRunt
                 output_port=output,
                 projection_enricher=enrich_context,
             )
+            handler.composition_memory_provider = _composition_memory
             _active_coordinator = ActiveWorldCognitionCoordinator(
                 store=store,
                 dispatcher=_dispatch_world_inquiry,
             )
+            from .world_dictionary_binding import bind_dictionary_world
             _runtime = ProductionWorldUnderstandingRuntime(
                 store=store,
                 frame_factory=_frame_factory,
+                semantic_pipeline=SemanticPipeline(model=ConfiguredWorldSemanticModel()),
                 context_request_handler=handler,
                 committed_state_observer=_active_coordinator.observe,
+                domain_provider=bind_dictionary_world,
+                # Do not spend the task's inference budget on bootstrap/catalog/identity events.
+                semantic_source_kinds=frozenset({"TOOL_RESULT", "FILESYSTEM", "GIT_CODE", "USER_CONVERSATION"}),
+                semantic_trace_observer=_semantic_diagnostic,
+                cognition_provider=cognition.materialize,
             )
             _context_output = output
     return _runtime
@@ -446,6 +509,42 @@ def refresh_active_repository_snapshot(run_context=None) -> MaterializedWorldSna
     )
 
 
+def refresh_task_world_snapshot(run_context=None) -> MaterializedWorldSnapshot | None:
+    """Select the exact runtime workspace, even if Git frames also exist.
+
+    Definitions and environment are observed afresh for a new principal; private
+    facts are never copied from another conversation to make a cold start work.
+    """
+    identity = _run_identity(run_context or current_run_context())
+    scope = _scope(identity)
+    if scope is None:
+        return None
+    runtime = production_world_understanding_runtime()
+    at = max(0, time.time_ns() // 1_000_000)
+    from capability_dictionary import load_dictionary
+    fingerprint = canonical_sha256({"dictionary": load_dictionary().sha256, "request": identity["request_id"],
+                                    "query": str(getattr(run_context or current_run_context(), "current_user_text", ""))})
+    envelope = build_post_commit_source_envelope(
+        source_kind="RUNTIME_ENVIRONMENT", source_native_id="runtime.dictionary-bootstrap",
+        producer_ref="v3.world-dictionary", payload={"machine": platform.system(), "python": platform.python_version(),
+                                                    "dictionary_context_fingerprint": fingerprint},
+        source_time=WorldTime(valid_from_ms=at, observed_at_ms=at, recorded_at_ms=at), scope=scope,
+        correlation_id="corr.dictionary-bootstrap", workspace_id=identity["workspace_id"])
+    frame = _frame_factory(envelope, None)
+    snapshot = runtime.store.current(life_id=scope.life_id, world_scope_hash=scope.world_scope_hash,
+        principal_scope_hash=scope.principal_scope_hash, frame_id=frame.frame_id)
+    if (snapshot is not None and any(e.entity_type == "ToolCapability" for e in snapshot.entities)
+            and any(a.key == "dictionary_context_fingerprint" and a.value.string_value == fingerprint
+                    for e in snapshot.entities if e.entity_type == "Runtime" for a in e.attributes)):
+        return snapshot
+    receipt = runtime.facade.accept(envelope)
+    if not receipt.processed:
+        logging.getLogger("tiangong.world").warning("WORLD_BOOTSTRAP_FAILED reason=%s", receipt.reason_code)
+        return snapshot
+    return runtime.store.current(life_id=scope.life_id, world_scope_hash=scope.world_scope_hash,
+        principal_scope_hash=scope.principal_scope_hash, frame_id=frame.frame_id)
+
+
 def _native_id(value: str) -> str:
     value = str(value or "").strip()
     if _OPAQUE.fullmatch(value):
@@ -497,13 +596,15 @@ def observe_native_post_commit(event: NativePostCommitEvent):
         workspace_id=identity["workspace_id"],
     )
     disposition = production_world_understanding_runtime().facade.accept(envelope)
+    if not disposition.processed:
+        logging.getLogger("tiangong.world").warning("WORLD_SOURCE_REJECTED source=%s reason=%s", event.source_kind, disposition.reason_code)
     if _tool_result_requests_repository_refresh(event):
         try:
             from .repository_perception import publish_active_repository_observation
 
             publish_active_repository_observation()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger("tiangong.world").warning("WORLD_REPOSITORY_REFRESH_FAILED type=%s", type(exc).__name__)
     return disposition
 
 

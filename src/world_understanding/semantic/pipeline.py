@@ -12,7 +12,7 @@ from .admission import SemanticAdmissionController, SemanticAdmissionOutcome, Se
 from .inputs import SemanticInputBundle
 from .model import (
     SEMANTIC_PROMPT_VERSION, SEMANTIC_SCHEMA_VERSION, SEMANTIC_SYSTEM_INSTRUCTION,
-    SemanticModel, SemanticModelRequest, SemanticModelResponse, SemanticModelUnavailable,
+    SemanticModel, SemanticModelRequest, SemanticModelResponse, SemanticModelUnavailable, SemanticModelDeferred,
     SemanticOutputRejected, parse_semantic_output,
 )
 
@@ -175,6 +175,12 @@ class SemanticPipeline:
         response: SemanticModelResponse | None = None
         try:
             response = self.model.generate(request)
+        except SemanticModelDeferred as exc:
+            trace = SemanticTrace("NOT_ADMITTED", admission.attention_milli, admission.voi_milli,
+                                  "DEFERRED", exc.reason_code, None, None, SEMANTIC_PROMPT_VERSION,
+                                  SEMANTIC_SCHEMA_VERSION, 0, 0, 0, refs, None, (), exc.reason_code)
+            return SemanticRunResult("NOT_ADMITTED", (), trace, _empty_cost(
+                created_at_ms=created_at_ms, input_count=len(refs), success=False, failure_type=exc.reason_code))
         except SemanticModelUnavailable:
             trace = SemanticTrace("LLM_UNAVAILABLE", admission.attention_milli, admission.voi_milli, admission.disposition, admission.reason_code,
                                   None, None, SEMANTIC_PROMPT_VERSION, SEMANTIC_SCHEMA_VERSION, 0, 0, 0, refs, None, (), "LLM_UNAVAILABLE")

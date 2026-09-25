@@ -2965,6 +2965,12 @@ export function createHttpRuntime({ kernel = null } = {}) {
       }
     },
 
+    async compositionFeedback(payload = {}) {
+      return apiJson("/api/v1/gateway/composition-feedback", {
+        method: "POST", body: JSON.stringify(payload)
+      });
+    },
+
     async recordConversationTurn(userText, assistantText, extra = {}) {
       try {
         return await apiJson(LIFE_API_ROUTES.memoryTurn.path, {
@@ -3470,6 +3476,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
         const parsed = parseFinalReplyPayload(finalReply);
         return {
           ok: false,
+          gatewayRequestId,
           // GF 门：把终态相位透传给 actions/会话面板，用于渲染非成功卡片
           phase: terminalPhase || "failed",
           code: String(finalDonePayload?.error_detail?.code || finalDonePayload?.error || "gateway_request_failed"),
@@ -3497,6 +3504,7 @@ export function createHttpRuntime({ kernel = null } = {}) {
       });
       return {
         ok: verdict.ok,
+        gatewayRequestId,
         phase: verdict.phase,
         model_terminal_status: modelTerminalStatus,
         stdout: finalReply,

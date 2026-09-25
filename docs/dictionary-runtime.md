@@ -81,6 +81,11 @@ separate process logs from artifact sizes. Runtime budgets never grant new acces
 
 ## Verification status and limits
 
+User-endorsed dynamic compositions can now be stored as reference DATA in the
+existing memory authority and adapted in later tasks. This does not add fixed
+business Skills. See [composition experience memory](composition-experience-memory.md)
+for feedback, version binding, reuse evidence and current limits.
+
 `test_task_generated_composition.py` exercises actual dictionary compilation,
 durable program registration, real file mutation/read/hash, altered arguments,
 missing dependencies, failed leaves, duplicate execution and fixed-Skill rejection.

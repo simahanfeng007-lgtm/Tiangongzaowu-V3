@@ -208,6 +208,11 @@ class MemoryCoordinator:
     def store(self) -> LifeShadowStore:
         return self._store
 
+    def commit_composition_experience(self, **kwargs):
+        """Persist user-endorsed dynamic composition DATA through this writer."""
+        from .composition_memory import commit_experience
+        return commit_experience(self, **kwargs)
+
     # ------------------------------------------------------------------
     # LifeEvent -> L1
     # ------------------------------------------------------------------
@@ -1055,6 +1060,7 @@ class MemoryCoordinator:
         policy_version: str,
         assertion_causal_utility_milli: int = 0,
         head_guard: tuple[str, str, str | None] | None = None,
+        observed_only: bool = False,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, bool]:
         parents = tuple(
             sorted(parents, key=lambda item: item.derivation_id)
@@ -1102,6 +1108,8 @@ class MemoryCoordinator:
             for item in parent_assertions
             if item is not None
         )
+        if observed_only and not verified:
+            raise MemoryCoordinatorError("observed promotion requires observed parents")
         domain = disposition.semantic_domain
         derivation = MemoryDerivationV1(
             derivation_id=derivation_id,
@@ -1155,7 +1163,7 @@ class MemoryCoordinator:
             memory_id=memory_id,
             life_id=disposition.life_id,
             assertion_kind=_assertion_kind_for_domain(domain),
-            epistemic_status="verified" if verified else "user_asserted",
+            epistemic_status="observed" if observed_only else "verified" if verified else "user_asserted",
             lifecycle_status="active",
             privacy_scope=privacy_scope,
             retention_class="LONG_TERM_MEMORY"

@@ -1817,8 +1817,17 @@ class BodyRuntime:
             preview = base64.b64encode(raw[:max_chars]).decode("ascii")
             return {"path": str(p), "mime": mimetypes.guess_type(str(p))[0], "size_bytes": len(raw), "base64_preview": preview, "truncated": len(raw) > max_chars}
         self._canonical_text_encoding(args)
-        data = self._read_canonical_utf8(p)
-        return {"path": str(p), "size_chars": len(data), "content": data[:max_chars], "truncated": len(data) > max_chars, "evidence": self._file_evidence(p)}
+        # Reading imported files must not impose the canonical write encoding.
+        # Explicit Unicode BOMs are unambiguous; never guess legacy encodings
+        # or replace corrupt bytes. Evidence remains bound to original bytes.
+        try:
+            decoded = decode_portable_bytes(p.read_bytes(), source="file.read")
+        except PortableTextError as exc:
+            raise OmniBodyError(str(exc)) from exc
+        data = decoded.text
+        return {"path": str(p), "size_chars": len(data), "content": data[:max_chars],
+                "encoding": decoded.encoding, "had_bom": decoded.had_bom,
+                "truncated": len(data) > max_chars, "evidence": self._file_evidence(p)}
 
     def _action_file_write(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         p = self._controlled_write_target(target)

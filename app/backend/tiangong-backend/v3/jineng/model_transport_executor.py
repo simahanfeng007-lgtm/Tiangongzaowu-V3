@@ -57,13 +57,14 @@ def execute_streaming_turn_with_repair(**kwargs) -> TransportExecutionResult:
     """
     started = time.perf_counter()
     on_repair = kwargs.pop("on_repair", None)
+    allow_output_repair = kwargs.pop("allow_output_repair", True)
     kwargs["retry_uncommitted_stream"] = True
     kwargs["on_attempt_reset"] = on_repair
     with model_call_scope(float(kwargs.get("max_wall_clock_seconds", 300.0))) as lifecycle:
         try:
             return execute_streaming_turn(**kwargs)
         except TransportExecutionError as exc:
-            if exc.error_code not in {"output_truncated", "invalid_tool_arguments"}:
+            if not allow_output_repair or exc.error_code not in {"output_truncated", "invalid_tool_arguments"}:
                 raise
             lifecycle.check()
             if on_repair is not None:

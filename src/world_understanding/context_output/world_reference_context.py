@@ -159,6 +159,19 @@ _OPERATION_TERMS = {
 }
 
 
+def action_context_relevance(semantic: str, summary: str, focus: str):
+    semantic, focus = semantic.casefold(), focus.casefold()
+    query_tokens = set(re.findall(r"[a-z0-9]+", focus))
+    overlap = len(query_tokens.intersection(re.findall(r"[a-z0-9]+", semantic + " " + summary.casefold())))
+    namespace, _, operation = semantic.partition(".")
+    namespace_match = any(term in focus for term in _NAMESPACE_TERMS.get(namespace, ()))
+    operation_match = any(term in focus for name, terms in _OPERATION_TERMS.items()
+                          if operation == name or operation.startswith(name + "_") for term in terms)
+    general = semantic in {"file.read", "file.list", "file.write", "python.run", "shell.run", "code.patch_replace"}
+    score = overlap * 4 + namespace_match * 12 + (namespace_match and operation_match) * 8 + (namespace_match and general) * 6
+    return (semantic not in focus, -score, semantic)
+
+
 def _reference_relevance(row, focus: str):
     """Presentation retrieval only: rank existing verified rows, never grant one.
 
@@ -170,22 +183,13 @@ def _reference_relevance(row, focus: str):
     semantic = source.semantic_id.casefold()
     title = entity.canonical_name.casefold()
     exact = semantic in focus or (len(title) > 2 and title in focus)
-    query_tokens = set(re.findall(r"[a-z0-9]+", focus))
-    description = " ".join((semantic, title, attrs.get("semantic_summary", "").casefold()))
-    overlap = len(query_tokens.intersection(re.findall(r"[a-z0-9]+", description)))
-    namespace, _, operation = semantic.partition(".")
-    namespace_match = any(term in focus for term in _NAMESPACE_TERMS.get(namespace, ()))
-    operation_match = any(term in focus for name, terms in _OPERATION_TERMS.items()
-                          if operation == name or operation.startswith(name + "_") for term in terms)
-    # Prefer the small general file/shell primitives within a matching namespace.
-    general = semantic in {"file.read", "file.list", "file.write", "python.run", "shell.run", "code.patch_replace"}
-    score = overlap * 4 + namespace_match * 12 + (namespace_match and operation_match) * 8 + (namespace_match and general) * 6
-    return (not exact, -score, semantic, entity.entity_id)
+    ranked = action_context_relevance(semantic, attrs.get("semantic_summary", ""), focus)
+    return (not exact, *ranked[1:], entity.entity_id)
 
 
 def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, query: WorldQuery,
                                          *, token_estimator=conservative_token_estimate,
-                                         procedural_experience=(), negative_evidence=()) -> CapabilityContextPacketV1 | None:
+                                         procedural_experience=(), negative_evidence=(), composition_memory=()) -> CapabilityContextPacketV1 | None:
     """Project bounded display candidates; execution still needs exact Source resolution.
 
     Selection is a deterministic presentation order (literal task match, then ID),
@@ -220,13 +224,14 @@ def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, qu
     rows.sort(key=lambda r: _reference_relevance(r, focus))
     methods = [r for r in rows if r[1].source_kind == "SKILL_METHOD"][:15]
     actions = [r for r in rows if r[1].source_kind == "TOOL_ACTION"][:30]
+    memory = list(composition_memory[:3])
 
     def packet():
         method_entries = tuple(MethodContextEntryV1(f"M{i:02d}", "method:" + s.semantic_id, s.version,
             canonical_sha256(s.model_dump(mode="json")), s.descriptor_sha256, e.canonical_name, a.get("semantic_summary", ""))
             for i, (e, s, _ref, a) in enumerate(methods, 1))
         action_entries = tuple(ActionContextEntryV1(f"A{i:02d}", "action:" + s.semantic_id, s.version,
-            canonical_sha256(s.model_dump(mode="json")), s.descriptor_sha256, a["effect_class"], a["risk_floor"], a["availability"])
+            canonical_sha256(s.model_dump(mode="json")), s.descriptor_sha256, a["effect_class"], a["risk_floor"], a["availability"], a.get("semantic_summary", ""))
             for i, (_e, s, _ref, a) in enumerate(actions, 1))
         selected = methods + actions
         digest = canonical_sha256({"domain": "tiangong.world-source-reference-projection.v1",
@@ -241,6 +246,7 @@ def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, qu
             frame_binding_sha256=next(iter(frame_bindings)), candidate_snapshot_sha256=digest,
             method_candidates=method_entries, action_candidates=action_entries,
             procedural_experience=stable_experience, negative_evidence=stable_negative,
+            composition_memory=tuple(memory),
             protected_identities=identities, composition_abi=_REFERENCE_ABI + f";omitted_records={len(rows)-len(selected)};ineligible_records={len(cap_entities)-len(rows)}"
             + f";experience_data_only=true;stable_experience={len(stable_experience)};negative_evidence={len(stable_negative)};rejected_lifecycle={rejected_lifecycle}",
             packet_sha256="0"*64)
@@ -256,6 +262,8 @@ def build_world_reference_context_packet(snapshot: MaterializedWorldSnapshot, qu
             methods.pop()
         elif len(actions) > 1:
             actions.pop()
+        elif memory:
+            memory.pop()
         else:
             raise ValueError("CAPABILITY_CONTEXT_IDENTITY_BUDGET_EXCEEDED")
         result = packet()

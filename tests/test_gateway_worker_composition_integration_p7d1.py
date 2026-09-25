@@ -143,7 +143,10 @@ def test_process_dispatches_composition_only_at_parent_durable_success_boundary(
         ORCHESTRATION_SOURCE.read_text(encoding="utf-8"),
         filename=str(ORCHESTRATION_SOURCE),
     )
-    process = _method(tree, "GatewayOrchestrationWorker", "process")
+    wrapper = _method(tree, "GatewayOrchestrationWorker", "process")
+    assert len(_calls(wrapper, "self._process")) == 1
+    assert _calls(wrapper, "self._dispatch_next_composition_step") == []
+    process = _method(tree, "GatewayOrchestrationWorker", "_process")
     continuation = _method(
         tree,
         "GatewayOrchestrationWorker",

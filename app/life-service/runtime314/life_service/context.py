@@ -188,6 +188,7 @@ class CausalContextBuilder:
         authority_reserve_tokens: int = 5_000,
         protocol_reserve_tokens: int = 5_000,
     ) -> CausalContextPack:
+        from .composition_memory import is_experience_payload
         if not continuity.has_valid_capsule_sha256():
             raise ContextBuildError("continuity capsule digest is invalid")
         if created_at_ms < continuity.created_at_ms:
@@ -214,6 +215,10 @@ class CausalContextBuilder:
         ):
             raise ContextBuildError("external context items are invalid")
         used = continuity_tokens
+        # These records have workspace, approval, source-version and outcome
+        # filters owned by the composition reader. Generic history must never
+        # re-inject old or withdrawn program versions around those filters.
+        external_items = tuple(item for item in external_items if not is_experience_payload(item.summary))
         selected: list[CausalContextItem] = []
         selected_refs: set[str] = set()
         optional_items: list[CausalContextItem] = []
@@ -270,8 +275,6 @@ class CausalContextBuilder:
         )
 
         for assertion in candidates:
-            if assertion.memory_id in external_refs:
-                raise ContextBuildError("context item identity collision")
             assert assertion.protected_payload_id is not None
             try:
                 plaintext = self.store.read_protected_payload(
@@ -283,6 +286,10 @@ class CausalContextBuilder:
                         "required memory cannot be read from protected storage"
                     ) from exc
                 continue
+            if is_experience_payload(plaintext):
+                continue
+            if assertion.memory_id in external_refs:
+                raise ContextBuildError("context item identity collision")
             summary = self.summary_provider(assertion, plaintext)
             if not isinstance(summary, str) or not summary.strip() or len(summary) > 20_000:
                 raise ContextBuildError("memory summarizer returned an invalid summary")

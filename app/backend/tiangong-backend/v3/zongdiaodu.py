@@ -1467,11 +1467,13 @@ def _tool_result_with_contract(
     result: Any,
     *,
     source_native_id: str = "",
+    invocation: dict | None = None,
 ) -> Any:
     return attach_tool_result_contract(
         tool_name,
         result,
         source_native_id=source_native_id,
+        invocation=invocation,
     )
 
 
@@ -2815,7 +2817,9 @@ class Zongdiaodu:
             pinned = run_state.setdefault("dictionary_sha256", release.sha256)
             if pinned != release.sha256:
                 raise RuntimeError("dictionary_version_migration_required")
-            return system_tishi
+            from .world_context_integration import refresh_world_context_in_prompt
+            from .run_context import current_run_context
+            return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
 
         def _run_scoped_model(call):
             from .jineng.http_kehuduan import _effective_llm_deadline_seconds
@@ -2952,14 +2956,14 @@ class Zongdiaodu:
                         disable_tools=True,
                     ):
                         return self.gutong.huanxing(
-                            system_tishi,
+                            _dictionary_system_prompt(),
                             closeout_user_text,
                             shenti,
                             on_text_chunk=lifecycle.guard(on_chunk),
                             on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                         )
                 return self.gutong.huanxing(
-                    system_tishi, closeout_user_text, shenti,
+                    _dictionary_system_prompt(), closeout_user_text, shenti,
                     on_text_chunk=lifecycle.guard(on_chunk),
                     on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                 )
@@ -3392,9 +3396,13 @@ class Zongdiaodu:
                     blocked = {"ok": False, "error": str(exc)[:300],
                         "received_argument_fields": [sorted(args) for _, args in tools],
                         "instruction": "请通过 composition 生成 Tool 和 Skill；仅能力发现可直接调用。整份组合未登记、未执行。修正后返回一个完整组合调用。"}
+                    repair = getattr(exc, "composition_repair", None)
+                    if isinstance(repair, dict):
+                        blocked["repair"] = repair
                     rejections = run_state.setdefault("composition_rejections", [])
                     rejections.append({"error": blocked["error"],
                         "received_argument_fields": blocked["received_argument_fields"],
+                        **({"repair": repair} if isinstance(repair, dict) else {}),
                         "at": time.time()})
                     run_state["composition_rejections"] = rejections[-12:]
                     _simple_chain_save_run_state(run_state)
@@ -3767,7 +3775,7 @@ class Zongdiaodu:
                         )
                     except Exception as exc:
                         raw = {"ok": False, "error": str(exc)}
-                    raw = _tool_result_with_contract(tn, raw, source_native_id=call_id)
+                    raw = _tool_result_with_contract(tn, raw, source_native_id=call_id, invocation=ta)
                     return tn, ta, raw, call_id, call_index
 
                 if ordered_batch:
@@ -4701,6 +4709,7 @@ class Zongdiaodu:
                 tool_name,
                 gongju_jieguo,
                 source_native_id=tool_call_id,
+                invocation=tool_args,
             )
             if _gongju_jieguo_xuyao_queren(gongju_jieguo):
                 # 确认通道：暂停本轮，等用户在确认卡片中决定；批准后前端会重放原指令
@@ -5795,6 +5804,7 @@ class Zongdiaodu:
                     tool_name,
                     gongju_jieguo,
                     source_native_id=f"{zhuizong_id}.{gongju_cishu}",
+                    invocation=tool_args,
                 )
                 QUANZHUIXIAN.jilu_kuadu(
                     zhuizong_id,

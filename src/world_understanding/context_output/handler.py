@@ -47,6 +47,7 @@ class WorldContextRequestHandler:
         # (empty experience), and a failing provider must not break the
         # canonical context path — but it never injects anything itself.
         self.experience_provider = None
+        self.composition_memory_provider = None
 
     def __call__(self, envelope: WorldIngressEnvelope) -> ContextRequestDisposition:
         query = compile_world_query(envelope)
@@ -66,6 +67,12 @@ class WorldContextRequestHandler:
         reserved = 0
         recalled_experience = ()
         recalled_negative = ()
+        composition_memory = ()
+        if callable(self.composition_memory_provider):
+            try:
+                composition_memory = tuple(self.composition_memory_provider(query, snapshot))
+            except Exception as exc:
+                _log.warning("WORLD_COMPOSITION_MEMORY_UNAVAILABLE type=%s", type(exc).__name__)
         provider = getattr(self, "experience_provider", None)
         if callable(provider):
             try:
@@ -77,7 +84,7 @@ class WorldContextRequestHandler:
             capability = build_world_reference_context_packet(
                 snapshot, query, token_estimator=self.projector.token_estimator,
                 procedural_experience=recalled_experience,
-                negative_evidence=recalled_negative)
+                negative_evidence=recalled_negative, composition_memory=composition_memory)
             if capability is not None:
                 reserved = capability_context_reserved_tokens(capability, token_estimator=self.projector.token_estimator)
         except ValueError as exc:

@@ -1,6 +1,9 @@
 """P3 deterministic source compiler set. Compiler instances hold configuration only, never life state."""
 from __future__ import annotations
 from typing import Any
+import json
+import ntpath
+from contracts.canonical import canonical_sha256
 from contracts.world_understanding.ingress import WorldIngressEnvelope
 from contracts.world_understanding.life_learning import LifeLearningObservation
 from .base import CompilerSpec,DeterministicSourceCompiler,make_direct_known,payload_text
@@ -30,6 +33,12 @@ SPECS={
 "MODEL_OUTPUT":CompilerSpec("MODEL_OUTPUT","wu.compiler.model-output","v0.1","MODEL_PROPOSED","model.proposed","INTERNAL_MODEL_OUTPUT",0,0),
 }
 
+def file_subject_ref(path: str) -> str:
+    # Filesystem paths are DATA; contract refs must remain opaque identifiers.
+    canonical = ntpath.normcase(ntpath.normpath(path)) if ntpath.splitdrive(path)[0] else path
+    return "file." + canonical_sha256({"path": canonical})
+
+
 class ToolResultCompiler(DeterministicSourceCompiler):
     def __call__(self,envelope:WorldIngressEnvelope):
         if envelope.source_kind!="TOOL_RESULT": raise ValueError("compiler source_kind mismatch")
@@ -44,14 +53,32 @@ class ToolResultCompiler(DeterministicSourceCompiler):
                 subject_ref="tool:"+tool_name,
                 object_text=tool_name,
             ))
+            if type(payload.get("ok")) is bool:
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="TOOL_OUTCOME",predicate="tool.observed_status",subject_ref="tool:"+tool_name,object_text="succeeded" if payload["ok"] else "failed"))
+        binding = payload.get("observation_binding")
+        if (payload.get("ok") is True and isinstance(binding, dict)
+                and binding.get("schema") == "tiangong.native-observation-binding.v1"
+                and binding.get("action") in {"file.read", "file.hash"}
+                and binding.get("file_path") and binding.get("file_sha256")):
+            path = str(binding["file_path"])
+            subject = file_subject_ref(path)
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_IDENTITY",predicate="filesystem.file_identity",subject_ref=subject,object_text=path,authority_domain="FILESYSTEM_ARTIFACT"))
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_CONTENT_SHA256",predicate="filesystem.content_sha256",subject_ref=subject,object_text=str(binding["file_sha256"]),authority_domain="FILESYSTEM_ARTIFACT"))
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_OBSERVATION_ID",predicate="filesystem.observation_envelope",subject_ref=subject,object_text=envelope.envelope_id,authority_domain="FILESYSTEM_ARTIFACT"))
         evidence=payload.get("write_evidence")
         if payload.get("observed_write_effect") is True and isinstance(evidence,dict) and evidence.get("authoritative") is True:
             changed=tuple(str(x).strip() for x in (evidence.get("changed_files") or ()) if str(x).strip())
             deleted=tuple(str(x).strip() for x in (evidence.get("deleted_files") or ()) if str(x).strip())
             for path in sorted(set(changed)):
                 rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_WRITE_OBSERVED",predicate="filesystem.write_observed",subject_ref=envelope.source_native_id,object_text=path,authority_ceiling_milli=1000,empirical_evidence_weight_milli=1000,authority_domain="FILESYSTEM_ARTIFACT"))
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_IDENTITY",predicate="filesystem.file_identity",subject_ref=file_subject_ref(path),object_text=path,authority_domain="FILESYSTEM_ARTIFACT"))
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_CONTENT_SHA256",predicate="filesystem.content_sha256",subject_ref=file_subject_ref(path),object_text="requires_reobservation",authority_domain="FILESYSTEM_ARTIFACT"))
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_OBSERVATION_ID",predicate="filesystem.observation_envelope",subject_ref=file_subject_ref(path),object_text=envelope.envelope_id,authority_domain="FILESYSTEM_ARTIFACT"))
+                if tool_name:
+                    rows.append(make_direct_known(envelope,self.spec,proposition_type="WRITES",predicate="tool.writes",subject_ref="tool:"+tool_name,object_text=file_subject_ref(path),authority_domain="FILESYSTEM_ARTIFACT"))
             for path in sorted(set(deleted)):
                 rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_DELETE_OBSERVED",predicate="filesystem.delete_observed",subject_ref=envelope.source_native_id,object_text=path,authority_ceiling_milli=1000,empirical_evidence_weight_milli=1000,authority_domain="FILESYSTEM_ARTIFACT"))
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="STRUCTURE_ENTITY_RETIRED",predicate="filesystem.file_retired",subject_ref=file_subject_ref(path),object_text=json.dumps({"entity_type":"File","canonical_name":path},ensure_ascii=False),authority_domain="FILESYSTEM_ARTIFACT"))
         elif payload.get("write_effect") is True:
             rows.append(make_direct_known(envelope,self.spec,proposition_type="TOOL_WRITE_DECLARED",predicate="tool.write_declared",object_text=payload_text(payload,envelope.payload_sha256),authority_ceiling_milli=0,empirical_evidence_weight_milli=0))
         return tuple(rows)
@@ -72,10 +99,14 @@ class RuntimeEnvironmentCompiler(DeterministicSourceCompiler):
         if envelope.source_kind!="RUNTIME_ENVIRONMENT": raise ValueError("compiler source_kind mismatch")
         payload=envelope.payload_inline or {}
         machine=str(payload.get("machine") or "runtime").strip()
-        return (
+        rows = [
             make_direct_known(envelope,self.spec),
             make_direct_known(envelope,self.spec,proposition_type="RUNTIME_IDENTITY",predicate="runtime.identity",subject_ref="runtime:"+machine,object_text=machine),
-        )
+        ]
+        fingerprint = payload.get("dictionary_context_fingerprint")
+        if isinstance(fingerprint, str) and len(fingerprint) == 64 and all(ch in "0123456789abcdef" for ch in fingerprint):
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="RUNTIME_CONTEXT_FINGERPRINT",predicate="runtime.dictionary_context",subject_ref="runtime:"+machine,object_text=fingerprint))
+        return tuple(rows)
 
 class KnowledgeCompiler(DeterministicSourceCompiler):
     def __call__(self,envelope:WorldIngressEnvelope):
@@ -124,10 +155,14 @@ class FilesystemEvidenceCompiler(DeterministicSourceCompiler):
         path=str(payload.get("path") or envelope.source_native_id)
         rows=[]
         if isinstance(payload.get("exists"),bool):
-            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_EXISTS",predicate="filesystem.exists",subject_ref=path,object_text="true" if payload["exists"] else "false"))
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_EXISTS",predicate="filesystem.exists",subject_ref=file_subject_ref(path),object_text="true" if payload["exists"] else "false"))
+            if payload["exists"]:
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_IDENTITY",predicate="filesystem.file_identity",subject_ref=file_subject_ref(path),object_text=path))
+            else:
+                rows.append(make_direct_known(envelope,self.spec,proposition_type="STRUCTURE_ENTITY_RETIRED",predicate="filesystem.file_retired",subject_ref=file_subject_ref(path),object_text=json.dumps({"entity_type":"File","canonical_name":path},ensure_ascii=False)))
         sha=payload.get("sha256")
         if isinstance(sha,str) and len(sha)==64 and all(ch in "0123456789abcdef" for ch in sha):
-            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_HASH_AT",predicate="filesystem.sha256",subject_ref=path,object_text=sha))
+            rows.append(make_direct_known(envelope,self.spec,proposition_type="FILE_HASH_AT",predicate="filesystem.sha256",subject_ref=file_subject_ref(path),object_text=sha))
         return tuple(rows) if rows else (make_direct_known(envelope,self.spec),)
 
 class ChainEventCompiler(DeterministicSourceCompiler):

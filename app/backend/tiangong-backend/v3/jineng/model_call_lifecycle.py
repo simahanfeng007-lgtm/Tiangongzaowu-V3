@@ -111,12 +111,23 @@ def current_model_call() -> ModelCallLifecycle | None:
 
 
 @contextmanager
-def model_call_scope(seconds: float, cancel_check=None):
+def model_call_scope(seconds: float, cancel_check=None, *, child: bool = False):
     parent = current_model_call()
-    if parent is not None:
+    if parent is not None and not child:
         parent.check()
         yield parent
         return
+    if parent is not None:
+        parent.check()
+        seconds = min(seconds, parent.remaining)
+        own_cancel_check = cancel_check
+
+        def cancel_check():
+            try:
+                parent.check()
+            except ModelCallStopped:
+                return True
+            return bool(own_cancel_check and own_cancel_check())
     lifecycle = ModelCallLifecycle(seconds, cancel_check)
     token = _CURRENT.set(lifecycle)
     lifecycle.start()
@@ -131,9 +142,9 @@ def model_call_scope(seconds: float, cancel_check=None):
 T = TypeVar("T")
 
 
-def run_model_call(call: Callable[[ModelCallLifecycle], T], *, seconds: float, cancel_check=None) -> T:
+def run_model_call(call: Callable[[ModelCallLifecycle], T], *, seconds: float, cancel_check=None, child: bool = False) -> T:
     """Fence uncooperative network/DNS code without accepting a late result."""
-    with model_call_scope(seconds, cancel_check) as lifecycle:
+    with model_call_scope(seconds, cancel_check, child=child) as lifecycle:
         finished = threading.Event()
         holder = {}
 

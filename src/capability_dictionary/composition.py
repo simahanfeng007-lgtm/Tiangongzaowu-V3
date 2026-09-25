@@ -52,9 +52,15 @@ def digest(value: Any) -> str:
         separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
 
 
-def _object(value, required, optional=()):
+def _object(value, required, optional=(), *, path="composition"):
     if type(value) is not dict or not set(required) <= value.keys() or value.keys() - set(required) - set(optional):
-        raise DictionaryError("composition.fields_invalid")
+        error = DictionaryError("composition.fields_invalid")
+        keys = set(value) if type(value) is dict else set()
+        error.composition_repair = {"path": path, "expected_type": "object", "received_type": type(value).__name__,
+            "required_fields": sorted(required), "optional_fields": sorted(optional),
+            "missing_fields": sorted(set(required) - keys),
+            "unexpected_fields": sorted(str(key)[:80] for key in keys - set(required) - set(optional))[:16]}
+        raise error
     return value
 
 
@@ -92,7 +98,11 @@ def compile_task_composition(proposal, *, release=None) -> dict:
     strings are never evaluated as expressions or implicit output references.
     """
     release = release or load_dictionary()
-    _object(proposal, {"tools", "skill"})
+    _object(proposal, {"tools", "skill"}, {"experience_refs"})
+    refs = proposal.get("experience_refs", [])
+    if (type(refs) is not list or len(refs) > 3 or len(set(str(ref) for ref in refs)) != len(refs)
+            or any(type(ref) is not str or not re.fullmatch(r"cex_[0-9a-f]{64}", ref) for ref in refs)):
+        raise DictionaryError("composition.experience_refs_invalid")
     try:
         raw = json.dumps(proposal, ensure_ascii=False, allow_nan=False)
     except (ValueError, TypeError) as exc:
@@ -103,8 +113,8 @@ def compile_task_composition(proposal, *, release=None) -> dict:
     if type(definitions) is not list or not 1 <= len(definitions) <= 16:
         raise DictionaryError("composition.tools_invalid")
     tools = {}
-    for tool in definitions:
-        _object(tool, {"id", "description", "actions"})
+    for tool_index, tool in enumerate(definitions):
+        _object(tool, {"id", "description", "actions"}, path=f"composition.tools[{tool_index}]")
         tool_id = _id(tool["id"])
         _description(tool["description"])
         if tool_id in tools:
@@ -112,8 +122,8 @@ def compile_task_composition(proposal, *, release=None) -> dict:
         actions = tool["actions"]
         if type(actions) is not list or not 1 <= len(actions) <= MAX_LEAVES:
             raise DictionaryError("composition.actions_invalid")
-        for action in actions:
-            _object(action, {"action", "args"}, {"target"})
+        for action_index, action in enumerate(actions):
+            _object(action, {"action", "args"}, {"target"}, path=f"composition.tools[{tool_index}].actions[{action_index}]")
             action_id = action["action"]
             if type(action_id) is not str or action_id.startswith(("skill.", "skill_")):
                 raise DictionaryError("composition.fixed_skill_forbidden")
@@ -124,14 +134,14 @@ def compile_task_composition(proposal, *, release=None) -> dict:
                 raise DictionaryError("composition.invocation_invalid")
             _data(action["args"])
         tools[tool_id] = tool
-    skill = _object(proposal["skill"], {"id", "description", "steps"})
+    skill = _object(proposal["skill"], {"id", "description", "steps"}, path="composition.skill")
     _id(skill["id"])
     _description(skill["description"])
     if type(skill["steps"]) is not list or not 1 <= len(skill["steps"]) <= 16:
         raise DictionaryError("composition.skill_steps_invalid")
     steps = {}
-    for step in skill["steps"]:
-        _object(step, {"id", "tool", "depends_on"})
+    for step_index, step in enumerate(skill["steps"]):
+        _object(step, {"id", "tool", "depends_on"}, path=f"composition.skill.steps[{step_index}]")
         step_id = _id(step["id"])
         if step_id in steps:
             raise DictionaryError("composition.step_duplicate")

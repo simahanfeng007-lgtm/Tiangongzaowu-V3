@@ -1152,6 +1152,7 @@ export const conversationPanelPlugin = {
       const name = document.createElement("span");
       name.className = "message-name";
       name.textContent = item.role === "user" ? userDisplayName(currentSettings) : personaName(currentSettings);
+      if (item.meta?.origin === "composition_feedback") name.textContent = "做法记忆";
       const time = document.createElement("span");
       time.className = "message-time";
       time.textContent = formatTime(item.at);
@@ -1181,6 +1182,23 @@ export const conversationPanelPlugin = {
           copyTextToClipboard(copyText, copy);
         });
         meta.appendChild(copy);
+      }
+
+      if (item.role === "assistant" && item.meta?.gatewayRequestId && !item.error) {
+        const remember = document.createElement("button");
+        remember.type = "button";
+        remember.className = "message-copy composition-memory";
+        remember.textContent = item.meta.compositionRemembered ? "已记住 · 撤销" : "认可并记住";
+        remember.addEventListener("click", async (event) => {
+          event.preventDefault(); event.stopPropagation(); remember.disabled = true;
+          try {
+            const result = await actions.rememberComposition(item, item.meta.compositionRemembered ? "withdraw" : "accept");
+            if (!result?.ok || !result?.saved) throw new Error(result?.error || "没有可保存的组合");
+            remember.textContent = result.status === "accepted" ? "已记住 · 撤销" : "认可并记住";
+          } catch (error) { remember.textContent = "未保存，点击重试"; remember.title = error.message; }
+          finally { remember.disabled = false; }
+        });
+        meta.appendChild(remember);
       }
 
       const content = document.createElement("div");
@@ -1949,16 +1967,20 @@ export const conversationPanelPlugin = {
     }
 
     let _lastMsgCount = 0;
+    let _lastExperienceSnapshot = "";
     let _lastActiveSessionId = state.snapshot().activeSessionId;
     state.on("messages", (messages) => {
       const snap = state.snapshot();
       const sessionChanged = snap.activeSessionId !== _lastActiveSessionId;
       const countChanged = messages.length !== _lastMsgCount;
+      const experienceSnapshot = messages.map(item => `${item.id}:${item.meta?.gatewayRequestId || ""}:${item.meta?.compositionRemembered || false}`).join("|");
+      const experienceChanged = experienceSnapshot !== _lastExperienceSnapshot;
+      _lastExperienceSnapshot = experienceSnapshot;
       _lastMsgCount = messages.length;
       _lastActiveSessionId = snap.activeSessionId;
 
       // 结构性变化（新增/删除/清空/切换）：全量重建
-      if (sessionChanged || countChanged) {
+      if (sessionChanged || countChanged || experienceChanged) {
         if (_commitRafId !== null) {
           cancelAnimationFrame(_commitRafId);
           if (_commitTimer) clearTimeout(_commitTimer);

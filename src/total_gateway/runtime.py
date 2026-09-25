@@ -869,6 +869,8 @@ class GatewayRuntime:
         self.learning_output_binding = None
         self.communication_service = communication_service
         self.backend_service = backend_service
+        from .composition_experience import CompositionExperienceService
+        self.composition_experiences = CompositionExperienceService(self)
         self.artifacts = ArtifactOpenService(
             facts,
             objects,
@@ -1404,12 +1406,19 @@ class GatewayRuntime:
                     return _gateway_p15_memory_remember(runtime, user_text)
 
                 def p15_memory_recall(user_text: object) -> str:
-                    return _gateway_p15_memory_recall(runtime, user_text)
+                    ordinary = _gateway_p15_memory_recall(runtime, user_text)
+                    try:
+                        experience = runtime.composition_experiences.recall(str(user_text or ""))
+                    except Exception as exc:
+                        diagnostic_log("composition_experience.recall_failed:" + type(exc).__name__)
+                        experience = ""
+                    return ordinary + ("\n" + experience if experience else "")
 
                 runtime.backend_service.set_p15_memory_provider(
                     remember_provider=p15_memory_remember,
                     recall_provider=p15_memory_recall,
                 )
+                runtime.backend_service.set_world_composition_memory_provider(runtime.composition_experiences.world_context)
 
                 def execution_epoch_checkpoint(payload: object) -> dict[str, object]:
                     return _gateway_execution_epoch_checkpoint(runtime, payload)
@@ -1419,7 +1428,7 @@ class GatewayRuntime:
                 )
                 runtime.backend_service.set_regenerative_execution_provider(
                     RegenerativeExecutionAuthority(runtime.store, workspace_root=config.workspace_root,
-                                                   require_compositions=True)
+                                                   require_compositions=True, experience_service=runtime.composition_experiences)
                 )
 
                 def pending_learning_ingest(arguments: object) -> dict[str, object]:
@@ -1583,6 +1592,7 @@ class GatewayRuntime:
                     != source_revision["release_manifest_sha256"]
                 ):
                     raise RuntimeError("source_launch.assembled_release_changed")
+                runtime.orchestration.set_execution_learning_observer(runtime.composition_experiences.observe_terminal)
                 if runtime.backend_service is not None:
                     runtime.backend_service.set_composition_handoff_validator(
                         runtime.orchestration.validate_composition_parent_handoff)

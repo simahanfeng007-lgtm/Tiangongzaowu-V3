@@ -45,6 +45,9 @@ class MaterializationInput:
     # Trusted domain transactions supply exact source keys, never model flags.
     changed_source_keys: tuple[str,...]=()
     preserve_previous_domains: bool=False
+    preserve_previous_hypotheses: bool=False
+    preserve_previous_cognition: bool=False
+    replace_previous_cognition: bool=False
 
 
 def _frame_ref(frame: SoftwareWorldFrame) -> WorldRecordRef:
@@ -119,7 +122,7 @@ class WorldStateMaterializer:
                 if decision.remains_stable: revalidated.append(ref)
                 else: cognition_stale.append(ref); continue
             cognition_refs.append(ref)
-        if data.preserve_previous_domains and previous is not None and previous.cognition_heads is not None:
+        if not data.replace_previous_cognition and (data.preserve_previous_domains or data.preserve_previous_cognition) and previous is not None and previous.cognition_heads is not None:
             supplied = {_identity(r) for r in cognition_refs + cognition_stale}
             cognition_refs.extend(r for r in previous.cognition_heads.refs if _identity(r) not in supplied)
         cognition_manifest=None if not cognition_refs else HeadManifest.build("cognition_heads",tuple(cognition_refs),max_items=self.config.max_cognition)
@@ -128,7 +131,8 @@ class WorldStateMaterializer:
             require_exact_scope(scope,hyp.scope)
             if not hyp.has_valid_hash(): raise ValueError("WORLD_STATE_HYPOTHESIS_HASH_INVALID")
             hyp_refs.append(_hyp_ref(hyp))
-        if data.preserve_previous_domains and previous is not None and previous.active_hypotheses is not None:
+        retain_hypotheses = data.preserve_previous_domains or data.preserve_previous_hypotheses
+        if retain_hypotheses and previous is not None and previous.active_hypotheses is not None:
             supplied = {_identity(r) for r in hyp_refs}
             hyp_refs.extend(r for r in previous.active_hypotheses.refs if _identity(r) not in supplied)
         hypothesis_manifest=None if not hyp_refs else HeadManifest.build("active_hypotheses",tuple(hyp_refs),max_items=self.config.max_hypotheses)
@@ -137,6 +141,7 @@ class WorldStateMaterializer:
             uncertainty_refs = tuple({r.sort_key(): r for r in (*previous.uncertainty.refs, *uncertainty_refs)}.values())
         uncertainty_manifest=None if not uncertainty_refs else HeadManifest.build("uncertainty",uncertainty_refs,max_items=self.config.max_uncertainty)
         all_current_refs=tuple(sorted((*entity_refs,*relation_refs,*cognition_refs,*hyp_refs),key=lambda r:r.sort_key()))
+        current_ref_keys={ref.sort_key() for ref in all_current_refs}
         dependencies=DependencyManifest.build(data.dependency_bindings,max_items=self.config.max_dependencies)
         old_refs=() if previous is None else tuple(sorted((*previous.entity_heads.refs,*previous.relation_heads.refs,*(() if previous.cognition_heads is None else previous.cognition_heads.refs),*(() if previous.active_hypotheses is None else previous.active_hypotheses.refs)),key=lambda r:r.sort_key()))
         added,removed,changed,refreshed=_head_delta(old_refs,all_current_refs)
@@ -164,6 +169,10 @@ class WorldStateMaterializer:
             state,data.cut,entity_manifest,relation_manifest,cognition_manifest,
             hypothesis_manifest,uncertainty_manifest,dependencies,delta,data.frame.frame_id,
             tuple(data.graph.entities()),tuple(data.graph.relations()),
+            tuple(sorted({h.hypothesis_id:h for h in (
+                *((previous.hypotheses if previous is not None and retain_hypotheses else ())),
+                *data.active_hypotheses,
+            ) if _hyp_ref(h).sort_key() in current_ref_keys}.values(),key=lambda h:h.hypothesis_id)),
         )
         return self.store.publish(snapshot)
 

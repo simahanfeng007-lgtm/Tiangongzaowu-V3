@@ -113,10 +113,11 @@ class _Identity:
 class RegenerativeExecutionAuthority:
     """Thin request dispatcher backed by one existing GatewayStateStore."""
 
-    def __init__(self, store: GatewayStateStore, *, workspace_root=None, require_compositions=False) -> None:
+    def __init__(self, store: GatewayStateStore, *, workspace_root=None, require_compositions=False, experience_service=None) -> None:
         self._store = store
         self._workspace_root = workspace_root
         self._require_compositions = require_compositions
+        self._experience_service = experience_service
 
     def __call__(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -257,7 +258,20 @@ class RegenerativeExecutionAuthority:
                 checked = validate_tool_request(call["action"], call["target"], call["args"],
                     workspace=self._workspace_root, available_actions=tuple(release.tools))
                 if not checked.get("ok"):
-                    raise ValueError("composition.argument_schema_invalid:" + call["action"])
+                    error = ValueError("composition.argument_schema_invalid:" + call["action"])
+                    # Preserve the validator's diagnosis across the embedded
+                    # boundary; otherwise the model repeats an opaque rejection.
+                    error.composition_repair = {
+                        "leaf_id": leaf["id"], "action": call["action"],
+                        "issues": checked["issues"][:8],
+                        "expected_args_schema": checked["expected"].get("args", {}),
+                        "workspace": str(self._workspace_root), "executed": False,
+                    }
+                    raise error
+        if program["proposal"].get("experience_refs"):
+            if self._experience_service is None:
+                raise ValueError("composition_experience.service_unavailable")
+            self._experience_service.bind_use(identity, program)
         composition_id = "cmp_" + canonical_sha256({
             "request_id": identity.request_id, "run_id": identity.run_id,
             "generation": identity.generation, "program_sha256": program["program_sha256"],
@@ -269,6 +283,8 @@ class RegenerativeExecutionAuthority:
             epoch_index=_integer(payload.get("epoch_index", 0), label="epoch_index"),
             event_type="composition.registered", created_at_ms=_integer(payload.get("now_ms"), label="now_ms"),
             payload={"composition_id": composition_id,
+                     "workspace_sha256": canonical_sha256(str(self._workspace_root).casefold()),
+                     "runtime_version": None if self._experience_service is None else self._experience_service.lessons.source_version(),
                      "program_json": json.dumps(program, ensure_ascii=False, sort_keys=True,
                                                 separators=(",", ":"), allow_nan=False),
                      "root_goal_hash": contract["root_goal_hash"], "may_authorize": False},
@@ -639,6 +655,12 @@ class RegenerativeExecutionAuthority:
             step_id=step_id,
             effect_id=effect_id,
         )
+        if self._experience_service is not None:
+            try:
+                self._experience_service.observe_execution(identity.request_id)
+            except Exception as exc:
+                from .diagnostics import diagnostic_log
+                diagnostic_log("composition_lesson.write_pending:" + type(exc).__name__)
         return {
             "effect_id": effect_id,
             "effect_state": record.state,

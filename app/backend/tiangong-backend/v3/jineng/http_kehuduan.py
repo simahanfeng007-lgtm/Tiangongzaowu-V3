@@ -547,6 +547,26 @@ def _canonical_to_omni_arguments(call: dict[str, Any], raw_args: dict[str, Any] 
         # Preserve every field for the composition boundary to validate;
         # unknown/authority fields must be rejected there, not silently hidden.
         envelope = dict(raw)
+        # Decode a complete, extra-encoded program once. This is lossless wire
+        # normalization, not a repair of code, missing fields or permissions.
+        encoded = envelope["composition"]
+        if isinstance(encoded, str) and len(encoded) <= 262144:
+            import json
+
+            def unique_object(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate composition key")
+                    result[key] = value
+                return result
+
+            try:
+                decoded = json.loads(encoded, object_pairs_hook=unique_object)
+            except (ValueError, TypeError, RecursionError):
+                decoded = None
+            if isinstance(decoded, dict):
+                envelope["composition"] = decoded
         # Compatible providers sometimes fill unused optional properties with
         # their empty defaults. They convey no second invocation. Nonempty
         # mixed-mode fields stay present and fail envelope validation.
@@ -759,6 +779,17 @@ class HttpKehuduan:
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
         self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
         self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
+        self._semantic_inference = contextvars.ContextVar("tiangong_semantic_inference", default=None)
+
+    @contextmanager
+    def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
+        """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
+        token = self._semantic_inference.set((endpoint, max(128, min(4096, int(max_output_tokens)))))
+        try:
+            with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
+                yield
+        finally:
+            self._semantic_inference.reset(token)
 
     @contextmanager
     def scoped_native_history(self, history, observations=()):
@@ -810,7 +841,8 @@ class HttpKehuduan:
             provider_id or duqu_moren_provider(self._moren_provider)
         )
         try:
-            endpoint = duqu_model_endpoint_config(requested_identity)
+            semantic_inference = self._semantic_inference.get()
+            endpoint = semantic_inference[0] if semantic_inference is not None else duqu_model_endpoint_config(requested_identity)
         except Exception as exc:
             return ModelTurnReply(
                 _llm_error_text(str(exc), provider=requested_identity),
@@ -886,7 +918,7 @@ class HttpKehuduan:
         st = shenti or ShentiZhuangtai()
         native_audio_receipt: dict[str, Any] | None = None
         try:
-            learned_skill_context = _learned_skill_context()
+            learned_skill_context = "" if semantic_inference is not None else _learned_skill_context()
             effective_system_tishi = system_tishi + learned_skill_context if learned_skill_context else system_tishi
             if self._disable_tools.get(False):
                 gongju_yuanshi = []
@@ -971,6 +1003,18 @@ class HttpKehuduan:
             # bug-fix: cc#17 删除 _apply_endpoint_raw_reasoning 的三次重复调用，保留一次（2026-08-26，凌霜）
             raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
             reasoning_trace.update(raw_reasoning_trace)
+            if semantic_inference is not None:
+                # Applied after provider defaults so they cannot inflate the
+                # auxiliary call's output budget. Transport owns wire naming.
+                payload.pop("max_completion_tokens", None)
+                payload.pop("max_output_tokens", None)
+                payload["max_tokens"] = semantic_inference[1]
+                thinking = payload.get("thinking")
+                if endpoint.protocol_family == ProtocolFamily.ANTHROPIC_MESSAGES.value and isinstance(thinking, dict):
+                    thinking_budget = thinking.get("budget_tokens")
+                    if isinstance(thinking_budget, int) and thinking_budget >= semantic_inference[1]:
+                        payload["thinking"] = ({**thinking, "budget_tokens": semantic_inference[1] - 1}
+                            if semantic_inference[1] > 1024 else {"type": "disabled"})
             if isinstance(optimization_trace, dict):
                 optimization_trace.update(reasoning_trace)
                 optimization_trace.update(_cache_prefix_observation(payload))
@@ -1065,7 +1109,8 @@ class HttpKehuduan:
                 on_repair=_restart_visible_stream,
                 on_request_built=_record_dictionary_wire,
                 on_reasoning_chunk=on_reasoning_chunk,
-                retry_limit=HTTP_RETRY_LIMIT,
+                retry_limit=1 if semantic_inference is not None else HTTP_RETRY_LIMIT,
+                allow_output_repair=semantic_inference is None,
                 retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
                 transient_status_codes=TRANSIENT_STATUS_CODES,
                 max_wall_clock_seconds=effective_llm_max_seconds,
@@ -1567,11 +1612,9 @@ def _zhuanhuan_openai_geshi(gongju_yuanshi: list[dict]) -> list[dict]:
                 "function": {
                     "name": name,
                     "description": miaoshu,
-                    "parameters": {
-                        "type": "object",
-                        "properties": canshu.get("properties") or {},
-                        "required": canshu.get("required") if isinstance(canshu.get("required"), list) else [],
-                    },
+                    # Preserve root union/constraint keywords from the canonical
+                    # dictionary, rather than advertising a weaker wire schema.
+                    "parameters": json.loads(json.dumps(canshu)),
                 },
             }
             if isinstance(canshu.get("additionalProperties"), bool):

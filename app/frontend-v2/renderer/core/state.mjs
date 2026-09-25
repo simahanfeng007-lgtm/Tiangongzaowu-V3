@@ -255,7 +255,14 @@ function cleanMessages(messages, sessionId = "") {
         at: Number(item?.at || Date.now()),
         sessionId: boundedText(item?.sessionId || item?.session_id || item?.conversationId || item?.conversation_id || sessionId || "", 256),
         kind: item?.kind ? boundedText(item.kind, 64) : null,
-        requestId: item?.requestId || item?.request_id ? boundedText(item?.requestId || item?.request_id, 256) : null
+        requestId: item?.requestId || item?.request_id ? boundedText(item?.requestId || item?.request_id, 256) : null,
+        meta: {
+          origin: boundedText(item?.meta?.origin || "", 64),
+          runId: boundedText(item?.meta?.runId || "", 256),
+          gatewayRequestId: /^req_[a-f0-9]{64}$/.test(item?.meta?.gatewayRequestId || "") ? item.meta.gatewayRequestId : "",
+          compositionRemembered: item?.meta?.compositionRemembered === true,
+          compositionExperienceId: /^cex_[a-f0-9]{64}$/.test(item?.meta?.compositionExperienceId || "") ? item.meta.compositionExperienceId : ""
+        }
       })).filter((item) => item.role && (item.content || item.kind === "work")).slice(-80)
     : [];
 }

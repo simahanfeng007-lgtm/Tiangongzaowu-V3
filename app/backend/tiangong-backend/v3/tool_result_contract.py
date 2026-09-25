@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
+import posixpath
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -351,8 +353,28 @@ def _observed_write_evidence(
     verified_unchanged_files: list[str] = []
     post_rows: list[dict[str, Any]] = []
     for candidate in candidates:
-        _extend_paths(changed_files, candidate.get("changed_files"))
-        _extend_paths(deleted_files, candidate.get("deleted_files"))
+        for key, destination in (("changed_files", changed_files), ("deleted_files", deleted_files)):
+            paths: list[str] = []
+            _extend_paths(paths, candidate.get(key))
+            root = str(candidate.get("committed_workspace") or "")
+            if (root and candidate.get("receipt_role") == "execution"
+                    and candidate.get("commit_state") == "committed"):
+                # Broker deltas are relative to the workspace it actually
+                # merged into, not the program path or a later UI workspace.
+                path_module = ntpath if ntpath.splitdrive(root)[0] else posixpath
+                root = path_module.normpath(root)
+                if not path_module.isabs(root):
+                    continue
+                for value in paths:
+                    target = path_module.normpath(path_module.join(root, value))
+                    try:
+                        contained = path_module.normcase(path_module.commonpath((root, target))) == path_module.normcase(root)
+                    except ValueError:
+                        contained = False
+                    if contained:
+                        destination.append(target)
+            else:
+                destination.extend(paths)
         _extend_paths(verified_unchanged_files, candidate.get("verified_unchanged_files"))
     changed_files = _unique(changed_files)
     deleted_files = _unique(deleted_files)

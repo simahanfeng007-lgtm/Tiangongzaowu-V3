@@ -402,6 +402,7 @@ def test_process_reopen_after_l3_commit_before_receipt_is_idempotent(memory,tmp_
             'event':canonical_sha256({'event':obs.observation_id}),'evidence':canonical_sha256({'machine-evidence':obs.observation_id})}
     code='''
 import json,sys
+sys.path.insert(0,sys.argv[2])
 from life_service.store import LifeShadowStore
 from life_service.memory_coordinator import MemoryCoordinator
 from total_gateway.learning_experience_writeback import commit_observation_via_memory
@@ -413,7 +414,7 @@ with LifeShadowStore.open(Path(v['path']),create=False,now_ms=100) as s:
  print(json.dumps(r))
 '''
     env={**os.environ,'PYTHONPATH':str(Path(__file__).parents[1]/'src')}
-    result=subprocess.run([sys.executable,'-c',code,json.dumps(config)],env=env,capture_output=True,text=True,timeout=30)
+    result=subprocess.run([sys.executable,'-X','utf8','-c',code,json.dumps(config),str(Path(__file__).parents[1]/'src')],env=env,capture_output=True,text=True,encoding='utf-8',timeout=30)
     assert result.returncode==0,result.stderr
     receipt=json.loads(result.stdout)
     assert receipt['duplicate'] and receipt['state_sha256']==first['state_sha256']

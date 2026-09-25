@@ -196,6 +196,7 @@ _ROUTES = (
 )
 
 _NATIVE_ROUTES = (
+    _route("POST", "/api/v1/gateway/composition-feedback", "gateway", timeout_seconds=120),
     _route("POST", "/api/v1/gateway/internal/inbound", "gateway"),
     _route("POST", "/api/v1/gateway/desktop/inbound", "gateway"),
     _route(
@@ -965,6 +966,12 @@ class DesktopApiRouter:
             self._runtime.readiness.clear()
             raise DesktopApiError(503, "desktop_api.desktop_status.unavailable") from exc
         state = request_snapshot.state if request_snapshot is not None else queue_item.state
+        experience_service = getattr(self._runtime, "composition_experiences", None)
+        if experience_service is not None and state in {"COMPLETED", "FAILED", "CANCELLED"}:
+            try:
+                experience_service.observe_terminal(request_id)
+            except Exception as exc:
+                diagnostic_log("composition_experience.outcome_pending:" + type(exc).__name__)
         run_id = request_snapshot.run_id if request_snapshot is not None else ""
         generation = request_snapshot.generation if request_snapshot is not None else 0
         updated_at_ms = request_snapshot.updated_at_ms if request_snapshot is not None else entry.created_at_ms
@@ -1029,6 +1036,17 @@ class DesktopApiRouter:
         headers: Mapping[str, str],
         body: bytes,
     ) -> DesktopProxyResponse:
+        if route.path == "/api/v1/gateway/composition-feedback":
+            if str(headers.get("Content-Type", "")).strip().lower() not in _JSON_MEDIA_TYPES:
+                raise DesktopApiError(415, "desktop_api.content_type.invalid")
+            if not body or len(body) > 32768:
+                raise DesktopApiError(400, "composition_experience.feedback_size")
+            try:
+                result = self._runtime.composition_experiences.feedback(_strict_json_object(body))
+                return self._artifact_response(200, result)
+            except (ValueError, KeyError) as exc:
+                code = str(exc) if str(exc).startswith("composition_experience.") else "composition_experience.feedback_failed"
+                raise DesktopApiError(409, code) from exc
         if route.path == "/api/v1/v3/life/learning/decide":
             media_type = str(headers.get("Content-Type", "")).strip().lower()
             if media_type not in _JSON_MEDIA_TYPES:

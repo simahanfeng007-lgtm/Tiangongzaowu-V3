@@ -66,9 +66,17 @@ def attach_tool_result_contract(
     result: object,
     *,
     source_native_id: str = "",
+    invocation: dict | None = None,
 ) -> object:
     """Attach the canonical v3 ToolResult contract and publish one post-commit fact."""
     contract = canonical_tool_result(tool_name, result)
+    from world_understanding.cognition.runtime import observation_binding
+    try:
+        binding = observation_binding(invocation, contract, result)
+    except Exception as exc:
+        import logging
+        logging.getLogger("tiangong.world").warning("WORLD_OBSERVATION_BINDING_FAILED type=%s", type(exc).__name__)
+        binding = None
     if isinstance(result, dict):
         output: object = dict(result)
         output.setdefault("tool_result_contract", contract)
@@ -111,7 +119,7 @@ def attach_tool_result_contract(
             source_kind="TOOL_RESULT",
             source_native_id=native_id,
             producer_ref="v3.tool_result_contract",
-            payload={"tool_name": str(tool_name or ""), **contract, **causal},
+            payload={"tool_name": str(tool_name or ""), **contract, **causal, "observation_binding": binding},
             occurred_at_ms=int(time.time() * 1000),
         )
     )

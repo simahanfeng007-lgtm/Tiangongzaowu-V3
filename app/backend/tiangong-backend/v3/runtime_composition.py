@@ -61,6 +61,12 @@ def build_zongdiaodu_composition(
         http_kehuduan = HttpKehuduan()
         gutong = GutongCeng(http_kehuduan.zuowei_huidiao())
 
+    from .world_semantic_binding import bind_world_semantic_client
+    # A callback-only dispatcher owns no HTTP channel and must not detach a
+    # production client already owned by another dispatcher in this process.
+    if http_kehuduan is not None:
+        bind_world_semantic_client(http_kehuduan)
+
     return ZongdiaoduComposition(
         http_kehuduan=http_kehuduan,
         gutong=gutong,

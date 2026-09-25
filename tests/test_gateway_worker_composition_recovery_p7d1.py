@@ -390,7 +390,7 @@ def test_composition_watchdog_slot_stays_owned_until_timed_out_call_really_exits
 
 
 def _parent_execution_timeout_try() -> ast.Try:
-    """Return the exact parent execution-future wait from process()."""
+    """Return the actual wait reached through the learning-observer wrapper."""
 
     tree = ast.parse(
         ORCHESTRATION_SOURCE.read_text(encoding="utf-8"),
@@ -401,11 +401,15 @@ def _parent_execution_timeout_try() -> ast.Try:
         for node in tree.body
         if isinstance(node, ast.ClassDef) and node.name == "GatewayOrchestrationWorker"
     )
-    process = next(
+    wrapper = next(
         node
         for node in worker.body
         if isinstance(node, ast.FunctionDef) and node.name == "process"
     )
+    assert sum(isinstance(node, ast.Call) and ast.unparse(node.func) == "self._process"
+               for node in ast.walk(wrapper)) == 1
+    process = next(node for node in worker.body
+                   if isinstance(node, ast.FunctionDef) and node.name == "_process")
     candidates = [
         node
         for node in ast.walk(process)
