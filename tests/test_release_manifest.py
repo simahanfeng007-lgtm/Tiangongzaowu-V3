@@ -40,9 +40,10 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertFalse(manifest.production_claim)
         self.assertEqual(manifest.release_channel, "development")
         self.assertEqual(manifest.contract_schema_bundle_sha256, contract_schema_bundle_sha256())
+        # Release pins describe published file bytes, not the parsed registry snapshot.
         self.assertEqual(
             manifest.action_registry_sha256,
-            "1a67ef7330c2fb87cac9f3d91b8baa132191b0ce4aabdfad6252d5fe5c6b7d25",
+            "23efcb88ca937313b236c1e8312d2adf1c58ee630b85eeb628119e7052731356",
         )
         self.assertEqual(
             manifest.capability_manifest_sha256,
