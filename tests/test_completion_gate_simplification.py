@@ -317,3 +317,61 @@ def test_written_story_can_complete_without_an_unrequested_python_check(tmp_path
     assert not kernel._simple_chain_evidence_check(explicit, history,
         [{"path": str(target)}], final_reply="已完成。",
         task_obligations=integrity.build_action_obligations(explicit))[0]
+
+
+@pytest.mark.parametrize("action,expected", [
+    ("file.write", True), ("core.filesystem.file.write", True),
+    ("core.filesystem.file.read", False), ("unregistered.file.write", False),
+])
+def test_dictionary_alias_receipts_keep_write_evidence_without_trusting_route_claims(tmp_path, action, expected):
+    import hashlib
+    from v3.tool_result_contract import normalize_tool_result
+    target = tmp_path / "manifest.csv"
+    content = b"source,target\na,b\n"
+    target.write_bytes(content)
+    raw = {"action": action, "success": True, "routed_to": "file.write",
+        "evidence": {"path": str(target), "exists": True, "is_file": True,
+            "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content)},
+        "snapshots": [{"path": str(target), "existed": False}]}
+    contract = normalize_tool_result("omni_body", raw)
+    assert contract["observed_write_effect"] is expected
+    assert contract["may_mutate"] is expected
+    assert bool(contract["generated_attachments"]) is expected
+    prompt = "请生成 manifest.csv。"
+    payload = observation(action, str(target), contract=contract, result=raw)
+    assert (integrity.execution_integrity_blockers(prompt, [payload]) == []) is expected
+    raw["success"] = False
+    failed = normalize_tool_result("omni_body", raw)
+    assert not failed["observed_write_effect"]
+    assert not failed["generated_attachments"]
+
+
+def test_dictionary_alias_execution_without_changes_does_not_invent_output():
+    from v3.tool_result_contract import normalize_tool_result
+    contract = normalize_tool_result("omni_body", {"action": "core.code.python.run", "success": True,
+        "execution": {"ok": True, "returncode": 0, "changed_files": [], "deleted_files": []}})
+    assert contract["may_mutate"]
+    assert not contract["observed_write_effect"]
+    assert not contract["generated_attachments"]
+
+
+@pytest.mark.parametrize("prompt,goals,expected", [
+    ("请生成 proof.txt。", [], False),
+    ("你好", [{"kind": "effect", "status": "pending"}], False),
+    ("你好", [], True),
+])
+def test_real_loop_chat_escape_cannot_bypass_work_or_goal_evidence(prompt, goals, expected):
+    import ast
+    from pathlib import Path
+    from v3 import zongdiaodu
+    tree = ast.parse(Path(zongdiaodu.__file__).read_text(encoding="utf-8"))
+    branches = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id == "_simple_chain_fluent_text_reply" for n in ast.walk(node.test))]
+    assert len(branches) == 1
+    predicate = compile(ast.Expression(branches[0].test), "real-loop-chat-escape", "eval")
+    allowed = eval(predicate, {"generated_attachments": [], "required_read_paths": [],
+        "xiaoxi": prompt, "run_state": {"obligations": goals}, "huifu": "已经全部完成了。",
+        "_runtime_detects_work_intent": kernel._runtime_detects_work_intent,
+        "_simple_chain_fluent_text_reply": lambda value: True})
+    assert bool(allowed) is expected

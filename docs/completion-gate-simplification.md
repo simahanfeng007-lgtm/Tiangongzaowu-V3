@@ -53,6 +53,15 @@ and read back but rejected by that invented execution obligation. Explicit run
 commands, including environment-check scripts, still require successful receipts.
 The failed comparison is retained; receipt replay and a separate A/C retest verify
 the correction without replacing its original result.
+Version 1.40 resolves tool-receipt action aliases using the dictionary's own
+registered binding chain. A `core.filesystem.file.write` receipt now carries the
+same observed write and generated attachment as `file.write`; a result's
+`routed_to` string or an unregistered suffix cannot grant those semantics.
+Missing, failed and unchanged execution-only receipts do not invent output.
+The file-organizer comparison exposed this mismatch even though its actual files
+were correct: an ordinary-chat fallback bypassed the rejected completion proof.
+That fallback now requires ordinary chat without work intent or task obligations;
+real work completes through its verified evidence instead of fluent prose.
 The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
 instruction to read an input PPT. Capability modifiers now stay attached to the
 output noun. Explicit sequences such as creating a file and then opening it keep

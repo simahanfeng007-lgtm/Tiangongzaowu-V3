@@ -336,6 +336,28 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _receipt_action(data: dict[str, Any]) -> str:
+    """Resolve receipt semantics through the dictionary's registered bindings.
+
+    A result's routed_to string is diagnostic data, never alias authority.
+    Unknown names keep their original semantics rather than matching a suffix.
+    """
+    action = str(data.get("action") or data.get("caozuo") or "").strip().lower()
+    if not action or action in WRITE_ACTIONS or action in EXECUTION_ACTIONS:
+        return action
+    from capability_dictionary import load_dictionary
+
+    tools = load_dictionary().tools
+    resolved, seen = action, set()
+    while resolved in tools and resolved not in seen:
+        seen.add(resolved)
+        binding = tools[resolved]["binding"]
+        if binding.get("kind") != "alias":
+            return resolved
+        resolved = str(binding.get("target") or "")
+    return action
+
+
 def _observed_write_evidence(
     tool_name: str,
     data: dict[str, Any],
@@ -345,7 +367,7 @@ def _observed_write_evidence(
     if not ok:
         return None
     name = str(tool_name or data.get("tool_name") or "").strip()
-    action = str(data.get("action") or data.get("caozuo") or "").strip().lower()
+    action = _receipt_action(data)
     candidates = _candidate_dicts(data)
 
     changed_files: list[str] = []
@@ -814,7 +836,7 @@ def write_evidence_v2_is_valid(payload: dict[str, Any] | None) -> bool:
 
 def _may_mutate(tool_name: str, data: dict[str, Any]) -> bool:
     name = str(tool_name or data.get("tool_name") or "").strip()
-    action = str(data.get("action") or data.get("caozuo") or "").strip().lower()
+    action = _receipt_action(data)
     return name in WRITE_TOOLS or action in WRITE_ACTIONS or action in EXECUTION_ACTIONS
 
 
@@ -889,7 +911,7 @@ def normalize_tool_result(tool_name: str, result: Any) -> dict[str, Any]:
         ok = False
     write_evidence = _observed_write_evidence(tool_name, data, bool(ok))
     may_mutate = _may_mutate(tool_name, data)
-    action = str(data.get("action") or data.get("caozuo") or "").strip().lower()
+    action = _receipt_action(data)
     name = str(tool_name or data.get("tool_name") or "").strip()
     legacy_write_classification = bool(
         ok and (name in WRITE_TOOLS or action in WRITE_ACTIONS)

@@ -15,6 +15,7 @@ from __future__ import annotations
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.38 keeps generic output review from prescribing a separate file reader.
 # 1.39 keeps available runtime nouns from inventing program-execution duties.
-VERIFICATION_PLANE_VERSION = "1.39"
+# 1.40 resolves dictionary receipt aliases and fences the ordinary-chat escape.
+VERIFICATION_PLANE_VERSION = "1.40"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
