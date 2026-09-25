@@ -54,7 +54,7 @@
   "src/omni_body_skill/tools/composition_path.py": "78d24a97edc9e06fa12c738396dbc6ce97eff03773f0e113f10b6efd5165e5a1",
   "app/backend/tiangong-backend/v3/composition_turn.py": "ac931b2a07259b56cec9ef48b74587d57567a223b3652bd329fd3a6ef2f73aa6",
   "app/backend/tiangong-backend/v3/execution_integrity.py": "429d5288d7ff82f745f4e74a871cc8bb8e1be6fea03a188e453df0389d8d7cd8",
-  "app/backend/tiangong-backend/v3/simple_chain/kernel.py": "035c6741566a2c57a7b3558ffdad893645f1993719d52517bfcf1b289800d99f",
+  "app/backend/tiangong-backend/v3/simple_chain/kernel.py": "9d829c0365419e1c5d753a9da5fad0677d8f12336ac41407ad2c5452a9e5e157",
   "app/backend/tiangong-backend/v3/zongdiaodu.py": "9a86b95aec3f8277a1edcfcda96200498dffd28bc6a808818ddceb6fd481d35b",
   "src/world_understanding/known/rules/__init__.py": "d1236ff1fad812804d24a9733886a9bf669f6a43fc7c77ea6fbd17a983845dd5",
   "app/main.js": "f1252b5960763c1bf05f41b967c3b8a23c9dcf609b065bc87c4ea4904b7e89bb",

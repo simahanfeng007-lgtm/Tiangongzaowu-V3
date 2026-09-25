@@ -3300,7 +3300,7 @@ def _simple_chain_paths_match_desktop(
     # Exact output paths remain checked by the final artifact evidence gate.
     destinations = re.finditer(
         r"(?:保存(?:到|在|至)|放(?:到|在)|输出到|生成到|写到|存到)\s*(?:我的)?(?:桌面|desktop)"
-        r"|(?:在|on\s+(?:the\s+)?)\s*(?:桌面|desktop)\s*(?:创建|生成|保存|create|save)", text, re.I,
+        r"|(?:在|on\s+(?:the\s+)?)\s*(?:桌面|desktop)(?:上)?\s*(?:创建|生成|保存|写|制作|create|save)", text, re.I,
     )
     if not any(not re.search(r"(?:不要|不得|不许|禁止|无需|不用|别|do not|never)\s*$",
                              text[:match.start()], re.I) for match in destinations):

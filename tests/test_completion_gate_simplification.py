@@ -8,7 +8,7 @@ from v3.simple_chain import kernel
 from test_task_execution_simplification import observation
 
 
-@pytest.mark.parametrize("restriction", ["禁止访问桌面", "不要保存到桌面", "桌面清理主题", "do not access desktop"])
+@pytest.mark.parametrize("restriction", ["禁止访问桌面", "不要保存到桌面", "不要在桌面上写文件", "桌面清理主题", "do not access desktop"])
 def test_desktop_mention_does_not_relocate_input_or_output(tmp_path, monkeypatch, restriction):
     monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setenv("TIANGONG_DESKTOP_PATH", str(tmp_path / "desktop"))
