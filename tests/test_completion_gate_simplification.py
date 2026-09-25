@@ -108,3 +108,270 @@ def test_hash_column_does_not_request_hashing_the_manifest_itself():
     assert not any(item["kind"] == "observation" and item["target_path"] == "manifest.csv" for item in goals)
     explicit = integrity.build_action_obligations("请创建 proof.txt，然后计算其 SHA-256。")
     assert any(item.get("evidence_predicate") == "sha256_digest" and item["target_path"] == "proof.txt" for item in explicit)
+
+
+def inline_output_receipt(tmp_path):
+    from v3.tool_result_contract import normalize_tool_result
+    (tmp_path / "result.json").write_text('{"created": true}', encoding="utf-8")
+    raw = {"ok": True, "action": "python.run", "result": {"action": "python.run", "success": True,
+        "execution": {"receipt_role": "execution", "execution_state": "completed", "ok": True,
+            "returncode": 0, "commit_state": "committed", "committed_workspace": str(tmp_path),
+            "changed_files": ["result.json"], "deleted_files": []}}}
+    payload = observation("python.run", contract=normalize_tool_result("omni_body", raw))
+    payload["tool_result"] = raw
+    payload["tool_args"]["args"] = {"code": "# submitted inline program"}
+    return payload
+
+
+def test_inline_output_receipt_satisfies_local_delivery_and_life_roundtrip(tmp_path):
+    prompt = "请生成并交付 result.json。"
+    payload = inline_output_receipt(tmp_path)
+    assert payload["tool_result_contract"]["paths"] == []
+    goal = next(item for item in integrity.build_action_obligations(prompt) if item["kind"] == "delivery")
+    assert integrity.obligation_is_satisfied(goal, [payload])
+    state = {"obligations": [deepcopy(goal)], "round": 1}
+    integrity.update_run_state_obligations(state, payload)
+    assert state["obligations"][0]["status"] == "satisfied"
+    contract = integrity.initialize_task_contract(prompt)
+    projected = integrity.build_task_contract_obligations(contract)
+    assert next(item for item in projected if item["kind"] == "delivery")["delivery_mode"] == "local_artifact"
+    updated = integrity.update_task_contract_evidence(contract, payload, round_number=1)
+    assert next(item for item in updated["desired_facts"] if item["kind"] == "delivery")["status"] == "satisfied"
+    reconciled, goals = integrity.reconcile_completion_evidence(contract, projected, [payload])
+    assert all(item["status"] == "satisfied" for item in goals)
+    assert all(item["status"] == "satisfied" for item in reconciled["desired_facts"])
+
+
+@pytest.mark.parametrize("failure", ["execution_failed", "discarded", "untrusted", "deleted", "missing_post", "claim_only", "different_target", "external"])
+def test_local_delivery_does_not_invent_output_evidence(tmp_path, failure):
+    payload = inline_output_receipt(tmp_path)
+    goal = {"kind": "delivery", "delivery_mode": "local_artifact", "target_path": "result.json"}
+    evidence = payload["tool_result_contract"]["write_evidence"]
+    if failure == "execution_failed":
+        payload["tool_result"]["result"]["execution"].update(ok=False, returncode=1)
+    elif failure == "discarded":
+        payload["tool_result"]["result"]["execution"]["commit_state"] = "discarded"
+    elif failure == "untrusted":
+        evidence["authoritative"] = False
+    elif failure == "deleted":
+        evidence["deleted_files"] = evidence.pop("changed_files")
+        payload["tool_result_contract"]["paths"] = list(evidence["deleted_files"])
+    elif failure == "missing_post":
+        evidence["post"] = [{"path": str(tmp_path / "result.json"), "exists": False}]
+    elif failure == "claim_only":
+        evidence["changed_files"] = []
+        payload["tool_args"]["target"] = str(tmp_path / "result.json")
+        payload["tool_result"]["result"]["execution"]["stdout"] = "result.json created successfully"
+    elif failure == "different_target":
+        goal["target_path"] = "other.json"
+    elif failure == "external":
+        goal["delivery_mode"] = "external"
+    assert not integrity.obligation_is_satisfied(goal, [payload])
+
+
+@pytest.mark.parametrize("instruction,path", [
+    ("生成可正常打开的", "weekly.pptx"), ("生成一个可以直接编辑的", "sales.xlsx"),
+    ("编写能够正确运行的", "worker.py"), ("生成可直接交付的", "report.pdf"),
+])
+def test_output_capability_modifier_does_not_become_an_input_command(instruction, path):
+    prompt = f"请读取 brief.json，{instruction} {path}。"
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "effect" and item["target_path"] == path for item in goals)
+    assert not any(item["kind"] == "observation" and item["target_path"] == path for item in goals)
+    assert kernel._simple_chain_explicit_read_paths(prompt) == ["brief.json"]
+    assert path in kernel._simple_chain_explicit_deliverable_paths(prompt)
+
+
+@pytest.mark.parametrize("prompt", ["请打开可正常读取的 report.pptx。", "请生成 report.pptx，然后打开 report.pptx。"])
+def test_explicit_open_command_still_requires_observation(prompt):
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "observation" and item["target_path"] == "report.pptx" for item in goals)
+
+
+def test_repaired_execution_can_explain_a_prior_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请读取 input.txt，再运行程序，生成 result.json。"
+    read = observation("file.read", str(tmp_path / "input.txt"),
+        result={"content": "PermissionError from an absolute input path"},
+        contract={"ok": True, "paths": [str(tmp_path / "input.txt")], "write_effect": False})
+    generated = inline_output_receipt(tmp_path)
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, [read, generated],
+        [{"path": str(tmp_path / "result.json")}],
+        final_reply="此前出现 PermissionError，现已修复路径并生成 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+
+
+@pytest.mark.parametrize("read_ok", [True, False])
+def test_error_log_answer_is_judged_by_actual_read_evidence(read_ok):
+    prompt = "请读取 error.log 并说明 PermissionError。"
+    read = observation("file.read", "error.log", ok=read_ok,
+        result={"content": "PermissionError: access denied"} if read_ok else {},
+        contract={"ok": read_ok, "paths": ["error.log"], "write_effect": False, "may_mutate": False})
+    allowed, _, _ = kernel._simple_chain_evidence_check(prompt, [read], [],
+        final_reply="日志中的 PermissionError 表示 access denied。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed is read_ok
+
+
+@pytest.mark.parametrize("review", ["检查交付文件", "检查生成产物", "检查输出", "检查副本", "check output files"])
+@pytest.mark.parametrize("separator", ["，然后", "并"])
+def test_generic_output_review_does_not_require_a_separate_reader(review, separator):
+    prompt = f"请生成 result.json{separator}{review}。"
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "effect" for item in goals)
+    assert not any(item["kind"] == "observation" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, []), "actual output evidence remains required"
+
+
+@pytest.mark.parametrize("prompt", [
+    "请检查交付文件。",
+    "请检查交付文件。环境已安装 Python。",
+    "请生成 result.json，然后读取交付文件。",
+    "请生成 result.json，然后打开交付文件。",
+    "请检查 input.txt，然后生成 result.json。",
+    "请生成 result.json，然后检查 result.json。",
+])
+def test_explicit_or_observation_only_requests_keep_their_evidence_requirement(prompt):
+    assert any(item["kind"] == "observation" for item in integrity.build_action_obligations(prompt))
+
+
+def test_inline_generation_can_complete_after_generic_output_review(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请实际生成 result.json，并检查交付文件。"
+    receipt = inline_output_receipt(tmp_path)
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, [receipt],
+        [{"path": str(tmp_path / "result.json")}], final_reply="已生成并检查 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+    receipt["ok"] = False
+    assert not kernel._simple_chain_evidence_check(prompt, [receipt],
+        [{"path": str(tmp_path / "result.json")}], final_reply="已生成并检查 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))[0]
+
+
+@pytest.mark.parametrize("verb", ["检查", "读取", "查看", "打开", "浏览"])
+def test_reading_a_deliverable_does_not_request_sending_it(verb):
+    prompt = f"请{verb}交付文件 proof.txt。"
+    goals = integrity.build_action_obligations(prompt)
+    assert {item["kind"] for item in goals} == {"observation"}
+    assert {item["target_path"] for item in goals} == {"proof.txt"}
+    receipt = observation("file.read", "proof.txt", result={"content": "verified"},
+        contract={"ok": True, "paths": ["proof.txt"], "write_effect": False})
+    assert integrity.execution_integrity_blockers(prompt, [receipt]) == []
+
+
+def test_unknown_read_synonym_cannot_invent_a_delivery_requirement():
+    # The conservative floor does not cover every synonym. Fall through to the
+    # model rather than turning the deliverable noun into a sending command.
+    goals = integrity.build_action_obligations("请阅读交付文件 proof.txt。")
+    assert not any(item["kind"] == "delivery" for item in goals)
+
+
+@pytest.mark.parametrize("context", [
+    "只使用当前工作区和已安装的运行环境。",
+    "使用已有执行环境和标准库。",
+    "使用运行环境中的已安装库。",
+    "请检查运行环境。",
+])
+def test_available_runtime_context_does_not_request_program_execution(context):
+    prompt = f"请读取 brief.json，生成 story.md。{context}"
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "observation" for item in goals)
+    assert any(item["kind"] == "effect" for item in goals)
+    assert not any(item["kind"] == "execution" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, [])
+
+
+@pytest.mark.parametrize("prompt", [
+    "请在现有运行环境中运行 worker.py。",
+    "请生成 story.md。然后运行字数检查程序。",
+    "请执行环境检查.py。",
+    "请运行环境.py。",
+])
+def test_explicit_execution_remains_required_with_environment_nouns(prompt):
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item.get("evidence_predicate") == "command_execution" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, [], final_reply="已经完成。")
+
+
+def test_written_story_can_complete_without_an_unrequested_python_check(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请读取 brief.json，生成 story.md。只使用当前工作区和已安装的运行环境。"
+    target = tmp_path / "story.md"
+    target.write_text("灯塔重新亮起。", encoding="utf-8")
+    read = observation("file.read", "brief.json", result={"content": "灯塔"},
+        contract={"ok": True, "paths": ["brief.json"], "write_effect": False})
+    write = changed(str(target))
+    failed_optional_check = observation("python.run", ok=False,
+        result={"execution": {"ok": False, "returncode": 1}},
+        contract={"ok": False, "may_mutate": False, "write_effect": False})
+    reread = observation("file.read", str(target), result={"content": "灯塔重新亮起。"},
+        contract={"ok": True, "paths": [str(target)], "write_effect": False})
+    history = [read, write, failed_optional_check, reread]
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, history,
+        [{"path": str(target)}], final_reply="story.md 已写入并回读。额外脚本检查失败。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+    explicit = prompt + "请运行字数检查程序。"
+    assert not kernel._simple_chain_evidence_check(explicit, history,
+        [{"path": str(target)}], final_reply="已完成。",
+        task_obligations=integrity.build_action_obligations(explicit))[0]
+
+
+@pytest.mark.parametrize("action,expected", [
+    ("file.write", True), ("core.filesystem.file.write", True),
+    ("core.filesystem.file.read", False), ("unregistered.file.write", False),
+])
+def test_dictionary_alias_receipts_keep_write_evidence_without_trusting_route_claims(tmp_path, action, expected):
+    import hashlib
+    from v3.tool_result_contract import normalize_tool_result
+    target = tmp_path / "manifest.csv"
+    content = b"source,target\na,b\n"
+    target.write_bytes(content)
+    raw = {"action": action, "success": True, "routed_to": "file.write",
+        "evidence": {"path": str(target), "exists": True, "is_file": True,
+            "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content)},
+        "snapshots": [{"path": str(target), "existed": False}]}
+    contract = normalize_tool_result("omni_body", raw)
+    assert contract["observed_write_effect"] is expected
+    assert contract["may_mutate"] is expected
+    assert bool(contract["generated_attachments"]) is expected
+    prompt = "请生成 manifest.csv。"
+    payload = observation(action, str(target), contract=contract, result=raw)
+    assert (integrity.execution_integrity_blockers(prompt, [payload]) == []) is expected
+    raw["success"] = False
+    failed = normalize_tool_result("omni_body", raw)
+    assert not failed["observed_write_effect"]
+    assert not failed["generated_attachments"]
+
+
+def test_dictionary_alias_execution_without_changes_does_not_invent_output():
+    from v3.tool_result_contract import normalize_tool_result
+    contract = normalize_tool_result("omni_body", {"action": "core.code.python.run", "success": True,
+        "execution": {"ok": True, "returncode": 0, "changed_files": [], "deleted_files": []}})
+    assert contract["may_mutate"]
+    assert not contract["observed_write_effect"]
+    assert not contract["generated_attachments"]
+
+
+@pytest.mark.parametrize("prompt,goals,expected", [
+    ("请生成 proof.txt。", [], False),
+    ("你好", [{"kind": "effect", "status": "pending"}], False),
+    ("你好", [], True),
+])
+def test_real_loop_chat_escape_cannot_bypass_work_or_goal_evidence(prompt, goals, expected):
+    import ast
+    from pathlib import Path
+    from v3 import zongdiaodu
+    tree = ast.parse(Path(zongdiaodu.__file__).read_text(encoding="utf-8"))
+    branches = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id == "_simple_chain_fluent_text_reply" for n in ast.walk(node.test))]
+    assert len(branches) == 1
+    predicate = compile(ast.Expression(branches[0].test), "real-loop-chat-escape", "eval")
+    allowed = eval(predicate, {"generated_attachments": [], "required_read_paths": [],
+        "xiaoxi": prompt, "run_state": {"obligations": goals}, "huifu": "已经全部完成了。",
+        "_runtime_detects_work_intent": kernel._runtime_detects_work_intent,
+        "_simple_chain_fluent_text_reply": lambda value: True})
+    assert bool(allowed) is expected

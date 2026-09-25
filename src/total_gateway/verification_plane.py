@@ -13,7 +13,9 @@ from __future__ import annotations
 # 1.33 preserves task-generated composition fencing and records the reviewed
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
-# 1.35 removes unsolicited quality gates while retaining current factual evidence.
-VERIFICATION_PLANE_VERSION = "1.35"
+# 1.38 keeps generic output review from prescribing a separate file reader.
+# 1.39 keeps available runtime nouns from inventing program-execution duties.
+# 1.40 resolves dictionary receipt aliases and fences the ordinary-chat escape.
+VERIFICATION_PLANE_VERSION = "1.40"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

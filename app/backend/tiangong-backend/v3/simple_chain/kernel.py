@@ -3530,8 +3530,8 @@ def _simple_chain_substantive_answer(
     text = str(final_reply or "").strip()
     if not text:
         return False, "final_reply_empty"
-    if _simple_chain_reply_restates_tool_error(text):
-        return False, "final_reply_restates_tool_error"
+    # Error names can be the observed subject or a repaired failure. Actual
+    # failed calls remain blocked by execution evidence, not prose keywords.
     lowered = text.lower()
     if any(marker in lowered for marker in _SIMPLE_CHAIN_ANSWER_CLOSING_MARKERS):
         return True, "explicit_closing"
@@ -5409,7 +5409,14 @@ def _simple_chain_evidence_check(
         isinstance(item, dict) and str(item.get("kind") or "").strip().lower() == "observation"
         for item in task_obligations or []
     )
-    if observation_required and final_reply is not None:
+    artifact_or_effect_required = any(
+        isinstance(item, dict) and str(item.get("kind") or "").strip().lower() in {"effect", "delivery"}
+        for item in task_obligations or []
+    )
+    # Reading inputs for a creation/repair task does not require its completion
+    # summary to repeat the source text. Factual obligations and output checks
+    # above already decide whether the requested effect was accomplished.
+    if observation_required and not artifact_or_effect_required and final_reply is not None:
         answer_ok, answer_code = _simple_chain_substantive_answer(quality_history, final_reply)
         if not answer_ok:
             reasons.append(f"observed facts were not delivered in the final reply: {answer_code}")

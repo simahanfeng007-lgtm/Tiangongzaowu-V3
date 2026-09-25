@@ -29,11 +29,16 @@ def test_deliverable_noun_does_not_request_a_separate_delivery(verb):
     assert {item["kind"] for item in integrity.build_action_obligations(request)} == {"effect"}
 
 
-@pytest.mark.parametrize("user_text", [
-    "请交付文件 proof.txt", "请创建文件 proof.txt，然后交付文件", "请生成交付文件 proof.txt，然后上传文件",
-])
-def test_actual_delivery_still_requires_delivery_evidence(user_text):
+@pytest.mark.parametrize("user_text", ["请交付文件 proof.txt", "请创建文件 proof.txt，然后交付文件"])
+def test_local_delivery_accepts_only_the_requested_committed_artifact(user_text):
     assert "delivery" in {item["kind"] for item in integrity.build_action_obligations(user_text)}
+    assert integrity.execution_integrity_blockers(user_text, [_write_fact("proof.txt")]) == []
+    for history in ([], [_write_fact("wrong.txt")], [{**_write_fact("proof.txt"), "ok": False}]):
+        assert integrity.execution_integrity_blockers(user_text, history)
+
+
+def test_external_delivery_still_requires_delivery_evidence():
+    user_text = "请生成交付文件 proof.txt，然后上传文件"
     assert "execution_obligation:delivery:missing_evidence" in integrity.execution_integrity_blockers(
         user_text, [_write_fact("proof.txt")]
     )
@@ -92,12 +97,18 @@ def test_later_explicit_delivery_does_not_take_the_creation_target():
     assert [(item["kind"], item["target_path"]) for item in obligations if item["kind"] == "effect"] == [
         ("effect", "proof.txt"),
     ]
+    assert [(item["kind"], item["target_path"]) for item in obligations if item["kind"] == "delivery"] == [
+        ("delivery", "existing.md"),
+    ]
     assert integrity.execution_integrity_blockers(request, [_write_fact("proof.txt")]) == [
         "execution_obligation:delivery:missing_evidence",
     ]
     assert "execution_obligation:effect:missing_evidence" in integrity.execution_integrity_blockers(
         request, [_write_fact("wrong.txt")]
     )
+    assert integrity.execution_integrity_blockers(
+        request, [_write_fact("proof.txt"), _write_fact("existing.md")]
+    ) == []
 
 
 def test_negated_deliverable_creation_stays_preserved():

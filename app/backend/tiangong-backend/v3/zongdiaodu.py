@@ -4137,14 +4137,14 @@ class Zongdiaodu:
                         break
                     final_reasons_now = proof_reasons_now
 
-                    # bug-fix: 多次思考路径根治 - 模型已给出通顺最终答复时，跳过 completion
-                    # correction 强插续写：被误判为 work 的文本问答不再被强迫“再思考 N 轮”。
-                    # bug-fix: 条件放宽到“已有工具证据 + 模型本轮已给出收尾语”——只读查询
-                    # （读文件后直接回答）不再被完成门连环打回重答 3-5 遍；仍有交付物
-                    # （generated_attachments）或必读路径义务时不走此捷径（2026-08-26，凌霜修 logic 类）
+                    # Fluent prose may finish ordinary chat, but cannot bypass
+                    # a rejected factual obligation or an explicit work request.
+                    # Verified read/write tasks already pass the gate above.
                     if (
                         not generated_attachments
                         and not required_read_paths
+                        and not _runtime_detects_work_intent(xiaoxi)
+                        and not (run_state.get("obligations") if isinstance(run_state, dict) else None)
                         and _simple_chain_fluent_text_reply(huifu)
                     ):
                         final_guard_exhausted = True
