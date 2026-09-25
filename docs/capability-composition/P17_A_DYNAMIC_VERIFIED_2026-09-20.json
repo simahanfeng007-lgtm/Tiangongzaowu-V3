@@ -86,57 +86,57 @@
    "reason": "conversation-context field access",
    "reviewed_line": "return str(getattr(enum_obj, name).value)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2151": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2150": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "fn = getattr(store, name, None)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2371": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2370": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "fn = getattr(target, name, None)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2573": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2572": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of logging; no caller-supplied module name.",
    "reviewed_line": "_log = __import__(\"logging\").getLogger(\"tiangong.zongdiaodu\")"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2752": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2751": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of logging; no caller-supplied module name.",
    "reviewed_line": "_log_warn = __import__(\"logging\").getLogger(\"tiangong.zongdiaodu\")"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:493": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:492": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "setattr(q, emo1, min(1.0, getattr(q, emo1) + d1))"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:494": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:493": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "setattr(q, emo2, min(1.0, getattr(q, emo2) + d2))"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:502": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:501": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "emotions = {n: getattr(q, n) for n in _EMOTION_NAMES}"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:504": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:503": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "desires = {n: getattr(q, n) for n in _DESIRE_NAMES}"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:508": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:507": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:5388": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5387": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "field.name: self._state_to_plain_dict(getattr(value, field.name))"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:5565": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5564": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "current = getattr(target, key)"
@@ -266,7 +266,7 @@
    "reason": "reflection model field access",
    "reviewed_line": "if not getattr(parsed, digest_method)():"
   },
-  "src/life_service/store.py:3611": {
+  "src/life_service/store.py:3614": {
    "category": "model_field_iteration",
    "reason": "store row field access",
    "reviewed_line": "getattr(event, name) != value"
@@ -481,7 +481,7 @@
    "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite",
    "reviewed_line": "if any(not callable(getattr(store, name, None)) for name in required_store_methods):"
   },
-  "src/total_gateway/regenerative_execution.py:162": {
+  "src/total_gateway/regenerative_execution.py:163": {
    "category": "model_field_iteration",
    "reason": "Reads a fixed set of contract fields for identity, uniqueness, or schema validation.",
    "reviewed_line": "values = getattr(self, field_name)"

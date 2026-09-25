@@ -420,7 +420,8 @@ def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
         "file.write",
         {"action": "file.write", "target": "elsewhere.txt", "args": {"content": "x"}},
     )
-    assert any("target mismatch" in issue for issue in single_issues)
+    # A single deliverable may also need temporary scripts or scaffolding.
+    assert single_issues == []
 
 
 def test_multi_file_project_allows_empty_scaffold_files() -> None:
@@ -753,12 +754,12 @@ def test_missing_deliverable_scoped_to_declared_project_dir(
     assert "README.md" not in missing2
 
 
-def test_project_dir_block_confines_writes_to_declared_dir(
+def test_intermediate_writes_are_allowed_but_final_project_location_is_checked(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """项目目录围栏：写操作写到目录外直接拦截，读操作不受限。"""
-    from v3.zongdiaodu import _simple_chain_prepare_tool_call
+    """Temporary writes need not be deliverables; final files stay path-bound."""
+    from v3.zongdiaodu import _simple_chain_prepare_tool_call, _simple_chain_missing_deliverable_paths
 
     monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
     prompt = (
@@ -775,8 +776,10 @@ def test_project_dir_block_confines_writes_to_declared_dir(
             "args": {"content": "x"},
         },
     )
-    assert block is not None
-    assert block.get("schema") == "tiangong.v3.simple_chain.project_dir_confined.v1"
+    assert block is None
+    (tmp_path / "CLI").mkdir()
+    (tmp_path / "CLI/README.md").write_text("x", encoding="utf-8")
+    assert "README.md" in _simple_chain_missing_deliverable_paths(prompt, [], [])
 
     _name2, _args2, _action2, _issues2, block2 = _simple_chain_prepare_tool_call(
         "req_x",
@@ -803,8 +806,8 @@ def test_project_dir_block_confines_writes_to_declared_dir(
     assert block3 is None
 
 
-def test_wrong_parent_project_path_is_blocked_without_semantic_rewrite() -> None:
-    """错误目标保持原样并由范围围栏拒绝，不替模型改写路径。"""
+def test_intermediate_project_path_is_not_rewritten_or_quality_blocked() -> None:
+    """Native permission checks own scope; task quality cannot rewrite a path."""
     from v3.zongdiaodu import _simple_chain_prepare_tool_call
 
     prompt = (
@@ -821,8 +824,7 @@ def test_wrong_parent_project_path_is_blocked_without_semantic_rewrite() -> None
     )
     assert action == "file.write"
     assert prepared == args
-    assert block is not None
-    assert block["stage"] == "project_dir_confined"
+    assert block is None
 
     args2 = {
         "action": "file.write",

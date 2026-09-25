@@ -41,6 +41,8 @@ def composition_prompt(release) -> str:
         "Skill 通过 depends_on 指明步骤依赖。可以组合多个 Tool，不需要把每个原子动作拆成一轮。"
         "参数必须是已经确定的具体值，不支持插值表达式。需要先读取未知数据时只组合观察步骤；"
         "观察结果回来后再决定后续组合，不猜文件内容或执行结果。失败后依据真实回执修正组合。"
+        "若某动作在修正之前的失败，可在该 action 对象的 repair_of 字段填写失败回执 execution_evidence.event_hash；"
+        "允许改正 target，宿主会核对同一任务的失败及后续实际结果。不要把无关成功声明为修复。"
         "组合登记不是执行成功，组合成功不是整个任务完成；须核实用户要求的产物与执行事实。"
         "复杂参数先用 system.action_schema 查询。已有正确成果避免重写，取消或结果不明须先核对。\n"
         "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
@@ -123,7 +125,10 @@ def compile_task_composition(proposal, *, release=None) -> dict:
         if type(actions) is not list or not 1 <= len(actions) <= MAX_LEAVES:
             raise DictionaryError("composition.actions_invalid")
         for action_index, action in enumerate(actions):
-            _object(action, {"action", "args"}, {"target"}, path=f"composition.tools[{tool_index}].actions[{action_index}]")
+            _object(action, {"action", "args"}, {"target", "repair_of"}, path=f"composition.tools[{tool_index}].actions[{action_index}]")
+            if "repair_of" in action and (type(action["repair_of"]) is not str
+                    or not re.fullmatch(r"[0-9a-f]{64}", action["repair_of"])):
+                raise DictionaryError("composition.repair_reference_invalid")
             action_id = action["action"]
             if type(action_id) is not str or action_id.startswith(("skill.", "skill_")):
                 raise DictionaryError("composition.fixed_skill_forbidden")
@@ -167,8 +172,13 @@ def compile_task_composition(proposal, *, release=None) -> dict:
     for key in ordered:
         step = steps[key]
         for ordinal, action in enumerate(tools[step["tool"]]["actions"], 1):
-            leaves.append({"id": f"{key}.{ordinal}", "tool_id": step["tool"],
-                "skill_step_id": key, "invocation": {"target": "", **copy.deepcopy(action)}})
+            invocation = {"target": "", **copy.deepcopy(action)}
+            repair_of = invocation.pop("repair_of", None)
+            leaf = {"id": f"{key}.{ordinal}", "tool_id": step["tool"],
+                    "skill_step_id": key, "invocation": invocation}
+            if repair_of is not None:
+                leaf["repair_of"] = repair_of
+            leaves.append(leaf)
     if len(leaves) > MAX_LEAVES:
         raise DictionaryError("composition.too_many_actions")
     program = {"schema": SCHEMA, "dictionary_sha256": release.sha256,

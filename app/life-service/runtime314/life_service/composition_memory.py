@@ -30,7 +30,19 @@ def read_experiences(coordinator, *, life_id, principal_ref, schema=SCHEMA):
         raise ValueError("composition_memory.schema_invalid")
     store = coordinator.store
     result = []
-    for derivation in store.list_memory_derivations(life_id=life_id, layer="L3_EXPERIENCE", active_only=True, limit=4096):
+    def heads():
+        cursor = None
+        while True:
+            page = store.list_active_memory_heads(life_id=life_id, principal_ref=principal_ref,
+                layer="L3_EXPERIENCE", claim_prefix="composition-experience:",
+                after_claim_key=cursor, limit=256)
+            if not page:
+                return
+            yield from page
+            cursor = page[-1].claim_key
+
+    # Page current scoped heads, never the earliest historical derivations.
+    for derivation in heads():
         if derivation.principal_ref != principal_ref or derivation.privacy_scope != "private":
             continue
         if not derivation.claim_key.startswith("composition-experience:"):

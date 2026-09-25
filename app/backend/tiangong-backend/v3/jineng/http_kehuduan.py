@@ -1009,6 +1009,14 @@ class HttpKehuduan:
                 payload.pop("max_completion_tokens", None)
                 payload.pop("max_output_tokens", None)
                 payload["max_tokens"] = semantic_inference[1]
+                if (pid in {"deepseek", "deepseek_v4"} and endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
+                        and model_name.lower().startswith(("deepseek-flash", "deepseek-v4"))):
+                    # This bounded, tool-free call extracts a small typed record.
+                    # V4 thinking shares max_tokens and can consume the entire
+                    # semantic budget before producing JSON. Main task reasoning
+                    # is untouched; do not apply this to thinking-only R1 models.
+                    payload["thinking"] = {"type": "disabled"}
+                    payload.pop("reasoning_effort", None)
                 thinking = payload.get("thinking")
                 if endpoint.protocol_family == ProtocolFamily.ANTHROPIC_MESSAGES.value and isinstance(thinking, dict):
                     thinking_budget = thinking.get("budget_tokens")

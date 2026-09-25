@@ -1130,6 +1130,9 @@ def _simple_chain_regenerative_execute_tool(
         },
     )
     final_effect_state = str((finished or {}).get("effect_state") or "")
+    if outcome != "succeeded" and isinstance(raw, dict) and (finished or {}).get("event_hash"):
+        raw = {**raw, "execution_evidence": {"event_hash": finished["event_hash"],
+               "effect_id": effect_id, "outcome": outcome}}
     if outcome == "ambiguous" or final_effect_state == "AMBIGUOUS":
         _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous", call_id=call_id)
     else:
@@ -2422,9 +2425,15 @@ def _simple_chain_requested_target_paths(user_message: str) -> list[str]:
     text = conversion_output if conversion_output is not None else source_text
     out: list[str] = []
 
-    for binding in request_target_bindings(text):
+    bindings = request_target_bindings(text)
+    excluded = {_path_key_for_qc(item["target_path"]) for item in bindings
+                if item["role"] in {"input", "preserved", "executable", "workspace"}}
+    required = {_path_key_for_qc(item["target_path"]) for item in bindings
+                if item["role"] in {"output", "existing"}}
+    for binding in bindings:
         path = binding["target_path"]
-        if re.match(r"[A-Za-z]:[\\/]", path) and _path_suffix(path) in _DELIVERABLE_SUFFIXES:
+        if (binding["role"] in {"output", "existing"}
+                and re.match(r"[A-Za-z]:[\\/]", path) and _path_suffix(path) in _DELIVERABLE_SUFFIXES):
             out.append(path)
 
     filename_pattern = re.compile(
@@ -2432,41 +2441,19 @@ def _simple_chain_requested_target_paths(user_message: str) -> list[str]:
         rf"\s*[《\"“']?([^，。；;\s`\"”'》]+?\.(?:{_DELIVERABLE_EXTENSION_PATTERN}))",
         re.IGNORECASE,
     )
-    desktop_mentioned = "桌面" in text or "desktop" in text.lower()
     for match in filename_pattern.finditer(text):
         name = match.group(1).strip().strip("。；;，,")
         if not name:
             continue
-        if re.match(r"^[A-Za-z]:\\", name):
-            out.append(name)
-        elif desktop_mentioned and "/" not in name and "\\" not in name:
-            # “桌面”出现在任务标题（如“桌面清理计划”）不代表要保存到桌面；
-            # 只有裸文件名（不带目录前缀）才按桌面目录解析。
-            out.append(str(Path(os.environ.get("TIANGONG_DESKTOP_PATH") or Path.home()) / name))
-        else:
-            out.append(name)
+        out.append(name)
     out.extend(_simple_chain_bracketed_deliverable_paths(text))
-
-    if desktop_mentioned:
-        loose_name_pattern = re.compile(
-            rf"([\u4e00-\u9fffA-Za-z0-9_\-·.]+?\.(?:{_DELIVERABLE_EXTENSION_PATTERN}))",
-            re.IGNORECASE,
-        )
-        for match in loose_name_pattern.finditer(text):
-            name = match.group(1).strip().strip("。；;，,")
-            before = text[max(0, match.start() - 2):match.start()]
-            inside_longer_path = "/" in before or "\\" in before
-            if (
-                name
-                and not re.match(r"^[A-Za-z]:\\", name)
-                and not inside_longer_path
-            ):
-                out.append(str(Path(os.environ.get("TIANGONG_DESKTOP_PATH") or Path.home()) / name))
 
     seen: set[str] = set()
     unique: list[str] = []
     for path in out:
         key = _path_key_for_qc(path)
+        if key in excluded and key not in required:
+            continue
         if key and key not in seen:
             seen.add(key)
             unique.append(path)
@@ -2489,7 +2476,7 @@ def _simple_chain_explicit_deliverable_paths(user_message: str) -> list[str]:
         for item in sorted(_DELIVERABLE_SUFFIXES, key=len, reverse=True)
     )
     token_pattern = re.compile(
-        rf"(?<![A-Za-z0-9_.-])"
+        rf"(?<![A-Za-z0-9_.:/\\-])"
         rf"((?:[A-Za-z0-9_.-]+[\\/])*[A-Za-z0-9_-]+\.(?:{suffixes}))"
         rf"(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
         re.IGNORECASE,
@@ -2555,11 +2542,10 @@ def _simple_chain_project_dir(user_message: str) -> str:
     patterns = (
         r"(?:到|放|保存到|创建(?:到|在)?|输出到|生成到|全部产物放)\s*"
         r"工作区\s*([A-Za-z0-9_.-]+)\s*[\\/]?\s*(?:目录|文件夹|下)",
-        r"工作区\s*([A-Za-z0-9_.-]+)\s*[\\/]?\s*(?:目录|文件夹|下)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
-        if match:
+        if match and not re.search(r"(?:不要|不得|不许|禁止|无需|不用|别)\s*$", text[:match.start()]):
             return str(match.group(1) or "").strip().strip("/\\")
     return ""
 
@@ -3237,7 +3223,8 @@ def _simple_chain_desktop_file_format_ok(path: str, suffix: str) -> bool:
     """
     try:
         candidate = Path(path)
-        head = candidate.read_bytes()[:32]
+        with candidate.open("rb") as stream:
+            head = stream.read(32)
         if suffix in {".docx", ".xlsx", ".pptx", ".zip"}:
             with zipfile.ZipFile(candidate, "r") as archive:
                 names = set(archive.namelist())
@@ -3309,7 +3296,14 @@ def _simple_chain_paths_match_desktop(
     verify_format: bool = True,
 ) -> bool:
     text = str(user_message or "")
-    if "桌面" not in text and "desktop" not in text.lower():
+    # A topic, source location or prohibition is not a delivery destination.
+    # Exact output paths remain checked by the final artifact evidence gate.
+    destinations = re.finditer(
+        r"(?:保存(?:到|在|至)|放(?:到|在)|输出到|生成到|写到|存到)\s*(?:我的)?(?:桌面|desktop)"
+        r"|(?:在|on\s+(?:the\s+)?)\s*(?:桌面|desktop)(?:上)?\s*(?:创建|生成|保存|写|制作|create|save)", text, re.I,
+    )
+    if not any(not re.search(r"(?:不要|不得|不许|禁止|无需|不用|别|do not|never)\s*$",
+                             text[:match.start()], re.I) for match in destinations):
         return True
     suffixes = _simple_chain_expected_suffixes(user_message)
     if suffixes:
@@ -3689,55 +3683,12 @@ def _simple_chain_allows_empty_scaffold(user_message: str, tool_args: dict[str, 
         return False
 
 def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: dict[str, Any]) -> list[str]:
-    if action in {"skill.route", "skill.get", "skill.read"}:
-        return []
-    if action not in {
-        "file.write", "file.append", "code.write", "zip.create", "docx.create", "sheet.create", "pptx.create",
-        "pdf.create_from_text", "mindmap.create",
-    }:
-        return []
-    issues: list[str] = []
-    expected_paths = _simple_chain_requested_target_paths(user_message)
-    expected_suffixes = _simple_chain_expected_suffixes(user_message)
-    actual_paths: list[str] = []
-    if isinstance(tool_args, dict):
-        actual_paths.append(str(tool_args.get("target") or ""))
-        args = tool_args.get("args")
-        if isinstance(args, dict):
-            actual_paths.append(str(args.get("output") or ""))
-    actual_paths = [path for path in actual_paths if path.strip()]
-    # 多交付物/工程任务（项目脚手架、文档站）的中间文件不属于任何单一交付物，
-    # 逐写路径/后缀严格匹配会误伤合法写入；交付物存在性由终局门统一校验。
-    if _simple_chain_strict_single_deliverable(user_message):
-        if expected_paths and not _simple_chain_paths_match_expected(actual_paths, expected_paths):
-            issues.append(f"preflight target mismatch: expected={expected_paths[:3]} actual={actual_paths[:3]}")
-        if expected_suffixes and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
-            issues.append(f"preflight suffix mismatch: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
-    if not _simple_chain_paths_match_desktop(actual_paths, user_message, verify_format=False):
-        issues.append(f"preflight desktop target mismatch: actual={actual_paths[:3]}")
-    if action in {"file.write", "file.append", "code.write"}:
-        args = tool_args.get("args") if isinstance(tool_args, dict) else {}
-        binary_write = bool(args.get("binary")) if isinstance(args, dict) else False
-        content = _simple_chain_tool_args_content(tool_args)
-        if (
-            not binary_write
-            and content == ""
-            and "空文件" not in str(user_message or "")
-            and not _simple_chain_allows_empty_scaffold(user_message, tool_args)
-        ):
-            issues.append("preflight missing non-empty args.content")
-        min_chars, metric = _simple_chain_content_requirement_for(
-            str((tool_args or {}).get("target") or args.get("target") or args.get("path") or ""),
-            user_message,
-        )
-        novel_min = _novel_chapter_min_chars(user_message, action, tool_args)
-        if novel_min > min_chars:
-            min_chars, metric = novel_min, "cjk"
-        if min_chars and not binary_write:
-            count = _count_chinese_chars(content) if metric == "cjk" else _count_nonspace_chars(content)
-            if count < min_chars:
-                issues.append(f"preflight content {metric}_chars={count} < required {min_chars}")
-    return issues
+    """Compatibility hook: task quality must not reject intermediate actions.
+
+    Native admission still checks action schemas, grants and workspace scope.
+    Completion checks actual deliverables, not every temporary/helper write.
+    """
+    return []
 
 def _requests_zip_delivery(user_message: str) -> bool:
     text = str(user_message or "")
@@ -4187,14 +4138,20 @@ def _simple_chain_execute_tool_with_timeout(
 def _gongju_jieguo_chenggong(result: Any) -> bool:
     return tool_result_ok("", result)
 
-def _simple_chain_should_replay_cached_call(cached_result: Any) -> bool:
-    """重复观察去重只对“已成功”的结果生效。
+def _simple_chain_should_replay_cached_call(cached_result: Any, *, tool_name="", tool_args=None) -> bool:
+    """Static discovery can reuse successes; task effects defer to Gateway.
 
-    模型修完代码后重跑同一条验证命令（pytest 等）是修复的关键步骤；
-    若缓存结果是失败，必须放行重跑，不能复用旧失败当“重复副作用”。
+    Gateway binds current state and durable receipts before deciding whether to
+    replay. The legacy non-Gateway path still only reuses successful results.
     """
     if cached_result is None:
         return False
+    if tool_name == "omni_body" and isinstance(tool_args, dict):
+        if (tool_args.get("action") not in {"system.capabilities", "system.action_schema"}
+                and getattr(current_run_context(), "outer_execution_ticket_id", "")):
+            # The durable Gateway checks state versions and duplicate effects.
+            # A name/args-only cache must not hide the new composition's leaf.
+            return False
     return _gongju_jieguo_chenggong(cached_result)
 
 def _simple_chain_allowed_tool_names(available_tool_names: set[str] | None) -> set[str]:
@@ -4413,7 +4370,7 @@ def _simple_chain_declared_action_names() -> frozenset[str]:
     _SIMPLE_CHAIN_DECLARED_ACTION_NAMES = frozenset(names)
     return _SIMPLE_CHAIN_DECLARED_ACTION_NAMES
 
-def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
+def _simple_chain_explicit_action_sequence(user_message: str, *, require_order: bool = True) -> list[str]:
     text = _simple_chain_user_goal_text(user_message).lower()
     strict_order_markers = (
         r"严格(?:地)?按(?:照)?(?:以下|下列|上述|这个)?顺序",
@@ -4424,7 +4381,7 @@ def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
         r"(?:first|firstly)\b.{0,160}\b(?:then|next|after that)\b",
         r"(?:strictly|exactly)\s+in\s+(?:this\s+)?order",
     )
-    if not any(re.search(marker, text, re.IGNORECASE | re.DOTALL) for marker in strict_order_markers):
+    if require_order and not any(re.search(marker, text, re.IGNORECASE | re.DOTALL) for marker in strict_order_markers):
         return []
     declared = _simple_chain_declared_action_names()
     positioned: list[tuple[int, str]] = []
@@ -4432,6 +4389,13 @@ def _simple_chain_explicit_action_sequence(user_message: str) -> list[str]:
         action = match.group(1)
         if action in declared:
             before = text[max(0, match.start() - 40):match.start()]
+            if not require_order:
+                # Only a direct affirmative instruction can opt into a named
+                # quality review. Merely mentioning a checker is advisory.
+                if not re.search(r"(?:调用|执行|使用|通过|运行|\bcall|\brun|\buse|\bpass)\s*[`\"']?\s*$", before):
+                    continue
+                if re.search(r"(?:不要|不得|不许|禁止|无需|不用|不需要|不要求|别|do not|never)[^，。；;\n]{0,24}$", before):
+                    continue
             if re.search(r"(说明|介绍|解释|描述|列出|参数|用法|什么是|如何|是什么)", before):
                 # 说明/介绍语境里的工具名只是名词提及，不是要求执行的动作（B7）。
                 continue
@@ -4510,9 +4474,6 @@ def _simple_chain_prepare_tool_call(
             nested["user_text"] = str(user_message or "")
             update_run_context(learning_intent_verified=True)
         args = {**args, "args": nested}
-    project_block = _simple_chain_project_dir_block(request_id, user_message, name, args, action)
-    if project_block is not None:
-        return name, args, action, [], project_block
     return name, args, action, _simple_chain_preflight_issues(user_message, action, args), None
 
 def _simple_chain_accept_task_profile(
@@ -4546,58 +4507,6 @@ def _simple_chain_accept_task_profile(
     _simple_chain_save_run_state(run_state)
     return cleaned_args
 
-def _simple_chain_project_dir_block(
-    request_id: str,
-    user_message: str,
-    tool_name: str,
-    tool_args: dict[str, Any],
-    action: str,
-) -> dict[str, Any] | None:
-    """项目目录围栏：任务指定“工作区 xxx/ 目录”时，写操作必须落在该目录内。
-
-    模型可能把“CLI 项目”自行解读成 CLI/ 子目录（如 CLI/markdown-wiki），
-    导致产物写到错误位置后 gate 又按文件名误判完成。这里在写操作执行前
-    拦截目录外路径，并明确引导回项目目录；只读调用不受限。
-    """
-    project_dir = _simple_chain_project_dir(user_message)
-    if not project_dir:
-        return None
-    if action not in _SIMPLE_CHAIN_MUTATING_ACTIONS:
-        return None
-    if action in {"shell.run", "command.run", "run"}:
-        # 命令类由交付守卫/类型校验处理，结构化 omni_body 写路径在此约束。
-        return None
-    root = _delivery_workspace_root()
-    if not root:
-        return None
-    project_root = (Path(root) / project_dir).resolve(strict=False)
-    blocked: list[str] = []
-    for raw in _simple_chain_requested_paths(tool_args):
-        if not str(raw).strip():
-            continue
-        try:
-            resolved = Path(_delivery_resolve_path(str(raw), root)).resolve(strict=False)
-            resolved.relative_to(project_root)
-        except Exception:
-            if str(raw) not in blocked:
-                blocked.append(str(raw))
-    if not blocked:
-        return None
-    return {
-        "schema": "tiangong.v3.simple_chain.project_dir_confined.v1",
-        "request_id": str(request_id or ""),
-        "ok": False,
-        "stage": "project_dir_confined",
-        "tool_name": str(tool_name or ""),
-        "project_dir": project_dir,
-        "blocked_paths": blocked[:8],
-        "instruction": (
-            f"任务要求所有产物放在工作区 {project_dir}/ 目录内。"
-            "不要创建或写入目录外的同名项目目录（例如 CLI/markdown-wiki）。"
-            f"请把全部文件直接写到 {project_dir}/ 下，并保持相对路径一致；"
-            "这是硬性位置约束，不是建议。"
-        ),
-    }
 
 def _simple_chain_qc_acceptance(payload: Any) -> tuple[bool | None, Any]:
     """Return the explicit QC acceptance verdict and score from nested envelopes."""
@@ -4701,6 +4610,7 @@ def _simple_chain_quality_gate_payload(
     codex_evidence["source_text_map_ref"] = "quality_payload.source_text_map"
     failures: list[str] = []
     final_requirement_gaps: list[str] = []
+    quality_advisories: list[str] = []
     if repeat_count >= 2:
         failures.append("[REPEATED_TOOL_CALL] identical tool and arguments were already executed")
     if not _gongju_jieguo_chenggong(tool_result):
@@ -4720,48 +4630,6 @@ def _simple_chain_quality_gate_payload(
     }:
         if not _tool_write_verified(tool_name, tool_result):
             failures.append("filesystem readback did not verify the mutation")
-        target_paths = _simple_chain_requested_target_paths(user_message)
-        expected_suffixes = _simple_chain_expected_suffixes(user_message)
-        actual_paths = _simple_chain_payload_paths({
-            "tool_args": tool_args if isinstance(tool_args, dict) else {},
-            "tool_result_contract": contract,
-        })
-        if _simple_chain_strict_single_deliverable(user_message):
-            if target_paths and not _simple_chain_paths_match_expected(actual_paths, target_paths):
-                final_requirement_gaps.append(f"mutation path does not match requested target: expected={target_paths[:3]} actual={actual_paths[:3]}")
-            if expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_suffix(actual_paths, expected_suffixes):
-                final_requirement_gaps.append(f"mutation suffix does not match requested deliverable suffixes: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
-            elif expected_suffixes and action not in {"file.delete_to_trash", "delete"} and not _simple_chain_paths_match_requested_formats(actual_paths, expected_suffixes):
-                final_requirement_gaps.append(f"mutation output format does not match requested deliverable format: expected={sorted(expected_suffixes)} actual={actual_paths[:3]}")
-        if not _simple_chain_paths_match_desktop(actual_paths, user_message):
-            final_requirement_gaps.append(f"mutation did not produce requested desktop deliverable: actual={actual_paths[:3]}")
-    if action in {"file.write", "file.append", "code.write"}:
-        args = tool_args.get("args") if isinstance(tool_args, dict) else {}
-        binary_write = bool(args.get("binary")) if isinstance(args, dict) else False
-        content = _simple_chain_tool_args_content(tool_args)
-        if (
-            not binary_write
-            and content == ""
-            and "空文件" not in str(user_message or "")
-            and not _simple_chain_allows_empty_scaffold(user_message, tool_args)
-        ):
-            final_requirement_gaps.append("file.write/file.append/code.write missing non-empty args.content")
-        _requirements = None
-        if isinstance(run_state, dict):
-            _wi = run_state.get("work_intent") if isinstance(run_state.get("work_intent"), dict) else {}
-            _requirements = _wi.get("requirements") if isinstance(_wi.get("requirements"), list) else None
-        min_chars, metric = _simple_chain_content_requirement_for(
-            str((tool_args or {}).get("target") or args.get("target") or args.get("path") or ""),
-            user_message,
-            _requirements,
-        )
-        novel_min = _novel_chapter_min_chars(user_message, action, tool_args)
-        if novel_min > min_chars:
-            min_chars, metric = novel_min, "cjk"
-        if min_chars and not binary_write:
-            count = _count_chinese_chars(content) if metric == "cjk" else _count_nonspace_chars(content)
-            if count < min_chars:
-                final_requirement_gaps.append(f"written content {metric}_chars={count} < required {min_chars}")
     if isinstance(tool_result, dict):
         readback = tool_result.get("readback")
         if isinstance(readback, dict) and readback.get("ok") is False:
@@ -4771,11 +4639,13 @@ def _simple_chain_quality_gate_payload(
     if action.startswith("qc."):
         acceptance, score = _simple_chain_qc_acceptance(tool_result)
         if acceptance is False:
+            destination = (final_requirement_gaps if action in _simple_chain_explicit_action_sequence(user_message, require_order=False)
+                           else quality_advisories)
             suffix = f": score={score}" if score is not None else ""
-            final_requirement_gaps.append(f"quality acceptance failed{suffix}")
+            destination.append(f"quality acceptance failed{suffix}")
             issue_summary = _simple_chain_qc_issue_summary(tool_result)
             if issue_summary:
-                final_requirement_gaps.append(f"quality acceptance detail: {issue_summary}")
+                destination.append(f"quality acceptance detail: {issue_summary}")
     passed = not failures
     if action == "skill.route":
         instruction = (
@@ -4822,6 +4692,11 @@ def _simple_chain_quality_gate_payload(
             "to call `omni_body` again to close the gaps or continue to final review. Use source_text_map as "
             "the original-text evidence; do not ask the user unless required information is truly missing."
         )
+    elif passed and quality_advisories:
+        instruction = (
+            "The optional quality review ran successfully. Its suggestions are advisory, not completion "
+            "requirements. Deliver when the user's actual requirements and execution evidence are satisfied."
+        )
     elif passed:
         instruction = (
             "Tool succeeded. Decide the next step from the real tool output and source_text_map. "
@@ -4848,6 +4723,7 @@ def _simple_chain_quality_gate_payload(
         "stage": "tool_observation",
         "quality_gate": "tool_succeeded" if passed else "tool_failed",
         "tool_execution_ok": passed,
+        "quality_advisories": quality_advisories,
         "final_requirements_satisfied_by_this_step": passed and not final_requirement_gaps,
         "model_decides_next_step": True,
         "retry_same_step": False,
@@ -5373,6 +5249,24 @@ def _simple_chain_history_payload_text(payload: dict) -> str:
 from .content_preflight import _office_content_gaps  # noqa: F401
 
 
+def _simple_chain_artifact_integrity_gaps(
+    user_message: str, quality_history: list[dict[str, Any]], generated_attachments: list[dict[str, str]],
+) -> list[str]:
+    """Check real output bytes, without guessing style or business quality."""
+    expected = _simple_chain_explicit_deliverable_paths(user_message)
+    paths = _simple_chain_collect_paths(quality_history, generated_attachments)
+    root = _delivery_workspace_root()
+    paths.extend(_delivery_resolve_path(path, root) for path in expected)
+    issues = []
+    for path in _simple_chain_unique_paths(paths):
+        if expected and not any(_simple_chain_paths_match_expected([path], [target]) for target in expected):
+            continue
+        resolved = _delivery_resolve_path(path, root)
+        if Path(resolved).is_file() and not _simple_chain_desktop_file_format_ok(resolved, _path_suffix(resolved)):
+            issues.append(f"deliverable bytes do not match the file format: {path}")
+    return issues
+
+
 def _simple_chain_evidence_check(
     user_message: str,
     quality_history: list[dict[str, Any]],
@@ -5405,9 +5299,9 @@ def _simple_chain_evidence_check(
     )
     if integrity_reasons:
         reasons.extend(reason for reason in integrity_reasons if reason not in reasons)
-    office_gaps = _office_content_gaps(user_message, generated_attachments)
-    if office_gaps:
-        reasons.extend(gap for gap in office_gaps if gap not in reasons)
+    # Office style/content heuristics are advisory. They must not turn a short
+    # valid document, repeated business rows or uncached formulas into failure.
+    reasons.extend(_simple_chain_artifact_integrity_gaps(user_message, quality_history, generated_attachments))
     if not quality_history:
         if _simple_chain_is_clarification_question(final_reply):
             return True, "clarify", []
@@ -5473,7 +5367,7 @@ def _simple_chain_evidence_check(
             )
     for qc_action in [
         action
-        for action in _simple_chain_explicit_action_sequence(user_message)
+        for action in _simple_chain_explicit_action_sequence(user_message, require_order=False)
         if action.startswith("qc.")
     ]:
         latest_qc = next(

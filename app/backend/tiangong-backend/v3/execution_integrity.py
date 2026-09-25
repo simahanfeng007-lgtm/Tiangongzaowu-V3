@@ -1214,7 +1214,11 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
     explicit_targets = _extract_explicit_targets(text)
     bindings = request_target_bindings(text)
-    requires_sha256 = bool(re.search(r"sha\s*[-_]?\s*256|sha256|计算.{0,12}(?:哈希|hash)|(?:哈希|hash).{0,12}计算", text, re.IGNORECASE))
+    # A CSV column named sha256 is not an instruction to hash the CSV itself.
+    # Unbound verification stays a generic factual action, not a made-up target.
+    requires_sha256 = bool(re.search(
+        r"(?:计算|给出|返回|提供|compute|calculate|return)[^。；;\n]{0,80}(?:sha\s*[-_]?\s*256|哈希|hash)"
+        r"|(?:sha\s*[-_]?\s*256|哈希|hash)[^。；;\n]{0,12}计算", text, re.I))
     obligations: list[dict[str, Any]] = []
     obligation_index = 0
     fact_kinds = _requested_fact_kinds(text)
@@ -1232,7 +1236,8 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
         # it". Never broadcast an unbound action to an inventory of files.
         if (not targets and use_explicit_target and len(explicit_targets) == 1
                 and fact_kind != "effect"
-                and re.search(r"读回|该文件|这个文件|其|\bit\b|sha\s*[-_]?\s*256", text, re.I)):
+                and (re.search(r"读回|重新读取|该文件|这个文件|其|\bit\b", text, re.I)
+                     or (fact_kind == "execution" and requires_sha256))):
             targets = explicit_targets
         if not targets:
             # The existing execution floor remains authoritative when the
@@ -1848,6 +1853,29 @@ def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
     return True
 
 
+def _bind_submission_evidence(obligation: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Bind freshness to the actual submitted program and its explicit inputs.
+
+    This is evidence bookkeeping, not source-code interpretation. Undeclared
+    imports are not claimed to be covered by the argument dependency snapshot.
+    """
+    obligation["llm_submission_target"] = _payload_target(payload)
+    if obligation.get("evidence_predicate") not in {"tests_passed", "program_execution", "command_execution"}:
+        return
+    dependencies = [str(value) for value in obligation.get("evidence_dependency_paths") or [] if value]
+    if obligation["llm_submission_target"]:
+        dependencies.append(obligation["llm_submission_target"])
+    args = payload.get("tool_args") or {}
+    for source in (args, _payload_nested_args(payload)):
+        for key in ("argv", "arguments", "command", "cmd"):
+            value = source.get(key)
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if isinstance(item, str):
+                    dependencies.extend(_extract_explicit_targets(item))
+    obligation["evidence_submission_paths"] = list(dict.fromkeys(dependencies))
+
+
 def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[dict[str, Any]] | None) -> bool:
     if not bool(obligation.get("actionable", True)):
         return False
@@ -1862,7 +1890,7 @@ def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[di
             continue
         if not prior_kind:
             satisfied = True
-            evidence_obligation["llm_submission_target"] = _payload_target(payload)
+            _bind_submission_evidence(evidence_obligation, payload)
             continue
         prior_obligation = {
             "kind": prior_kind,
@@ -1871,7 +1899,7 @@ def obligation_is_satisfied(obligation: dict[str, Any], quality_history: list[di
         }
         if any(_successful_fact(prior, prior_obligation) for prior in history[:index]):
             satisfied = True
-            evidence_obligation["llm_submission_target"] = _payload_target(payload)
+            _bind_submission_evidence(evidence_obligation, payload)
     return satisfied
 
 
@@ -1891,7 +1919,10 @@ def _obligation_evidence_invalidated(payload: dict[str, Any], obligation: dict[s
             attempt_target = _normalize_path(_payload_target(payload))
             if not prior_target or not attempt_target or prior_target == attempt_target:
                 return True
-        dependencies = obligation.get("evidence_dependency_paths") or []
+        dependencies = [*list(obligation.get("evidence_dependency_paths") or []),
+                        *list(obligation.get("evidence_submission_paths") or [])]
+        if obligation.get("llm_submission_target"):
+            dependencies.append(obligation["llm_submission_target"])
         evidence = _contract(payload).get("write_evidence")
         if isinstance(evidence, dict) and evidence.get("authoritative") is True:
             changed = [*list(evidence.get("changed_files") or []), *list(evidence.get("deleted_files") or [])]
@@ -1903,8 +1934,6 @@ def _obligation_evidence_invalidated(payload: dict[str, Any], obligation: dict[s
             value = path.get("path") if isinstance(path, dict) else path
             actual = _normalize_path(value)
             if any(actual == _normalize_path(target) or actual.endswith("/" + _normalize_path(target)) for target in dependencies):
-                return True
-            if not dependencies and re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", actual):
                 return True
     if not obligation.get("target_path") or not _target_matches(payload, obligation):
         return False
@@ -2057,6 +2086,7 @@ def update_run_state_obligations(run_state: dict[str, Any] | None, payload: dict
             obligation["satisfied_by_action"] = action
             obligation["llm_submission_action"] = action
             obligation["llm_submission_target"] = target
+            _bind_submission_evidence(obligation, payload)
             obligation["observed_fact_kinds"] = fact_kinds
             obligation["evidence_ok"] = True
             obligation["evidence_round"] = int(run_state.get("round") or 0)
