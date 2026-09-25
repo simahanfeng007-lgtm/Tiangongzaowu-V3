@@ -36,6 +36,10 @@ executions, program text, stdout claims and external delivery are not substitute
 for a committed local artifact. The local/external delivery mode also survives
 projection between Runtime obligations and Life desired facts. Verification Plane
 1.36 records this correction; the original failed task remains in the benchmark.
+Full regression then exposed an omitted delivery target: a request to create one
+file and deliver another could accept the first file's receipt. Version 1.37 binds
+the explicit delivery filename as well. Local creation/delivery accepts committed
+evidence for that artifact; external upload still needs a real delivery receipt.
 The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
 instruction to read an input PPT. Capability modifiers now stay attached to the
 output noun. Explicit sequences such as creating a file and then opening it keep

@@ -1234,7 +1234,7 @@ def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
     if requires_sha256 and "execution" not in fact_kinds:
         fact_kinds.append("execution")
     for fact_kind in fact_kinds:
-        use_explicit_target = fact_kind in {"observation", "effect"} or (fact_kind == "execution" and requires_sha256)
+        use_explicit_target = fact_kind in {"observation", "effect", "delivery"} or (fact_kind == "execution" and requires_sha256)
         targets = list(dict.fromkeys(
             item["target_path"] for item in bindings if item["kind"] == fact_kind
         )) if use_explicit_target else []
