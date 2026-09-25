@@ -10,8 +10,8 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-# 1.32 binds task-generated Tool/Skill programs to the existing execution ledger
-# and fences every leaf before effect preparation; fixed Skill bodies are retired.
-VERIFICATION_PLANE_VERSION = "1.32"
+# 1.33 preserves task-generated composition fencing and records the reviewed
+# experience-memory, native world-observation and inquiry identity boundaries.
+VERIFICATION_PLANE_VERSION = "1.33"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
