@@ -47,6 +47,12 @@ The instruction remains in the model's request; named file observations, direct
 read/open/list commands, observation-only tasks and actual output evidence remain.
 Inspecting or reading a "deliverable file" also keeps delivery as a noun modifier,
 so an observation-only request cannot silently acquire an upload/send obligation.
+Version 1.39 fixes the same distinction for an available runtime: a request to use
+the installed `运行环境` does not require running a program. A real novel was written
+and read back but rejected by that invented execution obligation. Explicit run
+commands, including environment-check scripts, still require successful receipts.
+The failed comparison is retained; receipt replay and a separate A/C retest verify
+the correction without replacing its original result.
 The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
 instruction to read an input PPT. Capability modifiers now stay attached to the
 output noun. Explicit sequences such as creating a file and then opening it keep

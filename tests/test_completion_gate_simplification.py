@@ -266,3 +266,54 @@ def test_unknown_read_synonym_cannot_invent_a_delivery_requirement():
     # model rather than turning the deliverable noun into a sending command.
     goals = integrity.build_action_obligations("请阅读交付文件 proof.txt。")
     assert not any(item["kind"] == "delivery" for item in goals)
+
+
+@pytest.mark.parametrize("context", [
+    "只使用当前工作区和已安装的运行环境。",
+    "使用已有执行环境和标准库。",
+    "使用运行环境中的已安装库。",
+    "请检查运行环境。",
+])
+def test_available_runtime_context_does_not_request_program_execution(context):
+    prompt = f"请读取 brief.json，生成 story.md。{context}"
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "observation" for item in goals)
+    assert any(item["kind"] == "effect" for item in goals)
+    assert not any(item["kind"] == "execution" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, [])
+
+
+@pytest.mark.parametrize("prompt", [
+    "请在现有运行环境中运行 worker.py。",
+    "请生成 story.md。然后运行字数检查程序。",
+    "请执行环境检查.py。",
+    "请运行环境.py。",
+])
+def test_explicit_execution_remains_required_with_environment_nouns(prompt):
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item.get("evidence_predicate") == "command_execution" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, [], final_reply="已经完成。")
+
+
+def test_written_story_can_complete_without_an_unrequested_python_check(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请读取 brief.json，生成 story.md。只使用当前工作区和已安装的运行环境。"
+    target = tmp_path / "story.md"
+    target.write_text("灯塔重新亮起。", encoding="utf-8")
+    read = observation("file.read", "brief.json", result={"content": "灯塔"},
+        contract={"ok": True, "paths": ["brief.json"], "write_effect": False})
+    write = changed(str(target))
+    failed_optional_check = observation("python.run", ok=False,
+        result={"execution": {"ok": False, "returncode": 1}},
+        contract={"ok": False, "may_mutate": False, "write_effect": False})
+    reread = observation("file.read", str(target), result={"content": "灯塔重新亮起。"},
+        contract={"ok": True, "paths": [str(target)], "write_effect": False})
+    history = [read, write, failed_optional_check, reread]
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, history,
+        [{"path": str(target)}], final_reply="story.md 已写入并回读。额外脚本检查失败。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+    explicit = prompt + "请运行字数检查程序。"
+    assert not kernel._simple_chain_evidence_check(explicit, history,
+        [{"path": str(target)}], final_reply="已完成。",
+        task_obligations=integrity.build_action_obligations(explicit))[0]

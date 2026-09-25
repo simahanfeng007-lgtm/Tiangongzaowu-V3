@@ -14,6 +14,7 @@ from __future__ import annotations
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.38 keeps generic output review from prescribing a separate file reader.
-VERIFICATION_PLANE_VERSION = "1.38"
+# 1.39 keeps available runtime nouns from inventing program-execution duties.
+VERIFICATION_PLANE_VERSION = "1.39"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

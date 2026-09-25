@@ -663,6 +663,12 @@ def is_execution_discussion_only(user_text: object) -> bool:
 
 def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
     """Keep a deliverable noun from becoming the object's nearest action."""
+    # An available runtime is context, not an instruction to run a program.
+    # Keep commands such as "运行环境检查.py" and "运行环境.py" intact.
+    if verb in {"运行", "执行"} and re.match(
+        r"环境(?=$|[，。；：,;:！!？?中下内里和或与及]|\.(?:$|[^a-z0-9]))", right
+    ):
+        return True
     # "生成可正常打开的 report.pptx" describes the output's usability;
     # "生成后打开 report.pptx" is a separate action and remains required.
     if right.startswith("的") and re.search(

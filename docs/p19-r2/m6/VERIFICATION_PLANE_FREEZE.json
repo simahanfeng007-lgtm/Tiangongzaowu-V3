@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.38",
+ "verification_plane_version": "1.39",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -53,7 +53,7 @@
   "src/omni_body_skill/tools/path_identity.py": "761a921a44237e8668597435c37775f094467a25f4f7cc01258cedd45cc98747",
   "src/omni_body_skill/tools/composition_path.py": "78d24a97edc9e06fa12c738396dbc6ce97eff03773f0e113f10b6efd5165e5a1",
   "app/backend/tiangong-backend/v3/composition_turn.py": "ac931b2a07259b56cec9ef48b74587d57567a223b3652bd329fd3a6ef2f73aa6",
-  "app/backend/tiangong-backend/v3/execution_integrity.py": "2e0e720dffd78c386b494a986f62c4748ee22f251e6cb83c602e53c74426b14f",
+  "app/backend/tiangong-backend/v3/execution_integrity.py": "8a5bfe80923b5a9b65a2b1d80ac510048da5e93052745cf01ea57532a1557f12",
   "app/backend/tiangong-backend/v3/simple_chain/kernel.py": "3374b03a0025d3486ac4199678952e7209dc41d30af03f7d53d49375e577fbd1",
   "app/backend/tiangong-backend/v3/zongdiaodu.py": "9a86b95aec3f8277a1edcfcda96200498dffd28bc6a808818ddceb6fd481d35b",
   "src/world_understanding/known/rules/__init__.py": "d1236ff1fad812804d24a9733886a9bf669f6a43fc7c77ea6fbd17a983845dd5",
@@ -154,7 +154,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "1da0d647a33be7b76b5dfd2cafec690538d789ccceff5dd48125118f52d3ff95",
+  "src/total_gateway/verification_plane.py": "f4df5e9ec2680ad4ca8d7c4223578a2bfb11558768373fedc61d5a3680287648",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",
