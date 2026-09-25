@@ -24,4 +24,4 @@ repository-structure = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["contracts*", "total_gateway*", "communication_service*", "runtime_security*", "life_service*", "world_understanding*"]
+include = ["contracts*", "total_gateway*", "communication_service*", "runtime_security*", "life_service*", "world_understanding*", "capability_dictionary*"]

@@ -62,14 +62,16 @@ class ModelToolBoundaryTests(unittest.TestCase):
             & set(result)
         )
 
-    def test_all_authoritative_model_schemas_require_only_action(self) -> None:
-        source = OMNI_TOOL.read_text(encoding="utf-8")
-        self.assertIn('"required": ["action"]', source)
-        contract = json.loads(OMNI_TOOL_JSON.read_text(encoding="utf-8"))
-        self.assertEqual(contract["parameters"]["required"], ["action"])
-        adapter = ADAPTER_CORE.read_text(encoding="utf-8")
-        self.assertIn('schema["required"] = ["action"]', adapter)
-        self.assertNotIn('schema["required"] = ["action", "target", "args"]', adapter)
+    def test_authoritative_model_schemas_preserve_dictionary_composition(self) -> None:
+        from capability_dictionary import load_dictionary
+        from omni_body_skill.model_adapters.core import render_tool_schema
+        from omni_body_skill.api.v1.v3.tools.omni_body import TOOL_DESCRIPTION
+        expected = load_dictionary().host_protocol["parameters"]
+        contract = TOOL_DESCRIPTION
+        self.assertEqual(contract["parameters"], expected)
+        self.assertEqual(render_tool_schema(provider="mimo")["tool_schema"][0]["function"]["parameters"], expected)
+        self.assertIn("composition", expected["properties"])
+        self.assertNotIn("action", expected.get("required", []))
 
 
 if __name__ == "__main__":

@@ -158,7 +158,7 @@ def test_gateway_start_installs_external_observer_and_full_coverage(tmp_path, mo
     config = GatewayConfig(environment="test", deployment_mode="embedded", port=0,
         state_root=tmp_path / "gateway-root", min_free_bytes=1_048_576,
         backend_internal_token="test-r3b-token-" + ("x" * 48), release_source_root=root,
-        workspace_root=workspace, skill_root=root / "app/backend/tiangong-backend/_internal/omni_body_skill")
+        workspace_root=workspace, skill_root=root / "dictionaries")
     runtime = GatewayRuntime.start(config)
     try:
         summary = legacy_migration_summary(runtime.life_service._scope_state(), now_ms=10**15)
@@ -209,7 +209,7 @@ def test_gateway_start_is_not_blocked_when_external_coverage_activation_temporar
     config = GatewayConfig(environment="test", deployment_mode="embedded", port=0,
         state_root=tmp_path / "gateway-root", min_free_bytes=1_048_576,
         backend_internal_token="test-r3b-token-" + ("y" * 48), release_source_root=root,
-        workspace_root=workspace, skill_root=root / "app/backend/tiangong-backend/_internal/omni_body_skill")
+        workspace_root=workspace, skill_root=root / "dictionaries")
     runtime = GatewayRuntime.start(config)
     try:
         before = legacy_migration_summary(runtime.life_service._scope_state(), now_ms=10**15)

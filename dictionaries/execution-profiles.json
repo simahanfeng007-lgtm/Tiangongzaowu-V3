@@ -1,0 +1,11 @@
+{
+  "schema": "tiangong.dictionary.execution-profiles.v1",
+  "profiles": {
+    "local-text": {"timeout_seconds": 60, "max_log_bytes": 4194304, "max_artifact_bytes": 67108864, "network": "inherited_authority"},
+    "workspace-code": {"timeout_seconds": 300, "max_log_bytes": 4194304, "max_artifact_bytes": 268435456, "network": "denied"},
+    "office-file": {"timeout_seconds": 120, "max_log_bytes": 4194304, "max_artifact_bytes": 134217728, "network": "inherited_authority"},
+    "image-file": {"timeout_seconds": 120, "max_log_bytes": 4194304, "max_artifact_bytes": 268435456, "network": "inherited_authority"},
+    "media-render": {"timeout_seconds": 600, "max_log_bytes": 4194304, "max_artifact_bytes": 536870912, "network": "inherited_authority"},
+    "external-adapter": {"timeout_seconds": 120, "max_log_bytes": 4194304, "max_artifact_bytes": 67108864, "network": "inherited_authority"}
+  }
+}

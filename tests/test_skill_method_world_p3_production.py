@@ -22,17 +22,15 @@ EXPECTED_METHOD_IDS = (
 
 
 def _production_inputs() -> tuple[dict, str, dict[str, str]]:
+    """Frozen legacy migration input; never installed or supplied to the LLM.
+
+    Current runtime source tests use test_installed_composition_sources and
+    the dictionary's native method bytes. P3/P9 migration compatibility still
+    needs the historical metadata whose procedures have now been retired.
+    """
     repository_root = Path(__file__).resolve().parents[1]
-    skill_root = repository_root / "src" / "omni_body_skill"
-    index_path = skill_root / "registry" / "skill_router_index.json"
-    index_bytes = index_path.read_bytes()
-    index = json.loads(index_bytes.decode("utf-8", errors="strict"))
-    source_hashes: dict[str, str] = {}
-    for raw in index["skills"]:
-        source_path = skill_root.joinpath(*Path(raw["file"]).parts)
-        relative = source_path.relative_to(repository_root).as_posix()
-        source_hashes[relative] = hashlib.sha256(source_path.read_bytes()).hexdigest()
-    return index, hashlib.sha256(index_bytes).hexdigest(), source_hashes
+    fixture = json.loads((repository_root / "tests/fixtures/legacy-skill-migration-input.json").read_text("utf-8"))
+    return fixture["index"], fixture["index_source_sha256"], fixture["source_hashes"]
 
 
 def _legacy_action_ids(index: dict) -> set[str]:
@@ -66,7 +64,7 @@ def test_production_seed_catalog_is_reviewed_many_to_one_and_stable() -> None:
     assert tampered.has_valid_sha256() is False
 
 
-def test_real_static_catalog_compiles_a_nonempty_production_method_world() -> None:
+def test_historical_catalog_compiles_the_reviewed_migration_method_world() -> None:
     index, index_sha256, source_hashes = _production_inputs()
     snapshot = compile_production_skill_method_world(
         index,

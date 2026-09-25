@@ -132,20 +132,12 @@ from ..execution_integrity import (
 
 # 自 zongdiaodu.py（v3/）迁入本包（v3/simple_chain/）后目录深了一层：
 # parents[1]（原 v3/ 同级）现为 parents[2]（tiangong-backend/）。
-_ACTION_REGISTRY_DIR = Path(__file__).resolve().parents[2] / "omni_body_skill" / "registry"
-
-_SKILL_INDEX_PATH = _ACTION_REGISTRY_DIR / "skill_router_index.json"
-
-_ACTION_REGISTRY_PATHS = tuple(
-    _ACTION_REGISTRY_DIR / name
-    for name in (
-        "actions.json",
-        "actions.appbus.merged.json",
-        "app_actions.json",
-        "professional_app_actions.json",
-        "capability_manifest.generated.json",
-    )
-)
+from capability_dictionary import dictionary_root
+_ACTION_REGISTRY_DIR = dictionary_root() / "registry"
+_SKILL_INDEX_PATH = dictionary_root() / "skills/catalog.json"
+_ACTION_REGISTRY_PATHS = tuple(_ACTION_REGISTRY_DIR / name for name in (
+    "actions.json", "capability_manifest.generated.json",
+))
 
 def _simple_chain_explicit_named_skill_ids(user_message: str) -> list[str]:
     """Return only complete registered Skill IDs/names explicitly present in the request."""
@@ -434,6 +426,9 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         ),
         "skill_loaded": run_state.get("skill_loaded"),
         "loaded_skill_ids": list(run_state.get("loaded_skill_ids") or [])[:8],
+        "dictionary_sha256": run_state.get("dictionary_sha256"),
+        "dictionary_version": run_state.get("dictionary_version"),
+        "generated_compositions": list(run_state.get("generated_compositions") or [])[-32:],
         "completed_actions": list(run_state.get("completed_actions") or [])[-24:],
         "obligations": [item for item in (run_state.get("obligations") or []) if isinstance(item, dict)][-12:],
         "delivery": run_state.get("delivery") if isinstance(run_state.get("delivery"), dict) else {},
@@ -982,6 +977,7 @@ def _simple_chain_regenerative_execute_tool(
             "global_step": int(global_step),
             "tool_name": tool_name,
             "attempted_action": attempted_action,
+            "composition_ref": run_state.get("active_composition_ref"),
             **descriptor,
         },
         logical_effect_id=descriptor["logical_effect_id"],
@@ -992,6 +988,7 @@ def _simple_chain_regenerative_execute_tool(
         epoch_index=int(turn_loop.epoch_index),
         global_step=int(global_step),
         attempt=max(1, int(global_step)),
+        composition_ref=run_state.get("active_composition_ref"),
         **descriptor,
     )
     if not isinstance(prepared, dict):
@@ -1514,6 +1511,8 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
     run_state["round"] = int(run_state.get("round") or 0) + 1
+    if run_state.get("active_composition_ref"):
+        payload["composition_ref"] = dict(run_state["active_composition_ref"])
     action = str(payload.get("tool_action") or "")
     if action == "skill.route":
         run_state["status"] = "skill_routing"
@@ -1554,7 +1553,12 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
         "ok": payload_ok,
         "completion_ok": completion_ok,
     })
-    run_state.setdefault("observations", []).append(_run_state_safe_value(payload, limit=5000))
+    saved_observation = _run_state_safe_value(payload, limit=5000)
+    if run_state.get("active_composition_ref"):
+        # General result compaction caps dictionary fields. Preserve the small
+        # execution binding even when a rich tool result fills that cap.
+        saved_observation["composition_ref"] = dict(run_state["active_composition_ref"])
+    run_state.setdefault("observations", []).append(saved_observation)
     update_run_state_obligations(run_state, payload)
     if isinstance(run_state.get("task_contract"), dict):
         run_state["task_contract"] = update_task_contract_evidence(
@@ -2895,14 +2899,14 @@ def _novel_chapter_min_chars(user_message: str, action: str, tool_args: Any) -> 
     text = str(user_message or "")
     target = str((tool_args or {}).get("target") or "") if isinstance(tool_args, dict) else ""
     combined = text + "\n" + target
-    novel_markers = ("小说", "网文", "正文", "章节", "第一章", "第1章", "长安未雪", "novel", "chapter")
+    novel_markers = ("小说", "网文", "第一章", "第1章", "novel", "chapter")
     if not any(marker in combined for marker in novel_markers):
         return 0
     short_markers = ("短章", "片段", "梗概", "概要", "摘要", "几百字", "500字", "五百字")
     if any(marker in text for marker in short_markers):
         return 0
-    # 用户显式声明字数（≥1000 字 / 至少 800 字）时尊重用户值；
-    # 只有未声明时才套技能默认 2500，避免把用户可接受门槛抬得过高。
+    # A procedure may recommend a length, but only the user's explicit request
+    # creates a hard minimum. "正文至少16pt" is typography, not a novel request.
     explicit = re.search(
         r"(?:不少于|至少|不低于|超过|大于|≥|>)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字|字)",
         text,
@@ -2910,7 +2914,7 @@ def _novel_chapter_min_chars(user_message: str, action: str, tool_args: Any) -> 
     )
     if explicit:
         return max(1, int(explicit.group(1)))
-    return 2500
+    return 0
 
 def _contract_observed_write(contract: dict[str, Any] | None) -> bool:
     return contract_observed_write(contract)
@@ -3849,12 +3853,6 @@ _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK = int(
 # 直接回退模板，避免收尾调用拖过网关 watchdog 把 effect 判成 AMBIGUOUS。
 _SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS = int(
     os.environ.get("TIANGONG_SIMPLE_CHAIN_NATURAL_CLOSEOUT_MIN_REMAINING_SECONDS", "20")
-)
-
-# 链级 LLM 硬看门狗：SSE 保活/死锁场景下单次续写调用可能无限挂起，
-# 超过该秒数即强制返回终端错误，保证 run 一定收口、不占用执行槽。
-_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS", "180")
 )
 
 # run_state 保留策略：保留最新 N 个文件，且超过 D 天的旧文件删除（谁更严用谁）。
@@ -5417,10 +5415,20 @@ def _simple_chain_evidence_check(
 
     last_payload = quality_history[-1]
     if not execution_result_ok(last_payload):
-        reasons.extend(_simple_chain_failure_text(last_payload) or ["last omni_body step failed"])
-        return False, "failed", reasons
-
-    reasons.extend(_simple_chain_failure_text(last_payload))
+        contract = last_payload.get("tool_result_contract") or {}
+        result = (last_payload.get("tool_result") or {}).get("result") or {}
+        execution = result.get("execution") or {}
+        no_effect = (contract.get("may_mutate") is False
+                     or (execution.get("commit_state") == "discarded"
+                         and execution.get("execution_state") == "completed"))
+        # Task obligations and artifact checks determine completion. A failed
+        # optional read/check whose effects were absent or discarded must not
+        # veto already-verified deliverables. Uncertain effects still block.
+        if not no_effect:
+            reasons.extend(_simple_chain_failure_text(last_payload) or ["last tool effect remains unverified"])
+            return False, "failed", reasons
+    else:
+        reasons.extend(_simple_chain_failure_text(last_payload))
     completed_actions = {
         str(payload.get("tool_action") or "").strip().lower()
         for payload in quality_history

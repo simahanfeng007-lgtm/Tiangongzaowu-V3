@@ -397,7 +397,7 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         raw = arguments.get("skill_recommendation")
         recommendation = raw if isinstance(raw, Mapping) else {}
         candidates: list[dict[str, Any]] = []
-        for item in list(recommendation.get("candidates") or [])[:3]:
+        for item in list(recommendation.get("candidates") or [])[:8]:
             if not isinstance(item, Mapping):
                 continue
             skill_id = str(item.get("skill_id") or "")[:160]
@@ -406,6 +406,10 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
             candidates.append(
                 {
                     "skill_id": skill_id,
+                    "title": str(item.get("title") or "")[:256],
+                    "summary": str(item.get("summary") or "")[:2048],
+                    "required_actions": list(item.get("required_actions") or [])[:64],
+                    "optional_actions": list(item.get("optional_actions") or [])[:64],
                     "version": str(item.get("version") or "")[:160],
                     "sha256": str(item.get("sha256") or "")[:64],
                     "compatible": item.get("compatible") is True,
@@ -420,6 +424,8 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         selected = next((item for item in candidates if item["skill_id"] == selected_id), None)
         return {
             "schema": "tiangong.life.skill-routing.v1",
+            "catalog_sha256": str(recommendation.get("skill_catalog_hash") or ""),
+            "loaded_skills": list(arguments.get("loaded_skills") or [])[:16],
             "system_matching": {
                 "available": bool(recommendation),
                 "origin": "system_recommendation",

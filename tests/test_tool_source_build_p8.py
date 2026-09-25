@@ -42,13 +42,16 @@ class SimulatedCandidate:
 @pytest.fixture
 def simulated_build(builder, monkeypatch, tmp_path):
     snapshot = tmp_path / "immutable-source"
+    (snapshot / "dictionaries/registry").mkdir(parents=True)
+    (snapshot / "dictionaries/registry/capability_manifest.generated.json").write_bytes(b"{}\n")
     for relative in builder.AUTHORITY_FILES.values():
         path = snapshot / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("SIMULATED = True\n", encoding="utf-8")
     policy = {"schema": "tiangong.source-ownership.v2", "authority_policy": {
-        "editable_roots": ["src", "app/backend/tiangong-backend/v3"], "frozen_roots": [],
+        "editable_roots": ["src", "dictionaries", "app/backend/tiangong-backend/v3"], "frozen_roots": [],
     }, "mappings": [
+        {"id": "dictionary", "source": "dictionaries", "source_role": "authoritative", "targets": []},
         {"id": "body", "source": "src/omni_body_skill", "source_role": "authoritative", "targets": []},
         {"id": "fact", "source": "app/backend/tiangong-backend/v3/fact_kernel", "source_role": "authoritative", "targets": []},
     ]}
@@ -150,8 +153,8 @@ def test_failed_child_process_preserves_failure_and_does_not_produce_pass(builde
 def test_successful_build_can_keep_a_verified_unapproved_source_revision_bundle(builder, simulated_build, tmp_path):
     from total_gateway.tool_source_bundle import verify_tool_source_bundle
 
-    manifest_path = tmp_path / "immutable-source/src/omni_body_skill/registry/capability_manifest.generated.json"
-    manifest_path.parent.mkdir(parents=True)
+    manifest_path = tmp_path / "immutable-source/dictionaries/registry/capability_manifest.generated.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_bytes(b"{}\n")
     output = tmp_path / "source-revision.zip"
     result = builder.build_candidate(tmp_path, base="a" * 40, head="b" * 40,

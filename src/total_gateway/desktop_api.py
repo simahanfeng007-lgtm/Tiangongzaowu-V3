@@ -196,6 +196,7 @@ _ROUTES = (
 )
 
 _NATIVE_ROUTES = (
+    _route("POST", "/api/v1/gateway/composition-feedback", "gateway", timeout_seconds=120),
     _route("POST", "/api/v1/gateway/internal/inbound", "gateway"),
     _route("POST", "/api/v1/gateway/desktop/inbound", "gateway"),
     _route(
@@ -503,8 +504,14 @@ class DesktopApiRouter:
         if self._runtime.orchestration is None:
             raise DesktopApiError(503, "desktop_api.orchestration.not_configured")
         payload = _strict_json_object(body)
-        if set(payload) != _DESKTOP_INGRESS_KEYS:
+        if set(payload) not in (_DESKTOP_INGRESS_KEYS, _DESKTOP_INGRESS_KEYS | {"task_context"}):
             raise DesktopApiError(400, "desktop_api.desktop_ingress.fields.invalid")
+        from contracts.models import TaskInputContext
+        try:
+            task_context = (TaskInputContext.model_validate_json(json.dumps(payload["task_context"]))
+                            if payload.get("task_context") is not None else None)
+        except (ValueError, TypeError) as exc:
+            raise DesktopApiError(400, "desktop_api.desktop_ingress.task_context.invalid") from exc
         presentation_request_id = self._required_opaque(payload, "presentation_request_id")
         session_id = self._required_opaque(payload, "session_id")
         message_id = self._required_opaque(payload, "message_id")
@@ -602,6 +609,7 @@ class DesktopApiRouter:
                 }
             ),
             text=text,
+            task_context=task_context,
             attachments=tuple(accepted_attachments),
         )
         try:
@@ -864,6 +872,16 @@ class DesktopApiRouter:
                                if code in {"desktop_composition.source_context_unavailable",
                                            "desktop_composition.source_initialization_failed"}
                                else "查看具体原因后调整请求；本次不会自动切换执行范围。")}
+        if lowered.startswith("life.context."):
+            budget_exceeded = lowered == "life.context.budget_exceeded"
+            return {
+                "code": code,
+                "service": "life",
+                "message": ("当前目标与必需约束超出上下文预算。" if budget_exceeded
+                            else "任务上下文编译或授权失败，尚未开始执行。"),
+                "action": ("请将本次目标分为独立阶段，已完成的结果和检查点会保留。" if budget_exceeded
+                           else "请查看上下文诊断并修复后重试；本次失败记录已保留。"),
+            }
         if "identity" in lowered or lowered.startswith(("life.", "legacy.", "compat.life")):
             return {
                 "code": code,
@@ -948,6 +966,12 @@ class DesktopApiRouter:
             self._runtime.readiness.clear()
             raise DesktopApiError(503, "desktop_api.desktop_status.unavailable") from exc
         state = request_snapshot.state if request_snapshot is not None else queue_item.state
+        experience_service = getattr(self._runtime, "composition_experiences", None)
+        if experience_service is not None and state in {"COMPLETED", "FAILED", "CANCELLED"}:
+            try:
+                experience_service.observe_terminal(request_id)
+            except Exception as exc:
+                diagnostic_log("composition_experience.outcome_pending:" + type(exc).__name__)
         run_id = request_snapshot.run_id if request_snapshot is not None else ""
         generation = request_snapshot.generation if request_snapshot is not None else 0
         updated_at_ms = request_snapshot.updated_at_ms if request_snapshot is not None else entry.created_at_ms
@@ -1012,6 +1036,17 @@ class DesktopApiRouter:
         headers: Mapping[str, str],
         body: bytes,
     ) -> DesktopProxyResponse:
+        if route.path == "/api/v1/gateway/composition-feedback":
+            if str(headers.get("Content-Type", "")).strip().lower() not in _JSON_MEDIA_TYPES:
+                raise DesktopApiError(415, "desktop_api.content_type.invalid")
+            if not body or len(body) > 32768:
+                raise DesktopApiError(400, "composition_experience.feedback_size")
+            try:
+                result = self._runtime.composition_experiences.feedback(_strict_json_object(body))
+                return self._artifact_response(200, result)
+            except (ValueError, KeyError) as exc:
+                code = str(exc) if str(exc).startswith("composition_experience.") else "composition_experience.feedback_failed"
+                raise DesktopApiError(409, code) from exc
         if route.path == "/api/v1/v3/life/learning/decide":
             media_type = str(headers.get("Content-Type", "")).strip().lower()
             if media_type not in _JSON_MEDIA_TYPES:

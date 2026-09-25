@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "src/omni_body_skill/registry/skill_router_index.json"
-MANIFEST_PATH = ROOT / "src/omni_body_skill/registry/capability_manifest.generated.json"
-SKILLS_ROOT = ROOT / "src/omni_body_skill"
+INDEX_PATH = ROOT / "dictionaries/skills/catalog.json"
+MANIFEST_PATH = ROOT / "dictionaries/registry/capability_manifest.generated.json"
+SKILLS_ROOT = ROOT / "dictionaries"
 DEFAULT_OUTPUT = ROOT / "docs/capability-composition/P12_R1E_CAPABILITY_PARITY_2026-09-20.json"
 
 ACTION_FIELDS = (
@@ -73,8 +73,8 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
           skills_root: Path = SKILLS_ROOT) -> dict:
     index_payload = _strict(index_path.read_text(encoding="utf-8"), "index")
     items = index_payload.get("skills")
-    if not isinstance(items, list) or not items:
-        raise SystemExit("index: skills list is empty or invalid")
+    if not isinstance(items, list):
+        raise SystemExit("index: skills list is invalid")
     manifest_payload = _strict(manifest_path.read_text(encoding="utf-8"), "manifest")
     capabilities = manifest_payload.get("capabilities")
     if not isinstance(capabilities, dict) or not capabilities:
@@ -139,8 +139,9 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
         retained.append({
             "action": action,
             "present_in_current_manifest": action in capabilities,
-            "reason": "machine-fact progress / shared security surface; "
-                      "retained regardless of planner retirement (R1A)",
+            "implemented": bool((capabilities.get(action) or {}).get("implemented")),
+            "reason": "Historical shared action metadata. Presence in the "
+                      "manifest does not imply an executable action.",
         })
 
     total = len(parity_items)
@@ -165,6 +166,8 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
             "action_surface_uncovered_items": total - covered,
             "uncovered_actions": sorted(uncovered_actions),
             "task_parity_open_items": total,
+            "task_execution_proven": False,
+            "catalog_status": "FIXED_SKILLS_RETIRED" if not items else "LEGACY_SKILLS_PRESENT",
             "high_risk_effect_items": sum(
                 1 for entry in parity_items if entry["high_risk_effects"]),
         },
@@ -175,7 +178,9 @@ def build(index_path: Path = INDEX_PATH, manifest_path: Path = MANIFEST_PATH,
             "current generated manifest. It is NOT behavioural parity: every "
             "item remains REQUIRES_TASK_PARITY until the formal P11 matrix "
             "(R1G) proves the composition chain completes the legacy task. "
-            "This table never upgrades that status by itself."
+            "This table never upgrades that status by itself. An empty retired "
+            "fixed-Skill catalog is valid, but zero items prove no task execution; "
+            "model-generated compositions require their own live acceptance."
         ),
     }
 
@@ -208,7 +213,7 @@ def main() -> int:
               f"{table['summary']['action_surface_covered_items']} covered")
         return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered, encoding="utf-8")
+    args.output.write_bytes(rendered.encode("utf-8"))
     print(f"parity table written: {args.output} "
           f"({table['summary']['items_total']} items)")
     return 0

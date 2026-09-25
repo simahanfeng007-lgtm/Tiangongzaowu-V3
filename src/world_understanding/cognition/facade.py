@@ -95,6 +95,12 @@ class WorldCognitionFacade:
             decision_authority="deterministic_policy",
         )
 
+    def retrieve(self, **kwargs):
+        if not self.enabled:
+            return ()
+        _, _, _, retriever = self._components()
+        return retriever.retrieve(**kwargs)
+
     def project_context(
         self,
         *,

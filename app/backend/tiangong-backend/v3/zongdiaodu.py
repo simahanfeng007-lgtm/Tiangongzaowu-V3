@@ -35,7 +35,6 @@ from .simple_chain.kernel import (
     _SIMPLE_CHAIN_FINGERPRINT_NOISE_KEYS,
     _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS,
     _SIMPLE_CHAIN_IMAGE_SUFFIXES,
-    _SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS,
     _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS,
     _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS,
     _SIMPLE_CHAIN_MAX_LOOP_TURNS,
@@ -443,7 +442,8 @@ Two modes: chat or work.
 
 Work mode rules:
 - Before each `omni_body` call, write one short user-facing progress sentence.
-- Choose Skills, actions, ordering, retries, and verification steps from the task and observations.
+- Generate Tools and a Skill by composing dictionary actions for the current task and observations.
+- Preserve source values and units in outputs. Do not invent a missing unit, business fact, or trend; label interpretations as such.
 - Do not claim completion beyond successful recorded evidence; Runtime checks facts only at completion.
 - You may include an optional top-level `_task_profile` on any `omni_body` call:
   schema=`tiangong.v3.task_profile.v2`, proposed_level (`L1`, `L2`, or `L3`),
@@ -921,34 +921,8 @@ def _xlsx_max_row_count(path: Path) -> int:
         return 0
     return 0
 
-def _omni_body_skill_root() -> Path | None:
-    candidates: list[Path] = []
-    forced = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-    if forced:
-        candidates.append(Path(forced).expanduser())
-    candidates.extend([
-        Path(__file__).resolve().parent.parent / "omni_body_skill",
-        Path(__file__).resolve().parent / "bundled_skills" / "omni_body_skill",
-    ])
-    if str(os.environ.get("TIANGONG_ALLOW_USER_SKILL_OVERRIDE") or "").strip().lower() in {"1", "true", "yes", "on"}:
-        candidates.insert(1 if forced else 0, Path.home() / ".tiangong" / "v3" / "omni_body_skill")
-    for candidate in candidates:
-        try:
-            if (candidate / "SKILL.md").exists():
-                return candidate
-        except Exception:
-            continue
-    return None
 
 
-def _read_omni_body_skill_file(root: Path, relative_path: str, max_chars: int) -> str:
-    try:
-        text = (root / relative_path).read_text(encoding="utf-8").strip()
-    except Exception:
-        return ""
-    if len(text) > max_chars:
-        text = text[:max_chars].rstrip() + "\n...[truncated]"
-    return text
 
 
 def _omni_body_subskill_paths(user_message: str) -> list[str]:
@@ -1045,25 +1019,11 @@ def _recent_local_artifact_context(max_runs: int = 24, max_items: int = 8) -> st
 
 
 def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> str:
-    root = _omni_body_skill_root()
-    skill_text = ""
-    if root is not None:
-        skill_text = _read_omni_body_skill_file(root, "SKILL.md", max_chars)
-    return (
-        "[Omni Body — 唯一可执行工具]\n"
-        "所有本地文件/代码/文档/媒体操作通过 omni_body 执行。\n"
-        "模型自行判断是否需要 Skill、选择哪个 Skill，以及工具调用顺序；系统不预选执行路线。\n"
-        "需要 Skill 时可自主使用 skill.route/skill.list/skill.get/skill.read；用户明确点名完整注册 Skill 时只读取该精确目标。\n"
-        "互不依赖的多个操作可以在一条回复里同时发出多个 omni_body 调用，系统会并行执行。\n"
-        "有依赖关系的操作则分步进行，每次工具返回后根据实际结果决定下一步。\n"
-        "**每次调用工具前，先用一句自然语言告诉用户你正在做什么。**\n\n"
-        "[二进制 Office 文件规则]\n"
-        "docx/xlsx/pptx 是二进制文件：永远不要用 file.read 读取它们（会报非 UTF-8 错误）；"
-        "读取请用已注册的 office 读取 action（如 pptx.read），没有注册的格式就说明无法直接读取正文。\n"
-        "docx.create 必须提供非空 args.content（字符串正文）或 args.content_source（指向已有源文件）；"
-        "参数不全会返回 INVALID_TOOL_ARGUMENTS。禁止用相同错误参数重试；先调 system.action_schema 核对参数再调用。\n\n"
-        + (skill_text or "Omni Body skill file is unavailable; use the registered omni_body schema and returned evidence.")
-    )
+    from capability_dictionary import load_dictionary
+    release = load_dictionary()
+    from capability_dictionary.composition import composition_prompt
+    return composition_prompt(release)
+
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -1507,11 +1467,13 @@ def _tool_result_with_contract(
     result: Any,
     *,
     source_native_id: str = "",
+    invocation: dict | None = None,
 ) -> Any:
     return attach_tool_result_contract(
         tool_name,
         result,
         source_native_id=source_native_id,
+        invocation=invocation,
     )
 
 
@@ -2674,46 +2636,6 @@ class Zongdiaodu:
         def current_text(self) -> str:
             return self._accumulated
 
-    def _controlled_composition_turn_reply_if_enabled(
-        self, *, xiaoxi: str, system_tishi: str,
-    ) -> str | None:
-        """Run the P12-R1D controlled composition turn when explicitly enabled.
-
-        Returns None when the mode is ``off`` (default; the legacy planner is
-        untouched). A controlled turn's failure is returned to the user with
-        its original code — the legacy path is never replayed for the same
-        message, so a controlled deployment cannot silently degrade.
-        """
-
-        from .composition_turn import (
-            CompositionTurnError,
-            composition_planner_mode,
-            run_controlled_composition_turn,
-        )
-        if composition_planner_mode() != "controlled":
-            return None
-
-        def _model_call(prompt: str) -> str:
-            return self.http_kehuduan.llm_diaoyong(system_tishi, prompt)
-
-        try:
-            outcome = run_controlled_composition_turn(
-                user_text=xiaoxi, model_call=_model_call)
-        except CompositionTurnError as exc:
-            detail = f" {exc.detail}" if exc.detail else ""
-            return (f"[受控组合规划未完成：{exc.code}{detail}]\n"
-                    "本轮未回退旧规划路径。")
-        if outcome["outcome"] == "refused":
-            findings = ", ".join(outcome.get("findings") or [])
-            return (f"[受控组合规划拒绝：{outcome['reason']}]\n"
-                    f"原始校验发现：{findings or '无'}。本轮未回退旧规划路径。")
-        if outcome["outcome"] == "registration_not_configured":
-            return (f"[受控组合规划：计划 {outcome['plan_id']} 通过编译与校验"
-                    f"（{outcome['validation']}），但尚未配置系统登记证据提供方，"
-                    "计划未登记、未执行。]")
-        return (f"[受控组合规划：计划 {outcome['plan_id']} 已通过原 P7 链登记"
-                f"（registration {outcome.get('registration_id')}）。"
-                "执行仍需原有授权链。")
 
     def _huanxing_simple_chain(
         self,
@@ -2727,12 +2649,22 @@ class Zongdiaodu:
         run_control: Any | None,
         started_at: float,
         on_event: Callable[[dict], None] | None = None,
+        dictionary_context: dict | None = None,
     ) -> str:
         request_id = getattr(run_control, "request_id", "") if run_control else zhuizong_id
         recovery_checkpoint = _simple_chain_recovery_checkpoint_from_context(dynamic_context)
         recovery = recovery_checkpoint.get("recovery") if isinstance(recovery_checkpoint.get("recovery"), dict) else {}
         blocked_recovery_call_keys = set(recovery.get("blocked_call_keys") or [])
         explicit_retry_authorized = _simple_chain_explicit_retry_authorized(xiaoxi)
+        inherited_goal = str(recovery_checkpoint.get("original_user_goal") or "")
+        if inherited_goal:
+            # The bridge supplies this only for an explicit continuation in the
+            # same session. Preserve the original acceptance requirements while
+            # keeping uncertainty/replay guards from the previous request.
+            xiaoxi = inherited_goal
+            yonghu_tishi += "\n\n[继续原任务]\n" + inherited_goal + (
+                "\n先核对检查点与已有产物，再完成剩余工作。已提交的写入不要重复；"
+                "文件被用户修改时保留新版本，未知副作用先核对。")
         response_only_without_tools = (
             _simple_chain_is_response_only_without_tools(xiaoxi)
             or is_execution_discussion_only(xiaoxi)
@@ -2837,6 +2769,16 @@ class Zongdiaodu:
             run_control.step("build_context", "build context", "done", "Context is ready.")
 
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
+        from capability_dictionary import load_dictionary
+        dictionary_release = load_dictionary()
+        if recovery_checkpoint.get("dictionary_sha256") not in {None, "", dictionary_release.sha256}:
+            raise RuntimeError("dictionary_version_migration_required")
+        run_state["dictionary_sha256"] = dictionary_release.sha256
+        run_state["dictionary_version"] = dictionary_release.version
+        run_state["original_user_goal"] = xiaoxi
+        run_state["loaded_skill_ids"] = []  # Historical checkpoint field; no fixed Skill activation.
+        run_state["skill_loaded"] = False
+        run_state["generated_compositions"] = []
         if recovery_checkpoint:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
@@ -2862,121 +2804,141 @@ class Zongdiaodu:
         ]
         run_state.setdefault("delivery", {})["requested_actions"] = requested_actions
         run_state["delivery"]["missing_requested_actions"] = list(requested_actions)
-        run_state["status"] = "skill_loading"
-        run_state["stage"] = "skill_loading"
+        run_state["status"] = "composing"
+        run_state["stage"] = "composing"
         _simple_chain_save_run_state(run_state)
+
+        native_history: list[dict[str, Any]] = []
+        composition_cursor = None
+
+        def _dictionary_system_prompt():
+            from capability_dictionary import load_dictionary
+            release = load_dictionary()
+            pinned = run_state.setdefault("dictionary_sha256", release.sha256)
+            if pinned != release.sha256:
+                raise RuntimeError("dictionary_version_migration_required")
+            from .world_context_integration import refresh_world_context_in_prompt
+            from .run_context import current_run_context
+            return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
+
+        def _run_scoped_model(call):
+            from .jineng.http_kehuduan import _effective_llm_deadline_seconds
+            from .jineng.model_call_lifecycle import ModelCallStopped, run_model_call
+            from .model_protocol_contract import ProviderTurnEnvelope
+
+            try:
+                def invoke(lifecycle):
+                    if self.http_kehuduan is not None:
+                        with self.http_kehuduan.scoped_native_history(native_history, observations=quality_history):
+                            return call(lifecycle)
+                    return call(lifecycle)
+                result = run_model_call(
+                    invoke, seconds=_effective_llm_deadline_seconds(),
+                    cancel_check=getattr(run_control, "should_stop", None),
+                )
+            except ModelCallStopped as exc:
+                return shenti, ProviderTurnEnvelope(
+                    f"[LLM错误: {exc.reason}]", visible_text="",
+                    finish_reason="error", stop_semantics=exc.reason,
+                )
+            if _interim_emitter is not None:
+                _interim_emitter.flush()
+            return result
 
         def _llm_huanxing_scoped(on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 首轮唤醒同样必须有硬超时：模型 API 挂起时 run 必须收口，
             # 不能一直占用执行槽（与 _llm_jixu_scoped 的看门狗一致）。
-            import contextvars as _contextvars
-            import threading as _threading
 
-            def _call_huanxing() -> tuple[ShentiZhuangtai, str]:
+            def _call_huanxing(lifecycle) -> tuple[ShentiZhuangtai, str]:
                 if self.http_kehuduan is not None:
                     with self.http_kehuduan.scoped_tools(
                         allowed_tool_names=allowed_tool_names,
                         disable_tools=response_only_without_tools or bool(native_audio_paths),
                     ), self.http_kehuduan.scoped_native_audio(native_audio_paths):
                         return self.gutong.huanxing(
-                            system_tishi,
+                            _dictionary_system_prompt(),
                             cache_stable_user_message,
                             shenti,
-                            on_text_chunk=on_chunk,
-                            on_reasoning_chunk=on_reasoning_chunk,
+                            on_text_chunk=lifecycle.guard(on_chunk),
+                            on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                         )
                 return self.gutong.huanxing(
-                    system_tishi,
+                    _dictionary_system_prompt(),
                     cache_stable_user_message,
                     shenti,
-                    on_text_chunk=on_chunk,
-                    on_reasoning_chunk=on_reasoning_chunk,
+                    on_text_chunk=lifecycle.guard(on_chunk),
+                    on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                 )
 
-            holder: dict[str, Any] = {}
-
-            def _runner() -> None:
-                try:
-                    holder["value"] = _call_huanxing()
-                except Exception as exc:
-                    holder["error"] = exc
-                finally:
-                    if _interim_emitter is not None:
-                        _interim_emitter.flush()
-
-            _ctx = _contextvars.copy_context()
-            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
-            _thread.start()
-            _thread.join(timeout=_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS)
-            if _thread.is_alive():
-                return shenti, (
-                    "[LLM错误: initial_llm_call_hard_timeout 超过 "
-                    f"{_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS}s，已强制收口]"
-                )
-            if "error" in holder:
-                raise holder["error"]
-            return holder["value"]
+            return _run_scoped_model(_call_huanxing)
 
         def _llm_jixu_scoped(
             payload: Any, on_chunk=None, on_reasoning_chunk=None,
             provider_turn: Any = None, provider_tool_results: list[dict[str, Any]] | None = None,
         ) -> tuple[ShentiZhuangtai, str]:
+            nonlocal composition_cursor
+            from .model_protocol_contract import ProviderTurnEnvelope
+            if composition_cursor is not None:
+                cursor = composition_cursor
+                raw = provider_tool_results[0] if provider_tool_results else payload
+                if isinstance(raw, dict) and raw.get("schema") == "tiangong.v3.simple_chain.repeat_observation.v1":
+                    raw = raw.get("last_result")
+                success = bool(provider_tool_results) and _gongju_jieguo_chenggong(raw)
+                if isinstance(payload, dict) and payload.get("schema") == "tiangong.v3.simple_chain.repeat_observation.v1":
+                    success = _gongju_jieguo_chenggong(raw)
+                more = cursor.observe(raw, success=success)
+                run_state["generated_compositions"][-1].update(
+                    completed_leaves=cursor.index, status="running" if more else "succeeded" if success else "failed")
+                run_state.pop("active_composition_ref", None)
+                _simple_chain_save_run_state(run_state)
+                if more:
+                    # Execute the next already-compiled leaf, without pretending
+                    # the model generated a new call or inventing provider IDs.
+                    return shenti, cursor.provider_turn
+                payload = cursor.result()
+                provider_turn, provider_tool_results = cursor.provider_turn, [payload]
+                composition_cursor = None
+            if isinstance(provider_turn, ProviderTurnEnvelope) and provider_tool_results:
+                if not any(item["turn"].turn_id == provider_turn.turn_id for item in native_history):
+                    native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
+                # Compact whole call/result groups only. Durable fact receipts
+                # and loaded Skill bodies remain in Gateway/run context.
+                while len(native_history) > 3 and (len(native_history) > 32 or sum(
+                    len(str(item["turn"])) + len(json.dumps(item["results"], ensure_ascii=False, default=str))
+                    for item in native_history) > 96_000):
+                    native_history.pop(0)
             prior_texts: list[str] = []
             for item in quality_history:
                 if not isinstance(item, dict):
                     continue
                 prior_texts.append(_simple_chain_history_payload_text(item))
-            import contextvars as _contextvars
-            import threading as _threading
 
-            def _call_jixu() -> tuple[ShentiZhuangtai, str]:
+            def _call_jixu(lifecycle) -> tuple[ShentiZhuangtai, str]:
                 if self.http_kehuduan is not None:
                     with self.http_kehuduan.scoped_tools(
                         allowed_tool_names=allowed_tool_names,
                         disable_tools=response_only_without_tools,
                     ):
                         return self.gutong.jixu(
-                            system_tishi, payload, shenti, xiaoxi,
-                            on_text_chunk=on_chunk,
-                            on_reasoning_chunk=on_reasoning_chunk,
+                            _dictionary_system_prompt(), payload, shenti, xiaoxi,
+                            on_text_chunk=lifecycle.guard(on_chunk),
+                            on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                             assistant_messages=prior_texts,
                             stable_user_message=cache_stable_user_message,
                             provider_turn=provider_turn,
                             provider_tool_results=provider_tool_results,
                         )
                 return self.gutong.jixu(
-                    system_tishi, payload, shenti, xiaoxi,
-                    on_text_chunk=on_chunk,
-                    on_reasoning_chunk=on_reasoning_chunk,
+                    _dictionary_system_prompt(), payload, shenti, xiaoxi,
+                    on_text_chunk=lifecycle.guard(on_chunk),
+                    on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                     assistant_messages=prior_texts,
                     stable_user_message=cache_stable_user_message,
                     provider_turn=provider_turn,
                     provider_tool_results=provider_tool_results,
                 )
 
-            holder: dict[str, Any] = {}
-
-            def _runner() -> None:
-                try:
-                    holder["value"] = _call_jixu()
-                except Exception as exc:
-                    holder["error"] = exc
-                finally:
-                    if _interim_emitter is not None:
-                        _interim_emitter.flush()
-
-            _ctx = _contextvars.copy_context()
-            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
-            _thread.start()
-            _thread.join(timeout=_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS)
-            if _thread.is_alive():
-                return shenti, (
-                    "[LLM错误: llm_call_hard_timeout 超过 "
-                    f"{_SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS}s，已强制收口]"
-                )
-            if "error" in holder:
-                raise holder["error"]
-            return holder["value"]
+            return _run_scoped_model(_call_jixu)
 
         def _llm_closeout_scoped(payload: Any, on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 收尾必须是“新的一轮用户指令”，不能走 jixu 的工具结果续写框架，
@@ -2986,51 +2948,27 @@ class Zongdiaodu:
                 f"[原始用户请求]\n{xiaoxi}\n\n"
                 f"[平台收尾指令]\n{closeout_text}"
             )
-            import contextvars as _contextvars
-            import threading as _threading
 
-            def _call_closeout() -> tuple[ShentiZhuangtai, str]:
+            def _call_closeout(lifecycle) -> tuple[ShentiZhuangtai, str]:
                 if self.http_kehuduan is not None:
                     with self.http_kehuduan.scoped_tools(
                         allowed_tool_names=allowed_tool_names,
                         disable_tools=True,
                     ):
                         return self.gutong.huanxing(
-                            system_tishi,
+                            _dictionary_system_prompt(),
                             closeout_user_text,
                             shenti,
-                            on_text_chunk=on_chunk,
-                            on_reasoning_chunk=on_reasoning_chunk,
+                            on_text_chunk=lifecycle.guard(on_chunk),
+                            on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                         )
                 return self.gutong.huanxing(
-                    system_tishi, closeout_user_text, shenti,
-                    on_text_chunk=on_chunk,
-                    on_reasoning_chunk=on_reasoning_chunk,
+                    _dictionary_system_prompt(), closeout_user_text, shenti,
+                    on_text_chunk=lifecycle.guard(on_chunk),
+                    on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                 )
 
-            holder: dict[str, Any] = {}
-
-            def _runner() -> None:
-                try:
-                    holder["value"] = _call_closeout()
-                except Exception as exc:
-                    holder["error"] = exc
-                finally:
-                    if _interim_emitter is not None:
-                        _interim_emitter.flush()
-
-            _ctx = _contextvars.copy_context()
-            _thread = _threading.Thread(target=lambda: _ctx.run(_runner), daemon=True)
-            _thread.start()
-            _thread.join(timeout=max(20, _SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS // 2))
-            if _thread.is_alive():
-                return shenti, (
-                    "[LLM错误: closeout_hard_timeout 超过 "
-                    f"{max(20, _SIMPLE_CHAIN_LLM_HARD_TIMEOUT_SECONDS // 2)}s，已强制收口]"
-                )
-            if "error" in holder:
-                raise holder["error"]
-            return holder["value"]
+            return _run_scoped_model(_call_closeout)
 
         turn_loop = TurnLoopState()
         _simple_chain_regenerative_restore_turn_loop(run_state, turn_loop)
@@ -3079,7 +3017,7 @@ class Zongdiaodu:
                 if _remaining_s <= 3600.0:
                     effective_wall_clock_seconds = min(
                         effective_wall_clock_seconds,
-                        max(5.0, _remaining_s - 2.0),
+                        max(0.0, _remaining_s - 2.0),
                     )
         except Exception:
             pass
@@ -3257,6 +3195,14 @@ class Zongdiaodu:
         while True:
             if initial_llm_failed or audio_semantic_unavailable:
                 break
+            from .model_protocol_contract import model_turn_failure
+            failure = model_turn_failure(huifu)
+            if failure:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped" if failure == "cancelled" else "failed"
+                run_state["terminal_reason"] = failure
+                shenti, huifu = _natural_closeout(final_chain_status, [f"[terminal_model_error] {failure}"])
+                break
             iteration_count = turn_loop.bump_iteration()
             turn_loop.project_live(run_state, loop_started_at)
             loop_elapsed = time.monotonic() - loop_started_at
@@ -3268,7 +3214,7 @@ class Zongdiaodu:
                     quality_history,
                     generated_attachments,
                 ),
-                _simple_chain_natural_reply_text(huifu),
+                "" if composition_cursor is not None else _simple_chain_natural_reply_text(huifu),
             )
             if stuck:
                 final_guard_exhausted = True
@@ -3417,6 +3363,53 @@ class Zongdiaodu:
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
                     tools = self.gutong.jiexi_duogongju(huifu)
+            tools = [(name, _simple_chain_accept_task_profile(run_state, xiaoxi, name, args)) for name, args in tools]
+            if composition_cursor is not None:
+                tools = [("omni_body", composition_cursor.leaf["invocation"])]
+                run_state["active_composition_ref"] = composition_cursor.reference()
+            elif tools:
+                from capability_dictionary.composition import (
+                    CompositionCursor, DISCOVERY_ACTIONS, compile_task_composition,
+                )
+                from .simple_chain.kernel import _simple_chain_regenerative_call
+                try:
+                    if len(tools) == 1 and tools[0][0] == "omni_body" and set(tools[0][1]) == {"composition"}:
+                        proposal = tools[0][1]["composition"]
+                        program = compile_task_composition(proposal, release=dictionary_release)
+                        registered = _simple_chain_regenerative_call(run_state, "register_composition",
+                            proposal=proposal, epoch_index=int(turn_loop.epoch_index))
+                        if not registered or registered.get("program_sha256") != program["program_sha256"]:
+                            raise RuntimeError("composition.gateway_registration_required")
+                        composition_cursor = CompositionCursor(program, registered, huifu)
+                        run_state["generated_compositions"].append({
+                            **registered, "generated_tool_ids": [item["id"] for item in proposal["tools"]],
+                            "generated_skill_id": proposal["skill"]["id"],
+                            "leaf_count": len(program["leaves"]), "completed_leaves": 0, "status": "registered"})
+                        run_state["active_composition_ref"] = composition_cursor.reference()
+                        _simple_chain_save_run_state(run_state)
+                        tools = [("omni_body", composition_cursor.leaf["invocation"])]
+                    elif not all(name == "omni_body" and isinstance(args, dict)
+                            and set(args) <= {"action", "target", "args"}
+                            and args.get("action") in DISCOVERY_ACTIONS for name, args in tools):
+                        raise ValueError("composition.required_for_task_execution")
+                except (ValueError, TypeError) as exc:
+                    blocked = {"ok": False, "error": str(exc)[:300],
+                        "received_argument_fields": [sorted(args) for _, args in tools],
+                        "instruction": "请通过 composition 生成 Tool 和 Skill；仅能力发现可直接调用。整份组合未登记、未执行。修正后返回一个完整组合调用。"}
+                    repair = getattr(exc, "composition_repair", None)
+                    if isinstance(repair, dict):
+                        blocked["repair"] = repair
+                    rejections = run_state.setdefault("composition_rejections", [])
+                    rejections.append({"error": blocked["error"],
+                        "received_argument_fields": blocked["received_argument_fields"],
+                        **({"repair": repair} if isinstance(repair, dict) else {}),
+                        "at": time.time()})
+                    run_state["composition_rejections"] = rejections[-12:]
+                    _simple_chain_save_run_state(run_state)
+                    shenti, huifu = _llm_jixu_scoped(blocked,
+                        on_chunk=_on_text_chunk, on_reasoning_chunk=_on_reasoning_chunk,
+                        provider_turn=huifu, provider_tool_results=[blocked for _ in tools])
+                    continue
             if not tools:
                 tool_name, tool_args = "", {}
             elif len(tools) == 1:
@@ -3782,7 +3775,7 @@ class Zongdiaodu:
                         )
                     except Exception as exc:
                         raw = {"ok": False, "error": str(exc)}
-                    raw = _tool_result_with_contract(tn, raw, source_native_id=call_id)
+                    raw = _tool_result_with_contract(tn, raw, source_native_id=call_id, invocation=ta)
                     return tn, ta, raw, call_id, call_index
 
                 if ordered_batch:
@@ -4716,6 +4709,7 @@ class Zongdiaodu:
                 tool_name,
                 gongju_jieguo,
                 source_native_id=tool_call_id,
+                invocation=tool_args,
             )
             if _gongju_jieguo_xuyao_queren(gongju_jieguo):
                 # 确认通道：暂停本轮，等用户在确认卡片中决定；批准后前端会重放原指令
@@ -4880,6 +4874,12 @@ class Zongdiaodu:
                     )
                 QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_continue_after_tool", "cuowu", str(exc)[:500])
                 break
+            if composition_cursor is not None:
+                huifu = next_huifu
+                run_state["status"] = "executing_composition"
+                run_state["stage"] = "executing_composition"
+                _simple_chain_save_run_state(run_state)
+                continue
             if not str(next_huifu or "").strip() and not tool_ok:
                 final_guard_exhausted = True
                 final_chain_status = "failed"
@@ -5049,6 +5049,7 @@ class Zongdiaodu:
         duihua_shangxiawen: str = "",
         run_control: Any | None = None,
         on_event: Callable[[dict], None] | None = None,
+        dictionary_context: dict | None = None,
     ) -> str:
         """唤醒入口：用户消息 / 心跳维护 / 心跳自主灵感"""
         if shenti is None:
@@ -5224,16 +5225,15 @@ class Zongdiaodu:
                     # Returns None when the mode is off (the legacy chain runs
                     # byte-for-byte unchanged); a controlled turn NEVER falls
                     # back here — its failure is returned to the user as-is.
-                    _composition_reply = self._controlled_composition_turn_reply_if_enabled(
-                        xiaoxi=xiaoxi, system_tishi=system_tishi)
-                    if _composition_reply is not None:
-                        return _composition_reply
+                    # Static composition, when explicitly selected, is prepared
+                    # by Gateway. All conversational prefixes share this loop.
                     return self._huanxing_simple_chain(
                         xiaoxi=xiaoxi,
                         shenti=shenti,
                         yonghu_tishi=yonghu_tishi,
                         system_tishi=system_tishi,
                         dynamic_context=dynamic_context,
+                        dictionary_context=dictionary_context,
                         zhuizong_id=zhuizong_id,
                         run_control=run_control,
                         started_at=started_at,
@@ -5804,6 +5804,7 @@ class Zongdiaodu:
                     tool_name,
                     gongju_jieguo,
                     source_native_id=f"{zhuizong_id}.{gongju_cishu}",
+                    invocation=tool_args,
                 )
                 QUANZHUIXIAN.jilu_kuadu(
                     zhuizong_id,

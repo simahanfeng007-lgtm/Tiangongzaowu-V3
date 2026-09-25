@@ -247,6 +247,7 @@ class SourceAuthorityGuardTests(unittest.TestCase):
                 "src",
                 "app/backend/tiangong-backend/v3",
                 "app/backend/tiangong-backend/tiangong_kernel",
+                "dictionaries",
             ],
             policy.get("editable_roots"),
         )

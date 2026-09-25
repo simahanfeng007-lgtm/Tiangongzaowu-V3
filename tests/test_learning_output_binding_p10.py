@@ -414,7 +414,7 @@ def test_actual_gateway_start_installs_both_existing_call_sites(tmp_path,monkeyp
     config=GatewayConfig(environment='test',deployment_mode='embedded',port=0,
         state_root=tmp_path/'gateway-root',min_free_bytes=1_048_576,
         backend_internal_token='test-binding-token-'+('x'*48),release_source_root=root,
-        workspace_root=workspace,skill_root=root/'app/backend/tiangong-backend/_internal/omni_body_skill')
+        workspace_root=workspace,skill_root=root/'dictionaries')
     # Gateway startup installs process-global callbacks. Record their previous
     # identities for this fixture's cleanup; the real startup still installs and
     # exercises its own providers, and none of its authority checks are mocked.

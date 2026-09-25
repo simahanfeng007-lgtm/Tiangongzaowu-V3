@@ -140,6 +140,28 @@ def extract_native_roundtrip_context(
     return NativeRoundtripContext(turn=turn, bindings=bindings, results=results)
 
 
+def extract_native_roundtrip_history(payload: dict[str, Any], endpoint: ModelEndpointConfig) -> tuple[NativeRoundtripContext, ...]:
+    """All complete pairs in this run, isolated by provider/protocol/model."""
+    rows = payload.pop("__provider_history", ())
+    latest = extract_native_roundtrip_context(payload, endpoint)
+    history = []
+    seen = set()
+    for row in rows if isinstance(rows, (list, tuple)) else ():
+        if not isinstance(row, Mapping):
+            raise ValueError("invalid_native_history")
+        context = extract_native_roundtrip_context({"__provider_turn": row.get("turn"),
+            "__provider_tool_results": row.get("results")}, endpoint)
+        if context is None:
+            # Private provider state must never cross an endpoint change.
+            return (latest,) if latest is not None else ()
+        if context.turn.turn_id not in seen:
+            history.append(context)
+            seen.add(context.turn.turn_id)
+    if latest is not None and latest.turn.turn_id not in seen:
+        history.append(latest)
+    return tuple(history)
+
+
 def drop_last_role_messages(
     messages: Sequence[Any],
     *,
@@ -159,3 +181,34 @@ def drop_last_role_messages(
             if remaining <= 0:
                 break
     return output
+
+
+def compact_native_observations(messages, observations, history):
+    """Keep host checks once the complete result has a verified native pair.
+
+    Only explicit runtime observations are eligible. Conversation text, unmatched
+    receipts, and cross-provider fallbacks are unchanged. Durable receipts and
+    the provider-native results themselves are never changed by this projection.
+    """
+    output = list(messages or [])
+    if not history or not output or len(output) > len(observations or []):
+        return output, False
+    bound_results = {json.dumps(result, sort_keys=True, ensure_ascii=False, default=str)
+                     for context in history for result in context.results}
+    changed = False
+    for index, observation in enumerate(observations[-len(output):]):
+        if not isinstance(observation, Mapping) or not isinstance(observation.get("tool_result"), Mapping):
+            continue
+        identity = json.dumps(observation["tool_result"], sort_keys=True, ensure_ascii=False, default=str)
+        if identity not in bound_results:
+            continue
+        summary = {key: observation[key] for key in (
+            "tool_action", "ok", "summary", "quality_gate", "tool_execution_ok",
+            "final_requirements_satisfied_by_this_step", "failures", "gaps",
+            "final_requirement_gaps", "observation_gaps", "retry_same_step",
+        ) if key in observation}
+        summary["schema"] = "tiangong.model.native_observation_summary.v1"
+        summary["complete_result_in_native_pair"] = True
+        output[index] = json_output(summary)
+        changed = True
+    return output, changed

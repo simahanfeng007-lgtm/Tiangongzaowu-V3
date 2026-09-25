@@ -21,6 +21,7 @@ from .inquiry.inquiry_outcome import build_inquiry_outcome
 from .inquiry.self_will_integration import AutonomousIntent
 from .dynamics.inquiry_backoff import InquiryGainObservation, derive_inquiry_backoff
 from .world_state.store import MaterializedWorldSnapshot, WorldStateStore
+from .inquiry.observation import file_observation_context, observation_work_key, measured_file_gain
 
 
 class ActiveInquiryDispatcher(Protocol):
@@ -65,12 +66,13 @@ class ActiveWorldCognitionCoordinator:
 
     @staticmethod
     def _family(inquiry: WorldInquiry) -> str:
-        subject = inquiry.subject_refs[0].record_type if inquiry.subject_refs else "world"
+        subject = inquiry.subject_refs[0].record_id if inquiry.subject_refs else "world"
         missing = inquiry.missing_evidence_types[0] if inquiry.missing_evidence_types else "observation"
         return f"{subject}:{missing}"
 
-    def _records(self, scope_hash: str) -> tuple[dict[str, object], ...]:
-        return self._store.active_cognition_records(world_scope_hash=scope_hash)
+    def _records(self, scope) -> tuple[dict[str, object], ...]:
+        return tuple(row for row in self._store.active_cognition_records(world_scope_hash=scope.world_scope_hash)
+                     if row.get("inquiry", {}).get("scope") == scope.model_dump(mode="json"))
 
     @staticmethod
     def _next(record: Mapping[str, object], **changes: object) -> dict[str, object]:
@@ -100,13 +102,15 @@ class ActiveWorldCognitionCoordinator:
                     run_id=str(event.get("run_id") or ""),
                     execution_ticket_id=str(event.get("execution_ticket_id") or ""),
                 )
-            elif phase in {"DEFERRED", "DISMISSED", "EXPIRED", "FAILED"}:
+            elif phase in {"DEFERRED", "DISMISSED", "EXPIRED", "FAILED", "FINISHED"}:
+                if phase == "FINISHED":
+                    changes["reason_code"] = "OBSERVATION_FEEDBACK_MISSING"
                 decision = str(current.get("self_will_decision") or event.get("decision") or "DEFER").upper()
                 if decision not in {"DEFER", "DISMISS", "EXPIRE"}:
                     # An accepted execution failure remains an ACCEPT outcome;
                     # it simply has zero information gain and therefore backs off.
                     decision = "ACCEPT"
-                self._close_without_reality(current, decision=decision, closed_at_ms=int(event.get("at_ms") or 0))
+                self._close_without_reality({**current, **changes}, decision=decision, closed_at_ms=int(event.get("at_ms") or 0))
                 return
             self._store.put_active_cognition_record(self._next(current, **changes))
 
@@ -149,12 +153,16 @@ class ActiveWorldCognitionCoordinator:
             return
         payload = envelope.payload_inline or {}
         lineage = payload.get("world_inquiry_lineage") if isinstance(payload.get("world_inquiry_lineage"), Mapping) else {}
+        if (envelope.source_kind != "TOOL_RESULT" or envelope.scope_hint != inquiry.scope or snapshot.state.scope != inquiry.scope
+                or record.get("status") != "EXECUTING" or envelope.run_id != record.get("run_id")
+                or (payload.get("autonomous_intent_id") or lineage.get("autonomous_intent_id")) != autonomous.autonomous_intent_id
+                or (payload.get("gateway_intent_id") or lineage.get("gateway_intent_id")) != record.get("execution_ticket_id")
+                or envelope.source_time.recorded_at_ms < inquiry.created_at_ms):
+            return
         terminal = str(payload.get("terminal_status") or lineage.get("terminal_status") or payload.get("status") or "").lower()
         success = terminal in {"success", "succeeded", "completed", "ok"} or payload.get("ok") is True
-        unresolved = set(snapshot.state.stale_refs) | set(snapshot.state.unresolved_conflict_refs)
-        if snapshot.uncertainty is not None:
-            unresolved.update(snapshot.uncertainty.refs)
-        resolved = success and not any(ref in unresolved for ref in inquiry.subject_refs)
+        resolved, observations = measured_file_gain(inquiry, record, envelope, snapshot)
+        resolved = success and resolved
         source_ref = WorldRecordRef(
             record_type="world_source_envelope",
             record_id=envelope.envelope_id,
@@ -168,11 +176,12 @@ class ActiveWorldCognitionCoordinator:
             run_id=str(record.get("run_id") or envelope.run_id or "") or None,
             execution_ticket_id=str(record.get("execution_ticket_id") or "") or None,
             resulting_source_envelope_refs=(source_ref,),
+            observation_refs=observations,
             changed_world_state_refs=(snapshot.state_ref,),
             closed_at_ms=max(inquiry.created_at_ms, envelope.source_time.recorded_at_ms),
             resolved=resolved,
-            residual_gap_milli=0 if resolved else (500 if success else 1000),
-            information_gain_milli=1000 if resolved else (250 if success else 0),
+            residual_gap_milli=0 if resolved else 1000,
+            information_gain_milli=1000 if resolved else 0,
         )
         self._store.put_active_cognition_record(self._next(
             record,
@@ -194,16 +203,23 @@ class ActiveWorldCognitionCoordinator:
         if source_inquiry_id:
             # Reality closes the originating cycle and is never allowed to
             # synchronously spawn its successor (hard anti-self-excitation).
-            self._close_from_reality(envelope, snapshot, source_inquiry_id)
+            with self._lock:
+                self._close_from_reality(envelope, snapshot, source_inquiry_id)
             return
         with self._lock:
-            records = self._records(snapshot.state.scope.world_scope_hash)
+            records = self._records(snapshot.state.scope)
+            now_ms = envelope.source_time.recorded_at_ms
+            for row in records:
+                expiry = row.get("inquiry", {}).get("expires_at_ms")
+                if row.get("status") != "CLOSED" and expiry is not None and expiry <= now_ms:
+                    self._dispatch_event(str(row["record_id"]), {"phase": "EXPIRED", "at_ms": now_ms, "reason_code": "INQUIRY_LEASE_EXPIRED"})
+            records = self._records(snapshot.state.scope)
             open_count = sum(str(row.get("status") or "") != "CLOSED" for row in records)
             if open_count >= self._max_open:
                 return
             prior_dedup = {str(row.get("dedup_key") or "") for row in records}
             gaps = self._gaps.generate(snapshot)
-            for gap in gaps[:1]:
+            for gap in gaps:
                 now_ms = envelope.source_time.recorded_at_ms
                 curiosity = self._curiosity.build_curiosity(
                     gap,
@@ -219,7 +235,13 @@ class ActiveWorldCognitionCoordinator:
                     inquiry_budget_remaining=max(0, self._max_open - open_count),
                 )
                 if inquiry.dedup_key in prior_dedup:
-                    return
+                    continue
+                context = file_observation_context(inquiry, snapshot)
+                if context is None:
+                    continue
+                work_key = observation_work_key(inquiry)
+                if any(row.get("work_key") == work_key and (row.get("status") != "CLOSED" or row.get("information_gain_milli", 0) > 0) for row in records):
+                    continue
                 family_key = self._family(inquiry)
                 gain_observations = []
                 for row in records:
@@ -255,13 +277,16 @@ class ActiveWorldCognitionCoordinator:
                 )
                 admission = InquiryAdmission().evaluate(inquiry, signals, charge=False)
                 if admission.disposition != "ADMITTED":
-                    return
+                    continue
                 record = {
                     "record_id": inquiry.inquiry_id,
                     "revision": 1,
                     "world_scope_hash": inquiry.scope.world_scope_hash,
                     "dedup_key": inquiry.dedup_key,
                     "family_key": family_key,
+                    "work_key": work_key,
+                    "observation_context": context,
+                    "origin_request_id": envelope.request_id,
                     "status": "ADMITTED",
                     "source_world_state_id": snapshot.state.world_state_id,
                     "admission": asdict(admission),

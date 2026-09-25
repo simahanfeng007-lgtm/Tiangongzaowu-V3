@@ -153,7 +153,7 @@ def prepare_reviewed_method_world_revision(
     base_snapshot: SkillMethodWorldSnapshotV1,
     candidates: tuple[MethodSourceCandidateV1, ...], *,
     expected_base_snapshot_sha256: str,
-    corpus: LegacySkillMethodCorpusV1,
+    corpus: LegacySkillMethodCorpusV1 | None = None,
     source_documents: dict[str, tuple[str, bytes]],
     simulation_evidence: dict[str, MethodSimulationEvidenceV1],
     review_bytes: bytes, review_signature: bytes,
@@ -180,6 +180,7 @@ def prepare_reviewed_method_world_revision(
     reconstructed = compile_skill_method_world(
         base_snapshot.primitives, corpus=corpus, migration_bindings=base_snapshot.migration_bindings,
         reviewed_source_bindings=base_snapshot.reviewed_source_bindings,
+        installed_source_bindings=base_snapshot.installed_source_bindings,
     )
     if reconstructed != base_snapshot:
         raise MethodSourceReviewError("method review base graph or provenance is inconsistent")
@@ -240,6 +241,7 @@ def prepare_reviewed_method_world_revision(
         plan.next_primitives, corpus=corpus,
         migration_bindings=tuple(b for b in base_snapshot.migration_bindings if b.method_id not in changed),
         reviewed_source_bindings=tuple(natives.values()),
+        installed_source_bindings=tuple(b for b in base_snapshot.installed_source_bindings if b.method_id not in natives),
     )
     if snapshot.method_sources_sha256 != plan.next_method_sources_sha256:
         raise MethodSourceReviewError("method review compiled another source set")

@@ -57,13 +57,15 @@ _ACTION_SPECS = (
 
 def _legacy_static_context_tokens() -> int:
     repository_root = Path(__file__).resolve().parents[1]
-    skill_root = repository_root / "src" / "omni_body_skill"
-    index, _index_sha256, _source_hashes = _production_inputs()
-    parts = []
-    for raw in index["skills"]:
-        source_path = skill_root.joinpath(*Path(raw["file"]).parts)
-        parts.append(source_path.read_text(encoding="utf-8"))
-    return conservative_token_estimate("\n\n".join(parts))
+    # Preserve the measured historical comparison without reinstalling its
+    # procedures. The digest/count were derived from source_commit's bytes.
+    fixture = json.loads((repository_root / "tests/fixtures/legacy-skill-migration-input.json").read_text("utf-8"))
+    baseline = fixture["legacy_context_baseline"]
+    assert baseline["source_commit"] == fixture["source_commit"]
+    assert baseline["source_file_count"] == fixture["index"]["skill_count"]
+    assert len(baseline["text_sha256"]) == 64
+    assert baseline["characters"] > 0 and baseline["conservative_tokens"] > 0
+    return baseline["conservative_tokens"]
 
 
 def _proposal_signature(proposal) -> str:

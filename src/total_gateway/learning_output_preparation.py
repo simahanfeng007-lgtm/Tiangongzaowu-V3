@@ -177,7 +177,7 @@ def prepare_tool_source_learning_output(record, *, basis: LearningOutputBasisV1,
 
 def prepare_method_source_learning_output(
     record, *, basis: LearningOutputBasisV1, base_snapshot: SkillMethodWorldSnapshotV1,
-    expected_base_snapshot_sha256: str, corpus: LegacySkillMethodCorpusV1,
+    expected_base_snapshot_sha256: str, corpus: LegacySkillMethodCorpusV1 | None = None,
     candidates: tuple[MethodSourceCandidateV1, ...], source_documents: dict[str, tuple[str, bytes]],
     simulation_evidence: dict[str, MethodSimulationEvidenceV1], trusted_observer_public_key: bytes,
     now_ms: int,
@@ -195,7 +195,8 @@ def prepare_method_source_learning_output(
         raise LearningOutputPreparationError("learning_output.method_base_or_clock_mismatch")
     if compile_skill_method_world(base_snapshot.primitives, corpus=corpus,
             migration_bindings=base_snapshot.migration_bindings,
-            reviewed_source_bindings=base_snapshot.reviewed_source_bindings) != base_snapshot:
+            reviewed_source_bindings=base_snapshot.reviewed_source_bindings,
+            installed_source_bindings=base_snapshot.installed_source_bindings) != base_snapshot:
         raise LearningOutputPreparationError("learning_output.method_base_graph_mismatch")
     if (type(candidates) is not tuple or not 1 <= len(candidates) <= 128
             or any(type(c) is not MethodSourceCandidateV1 or c.may_authorize is not False

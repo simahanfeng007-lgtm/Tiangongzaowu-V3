@@ -286,6 +286,9 @@ def test_t26b_security_surface_files_match_reviewed_lineage() -> None:
     # all-or-none composition binding; record that reviewed successor instead
     # of overwriting the historical baseline.
     reviewed_successors = {
+        "src/total_gateway/skill_authority.py": (
+            ("dictionary-optional-actions-and-required-completion", "37dc03252e4b581afab59b66689fb486af3cb9d26e461c56b445b81537759f83"),
+        ),
         "src/contracts/authorization.py": (
             (
                 "p7c1-composition-execution-binding",

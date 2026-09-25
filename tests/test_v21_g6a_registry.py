@@ -7,16 +7,16 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "readable-python-source/omni_body_skill/registry/skill_router_index.json"
-MANIFEST = ROOT / "readable-python-source/omni_body_skill/registry/capability_manifest.generated.json"
+REGISTRY = ROOT / "dictionaries/skills/catalog.json"
+MANIFEST = ROOT / "dictionaries/registry/capability_manifest.generated.json"
 NON_SKILL_REFS = ROOT / "readable-python-source/omni_body_skill/registry/non_skill_references.json"
 LEDGER = ROOT / "v21-work/v21-g0-20260802T100346Z-dbc48aae2392/ledgers/issue-closure-ledger.json"
 
 
 def _load() -> tuple[dict, dict]:
-    registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    return registry, manifest
+    fixture = json.loads((ROOT / "tests/fixtures/legacy-skill-migration-input.json").read_text(encoding="utf-8"))
+    assert json.loads(REGISTRY.read_text(encoding="utf-8"))["skills"] == []
+    return fixture["index"], {"capabilities": fixture["legacy_capabilities"]}
 
 
 def test_t29_registry_34_unique_cards_12_acceptances_action_closure_orphan() -> None:
@@ -45,24 +45,24 @@ def test_t29_registry_34_unique_cards_12_acceptances_action_closure_orphan() -> 
     assert len(typed) == 12
     for item in typed:
         acceptance = item["acceptance"]
-        assert acceptance.get("minimum_score") > 0
-        assert acceptance.get("world_class_score") > 0
+        if "minimum_score" in acceptance:
+            assert acceptance["minimum_score"] > 0
+            assert acceptance["world_class_score"] >= acceptance["minimum_score"]
         assert acceptance.get("must_pass")
     search = next(item for item in skills if item["id"] == "skill_search_v2")
-    assert search["acceptance"]["image_result_required_fields"] == [
-        "image_url", "source_url", "thumbnail_url",
-    ]
-    non_skill = json.loads(NON_SKILL_REFS.read_text(encoding="utf-8"))
-    assert "deliverable_skills/28_delivery_kernel_global.md" in non_skill["references"]
+    assert search["acceptance"]["source_links_required"] is True
+    assert search["acceptance"]["must_pass"] == ["web.search.current_sources"]
+    assert not NON_SKILL_REFS.exists(), "legacy non-skill registry is retired"
+    fixture = json.loads((ROOT / "tests/fixtures/legacy-skill-migration-input.json").read_text(encoding="utf-8"))
+    assert all(len(fixture["source_hashes"]["dictionaries/" + item["file"]]) == 64 for item in skills)
     assert not any("delivery_kernel_global" in (item.get("file") or "") for item in skills)
     voice = next(item for item in skills if item["id"] == "skill_authorized_voice_audio_worldclass_v1")
     assert voice["quality_gates"] == ["qc.voice_authorized.delivery_check"]
-    image_alias = capabilities["web.image_search"]
-    assert image_alias["alias_to"] == "browser.image_search"
-    assert image_alias["alias_to"] != "web.search"
-    assert capabilities["browser.image_search"]["result_required_fields"] == [
-        "image_url", "source_url", "thumbnail_url",
-    ]
+    # The historical image-search names had no implementation. The migrated
+    # search Skill uses the actual current-source search contract instead.
+    assert "web.image_search" not in capabilities
+    assert "browser.image_search" not in capabilities
+    assert capabilities["web.search"]["executable"] is True
 
 
 def test_t21_skill_selection_binds_to_gateway_activation_actions() -> None:

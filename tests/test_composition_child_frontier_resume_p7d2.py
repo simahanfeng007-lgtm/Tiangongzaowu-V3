@@ -217,7 +217,7 @@ def test_restart_resumes_after_first_child_without_replaying_it(
         assert second.status == "SUCCEEDED"
         assert first_backend.calls == 1
         assert second_backend.calls == 1
-        assert second_backend.action_ids == ["skill.get"]
+        assert second_backend.action_ids == ["file.list"]
         assert second_backend.states_at_call == [("SIDE_EFFECT_STARTED", False)]
         assert restarted.dispatch_next(
             now_ms=1_802,
@@ -239,7 +239,7 @@ def test_restart_resumes_after_first_child_without_replaying_it(
         )
         assert second_record is not None
         assert second_record.request.materialized_arguments == {
-            "skill_id": "a" * 64
+            "pattern": "a" * 64
         }
         assert second_record.request.dependency_evidence[0]["effect_id"] == (
             first.effect_id
@@ -264,7 +264,7 @@ def test_restart_resumes_after_first_child_without_replaying_it(
             ).observed_at_ms,
         )
         assert finalization.final_output_aliases == {
-            harness.plan.final_output_aliases[0].alias: "# P7D.1 test"
+            harness.plan.final_output_aliases[0].alias: []
         }
 
         completion_lineage = tuple(

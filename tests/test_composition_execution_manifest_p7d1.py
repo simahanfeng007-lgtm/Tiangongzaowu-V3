@@ -22,8 +22,7 @@ COMPONENT_MANIFEST_SHA256 = "c" * 64
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_MANIFEST_PATH = (
     ROOT
-    / "src"
-    / "omni_body_skill"
+    / "dictionaries"
     / "registry"
     / "capability_manifest.generated.json"
 ).resolve()
@@ -86,7 +85,7 @@ def test_compiles_real_execution_manifest_from_all_three_authorities(
     assert execution_manifest.has_valid_sha256()
     assert execution_manifest.generated_at_ms == 1_001
     assert execution_manifest.component_manifest_hash == COMPONENT_MANIFEST_SHA256
-    assert len(execution_manifest.actions) == registry.executable_count == 290
+    assert len(execution_manifest.actions) == registry.executable_count == 285
     assert tuple(
         (item.action_id, item.version) for item in execution_manifest.actions
     ) == tuple(

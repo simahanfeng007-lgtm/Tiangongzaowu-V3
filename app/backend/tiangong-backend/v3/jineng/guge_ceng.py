@@ -10,27 +10,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 
-OMNI_BODY_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "action": {
-            "type": "string",
-            "description": "要执行的动作名。URL 正文用 web.read，关键词检索用 web.search；文件、代码、质检、交付和文档动作直接传对应 action。",
-        },
-        "target": {
-            "type": "string",
-            "description": "主操作对象、URL 或相对工作区路径。路径权限由系统裁决，模型不能声明权限。",
-        },
-        "args": {
-            "type": "object",
-            "description": "动作专用业务参数，例如 content、destination、output、sheets、text、command。不得包含确认、权限或内部运行字段。",
-            "additionalProperties": True,
-        },
-    },
-    "required": ["action"],
-    "additionalProperties": False,
-}
+from capability_dictionary import load_dictionary
 
+# Host protocol is published with the business dictionaries, not a second registry.
+OMNI_BODY_PARAMETERS = load_dictionary().host_protocol["parameters"]
 
 
 @dataclass
@@ -65,7 +48,7 @@ class GugeCeng:
         self.zhuce(
             GongjuYingshe(
                 "omni_body",
-                "统一身体工具入口。直接传 action 执行生产动作。URL 正文用 web.read，关键词检索用 web.search；文件、代码、质检、交付和文档动作直接执行。传 target/args 即可；权限与 workspace 由系统绑定。",
+                load_dictionary().host_protocol["description"],
                 OMNI_BODY_PARAMETERS,
                 self._shipeiqi_duben,
                 "A4",

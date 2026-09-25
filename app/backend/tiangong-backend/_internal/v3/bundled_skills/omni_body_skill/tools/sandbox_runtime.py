@@ -732,6 +732,7 @@ class SandboxRunner:
                 "receipt_role": "execution",
                 "execution_state": "completed",
                 "commit_state": "committed" if code == 0 else "discarded",
+                "committed_workspace": str(self.workspace),
                 "outputs_truncated": False,
                 "containment": containment,
                 "network": "denied" if containment == "windows-appcontainer" else "not_os_enforced",

@@ -41,7 +41,7 @@ import zipfile
 import urllib.parse
 import urllib.request
 import unicodedata
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from ._stub_actions import _stub_action_result
@@ -286,139 +286,12 @@ RISK = {
     "A5": "hard blocked: payment, credential theft, bypass, destructive permanent delete, unauthorized voice cloning",
 }
 
-ACTIONS: Dict[str, Dict[str, Any]] = {
-    "life.body.state.query": {
-        "risk": "A0",
-        "implemented": True,
-        "effect": "read",
-        "summary": "Read this Life's current authoritative Life projection and live runtime body state with a gateway audit receipt.",
-    },
-    "life.activity.query": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Read the authoritative Life activity ledger for today, yesterday, or a specified date.",
-    },
-    "system.capabilities": {"risk": "A0", "implemented": True, "summary": "List supported actions, schemas, risk levels, and adapter-only capabilities."},
-    "system.health": {"risk": "A0", "implemented": True, "summary": "Inspect workspace, dependencies, ffmpeg availability, and runtime configuration."},
-    "system.app_registry": {"risk": "A0", "implemented": True, "summary": "List mounted application tool groups and their action names."},
-    "system.action_schema": {"risk": "A0", "implemented": True, "summary": "Return metadata for a single action, including aliases and adapter requirements."},
-    "learning.ingest": {
-        "risk": "A2",
-        "implemented": True,
-        "summary": "Create a pending learning card from a host-verified explicit user learning request; never compiles, activates, registers, or releases tools.",
-        "allowed_effect": "create_pending_learning_card_only",
-        "requires_explicit_user_learning_intent": True,
-        "requires_host_verified_intent_token": True,
-    },
+from capability_dictionary import load_dictionary
 
-    "file.list": {"risk": "A0", "implemented": True, "summary": "List files/directories under a target directory."},
-    "file.read": {"risk": "A0", "implemented": True, "summary": "Read text or base64-encoded binary file preview."},
-    "file.write": {"risk": "A3", "implemented": True, "summary": "Write text/base64 file with rollback snapshot."},
-    "file.append": {"risk": "A3", "implemented": True, "summary": "Append text to a file with rollback snapshot."},
-    "file.copy": {"risk": "A3", "implemented": True, "summary": "Copy a file or directory with overwrite protection and rollback snapshot."},
-    "file.move": {"risk": "A3", "implemented": True, "summary": "Move a file or directory with rollback snapshot."},
-    "file.rename": {"risk": "A3", "implemented": True, "summary": "Rename a file or directory in place with rollback snapshot."},
-    "file.mkdir": {"risk": "A2", "implemented": True, "summary": "Create a directory."},
-    "file.delete_to_trash": {"risk": "A4", "implemented": True, "summary": "Move file/directory into workspace trash; never permanent delete."},
-    "file.search": {"risk": "A0", "implemented": True, "summary": "Search filenames and/or text content within workspace."},
-    "file.hash": {"risk": "A0", "implemented": True, "summary": "Calculate SHA-256 for a file."},
-
-    "zip.create": {"risk": "A2", "implemented": True, "summary": "Create a zip archive from files/directories."},
-    "zip.extract": {"risk": "A4", "implemented": True, "summary": "Safely extract zip archive under destination with zip-slip checks."},
-
-    "code.read": {"risk": "A0", "implemented": True, "summary": "Read source code file with metadata."},
-    "code.write": {"risk": "A3", "implemented": True, "summary": "Write source code and optionally run syntax checks."},
-    "code.patch_replace": {"risk": "A3", "implemented": True, "summary": "Patch file by replacing literal or regex text with rollback snapshot."},
-    "file.patch_replace": {"risk": "A3", "implemented": True, "alias_to": "code.patch_replace", "summary": "Compatibility alias for code.patch_replace."},
-    "quality.python_syntax": {"risk": "A0", "implemented": True, "summary": "Compile Python files to detect syntax errors."},
-    "quality.javascript_syntax": {"risk": "A0", "implemented": True, "summary": "Run node --check on JavaScript files without a free-form shell."},
-    "quality.run_tests": {"risk": "A4", "implemented": True, "summary": "Run a test command inside workspace; requires allow_shell=True."},
-    "python.run": {"risk": "A4", "implemented": True, "summary": "Run Python code or a Python script in workspace; requires allow_python=True."},
-    "shell.run": {"risk": "A4", "implemented": True, "summary": "Run shell command in workspace; requires allow_shell=True."},
-    "git.clone": {"risk": "A2", "implemented": True, "effect": "create", "summary": "Clone a public GitHub HTTPS repository into a new local directory through a governed network-read capability; generic shell/python remain network-denied."},
-
-    "docx.create": {"risk": "A2", "implemented": True, "summary": "Create a Word .docx document from structured sections/tables."},
-    "word.create": {"risk": "A2", "implemented": True, "summary": "Alias for docx.create — create a Word document."},
-    "pptx.create": {"risk": "A2", "implemented": True, "summary": "Create a PowerPoint .pptx deck from structured slide specs."},
-    "pptx.read": {"risk": "A0", "implemented": True, "summary": "Inspect PowerPoint slide text, dimensions, placeholders, fonts, and meaningful visual evidence."},
-    "sheet.create": {"risk": "A2", "implemented": True, "summary": "Create an .xlsx workbook from structured sheets."},
-    "sheet.read": {"risk": "A0", "implemented": True, "summary": "Read preview rows from .xlsx or .csv."},
-
-    # —— 别名映射：word.* → docx.* ——
-    "word.read": {"risk": "A0", "implemented": True, "summary": "Alias for docx: use file.read for .docx files."},
-    "mindmap.create": {"risk": "A2", "implemented": True, "summary": "Create Mermaid mindmap markdown and optional OPML."},
-
-    "pdf.extract_text": {"risk": "A0", "implemented": True, "summary": "Extract text from a PDF via pypdf."},
-    "pdf.create_from_text": {"risk": "A2", "implemented": True, "summary": "Create a simple PDF from text via reportlab."},
-
-    "image.info": {"risk": "A0", "implemented": True, "summary": "Inspect image size/mode/format."},
-    "image.create_canvas": {"risk": "A2", "implemented": True, "summary": "Create a blank image canvas."},
-    "image.resize": {"risk": "A2", "implemented": True, "summary": "Resize image with Pillow."},
-    "image.crop": {"risk": "A2", "implemented": True, "summary": "Crop image with Pillow."},
-    "image.rotate": {"risk": "A2", "implemented": True, "summary": "Rotate image with Pillow."},
-    "image.add_text": {"risk": "A2", "implemented": True, "summary": "Add simple text overlay to image."},
-    "image.compose": {"risk": "A2", "implemented": True, "summary": "Overlay one image on another."},
-    "image.convert": {"risk": "A2", "implemented": True, "summary": "Convert image format."},
-
-    "audio.tone": {"risk": "A2", "implemented": True, "summary": "Create a simple WAV tone/beep/music bed placeholder."},
-    "audio.trim": {"risk": "A2", "implemented": True, "summary": "Trim audio using ffmpeg."},
-    "audio.concat": {"risk": "A2", "implemented": True, "summary": "Concatenate audio files using ffmpeg concat demuxer."},
-    "audio.tts": {"risk": "A2", "implemented": False, "adapter": "tts_backend", "summary": "Text-to-speech through configured TTS backend adapter."},
-    "voice.clone_authorized": {"risk": "A5", "implemented": False, "adapter": "voice_backend_with_consent", "summary": "Only for owned/consented voices; disabled by default and requires explicit external consent gate."},
-
-    "video.info": {"risk": "A0", "implemented": True, "summary": "Inspect video metadata using ffprobe."},
-    "video.cut": {"risk": "A2", "implemented": True, "summary": "Cut a video segment using ffmpeg."},
-    "video.extract_audio": {"risk": "A2", "implemented": True, "summary": "Extract audio track using ffmpeg."},
-    "video.add_audio": {"risk": "A2", "implemented": True, "summary": "Mux/replace audio track using ffmpeg."},
-    "video.slideshow": {"risk": "A2", "implemented": True, "summary": "Create simple slideshow video from images using ffmpeg."},
-
-    "rollback.list": {"risk": "A0", "implemented": True, "summary": "List rollback-capable operations."},
-    "rollback.apply": {"risk": "A4", "implemented": True, "summary": "Restore snapshots for a previous mutating operation."},
-
-    "browser.open": {"risk": "A3", "implemented": False, "adapter": "browser_driver", "summary": "Open or operate browser through Playwright/Selenium/GUI adapter."},
-    "browser.search_web": {"risk": "A0", "implemented": False, "adapter": "web_search", "summary": "Use host model/web-search tool; this portable package has no bundled web access."},
-    "desktop.screenshot": {"risk": "A0", "implemented": False, "adapter": "desktop_automation", "summary": "Screenshot through pyautogui/accessibility adapter."},
-    "desktop.click": {"risk": "A3", "implemented": False, "adapter": "desktop_automation", "summary": "Click through GUI adapter."},
-    "desktop.type": {"risk": "A3", "implemented": False, "adapter": "desktop_automation", "summary": "Type through GUI adapter."},
-    "desktop.hotkey": {"risk": "A3", "implemented": False, "adapter": "desktop_automation", "summary": "Keyboard shortcut through GUI adapter."},
-}
-
-
-# ---------- app-bus registry loader ----------
-
-def _find_registry_root() -> Path | None:
-    here = Path(__file__).resolve()
-    candidates = []
-    for parent in [here.parent, *here.parents]:
-        candidates.append(parent)
-        candidates.append(parent.parent if parent.parent != parent else parent)
-    for root in candidates:
-        if (root / "registry" / "app_actions.json").exists():
-            return root
-    return None
-
-
-def _load_appbus_registry() -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    root = _find_registry_root()
-    if root is None:
-        return ({"schema": "tiangong.v3.omni_body.app_registry.v1", "apps": []}, {})
-    try:
-        apps_path = root / "registry" / "apps.json"
-        actions_path = root / "registry" / "app_actions.json"
-        apps_doc = json.loads(apps_path.read_text(encoding="utf-8")) if apps_path.exists() else {"apps": []}
-        actions_doc = json.loads(actions_path.read_text(encoding="utf-8")) if actions_path.exists() else {"actions": {}}
-        raw_actions = actions_doc.get("actions", {}) if isinstance(actions_doc, dict) else {}
-        actions: dict[str, dict[str, Any]] = {}
-        for name, meta in raw_actions.items():
-            if isinstance(name, str) and isinstance(meta, dict):
-                cleaned = dict(meta)
-                cleaned.setdefault("risk", "A2")
-                cleaned.setdefault("implemented", False)
-                cleaned.setdefault("summary", f"Mounted app-bus action: {name}")
-                actions[name] = cleaned
-        return (apps_doc if isinstance(apps_doc, dict) else {"apps": []}, actions)
-    except Exception as exc:
-        return ({"schema": "tiangong.v3.omni_body.app_registry.v1", "apps": [], "load_error": str(exc)}, {})
+DICTIONARY = load_dictionary()
+ACTIONS = DICTIONARY.action_metadata()
+APP_REGISTRY = DICTIONARY.applications
+APP_ACTIONS = {name: row for name, row in ACTIONS.items() if row.get("app_id")}
 
 
 def _load_learning_runtime() -> tuple[Any | None, Any | None, str]:
@@ -428,98 +301,13 @@ def _load_learning_runtime() -> tuple[Any | None, Any | None, str]:
     return None, None, "legacy_learning_runtime_detached"
 
 
-APP_REGISTRY, APP_ACTIONS = _load_appbus_registry()
-# Merge mounted application actions into the single tool action table.
-# These are NOT registered as separate v3 tools; they are routable actions under omni_body.
-ACTIONS.update(APP_ACTIONS)
-
-# Portable app fallbacks: these make the most common app-bus actions truly executable
-# without requiring the proprietary application to be installed. They do NOT claim
-# to be full native adapters. Native GUI/API adapters can still override these names
-# in a host deployment by registering higher-priority handlers before import.
-PORTABLE_APP_FALLBACKS: Dict[str, Dict[str, Any]] = {
-    # Browser: static fetch/download/text extraction. JS-heavy apps still need Playwright/CDP.
-    "browser.open": {"risk": "A2", "implemented": True, "summary": "Portable browser open/fetch fallback: downloads URL/file/data into a local snapshot."},
-    "browser.search_web": {"risk": "A0", "implemented": True, "summary": "Portable web search fallback through a configured search endpoint or direct search URL snapshot."},
-    "web.search": {"risk": "A0", "implemented": True, "alias_to": "browser.search_web", "summary": "Alias to browser.search_web."},
-    "search_web": {"risk": "A0", "implemented": True, "alias_to": "browser.search_web", "summary": "Alias to browser.search_web."},
-    "web.read": {"risk": "A0", "implemented": True, "alias_to": "browser.open", "summary": "Read visible text from a URL."},
-    "web.fetch": {"risk": "A0", "implemented": True, "alias_to": "browser.open", "summary": "Compatibility alias to web.read."},
-    "web_readability_extract": {"risk": "A0", "implemented": True, "alias_to": "browser.open", "summary": "Compatibility alias to web.read."},
-    "web.readability_extract": {"risk": "A0", "implemented": True, "alias_to": "browser.open", "summary": "Compatibility alias to web.read."},
-    "http.get": {"risk": "A0", "implemented": True, "summary": "Portable HTTP GET fallback returning status, content type, and decoded body text."},
-    "web.download": {"risk": "A2", "implemented": True, "summary": "Portable URL download fallback routed to browser.chrome.download."},
-    "browser.chrome.open": {"risk": "A2", "implemented": True, "summary": "Portable Chrome-open fallback routed to browser.chrome.goto."},
-    "browser.chrome.goto": {"risk": "A2", "implemented": True, "summary": "Portable Chrome goto fallback: fetch URL/file/data and save local HTML/text snapshot."},
-    "browser.chrome.extract_text": {"risk": "A0", "implemented": True, "summary": "Extract visible text from a fetched URL or local HTML snapshot."},
-    "browser.chrome.extract_dom": {"risk": "A0", "implemented": True, "summary": "Return static DOM/HTML snapshot. Dynamic JS pages need a real browser adapter."},
-    "browser.chrome.download": {"risk": "A2", "implemented": True, "summary": "Download a URL or copy file:// resource into workspace."},
-    "browser.chrome.pdf.print": {"risk": "A2", "implemented": True, "summary": "Create a simple PDF from static page text. Pixel-perfect print needs browser adapter."},
-    "browser.chrome.screenshot": {"risk": "A2", "implemented": True, "summary": "Create a portable text-image screenshot from static page text. Real viewport screenshot needs browser adapter."},
-
-    # Photoshop: portable layer project using JSON + PNG composite. Native PSD/UXP still needs Photoshop adapter.
-    "adobe.photoshop.document.create": {"risk": "A2", "implemented": True, "summary": "Create portable Photoshop-like design project with layer JSON and PNG composite."},
-    "adobe.photoshop.document.open": {"risk": "A0", "implemented": True, "summary": "Open/read portable Photoshop-like design project metadata."},
-    "adobe.photoshop.layer.create": {"risk": "A2", "implemented": True, "summary": "Add a layer to portable Photoshop-like project and re-render PNG composite."},
-    "adobe.photoshop.layer.update": {"risk": "A2", "implemented": True, "summary": "Update a portable Photoshop-like project layer and re-render PNG composite."},
-    "adobe.photoshop.text.add": {"risk": "A2", "implemented": True, "summary": "Add text layer to portable Photoshop-like project and re-render PNG composite."},
-    "adobe.photoshop.export.png": {"risk": "A2", "implemented": True, "summary": "Export portable Photoshop-like project composite to PNG."},
-    "adobe.photoshop.image.resize": {"risk": "A2", "implemented": True, "summary": "Resize image through portable Pillow fallback."},
-    "adobe.photoshop.image.crop": {"risk": "A2", "implemented": True, "summary": "Crop image through portable Pillow fallback."},
-
-    # Jianying/CapCut: portable video-project JSON + ffmpeg renderer. Native template/effects still need app adapter.
-    "jianying.project.create": {"risk": "A2", "implemented": True, "summary": "Create portable Jianying/CapCut-like project JSON."},
-    "jianying.media.import": {"risk": "A2", "implemented": True, "summary": "Import media path into portable Jianying project JSON."},
-    "jianying.timeline.cut": {"risk": "A2", "implemented": True, "summary": "Add cut segment instruction to portable Jianying project JSON."},
-    "jianying.subtitle.add": {"risk": "A2", "implemented": True, "summary": "Add subtitle instruction to portable Jianying project JSON."},
-    "jianying.music.add": {"risk": "A2", "implemented": True, "summary": "Attach music/audio path to portable Jianying project JSON."},
-    "jianying.cover.create": {"risk": "A2", "implemented": True, "summary": "Create simple cover image for portable Jianying project."},
-    "jianying.export.mp4": {"risk": "A2", "implemented": True, "summary": "Render portable Jianying project/video/images to MP4 through ffmpeg."},
-
-    # Feishu: real API can be mounted by env adapter; portable fallback creates local docx/md/pdf deliverables.
-    "feishu.docs.doc.create": {"risk": "A2", "implemented": True, "summary": "Create Feishu-like document locally, or remote Feishu doc if configured by host adapter."},
-    "feishu.docs.doc.read": {"risk": "A0", "implemented": True, "summary": "Read local Feishu-like document fallback file."},
-    "feishu.docs.doc.update": {"risk": "A3", "implemented": True, "summary": "Update local Feishu-like document fallback file."},
-    "feishu.docs.export.docx": {"risk": "A2", "implemented": True, "summary": "Export local Feishu-like document fallback to docx."},
-    "feishu.docs.export.pdf": {"risk": "A2", "implemented": True, "summary": "Export local Feishu-like document fallback to simple PDF."},
-
-    # Desktop: real GUI actions when pyautogui/PIL screen capture is available and explicitly enabled.
-    "desktop.screenshot": {"risk": "A0", "implemented": True, "summary": "Capture desktop screenshot through PIL ImageGrab/pyautogui when host display is available."},
-    "desktop.click": {"risk": "A3", "implemented": True, "summary": "Desktop click through pyautogui; requires OMNI_DESKTOP_ENABLE=1 or args.enable_desktop=true."},
-    "desktop.type": {"risk": "A3", "implemented": True, "summary": "Desktop typing through pyautogui; requires OMNI_DESKTOP_ENABLE=1 or args.enable_desktop=true."},
-    "desktop.hotkey": {"risk": "A3", "implemented": True, "summary": "Desktop hotkey through pyautogui; requires OMNI_DESKTOP_ENABLE=1 or args.enable_desktop=true."},
-    "windows.desktop.screenshot": {"risk": "A0", "implemented": True, "summary": "Alias to desktop.screenshot."},
-    "windows.desktop.click": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.click."},
-    "windows.desktop.type": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.type."},
-    "windows.desktop.hotkey": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.hotkey."},
-    "macos.desktop.screenshot": {"risk": "A0", "implemented": True, "summary": "Alias to desktop.screenshot."},
-    "macos.desktop.click": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.click."},
-    "macos.desktop.type": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.type."},
-    "macos.desktop.hotkey": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.hotkey."},
-    "linux.desktop.screenshot": {"risk": "A0", "implemented": True, "summary": "Alias to desktop.screenshot."},
-    "linux.desktop.click": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.click."},
-    "linux.desktop.type": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.type."},
-    "linux.desktop.hotkey": {"risk": "A3", "implemented": True, "summary": "Alias to desktop.hotkey."},
-
-    # TTS: local OS TTS fallback where available.
-    "audio.tts": {"risk": "A2", "implemented": True, "summary": "Create speech audio through local OS TTS engine if available; otherwise fail honestly."},
-    "elevenlabs.tts.create": {"risk": "A2", "implemented": True, "summary": "Portable TTS fallback routed to local audio.tts. Real ElevenLabs needs API adapter."},
-}
-for _name, _patch in PORTABLE_APP_FALLBACKS.items():
-    _merged = dict(ACTIONS.get(_name, {}))
-    _merged.update(_patch)
-    _merged.pop("adapter", None)
-    ACTIONS[_name] = _merged
-
 # ---------- v3.2 delivery kernel actions ----------
-# These are the compact action names used by the PPT Skill through the single
-# externally visible omni_body tool.  They must never disappear from validation
+# These are delivery primitives available to model-generated compositions.
+# Retired fixed Skill loaders are not runtime health requirements.
+# The retained primitives must never disappear from validation
 # merely because a dynamic submodule failed to import: that converts a precise
 # capability fault into the misleading `unknown_action` symptom.
 _REQUIRED_SINGLE_TOOL_ACTIONS: Dict[str, Dict[str, Any]] = {
-    "skill.route": {"risk": "A0", "summary": "Route a task to a compact executable Skill."},
-    "skill.get": {"risk": "A0", "summary": "Get compact Skill metadata."},
-    "skill.read": {"risk": "A0", "summary": "Read the selected Skill procedure."},
     "template.apply": {"risk": "A2", "summary": "Apply a delivery template and emit its machine-readable design contract."},
     "qc.ppt.delivery_check": {"risk": "A0", "summary": "Run the PowerPoint delivery quality gate."},
     "repair.plan": {"risk": "A2", "summary": "Create a repair plan from quality-gate findings."},
@@ -562,7 +350,8 @@ DELIVERY_ACTIONS, _DELIVERY_CAPABILITY_ERRORS = _finalize_delivery_registry(
     _LOADED_DELIVERY_ACTIONS,
     _DELIVERY_KERNEL_IMPORT_ERROR,
 )
-ACTIONS.update(DELIVERY_ACTIONS)
+# Runtime handlers are bindings, never an independent capability source.
+DELIVERY_ACTIONS = {k: v for k, v in ACTIONS.items() if DICTIONARY.tools[k]["binding"]["kind"] == "delivery" and k in _LOADED_DELIVERY_ACTIONS}
 
 
 def _required_capability_integrity() -> Dict[str, Any]:
@@ -904,6 +693,7 @@ def _capability_prefix_counts(action_names: Iterable[str]) -> Dict[str, int]:
 
 class BodyRuntime:
     def __init__(self, config: Optional[BodyRuntimeConfig] = None):
+        DICTIONARY.verify_published()
         self.config = config or BodyRuntimeConfig()
         self.workspace = Path(self.config.workspace).expanduser().resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -966,6 +756,9 @@ class BodyRuntime:
         )
 
     def run(self, action: str, target: Optional[str] = None, args: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
+        readiness = DICTIONARY.readiness(str(action), runtime=self)
+        if not readiness["ready"]:
+            return {"success": False, "ok": False, "action": action, "error_type": "DictionaryCapabilityUnavailable", "readiness": readiness}
         payload = dict(args or {})
         payload.update(kwargs)
         validation = validate_tool_request(
@@ -1103,7 +896,7 @@ class BodyRuntime:
                         raise OmniBodyError(f"Delivery kernel unavailable for {action}")
                     result = globals()["handle_delivery_action"](self, op_id, action, target, args)
                 else:
-                    handler_name = "_action_" + action.replace(".", "_")
+                    handler_name = DICTIONARY.tools[action]["binding"]["target"]
                     handler = getattr(self, handler_name, None)
                     if handler is None:
                         raise OmniBodyError(f"No handler implemented for {action}")
@@ -1117,6 +910,8 @@ class BodyRuntime:
                 result["success"] = False
             else:
                 result.setdefault("success", True)
+            result.setdefault("dictionary_sha256", DICTIONARY.sha256)
+            result.setdefault("dictionary_version", DICTIONARY.version)
             result.setdefault("op_id", op_id)
             result.setdefault("action", action)
             result.setdefault("risk_level", meta.get("risk"))
@@ -1572,6 +1367,11 @@ class BodyRuntime:
             raise OmniBodyError("shell=True is forbidden; commands must be explicit argument vectors")
         timeout = self.config.default_timeout_seconds if timeout is None else timeout
         timeout = max(1, min(600, int(timeout or 60)))
+        action = getattr(self._execution_state, "action", None)
+        row = DICTIONARY.tools.get(action) or DICTIONARY.tools["python.run"]
+        profile_id = row["budget"]["profile"]
+        profile = DICTIONARY.execution_profiles[profile_id]
+        timeout = min(timeout, profile["timeout_seconds"])
         run_cwd = Path(cwd) if cwd is not None else self.workspace
         if not self.config.sandbox_enabled and not require_os_containment:
             before_files = (
@@ -1637,13 +1437,20 @@ class BodyRuntime:
                 "deleted_files": deleted_files,
                 "changed_bytes": sum(after_files[path][0] for path in changed_files),
             }
-        result = self.sandbox.run(cmd, cwd=run_cwd, timeout_seconds=timeout, op_id=op_id,
+        limits = replace(self.sandbox.limits,
+            max_output_bytes=min(self.sandbox.limits.max_output_bytes, profile["max_log_bytes"]),
+            max_changed_bytes=min(self.sandbox.limits.max_changed_bytes, profile["max_artifact_bytes"]))
+        runner = SandboxRunner(self.workspace, self.sandbox.state_root, self.trash_dir, limits)
+        result = runner.run(cmd, cwd=run_cwd, timeout_seconds=timeout, op_id=op_id,
                                  require_os_containment=require_os_containment or self.config.sandbox_require_os_containment,
                                  cancel_check=self.config.cancel_check,
                                  allow_deletions=self.config.sandbox_allow_deletions,
                                  expected_workspace_files=expected_workspace_files)
         result["stdout"] = _bounded_subprocess_text(result.get("stdout"))
         result["stderr"] = _bounded_subprocess_text(result.get("stderr"))
+        result["dictionary_execution_profile"] = profile_id
+        result["max_artifact_bytes"] = limits.max_changed_bytes
+        result["max_log_bytes"] = limits.max_output_bytes
         return result
 
     def _adapter_or_blocked(self, action: str, target: Optional[str], args: Dict[str, Any], reason: str) -> Dict[str, Any]:
@@ -1691,6 +1498,8 @@ class BodyRuntime:
                     "implemented": bool(row.get("implemented")),
                     "effect": row.get("effect"),
                     "summary": row.get("summary"),
+                    "readiness": DICTIONARY.readiness(name, runtime=self),
+                    "execution_profile": DICTIONARY.tools[name]["budget"]["profile"],
                 }
                 for name, row in definitions.items()
             }
@@ -1784,24 +1593,31 @@ class BodyRuntime:
         if meta is None:
             raise OmniBodyError(f"Unknown action: {name}")
         capability = self.capability_manifest.capabilities.get(name)
-        return {"action": name, "schema": meta, "argument_contract": schema_for_action(name), "implemented": bool(meta.get("implemented")), "executable": bool(capability.executable) if capability else False, "capability": capability.to_dict() if capability else {}, "alias_to": meta.get("alias_to"), "adapter": meta.get("adapter")}
+        readiness = DICTIONARY.readiness(name, runtime=self)
+        profile_id = DICTIONARY.tools[name]["budget"]["profile"]
+        return {"action": name, "schema": meta, "argument_contract": schema_for_action(name), "implemented": bool(meta.get("implemented")), "executable": readiness["ready"], "readiness": readiness, "execution_profile": {"id": profile_id, **DICTIONARY.execution_profiles[profile_id]}, "capability": capability.to_dict() if capability else {}, "alias_to": meta.get("alias_to"), "adapter": meta.get("adapter")}
 
     def _action_system_health(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         deps = {}
-        for mod in ["docx", "pptx", "openpyxl", "PIL", "pypdf", "reportlab"]:
+        for mod in ["docx", "pptx", "openpyxl", "PIL", "pypdf", "reportlab", "imageio_ffmpeg"]:
             try:
                 __import__(mod)
                 deps[mod] = True
             except Exception:
                 deps[mod] = False
         healthy = bool(self.capability_integrity.get("healthy")) and bool(deps.get("pptx"))
+        # Cancellation callbacks can own locks and must never be deep-copied or
+        # exposed as configuration data. Copy only the serializable settings.
+        config = asdict(replace(self.config, cancel_check=None))
+        config.pop("cancel_check", None)
         return {
             "healthy": healthy,
             "workspace": str(self.workspace),
             "audit_dir": str(self.audit_dir),
             "backup_dir": str(self.backup_dir),
             "trash_dir": str(self.trash_dir),
-            "config": asdict(self.config),
+            "config": config,
+            "cancellation_enabled": callable(self.config.cancel_check),
             "dependencies": deps,
             "ffmpeg": self.ffmpeg,
             "ffprobe": self.ffprobe,
@@ -2001,8 +1817,17 @@ class BodyRuntime:
             preview = base64.b64encode(raw[:max_chars]).decode("ascii")
             return {"path": str(p), "mime": mimetypes.guess_type(str(p))[0], "size_bytes": len(raw), "base64_preview": preview, "truncated": len(raw) > max_chars}
         self._canonical_text_encoding(args)
-        data = self._read_canonical_utf8(p)
-        return {"path": str(p), "size_chars": len(data), "content": data[:max_chars], "truncated": len(data) > max_chars, "evidence": self._file_evidence(p)}
+        # Reading imported files must not impose the canonical write encoding.
+        # Explicit Unicode BOMs are unambiguous; never guess legacy encodings
+        # or replace corrupt bytes. Evidence remains bound to original bytes.
+        try:
+            decoded = decode_portable_bytes(p.read_bytes(), source="file.read")
+        except PortableTextError as exc:
+            raise OmniBodyError(str(exc)) from exc
+        data = decoded.text
+        return {"path": str(p), "size_chars": len(data), "content": data[:max_chars],
+                "encoding": decoded.encoding, "had_bom": decoded.had_bom,
+                "truncated": len(data) > max_chars, "evidence": self._file_evidence(p)}
 
     def _action_file_write(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         p = self._controlled_write_target(target)
@@ -3531,12 +3356,17 @@ class BodyRuntime:
                 dst = tmp / f"slide_{i:04d}{p.suffix.lower()}"
                 shutil.copy2(p, dst)
             first_suffix = srcs[0].suffix.lower()
-            frame_rate = float(args.get("frame_rate", 1 / float(args.get("seconds_per_image", 2))))
+            frame_rate = float(args.get("frame_rate", args.get("fps", 1 / float(args.get("seconds_per_image", 2)))))
+            if not math.isfinite(frame_rate) or not 0 < frame_rate <= 240:
+                raise OmniBodyError("video.slideshow frame_rate/fps must be a finite number in (0, 240]")
             # The Windows ffmpeg builds used by portable/source runtimes do
             # not consistently implement ``-pattern_type glob``.  The
             # normalized sequence names are already deterministic.
             sequence = tmp / f"slide_%04d{first_suffix}"
-            cmd = [ffmpeg, "-y", "-framerate", str(frame_rate), "-i", str(sequence), "-pix_fmt", "yuv420p", str(output)]
+            cmd = [ffmpeg, "-y", "-framerate", str(frame_rate), "-i", str(sequence), "-r", str(frame_rate)]
+            if args.get("size"):
+                cmd += ["-vf", "scale=" + str(args["size"]).replace("x", ":")]
+            cmd += ["-c:v", str(args.get("codec") or "libx264"), "-pix_fmt", str(args.get("pix_fmt") or "yuv420p"), str(output)]
             res = self._run_subprocess(cmd, timeout=int(args.get("timeout", 240)))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

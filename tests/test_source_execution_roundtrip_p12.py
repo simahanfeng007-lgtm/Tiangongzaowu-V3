@@ -46,7 +46,7 @@ from contracts import AttachmentRef
 from tests.test_source_registration_intake_p12 import (  # noqa: F401  fixtures/helpers
     intake,
     intake_factory,
-    source,
+    source as registration_source,
     _admission_inputs,
     _compile,
     _prepare,
@@ -57,8 +57,15 @@ from tests.test_tool_source_publication_p8 import publication  # noqa: F401  fix
 
 
 
+@pytest.fixture
+def source(tmp_path):
+    root = registration_source.__wrapped__(tmp_path)
+    (root / "src/omni_body_skill/fixture-action.txt").write_text("file.list", encoding="utf-8")
+    return root
+
+
 def _noarg_inputs(c, result):
-    """Admission inputs for the optional-argument skill.list contract."""
+    """Admission inputs for the current file.list atomic contract."""
     from tests.test_source_registration_intake_p12 import (
         _admission_inputs, _hashed)
     from total_gateway.composition_executable_plan import (
@@ -68,10 +75,16 @@ def _noarg_inputs(c, result):
     primitive = candidate.primitive
     permission = next(item for item in result.preparation.registry.permissions
                       if item.action_id == primitive.action_id)
+    import zipfile
+    with zipfile.ZipFile(c['tool_source'].bundle_path) as bundle:
+        manifest = json.loads(bundle.read('build-report.json'))['build_artifact']['gateway_manifest']
+    schema = compile_action_authority(manifest, generated_at_ms=0).schema_catalog.resolve(
+        primitive.action_id, permission.action_version)
+    entries = next(item for item in schema.value_schemas if item.value_schema_id == 'entries')
     output = _hashed(OutputDeclarationV1(
         output_binding_id=result.parse_outcome.proposal.steps[0].output_bindings[0],
-        source_kind='RESULT_PAYLOAD', json_pointer='/result/items',
-        value_schema_sha256='a' * 64, sha256='0' * 64))
+        source_kind='RESULT_PAYLOAD', json_pointer=entries.json_pointer,
+        value_schema_sha256=entries.value_schema_sha256, sha256='0' * 64))
     step = _hashed(StepExecutionBindingV1(
         step_id=result.plan.steps[0].step_id,
         candidate_id=result.parse_outcome.proposal.steps[0].candidate_id,
@@ -83,7 +96,7 @@ def _noarg_inputs(c, result):
         result_schema_sha256=primitive.result_schema_sha256,
         permission=permission, permission_sha256=permission.permission_sha256,
         depends_on=result.plan.steps[0].depends_on,
-        target_skeleton='',
+        target_skeleton=str(c['workspace_root']),
         args_skeleton={},
         output_declarations=(output,), sha256='0' * 64))
     final_reference = _hashed(StepOutputValueBindingV1(
@@ -280,7 +293,8 @@ class _BackendFixture:
 
     def request(self, method, path, payload, *, timeout_seconds,
                 backend_started=False, before_request=None):
-        del method, path, payload, timeout_seconds, backend_started, before_request
+        target = payload["execute_ticket"]["arguments"]["target"]
+        del method, path, timeout_seconds, backend_started, before_request
         self.calls += 1
         value = {
             'schema': 'tiangong.v3.omni_body.v1',
@@ -288,21 +302,12 @@ class _BackendFixture:
             'zhuangtai': 'wancheng',
             'gongju': 'omni_body',
             'action': self._action_id,
-            'target': '',
+            'target': target,
             'result': {
                 'success': True, 'op_id': 'r1c4-fixture',
                 'action': self._action_id, 'risk_level': 'A0',
                 'elapsed_seconds': 0, 'evidence': {},
-                'result': {
-                    'items': [{
-                        'id': 'native_0', 'version': 'v1', 'sha256': 'b' * 64,
-                        'source_ref': 'method_sources/native_0.v1.json',
-                        'score_millis': 900, 'required_actions': ['skill.list'],
-                        'missing_actions': [], 'compatible': True,
-                        'incompatible_reasons': [],
-                    }],
-                    'selection': {},
-                },
+                'root': target, 'count': 0, 'entries': [],
             },
             'llm_brief': 'R1C4 fixture listing',
             'evidence': {},
@@ -445,7 +450,8 @@ class _FailingBackend:
 
     def request(self, method, path, payload, *, timeout_seconds,
                 backend_started=False, before_request=None):
-        del method, path, payload, timeout_seconds, backend_started, before_request
+        target = payload["execute_ticket"]["arguments"]["target"]
+        del method, path, timeout_seconds, backend_started, before_request
         self.calls += 1
         value = {
             'schema': 'tiangong.v3.omni_body.v1', 'ok': False,

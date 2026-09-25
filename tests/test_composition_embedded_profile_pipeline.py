@@ -4,8 +4,8 @@ No HTTP server or model is started: production's in-process request port is the
 real private boundary. Only clocks/request identities and the host QA workspace
 are supplied by the fixture. Tool/method metadata comes from actual source.
 """
-from dataclasses import asdict
 from copy import deepcopy
+from functools import partial
 import hashlib
 import json
 import os
@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.test_composition_workspace_pipeline import material_for_calls, PROFILE, assert_unavailable_python_execution
+from tests.test_installed_composition_sources import source_copy  # noqa: F401
 from tests import test_composition_grant_authority_p7c1 as p7c1
 from tests import test_composition_grant_authority_p7d2 as p7d2
 from total_gateway.composition_step_execution import CompositionStepExecutionCoordinator
@@ -25,29 +26,36 @@ from total_gateway.orchestration import GatewayOrchestrationWorker
 from total_gateway.service_ports import CompatibilityJsonClient
 
 
-def _actual_worlds(loaded):
-    from total_gateway.installed_composition_sources import _installed_inputs, _tool_world
-    from world_understanding.skill_method_world.production_catalog import compile_production_skill_method_world
-    source=Path(__file__).resolve().parents[1]
-    inputs=_installed_inputs(source)
-    tools=_tool_world({'manifest':loaded.manifest,'source_inputs':asdict(inputs)},loaded.registry)
-    index_raw=(source/'src/omni_body_skill/registry/skill_router_index.json').read_bytes()
-    index=json.loads(index_raw)
-    methods=compile_production_skill_method_world(index,index_source_sha256=hashlib.sha256(index_raw).hexdigest(),
-        skill_source_hashes={'src/omni_body_skill/'+item['file']:hashlib.sha256((source/'src/omni_body_skill'/item['file']).read_bytes()).hexdigest()
-                            for item in index['skills']})
+def _actual_worlds(loaded, *, store, envelope, request, run, workspace_root, source_root):
+    from total_gateway.installed_composition_sources import InstalledCompositionSources
+    from world_understanding.production import ProductionWorldUnderstandingRuntime
+    from world_understanding.world_state import WorldStateStore
+    from v3.world_understanding_production import _frame_factory
+    from tests import test_composition_executable_plan_p7c0 as p7c0
+    runtime=ProductionWorldUnderstandingRuntime(store=WorldStateStore(root=workspace_root/'world'),
+        frame_factory=_frame_factory)
+    installed=InstalledCompositionSources.install(runtime=runtime, gateway=store,
+        source_root=source_root, archive_root=workspace_root/'installed-sources',
+        registry=loaded.registry, manifest=loaded.manifest)
+    context=SimpleNamespace(request_id=request.request_id, run_id=run.run_id, generation=1,
+        life_id='life_p7c1', principal_scope_hash=envelope.principal_scope_hash,
+        workspace_id=p7c0._workspace(workspace_root).workspace_id)
+    state=installed.ensure_world(context, now_ms=1240)
+    tools,_=installed.tool_source.load(loaded.registry)
+    methods=runtime.method_world_for_state(state.state_ref, scope=state.state.scope)
     assert all(item.idempotency=='UNKNOWN' and item.determinism_class=='NONDETERMINISTIC'
                for item in tools.primitives if item.action_id in {'code.write','python.run'})
-    return tools,methods
+    return tools,methods,state
 
 
-def test_actual_signed_private_entry_writes_runs_and_finalizes(tmp_path,monkeypatch):
+def test_actual_signed_private_entry_writes_runs_and_finalizes(tmp_path,monkeypatch,source_copy):
     from v3 import execution_integrity
     from tests import test_composition_activation_store_p7b2 as lineage_fixture
     root=tmp_path/'workspace'
     root.mkdir()
     source=Path(__file__).resolve().parents[1]
     monkeypatch.setenv('TIANGONG_OMNI_BODY_ROOT',str(source/'src/omni_body_skill'))
+    monkeypatch.setenv('TIANGONG_DICTIONARY_ROOT',str(source/'dictionaries'))
     monkeypatch.setenv('TIANGONG_FORCE_WORKSPACE_ROOT',str(root))
     monkeypatch.setenv('TIANGONG_OMNI_BODY_STATE_ROOT',str(tmp_path/'body-state'))
     envelope_type=lineage_fixture.InboundEnvelope
@@ -67,7 +75,7 @@ def test_actual_signed_private_entry_writes_runs_and_finalizes(tmp_path,monkeypa
     lifetime=composition_admission_lifetime_ms((action for action,_,_ in calls),**PROFILE)
     assert lifetime==390_000  # Actual 712c shape: three writes, two runs, two reads.
     monkeypatch.setattr(p7c1,'_production_material',material_for_calls(
-        calls,source_worlds=_actual_worlds,admission_lifetime_ms=lifetime))
+        calls,source_worlds=partial(_actual_worlds, source_root=source_copy),admission_lifetime_ms=lifetime))
     clock=SimpleNamespace(value=1800)
     monkeypatch.setattr(time,'time_ns',lambda:clock.value*1_000_000)
     from v3.jineng import jirou_ceng as muscle

@@ -25,14 +25,16 @@ def source(tmp_path):
     tools = root / "src/omni_body_skill/tools"
     tools.mkdir(parents=True)
     (tools / "handler.py").write_bytes(b"raise AssertionError('source must not be imported')\n")
-    registry = root / "src/omni_body_skill/registry"
-    registry.mkdir()
+    registry = root / "dictionaries/registry"
+    registry.mkdir(parents=True)
     (registry / "capability_manifest.generated.json").write_bytes(b"{}\n")
     policy = {
         "schema": "tiangong.source-ownership.v2",
-        "authority_policy": {"editable_roots": ["src"], "frozen_roots": []},
+        "authority_policy": {"editable_roots": ["src", "dictionaries"], "frozen_roots": []},
         "mappings": [{"id": "body", "source": "src/omni_body_skill", "source_role": "authoritative",
-                      "targets": ["mirror/omni_body_skill"]}],
+                      "targets": ["mirror/omni_body_skill"]},
+                     {"id": "dictionary", "source": "dictionaries", "source_role": "authoritative",
+                      "targets": ["mirror/dictionaries"]}],
     }
     (root / "source-ownership.json").write_text(json.dumps(policy), encoding="utf-8")
     return root
@@ -40,8 +42,10 @@ def source(tmp_path):
 
 def prepare(source):
     inputs = compile_tool_source_inputs(source)
-    metadata = {"skill.list": {"risk": "A0", "effect": "read", "implemented": True}}
-    manifest = compile_manifest(metadata, object, dynamic_actions=("skill.list",),
+    marker = source / "src/omni_body_skill/fixture-action.txt"
+    action = marker.read_text(encoding="utf-8").strip() if marker.is_file() else "skill.list"
+    metadata = {action: {"risk": "A0", "effect": "read", "implemented": True}}
+    manifest = compile_manifest(metadata, object, dynamic_actions=(action,),
                                 action_schema_catalog=build_action_schema_catalog(metadata)).to_gateway_dict(
         source_inputs_sha256=inputs.source_inputs_sha256,
     )
@@ -77,8 +81,8 @@ def test_package_keeps_exact_manifest_sources_and_official_mirrors(source, tmp_p
     assert result["may_publish"] is result["may_execute"] is result["may_authorize"] is False
     with zipfile.ZipFile(path) as archive:
         manifest = canonical_json_bytes(report["build_artifact"]["gateway_manifest"]) + b"\n"
-        assert archive.read("source/src/omni_body_skill/registry/capability_manifest.generated.json") == manifest
-        assert archive.read("source/mirror/omni_body_skill/registry/capability_manifest.generated.json") == manifest
+        assert archive.read("source/dictionaries/registry/capability_manifest.generated.json") == manifest
+        assert archive.read("source/mirror/dictionaries/registry/capability_manifest.generated.json") == manifest
         assert archive.read("source/src/omni_body_skill/tools/handler.py") == (
             source / "src/omni_body_skill/tools/handler.py").read_bytes()
         marker = json.loads(archive.read("source/mirror/omni_body_skill/.tiangong-generated-source.json"))
@@ -161,7 +165,7 @@ def rewrite_package(source_path, output_path, change):
 
 
 @pytest.mark.parametrize("relative", ["src/omni_body_skill/tools/handler.py",
-                                      "src/omni_body_skill/registry/capability_manifest.generated.json"])
+                                      "dictionaries/registry/capability_manifest.generated.json"])
 def test_rehashing_the_archive_and_index_cannot_detach_source_from_the_compiler_report(source, tmp_path, relative):
     original = tmp_path / "original.zip"
     bundle(source, original)

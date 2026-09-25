@@ -1558,6 +1558,7 @@ class EmbeddedLifeRuntime:
         }
 
     def _external_memory_items(self, *, limit: int = 64) -> tuple[CausalContextItem, ...]:
+        from .composition_memory import is_experience_payload
         items: list[CausalContextItem] = []
         scope = self._scope_state()
         try:
@@ -1657,7 +1658,17 @@ class EmbeddedLifeRuntime:
                 supporting_event_ids=(),
             )
         )
-        for index, record in enumerate(reversed(list(memory_rows.values()))):
+        # Persisted JSON sorts keys, so dictionary insertion order is not a
+        # chronology after restart. Select recent active records explicitly.
+        recent_memories = sorted(
+            (record for record in memory_rows.values()
+             if isinstance(record, dict) and str(record.get("status") or "active") == "active"
+             and not is_experience_payload(record.get("content"))),
+            key=lambda record: (str(record.get("updated_at") or record.get("created_at") or ""),
+                                str(record.get("memory_id") or "")),
+            reverse=True,
+        )
+        for index, record in enumerate(recent_memories):
             if index >= limit:
                 break
             # Context compilation follows the same default visibility rule as
@@ -1673,12 +1684,13 @@ class EmbeddedLifeRuntime:
             memory_id = str(record.get("memory_id") or "")
             if not _OPAQUE.fullmatch(memory_id):
                 continue
+            text = text[:20_000]
             items.append(
                 CausalContextItem(
                     item_ref=memory_id,
                     item_kind="memory",
                     source_revision=max(1, int(record.get("revision") or 1)),
-                    summary=text[:20_000],
+                    summary=text,
                     epistemic_status=str(record.get("epistemic_status") or "user_asserted"),
                     confidence_milli=max(0, min(1000, int(record.get("confidence_milli") or 800))),
                     priority=max(-3000, min(5000, int(record.get("priority") or 900))),
@@ -6018,6 +6030,7 @@ class EmbeddedLifeRuntime:
         scope projection is rebuilt from it (§7.1 startup reconciliation).
         """
 
+        from .composition_memory import is_experience_payload
         clean_life_id = str(life_id or "").strip()
         if not _OPAQUE.fullmatch(clean_life_id):
             return False
@@ -6198,6 +6211,13 @@ class EmbeddedLifeRuntime:
                 document = json.loads(raw.decode("utf-8"))
             except (UnicodeDecodeError, ValueError):
                 divergences += 1
+                continue
+            if is_experience_payload(document):
+                # The protected authority record remains intact. This removes
+                # only a legacy projection accidentally made before migration.
+                if live_id in scope["memories"]:
+                    scope["memories"].pop(live_id)
+                    changed = True
                 continue
             if isinstance(document, Mapping) and isinstance(document.get("record"), Mapping):
                 record = dict(document["record"])
@@ -6760,6 +6780,7 @@ class EmbeddedLifeRuntime:
         }
 
     def _memory_search(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        from .composition_memory import is_experience_payload
         query = str(payload.get("query") or "").casefold().strip()
         if len(query.encode("utf-8")) > _MAX_SEARCH_QUERY_BYTES:
             raise EmbeddedLifeError("life.memory.search_query_too_large")
@@ -6799,7 +6820,8 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.memory.search_status_invalid")
         causal_ref = str(payload.get("causal_ref") or "").strip()
         scope = self._scope_state(life_id)
-        records = scope["memories"]
+        records = {key: row for key, row in scope["memories"].items()
+                   if not is_experience_payload(row.get("content") if isinstance(row, Mapping) else None)}
         # Retrieval begins with direct lexical/cue matches, then includes one
         # causal hop.  This brings the useful old trigger-recall behavior into
         # the new typed causal graph without inventing new semantic relations.

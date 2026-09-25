@@ -34,6 +34,13 @@ SEMANTIC_SYSTEM_INSTRUCTION = (
 )
 
 class SemanticModelUnavailable(RuntimeError): pass
+class SemanticModelDeferred(RuntimeError):
+    """A configured model intentionally did not run within its auxiliary budget."""
+
+    def __init__(self, reason_code: str):
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
 class SemanticOutputRejected(ValueError): pass
 
 _OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@_-]{0,159}$")
@@ -200,6 +207,6 @@ def parse_semantic_output(output_text: str, *, refs: tuple[WorldRecordRef, ...],
 
 __all__ = [
     "SEMANTIC_PROMPT_VERSION", "SEMANTIC_SCHEMA_VERSION", "SEMANTIC_SYSTEM_INSTRUCTION", "SEMANTIC_OUTPUT_SCHEMA_GUIDE",
-    "SemanticModelUnavailable", "SemanticOutputRejected", "SemanticModelRequest", "SemanticModelResponse",
+    "SemanticModelUnavailable", "SemanticModelDeferred", "SemanticOutputRejected", "SemanticModelRequest", "SemanticModelResponse",
     "SemanticModel", "SemanticProposal", "parse_semantic_output",
 ]

@@ -106,11 +106,13 @@ class NetworkCapabilityTests(unittest.TestCase):
     def test_runtime_contract_and_manifest_keep_git_clone_typed_not_shell(self):
         contracts_path = ROOT / "readable-python-source" / "omni_body_skill" / "tool_contracts.py"
         omni_path = ROOT / "readable-python-source" / "omni_body_skill" / "tools" / "omni_body_tool.py"
-        manifest_path = ROOT / "readable-python-source" / "omni_body_skill" / "registry" / "capability_manifest.generated.json"
+        manifest_path = ROOT / "dictionaries" / "registry" / "capability_manifest.generated.json"
         contracts = contracts_path.read_text(encoding="utf-8")
         omni = omni_path.read_text(encoding="utf-8")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertIn('"git.clone": {', contracts)
+        schemas = json.loads((ROOT / "dictionaries/tools/schemas.json").read_text(encoding="utf-8"))
+        self.assertIn("git.clone", schemas["arguments"])
+        self.assertIn("load_dictionary().schemas", contracts)
         self.assertIn('def _action_git_clone(', omni)
         row = manifest["capabilities"]["git.clone"]
         self.assertTrue(row["executable"])

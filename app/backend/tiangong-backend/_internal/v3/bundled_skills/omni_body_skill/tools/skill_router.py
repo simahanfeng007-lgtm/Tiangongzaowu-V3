@@ -138,8 +138,20 @@ def _request_gateway(runtime: Any, operation: str, payload: dict[str, Any]) -> d
             raw = response.read(2 * 1024 * 1024 + 1)
             if response.status != 200 or len(raw) > 2 * 1024 * 1024:
                 raise SkillGatewayError("Skill authority response is invalid")
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        raise SkillGatewayError("Skill authority is unavailable") from exc
+    except urllib.error.HTTPError as exc:
+        # A rejected scope/activation is not a network failure. Only report the
+        # machine reason code, never a raw response that may contain credentials.
+        reason = "request_rejected"
+        try:
+            error = json.loads(exc.read(8192).decode("utf-8"))
+            candidate = error.get("reason_code") or error.get("error_code")
+            if isinstance(candidate, str) and len(candidate) <= 160:
+                reason = candidate
+        except (ValueError, UnicodeDecodeError, OSError):
+            pass
+        raise SkillGatewayError(f"Skill authority rejected the request (HTTP {exc.code}: {reason})") from exc
+    except (OSError, urllib.error.URLError) as exc:
+        raise SkillGatewayError("Skill authority connection failed") from exc
     try:
         decoded = json.loads(raw.decode("utf-8", errors="strict"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -155,8 +167,11 @@ def _candidate_card(candidate: dict[str, Any]) -> dict[str, Any]:
         "version": candidate.get("version"),
         "sha256": candidate.get("sha256"),
         "source_ref": candidate.get("source_ref"),
+        "title": candidate.get("title"),
+        "summary": candidate.get("summary"),
         "score_millis": candidate.get("score_millis"),
         "required_actions": list(candidate.get("required_actions") or []),
+        "available_optional_actions": list(candidate.get("available_optional_actions") or []),
         "missing_actions": list(candidate.get("missing_actions") or []),
         "compatible": candidate.get("compatible") is True,
         "incompatible_reasons": list(candidate.get("incompatible_reasons") or []),

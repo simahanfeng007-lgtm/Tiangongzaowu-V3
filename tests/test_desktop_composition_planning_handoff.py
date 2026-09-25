@@ -116,6 +116,9 @@ def test_process_prepares_before_parent_claim_ticket_and_backend_dispatch():
     tree = ast.parse(source.read_text(encoding="utf-8"))
     owner = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GatewayOrchestrationWorker")
     process = next(n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "process")
+    delegation = [n for n in ast.walk(process) if isinstance(n, ast.Call) and ast.unparse(n.func) == "self._process"]
+    assert len(delegation) == 1
+    process = next(n for n in owner.body if isinstance(n, ast.FunctionDef) and n.name == "_process")
 
     def call_line(name):
         return min(n.lineno for n in ast.walk(process) if isinstance(n, ast.Call) and ast.unparse(n.func) == name)

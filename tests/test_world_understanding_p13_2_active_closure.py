@@ -50,7 +50,9 @@ def _snapshot(*, stale: bool, sequence: int = 0):
         stale_refs=(subject,) if stale else (),
         has_valid_hash=lambda: True,
     )
-    return SimpleNamespace(state=state, state_ref=state_ref, uncertainty=None), subject
+    entity = SimpleNamespace(entity_id=subject.record_id, entity_sha256=subject.sha256, revision=1,
+        scope=scope, entity_type="File", lifecycle="ACTIVE", canonical_name="D:/fixture.txt", has_valid_hash=lambda: True)
+    return SimpleNamespace(state=state, state_ref=state_ref, uncertainty=None, entities=(entity,)), subject
 
 
 def _source(scope: WorldScope, *, at_ms: int = 1_000):
@@ -132,8 +134,8 @@ def test_gap_is_persisted_once_and_reality_closes_same_cycle_after_restart(tmp_p
     coordinator.observe(feedback, after)
     row = store.active_cognition_record(inquiry.inquiry_id)
     assert row is not None and row["status"] == "CLOSED"
-    assert row["outcome"]["resolved"] is True
-    assert row["outcome"]["information_gain_milli"] == 1000
+    assert row["outcome"]["resolved"] is False
+    assert row["outcome"]["information_gain_milli"] == 0  # ref disappearance alone is not evidence
     assert len(dispatched) == 1  # hard anti-loop on the reality transaction
 
     reopened = WorldStateStore(root=tmp_path / "world")
@@ -195,7 +197,7 @@ def test_existing_self_will_model_bridge_only_proposes_and_run_context_keeps_lin
         fake, {"inquiry": {"authorization": "NONE", "question": "health?"}}
     )
     assert response["ok"] is True
-    assert response["decision"]["observation"]["action"] == "system.health"
+    assert response["decision"]["decision"] == "DEFER"  # no retained target, no model call
 
     from v3.run_context import from_conversation_context
 
@@ -208,7 +210,8 @@ def test_existing_self_will_model_bridge_only_proposes_and_run_context_keeps_lin
     assert context.audit_metadata()["source_inquiry_id"] == context.source_inquiry_id
 
 
-def test_existing_gateway_worker_lane_carries_inquiry_to_authorized_runtime(tmp_path):
+def test_existing_gateway_worker_lane_carries_inquiry_to_authorized_runtime(tmp_path, monkeypatch):
+    monkeypatch.setattr("total_gateway.orchestration.time.time_ns", lambda: 2_000_000_000)
     captured = []
 
     def dispatch(inquiry, _sink):
@@ -234,8 +237,9 @@ def test_existing_gateway_worker_lane_carries_inquiry_to_authorized_runtime(tmp_
                         "decision": "ACCEPT",
                         "goal": "Read the bounded health observation",
                         "reason_codes": ["information_gain"],
-                        "observation": {"action": "system.health", "target": "", "args": {}},
+                        "observation": {"action": "file.hash", "target": "D:/fixture.txt", "args": {}},
                     },
+                    "observation_context": {"allowed_actions": ["file.hash"], "target": "D:/fixture.txt"},
                 }, "fixture"
             self.invocations.append((path, payload))
             return 200, {"ok": True, "status": "success"}, "fixture"
@@ -264,7 +268,7 @@ def test_existing_gateway_worker_lane_carries_inquiry_to_authorized_runtime(tmp_
     events = []
     assert worker.submit_world_inquiry(inquiry, events.append)
     assert worker._dispatch_next_world_inquiry()
-    assert [event["phase"] for event in events] == ["DECIDED", "STARTED"]
+    assert [event["phase"] for event in events] == ["DECIDED", "STARTED", "FINISHED"]
     assert authorized[0]["source_inquiry_id"] == inquiry.inquiry_id
     assert authorized[0]["action_id"] == "omni_body"
     assert worker._backend_compat_client.invocations[0][0].endswith("/life-action/invoke")

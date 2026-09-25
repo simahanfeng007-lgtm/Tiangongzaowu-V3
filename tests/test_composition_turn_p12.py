@@ -183,34 +183,18 @@ def test_released_generation_refuses_the_whole_turn(pin_env):
             available_verifiers=_FIXTURE_INTENTS, now_ms=5000)
 
 
-def test_orchestration_user_branch_wires_the_controlled_turn_before_legacy():
-    """The real caller exists and precedes the legacy chain (AST proof)."""
+def test_orchestration_user_branch_uses_the_dynamic_dictionary_loop():
+    """Static planning is a Gateway choice; user prefixes cannot bypass the loop."""
     source_text = (V3_ROOT / 'zongdiaodu.py').read_text(encoding='utf-8')
     tree = ast.parse(source_text)
-    method = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == 'huanxing':
-            method = node
-            break
-    assert method is not None
-    calls = []
-    for node in ast.walk(method):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            calls.append(node.func.attr)
-    assert '_controlled_composition_turn_reply_if_enabled' in calls
-    assert calls.index('_controlled_composition_turn_reply_if_enabled') < \
-        calls.index('_huanxing_simple_chain')
-    # And the helper itself returns None when the mode is off, verbatim.
-    helper = None
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.FunctionDef)
-                and node.name == '_controlled_composition_turn_reply_if_enabled'):
-            helper = node
-            break
-    assert helper is not None
-    helper_source = ast.get_source_segment(source_text, helper)
-    assert "composition_planner_mode() != \"controlled\"" in helper_source
-    assert 'return None' in helper_source
+    method = next(node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name == 'huanxing')
+    calls = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+             and isinstance(node.func, ast.Attribute)]
+    dynamic = [node for node in calls if node.func.attr == '_huanxing_simple_chain']
+    assert len(dynamic) == 1
+    assert any(keyword.arg == 'dictionary_context' for keyword in dynamic[0].keywords)
+    assert all(node.func.attr != '_controlled_composition_turn_reply_if_enabled' for node in calls)
 
 
 def test_pin_declared_verifiers_unblock_the_controlled_turn(intake, tmp_path,

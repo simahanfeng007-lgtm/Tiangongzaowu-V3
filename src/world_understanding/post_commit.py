@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Callable
+import logging
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +45,9 @@ def notify_native_post_commit(event: NativePostCommitEvent) -> object | None:
         return None
     try:
         return observer(event)
-    except Exception:
+    except Exception as exc:
+        # Exception messages can contain private payloads/credentials.
+        logging.getLogger("tiangong.world").warning("WORLD_POST_COMMIT_FAILED source=%s type=%s", event.source_kind, type(exc).__name__)
         return None
 
 

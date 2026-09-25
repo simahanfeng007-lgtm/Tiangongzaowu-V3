@@ -1,0 +1,9 @@
+{
+  "actions": [],
+  "principle": "Retired compatibility index. No fixed Skill procedures are installed. Tools and Skills are generated per task from dictionary primitives.",
+  "schema": "tiangong.skill-dictionary.v1",
+  "skill_count": 0,
+  "skills": [],
+  "tool_boundary": "skill router only returns skill cards; model executes flow",
+  "version": "2026.09.24.4"
+}

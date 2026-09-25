@@ -48,6 +48,12 @@ def anchor_hash(entity_type: str, stable_anchor: str) -> str:
 
 def seeds_from_perceptions(perceptions: tuple[SoftwarePerception, ...]) -> tuple[EntitySeed, ...]:
     output = []
+    metadata = {}
+    for p in perceptions:
+        key = {"TOOL_OUTCOME": "observed_status", "RUNTIME_CONTEXT_FINGERPRINT": "dictionary_context_fingerprint",
+               "FILE_CONTENT_SHA256": "content_sha256", "FILE_OBSERVATION_ID": "observation_envelope_id"}.get(p.proposition_type)
+        if key is not None and p.object_text:
+            metadata.setdefault(p.subject_ref, {})[key] = p.object_text
     for perception in perceptions:
         entity_type = ENTITY_IDENTITY_TYPES.get(perception.proposition_type)
         if entity_type is None or perception.object_text is None:
@@ -61,6 +67,8 @@ def seeds_from_perceptions(perceptions: tuple[SoftwarePerception, ...]) -> tuple
             time=record.time,
             truth_state=record.truth_state,
             epistemic_state=record.epistemic_state,
+            attributes=tuple(sorted(metadata.get(perception.subject_ref, {}).items())),
+            aliases=(perception.subject_ref,) if perception.proposition_type in {"FILE_IDENTITY", "TOOL_IDENTITY", "RUNTIME_IDENTITY"} else (),
         ))
     return tuple(output)
 

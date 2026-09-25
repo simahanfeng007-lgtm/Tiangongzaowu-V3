@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import tempfile
 import unittest
@@ -245,185 +246,75 @@ class SkillSelectionTests(unittest.TestCase):
 
 
 class FilesystemSkillCatalogTests(unittest.TestCase):
-    INDEX_SHA256 = "181c065471265728f7a55cdce28c2043ff0bf7d12ffa9c9dc00d577b24f1bc45"
-    CATALOG_SHA256 = "fec4b0709945b614edce5b80aa1a69381ba66b0df85f4bf8f253eb47127d5b35"
-    CAPABILITY_SHA256 = "f97a62d753f77b7c4fcccf5270322cf8aea4baf9cecb408b9ee2ab576a981577"
-
     @classmethod
     def source_root(cls) -> Path:
-        return (
-            Path(__file__).resolve().parents[1]
-            / "app"
-            / "backend"
-            / "tiangong-backend"
-            / "_internal"
-            / "omni_body_skill"
-        )
+        return Path(__file__).resolve().parents[1] / "dictionaries"
 
-    def test_loads_actual_34_skill_sources_and_pins_content_and_actions(self) -> None:
+    @classmethod
+    def setUpClass(cls):
+        root = cls.source_root()
+        cls.INDEX_SHA256 = hashlib.sha256((root / "skills/catalog.json").read_bytes()).hexdigest()
+        cls.CATALOG_SHA256 = load_filesystem_skill_catalog(root, expected_index_sha256=cls.INDEX_SHA256).catalog.sha256
+        cls.CAPABILITY_SHA256 = hashlib.sha256((root / "registry/capability_manifest.generated.json").read_bytes()).hexdigest()
+
+    def test_production_catalog_has_no_injected_fixed_skills(self) -> None:
         loaded = load_filesystem_skill_catalog(
-            self.source_root(),
-            expected_index_sha256=self.INDEX_SHA256,
+            self.source_root(), expected_index_sha256=self.INDEX_SHA256,
             expected_catalog_sha256=self.CATALOG_SHA256,
         )
-        self.assertEqual(loaded.source_file_count, 34)
+        self.assertEqual(loaded.source_file_count, 0)
         self.assertEqual(loaded.catalog.sha256, self.CATALOG_SHA256)
-        word = loaded.catalog.get("skill_word_business_proposal_worldclass_v1")
-        self.assertIsNotNone(word)
-        self.assertEqual(word.version, "v1")
-        self.assertEqual(
-            word.sha256,
-            "f42c07e0234df77cfc10a7fc45b077d4b0344ad89fef3477b2ebfe63181f13a6",
-        )
-        self.assertIn("docx.create", word.required_actions)
-        self.assertIn("qc.docx.delivery_check", word.required_actions)
-        self.assertIn("deliverable.package", word.required_actions)
-        ppt = loaded.catalog.get("skill_ppt_executive_report_worldclass_v1")
-        self.assertIsNotNone(ppt)
-        self.assertIn("pptx.read", ppt.required_actions)
-        mindmap = loaded.catalog.get("skill_mindmap_knowledge_architecture_worldclass_v1")
-        self.assertIsNotNone(mindmap)
-        self.assertIn("mindmap.create", mindmap.required_actions)
-        self.assertIn("file.read", mindmap.required_actions)
-        long_document = loaded.catalog.get("skill_managed_long_document_worldclass_v1")
-        self.assertIsNotNone(long_document)
-        self.assertEqual(
-            long_document.sha256,
-            "bcdd56d27cbe81c59584f776b5174b3014527b0b0990099fcbfacdb55d591398",
-        )
-        self.assertIn("docx.create", long_document.required_actions)
-        self.assertIn("qc.docx.delivery_check", long_document.required_actions)
+        self.assertEqual(loaded.catalog.definitions, ())
+        self.assertIsNone(loaded.catalog.get("skill_word_business_proposal_worldclass_v1"))
 
-    def test_system_matching_uses_the_pinned_model_action_surface(self) -> None:
+    def test_model_surface_remains_executable_without_fixed_skill_recommendations(self) -> None:
         root = self.source_root()
         loaded = load_filesystem_skill_catalog(
-            root,
-            expected_index_sha256=self.INDEX_SHA256,
+            root, expected_index_sha256=self.INDEX_SHA256,
             expected_catalog_sha256=self.CATALOG_SHA256,
         )
         model_capabilities = load_model_capability_manifest(
-            root / "registry" / "capability_manifest.generated.json",
+            root / "registry/capability_manifest.generated.json",
             expected_sha256=self.CAPABILITY_SHA256,
-            component_manifest_hash=HASH_C,
-            generated_at_ms=100,
+            component_manifest_hash=HASH_C, generated_at_ms=100,
         )
-        self.assertEqual(model_capabilities.executable_count, 290)
-        recommendation = SkillSelectionService(loaded.catalog).system_recommend(
-            "\u8bf7\u5236\u4f5c\u5546\u4e1a\u65b9\u6848 Word\u6587\u6863",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        )
-        self.assertEqual(
-            recommendation.selected_skill_id,
-            "skill_word_business_proposal_worldclass_v1",
-        )
-        self.assertEqual(recommendation.decision, "defer")
-        self.assertTrue(recommendation.candidates[0].compatible)
-        self.assertEqual(recommendation.candidates[0].missing_actions, ())
-
-        managed = SkillSelectionService(loaded.catalog).system_recommend(
-            "继续受管长篇小说工程，检查完整规划并按大纲断点续写",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        )
-        self.assertEqual(
-            managed.selected_skill_id,
-            "skill_managed_longform_novel_worldclass_v1",
-        )
-        self.assertTrue(managed.candidates[0].compatible)
-        self.assertEqual(managed.candidates[0].missing_actions, ())
-        self.assertIn("novel.project.status", managed.candidates[0].required_actions)
-
-        long_document = SkillSelectionService(loaded.catalog).system_recommend(
-            "创建一个二十万字超长文档工程，按章节断点续写并最终交付 DOCX",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        )
-        self.assertEqual(
-            long_document.selected_skill_id,
-            "skill_managed_long_document_worldclass_v1",
-        )
-        self.assertTrue(long_document.candidates[0].compatible)
-        self.assertEqual(long_document.candidates[0].missing_actions, ())
-        self.assertNotIn(
-            "skill_core_actions_reference_v1",
-            {item.skill_id for item in long_document.candidates},
-        )
-        model_long_document = SkillSelectionService(loaded.catalog).model_request(
-            "skill.route",
-            query="超长文档设计：创建多章文档工程并断点续写",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        ).record
-        self.assertEqual(
-            model_long_document.candidates[0].skill_id,
-            "skill_managed_long_document_worldclass_v1",
-        )
-        self.assertNotIn(
-            "skill_core_actions_reference_v1",
-            {item.skill_id for item in model_long_document.candidates},
-        )
-
-        mindmap = SkillSelectionService(loaded.catalog).system_recommend(
-            "设计一份城市韧性知识图谱脑图，同时交付 Mermaid mindmap 和 OPML",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        )
-        self.assertEqual(
-            mindmap.selected_skill_id,
-            "skill_mindmap_knowledge_architecture_worldclass_v1",
-        )
-        self.assertTrue(mindmap.candidates[0].compatible)
-        self.assertEqual(mindmap.candidates[0].missing_actions, ())
-
-        miniapp = SkillSelectionService(loaded.catalog).system_recommend(
-            "code_engineering:wechat_miniapp_offline 微信小程序 WXML WXSS 离线工程",
-            request_id=REQUEST_ID,
-            run_id=RUN_ID,
-            generation=1,
-            capability_manifest=model_capabilities.manifest,
-            decided_at_ms=1000,
-        )
-        self.assertEqual(
-            miniapp.selected_skill_id,
-            "skill_code_project_delivery_worldclass_v1",
-        )
-        self.assertTrue(miniapp.candidates[0].compatible)
-        self.assertEqual(miniapp.candidates[0].missing_actions, ())
-
-    def test_index_or_any_markdown_drift_fails_pinned_load(self) -> None:
-        with self.assertRaisesRegex(SkillSelectionError, "index digest"):
-            load_filesystem_skill_catalog(
-                self.source_root(),
-                expected_index_sha256=HASH_A,
-            )
-
-        with tempfile.TemporaryDirectory() as temporary:
-            copied = Path(temporary) / "skills"
-            shutil.copytree(self.source_root(), copied)
-            word_path = copied / "deliverable_skills" / "29_skill_word_business_proposal_worldclass.md"
-            word_path.write_bytes(word_path.read_bytes() + b"\nsource drift\n")
-            with self.assertRaisesRegex(SkillSelectionError, "catalog digest"):
-                load_filesystem_skill_catalog(
-                    copied,
-                    expected_index_sha256=self.INDEX_SHA256,
-                    expected_catalog_sha256=self.CATALOG_SHA256,
+        self.assertEqual(model_capabilities.executable_count, 285)
+        for query in ("请制作商业方案 Word 文档", "继续受管长篇小说工程",
+                      "创建超长文档并交付 DOCX", "设计 Mermaid 脑图",
+                      "微信小程序 WXML WXSS 离线工程"):
+            with self.subTest(query=query):
+                recommendation = SkillSelectionService(loaded.catalog).system_recommend(
+                    query, request_id=REQUEST_ID, run_id=RUN_ID, generation=1,
+                    capability_manifest=model_capabilities.manifest, decided_at_ms=1000,
                 )
+                self.assertEqual(recommendation.decision, "no_skill")
+                self.assertIsNone(recommendation.selected_skill_id)
+                self.assertEqual(recommendation.candidates, ())
+
+    def test_pins_and_retired_fixed_skill_injection_are_enforced(self) -> None:
+        from capability_dictionary import DictionaryError
+        with self.assertRaisesRegex(SkillSelectionError, "index digest"):
+            load_filesystem_skill_catalog(self.source_root(), expected_index_sha256=HASH_A)
+        with self.assertRaisesRegex(SkillSelectionError, "catalog digest"):
+            load_filesystem_skill_catalog(self.source_root(),
+                expected_index_sha256=self.INDEX_SHA256, expected_catalog_sha256=HASH_A)
+        with tempfile.TemporaryDirectory() as temporary:
+            copied = Path(temporary) / "dictionary"
+            shutil.copytree(self.source_root(), copied)
+            (copied / "skills/fixture.md").write_text("# Fixture", encoding="utf-8")
+            loaded = load_filesystem_skill_catalog(copied,
+                expected_index_sha256=self.INDEX_SHA256, expected_catalog_sha256=self.CATALOG_SHA256)
+            self.assertEqual(loaded.catalog.definitions, ())
+            index = copied / "skills/catalog.json"
+            raw = json.loads(index.read_text(encoding="utf-8"))
+            raw.update(skill_count=1, actions=["skill.route", "skill.list", "skill.get", "skill.read"],
+                       skills=[{"id": "skill_fixture_v1", "mingcheng": "Fixture", "category": "test",
+                                "file": "skills/fixture.md", "required_actions": ["file.list"]}])
+            index.write_text(json.dumps(raw), encoding="utf-8")
+            # Rehashing a caller-injected catalog does not restore fixed Skills.
+            with self.assertRaisesRegex(DictionaryError, "dictionary_fixed_skills_retired"):
+                load_filesystem_skill_catalog(copied,
+                    expected_index_sha256=hashlib.sha256(index.read_bytes()).hexdigest())
 
 
 if __name__ == "__main__":

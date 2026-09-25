@@ -271,7 +271,7 @@ def _runtime_instance() -> WorldContextIntegration:
             from .world_understanding_production import (
                 production_context_output_port,
                 production_world_understanding_runtime,
-                refresh_active_repository_snapshot,
+                refresh_task_world_snapshot,
             )
             production = production_world_understanding_runtime()
             _runtime = WorldContextIntegration(
@@ -279,9 +279,17 @@ def _runtime_instance() -> WorldContextIntegration:
                 token_budget=_bounded_token_budget(),
                 facade=production.facade,
                 output_port=production_context_output_port(),
-                repository_snapshot_refresher=refresh_active_repository_snapshot,
+                repository_snapshot_refresher=refresh_task_world_snapshot,
             )
         return _runtime
+
+
+def refresh_world_context_in_prompt(prompt: str, *, run_context: Any, user_text: str) -> str:
+    """Replace, never accumulate, an optional context slot before each model turn."""
+    import re
+    base = re.sub(r"\[WORLD_CONTEXT_SLOT\].*?\[/WORLD_CONTEXT_SLOT\]", "", prompt, flags=re.DOTALL).rstrip()
+    slot = render_world_context_slot_for_turn(run_context=run_context, user_text=user_text)
+    return base + ("\n\n" + slot if slot else "")
 
 
 def render_world_context_slot_for_turn(*, run_context: Any, user_text: str) -> str:

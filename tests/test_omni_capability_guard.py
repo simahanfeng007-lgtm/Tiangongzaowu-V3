@@ -31,7 +31,7 @@ from total_gateway.tickets import TicketSigner
 ROOT = Path(__file__).resolve().parents[1]
 OMNI_ROOT = ROOT / "readable-python-source" / "omni_body_skill"
 CAPABILITY_SOURCE = OMNI_ROOT / "tools" / "omni_capability.py"
-WRAPPER_SOURCE = OMNI_ROOT / "tools" / "omni_body_v3.py"
+WRAPPER_SOURCE = OMNI_ROOT / "api" / "v1" / "v3" / "tools" / "omni_body.py"
 RUNTIME_SOURCE = OMNI_ROOT / "tools" / "omni_body_tool.py"
 HASH_A = "a" * 64
 HASH_B = "b" * 64

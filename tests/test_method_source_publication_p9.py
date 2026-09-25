@@ -324,6 +324,9 @@ print(p.snapshot_sha256)
     import os
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
+    # The bundled Windows interpreter ignores PYTHONPATH by design (_pth).
+    # Pin this child to the source under test instead of a different install.
+    code = "import sys; sys.path.insert(0, " + repr(env["PYTHONPATH"]) + ")\n" + code
     result = subprocess.run([sys.executable, "-c", code, json.dumps(config)], cwd=Path(__file__).parents[1],
         env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr

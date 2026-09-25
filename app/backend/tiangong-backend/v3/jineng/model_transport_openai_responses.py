@@ -12,6 +12,7 @@ from .model_transport_contract import (
     content_text,
     drop_last_role_messages,
     extract_native_roundtrip_context,
+    extract_native_roundtrip_history,
     json_output,
 )
 from .model_transport_openai_chat import _legacy_wire
@@ -70,13 +71,15 @@ class OpenAIResponsesTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         canonical = dict(canonical_payload)
-        native = extract_native_roundtrip_context(canonical, endpoint)
+        observations_compacted = canonical.pop("__native_observations_compacted", False)
+        history = extract_native_roundtrip_history(canonical, endpoint)
         messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
-        if native is not None:
+        if history:
             # Gutong currently records the Runtime result as a legacy assistant
             # observation. Remove only the newest result slots after exact
             # ToolCallBinding verification, then add provider-native items.
-            messages = drop_last_role_messages(messages, role="assistant", count=len(native.results))
+            messages = drop_last_role_messages(messages, role="assistant",
+                count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
 
         payload: dict[str, Any] = {
             "model": endpoint.model_name or str(canonical.get("model") or ""),
@@ -86,7 +89,7 @@ class OpenAIResponsesTransport:
         if instructions:
             payload["instructions"] = instructions
 
-        if native is not None:
+        for native in history:
             continuation = native.turn.provider_continuation_state
             opaque = continuation.opaque_payload if isinstance(continuation.opaque_payload, Mapping) else {}
             replay_items = opaque.get("output_items") if isinstance(opaque.get("output_items"), list) else []
@@ -99,7 +102,7 @@ class OpenAIResponsesTransport:
             # same Run when provider state disappears.
             use_remote = bool(endpoint.endpoint_overrides.get("responses_use_previous_response_id", False))
             previous_response_id = str(opaque.get("previous_response_id") or "").strip()
-            if use_remote and previous_response_id:
+            if use_remote and len(history) == 1 and previous_response_id:
                 payload["previous_response_id"] = previous_response_id
 
         payload["input"] = input_items

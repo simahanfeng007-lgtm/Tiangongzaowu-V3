@@ -41,6 +41,8 @@ def _load_body_run():
         node for node in body_class.body if isinstance(node, ast.FunctionDef) and node.name == "run"
     )
     namespace = {
+        # This unit isolates replay recovery after dictionary admission.
+        "DICTIONARY": types.SimpleNamespace(readiness=lambda *_a, **_kw: {"ready": True}),
         "ACTIONS": {"pptx.create": {"risk": "A2"}},
         "Any": typing.Any,
         "Dict": typing.Dict,

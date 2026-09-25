@@ -41,6 +41,7 @@ from contracts import (
     derive_delivery_identity,
     derive_effect_identity,
     derive_outbound_scope_keys,
+    derive_run_identity,
     new_state_snapshot,
     text_sha256,
 )
@@ -703,14 +704,7 @@ class GatewayOrchestrationWorker:
         omni_schema_catalog = None
         skill_root = getattr(config, "skill_root", None)
         if skill_root is None and config.release_source_root is not None:
-            skill_root = (
-                config.release_source_root
-                / "app"
-                / "backend"
-                / "tiangong-backend"
-                / "_internal"
-                / "omni_body_skill"
-            )
+            skill_root = config.release_source_root / "dictionaries"
         if skill_root is None:
             raise OrchestrationError("orchestration.skill_catalog.missing")
         else:
@@ -719,7 +713,9 @@ class GatewayOrchestrationWorker:
                 expected_index_sha256=release.skill_index_sha256,
                 expected_catalog_sha256=release.skill_catalog_sha256,
             )
-            skill_selection = SkillSelectionService(loaded.catalog)
+            # The compatibility release index may be empty after fixed Skill
+            # retirement. Model-generated task compositions use the dictionary.
+            skill_selection = SkillSelectionService(loaded.catalog) if loaded.source_file_count else None
             capability_path = skill_root / "registry" / "capability_manifest.generated.json"
             loaded_capabilities = load_model_capability_manifest(
                 capability_path,
@@ -1889,6 +1885,8 @@ class GatewayOrchestrationWorker:
         arguments: Mapping[str, Any],
         source_inquiry_id: str = "",
         autonomous_intent_id: str = "",
+        inquiry_scope=None,
+        inquiry_origin_request_id: str = "",
     ) -> Iterator[dict[str, object]]:
         """Issue the outer ticket required before a learned artifact can act.
 
@@ -1928,7 +1926,9 @@ class GatewayOrchestrationWorker:
             "step_id": step_id,
             "invocation": invocation_sha256,
         })
-        run_id = "run_" + canonical_sha256({"request_id": request_id, "life_id": life_id})
+        # The child Omni admission validates this canonical derivation, not
+        # merely the run_ prefix. Each autonomous action owns one run.
+        run_id = derive_run_identity(request_id, 1).run_id
         conversation_scope_hash = canonical_sha256({
             "domain": "tiangong.gateway.learned-capability-conversation.v1",
             "artifact_id": artifact_id,
@@ -1944,6 +1944,15 @@ class GatewayOrchestrationWorker:
             "link_account_id": "desktop-local",
             "conversation_scope_hash": conversation_scope_hash,
         })
+        tenant_id, link_account_id = "desktop", "desktop-local"
+        if source_inquiry_id:
+            origin = self._world_inquiry_origin(inquiry_scope, inquiry_origin_request_id, life_id)
+            # Preserve the exact original conversation partition through Life,
+            # Ticket, RunContext and World feedback. This does not grant access
+            # to a different principal or let model output select one.
+            tenant_id, link_account_id = origin.tenant_id, origin.link_account_id
+            conversation_scope_hash = origin.conversation_scope_hash
+            principal_scope_hash = origin.principal_scope_hash
         profile = LifeProfileBindings(user_callsign="life-capability")
         current_request = f"Execute learned capability {artifact_id} step {step_id}"
         try:
@@ -1953,8 +1962,8 @@ class GatewayOrchestrationWorker:
                 run_id=run_id,
                 generation=0,
                 current_request=current_request,
-                tenant_id="desktop",
-                link_account_id="desktop-local",
+                tenant_id=tenant_id,
+                link_account_id=link_account_id,
                 conversation_scope_hash=conversation_scope_hash,
                 profile=profile,
                 observed_at_ms=now_ms,
@@ -2166,8 +2175,8 @@ class GatewayOrchestrationWorker:
             generation=0,
             effect_id=effect_id,
             channel="system",
-            tenant_id="desktop",
-            link_account_id="desktop-local",
+            tenant_id=tenant_id,
+            link_account_id=link_account_id,
             conversation_scope_hash=conversation_scope_hash,
             principal_scope_hash=principal_scope_hash,
             capability_manifest_hash=manifest.sha256,
@@ -2229,6 +2238,28 @@ class GatewayOrchestrationWorker:
         finally:
             self._omni_grants.unregister(ticket_payload.ticket_id)
 
+    def _world_inquiry_origin(self, scope, request_id, life_id):
+        if scope is None or not request_id or scope.life_id != life_id:
+            raise OrchestrationError("world_inquiry.origin_missing")
+        origin = self._store.get_request_envelope(request_id)
+        snapshot = next((s for s in self._store.list_request_snapshots(request_id) if s.machine == "request"), None)
+        contract = None if snapshot is None else self._store.get_execution_task_contract(request_id, run_id=snapshot.run_id, generation=snapshot.generation)
+        workspace_id = "workspace-" + canonical_sha256(str(self._workspace_root))
+        # Inbound principal includes the sender; the Life context projection
+        # uses a separate namespace. Verify against the original ingress keys,
+        # just as the ordinary chat execution path does.
+        from contracts.scope import InboundScope, derive_inbound_scope_keys
+        keys = None if origin is None else derive_inbound_scope_keys(InboundScope(
+            channel=origin.channel, tenant_id=origin.tenant_id, link_account_id=origin.link_account_id,
+            conversation_ref=origin.conversation_ref, channel_message_ref=origin.channel_message_ref,
+            sender_ref=origin.sender_ref))
+        if (origin is None or not contract or contract["life_id"] != life_id
+                or origin.principal_scope_hash != scope.principal_scope_hash or keys.principal_scope_hash != scope.principal_scope_hash
+                or keys.conversation_scope_hash != origin.conversation_scope_hash
+                or {b.key: b.value for b in scope.scope_bindings}.get("workspace_id") != workspace_id):
+            raise OrchestrationError("world_inquiry.origin_scope_mismatch")
+        return origin
+
     @staticmethod
     def _world_observation(arguments: object) -> dict[str, object]:
         if not isinstance(arguments, Mapping):
@@ -2264,6 +2295,9 @@ class GatewayOrchestrationWorker:
             return False
         now_ms = time.time_ns() // 1_000_000
         try:
+            if inquiry.expires_at_ms is not None and now_ms >= inquiry.expires_at_ms:
+                sink({"phase": "EXPIRED", "decision": "EXPIRE", "at_ms": now_ms, "reason_code": "INQUIRY_EXPIRED_IN_QUEUE"})
+                return True
             client = self._backend_compat_client
             if client is None:
                 raise OrchestrationError("world_inquiry.backend_unavailable")
@@ -2271,7 +2305,7 @@ class GatewayOrchestrationWorker:
                 "POST",
                 "/api/v1/internal/world-inquiry/decision",
                 {"inquiry": inquiry.model_dump(mode="json")},
-                timeout_seconds=240,
+                timeout_seconds=20,
             )
             raw_decision = payload.get("decision") if isinstance(payload, Mapping) else None
             if status >= 400 or payload.get("ok") is not True or not isinstance(raw_decision, Mapping):
@@ -2290,6 +2324,12 @@ class GatewayOrchestrationWorker:
                 sink({"phase": phase, "at_ms": now_ms, "decision": decision.decision})
                 return True
             arguments = self._world_observation(raw_decision.get("observation"))
+            observation_context = payload.get("observation_context")
+            if (not isinstance(observation_context, Mapping) or arguments["action"] not in observation_context.get("allowed_actions", ())
+                    or arguments["target"] != observation_context.get("target")):
+                raise OrchestrationError("world_inquiry.observation_target_unbound")
+            if inquiry.expires_at_ms is not None and time.time_ns() // 1_000_000 >= inquiry.expires_at_ms:
+                raise OrchestrationError("world_inquiry.expired_after_decision")
             with self.authorize_life_capability_action(
                 life_id=inquiry.scope.life_id,
                 artifact_id=inquiry.inquiry_id,
@@ -2300,6 +2340,8 @@ class GatewayOrchestrationWorker:
                 arguments=arguments,
                 source_inquiry_id=inquiry.inquiry_id,
                 autonomous_intent_id=autonomous.autonomous_intent_id,
+                inquiry_scope=inquiry.scope,
+                inquiry_origin_request_id=str(observation_context.get("origin_request_id") or ""),
             ) as run_context:
                 sink({
                     "phase": "STARTED",
@@ -2311,10 +2353,11 @@ class GatewayOrchestrationWorker:
                     "POST",
                     "/api/v1/internal/life-action/invoke",
                     {"action_id": "omni_body", "arguments": arguments, "run_context": run_context},
-                    timeout_seconds=300,
+                    timeout_seconds=20,
                 )
                 if invoke_status >= 400 or invoke_payload.get("ok") is False:
                     raise OrchestrationError("world_inquiry.observation_failed")
+            sink({"phase": "FINISHED", "at_ms": time.time_ns() // 1_000_000})
             return True
         except Exception as exc:
             sink({
@@ -2927,7 +2970,10 @@ class GatewayOrchestrationWorker:
                 if isinstance(candidate, Mapping):
                     encoded = canonical_json_bytes(candidate)
                     if len(encoded) <= 64 * 1024:
-                        repository_evidence = dict(candidate)
+                        from life_service.activity_scope import normalize_repository_evidence
+                        repository_evidence = normalize_repository_evidence(candidate)
+                        if repository_evidence is None:
+                            diagnostic_log("WORLD_OPTIONAL_REPOSITORY_EVIDENCE_REJECTED")
             except Exception:
                 # Repository evidence enriches the terminal experience but may
                 # never block the authoritative Life outcome commit.
@@ -4072,7 +4118,24 @@ class GatewayOrchestrationWorker:
             )
         return record
 
+    def set_execution_learning_observer(self, observer) -> None:
+        self._execution_learning_observer = observer
+
+    def _observe_execution_learning(self, request_id):
+        observer = getattr(self, "_execution_learning_observer", None)
+        if observer is not None:
+            try:
+                observer(request_id)
+            except Exception as exc:
+                diagnostic_log("composition_experience.outcome_pending:" + type(exc).__name__)
+
     def process(self, activation: ActiveRequestActivation) -> None:
+        try:
+            self._process(activation)
+        finally:
+            self._observe_execution_learning(activation.entry.request_id)
+
+    def _process(self, activation: ActiveRequestActivation) -> None:
         envelope = activation.envelope
         generation = activation.generation
         now_ms = time.time_ns() // 1_000_000
@@ -4201,13 +4264,36 @@ class GatewayOrchestrationWorker:
             None
             if self._skill_authority is None or composition_plan_record is not None
             else self._skill_authority.system_recommend(
-                envelope.text,
+                ((envelope.task_context.raw_user_text + "\n" + envelope.task_context.root_goal).strip()
+                 if envelope.task_context is not None else envelope.text),
                 request_id=request_id,
                 run_id=run_id,
                 generation=generation.generation,
                 decided_at_ms=now_ms,
+                limit=8,
             )
         )
+        recommendation_view = None
+        loaded_skills = []
+        if skill_recommendation is not None:
+            recommendation_view = skill_recommendation.model_dump(mode="json")
+            for item in recommendation_view["candidates"]:
+                definition = self._skill_authority.selection.catalog.get(item["skill_id"])
+                item.update(title=definition.title, summary=definition.summary,
+                            optional_actions=list(definition.optional_actions))
+        if envelope.task_context is not None and self._skill_authority is not None:
+            for skill_id in envelope.task_context.selected_skill_ids:
+                authorized = self._skill_authority.model_request(
+                    "skill.get", request_id=request_id, run_id=run_id,
+                    generation=generation.generation, principal_scope_hash=envelope.principal_scope_hash,
+                    decided_at_ms=now_ms, skill_id=skill_id,
+                )
+                if authorized.activation is None or not authorized.resolution.content:
+                    raise OrchestrationError("dictionary.explicit_skill_unavailable:" + skill_id)
+                loaded_skills.append({"skill_id": skill_id,
+                    "sha256": authorized.activation.skill_sha256,
+                    "content": authorized.resolution.content,
+                    "catalog_sha256": self._skill_authority.catalog_sha256})
         attachments = [
             {
                 "filename": item.filename,
@@ -4248,11 +4334,8 @@ class GatewayOrchestrationWorker:
             "life_snapshot": life.snapshot.model_dump(mode="json"),
             "recent_messages": [dict(item) for item in history.messages],
             "conversation_projection": history.metadata(),
-            "skill_recommendation": (
-                None
-                if skill_recommendation is None
-                else skill_recommendation.model_dump(mode="json")
-            ),
+            "skill_recommendation": recommendation_view,
+            "loaded_skills": loaded_skills,
             "text": envelope.text,
             "user_callsign": profile.user_callsign,
         }

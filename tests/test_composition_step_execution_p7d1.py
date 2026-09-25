@@ -76,18 +76,8 @@ def _successful_omni_value(action_id: str, *, target: str = "") -> dict[str, Any
                 "state_sha256": "a" * 64,
             }
         )
-    elif action_id == "skill.get":
-        runtime.update(
-            {
-                "result": {
-                    "markdown": "# P7D.1 test",
-                    "selection": {},
-                    "activation": {},
-                },
-                "activation": {},
-                "evidence": {},
-            }
-        )
+    elif action_id == "file.list":
+        runtime.update({"root": target, "count": 0, "entries": [], "evidence": {}})
     else:  # pragma: no cover - fixture only admits explicit actions above
         raise AssertionError(f"no successful fixture result for {action_id}")
     return {
@@ -857,11 +847,14 @@ def test_real_bound_embedded_route_runs_only_through_gateway_permit(
         assert fixture.facts.get_batch_for_effect(outcome.effect_id) is not None
 
 
-def test_valid_nonempty_opaque_target_reaches_handler(tmp_path: Path) -> None:
+def test_valid_nonempty_workspace_target_reaches_handler(tmp_path: Path) -> None:
+    root = tmp_path / "directory-target"
+    target = root / "read-target"
+    target.mkdir(parents=True)
     with _runtime_fixture(
-        tmp_path / "opaque-target",
-        action_id="skill.get",
-        target="word_delivery",
+        root,
+        action_id="file.list",
+        target=str(target),
         arguments={},
     ) as fixture:
         outcome = fixture.coordinator.dispatch_record(
@@ -870,7 +863,7 @@ def test_valid_nonempty_opaque_target_reaches_handler(tmp_path: Path) -> None:
 
         assert outcome.status == "SUCCEEDED"
         assert fixture.backend.calls == 1
-        assert fixture.record.request.target == "word_delivery"
+        assert fixture.record.request.target == str(target)
 
 
 def test_handler_attempt_substitution_is_ambiguous_and_writes_no_fact(

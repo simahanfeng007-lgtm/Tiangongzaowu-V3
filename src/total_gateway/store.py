@@ -8411,6 +8411,18 @@ class GatewayStateStore:
                     raise StoreCasConflict("execution ledger head changed before append")
             return event, True
 
+    def list_composition_learning_requests(self, *, limit: int = 64) -> tuple[str, ...]:
+        """Bounded restart replay for automatic memory; the ledger stays authoritative."""
+        if type(limit) is not int or not 1 <= limit <= 256:
+            raise ValueError("composition learning replay limit invalid")
+        with self._lock:
+            if self._closed:
+                raise StoreError("gateway store is closed")
+            rows = self._connection.execute(
+                "SELECT request_id FROM execution_ledger WHERE event_type IN ('step.failed','step.ambiguous','composition.registered') "
+                "GROUP BY request_id ORDER BY MAX(created_at_ms) DESC, request_id LIMIT ?", (limit,)).fetchall()
+            return tuple(str(row["request_id"]) for row in rows)
+
     def list_execution_events(
         self, request_id: str, *, run_id: str, generation: int, after_seq: int = 0
     ) -> tuple[ExecutionLedgerEvent, ...]:
@@ -15702,7 +15714,7 @@ class GatewayStateStore:
             if (
                 selected is None
                 or not selected.compatible
-                or selected.required_actions != grant.allowed_action_ids
+                or tuple(sorted(set(selected.required_actions) | set(selected.available_optional_actions))) != grant.allowed_action_ids
             ):
                 raise StoreConflictError("Skill activation actions do not match the compatible candidate")
             existing = self._connection.execute(

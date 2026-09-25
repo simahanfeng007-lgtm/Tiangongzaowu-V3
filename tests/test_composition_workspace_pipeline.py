@@ -78,7 +78,8 @@ def material_for_calls(calls, *, source_worlds=None, admission_lifetime_ms=60_00
             _, world, methods = p4._worlds(specs, manifest_sha256=loaded.registry.source_manifest_sha256)
             method_id = "generate_then_verify"
         else:
-            world, methods = source_worlds(loaded)
+            world, methods, source_state = source_worlds(loaded, store=store,
+                envelope=envelope, request=request, run=run, workspace_root=workspace_root)
             method_id = "acceptance_review"
         if source_worlds is None:
             primitives = tuple(p7c1._rehash_primitive(p, argument_schema_sha256=schemas[p.action_id].argument_schema_sha256,
@@ -94,6 +95,10 @@ def material_for_calls(calls, *, source_worlds=None, admission_lifetime_ms=60_00
                           request_id=request.request_id, run_id=run.run_id, generation=1,
                           principal_scope_hash=envelope.principal_scope_hash, created_at_ms=1250,
                           context_sha256=ZERO).with_computed_sha256()
+        if source_worlds is not None:
+            context = replace(context, world_state_ref=source_state.state.world_state_id,
+                world_state_sha256=source_state.state.state_sha256,
+                context_sha256=ZERO).with_computed_sha256()
         specs = tuple((f"step.{i:02}", by_action[action].candidate_id, () if i == 1 else (f"step.{i-1:02}",))
                       for i, (action, _, _) in enumerate(calls, 1))
         proposal = p7c0.parse_composition_proposal(p4._proposal_document(goal_ref=context.goal_ref,

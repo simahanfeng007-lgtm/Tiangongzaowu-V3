@@ -116,7 +116,8 @@ def intake_factory(source, publication, tmp_path, monkeypatch):
         with zipfile.ZipFile(bundle) as z:
             artifact = json.loads(z.read('build-report.json'))['build_artifact']
         registry = compile_action_authority(artifact['gateway_manifest'], generated_at_ms=0).registry
-        tool_source = PlanningToolSource(repo, bundle, digest, base, head, ('skill.list',),
+        action_ids = tuple(sorted(artifact['gateway_manifest']['capabilities']))
+        tool_source = PlanningToolSource(repo, bundle, digest, base, head, action_ids,
                                          'src/omni_body_skill/tools/handler.py', 'repo.fixture', 'worktree.fixture')
         tools, _ = tool_source.load(registry)
         workspace_root = tmp_path / 'registered-workspace'
@@ -124,7 +125,7 @@ def intake_factory(source, publication, tmp_path, monkeypatch):
         workspace_id = _workspace_binding(workspace_root).workspace_id
         gateway = GatewayStateStore.open(tmp_path / 'registered-gateway.sqlite3', now_ms=1000)
         inbound = _envelope('registration').model_copy(
-            update={'text': '请用 native_0，查看 skill.list。', 'attachments': tuple(attachments)})
+            update={'text': f'请用 native_0，查看 {action_ids[0]}。', 'attachments': tuple(attachments)})
         registered = gateway.register_request(inbound, ingress_sha256='b' * 64, created_at_ms=1100)
         request = registered.entry.request_id
         run = derive_run_identity(request, 1).run_id

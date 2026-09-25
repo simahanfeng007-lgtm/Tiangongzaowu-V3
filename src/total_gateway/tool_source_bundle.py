@@ -27,7 +27,7 @@ from .tool_source_inputs import ToolSourceInputFileV1, ToolSourceInputsV1, compi
 _SCHEMA = "tiangong.tool-source-build-bundle.v1"
 _INDEX = "bundle-manifest.json"
 _REPORT = "build-report.json"
-_MANIFEST = "src/omni_body_skill/registry/capability_manifest.generated.json"
+_MANIFEST = "dictionaries/registry/capability_manifest.generated.json"
 _RESERVED = {".tiangong-source-build-worker.py", ".tiangong-candidate-compiled-manifest.json"}
 _MAX_FILE_BYTES = 32 * 1024 * 1024
 _MAX_TOTAL_BYTES = 512 * 1024 * 1024

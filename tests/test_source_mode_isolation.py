@@ -34,7 +34,9 @@ class SourceModeIsolationTests(unittest.TestCase):
         for name in required:
             with self.subTest(name=name):
                 self.assertIn(f"$env:{name}", script)
-        self.assertIn('Join-Path $HostLocalAppData "TiangongV3-SourceWork"', script)
+        self.assertIn('[System.IO.Path]::GetFullPath($ProfileRoot)', script)
+        self.assertIn('Join-Path (Split-Path $Root -Parent) "data"', script)
+        self.assertNotIn('Join-Path $HostLocalAppData "TiangongV3-SourceWork"', script)
         self.assertIn('"--user-data-dir=$SourceUserData"', script)
         self.assertLess(
             script.index('"--user-data-dir=$SourceUserData"'),

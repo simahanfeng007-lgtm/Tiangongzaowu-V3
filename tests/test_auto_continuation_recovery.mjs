@@ -175,6 +175,10 @@ assert.equal(
   inferActiveProjectRoot("请继续 alpha 项目", "C:\\work", "", "", ""),
   "C:\\work\\alpha",
 );
+assert.equal(inferActiveProjectRoot("Data 工作表：A1项目、B1金额，第2到4行三个金额", "D:\\work"), "");
+assert.equal(inferActiveProjectRoot("保存到工作区相对目录 qa-cases/novel1/", "D:\\work"), "");
+assert.equal(inferActiveProjectRoot("继续", "D:\\work", "", "", "已读 D:\\work\\qa-cases\\novel1\\input.json"), "");
+assert.equal(inferActiveProjectRoot("继续", "D:\\work", "", "", "【本轮活跃项目根】\nD:\\work\\alpha\n"), "D:\\work\\alpha");
 
 // FE-07 regression: normal terminal states never carry the stop notice.
 const casualChat = autoContinuationDecision({

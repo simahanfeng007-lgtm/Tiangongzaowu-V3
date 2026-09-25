@@ -6,7 +6,9 @@ compiler boundary and publishes one coherent P9 WorldState transaction.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import logging
+import re
 from threading import RLock
 from typing import Callable, Protocol
 
@@ -33,6 +35,7 @@ from .software_world.query import execute_repository_graph_query
 from .world_state import MaterializationInput, WorldStateMaterializer, WorldStateStore
 from .world_state.store import MaterializedWorldSnapshot
 from .world_state.retention import RetainedWorldState
+from .world_state.manifests import DependencyBinding
 from .skill_method_world.publication import (
     PUBLICATION_SCHEMA, ARCHIVE_WATERMARK, MethodRevisionResolver,
     materialize_method_update, method_marker,
@@ -96,6 +99,10 @@ class ProductionWorldUnderstandingRuntime:
         semantic_pipeline: SemanticPipeline | None = None,
         committed_state_observer: Callable[[WorldIngressEnvelope, MaterializedWorldSnapshot], object] | None = None,
         method_revision_resolver: MethodRevisionResolver | None = None,
+        domain_provider: Callable | None = None,
+        semantic_source_kinds: frozenset[str] | None = None,
+        semantic_trace_observer: Callable | None = None,
+        cognition_provider: Callable | None = None,
     ) -> None:
         self.store = store
         self.frame_factory = frame_factory
@@ -104,10 +111,15 @@ class ProductionWorldUnderstandingRuntime:
         self._closure = KnownClosureEngine(RuleRegistry(build_p4_rules()))
         self._updater = SoftwareWorldUpdater()
         self._semantic = semantic_pipeline or SemanticPipeline(model=None)
+        self._last_semantic_trace = None
         self._materializer = WorldStateMaterializer(store)
         self._committed_state_observer = committed_state_observer
         self._method_revision_resolver = method_revision_resolver
         self._tool_revision_resolver = None
+        self._domain_provider = domain_provider
+        self._semantic_source_kinds = semantic_source_kinds
+        self._semantic_trace_observer = semantic_trace_observer
+        self._cognition_provider = cognition_provider
         self.facade = WorldUnderstandingFacade(
             enabled=True,
             context_request_handler=context_request_handler,
@@ -240,6 +252,8 @@ class ProductionWorldUnderstandingRuntime:
                 live
                 for live in self._streams.values()
                 if live.frame.scope == scope
+                and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", live.frame.commit)
+                and any(entity.entity_type == "Repository" for entity in live.graph.entities())
                 and any(entity.entity_type == "File" for entity in live.graph.entities())
             ]
             if not candidates:
@@ -429,6 +443,22 @@ class ProductionWorldUnderstandingRuntime:
                     pass
             return SourceMaterializationDisposition("METHOD_REVISION_MATERIALIZED", True, snapshot.state.world_state_id)
 
+    def _prepare_update(self, envelope, rows):
+        """Caller holds the short runtime lock; no model/network work here."""
+        previous = self._previous(self.frame_factory(envelope, None))
+        cut = self._next_cut(envelope, previous)
+        frame = self.frame_factory(envelope, cut)
+        if frame.scope != envelope.scope_hint:
+            raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_MISMATCH")
+        live = self._streams.get(frame.frame_id)
+        closure = self._closure.close(rows, prior=None if live is None else live.closure)
+        graph = _fork_graph(frame, previous if live is None else live.graph)
+        git_delta = repository_observation_to_git_delta(envelope=envelope, frame=frame, rows=rows) if envelope.source_kind == "GIT_CODE" else None
+        added_hashes = set(closure.added_record_hashes)
+        update = self._updater.update(frame=frame, graph=graph,
+            known_delta=tuple(r for r in closure.known.records() if r.record_hash in added_hashes), git_delta=git_delta)
+        return previous, cut, frame, closure, update
+
     def consume_source(
         self,
         envelope: WorldIngressEnvelope,
@@ -454,65 +484,92 @@ class ProductionWorldUnderstandingRuntime:
                 return SourceMaterializationDisposition(
                     "SOURCE_ALREADY_MATERIALIZED", True, previous.state.world_state_id
                 )
-            cut = self._next_cut(envelope, previous)
-            frame = self.frame_factory(envelope, cut)
-            if frame.frame_id != probe.frame_id or frame.scope != envelope.scope_hint:
+            previous, cut, frame, closure, update = self._prepare_update(envelope, rows)
+            if frame.frame_id != probe.frame_id:
                 raise ValueError("WORLD_PRODUCTION_FRAME_IDENTITY_MISMATCH")
-
-            live = self._streams.get(frame.frame_id)
-            prior_closure = None if live is None else live.closure
-            closure = self._closure.close(rows, prior=prior_closure)
-            graph = _fork_graph(frame, previous if live is None else live.graph)
-            git_delta = repository_observation_to_git_delta(
-                envelope=envelope,
-                frame=frame,
-                rows=rows,
-            ) if envelope.source_kind == "GIT_CODE" else None
-            added_hashes = set(closure.added_record_hashes)
-            update = self._updater.update(
-                frame=frame,
-                graph=graph,
-                known_delta=tuple(
-                    item
-                    for item in closure.known.records()
-                    if item.record_hash in added_hashes
-                ),
-                git_delta=git_delta,
-            )
-            semantic_input = build_semantic_input(
-                scope=frame.scope,
-                known_records=tuple(rows),
-                graph=update.graph,
-                seed_entity_ids=update.touched_entity_ids,
-            )
-            semantic = self._semantic.run(
-                semantic_input,
-                factors=SemanticFactors(novelty_milli=1000, life_relevance_milli=1000),
-                expected_gap_reduction_milli=1000,
-                expected_cost_milli=1,
-                created_at_ms=envelope.source_time.recorded_at_ms,
-            )
-            snapshot = self._materializer.materialize(
-                MaterializationInput(
-                    frame=frame,
-                    cut=cut,
-                    graph=update.graph,
-                    active_hypotheses=semantic.hypotheses,
-                    dependency_bindings=() if previous is None else previous.dependencies.bindings,
-                    preserve_previous_domains=(previous is not None and method_marker(previous, ARCHIVE_WATERMARK) is not None),
-                    source_transaction_id=envelope.envelope_id,
-                    materialized_at_ms=envelope.source_time.recorded_at_ms,
-                )
-            )
-            self._streams[frame.frame_id] = _StreamState(frame, update.graph, closure)
-            if self._committed_state_observer is not None:
+            data = MaterializationInput(frame=frame, cut=cut, graph=update.graph,
+                dependency_bindings=() if previous is None else previous.dependencies.bindings,
+                preserve_previous_hypotheses=True, preserve_previous_cognition=True,
+                preserve_previous_domains=previous is not None and method_marker(previous, ARCHIVE_WATERMARK) is not None,
+                source_transaction_id=envelope.envelope_id, materialized_at_ms=envelope.source_time.recorded_at_ms)
+            if self._domain_provider is not None:
                 try:
-                    self._committed_state_observer(envelope, snapshot)
-                except Exception:
-                    pass
-            return SourceMaterializationDisposition(
-                "SOURCE_MATERIALIZED", True, snapshot.state.world_state_id
+                    data = self._domain_provider(data, previous)
+                except Exception as exc:
+                    logging.getLogger("tiangong.world").warning("WORLD_DICTIONARY_PROJECTION_FAILED type=%s", type(exc).__name__)
+            if self._cognition_provider is not None:
+                try:
+                    data = self._cognition_provider(data, previous, envelope)
+                except Exception as exc:
+                    logging.getLogger("tiangong.world").warning("WORLD_COGNITION_PROJECTION_FAILED type=%s", type(exc).__name__)
+                    data = replace(data, stable_cognition=(), replace_previous_cognition=True)
+            current_keys = {WorldRecordRef(record_type="world_entity", record_id=e.entity_id, revision=e.revision, sha256=e.entity_sha256).sort_key() for e in data.graph.entities()}
+            current_keys.update(WorldRecordRef(record_type="world_relation", record_id=r.relation_id, revision=r.revision, sha256=r.relation_sha256).sort_key() for r in data.graph.relations())
+            data = replace(data, dependency_bindings=tuple(b for b in data.dependency_bindings
+                if b.ref.record_type not in {"world_entity", "world_relation"} or b.ref.sort_key() in current_keys))
+            # Native facts become durable BEFORE optional model inference. Late
+            # model replies cannot replay an old fact over a newer tool outcome.
+            snapshot = self._materializer.materialize(data)
+            self._streams[frame.frame_id] = _StreamState(frame, data.graph, closure)
+        self._notify_commit(envelope, snapshot)
+        # A slow provider must not hold either the Runtime or WorldState lock.
+        # Recheck the exact basis after inference; concurrent facts take precedence.
+        semantic = None
+        if self._semantic_source_kinds is None or envelope.source_kind in self._semantic_source_kinds:
+            try:
+                semantic_input = build_semantic_input(
+                    scope=frame.scope, known_records=tuple(rows), graph=update.graph,
+                    seed_entity_ids=update.touched_entity_ids)
+                semantic = self._semantic.run(semantic_input,
+                    factors=SemanticFactors(novelty_milli=1000, life_relevance_milli=1000),
+                    expected_gap_reduction_milli=1000, expected_cost_milli=1,
+                    created_at_ms=envelope.source_time.recorded_at_ms)
+            except Exception as exc:
+                logging.getLogger("tiangong.world_semantic").warning("WORLD_SEMANTIC_INPUT_FAILED type=%s", type(exc).__name__)
+        with self._lock:
+            current = self._previous(frame)
+            if current is None or current.state_ref != snapshot.state_ref:
+                if semantic is not None:
+                    semantic = replace(semantic, status="SUPERSEDED", hypotheses=(),
+                        trace=replace(semantic.trace, status="SUPERSEDED", admission_reason_code="SEMANTIC_BASIS_CHANGED", hypothesis_refs=()))
+            if semantic is not None:
+                self._last_semantic_trace = semantic.trace
+            hypotheses = () if semantic is None else semantic.hypotheses
+            dependencies = [b for b in data.dependency_bindings if b.ref.record_type != "world_hypothesis"]
+            # Conservatively invalidate interpretations when any observed input
+            # source advances. An inference is never promoted to an empirical fact.
+            keys = tuple(sorted(w.source_kind + ":" + w.watermark_type for w in cut.source_watermarks))
+            for hyp in hypotheses:
+                ref = WorldRecordRef(record_type="world_hypothesis", record_id=hyp.hypothesis_id, sha256=hyp.hypothesis_sha256)
+                dependencies.append(DependencyBinding(ref=ref, source_keys=keys))
+            logging.getLogger("tiangong.world_semantic").info(
+                "world_semantic status=%s reason=%s model=%s hypotheses=%d latency_ms=%d",
+                "SOURCE_NOT_SEMANTIC" if semantic is None else semantic.status,
+                None if semantic is None else semantic.trace.admission_reason_code,
+                None if semantic is None else semantic.trace.model_ref,
+                len(hypotheses), 0 if semantic is None else semantic.trace.latency_ms,
             )
+            refined = semantic is not None and semantic.status == "COMPLETED"
+            if refined:
+                refinement = replace(data, active_hypotheses=hypotheses, dependency_bindings=tuple(dependencies),
+                    preserve_previous_hypotheses=False, preserve_previous_domains=False,
+                    source_transaction_id="semantic." + semantic.trace.trace_sha256)
+                snapshot = self._materializer.materialize(refinement)
+        if semantic is not None and self._semantic_trace_observer is not None:
+            try:
+                self._semantic_trace_observer(envelope, semantic.trace)
+            except Exception as exc:
+                logging.getLogger("tiangong.world_semantic").warning("WORLD_SEMANTIC_DIAGNOSTIC_FAILED type=%s", type(exc).__name__)
+        if refined:
+            self._notify_commit(envelope, snapshot)
+        return SourceMaterializationDisposition("SOURCE_MATERIALIZED", True, snapshot.state.world_state_id)
+
+    def _notify_commit(self, envelope, snapshot):
+        if self._committed_state_observer is not None:
+            try:
+                self._committed_state_observer(envelope, snapshot)
+            except Exception as exc:
+                logging.getLogger("tiangong.world").warning("WORLD_COMMIT_OBSERVER_FAILED type=%s", type(exc).__name__)
 
 
 __all__ = [

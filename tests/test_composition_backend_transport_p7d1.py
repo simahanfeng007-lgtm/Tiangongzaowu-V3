@@ -61,6 +61,7 @@ class AuthorizedComposition:
     binding: CompositionExecutionBindingV1
     runtime: dict[str, Any]
     signer: Any
+    claim: Any
     schema_catalog: ActionSchemaCatalog
     expected_result_schema_sha256: str
 
@@ -77,12 +78,11 @@ def _canonical_legacy_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-def _valid_skill_get_result(
+def _valid_file_list_result(
     material: AuthorizedComposition,
     *,
     elapsed_seconds: float = 0.125,
 ) -> dict[str, Any]:
-    activation: dict[str, Any] = {}
     return {
         "schema": "tiangong.v3.omni_body.v1",
         "ok": True,
@@ -92,19 +92,16 @@ def _valid_skill_get_result(
         "target": material.invocation["target"],
         "result": {
             "success": True,
-            "op_id": "skill-get-p7d2",
+            "op_id": "file-list-p7d2",
             "action": material.ticket.payload.action_id,
             "risk_level": "A0",
             "elapsed_seconds": elapsed_seconds,
-            "result": {
-                "markdown": "# word_delivery",
-                "selection": {},
-                "activation": activation,
-            },
-            "activation": activation,
+            "root": material.invocation["target"],
+            "count": 0,
+            "entries": [],
             "evidence": {},
         },
-        "llm_brief": "skill loaded",
+        "llm_brief": "directory listed",
         "evidence": {},
     }
 
@@ -112,13 +109,15 @@ def _valid_skill_get_result(
 @pytest.fixture(scope="module")
 def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> AuthorizedComposition:
     root = tmp_path_factory.mktemp("p7d1-authority")
+    read_target = root / "read-target"
+    read_target.mkdir()
     # Use a real, explicitly-schema'd A0 composition action with a non-empty
     # target.  This makes target and target-snapshot enforcement substantive;
     # the private route must not special-case only targetless actions.
     with p7c1._harness(
         root,
-        action_id="skill.get",
-        target="word_delivery",
+        action_id="file.list",
+        target=str(read_target),
         arguments={},
     ) as harness:
         response = p7c1._authorize(harness)
@@ -131,6 +130,11 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
         intent, impact, decision, ticket, grant = (
             persisted.artifacts.restore_contracts()
         )
+        from total_gateway.composition_execution_binding import rebuild_composition_effect_claim
+        claim = rebuild_composition_effect_claim(persisted.request,
+            run_sequence=p7c1.derive_run_sequence(persisted.request.request_id, persisted.request.run_id),
+            ordinal=next(index + 1 for index, step in enumerate(harness.plan.step_bindings)
+                         if step.step_id == persisted.request.step_id), lease_epoch=1)
         original_binding = ticket.payload.composition_execution_binding
         assert original_binding is not None
         result_schema = harness.loaded.schema_catalog.resolve(
@@ -191,7 +195,7 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
         grant = harness.signer.sign_omni_capability(grant_payload)
         invocation = {
             "action": ticket.payload.action_id,
-            "target": "word_delivery",
+            "target": str(read_target),
             "args": {},
         }
         assert canonical_sha256(invocation) == ticket.payload.arguments_hash
@@ -224,6 +228,7 @@ def authorized_composition(tmp_path_factory: pytest.TempPathFactory) -> Authoriz
             binding=binding,
             runtime=runtime,
             signer=harness.signer,
+            claim=claim,
             schema_catalog=harness.loaded.schema_catalog,
             expected_result_schema_sha256=result_schema.result_schema_sha256,
         )
@@ -357,6 +362,10 @@ def _client_execute(
         intent=material.intent,
         decision=material.decision,
         impact=material.impact,
+        claim=material.claim,
+        expected_fence_epoch=(ticket or material.ticket).payload.fence_epoch,
+        active_lease_epoch=1,
+        expected_target_snapshot_sha256=material.binding.target_snapshot_sha256,
         expected_composition_binding=expected_binding or material.binding,
         actual_target_snapshot_sha256=(
             material.binding.target_snapshot_sha256
@@ -523,6 +532,7 @@ def test_backend_client_binds_complete_invocation_and_all_four_runtime_hashes(
         client = BackendClient(
             transport,
             store,
+            composition_workspace_root=Path(material.invocation["target"]).parent,
             ticket_consumer_instance_id="p7d1-composition-consumer",
         )
 
@@ -576,15 +586,15 @@ def test_composition_preflight_drift_has_zero_callback_nonce_and_transport(
     actual_snapshot = material.binding.target_snapshot_sha256
 
     if drift == "overall":
-        invocation["args"]["skill_id"] = "substituted-skill"
+        invocation["args"]["pattern"] = "substituted-pattern"
     elif drift == "shape":
         invocation["unexpected"] = "caller authority injection"
         ticket, grant = _ticket_and_grant_for_invocation(material, invocation)
     elif drift == "action":
-        invocation["action"] = "skill.read"
+        invocation["action"] = "file.read"
         ticket, grant = _ticket_and_grant_for_invocation(material, invocation)
     elif drift == "arguments":
-        invocation["args"] = {"skill_id": "substituted-skill"}
+        invocation["args"] = {"pattern": "substituted-pattern"}
         ticket, grant = _ticket_and_grant_for_invocation(material, invocation)
     elif drift == "target":
         invocation["target"] = "substituted-target"
@@ -604,6 +614,7 @@ def test_composition_preflight_drift_has_zero_callback_nonce_and_transport(
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id=f"p7d1-drift-{drift}",
     )
     callback_calls: list[int] = []
@@ -636,6 +647,7 @@ def test_before_dispatch_failure_leaves_nonce_and_transport_untouched(
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id="p7d1-callback-failure",
     )
     try:
@@ -667,6 +679,7 @@ def test_transport_runner_receives_exact_timeout_and_invokes_transport_once(
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id="p7d1-transport-runner-success",
     )
     runner_calls: list[float] = []
@@ -709,6 +722,7 @@ def test_invalid_transport_runner_fails_before_callback_nonce_or_transport(
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id="p7d1-transport-runner-invalid",
     )
     callback_calls: list[int] = []
@@ -745,6 +759,7 @@ def test_transport_runner_timeout_or_exception_after_dispatch_is_ambiguous_witho
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id=(
             f"p7d1-transport-runner-{type(runner_error).__name__}"
         ),
@@ -794,6 +809,7 @@ def test_every_failure_after_dispatch_callback_is_ambiguous(
     client = BackendClient(
         transport,
         store,
+        composition_workspace_root=Path(material.invocation["target"]).parent,
         ticket_consumer_instance_id=f"p7d1-post-dispatch-{failure_kind}",
     )
     callback_calls: list[int] = []
@@ -817,7 +833,7 @@ def test_composition_transport_uses_only_exact_private_route_and_body_and_wraps_
     authorized_composition: AuthorizedComposition,
 ) -> None:
     material = authorized_composition
-    raw_omni = _valid_skill_get_result(material)
+    raw_omni = _valid_file_list_result(material)
     raw_omni["metrics"] = {"ratio": 0.75}
     client = FakeCompatibilityClient(status=200, payload=raw_omni)
     grant_value = material.grant.model_dump(mode="json")
@@ -877,7 +893,7 @@ def test_composition_transport_uses_continuation_binding_attempt(
     ticket, grant, runtime = _continuation_signed_authority(material, attempt=2)
     client = FakeCompatibilityClient(
         status=200,
-        payload=_valid_skill_get_result(material),
+        payload=_valid_file_list_result(material),
     )
     transport = _composition_transport(
         material,
@@ -900,7 +916,7 @@ def test_composition_transport_rejects_mismatched_expected_result_schema_before_
     material = authorized_composition
     client = FakeCompatibilityClient(
         status=200,
-        payload=_valid_skill_get_result(material),
+        payload=_valid_file_list_result(material),
     )
     transport = _composition_transport(
         material,
@@ -920,7 +936,7 @@ def test_composition_transport_rejects_success_result_outside_explicit_schema(
     authorized_composition: AuthorizedComposition,
 ) -> None:
     material = authorized_composition
-    raw_omni = _valid_skill_get_result(material)
+    raw_omni = _valid_file_list_result(material)
     raw_omni["result"]["action"] = "skill.read"
     client = FakeCompatibilityClient(status=200, payload=raw_omni)
     transport = _composition_transport(material, client)
@@ -937,7 +953,7 @@ def test_composition_transport_rejects_untrusted_backend_output_object_refs(
     authorized_composition: AuthorizedComposition,
 ) -> None:
     material = authorized_composition
-    raw_omni = _valid_skill_get_result(material)
+    raw_omni = _valid_file_list_result(material)
     raw_omni["output_object_refs"] = ["obj_" + "a" * 64]
     client = FakeCompatibilityClient(status=200, payload=raw_omni)
     transport = _composition_transport(material, client)
@@ -1143,7 +1159,7 @@ def test_transport_and_real_embedded_request_contract_execute_end_to_end(
 
     def runner(payload: dict[str, Any]) -> dict[str, Any]:
         runner_calls.append(deepcopy(payload))
-        return _valid_skill_get_result(material)
+        return _valid_file_list_result(material)
 
     backend = EmbeddedBackendRuntime.__new__(EmbeddedBackendRuntime)
     backend._lock = threading.RLock()

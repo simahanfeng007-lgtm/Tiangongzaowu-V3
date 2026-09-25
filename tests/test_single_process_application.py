@@ -135,7 +135,7 @@ class SingleProcessApplicationTests(unittest.TestCase):
                 backend_internal_token=TOKEN,
                 release_source_root=ROOT,
                 workspace_root=workspace,
-                skill_root=ROOT / "app/backend/tiangong-backend/_internal/omni_body_skill",
+                skill_root=ROOT / "dictionaries",
             )
             runtime = GatewayRuntime.start(config)
             try:

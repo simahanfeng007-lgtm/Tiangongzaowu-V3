@@ -300,6 +300,54 @@ class ReviewedMethodSourceBindingV1:
 
 
 @dataclass(frozen=True, slots=True)
+class InstalledMethodSourceBindingV1:
+    """Observed installed definition, explicitly neither review nor approval."""
+
+    method_id: str
+    version: str
+    source_path: str
+    source_sha256: str
+    descriptor_sha256: str
+    observation_sha256: str
+    binding_sha256: str
+    may_authorize: bool = False
+    may_execute: bool = False
+
+    def __post_init__(self):
+        validate_native_method_path(self.source_path)
+        if self.may_authorize is not False or self.may_execute is not False:
+            raise SkillMethodWorldError("installed method observation has no authority")
+        if not self.method_id or re.fullmatch(r"v[1-9][0-9]{0,8}", self.version) is None:
+            raise SkillMethodWorldError("installed method identity is invalid")
+        if any(_SHA256.fullmatch(value) is None for value in (
+            self.source_sha256, self.descriptor_sha256, self.observation_sha256, self.binding_sha256
+        )):
+            raise SkillMethodWorldError("installed method digest is invalid")
+
+    def payload(self):
+        return {"schema": "tiangong.installed-method-source-binding.v1",
+                "method_id": self.method_id, "version": self.version,
+                "source_path": self.source_path, "source_sha256": self.source_sha256,
+                "descriptor_sha256": self.descriptor_sha256, "observation_sha256": self.observation_sha256,
+                "may_authorize": False, "may_execute": False}
+
+    def has_valid_sha256(self):
+        return self.binding_sha256 == canonical_sha256(self.payload())
+
+    def matches_primitive(self, primitive):
+        ref = primitive.source_ref
+        return (self.has_valid_sha256() and self.method_id == primitive.method_id == ref.semantic_id
+                and self.version == primitive.version == ref.version
+                and self.source_sha256 == primitive.source_sha256 == ref.source_sha256
+                and self.descriptor_sha256 == primitive.descriptor_sha256 == ref.descriptor_sha256
+                and ref.source_kind == "SKILL_METHOD" and ref.manifest_sha256 is None
+                and ref.source_files == (self.source_path,) and not ref.source_spans)
+
+
+_SKILL_METHOD_WORLD_INSTALLED_SCHEMA = "tiangong.skill-method-world.installed.v1"
+
+
+@dataclass(frozen=True, slots=True)
 class SkillMethodWorldSnapshotV1:
     schema: str
     legacy_corpus_sha256: str
@@ -311,9 +359,10 @@ class SkillMethodWorldSnapshotV1:
     may_authorize: bool = False
     may_execute: bool = False
     reviewed_source_bindings: tuple[ReviewedMethodSourceBindingV1, ...] = ()
+    installed_source_bindings: tuple[InstalledMethodSourceBindingV1, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.schema not in {_SKILL_METHOD_WORLD_SCHEMA, _SKILL_METHOD_WORLD_REVIEWED_SCHEMA}:
+        if self.schema not in {_SKILL_METHOD_WORLD_SCHEMA, _SKILL_METHOD_WORLD_REVIEWED_SCHEMA, _SKILL_METHOD_WORLD_INSTALLED_SCHEMA}:
             raise SkillMethodWorldError("unsupported Skill Method World snapshot schema")
         if self.may_authorize is not False or self.may_execute is not False:
             raise SkillMethodWorldError("Skill Method World is non-authorizing and non-executing")
@@ -321,21 +370,23 @@ class SkillMethodWorldSnapshotV1:
         if not method_ids or method_ids != tuple(sorted(set(method_ids))):
             raise SkillMethodWorldError("method primitives must be sorted and unique")
         binding_ids = tuple(item.method_id for item in self.migration_bindings)
-        native_ids = tuple(item.method_id for item in self.reviewed_source_bindings)
+        native_bindings = tuple(sorted(self.reviewed_source_bindings + self.installed_source_bindings, key=lambda item: item.method_id))
+        native_ids = tuple(item.method_id for item in native_bindings)
         if (binding_ids != tuple(sorted(set(binding_ids)))
                 or native_ids != tuple(sorted(set(native_ids)))
                 or set(binding_ids) & set(native_ids)
                 or tuple(sorted(binding_ids + native_ids)) != method_ids
-                or bool(native_ids) != (self.schema == _SKILL_METHOD_WORLD_REVIEWED_SCHEMA)):
+                or bool(native_ids) != (self.schema != _SKILL_METHOD_WORLD_SCHEMA)
+                or bool(self.installed_source_bindings) != (self.schema == _SKILL_METHOD_WORLD_INSTALLED_SCHEMA)):
             raise SkillMethodWorldError(
                 "every method must have exactly one migration or reviewed-source binding"
             )
-        native_paths = tuple(item.source_path.casefold() for item in self.reviewed_source_bindings)
+        native_paths = tuple(item.source_path.casefold() for item in native_bindings)
         if len(native_paths) != len(set(native_paths)):
             raise SkillMethodWorldError("native method source paths collide")
         by_id = {item.method_id: item for item in self.primitives}
         if any(not item.matches_primitive(by_id[item.method_id])
-               for item in self.reviewed_source_bindings):
+               for item in native_bindings):
             raise SkillMethodWorldError("native method provenance does not match primitive")
         relation_keys = tuple(
             (item.relation_type, item.source_ref, item.target_ref)
@@ -360,10 +411,15 @@ class SkillMethodWorldSnapshotV1:
         }
         # Preserve every historical P3 v1 byte/hash. Mixed/native provenance
         # uses an explicit v2 schema in the SAME domain snapshot type.
-        if self.schema == _SKILL_METHOD_WORLD_REVIEWED_SCHEMA:
+        if self.schema in {_SKILL_METHOD_WORLD_REVIEWED_SCHEMA, _SKILL_METHOD_WORLD_INSTALLED_SCHEMA}:
             result["reviewed_source_bindings"] = [
                 {**item.payload(), "binding_sha256": item.binding_sha256}
                 for item in self.reviewed_source_bindings
+            ]
+        if self.schema == _SKILL_METHOD_WORLD_INSTALLED_SCHEMA:
+            result["installed_source_bindings"] = [
+                {**item.payload(), "binding_sha256": item.binding_sha256}
+                for item in self.installed_source_bindings
             ]
         return result
 

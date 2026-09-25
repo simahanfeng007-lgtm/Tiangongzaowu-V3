@@ -158,6 +158,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
                 return None
 
             def iter_lines(self):
+                __import__("time").sleep(0.04)
                 yield 'data: {"choices":[{"delta":{"content":"keepalive"}}]}'
 
             # bug-fix: 同 _StubResponse，httpx 0.28 兼容（2026-08-25，凌霜）。
@@ -200,10 +201,6 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
                 "v3.jineng.model_transport_executor.validate_model_endpoint",
                 return_value=pinned_binding,
             ),
-            mock.patch(
-                "v3.jineng.model_transport_executor.time.perf_counter",
-                side_effect=[0.0, 0.0, 0.0, 301.0, 301.0],
-            ),
         ):
             with self.assertRaises(TransportExecutionError) as caught:
                 execute_streaming_turn(
@@ -214,7 +211,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
                         "messages": [{"role": "user", "content": "ping"}]
                     },
                     retry_limit=1,
-                    max_wall_clock_seconds=300.0,
+                    max_wall_clock_seconds=0.01,
                 )
 
         self.assertTrue(caught.exception.deadline_exceeded)

@@ -419,7 +419,7 @@ def read_tool_source_manifests(
     code, running filters or trusting mutable checkout files.
     """
     verify_tool_source_candidate(repository, candidate)
-    path = "src/omni_body_skill/registry/capability_manifest.generated.json"
+    path = "dictionaries/registry/capability_manifest.generated.json"
     documents: list[dict[str, Any]] = []
     for commit in (candidate.base_commit, candidate.candidate_commit):
         oid = _git(repository, "rev-parse", commit + ":" + path).decode("ascii").strip()

@@ -1,0 +1,4737 @@
+{
+  "purpose": "Historical P3/P9 migration compatibility only. Not an installed catalog, prompt, or executable Skill.",
+  "source_commit": "3a95e155e741bf18284ff5c468096876da611888",
+  "index_source_sha256": "5c094713f2dea62931dde0e4fa9f6ed841f539a202bd8d468c12b3be033ddb0a",
+  "index": {
+    "actions": [
+      "skill.route",
+      "skill.get",
+      "skill.read",
+      "skill.list",
+      "skill.step.check",
+      "skill.progress.report"
+    ],
+    "principle": "omni_body routes to model-visible skills; model executes the skill loop by calling atomic actions and qc gates. The tool never runs the skill as an agent.",
+    "schema": "tiangong.skill-dictionary.v1",
+    "skill_count": 34,
+    "skills": [
+      {
+        "acceptance": {
+          "minimum_score": 1,
+          "must_pass": [
+            "only creates pending learning card"
+          ],
+          "world_class_score": 1
+        },
+        "category": "learning",
+        "deliverables": [
+          "learning_card"
+        ],
+        "file": "skills/57_learning_card_ingest.md",
+        "final_actions": [],
+        "id": "skill_learning_card_ingest_v1",
+        "keywords": [
+          "学一下",
+          "学习这个",
+          "学习这段",
+          "做成能力",
+          "沉淀成skill",
+          "沉淀成技能",
+          "学习卡",
+          "以后遇到",
+          "按这个流程"
+        ],
+        "max_chars": 2200,
+        "mingcheng": "显式学习请求建卡",
+        "optional_actions": [],
+        "production_actions": [
+          "learning.ingest"
+        ],
+        "quality_gates": [],
+        "repair_actions": [],
+        "required_actions": [
+          "learning.ingest"
+        ],
+        "starter_actions": [
+          "learning.ingest"
+        ],
+        "summary": "显式学习；生成学习卡；能力沉淀",
+        "taskIntents": [
+          "显式学习",
+          "生成学习卡",
+          "能力沉淀"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_core_actions_reference_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "core",
+        "deliverables": [
+          "all"
+        ],
+        "file": "skills/00_core_actions_reference.md",
+        "final_actions": [],
+        "id": "skill_core_actions_reference_v1",
+        "keywords": [
+          "文件",
+          "文档",
+          "word",
+          "docx",
+          "ppt",
+          "pptx",
+          "excel",
+          "xlsx",
+          "pdf",
+          "表格",
+          "脑图",
+          "搜索",
+          "写入",
+          "读取",
+          "创建",
+          "生成",
+          "写",
+          "file",
+          "write",
+          "read",
+          "create",
+          "代码",
+          "命令",
+          "运行",
+          "方案",
+          "销售",
+          "话术",
+          "汇报",
+          "报告",
+          "提案",
+          "笔记"
+        ],
+        "max_chars": 0,
+        "mingcheng": "Omni Body 核心动作参数手册",
+        "optional_actions": [],
+        "production_actions": [
+          "file.write",
+          "docx.create",
+          "pptx.create",
+          "sheet.create"
+        ],
+        "quality_gates": [],
+        "repair_actions": [],
+        "required_actions": [
+          "docx.create",
+          "file.write",
+          "pptx.create",
+          "sheet.create"
+        ],
+        "starter_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "summary": "文件操作；文档生成；数据处理",
+        "taskIntents": [
+          "文件操作",
+          "文档生成",
+          "数据处理"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "project_manifest_valid",
+            "checkpoint_current",
+            "source_sections_complete",
+            "qc.docx.delivery_check",
+            "project_folder_delivered"
+          ],
+          "world_class_score": 90
+        },
+        "category": "managed_long_document",
+        "deliverables": [
+          "project_folder",
+          "docx",
+          "md",
+          "json",
+          "zip"
+        ],
+        "file": "skills/60_skill_managed_long_document_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_managed_long_document_worldclass_v1",
+        "keywords": [
+          "超长文档",
+          "长文档工程",
+          "大型文档",
+          "多章文档",
+          "分章续写",
+          "持续编写文档",
+          "20万字文档",
+          "十万字文档",
+          "文档工程文件夹",
+          "长篇报告工程",
+          "断点续写文档"
+        ],
+        "max_chars": 6000,
+        "mingcheng": "世界顶尖级受管超长文档工程",
+        "optional_actions": [
+          "code.patch_replace",
+          "deliverable.package",
+          "file.hash",
+          "file.list",
+          "file.mkdir",
+          "file.read",
+          "preview.generate",
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan"
+        ],
+        "production_actions": [
+          "file.write",
+          "file.append",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "file.hash",
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "code.patch_replace",
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.append",
+          "file.write"
+        ],
+        "starter_actions": [
+          "file.list",
+          "file.mkdir",
+          "file.read"
+        ],
+        "summary": "超长文档设计；受管长文档；多章文档工程；可恢复文档续写",
+        "taskIntents": [
+          "超长文档设计",
+          "受管长文档",
+          "多章文档工程",
+          "可恢复文档续写"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.docx.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "business_document",
+        "deliverables": [
+          "docx",
+          "md",
+          "zip"
+        ],
+        "file": "skills/29_skill_word_business_proposal_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_word_business_proposal_worldclass_v1",
+        "keywords": [
+          "word",
+          "docx",
+          "方案",
+          "建议书",
+          "投标",
+          "提案",
+          "商业方案",
+          "客户方案",
+          "培训方案",
+          "市场调研",
+          "可成交",
+          "汇报材料"
+        ],
+        "max_chars": 0,
+        "mingcheng": "世界顶尖级商业 Word 方案交付",
+        "optional_actions": [
+          "deliverable.package",
+          "preview.generate",
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "template.apply",
+          "writing.outline.create"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "qc.docx.delivery_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write"
+        ],
+        "starter_actions": [
+          "template.apply",
+          "writing.outline.create"
+        ],
+        "summary": "商业方案；Word文档；客户交付；项目建议书",
+        "taskIntents": [
+          "商业方案",
+          "Word文档",
+          "客户交付",
+          "项目建议书"
+        ],
+        "template_id": "business_proposal"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.ppt.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "executive_presentation",
+        "deliverables": [
+          "pptx",
+          "md",
+          "zip"
+        ],
+        "file": "skills/30_skill_ppt_executive_report_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_ppt_executive_report_worldclass_v1",
+        "inspection_actions": [
+          "pptx.read"
+        ],
+        "keywords": [
+          "ppt",
+          "pptx",
+          "幻灯片",
+          "演示",
+          "presentation",
+          "汇报"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "PowerPoint 演示制作",
+        "optional_actions": [
+          "file.hash",
+          "file.write",
+          "pptx.read",
+          "preview.generate",
+          "python.run"
+        ],
+        "production_actions": [
+          "pptx.create"
+        ],
+        "quality_gates": [
+          "qc.ppt.delivery_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "pptx.create"
+        ],
+        "required_actions": [
+          "pptx.create"
+        ],
+        "starter_actions": [
+          "template.apply",
+          "writing.outline.create"
+        ],
+        "summary": "适用：报告、提案、教学等 PPTX 演示文件。",
+        "taskIntents": [
+          "PowerPoint 演示制作"
+        ],
+        "template_id": "executive_ppt"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.code.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "code_engineering",
+        "deliverables": [
+          "source",
+          "README",
+          "tests",
+          "zip"
+        ],
+        "file": "skills/31_skill_code_project_delivery_worldclass.md",
+        "final_actions": [
+          "deliverable.package",
+          "zip.create"
+        ],
+        "id": "skill_code_project_delivery_worldclass_v1",
+        "keywords": [
+          "文件",
+          "代码",
+          "python",
+          "脚本",
+          "计算",
+          "执行",
+          "csv",
+          "测试"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "文件操作与代码执行",
+        "optional_actions": [
+          "code.patch_replace",
+          "code.write",
+          "file.hash",
+          "file.list",
+          "python.run"
+        ],
+        "production_actions": [
+          "code.write",
+          "file.write"
+        ],
+        "quality_gates": [
+          "quality.python_syntax",
+          "quality.run_tests",
+          "qc.code.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "code.patch_replace",
+          "code.write"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write"
+        ],
+        "starter_actions": [
+          "writing.outline.create",
+          "file.mkdir"
+        ],
+        "summary": "适用：创建或修改文件、编写并运行代码。",
+        "taskIntents": [
+          "文件操作与代码执行"
+        ],
+        "template_id": "code_project"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.research.evidence_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "research_review",
+        "deliverables": [
+          "evidence_table",
+          "review_doc",
+          "zip"
+        ],
+        "file": "skills/32_skill_research_literature_review_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_research_literature_review_worldclass_v1",
+        "keywords": [
+          "论文",
+          "综述",
+          "研究",
+          "资料",
+          "文献",
+          "调研",
+          "搜索",
+          "引用",
+          "pdf",
+          "证据",
+          "系统综述",
+          "最新资料"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级资料/论文综述交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.research.evidence_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "research.evidence_table.create",
+          "template.apply"
+        ],
+        "production_actions": [
+          "pdf.extract_text",
+          "file.write",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "qc.research.evidence_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "research.evidence_table.create",
+          "file.write"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write",
+          "pdf.extract_text"
+        ],
+        "starter_actions": [
+          "template.apply",
+          "research.evidence_table.create"
+        ],
+        "summary": "资料搜索；论文综述；研究报告；证据表",
+        "taskIntents": [
+          "资料搜索",
+          "论文综述",
+          "研究报告",
+          "证据表"
+        ],
+        "template_id": "research_review"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.video.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "short_video",
+        "deliverables": [
+          "mp4",
+          "script",
+          "cover",
+          "zip"
+        ],
+        "file": "skills/33_skill_short_video_delivery_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_short_video_delivery_worldclass_v1",
+        "keywords": [
+          "视频",
+          "短片",
+          "mp4",
+          "video",
+          "片头",
+          "字幕"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "本地视频制作与素材剪辑",
+        "optional_actions": [
+          "image.add_text",
+          "image.compose",
+          "image.create_canvas",
+          "python.run",
+          "system.health",
+          "video.add_audio",
+          "video.cut",
+          "video.info",
+          "video.slideshow"
+        ],
+        "production_actions": [
+          "video.cut",
+          "video.slideshow",
+          "video.add_audio",
+          "jianying.export.mp4"
+        ],
+        "quality_gates": [
+          "qc.video.delivery_check",
+          "qc.image.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "video.cut",
+          "video.add_audio",
+          "jianying.export.mp4"
+        ],
+        "required_actions": [
+          "file.write"
+        ],
+        "starter_actions": [
+          "template.apply",
+          "writing.outline.create"
+        ],
+        "summary": "适用：已有素材剪辑、字幕画面、图文短片、演示动画。",
+        "taskIntents": [
+          "本地视频制作与素材剪辑"
+        ],
+        "template_id": "short_video"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "planning_complete",
+            "chapter_transaction_committed",
+            "project_folder_delivered"
+          ],
+          "world_class_score": 90
+        },
+        "category": "managed_longform_fiction",
+        "deliverables": [
+          "project_folder",
+          "md",
+          "json"
+        ],
+        "file": "skills/58_skill_managed_longform_novel_worldclass.md",
+        "final_actions": [
+          "novel.project.status",
+          "novel.project.audit"
+        ],
+        "id": "skill_managed_longform_novel_worldclass_v1",
+        "keywords": [
+          "受管长篇",
+          "长篇小说工程",
+          "超长小说工程",
+          "小说工程",
+          "持续续写",
+          "长期续写",
+          "完整蓝图",
+          "完整规划",
+          "全书规划",
+          "多章连载",
+          "整本小说",
+          "小说文件夹",
+          ".novel-system",
+          "断点续写"
+        ],
+        "max_chars": 0,
+        "mingcheng": "世界顶尖级受管长篇小说工程",
+        "optional_actions": [
+          "novel.project.audit",
+          "novel.project.create",
+          "novel.project.recover",
+          "novel.project.status"
+        ],
+        "production_actions": [
+          "novel.blueprint.update",
+          "novel.blueprint.patch",
+          "novel.blueprint.upsert_many",
+          "novel.blueprint.assist",
+          "novel.reference.resolve",
+          "novel.timeline.calculate",
+          "novel.timeline.shift_suffix",
+          "novel.timeline.normalize",
+          "novel.mobility.align_initial_many",
+          "novel.blueprint.compile",
+          "novel.plan.rebase",
+          "novel.chapter.checkout",
+          "novel.scene.design",
+          "novel.context.query",
+          "novel.chapter.submit"
+        ],
+        "quality_gates": [
+          "novel.project.audit"
+        ],
+        "repair_actions": [
+          "novel.blueprint.assist",
+          "novel.blueprint.patch",
+          "novel.blueprint.upsert_many",
+          "novel.timeline.normalize",
+          "novel.mobility.align_initial_many",
+          "novel.plan.rebase"
+        ],
+        "required_actions": [
+          "novel.blueprint.assist",
+          "novel.blueprint.compile",
+          "novel.blueprint.patch",
+          "novel.blueprint.update",
+          "novel.blueprint.upsert_many",
+          "novel.chapter.checkout",
+          "novel.chapter.submit",
+          "novel.context.query",
+          "novel.mobility.align_initial_many",
+          "novel.plan.rebase",
+          "novel.reference.resolve",
+          "novel.scene.design",
+          "novel.timeline.calculate",
+          "novel.timeline.normalize",
+          "novel.timeline.shift_suffix"
+        ],
+        "starter_actions": [
+          "novel.project.status",
+          "novel.project.create",
+          "novel.project.recover"
+        ],
+        "summary": "受管长篇小说；长篇小说工程；持续续写小说；全书规划与章节事务",
+        "taskIntents": [
+          "受管长篇小说",
+          "长篇小说工程",
+          "持续续写小说",
+          "全书规划与章节事务"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_webnovel_chapter_delivery_worldclass_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "creative_writing",
+        "file": "skills/34_skill_webnovel_chapter_delivery_worldclass.md",
+        "id": "skill_webnovel_chapter_delivery_worldclass_v1",
+        "keywords": [
+          "小说",
+          "故事",
+          "章节",
+          "写作",
+          "人物",
+          "fiction",
+          "novel"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "小说与长篇文字写作",
+        "optional_actions": [
+          "file.append",
+          "file.hash",
+          "file.read"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "file.write"
+        ],
+        "summary": "适用：小说、短篇故事、章节写作并保存文件。",
+        "taskIntents": [
+          "小说与长篇文字写作"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.poster.commercial_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "visual_design",
+        "deliverables": [
+          "png",
+          "brief",
+          "zip"
+        ],
+        "file": "skills/35_skill_poster_visual_delivery_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_poster_visual_delivery_worldclass_v1",
+        "keywords": [
+          "图片",
+          "海报",
+          "png",
+          "image",
+          "poster",
+          "配图"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "本地图片与海报制作",
+        "optional_actions": [
+          "file.write",
+          "image.add_text",
+          "image.compose",
+          "image.info",
+          "python.run"
+        ],
+        "production_actions": [
+          "image.create_canvas",
+          "image.add_text",
+          "image.compose",
+          "adobe.photoshop.layer.create"
+        ],
+        "quality_gates": [
+          "qc.poster.commercial_check",
+          "qc.image.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "image.add_text",
+          "image.compose"
+        ],
+        "required_actions": [
+          "image.create_canvas"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "适用：信息海报、示意图、文字图片、本地绘图。",
+        "taskIntents": [
+          "本地图片与海报制作"
+        ],
+        "template_id": "poster_campaign"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.sheet.analysis_report_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "data_analysis",
+        "deliverables": [
+          "xlsx",
+          "analysis_md",
+          "zip"
+        ],
+        "file": "skills/36_skill_spreadsheet_analysis_report_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_spreadsheet_analysis_report_worldclass_v1",
+        "keywords": [
+          "表格",
+          "excel",
+          "xlsx",
+          "spreadsheet",
+          "汇总",
+          "公式",
+          "工作表"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "可编辑表格制作与数据分析",
+        "optional_actions": [
+          "file.hash",
+          "file.read"
+        ],
+        "production_actions": [
+          "sheet.read",
+          "sheet.create",
+          "file.write"
+        ],
+        "quality_gates": [
+          "qc.sheet.analysis_report_check",
+          "qc.sheet.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "sheet.create",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.write",
+          "python.run"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "适用：生成 Excel 表格、公式、汇总及分析。",
+        "taskIntents": [
+          "可编辑表格制作与数据分析"
+        ],
+        "template_id": "spreadsheet_analysis"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.meeting.minutes_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "meeting_ops",
+        "deliverables": [
+          "md",
+          "docx",
+          "zip"
+        ],
+        "file": "skills/37_skill_meeting_minutes_action_followup_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_meeting_minutes_action_followup_worldclass_v1",
+        "keywords": [
+          "会议",
+          "纪要",
+          "录音",
+          "行动项",
+          "待办",
+          "跟进",
+          "决策",
+          "会议记录",
+          "访谈",
+          "沟通"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级会议纪要与行动跟进交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.meeting.minutes_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "qc.meeting.minutes_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "会议纪要；行动跟进；访谈整理",
+        "taskIntents": [
+          "会议纪要",
+          "行动跟进",
+          "访谈整理"
+        ],
+        "template_id": "meeting_minutes"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.sales.script_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "sales_enablement",
+        "deliverables": [
+          "md",
+          "docx",
+          "zip"
+        ],
+        "file": "skills/38_skill_sales_script_delivery_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_sales_script_delivery_worldclass_v1",
+        "keywords": [
+          "销售",
+          "话术",
+          "电话",
+          "开场",
+          "异议",
+          "成交",
+          "客户",
+          "b2b",
+          "转化",
+          "线索",
+          "跟进"
+        ],
+        "max_chars": 0,
+        "mingcheng": "世界顶尖级B2B销售话术交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.sales.script_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "qc.sales.script_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "销售话术；B2B转化；客户沟通",
+        "taskIntents": [
+          "销售话术",
+          "B2B转化",
+          "客户沟通"
+        ],
+        "template_id": "sales_script"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.course.plan_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "education",
+        "deliverables": [
+          "md",
+          "docx",
+          "zip"
+        ],
+        "file": "skills/39_skill_course_lesson_plan_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_course_lesson_plan_worldclass_v1",
+        "keywords": [
+          "课程",
+          "教案",
+          "培训",
+          "教学",
+          "课时",
+          "学习目标",
+          "作业",
+          "课堂",
+          "讲义",
+          "教学设计"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级课程/教案交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.course.plan_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create",
+          "pptx.create"
+        ],
+        "quality_gates": [
+          "qc.course.plan_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "docx.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write",
+          "pptx.create"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "课程设计；教案；培训交付",
+        "taskIntents": [
+          "课程设计",
+          "教案",
+          "培训交付"
+        ],
+        "template_id": "course_plan"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.kb.ingestion_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "knowledge_base",
+        "deliverables": [
+          "manifest",
+          "qa",
+          "zip"
+        ],
+        "file": "skills/40_skill_knowledge_base_ingestion_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_knowledge_base_ingestion_worldclass_v1",
+        "keywords": [
+          "知识库",
+          "入库",
+          "切片",
+          "chunk",
+          "qa",
+          "问答",
+          "文档整理",
+          "向量",
+          "检索",
+          "知识"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级知识库入库交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.kb.ingestion_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.read",
+          "file.write",
+          "pdf.extract_text"
+        ],
+        "quality_gates": [
+          "qc.kb.ingestion_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write",
+          "pdf.extract_text"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "知识库入库；文档结构化；检索增强",
+        "taskIntents": [
+          "知识库入库",
+          "文档结构化",
+          "检索增强"
+        ],
+        "template_id": "kb_ingestion"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.voice_authorized.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "authorized_audio",
+        "deliverables": [
+          "consent_pack",
+          "audio",
+          "zip"
+        ],
+        "file": "skills/41_skill_authorized_voice_audio_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_authorized_voice_audio_worldclass_v1",
+        "keywords": [
+          "声音",
+          "配音",
+          "tts",
+          "音频",
+          "克隆",
+          "授权",
+          "旁白",
+          "语音",
+          "录音",
+          "voice"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级授权声音/音频交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.voice_authorized.delivery_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "audio.tts",
+          "audio.trim",
+          "audio.concat"
+        ],
+        "quality_gates": [
+          "qc.voice_authorized.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "audio.trim"
+        ],
+        "required_actions": [
+          "audio.concat",
+          "audio.trim",
+          "audio.tts",
+          "file.write"
+        ],
+        "safety": "voice.clone_authorized remains A5 unless external consent backend is mounted. Prefer audio.tts for non-impersonating narration.",
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "授权声音；音频交付；TTS",
+        "taskIntents": [
+          "授权声音",
+          "音频交付",
+          "TTS"
+        ],
+        "template_id": "authorized_voice_audio"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.seo.people_first_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "web_content",
+        "deliverables": [
+          "md",
+          "html",
+          "zip"
+        ],
+        "file": "skills/42_skill_seo_people_first_content_worldclass.md",
+        "final_actions": [
+          "preview.generate",
+          "deliverable.package"
+        ],
+        "id": "skill_seo_people_first_content_worldclass_v1",
+        "keywords": [
+          "seo",
+          "网页",
+          "文章",
+          "内容",
+          "官网",
+          "落地页",
+          "搜索排名",
+          "people-first",
+          "博客",
+          "页面"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级SEO/网页内容交付",
+        "optional_actions": [
+          "deliverable.package",
+          "preview.generate",
+          "qc.seo.people_first_check",
+          "qc.writing.ai_tone_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "docx.create"
+        ],
+        "quality_gates": [
+          "qc.seo.people_first_check",
+          "qc.writing.ai_tone_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.write"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "SEO内容；网页内容；落地页",
+        "taskIntents": [
+          "SEO内容",
+          "网页内容",
+          "落地页"
+        ],
+        "template_id": "seo_people_first"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.content.calendar_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "content_ops",
+        "deliverables": [
+          "csv",
+          "xlsx",
+          "zip"
+        ],
+        "file": "skills/43_skill_content_calendar_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_content_calendar_worldclass_v1",
+        "keywords": [
+          "内容日历",
+          "排期",
+          "选题",
+          "小红书",
+          "抖音",
+          "公众号",
+          "运营",
+          "内容计划",
+          "发布计划",
+          "日历"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级内容日历交付",
+        "optional_actions": [
+          "deliverable.package",
+          "qc.content.calendar_check",
+          "qc.sheet.delivery_check",
+          "repair.plan",
+          "template.apply"
+        ],
+        "production_actions": [
+          "file.write",
+          "sheet.create"
+        ],
+        "quality_gates": [
+          "qc.content.calendar_check",
+          "qc.sheet.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "file.write",
+          "sheet.create"
+        ],
+        "required_actions": [
+          "file.write",
+          "sheet.create"
+        ],
+        "starter_actions": [
+          "template.apply"
+        ],
+        "summary": "内容运营；内容日历；选题排期",
+        "taskIntents": [
+          "内容运营",
+          "内容日历",
+          "选题排期"
+        ],
+        "template_id": "content_calendar"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "app.adapter.health"
+          ],
+          "world_class_score": 90
+        },
+        "category": "professional_app_bridge",
+        "deliverables": [
+          "bridge_pack",
+          "script",
+          "manifest",
+          "zip"
+        ],
+        "file": "skills/44_skill_professional_application_bridge_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_professional_application_bridge_worldclass_v1",
+        "keywords": [
+          "专业应用",
+          "应用桥接",
+          "app adapter",
+          "原生应用",
+          "插件",
+          "脚本桥接",
+          "native adapter",
+          "自动化后端",
+          "能力探测",
+          "桥接包"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级专业应用桥接交付",
+        "optional_actions": [
+          "app.adapter.health",
+          "app.adapter.matrix",
+          "deliverable.package",
+          "preview.generate",
+          "repair.plan"
+        ],
+        "production_actions": [
+          "app.native.capability_probe",
+          "app.bridge.script.create",
+          "app.bridge.pack.create"
+        ],
+        "quality_gates": [
+          "preview.generate"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "app.bridge.script.create"
+        ],
+        "required_actions": [
+          "app.bridge.pack.create",
+          "app.bridge.script.create",
+          "app.native.capability_probe"
+        ],
+        "starter_actions": [
+          "app.adapter.health",
+          "app.adapter.matrix"
+        ],
+        "summary": "专业应用桥接；应用适配器；工具挂载；能力探测",
+        "taskIntents": [
+          "专业应用桥接",
+          "应用适配器",
+          "工具挂载",
+          "能力探测"
+        ],
+        "template_id": "professional_app_bridge"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "preview.generate"
+          ],
+          "world_class_score": 90
+        },
+        "category": "browser_automation",
+        "deliverables": [
+          "html",
+          "txt",
+          "png",
+          "pdf",
+          "bridge_pack",
+          "zip"
+        ],
+        "file": "skills/45_skill_browser_playwright_automation_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_browser_playwright_automation_worldclass_v1",
+        "keywords": [
+          "浏览器",
+          "网页",
+          "网站",
+          "chrome",
+          "playwright",
+          "截图",
+          "爬取",
+          "下载",
+          "网页转pdf",
+          "自动填写",
+          "抓取",
+          "页面"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级浏览器自动化交付",
+        "optional_actions": [
+          "app.native.capability_probe",
+          "browser.playwright.script.create",
+          "deliverable.package",
+          "preview.generate",
+          "qc.research.evidence_check",
+          "repair.plan"
+        ],
+        "production_actions": [
+          "browser.playwright.goto",
+          "browser.playwright.screenshot",
+          "browser.playwright.extract_text",
+          "browser.playwright.pdf"
+        ],
+        "quality_gates": [
+          "preview.generate",
+          "qc.research.evidence_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "browser.playwright.script.create"
+        ],
+        "required_actions": [
+          "browser.playwright.extract_text",
+          "browser.playwright.goto",
+          "browser.playwright.pdf",
+          "browser.playwright.screenshot"
+        ],
+        "starter_actions": [
+          "app.native.capability_probe",
+          "browser.playwright.script.create"
+        ],
+        "summary": "浏览器自动化；网页抓取；网页截图；页面导出",
+        "taskIntents": [
+          "浏览器自动化",
+          "网页抓取",
+          "网页截图",
+          "页面导出"
+        ],
+        "template_id": "browser_playwright_automation"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.docx.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "office_native_bridge",
+        "deliverables": [
+          "docx",
+          "xlsx",
+          "pptx",
+          "pdf",
+          "script",
+          "bridge_pack",
+          "zip"
+        ],
+        "file": "skills/46_skill_office_native_bridge_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_office_native_bridge_worldclass_v1",
+        "keywords": [
+          "office",
+          "wps",
+          "word原生",
+          "excel原生",
+          "powerpoint原生",
+          "com",
+          "graph",
+          "onedrive",
+          "sharepoint",
+          "导出pdf",
+          "vba",
+          "office脚本"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级 Office / WPS 原生桥接交付",
+        "optional_actions": [
+          "app.native.capability_probe",
+          "deliverable.package",
+          "microsoft.office.com.script.create",
+          "qc.docx.delivery_check",
+          "qc.ppt.delivery_check",
+          "qc.sheet.delivery_check",
+          "repair.plan"
+        ],
+        "production_actions": [
+          "docx.create",
+          "sheet.create",
+          "pptx.create",
+          "microsoft.graph.request_pack.create",
+          "microsoft.word.native.export_pdf",
+          "microsoft.powerpoint.native.export_pdf",
+          "wps.native.script.create"
+        ],
+        "quality_gates": [
+          "qc.docx.delivery_check",
+          "qc.ppt.delivery_check",
+          "qc.sheet.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "docx.create",
+          "pptx.create",
+          "sheet.create"
+        ],
+        "required_actions": [
+          "docx.create",
+          "microsoft.graph.request_pack.create",
+          "microsoft.powerpoint.native.export_pdf",
+          "microsoft.word.native.export_pdf",
+          "pptx.create",
+          "sheet.create",
+          "wps.native.script.create"
+        ],
+        "starter_actions": [
+          "app.native.capability_probe",
+          "microsoft.office.com.script.create"
+        ],
+        "summary": "Office原生桥接；WPS桥接；PDF导出；Office自动化",
+        "taskIntents": [
+          "Office原生桥接",
+          "WPS桥接",
+          "PDF导出",
+          "Office自动化"
+        ],
+        "template_id": "office_native_bridge"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "qc.image.delivery_check"
+          ],
+          "world_class_score": 90
+        },
+        "category": "design_native_bridge",
+        "deliverables": [
+          "psjs",
+          "jsx",
+          "py",
+          "png",
+          "mp4",
+          "blend",
+          "zip"
+        ],
+        "file": "skills/47_skill_adobe_blender_design_bridge_worldclass.md",
+        "final_actions": [
+          "deliverable.package"
+        ],
+        "id": "skill_adobe_blender_design_bridge_worldclass_v1",
+        "keywords": [
+          "photoshop",
+          "ps",
+          "adobe",
+          "premiere",
+          "pr",
+          "after effects",
+          "ae",
+          "blender",
+          "3d",
+          "建模",
+          "渲染",
+          "uxp",
+          "jsx",
+          "psjs",
+          "图层",
+          "时间线"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级 Adobe / Blender 专业设计桥接交付",
+        "optional_actions": [
+          "app.adapter.health",
+          "app.native.capability_probe",
+          "deliverable.package",
+          "qc.image.delivery_check",
+          "qc.video.delivery_check",
+          "repair.plan"
+        ],
+        "production_actions": [
+          "adobe.photoshop.uxp.script.create",
+          "adobe.premiere.jsx.script.create",
+          "adobe.aftereffects.jsx.script.create",
+          "blender.python.script.create",
+          "blender.python.run"
+        ],
+        "quality_gates": [
+          "qc.image.delivery_check",
+          "qc.video.delivery_check"
+        ],
+        "repair_actions": [
+          "repair.plan",
+          "adobe.photoshop.uxp.script.create",
+          "blender.python.script.create"
+        ],
+        "required_actions": [
+          "adobe.aftereffects.jsx.script.create",
+          "adobe.photoshop.uxp.script.create",
+          "adobe.premiere.jsx.script.create",
+          "blender.python.run",
+          "blender.python.script.create"
+        ],
+        "starter_actions": [
+          "app.adapter.health",
+          "app.native.capability_probe"
+        ],
+        "summary": "Adobe桥接；Photoshop脚本；Premiere脚本；Blender建模；专业设计应用",
+        "taskIntents": [
+          "Adobe桥接",
+          "Photoshop脚本",
+          "Premiere脚本",
+          "Blender建模",
+          "专业设计应用"
+        ],
+        "template_id": "adobe_blender_design_bridge"
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_computer_operation_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "system",
+        "file": "skills/49_skill_computer_operation.md",
+        "id": "skill_computer_operation_v1",
+        "keywords": [
+          "shell",
+          "命令",
+          "终端",
+          "命令行",
+          "cmd",
+          "powershell",
+          "bash",
+          "执行",
+          "运行",
+          "操作电脑",
+          "系统",
+          "进程",
+          "磁盘",
+          "内存",
+          "安装",
+          "pip",
+          "npm",
+          "git",
+          "网络",
+          "ping",
+          "ipconfig",
+          "tasklist",
+          "任务管理器",
+          "查找文件",
+          "搜索文件"
+        ],
+        "max_chars": 0,
+        "mingcheng": "电脑操作",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "python.run",
+          "file.read",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write",
+          "python.run",
+          "shell.run"
+        ],
+        "summary": "执行命令；系统操作；电脑操作",
+        "taskIntents": [
+          "执行命令",
+          "系统操作",
+          "电脑操作"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_desktop_cleanup_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "system",
+        "file": "skills/50_skill_desktop_cleanup.md",
+        "id": "skill_desktop_cleanup_v1",
+        "keywords": [
+          "整理桌面",
+          "桌面好乱",
+          "清理",
+          "磁盘空间",
+          "C盘",
+          "重复文件",
+          "整理文件夹",
+          "整理下载",
+          "释放空间",
+          "磁盘不足"
+        ],
+        "max_chars": 0,
+        "mingcheng": "桌面清理与文件整理",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "python.run",
+          "file.list",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.list",
+          "file.write",
+          "python.run",
+          "shell.run"
+        ],
+        "summary": "桌面清理；文件整理；磁盘清理",
+        "taskIntents": [
+          "桌面清理",
+          "文件整理",
+          "磁盘清理"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_utility_toolbox_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "utility",
+        "file": "skills/51_skill_utility_toolbox.md",
+        "id": "skill_utility_toolbox_v1",
+        "keywords": [
+          "批量改名",
+          "重命名",
+          "改名",
+          "合并PDF",
+          "拆分PDF",
+          "PDF合并",
+          "压缩图片",
+          "图片压缩",
+          "图片转换",
+          "改大小",
+          "图片改大小",
+          "转换格式",
+          "PNG转JPG",
+          "批量处理"
+        ],
+        "max_chars": 0,
+        "mingcheng": "实用工具箱",
+        "optional_actions": [],
+        "production_actions": [
+          "python.run",
+          "shell.run",
+          "file.list",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.list",
+          "file.write",
+          "python.run",
+          "shell.run"
+        ],
+        "summary": "批量重命名；PDF处理；图片处理",
+        "taskIntents": [
+          "批量重命名",
+          "PDF处理",
+          "图片处理"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_format_converter_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "utility",
+        "file": "skills/52_skill_format_converter.md",
+        "id": "skill_format_converter_v1",
+        "keywords": [
+          "转格式",
+          "格式转换",
+          "转换格式",
+          "音频转换",
+          "视频转换",
+          "图片转换",
+          "文档转换",
+          "电子书转换",
+          "转MP3",
+          "转WAV",
+          "转FLAC",
+          "转AAC",
+          "转OGG",
+          "转M4A",
+          "提取音频",
+          "转MP4",
+          "转MKV",
+          "转AVI",
+          "转MOV",
+          "转WEBM",
+          "转GIF",
+          "视频压缩",
+          "视频转GIF",
+          "转PNG",
+          "转JPG",
+          "转JPEG",
+          "转WebP",
+          "转AVIF",
+          "转BMP",
+          "转TIFF",
+          "转DOCX",
+          "转PDF",
+          "转EPUB",
+          "转MOBI",
+          "转MD",
+          "转HTML",
+          "转TXT",
+          "Markdown转Word",
+          "Word转Markdown",
+          "PDF转Word",
+          "压缩视频",
+          "压缩图片",
+          "提取音频"
+        ],
+        "max_chars": 0,
+        "mingcheng": "万能格式转换",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "python.run",
+          "file.list",
+          "file.write"
+        ],
+        "required_actions": [
+          "file.list",
+          "file.write",
+          "python.run",
+          "shell.run"
+        ],
+        "summary": "格式转换；音频转换；视频转换；图片转换；文档转换；电子书转换",
+        "taskIntents": [
+          "格式转换",
+          "音频转换",
+          "视频转换",
+          "图片转换",
+          "文档转换",
+          "电子书转换"
+        ]
+      },
+      {
+        "acceptance": {
+          "must_pass": [
+            "web.search.current_sources"
+          ],
+          "source_links_required": true
+        },
+        "category": "search",
+        "file": "skills/48_skill_web_search_research_worldclass.md",
+        "id": "skill_search_v2",
+        "keywords": [
+          "搜索",
+          "搜一下",
+          "查一下",
+          "查找",
+          "帮我搜",
+          "在线搜",
+          "上网搜",
+          "百度",
+          "搜狗",
+          "谷歌",
+          "Google",
+          "搜图",
+          "找图",
+          "图片搜索",
+          "图搜",
+          "找图片",
+          "新闻",
+          "最新",
+          "快讯",
+          "热点",
+          "论文",
+          "学术",
+          "研究",
+          "代码",
+          "报错",
+          "debug",
+          "stackoverflow",
+          "github"
+        ],
+        "max_chars": 0,
+        "mingcheng": "网络搜索与来源研究",
+        "optional_actions": [
+          "file.write",
+          "http.get",
+          "system.action_schema"
+        ],
+        "production_actions": [
+          "web.search",
+          "http.get",
+          "file.write"
+        ],
+        "required_actions": [
+          "web.search"
+        ],
+        "summary": "通过已就绪的网页搜索与抓取工具获取来源，缺少独立图片搜索能力时明确说明。",
+        "taskIntents": [
+          "搜索",
+          "图片搜索",
+          "新闻搜索",
+          "学术搜索"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_production_packaging_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "devops",
+        "file": "skills/53_skill_production_packaging.md",
+        "id": "skill_production_packaging_v1",
+        "keywords": [
+          "打包",
+          "exe",
+          "安装包",
+          "NSIS",
+          "electron-builder",
+          "便携版",
+          "发布",
+          "分发",
+          "构建",
+          "build",
+          "package",
+          "installer",
+          "setup"
+        ],
+        "max_chars": 0,
+        "mingcheng": "产品级EXE打包",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write",
+          "shell.run"
+        ],
+        "summary": "打包；构建安装包；发布应用",
+        "taskIntents": [
+          "打包",
+          "构建安装包",
+          "发布应用"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_frontend_optimization_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "frontend",
+        "file": "skills/54_skill_frontend_optimization.md",
+        "id": "skill_frontend_optimization_v1",
+        "keywords": [
+          "前端优化",
+          "性能优化",
+          "压缩",
+          "minify",
+          "lighthouse",
+          "WebP",
+          "懒加载",
+          "lazy load",
+          "PurgeCSS",
+          "Terser",
+          "图片优化",
+          "加速",
+          "加载慢"
+        ],
+        "max_chars": 0,
+        "mingcheng": "前端性能优化",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write",
+          "shell.run"
+        ],
+        "summary": "前端优化；性能优化；压缩资源",
+        "taskIntents": [
+          "前端优化",
+          "性能优化",
+          "压缩资源"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_frontend_design_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "frontend",
+        "file": "skills/55_skill_frontend_design.md",
+        "id": "skill_frontend_design_v1",
+        "keywords": [
+          "html",
+          "网页",
+          "页面",
+          "网站",
+          "交互",
+          "css",
+          "javascript"
+        ],
+        "max_chars": 12000,
+        "mingcheng": "HTML 页面与交互制作",
+        "optional_actions": [
+          "code.patch_replace",
+          "code.write",
+          "file.hash",
+          "file.read",
+          "python.run"
+        ],
+        "production_actions": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ],
+        "required_actions": [
+          "file.write"
+        ],
+        "summary": "适用：独立 HTML、网页原型、简单交互页面。",
+        "taskIntents": [
+          "HTML 页面与交互制作"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_vrm_optimization_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "frontend",
+        "file": "skills/56_skill_vrm_optimization.md",
+        "id": "skill_vrm_optimization_v1",
+        "keywords": [
+          "VRM",
+          "3D",
+          "身体",
+          "模型",
+          "表情",
+          "动画",
+          "blendShape",
+          "SpringBone",
+          "MToon",
+          "镜头",
+          "灯光",
+          "虚拟形象",
+          "vrm优化"
+        ],
+        "max_chars": 0,
+        "mingcheng": "VRM身体展示优化",
+        "optional_actions": [],
+        "production_actions": [
+          "shell.run",
+          "file.write",
+          "file.read"
+        ],
+        "required_actions": [
+          "file.read",
+          "file.write",
+          "shell.run"
+        ],
+        "summary": "VRM优化；3D调整；表情修复",
+        "taskIntents": [
+          "VRM优化",
+          "3D调整",
+          "表情修复"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "mermaid_parseable",
+            "opml_parseable",
+            "source_preserved"
+          ],
+          "world_class_score": 90
+        },
+        "category": "knowledge_architecture",
+        "deliverables": [
+          "mindmap",
+          "md",
+          "opml",
+          "source_outline"
+        ],
+        "file": "skills/59_skill_mindmap_knowledge_architecture_worldclass.md",
+        "final_actions": [
+          "file.list"
+        ],
+        "id": "skill_mindmap_knowledge_architecture_worldclass_v1",
+        "keywords": [
+          "脑图",
+          "思维导图",
+          "知识图谱",
+          "知识结构",
+          "概念图",
+          "主题拆解",
+          "mermaid mindmap",
+          "opml",
+          "mind map"
+        ],
+        "max_chars": 4000,
+        "mingcheng": "世界顶尖级脑图与知识结构交付",
+        "optional_actions": [
+          "code.patch_replace",
+          "file.list",
+          "file.mkdir",
+          "file.read"
+        ],
+        "production_actions": [
+          "file.write",
+          "mindmap.create"
+        ],
+        "quality_gates": [
+          "file.read",
+          "file.list"
+        ],
+        "repair_actions": [
+          "code.patch_replace",
+          "mindmap.create"
+        ],
+        "required_actions": [
+          "file.write",
+          "mindmap.create"
+        ],
+        "starter_actions": [
+          "file.mkdir",
+          "file.read"
+        ],
+        "summary": "脑图设计；思维导图；知识结构设计；OPML交付",
+        "taskIntents": [
+          "脑图设计",
+          "思维导图",
+          "知识结构设计",
+          "OPML交付"
+        ]
+      },
+      {
+        "acceptance": {
+          "minimum_score": 80,
+          "must_pass": [
+            "acceptance.skill_omni_body_reference_v1"
+          ],
+          "world_class_score": 90
+        },
+        "category": "core",
+        "file": "skills/51_skill_omni_body_reference.md",
+        "id": "skill_omni_body_reference_v1",
+        "keywords": [
+          "文件",
+          "文档",
+          "代码",
+          "命令",
+          "图片",
+          "视频",
+          "音频",
+          "word",
+          "excel",
+          "ppt",
+          "pdf",
+          "zip",
+          "读取",
+          "写入",
+          "创建",
+          "删除",
+          "移动",
+          "复制",
+          "重命名",
+          "搜索",
+          "下载",
+          "网络",
+          "网页",
+          "运行",
+          "执行",
+          "python",
+          "shell",
+          "cmd",
+          "整理",
+          "归类",
+          "打包",
+          "压缩",
+          "解压",
+          "file",
+          "write",
+          "read",
+          "create",
+          "move",
+          "copy",
+          "delete",
+          "shell.run",
+          "python.run",
+          "file.list"
+        ],
+        "max_chars": 0,
+        "mingcheng": "Omni Body 万能工具参考",
+        "optional_actions": [],
+        "production_actions": [
+          "file.list",
+          "file.read",
+          "file.write",
+          "file.move",
+          "file.copy",
+          "file.mkdir",
+          "shell.run",
+          "python.run",
+          "docx.create",
+          "pptx.create",
+          "sheet.create",
+          "web.search",
+          "http.get",
+          "web.download"
+        ],
+        "required_actions": [
+          "docx.create",
+          "file.copy",
+          "file.list",
+          "file.mkdir",
+          "file.move",
+          "file.read",
+          "file.write",
+          "http.get",
+          "pptx.create",
+          "python.run",
+          "sheet.create",
+          "shell.run",
+          "web.download",
+          "web.search"
+        ],
+        "summary": "文件操作；文档生成；代码编写；数据处理；桌面清理；文件整理；搜索；下载；图片处理；视频处理；音频处理；命令执行；脚本运行",
+        "taskIntents": [
+          "文件操作",
+          "文档生成",
+          "代码编写",
+          "数据处理",
+          "桌面清理",
+          "文件整理",
+          "搜索",
+          "下载",
+          "图片处理",
+          "视频处理",
+          "音频处理",
+          "命令执行",
+          "脚本运行"
+        ]
+      }
+    ],
+    "tool_boundary": "skill router only returns skill cards; model executes flow",
+    "version": "2026.09.24.4"
+  },
+  "source_hashes": {
+    "dictionaries/skills/57_learning_card_ingest.md": "97c63acd27b98218bb323245dface0faac23cd47548345150307c141ff66dbc9",
+    "dictionaries/skills/00_core_actions_reference.md": "954571054caac825bb69efe49d0e6f60770bf0d9c1eac8372db90b554224ede8",
+    "dictionaries/skills/60_skill_managed_long_document_worldclass.md": "bcdd56d27cbe81c59584f776b5174b3014527b0b0990099fcbfacdb55d591398",
+    "dictionaries/skills/29_skill_word_business_proposal_worldclass.md": "f42c07e0234df77cfc10a7fc45b077d4b0344ad89fef3477b2ebfe63181f13a6",
+    "dictionaries/skills/30_skill_ppt_executive_report_worldclass.md": "ca2200e57d26a9c834fe5b00d0310d179f94e3bb1b4f621e5c6befa6bb0dc26a",
+    "dictionaries/skills/31_skill_code_project_delivery_worldclass.md": "5f0730d5d9a380525a8fc1d24c3ed901996848954a6ea541e64303de5c2a4274",
+    "dictionaries/skills/32_skill_research_literature_review_worldclass.md": "a5309ae38c6fe2537b0d8e3293e1c6050abc74dbaef7af2e1e1cc9276a922e18",
+    "dictionaries/skills/33_skill_short_video_delivery_worldclass.md": "417431584638d9b3eaede79a055bf7a59c389c8aa685cd63d5db60ed7001be77",
+    "dictionaries/skills/58_skill_managed_longform_novel_worldclass.md": "70613be3ebb0a81a5300078caaa4cb0e7d066ece51121353b60a270a5e20219f",
+    "dictionaries/skills/34_skill_webnovel_chapter_delivery_worldclass.md": "c7a32a5feaf25e6030e35dad02f51c748dc156fb9207b330e09231c9cc441987",
+    "dictionaries/skills/35_skill_poster_visual_delivery_worldclass.md": "c1972db444dc79f25f4ff04fd2ef55cefb2cce8322065a0be88e414b61956d38",
+    "dictionaries/skills/36_skill_spreadsheet_analysis_report_worldclass.md": "ef0444d168a56e50e0b6a2380f13e77b64ce71a99891bbf5265081af1b25140f",
+    "dictionaries/skills/37_skill_meeting_minutes_action_followup_worldclass.md": "7c982d7485c0ec48e0b60a7bafa48e5d11ffa2f339b3c0d57e10f46309fb51c4",
+    "dictionaries/skills/38_skill_sales_script_delivery_worldclass.md": "bf6a0530ab93dbae90218587cc93c379c2fa1f1ea5969ed04867275821419571",
+    "dictionaries/skills/39_skill_course_lesson_plan_worldclass.md": "f0898b901be1313e72ed3feb84f2c0b646cf8a171e3ce2e09b328a4d04bb6128",
+    "dictionaries/skills/40_skill_knowledge_base_ingestion_worldclass.md": "202ef7f7fee5619f657526d80eef59cf825b38417e28844d9849ac89b7933f26",
+    "dictionaries/skills/41_skill_authorized_voice_audio_worldclass.md": "d7409bb6b9d1ebdd0089c118a1a6730c677c6b86042a15143e4c1cbfcfe031e7",
+    "dictionaries/skills/42_skill_seo_people_first_content_worldclass.md": "5b5c8a0982be85005bbcb2aa0c4add1d9fbd4264ff0b8ab24f16f1625a075725",
+    "dictionaries/skills/43_skill_content_calendar_worldclass.md": "becda8a920a45a7db1699a46eb238679a06e547e7e3984881eb1b6b6caf615da",
+    "dictionaries/skills/44_skill_professional_application_bridge_worldclass.md": "cd0275cda965ae735f7a72df77d791e3d28ba84d24605111473abf32b09f4246",
+    "dictionaries/skills/45_skill_browser_playwright_automation_worldclass.md": "26d06918e019a0f052b7f6cff7781a43c6726a0ce88d832265dd5ec62d0362d8",
+    "dictionaries/skills/46_skill_office_native_bridge_worldclass.md": "b44b4944d83400b7a60dc73db676fe2ad062628df5c5eafbba29af78edac18cc",
+    "dictionaries/skills/47_skill_adobe_blender_design_bridge_worldclass.md": "826cb104272575747706a19c0711da6194bdc232ffcd6d1530c9183104dc8429",
+    "dictionaries/skills/49_skill_computer_operation.md": "b0606d288aa4c04f564c101846d424fbbfc9aa034bab58d50850299b0ee3e403",
+    "dictionaries/skills/50_skill_desktop_cleanup.md": "a14dedcafaa6ce55c4e6cc4f063db272812f63ffd9fdd2fd317cc13620e51c99",
+    "dictionaries/skills/51_skill_utility_toolbox.md": "93c73eb1e5dcef41c0e00c158792f48b7b51c20a6a19a9b10a176ea589046ec4",
+    "dictionaries/skills/52_skill_format_converter.md": "e7ed17521fbdbfd996b66b37fa17ee38cb408387643faa55127019842a4ab790",
+    "dictionaries/skills/48_skill_web_search_research_worldclass.md": "1af087cfcde3856b037257741207bbbdcb7d5ca8daef099ba99fdf1aa658483f",
+    "dictionaries/skills/53_skill_production_packaging.md": "f9a6e03e37e9503c80435b48f54f721d15b8c65f6abe2eb3ea1b170f8771c10a",
+    "dictionaries/skills/54_skill_frontend_optimization.md": "e812291457e998a8cbcaeaaa55cd22d76a23ccd688cebd1aa3e56da5bf0c08b5",
+    "dictionaries/skills/55_skill_frontend_design.md": "f300b9a225869d85aff42b9ef4abde5658fcf66f8fe09905409d358e1963c56f",
+    "dictionaries/skills/56_skill_vrm_optimization.md": "d13b35aab382a7a2871e60497d15e72409be3af0d5dc587237d6f0ebd209be29",
+    "dictionaries/skills/59_skill_mindmap_knowledge_architecture_worldclass.md": "12a6f5186718e1160c77fc3c45ecfbd9ccc12165ce4a2c0df3864eee601316ad",
+    "dictionaries/skills/51_skill_omni_body_reference.md": "ddbd552c79537d275d4f5b76e804932df6259bf69e8b001c688af72616a85a72"
+  },
+  "legacy_context_baseline": {
+    "source_commit": "3a95e155e741bf18284ff5c468096876da611888",
+    "source_file_count": 34,
+    "text_sha256": "81f72470dcb2259186adf62358c34682bf8a1ca92117be7372fc2016f07fbd9a",
+    "characters": 47768,
+    "conservative_tokens": 24715
+  },
+  "legacy_capability_manifest_sha256": "beccf4b667d03485f9dc6da5a3327fbb0551d3bc0e966f32cd9aba3aadd36031",
+  "legacy_capabilities": {
+    "ableton.live.arrangement.render": {
+      "executable": false
+    },
+    "ableton.live.clip.import": {
+      "executable": false
+    },
+    "ableton.live.device.add": {
+      "executable": false
+    },
+    "ableton.live.midi.create": {
+      "executable": false
+    },
+    "ableton.live.set.create": {
+      "executable": false
+    },
+    "ableton.live.track.add": {
+      "executable": false
+    },
+    "adobe.aftereffects.composition.create": {
+      "executable": false
+    },
+    "adobe.aftereffects.effect.apply": {
+      "executable": false
+    },
+    "adobe.aftereffects.export.mov": {
+      "executable": false
+    },
+    "adobe.aftereffects.jsx.script.create": {
+      "executable": true
+    },
+    "adobe.aftereffects.keyframe.set": {
+      "executable": false
+    },
+    "adobe.aftereffects.layer.add": {
+      "executable": false
+    },
+    "adobe.aftereffects.project.create": {
+      "executable": false
+    },
+    "adobe.aftereffects.render.queue": {
+      "executable": false
+    },
+    "adobe.aftereffects.text.animate": {
+      "executable": false
+    },
+    "adobe.audition.audio.open": {
+      "executable": false
+    },
+    "adobe.audition.clip.concat": {
+      "executable": false
+    },
+    "adobe.audition.clip.trim": {
+      "executable": false
+    },
+    "adobe.audition.effect.apply": {
+      "executable": false
+    },
+    "adobe.audition.mixdown.export": {
+      "executable": false
+    },
+    "adobe.audition.noise.reduce": {
+      "executable": false
+    },
+    "adobe.illustrator.artboard.create": {
+      "executable": false
+    },
+    "adobe.illustrator.document.create": {
+      "executable": false
+    },
+    "adobe.illustrator.export.pdf": {
+      "executable": false
+    },
+    "adobe.illustrator.export.png": {
+      "executable": false
+    },
+    "adobe.illustrator.export.svg": {
+      "executable": false
+    },
+    "adobe.illustrator.path.create": {
+      "executable": false
+    },
+    "adobe.illustrator.style.apply": {
+      "executable": false
+    },
+    "adobe.illustrator.text.add": {
+      "executable": false
+    },
+    "adobe.illustrator.vector.import": {
+      "executable": false
+    },
+    "adobe.indesign.document.create": {
+      "executable": false
+    },
+    "adobe.indesign.export.pdf": {
+      "executable": false
+    },
+    "adobe.indesign.image.place": {
+      "executable": false
+    },
+    "adobe.indesign.package.create": {
+      "executable": false
+    },
+    "adobe.indesign.page.add": {
+      "executable": false
+    },
+    "adobe.indesign.style.apply": {
+      "executable": false
+    },
+    "adobe.indesign.textframe.add": {
+      "executable": false
+    },
+    "adobe.lightroom.batch.export": {
+      "executable": false
+    },
+    "adobe.lightroom.crop.set": {
+      "executable": false
+    },
+    "adobe.lightroom.export.jpg": {
+      "executable": false
+    },
+    "adobe.lightroom.photo.import": {
+      "executable": false
+    },
+    "adobe.lightroom.photo.rate": {
+      "executable": false
+    },
+    "adobe.lightroom.preset.apply": {
+      "executable": false
+    },
+    "adobe.photoshop.document.create": {
+      "executable": true
+    },
+    "adobe.photoshop.document.open": {
+      "executable": true
+    },
+    "adobe.photoshop.export.png": {
+      "executable": true
+    },
+    "adobe.photoshop.export.psd": {
+      "executable": false
+    },
+    "adobe.photoshop.filter.apply": {
+      "executable": false
+    },
+    "adobe.photoshop.image.crop": {
+      "executable": true
+    },
+    "adobe.photoshop.image.resize": {
+      "executable": true
+    },
+    "adobe.photoshop.layer.create": {
+      "executable": true
+    },
+    "adobe.photoshop.layer.update": {
+      "executable": true
+    },
+    "adobe.photoshop.mask.create": {
+      "executable": false
+    },
+    "adobe.photoshop.selection.make": {
+      "executable": false
+    },
+    "adobe.photoshop.text.add": {
+      "executable": true
+    },
+    "adobe.photoshop.uxp.script.create": {
+      "executable": true
+    },
+    "adobe.premiere.audio.mix": {
+      "executable": false
+    },
+    "adobe.premiere.clip.move": {
+      "executable": false
+    },
+    "adobe.premiere.color.apply": {
+      "executable": false
+    },
+    "adobe.premiere.export.mp4": {
+      "executable": false
+    },
+    "adobe.premiere.jsx.script.create": {
+      "executable": true
+    },
+    "adobe.premiere.media.import": {
+      "executable": false
+    },
+    "adobe.premiere.project.create": {
+      "executable": false
+    },
+    "adobe.premiere.subtitle.add": {
+      "executable": false
+    },
+    "adobe.premiere.timeline.create": {
+      "executable": false
+    },
+    "adobe.premiere.timeline.cut": {
+      "executable": false
+    },
+    "adobe.premiere.transition.add": {
+      "executable": false
+    },
+    "airtable.base.list": {
+      "executable": false
+    },
+    "airtable.record.create": {
+      "executable": false
+    },
+    "airtable.record.delete": {
+      "executable": false
+    },
+    "airtable.record.update": {
+      "executable": false
+    },
+    "airtable.table.read": {
+      "executable": false
+    },
+    "airtable.view.read": {
+      "executable": false
+    },
+    "anthropic_api.text.generate": {
+      "executable": false
+    },
+    "anthropic_api.tool_use.run": {
+      "executable": false
+    },
+    "anthropic_api.vision.analyze": {
+      "executable": false
+    },
+    "app.adapter.health": {
+      "executable": true
+    },
+    "app.adapter.matrix": {
+      "executable": true
+    },
+    "app.bridge.pack.create": {
+      "executable": true
+    },
+    "app.bridge.script.create": {
+      "executable": true
+    },
+    "app.native.capability_probe": {
+      "executable": true
+    },
+    "asana.comment.add": {
+      "executable": false
+    },
+    "asana.project.read": {
+      "executable": false
+    },
+    "asana.task.create": {
+      "executable": false
+    },
+    "asana.task.search": {
+      "executable": false
+    },
+    "asana.task.update": {
+      "executable": false
+    },
+    "audacity.audio.open": {
+      "executable": false
+    },
+    "audacity.audio.trim": {
+      "executable": false
+    },
+    "audacity.effect.apply": {
+      "executable": false
+    },
+    "audacity.export.mp3": {
+      "executable": false
+    },
+    "audacity.export.wav": {
+      "executable": false
+    },
+    "audacity.noise.reduce": {
+      "executable": false
+    },
+    "audacity.track.mix": {
+      "executable": false
+    },
+    "audio.concat": {
+      "executable": true
+    },
+    "audio.tone": {
+      "executable": true
+    },
+    "audio.trim": {
+      "executable": true
+    },
+    "audio.tts": {
+      "executable": true
+    },
+    "blender.python.run": {
+      "executable": true
+    },
+    "blender.python.script.create": {
+      "executable": true
+    },
+    "browser.chrome.back": {
+      "executable": false
+    },
+    "browser.chrome.click": {
+      "executable": false
+    },
+    "browser.chrome.cookies.read": {
+      "executable": false
+    },
+    "browser.chrome.cookies.write": {
+      "executable": false
+    },
+    "browser.chrome.download": {
+      "executable": true
+    },
+    "browser.chrome.extract_dom": {
+      "executable": true
+    },
+    "browser.chrome.extract_text": {
+      "executable": true
+    },
+    "browser.chrome.fill": {
+      "executable": false
+    },
+    "browser.chrome.forward": {
+      "executable": false
+    },
+    "browser.chrome.goto": {
+      "executable": true
+    },
+    "browser.chrome.network.capture": {
+      "executable": false
+    },
+    "browser.chrome.open": {
+      "executable": true
+    },
+    "browser.chrome.pdf.print": {
+      "executable": true
+    },
+    "browser.chrome.reload": {
+      "executable": false
+    },
+    "browser.chrome.run_js": {
+      "executable": false
+    },
+    "browser.chrome.screenshot": {
+      "executable": true
+    },
+    "browser.chrome.select": {
+      "executable": false
+    },
+    "browser.chrome.upload_file": {
+      "executable": false
+    },
+    "browser.edge.click": {
+      "executable": false
+    },
+    "browser.edge.download": {
+      "executable": false
+    },
+    "browser.edge.extract_dom": {
+      "executable": false
+    },
+    "browser.edge.extract_text": {
+      "executable": false
+    },
+    "browser.edge.fill": {
+      "executable": false
+    },
+    "browser.edge.goto": {
+      "executable": false
+    },
+    "browser.edge.open": {
+      "executable": false
+    },
+    "browser.edge.pdf.print": {
+      "executable": false
+    },
+    "browser.edge.run_js": {
+      "executable": false
+    },
+    "browser.edge.screenshot": {
+      "executable": false
+    },
+    "browser.firefox.click": {
+      "executable": false
+    },
+    "browser.firefox.download": {
+      "executable": false
+    },
+    "browser.firefox.extract_dom": {
+      "executable": false
+    },
+    "browser.firefox.extract_text": {
+      "executable": false
+    },
+    "browser.firefox.fill": {
+      "executable": false
+    },
+    "browser.firefox.goto": {
+      "executable": false
+    },
+    "browser.firefox.open": {
+      "executable": false
+    },
+    "browser.firefox.pdf.print": {
+      "executable": false
+    },
+    "browser.firefox.run_js": {
+      "executable": false
+    },
+    "browser.firefox.screenshot": {
+      "executable": false
+    },
+    "browser.open": {
+      "executable": true
+    },
+    "browser.playwright.extract_text": {
+      "executable": true
+    },
+    "browser.playwright.goto": {
+      "executable": true
+    },
+    "browser.playwright.pdf": {
+      "executable": true
+    },
+    "browser.playwright.screenshot": {
+      "executable": true
+    },
+    "browser.playwright.script.create": {
+      "executable": true
+    },
+    "browser.search_web": {
+      "executable": true
+    },
+    "canva.api.request_pack.create": {
+      "executable": true
+    },
+    "canva.asset.upload": {
+      "executable": false
+    },
+    "canva.brandkit.apply": {
+      "executable": false
+    },
+    "canva.design.create": {
+      "executable": false
+    },
+    "canva.export.pdf": {
+      "executable": false
+    },
+    "canva.export.png": {
+      "executable": false
+    },
+    "canva.template.apply": {
+      "executable": false
+    },
+    "canva.text.update": {
+      "executable": false
+    },
+    "capcut.cover.create": {
+      "executable": false
+    },
+    "capcut.effect.apply": {
+      "executable": false
+    },
+    "capcut.export.mp4": {
+      "executable": false
+    },
+    "capcut.media.import": {
+      "executable": false
+    },
+    "capcut.music.add": {
+      "executable": false
+    },
+    "capcut.project.create": {
+      "executable": false
+    },
+    "capcut.subtitle.add": {
+      "executable": false
+    },
+    "capcut.subtitle.auto": {
+      "executable": false
+    },
+    "capcut.template.apply": {
+      "executable": false
+    },
+    "capcut.timeline.cut": {
+      "executable": false
+    },
+    "clickup.comment.add": {
+      "executable": false
+    },
+    "clickup.space.read": {
+      "executable": false
+    },
+    "clickup.task.create": {
+      "executable": false
+    },
+    "clickup.task.search": {
+      "executable": false
+    },
+    "clickup.task.update": {
+      "executable": false
+    },
+    "code.patch_replace": {
+      "executable": true
+    },
+    "code.read": {
+      "executable": true
+    },
+    "code.write": {
+      "executable": true
+    },
+    "comfyui.image.generate": {
+      "executable": false
+    },
+    "comfyui.image.inpaint": {
+      "executable": false
+    },
+    "comfyui.image.outpaint": {
+      "executable": false
+    },
+    "comfyui.image.upscale": {
+      "executable": false
+    },
+    "comfyui.queue.status": {
+      "executable": false
+    },
+    "comfyui.workflow.run": {
+      "executable": false
+    },
+    "content.calendar.create": {
+      "executable": true
+    },
+    "core.archive.zip.create": {
+      "executable": true
+    },
+    "core.archive.zip.extract": {
+      "executable": true
+    },
+    "core.audio.audio.concat": {
+      "executable": true
+    },
+    "core.audio.audio.tone": {
+      "executable": true
+    },
+    "core.audio.audio.trim": {
+      "executable": true
+    },
+    "core.code.code.patch_replace": {
+      "executable": true
+    },
+    "core.code.code.read": {
+      "executable": true
+    },
+    "core.code.code.write": {
+      "executable": true
+    },
+    "core.code.python.run": {
+      "executable": true
+    },
+    "core.code.quality.python_syntax": {
+      "executable": true
+    },
+    "core.code.quality.run_tests": {
+      "executable": true
+    },
+    "core.code.shell.run": {
+      "executable": true
+    },
+    "core.filesystem.file.append": {
+      "executable": true
+    },
+    "core.filesystem.file.copy": {
+      "executable": true
+    },
+    "core.filesystem.file.delete_to_trash": {
+      "executable": true
+    },
+    "core.filesystem.file.hash": {
+      "executable": true
+    },
+    "core.filesystem.file.list": {
+      "executable": true
+    },
+    "core.filesystem.file.mkdir": {
+      "executable": true
+    },
+    "core.filesystem.file.move": {
+      "executable": true
+    },
+    "core.filesystem.file.read": {
+      "executable": true
+    },
+    "core.filesystem.file.rename": {
+      "executable": true
+    },
+    "core.filesystem.file.search": {
+      "executable": true
+    },
+    "core.filesystem.file.write": {
+      "executable": true
+    },
+    "core.image.image.add_text": {
+      "executable": true
+    },
+    "core.image.image.compose": {
+      "executable": true
+    },
+    "core.image.image.convert": {
+      "executable": true
+    },
+    "core.image.image.create_canvas": {
+      "executable": true
+    },
+    "core.image.image.crop": {
+      "executable": true
+    },
+    "core.image.image.info": {
+      "executable": true
+    },
+    "core.image.image.resize": {
+      "executable": true
+    },
+    "core.image.image.rotate": {
+      "executable": true
+    },
+    "core.office.docx.create": {
+      "executable": true
+    },
+    "core.office.mindmap.create": {
+      "executable": true
+    },
+    "core.office.pdf.create_from_text": {
+      "executable": true
+    },
+    "core.office.pdf.extract_text": {
+      "executable": true
+    },
+    "core.office.pptx.create": {
+      "executable": true
+    },
+    "core.office.sheet.create": {
+      "executable": true
+    },
+    "core.office.sheet.read": {
+      "executable": true
+    },
+    "core.rollback.rollback.apply": {
+      "executable": true
+    },
+    "core.rollback.rollback.list": {
+      "executable": true
+    },
+    "core.video.video.add_audio": {
+      "executable": true
+    },
+    "core.video.video.cut": {
+      "executable": true
+    },
+    "core.video.video.extract_audio": {
+      "executable": true
+    },
+    "core.video.video.info": {
+      "executable": true
+    },
+    "core.video.video.slideshow": {
+      "executable": true
+    },
+    "course.lesson_plan.create": {
+      "executable": true
+    },
+    "davinci.resolve.color.grade": {
+      "executable": false
+    },
+    "davinci.resolve.deliver.render": {
+      "executable": false
+    },
+    "davinci.resolve.fusion.apply": {
+      "executable": false
+    },
+    "davinci.resolve.media.import": {
+      "executable": false
+    },
+    "davinci.resolve.project.create": {
+      "executable": false
+    },
+    "davinci.resolve.subtitle.add": {
+      "executable": false
+    },
+    "davinci.resolve.timeline.create": {
+      "executable": false
+    },
+    "davinci.resolve.timeline.cut": {
+      "executable": false
+    },
+    "deepseek_api.code.generate": {
+      "executable": false
+    },
+    "deepseek_api.embedding.create": {
+      "executable": false
+    },
+    "deepseek_api.reasoning.run": {
+      "executable": false
+    },
+    "deepseek_api.text.generate": {
+      "executable": false
+    },
+    "deliverable.package": {
+      "executable": true
+    },
+    "delivery.kernel.info": {
+      "executable": true
+    },
+    "delivery.v33.info": {
+      "executable": true
+    },
+    "desktop.click": {
+      "executable": true
+    },
+    "desktop.hotkey": {
+      "executable": true
+    },
+    "desktop.screenshot": {
+      "executable": true
+    },
+    "desktop.type": {
+      "executable": true
+    },
+    "dingtalk.docs.doc.create": {
+      "executable": false
+    },
+    "dingtalk.docs.doc.read": {
+      "executable": false
+    },
+    "dingtalk.docs.doc.update": {
+      "executable": false
+    },
+    "dingtalk.docs.export.pdf": {
+      "executable": false
+    },
+    "dingtalk.docs.permission.set": {
+      "executable": false
+    },
+    "dingtalk.docs.sheet.create": {
+      "executable": false
+    },
+    "dingtalk.docs.sheet.read": {
+      "executable": false
+    },
+    "dingtalk.im.file.upload": {
+      "executable": false
+    },
+    "dingtalk.im.group.list": {
+      "executable": false
+    },
+    "dingtalk.im.message.create_draft": {
+      "executable": false
+    },
+    "dingtalk.im.message.read": {
+      "executable": false
+    },
+    "dingtalk.im.message.send_confirmed": {
+      "executable": false
+    },
+    "docker.compose.config": {
+      "executable": true
+    },
+    "docker.compose.down": {
+      "executable": false
+    },
+    "docker.compose.up": {
+      "executable": false
+    },
+    "docker.container.logs": {
+      "executable": false
+    },
+    "docker.container.run": {
+      "executable": false
+    },
+    "docker.container.stop": {
+      "executable": false
+    },
+    "docker.health": {
+      "executable": true
+    },
+    "docker.image.build": {
+      "executable": false
+    },
+    "docker.ps": {
+      "executable": true
+    },
+    "docker.volume.list": {
+      "executable": false
+    },
+    "docx.create": {
+      "executable": true
+    },
+    "elevenlabs.tts.create": {
+      "executable": true
+    },
+    "elevenlabs.voice.clone_authorized": {
+      "executable": false
+    },
+    "elevenlabs.voice.list": {
+      "executable": false
+    },
+    "feishu.api.request_pack.create": {
+      "executable": true
+    },
+    "feishu.docs.comment.add": {
+      "executable": false
+    },
+    "feishu.docs.doc.create": {
+      "executable": true
+    },
+    "feishu.docs.doc.read": {
+      "executable": true
+    },
+    "feishu.docs.doc.update": {
+      "executable": true
+    },
+    "feishu.docs.export.docx": {
+      "executable": true
+    },
+    "feishu.docs.export.pdf": {
+      "executable": true
+    },
+    "feishu.docs.permission.set": {
+      "executable": false
+    },
+    "feishu.im.file.upload": {
+      "executable": false
+    },
+    "feishu.im.group.list": {
+      "executable": false
+    },
+    "feishu.im.message.create_draft": {
+      "executable": false
+    },
+    "feishu.im.message.read": {
+      "executable": false
+    },
+    "feishu.im.message.send_confirmed": {
+      "executable": false
+    },
+    "feishu.sheets.export.xlsx": {
+      "executable": false
+    },
+    "feishu.sheets.formula.set": {
+      "executable": false
+    },
+    "feishu.sheets.permission.set": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.create": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.read": {
+      "executable": false
+    },
+    "feishu.sheets.sheet.update_cells": {
+      "executable": false
+    },
+    "feishu.wiki.page.create": {
+      "executable": false
+    },
+    "feishu.wiki.page.read": {
+      "executable": false
+    },
+    "feishu.wiki.page.update": {
+      "executable": false
+    },
+    "feishu.wiki.permission.set": {
+      "executable": false
+    },
+    "feishu.wiki.search": {
+      "executable": false
+    },
+    "feishu.wiki.space.list": {
+      "executable": false
+    },
+    "ffmpeg.audio.concat": {
+      "executable": true
+    },
+    "ffmpeg.audio.trim": {
+      "executable": true
+    },
+    "ffmpeg.video.add_audio": {
+      "executable": true
+    },
+    "ffmpeg.video.cut": {
+      "executable": true
+    },
+    "ffmpeg.video.extract_audio": {
+      "executable": true
+    },
+    "ffmpeg.video.info": {
+      "executable": true
+    },
+    "ffmpeg.video.slideshow": {
+      "executable": true
+    },
+    "figma.api.request_pack.create": {
+      "executable": true
+    },
+    "figma.comment.add": {
+      "executable": false
+    },
+    "figma.component.create": {
+      "executable": false
+    },
+    "figma.export.png": {
+      "executable": false
+    },
+    "figma.export.svg": {
+      "executable": false
+    },
+    "figma.file.read": {
+      "executable": false
+    },
+    "figma.frame.create": {
+      "executable": false
+    },
+    "figma.image.place": {
+      "executable": false
+    },
+    "figma.text.update": {
+      "executable": false
+    },
+    "file.append": {
+      "executable": true
+    },
+    "file.copy": {
+      "executable": true
+    },
+    "file.delete_to_trash": {
+      "executable": true
+    },
+    "file.hash": {
+      "executable": true
+    },
+    "file.list": {
+      "executable": true
+    },
+    "file.mkdir": {
+      "executable": true
+    },
+    "file.move": {
+      "executable": true
+    },
+    "file.patch_replace": {
+      "executable": true
+    },
+    "file.read": {
+      "executable": true
+    },
+    "file.rename": {
+      "executable": true
+    },
+    "file.search": {
+      "executable": true
+    },
+    "file.write": {
+      "executable": true
+    },
+    "finalcut.event.create": {
+      "executable": false
+    },
+    "finalcut.export.mp4": {
+      "executable": false
+    },
+    "finalcut.library.open": {
+      "executable": false
+    },
+    "finalcut.media.import": {
+      "executable": false
+    },
+    "finalcut.music.add": {
+      "executable": false
+    },
+    "finalcut.timeline.cut": {
+      "executable": false
+    },
+    "finalcut.title.add": {
+      "executable": false
+    },
+    "flstudio.channel.add": {
+      "executable": false
+    },
+    "flstudio.midi.import": {
+      "executable": false
+    },
+    "flstudio.mixdown.export": {
+      "executable": false
+    },
+    "flstudio.pattern.create": {
+      "executable": false
+    },
+    "flstudio.project.create": {
+      "executable": false
+    },
+    "gemini_api.embedding.create": {
+      "executable": false
+    },
+    "gemini_api.text.generate": {
+      "executable": false
+    },
+    "gemini_api.video.analyze": {
+      "executable": false
+    },
+    "gemini_api.vision.analyze": {
+      "executable": false
+    },
+    "git.add": {
+      "executable": true
+    },
+    "git.branch.create": {
+      "executable": false
+    },
+    "git.checkout": {
+      "executable": false
+    },
+    "git.clone": {
+      "executable": true
+    },
+    "git.commit": {
+      "executable": true
+    },
+    "git.diff": {
+      "executable": true
+    },
+    "git.log": {
+      "executable": true
+    },
+    "git.merge": {
+      "executable": false
+    },
+    "git.stash": {
+      "executable": false
+    },
+    "git.status": {
+      "executable": true
+    },
+    "git.tag": {
+      "executable": false
+    },
+    "github.issue.create": {
+      "executable": false
+    },
+    "github.issue.update": {
+      "executable": false
+    },
+    "github.pull_request.create": {
+      "executable": false
+    },
+    "github.pull_request.review": {
+      "executable": false
+    },
+    "github.release.create": {
+      "executable": false
+    },
+    "github.repo.search": {
+      "executable": false
+    },
+    "github.workflow.run": {
+      "executable": false
+    },
+    "gitlab.issue.create": {
+      "executable": false
+    },
+    "gitlab.merge_request.create": {
+      "executable": false
+    },
+    "gitlab.pipeline.run": {
+      "executable": false
+    },
+    "gitlab.project.search": {
+      "executable": false
+    },
+    "gitlab.release.create": {
+      "executable": false
+    },
+    "gmail.attachment.download": {
+      "executable": false
+    },
+    "gmail.label.apply": {
+      "executable": false
+    },
+    "gmail.mail.create_draft": {
+      "executable": false
+    },
+    "gmail.mail.read": {
+      "executable": false
+    },
+    "gmail.mail.search": {
+      "executable": false
+    },
+    "gmail.mail.send_confirmed": {
+      "executable": false
+    },
+    "gmail.thread.read": {
+      "executable": false
+    },
+    "google.docs.comment.add": {
+      "executable": false
+    },
+    "google.docs.document.create": {
+      "executable": false
+    },
+    "google.docs.document.read": {
+      "executable": false
+    },
+    "google.docs.document.update": {
+      "executable": false
+    },
+    "google.docs.export.docx": {
+      "executable": false
+    },
+    "google.docs.export.pdf": {
+      "executable": false
+    },
+    "google.docs.share.set_permission": {
+      "executable": false
+    },
+    "google.drive.file.copy": {
+      "executable": false
+    },
+    "google.drive.file.delete_to_trash": {
+      "executable": false
+    },
+    "google.drive.file.download": {
+      "executable": false
+    },
+    "google.drive.file.list": {
+      "executable": false
+    },
+    "google.drive.file.move": {
+      "executable": false
+    },
+    "google.drive.file.upload": {
+      "executable": false
+    },
+    "google.drive.folder.create": {
+      "executable": false
+    },
+    "google.drive.permission.set": {
+      "executable": false
+    },
+    "google.sheets.chart.create": {
+      "executable": false
+    },
+    "google.sheets.export.xlsx": {
+      "executable": false
+    },
+    "google.sheets.formula.set": {
+      "executable": false
+    },
+    "google.sheets.share.set_permission": {
+      "executable": false
+    },
+    "google.sheets.sheet.create": {
+      "executable": false
+    },
+    "google.sheets.sheet.read": {
+      "executable": false
+    },
+    "google.sheets.sheet.update_cells": {
+      "executable": false
+    },
+    "google.slides.deck.create": {
+      "executable": false
+    },
+    "google.slides.export.pdf": {
+      "executable": false
+    },
+    "google.slides.export.pptx": {
+      "executable": false
+    },
+    "google.slides.share.set_permission": {
+      "executable": false
+    },
+    "google.slides.slide.add": {
+      "executable": false
+    },
+    "google.slides.slide.update": {
+      "executable": false
+    },
+    "http.get": {
+      "executable": true
+    },
+    "hubspot.contact.create": {
+      "executable": false
+    },
+    "hubspot.contact.search": {
+      "executable": false
+    },
+    "hubspot.deal.create": {
+      "executable": false
+    },
+    "hubspot.deal.update": {
+      "executable": false
+    },
+    "hubspot.email.create_draft": {
+      "executable": false
+    },
+    "hubspot.task.create": {
+      "executable": false
+    },
+    "image.add_text": {
+      "executable": true
+    },
+    "image.compose": {
+      "executable": true
+    },
+    "image.convert": {
+      "executable": true
+    },
+    "image.create_canvas": {
+      "executable": true
+    },
+    "image.crop": {
+      "executable": true
+    },
+    "image.info": {
+      "executable": true
+    },
+    "image.resize": {
+      "executable": true
+    },
+    "image.rotate": {
+      "executable": true
+    },
+    "jetbrains.idea.edit.apply": {
+      "executable": false
+    },
+    "jetbrains.idea.file.search": {
+      "executable": false
+    },
+    "jetbrains.idea.inspection.read": {
+      "executable": false
+    },
+    "jetbrains.idea.project.open": {
+      "executable": false
+    },
+    "jetbrains.idea.run.config": {
+      "executable": false
+    },
+    "jetbrains.idea.test.run": {
+      "executable": false
+    },
+    "jianying.cover.create": {
+      "executable": true
+    },
+    "jianying.effect.apply": {
+      "executable": false
+    },
+    "jianying.export.mp4": {
+      "executable": true
+    },
+    "jianying.media.import": {
+      "executable": true
+    },
+    "jianying.music.add": {
+      "executable": true
+    },
+    "jianying.project.create": {
+      "executable": true
+    },
+    "jianying.subtitle.add": {
+      "executable": true
+    },
+    "jianying.subtitle.auto": {
+      "executable": false
+    },
+    "jianying.template.apply": {
+      "executable": false
+    },
+    "jianying.timeline.cut": {
+      "executable": true
+    },
+    "jira.comment.add": {
+      "executable": false
+    },
+    "jira.issue.create": {
+      "executable": false
+    },
+    "jira.issue.search": {
+      "executable": false
+    },
+    "jira.issue.transition": {
+      "executable": false
+    },
+    "jira.issue.update": {
+      "executable": false
+    },
+    "jupyter.cell.add": {
+      "executable": false
+    },
+    "jupyter.cell.run": {
+      "executable": false
+    },
+    "jupyter.export.html": {
+      "executable": false
+    },
+    "jupyter.export.ipynb": {
+      "executable": false
+    },
+    "jupyter.kernel.restart": {
+      "executable": false
+    },
+    "jupyter.notebook.create": {
+      "executable": false
+    },
+    "kb.ingestion_manifest.create": {
+      "executable": true
+    },
+    "kingdee.customer.search": {
+      "executable": false
+    },
+    "kingdee.export.xlsx": {
+      "executable": false
+    },
+    "kingdee.inventory.read": {
+      "executable": false
+    },
+    "kingdee.report.run": {
+      "executable": false
+    },
+    "kingdee.voucher.create_draft": {
+      "executable": false
+    },
+    "kubernetes.deployment.apply": {
+      "executable": false
+    },
+    "kubernetes.logs.read": {
+      "executable": false
+    },
+    "kubernetes.namespace.create": {
+      "executable": false
+    },
+    "kubernetes.pod.list": {
+      "executable": false
+    },
+    "kubernetes.rollout.status": {
+      "executable": false
+    },
+    "kubernetes.service.apply": {
+      "executable": false
+    },
+    "learning.ingest": {
+      "executable": true
+    },
+    "life.activity.query": {
+      "executable": true
+    },
+    "life.body.state.query": {
+      "executable": true
+    },
+    "linear.comment.add": {
+      "executable": false
+    },
+    "linear.cycle.read": {
+      "executable": false
+    },
+    "linear.issue.create": {
+      "executable": false
+    },
+    "linear.issue.search": {
+      "executable": false
+    },
+    "linear.issue.update": {
+      "executable": false
+    },
+    "linux.desktop.click": {
+      "executable": true
+    },
+    "linux.desktop.clipboard.read": {
+      "executable": false
+    },
+    "linux.desktop.clipboard.write": {
+      "executable": false
+    },
+    "linux.desktop.drag": {
+      "executable": false
+    },
+    "linux.desktop.hotkey": {
+      "executable": true
+    },
+    "linux.desktop.ocr": {
+      "executable": false
+    },
+    "linux.desktop.screenshot": {
+      "executable": true
+    },
+    "linux.desktop.type": {
+      "executable": true
+    },
+    "linux.desktop.window.focus": {
+      "executable": false
+    },
+    "linux.desktop.window.list": {
+      "executable": false
+    },
+    "macos.desktop.click": {
+      "executable": true
+    },
+    "macos.desktop.clipboard.read": {
+      "executable": false
+    },
+    "macos.desktop.clipboard.write": {
+      "executable": false
+    },
+    "macos.desktop.drag": {
+      "executable": false
+    },
+    "macos.desktop.hotkey": {
+      "executable": true
+    },
+    "macos.desktop.ocr": {
+      "executable": false
+    },
+    "macos.desktop.screenshot": {
+      "executable": true
+    },
+    "macos.desktop.type": {
+      "executable": true
+    },
+    "macos.desktop.window.focus": {
+      "executable": false
+    },
+    "macos.desktop.window.list": {
+      "executable": false
+    },
+    "mcp.servers.list": {
+      "executable": true
+    },
+    "mcp.tool.call": {
+      "executable": true
+    },
+    "mcp.tools.list": {
+      "executable": true
+    },
+    "meeting.minutes.create": {
+      "executable": true
+    },
+    "microsoft.excel.native.chart.create": {
+      "executable": true
+    },
+    "microsoft.excel.sheet.create": {
+      "executable": true
+    },
+    "microsoft.excel.sheet.read": {
+      "executable": true
+    },
+    "microsoft.graph.request_pack.create": {
+      "executable": true
+    },
+    "microsoft.office.com.script.create": {
+      "executable": true
+    },
+    "microsoft.onedrive.file.copy": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.delete_to_trash": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.download": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.list": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.move": {
+      "executable": false
+    },
+    "microsoft.onedrive.file.upload": {
+      "executable": false
+    },
+    "microsoft.onedrive.permission.set": {
+      "executable": false
+    },
+    "microsoft.onenote.export.pdf": {
+      "executable": false
+    },
+    "microsoft.onenote.notebook.list": {
+      "executable": false
+    },
+    "microsoft.onenote.page.create": {
+      "executable": false
+    },
+    "microsoft.onenote.page.read": {
+      "executable": false
+    },
+    "microsoft.onenote.page.update": {
+      "executable": false
+    },
+    "microsoft.outlook.attachment.download": {
+      "executable": false
+    },
+    "microsoft.outlook.calendar.create_event": {
+      "executable": false
+    },
+    "microsoft.outlook.calendar.search": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.create_draft": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.read": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.search": {
+      "executable": false
+    },
+    "microsoft.outlook.mail.send_confirmed": {
+      "executable": false
+    },
+    "microsoft.powerpoint.native.export_pdf": {
+      "executable": true
+    },
+    "microsoft.powerpoint.pptx.create": {
+      "executable": true
+    },
+    "microsoft.sharepoint.file.download": {
+      "executable": false
+    },
+    "microsoft.sharepoint.file.list": {
+      "executable": false
+    },
+    "microsoft.sharepoint.file.upload": {
+      "executable": false
+    },
+    "microsoft.sharepoint.list.read": {
+      "executable": false
+    },
+    "microsoft.sharepoint.list.update_item": {
+      "executable": false
+    },
+    "microsoft.sharepoint.page.create": {
+      "executable": false
+    },
+    "microsoft.sharepoint.site.search": {
+      "executable": false
+    },
+    "microsoft.teams.channel.list": {
+      "executable": false
+    },
+    "microsoft.teams.chat.read": {
+      "executable": false
+    },
+    "microsoft.teams.file.upload": {
+      "executable": false
+    },
+    "microsoft.teams.meeting.create": {
+      "executable": false
+    },
+    "microsoft.teams.message.create_draft": {
+      "executable": false
+    },
+    "microsoft.teams.message.send_confirmed": {
+      "executable": false
+    },
+    "microsoft.visio.connector.add": {
+      "executable": false
+    },
+    "microsoft.visio.diagram.create": {
+      "executable": false
+    },
+    "microsoft.visio.export.pdf": {
+      "executable": false
+    },
+    "microsoft.visio.export.svg": {
+      "executable": false
+    },
+    "microsoft.visio.shape.add": {
+      "executable": false
+    },
+    "microsoft.word.docx.create": {
+      "executable": true
+    },
+    "microsoft.word.native.export_pdf": {
+      "executable": true
+    },
+    "microsoft.word.pdf.create_from_text": {
+      "executable": true
+    },
+    "mindmap.create": {
+      "executable": true
+    },
+    "model.adapter.detect": {
+      "executable": true
+    },
+    "model.adapter.info": {
+      "executable": true
+    },
+    "model.adapter.list": {
+      "executable": true
+    },
+    "model.adapter.parse_tool_call": {
+      "executable": true
+    },
+    "model.adapter.render_tool_result": {
+      "executable": true
+    },
+    "model.adapter.render_tool_schema": {
+      "executable": true
+    },
+    "model.adapter.roundtrip_test": {
+      "executable": true
+    },
+    "mysql.backup.create": {
+      "executable": false
+    },
+    "mysql.query.run": {
+      "executable": false
+    },
+    "mysql.schema.read": {
+      "executable": false
+    },
+    "mysql.table.export_csv": {
+      "executable": false
+    },
+    "mysql.table.import_csv": {
+      "executable": false
+    },
+    "notion.database.insert": {
+      "executable": false
+    },
+    "notion.database.query": {
+      "executable": false
+    },
+    "notion.export.markdown": {
+      "executable": false
+    },
+    "notion.page.create": {
+      "executable": false
+    },
+    "notion.page.read": {
+      "executable": false
+    },
+    "notion.page.update": {
+      "executable": false
+    },
+    "notion.search": {
+      "executable": false
+    },
+    "novel.blueprint.assist": {
+      "executable": true
+    },
+    "novel.blueprint.compile": {
+      "executable": true
+    },
+    "novel.blueprint.patch": {
+      "executable": true
+    },
+    "novel.blueprint.update": {
+      "executable": true
+    },
+    "novel.blueprint.upsert_many": {
+      "executable": true
+    },
+    "novel.chapter.checkout": {
+      "executable": true
+    },
+    "novel.chapter.submit": {
+      "executable": true
+    },
+    "novel.context.query": {
+      "executable": true
+    },
+    "novel.mobility.align_initial_many": {
+      "executable": true
+    },
+    "novel.plan.rebase": {
+      "executable": true
+    },
+    "novel.project.audit": {
+      "executable": true
+    },
+    "novel.project.create": {
+      "executable": true
+    },
+    "novel.project.recover": {
+      "executable": true
+    },
+    "novel.project.status": {
+      "executable": true
+    },
+    "novel.reference.resolve": {
+      "executable": true
+    },
+    "novel.scene.design": {
+      "executable": true
+    },
+    "novel.timeline.calculate": {
+      "executable": true
+    },
+    "novel.timeline.normalize": {
+      "executable": true
+    },
+    "novel.timeline.shift_suffix": {
+      "executable": true
+    },
+    "obsidian.graph.export": {
+      "executable": false
+    },
+    "obsidian.link.create": {
+      "executable": false
+    },
+    "obsidian.note.create": {
+      "executable": false
+    },
+    "obsidian.note.read": {
+      "executable": false
+    },
+    "obsidian.note.update": {
+      "executable": false
+    },
+    "obsidian.search": {
+      "executable": false
+    },
+    "obsidian.vault.list": {
+      "executable": false
+    },
+    "openai_api.audio.transcribe": {
+      "executable": false
+    },
+    "openai_api.embedding.create": {
+      "executable": false
+    },
+    "openai_api.image.edit": {
+      "executable": false
+    },
+    "openai_api.image.generate": {
+      "executable": false
+    },
+    "openai_api.text.generate": {
+      "executable": false
+    },
+    "openai_api.tts.create": {
+      "executable": false
+    },
+    "pdf.create_from_text": {
+      "executable": true
+    },
+    "pdf.extract_text": {
+      "executable": true
+    },
+    "pillow.image.add_text": {
+      "executable": true
+    },
+    "pillow.image.compose": {
+      "executable": true
+    },
+    "pillow.image.convert": {
+      "executable": true
+    },
+    "pillow.image.create_canvas": {
+      "executable": true
+    },
+    "pillow.image.crop": {
+      "executable": true
+    },
+    "pillow.image.info": {
+      "executable": true
+    },
+    "pillow.image.resize": {
+      "executable": true
+    },
+    "pillow.image.rotate": {
+      "executable": true
+    },
+    "poster.brief.create": {
+      "executable": true
+    },
+    "postgresql.backup.create": {
+      "executable": false
+    },
+    "postgresql.query.run": {
+      "executable": false
+    },
+    "postgresql.schema.read": {
+      "executable": false
+    },
+    "postgresql.table.export_csv": {
+      "executable": false
+    },
+    "postgresql.table.import_csv": {
+      "executable": false
+    },
+    "powerbi.dashboard.read": {
+      "executable": false
+    },
+    "powerbi.dataset.refresh": {
+      "executable": false
+    },
+    "powerbi.query.execute": {
+      "executable": false
+    },
+    "powerbi.report.export": {
+      "executable": false
+    },
+    "pptx.create": {
+      "executable": true
+    },
+    "pptx.read": {
+      "executable": true
+    },
+    "preview.generate": {
+      "executable": true
+    },
+    "python.run": {
+      "executable": true
+    },
+    "qc.code.delivery_check": {
+      "executable": true
+    },
+    "qc.content.calendar_check": {
+      "executable": true
+    },
+    "qc.course.plan_check": {
+      "executable": true
+    },
+    "qc.docx.delivery_check": {
+      "executable": true
+    },
+    "qc.image.delivery_check": {
+      "executable": true
+    },
+    "qc.kb.ingestion_check": {
+      "executable": true
+    },
+    "qc.meeting.minutes_check": {
+      "executable": true
+    },
+    "qc.novel.chapter_check": {
+      "executable": true
+    },
+    "qc.poster.commercial_check": {
+      "executable": true
+    },
+    "qc.ppt.delivery_check": {
+      "executable": true
+    },
+    "qc.research.evidence_check": {
+      "executable": true
+    },
+    "qc.sales.script_check": {
+      "executable": true
+    },
+    "qc.seo.people_first_check": {
+      "executable": true
+    },
+    "qc.sheet.analysis_report_check": {
+      "executable": true
+    },
+    "qc.sheet.delivery_check": {
+      "executable": true
+    },
+    "qc.video.delivery_check": {
+      "executable": true
+    },
+    "qc.voice_authorized.delivery_check": {
+      "executable": true
+    },
+    "qc.writing.ai_tone_check": {
+      "executable": true
+    },
+    "quality.javascript_syntax": {
+      "executable": true
+    },
+    "quality.python_syntax": {
+      "executable": true
+    },
+    "quality.run_tests": {
+      "executable": true
+    },
+    "reaper.fx.apply": {
+      "executable": false
+    },
+    "reaper.item.trim": {
+      "executable": false
+    },
+    "reaper.media.import": {
+      "executable": false
+    },
+    "reaper.project.create": {
+      "executable": false
+    },
+    "reaper.render.mp3": {
+      "executable": false
+    },
+    "reaper.render.wav": {
+      "executable": false
+    },
+    "reaper.track.add": {
+      "executable": false
+    },
+    "redis.info.read": {
+      "executable": false
+    },
+    "redis.key.delete": {
+      "executable": false
+    },
+    "redis.key.get": {
+      "executable": false
+    },
+    "redis.key.set": {
+      "executable": false
+    },
+    "redis.scan": {
+      "executable": false
+    },
+    "repair.plan": {
+      "executable": true
+    },
+    "research.evidence_table.create": {
+      "executable": true
+    },
+    "rollback.apply": {
+      "executable": true
+    },
+    "rollback.list": {
+      "executable": true
+    },
+    "rubric.evaluate": {
+      "executable": true
+    },
+    "sales.script.create": {
+      "executable": true
+    },
+    "salesforce.account.update": {
+      "executable": false
+    },
+    "salesforce.lead.create": {
+      "executable": false
+    },
+    "salesforce.lead.search": {
+      "executable": false
+    },
+    "salesforce.opportunity.create": {
+      "executable": false
+    },
+    "salesforce.report.run": {
+      "executable": false
+    },
+    "salesforce.task.create": {
+      "executable": false
+    },
+    "sap.export.xlsx": {
+      "executable": false
+    },
+    "sap.record.read": {
+      "executable": false
+    },
+    "sap.record.search": {
+      "executable": false
+    },
+    "sap.report.run": {
+      "executable": false
+    },
+    "sap.workflow.create_draft": {
+      "executable": false
+    },
+    "search_web": {
+      "executable": true
+    },
+    "seo.content.brief.create": {
+      "executable": true
+    },
+    "sheet.create": {
+      "executable": true
+    },
+    "sheet.read": {
+      "executable": true
+    },
+    "shell.run": {
+      "executable": true
+    },
+    "shopify.inventory.update": {
+      "executable": false
+    },
+    "shopify.order.fulfillment_update": {
+      "executable": false
+    },
+    "shopify.order.search": {
+      "executable": false
+    },
+    "shopify.product.create": {
+      "executable": false
+    },
+    "shopify.product.search": {
+      "executable": false
+    },
+    "sketch.artboard.create": {
+      "executable": false
+    },
+    "sketch.document.open": {
+      "executable": false
+    },
+    "sketch.export.png": {
+      "executable": false
+    },
+    "sketch.export.svg": {
+      "executable": false
+    },
+    "sketch.symbol.create": {
+      "executable": false
+    },
+    "sketch.text.update": {
+      "executable": false
+    },
+    "skill.get": {
+      "executable": true
+    },
+    "skill.list": {
+      "executable": true
+    },
+    "skill.progress.report": {
+      "executable": true
+    },
+    "skill.read": {
+      "executable": true
+    },
+    "skill.route": {
+      "executable": true
+    },
+    "skill.step.check": {
+      "executable": true
+    },
+    "spreadsheet.analysis.plan.create": {
+      "executable": true
+    },
+    "sqlite.backup.create": {
+      "executable": false
+    },
+    "sqlite.query": {
+      "executable": true
+    },
+    "sqlite.query.run": {
+      "executable": false
+    },
+    "sqlite.schema.read": {
+      "executable": false
+    },
+    "sqlite.table.export_csv": {
+      "executable": false
+    },
+    "sqlite.table.import_csv": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.generate": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.img2img": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.inpaint": {
+      "executable": false
+    },
+    "stable_diffusion_webui.image.upscale": {
+      "executable": false
+    },
+    "stable_diffusion_webui.model.switch": {
+      "executable": false
+    },
+    "system.action_schema": {
+      "executable": true
+    },
+    "system.app_registry": {
+      "executable": true
+    },
+    "system.capabilities": {
+      "executable": true
+    },
+    "system.health": {
+      "executable": true
+    },
+    "tableau.dashboard.read": {
+      "executable": false
+    },
+    "tableau.extract.refresh": {
+      "executable": false
+    },
+    "tableau.view.export": {
+      "executable": false
+    },
+    "tableau.workbook.publish": {
+      "executable": false
+    },
+    "template.apply": {
+      "executable": true
+    },
+    "template.list": {
+      "executable": true
+    },
+    "trello.board.list": {
+      "executable": false
+    },
+    "trello.card.create": {
+      "executable": false
+    },
+    "trello.card.move": {
+      "executable": false
+    },
+    "trello.checklist.add": {
+      "executable": false
+    },
+    "trello.comment.add": {
+      "executable": false
+    },
+    "tts.edge.tts.create": {
+      "executable": false
+    },
+    "tts.edge.voice.list": {
+      "executable": false
+    },
+    "v34.professional_apps.info": {
+      "executable": true
+    },
+    "video.add_audio": {
+      "executable": true
+    },
+    "video.cut": {
+      "executable": true
+    },
+    "video.extract_audio": {
+      "executable": true
+    },
+    "video.info": {
+      "executable": true
+    },
+    "video.slideshow": {
+      "executable": true
+    },
+    "voice.clone_authorized": {
+      "executable": false
+    },
+    "voice.consent_pack.create": {
+      "executable": true
+    },
+    "vscode.diagnostics.read": {
+      "executable": false
+    },
+    "vscode.edit.apply": {
+      "executable": false
+    },
+    "vscode.extension.install": {
+      "executable": false
+    },
+    "vscode.file.open": {
+      "executable": false
+    },
+    "vscode.file.search": {
+      "executable": false
+    },
+    "vscode.terminal.run": {
+      "executable": false
+    },
+    "vscode.workspace.open": {
+      "executable": false
+    },
+    "web.download": {
+      "executable": true
+    },
+    "web.fetch": {
+      "executable": true
+    },
+    "web.read": {
+      "executable": true
+    },
+    "web.readability_extract": {
+      "executable": true
+    },
+    "web.search": {
+      "executable": true
+    },
+    "web_readability_extract": {
+      "executable": true
+    },
+    "wechat.desktop.contact.search_visible": {
+      "executable": false
+    },
+    "wechat.desktop.file.send_confirmed": {
+      "executable": false
+    },
+    "wechat.desktop.message.create_draft": {
+      "executable": false
+    },
+    "wechat.desktop.message.read_visible": {
+      "executable": false
+    },
+    "wechat.desktop.message.send_confirmed": {
+      "executable": false
+    },
+    "wechat_work.calendar.create_event": {
+      "executable": false
+    },
+    "wechat_work.contact.search": {
+      "executable": false
+    },
+    "wechat_work.file.upload": {
+      "executable": false
+    },
+    "wechat_work.message.create_draft": {
+      "executable": false
+    },
+    "wechat_work.message.read": {
+      "executable": false
+    },
+    "wechat_work.message.send_confirmed": {
+      "executable": false
+    },
+    "wechat_work.webhook.request_pack.create": {
+      "executable": true
+    },
+    "whisper.audio.transcribe": {
+      "executable": false
+    },
+    "whisper.audio.translate": {
+      "executable": false
+    },
+    "whisper.segments.export_srt": {
+      "executable": false
+    },
+    "whisper.segments.export_txt": {
+      "executable": false
+    },
+    "windows.desktop.click": {
+      "executable": true
+    },
+    "windows.desktop.clipboard.read": {
+      "executable": false
+    },
+    "windows.desktop.clipboard.write": {
+      "executable": false
+    },
+    "windows.desktop.drag": {
+      "executable": false
+    },
+    "windows.desktop.hotkey": {
+      "executable": true
+    },
+    "windows.desktop.ocr": {
+      "executable": false
+    },
+    "windows.desktop.screenshot": {
+      "executable": true
+    },
+    "windows.desktop.type": {
+      "executable": true
+    },
+    "windows.desktop.window.focus": {
+      "executable": false
+    },
+    "windows.desktop.window.list": {
+      "executable": false
+    },
+    "windows.powershell.command.run": {
+      "executable": false
+    },
+    "windows.powershell.process.list": {
+      "executable": false
+    },
+    "windows.powershell.registry.read": {
+      "executable": false
+    },
+    "windows.powershell.script.run": {
+      "executable": false
+    },
+    "windows.powershell.service.list": {
+      "executable": false
+    },
+    "word.create": {
+      "executable": true
+    },
+    "word.read": {
+      "executable": true
+    },
+    "wordpress.comment.moderate": {
+      "executable": false
+    },
+    "wordpress.media.upload": {
+      "executable": false
+    },
+    "wordpress.page.create": {
+      "executable": false
+    },
+    "wordpress.post.create": {
+      "executable": false
+    },
+    "wordpress.post.update": {
+      "executable": false
+    },
+    "wps.native.script.create": {
+      "executable": true
+    },
+    "wps.presentation.pptx.create": {
+      "executable": true
+    },
+    "wps.spreadsheet.sheet.create": {
+      "executable": true
+    },
+    "wps.spreadsheet.sheet.read": {
+      "executable": true
+    },
+    "wps.writer.docx.create": {
+      "executable": true
+    },
+    "wps.writer.pdf.create_from_text": {
+      "executable": true
+    },
+    "writing.chapter.plan.create": {
+      "executable": true
+    },
+    "writing.outline.create": {
+      "executable": true
+    },
+    "yonyou.customer.search": {
+      "executable": false
+    },
+    "yonyou.export.xlsx": {
+      "executable": false
+    },
+    "yonyou.inventory.read": {
+      "executable": false
+    },
+    "yonyou.report.run": {
+      "executable": false
+    },
+    "yonyou.voucher.create_draft": {
+      "executable": false
+    },
+    "yuque.doc.create": {
+      "executable": false
+    },
+    "yuque.doc.read": {
+      "executable": false
+    },
+    "yuque.doc.update": {
+      "executable": false
+    },
+    "yuque.export.markdown": {
+      "executable": false
+    },
+    "yuque.permission.set": {
+      "executable": false
+    },
+    "yuque.repo.search": {
+      "executable": false
+    },
+    "zip.create": {
+      "executable": true
+    },
+    "zip.extract": {
+      "executable": true
+    },
+    "zoho.crm.deal.create": {
+      "executable": false
+    },
+    "zoho.crm.deal.update": {
+      "executable": false
+    },
+    "zoho.crm.lead.create": {
+      "executable": false
+    },
+    "zoho.crm.lead.search": {
+      "executable": false
+    },
+    "zoho.crm.report.run": {
+      "executable": false
+    },
+    "zoho.crm.task.create": {
+      "executable": false
+    }
+  }
+}

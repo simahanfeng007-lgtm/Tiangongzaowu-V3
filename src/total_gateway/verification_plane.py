@@ -10,6 +10,8 @@ fails with VERIFICATION_PLANE_FREEZE_CHANGED otherwise).
 
 from __future__ import annotations
 
-VERIFICATION_PLANE_VERSION = "1.28"
+# 1.33 preserves task-generated composition fencing and records the reviewed
+# experience-memory, native world-observation and inquiry identity boundaries.
+VERIFICATION_PLANE_VERSION = "1.33"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

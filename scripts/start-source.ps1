@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$Verify,
+    [string]$ProfileRoot = $env:TIANGONG_SOURCE_PROFILE_ROOT,
     [ValidateRange(0, 65535)]
     [int]$RemoteDebuggingPort = 0
 )
@@ -24,7 +25,7 @@ if (-not $HostLocalAppData) {
     throw "Windows LocalApplicationData is unavailable; refusing to fall back to the packaged profile."
 }
 
-$SourceProfileRoot = Join-Path $HostLocalAppData "TiangongV3-SourceWork"
+$SourceProfileRoot = if ($ProfileRoot) { [System.IO.Path]::GetFullPath($ProfileRoot) } else { Join-Path (Split-Path $Root -Parent) "data" }
 $SourceUserData = Join-Path $SourceProfileRoot "electron-user-data"
 $SourceRuntimeRoot = Join-Path $SourceProfileRoot "runtime"
 $SourceStateRoot = Join-Path $SourceRuntimeRoot "state"
@@ -125,15 +126,14 @@ $env:TIANGONG_LIFE_SERVICE_DIR = Join-Path $AppRoot "life-service"
 $env:TIANGONG_COMMUNICATION_SOURCE_ROOT = Join-Path $Root "src"
 $env:TIANGONG_TOTAL_GATEWAY_SOURCE_ROOT = Join-Path $Root "src"
 $env:TIANGONG_GATEWAY_DEPLOYMENT_MODE = "embedded"
-$env:TIANGONG_GATEWAY_SKILL_ROOT = Join-Path $AppRoot "backend\tiangong-backend\_internal\omni_body_skill"
+$env:TIANGONG_GATEWAY_SKILL_ROOT = Join-Path $Root "dictionaries"
+$env:TIANGONG_DICTIONARY_ROOT = $env:TIANGONG_GATEWAY_SKILL_ROOT
 $env:PYTHONUTF8 = "1"
 $env:PYTHONDONTWRITEBYTECODE = "1"
-# This host can create the AppContainer token but arbitrary Win32 children exit
-# during system DLL initialization before user code starts.  Source mode opts
-# into the existing compatibility sandbox explicitly; packaged/default runtime
-# remains fail-closed.  The compatibility path still uses a private workspace
-# copy, secret-free environment, resource limits and kill-on-close process tree.
-$env:TIANGONG_SANDBOX_COMPAT = "1"
+# Source and packaged execution use the same verified native containment.
+$env:TIANGONG_SANDBOX_COMPAT = "0"
+& $Python (Join-Path $Root "scripts\install-python-appcontainer-compat.py")
+if ($LASTEXITCODE -ne 0) { throw "Failed to install source Python compatibility" }
 
 # Rebuild the development release authority from the exact source tree that
 # will be launched. This prevents a checked-in legacy 7174/7175/7176 manifest
@@ -145,6 +145,7 @@ Push-Location $AppRoot
 try {
     $ElectronArgs = @("--user-data-dir=$SourceUserData")
     if ($RemoteDebuggingPort -gt 0) {
+        $ElectronArgs += "--remote-debugging-address=127.0.0.1"
         $ElectronArgs += "--remote-debugging-port=$RemoteDebuggingPort"
     }
     $ElectronArgs += "."

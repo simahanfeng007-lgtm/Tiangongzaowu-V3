@@ -296,7 +296,7 @@ class EmbeddedBackendRuntime:
             "tools": [
                 f"{tools.get('summary', {}).get('toolCount', 0)} registered tools",
                 "omni_body-only model-visible tool surface",
-                "deliverable_skills routed through skill.route/get/read",
+                "published dictionary Skills routed through skill.route/get/read",
             ],
             "body": ["voice settings", "reply read-aloud", "character profile"],
             "lifecycle": ["embedded LifeKernel", "memory", "experience", "self-healing recovery"],
@@ -621,6 +621,10 @@ class EmbeddedBackendRuntime:
             raise EmbeddedBackendError("omni_body.learning_ingest_provider_unsupported")
         setter(provider)
         self._learning_ingest_provider = provider
+
+    def set_world_composition_memory_provider(self, provider: Any) -> None:
+        module = importlib.import_module("v3.world_understanding_production")
+        module.set_world_composition_memory_provider(provider)
 
     def set_world_inquiry_dispatcher(self, dispatcher: Any) -> None:
         """Wire P13.2 to the one Gateway orchestration worker in-process."""
@@ -964,7 +968,11 @@ class EmbeddedBackendRuntime:
         inquiry = body.get("inquiry")
         if not isinstance(inquiry, Mapping):
             raise ValueError("world inquiry is required")
-        encoded = json.dumps(dict(inquiry), ensure_ascii=False, sort_keys=True)
+        from v3.world_understanding_production import production_inquiry_context
+        observation_context = production_inquiry_context(dict(inquiry))
+        if observation_context is None:
+            return {"ok": True, "decision": {"decision": "DEFER", "reason_codes": ["no_bound_observation_target"]}}
+        encoded = json.dumps({"inquiry": dict(inquiry), "observation_context": observation_context}, ensure_ascii=False, sort_keys=True)
         if len(encoded.encode("utf-8")) > 128 * 1024:
             raise ValueError("world inquiry is too large")
         system_prompt = (
@@ -975,11 +983,19 @@ class EmbeddedBackendRuntime:
             "system.health、system.capabilities、file.read、file.list、file.search、file.hash、git.status、"
             "git.diff、git.log、web.search、web.fetch。证据不足以安全确定 target/args 时必须 DEFER。"
             "不得提出写入、删除、执行命令、发消息、登录、授权或多步循环，也不得声称观察已经发生。"
+            "observation_context 是已核验的目标数据：仅选择其中 allowed_actions，target 必须原样使用。"
+            "文件重新核验优先用 file.hash，避免无关内容读取。"
         )
         llm = getattr(self.scheduler, "_zhiming_llm", None)
         if not callable(llm):
             raise RuntimeError("world inquiry self-will bridge unavailable")
-        raw = str(llm(system_prompt, encoded) or "").strip()
+        from v3.jineng.model_call_lifecycle import run_model_call
+        from contextlib import nullcontext
+        client = getattr(self.scheduler, "http_kehuduan", None)
+        def decide(_lifecycle):
+            with client.scoped_tools(disable_tools=True) if client is not None else nullcontext():
+                return llm(system_prompt, encoded)
+        raw = str(run_model_call(decide, seconds=15) or "").strip()
         if raw.startswith("[LLM"):
             raise RuntimeError(raw[:240])
         match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
@@ -991,6 +1007,7 @@ class EmbeddedBackendRuntime:
         return {
             "ok": True,
             "decision": decision,
+            "observation_context": observation_context,
             "model_output_sha256": __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest(),
         }
 
@@ -1021,6 +1038,10 @@ class EmbeddedBackendRuntime:
         # requests its exact inner Omni grant through the existing authority.
         with bind_run_context(dict(run_context)):
             result = JIROU.zhixing(mapping, dict(arguments))
+            if run_context.get("source_inquiry_id"):
+                from v3.runtime_tool_result_boundary import attach_tool_result_contract
+                result = attach_tool_result_contract(action_id, result, invocation=dict(arguments),
+                    source_native_id="inquiry." + str(run_context["source_inquiry_id"]))
         return result if isinstance(result, dict) else {"ok": True, "result": result}
 
     def _learning_synthesis(self, body: Mapping[str, Any]) -> dict[str, Any]:

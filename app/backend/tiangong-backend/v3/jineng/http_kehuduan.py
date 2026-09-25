@@ -52,7 +52,7 @@ from .deepseek_zhuanshu import (
 )
 from .guge_ceng import GUGE
 from .minimax_m3_adapter import MINIMAX_M3
-from .model_transport_executor import TransportExecutionError, execute_streaming_turn
+from .model_transport_executor import TransportExecutionError, execute_streaming_turn_with_repair as execute_streaming_turn
 from .moxing_shipei import MOXING_SHIPEI
 
 
@@ -431,23 +431,11 @@ def _allowed_tools_from_system_prompt(system_tishi: str) -> set[str] | None:
 
 
 def _omni_body_skill_root_for_model_adapter() -> Path | None:
-    candidates: list[Path] = []
-    forced = os.environ.get("TIANGONG_OMNI_BODY_ROOT")
-    if forced:
-        candidates.append(Path(forced).expanduser())
-    candidates.extend([
-        Path.home() / ".tiangong" / "v3" / "omni_body_skill",
-        Path(__file__).resolve().parents[1] / "omni_body_skill",
-        Path(__file__).resolve().parents[1] / "bundled_skills" / "omni_body_skill",
-    ])
-    for candidate in candidates:
-        try:
-            root = candidate.resolve(strict=False)
-            if (root / "model_adapters" / "core.py").exists():
-                return root
-        except Exception:
-            continue
-    return None
+    # Reuse the installed, source-verified protocol implementation. Never probe
+    # a user-home Skill copy or a retired bundled Skill as a capability source.
+    import omni_body_skill
+    root = Path(omni_body_skill.__file__).resolve().parent
+    return root if (root / "model_adapters/core.py").is_file() else None
 
 
 def _model_adapter_core() -> Any | None:
@@ -552,6 +540,40 @@ def _json_loads_maybe(value: Any) -> Any:
 def _canonical_to_omni_arguments(call: dict[str, Any], raw_args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Strip model-authored authority fields before the Gate sees a tool call."""
     raw = raw_args if isinstance(raw_args, dict) else {}
+    if "composition" in raw:
+        # A generated program is already a host-protocol envelope. The legacy
+        # action normalizer used to bury it inside args and invent an empty
+        # action, so even a correct model program could never be registered.
+        # Preserve every field for the composition boundary to validate;
+        # unknown/authority fields must be rejected there, not silently hidden.
+        envelope = dict(raw)
+        # Decode a complete, extra-encoded program once. This is lossless wire
+        # normalization, not a repair of code, missing fields or permissions.
+        encoded = envelope["composition"]
+        if isinstance(encoded, str) and len(encoded) <= 262144:
+            import json
+
+            def unique_object(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate composition key")
+                    result[key] = value
+                return result
+
+            try:
+                decoded = json.loads(encoded, object_pairs_hook=unique_object)
+            except (ValueError, TypeError, RecursionError):
+                decoded = None
+            if isinstance(decoded, dict):
+                envelope["composition"] = decoded
+        # Compatible providers sometimes fill unused optional properties with
+        # their empty defaults. They convey no second invocation. Nonempty
+        # mixed-mode fields stay present and fail envelope validation.
+        for field, empty in (("action", ""), ("target", ""), ("args", {})):
+            if field in envelope and envelope[field] == empty:
+                envelope.pop(field)
+        return envelope
     known = {
         "action", "command", "operation", "op", "target", "path", "url", "resource",
         "args", "payload", "confirm", "confirmed",
@@ -661,6 +683,11 @@ def _llm_error_text(
 
 def _effective_llm_deadline_seconds() -> float:
     """Resolve the Runtime call ceiling against the current Gateway effect deadline."""
+    from .model_call_lifecycle import current_model_call
+
+    active = current_model_call()
+    if active is not None:
+        return active.remaining
     effective_llm_max_seconds = _LLM_CALL_MAX_SECONDS
     try:
         from contracts.reliability import current_execution_deadline_ms
@@ -673,7 +700,7 @@ def _effective_llm_deadline_seconds() -> float:
             if remaining <= 3600.0:
                 effective_llm_max_seconds = min(
                     effective_llm_max_seconds,
-                    max(5.0, remaining - 2.0),
+                    max(0.0, remaining - 2.0),
                 )
     except Exception:
         pass
@@ -724,6 +751,7 @@ def _error_turn(
     protocol_family: str,
     optimization_family: str,
     model_name: str,
+    error_code: str = "error",
 ) -> ProviderTurnEnvelope:
     return ProviderTurnEnvelope(
         value,
@@ -735,7 +763,7 @@ def _error_turn(
         visible_text="",
         provider_id=optimization_family,
         finish_reason="error",
-        stop_semantics="error",
+        stop_semantics=error_code,
     )
 
 
@@ -749,6 +777,29 @@ class HttpKehuduan:
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
+        self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
+        self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
+        self._semantic_inference = contextvars.ContextVar("tiangong_semantic_inference", default=None)
+
+    @contextmanager
+    def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
+        """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
+        token = self._semantic_inference.set((endpoint, max(128, min(4096, int(max_output_tokens)))))
+        try:
+            with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
+                yield
+        finally:
+            self._semantic_inference.reset(token)
+
+    @contextmanager
+    def scoped_native_history(self, history, observations=()):
+        token = self._native_history.set(history)
+        observation_token = self._native_observations.set(observations)
+        try:
+            yield
+        finally:
+            self._native_history.reset(token)
+            self._native_observations.reset(observation_token)
 
     @contextmanager
     def scoped_tools(self, allowed_tool_names: list[str] | set[str] | tuple[str, ...] | None = None, disable_tools: bool = False):
@@ -790,7 +841,8 @@ class HttpKehuduan:
             provider_id or duqu_moren_provider(self._moren_provider)
         )
         try:
-            endpoint = duqu_model_endpoint_config(requested_identity)
+            semantic_inference = self._semantic_inference.get()
+            endpoint = semantic_inference[0] if semantic_inference is not None else duqu_model_endpoint_config(requested_identity)
         except Exception as exc:
             return ModelTurnReply(
                 _llm_error_text(str(exc), provider=requested_identity),
@@ -866,7 +918,7 @@ class HttpKehuduan:
         st = shenti or ShentiZhuangtai()
         native_audio_receipt: dict[str, Any] | None = None
         try:
-            learned_skill_context = _learned_skill_context()
+            learned_skill_context = "" if semantic_inference is not None else _learned_skill_context()
             effective_system_tishi = system_tishi + learned_skill_context if learned_skill_context else system_tishi
             if self._disable_tools.get(False):
                 gongju_yuanshi = []
@@ -903,6 +955,13 @@ class HttpKehuduan:
                         "当前端点未证明原生 function calling 能力；不得伪装 native tool。"
                     )
 
+            from .model_transport_contract import compact_native_observations, extract_native_roundtrip_history
+            history = self._native_history.get(())
+            native_observations_compacted = False
+            if history and prior_assistant_messages:
+                verified_history = extract_native_roundtrip_history({"__provider_history": history}, endpoint)
+                prior_assistant_messages, native_observations_compacted = compact_native_observations(
+                    prior_assistant_messages, self._native_observations.get(()), verified_history)
             payload = MOXING_SHIPEI.goujian_qingqiu(
                 pid,
                 effective_system_tishi,
@@ -920,6 +979,10 @@ class HttpKehuduan:
                 payload["__provider_tool_results"] = [
                     dict(item) for item in provider_tool_results if isinstance(item, dict)
                 ]
+            if history:
+                payload["__provider_history"] = list(history)
+            if native_observations_compacted:
+                payload["__native_observations_compacted"] = True
             audio_paths = self._native_audio_paths.get(())
             if endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value:
                 native_audio_receipt = _inject_native_audio_input(payload, audio_paths)
@@ -940,6 +1003,18 @@ class HttpKehuduan:
             # bug-fix: cc#17 删除 _apply_endpoint_raw_reasoning 的三次重复调用，保留一次（2026-08-26，凌霜）
             raw_reasoning_trace = _apply_endpoint_raw_reasoning(endpoint, capability, payload)
             reasoning_trace.update(raw_reasoning_trace)
+            if semantic_inference is not None:
+                # Applied after provider defaults so they cannot inflate the
+                # auxiliary call's output budget. Transport owns wire naming.
+                payload.pop("max_completion_tokens", None)
+                payload.pop("max_output_tokens", None)
+                payload["max_tokens"] = semantic_inference[1]
+                thinking = payload.get("thinking")
+                if endpoint.protocol_family == ProtocolFamily.ANTHROPIC_MESSAGES.value and isinstance(thinking, dict):
+                    thinking_budget = thinking.get("budget_tokens")
+                    if isinstance(thinking_budget, int) and thinking_budget >= semantic_inference[1]:
+                        payload["thinking"] = ({**thinking, "budget_tokens": semantic_inference[1] - 1}
+                            if semantic_inference[1] > 1024 else {"type": "disabled"})
             if isinstance(optimization_trace, dict):
                 optimization_trace.update(reasoning_trace)
                 optimization_trace.update(_cache_prefix_observation(payload))
@@ -982,22 +1057,67 @@ class HttpKehuduan:
         # bug-fix: 多次思考路径根治 - 接通流式 think 过滤器（原为 dead code）：
         # 本次 llm_diaoyong 独立一个过滤器实例，流式 chunk 先滤掉内联思考块再回调。
         liushi_on_chunk, liushi_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
+
+        def _record_dictionary_wire(payload: Mapping[str, Any]) -> None:
+            # Record exact outbound context coverage, without storing messages,
+            # private reasoning, or authentication headers in diagnostics.
+            from capability_dictionary import load_dictionary
+            from ..run_context import current_run_context
+            import hashlib
+            release = load_dictionary()
+            serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            calls, results = 0, 0
+            pending = list(payload.get("messages") or payload.get("input") or [])
+            while pending:
+                item = pending.pop()
+                if isinstance(item, dict):
+                    calls += len(item.get("tool_calls") or [])
+                    calls += int(item.get("type") in {"tool_use", "function_call"})
+                    results += int(item.get("role") == "tool" or item.get("type") in {"tool_result", "function_call_output"})
+                    pending.extend(value for key, value in item.items() if key != "tool_calls" and isinstance(value, (dict, list)))
+                elif isinstance(item, list):
+                    pending.extend(item)
+            receipts = optimization_trace.setdefault("dictionary_wire", [])
+            receipts.append({"dictionary_version": release.version, "dictionary_sha256": release.sha256,
+                "observed_at_ms": int(time.time() * 1000),
+                "request_id": current_run_context().request_id,
+                "run_id": current_run_context().run_id,
+                "request_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+                "skill_ids_present": [key for key in release.skill_bodies if key in serialized],
+                "full_skill_sha256": {key: hashlib.sha256(body.encode("utf-8")).hexdigest()
+                    for key, body in release.skill_bodies.items()
+                    if json.dumps(body, ensure_ascii=False)[1:-1] in serialized},
+                "native_tool_call_count": calls, "native_tool_result_count": results})
+
+        def _restart_visible_stream() -> None:
+            nonlocal liushi_on_chunk, liushi_flush
+            # A rejected response may end inside an unclosed <think> tag. The
+            # repair is a new response and must not inherit that parser state.
+            liushi_on_chunk, liushi_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
+
+        def _emit_visible_chunk(chunk: str) -> None:
+            if liushi_on_chunk is not None:
+                liushi_on_chunk(chunk)
+
         try:
             executed = execute_streaming_turn(
                 client=self._kehuduan,
                 endpoint=endpoint,
                 api_key=miyao,
                 canonical_payload=payload,
-                on_text_chunk=liushi_on_chunk,
+                on_text_chunk=_emit_visible_chunk if on_text_chunk is not None else None,
+                on_repair=_restart_visible_stream,
+                on_request_built=_record_dictionary_wire,
                 on_reasoning_chunk=on_reasoning_chunk,
-                retry_limit=HTTP_RETRY_LIMIT,
+                retry_limit=1 if semantic_inference is not None else HTTP_RETRY_LIMIT,
+                allow_output_repair=semantic_inference is None,
                 retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
                 transient_status_codes=TRANSIENT_STATUS_CODES,
                 max_wall_clock_seconds=effective_llm_max_seconds,
             )
         except TransportExecutionError as exc:
             api_status = "wall_clock_deadline" if exc.deadline_exceeded else (
-                "http_error" if exc.http_status is not None else "transport_error"
+                "http_error" if exc.error_code == "http_error" else exc.error_code
             )
             _jilu_l4_youhua_zhuizong(
                 optimization_trace,
@@ -1006,14 +1126,17 @@ class HttpKehuduan:
                 latency_ms=exc.latency_ms,
                 retry_count=exc.retry_count,
                 error_preview=exc.response_preview or exc.reason,
+                response_metrics=exc.response_metrics,
             )
             hint = (
                 # bug-fix: Kimi#14 墙钟超时/网络失败 hint 由英文改中文，用户不再看到英文提示（2026-08-26，凌霜）
                 "单次模型调用超过了平台墙钟时限；本轮已停止等待，而不是无限挂起，请稍后重试或切换模型。"
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
-                if exc.http_status is not None
-                else "网络/代理/DNS 连接失败，或 Base URL 指向的不是 API 服务；请检查网络与 Base URL 配置。"
+                if exc.error_code == "http_error"
+                else "模型输出不完整，已尝试一次拆分修复，本轮未执行不完整的工具调用。"
+                if exc.error_code in {"output_truncated", "invalid_tool_arguments"}
+                else "模型响应未正常完成；请结合错误码检查模型服务和连接。"
             )
             error = _error_turn(
                 _llm_error_text(
@@ -1032,6 +1155,7 @@ class HttpKehuduan:
                 protocol_family=endpoint.protocol_family,
                 optimization_family=pid,
                 model_name=model_name,
+                error_code=exc.error_code,
             )
             return _with_native_audio(
                 error,
@@ -1045,37 +1169,7 @@ class HttpKehuduan:
             liushi_flush()
         turn = _canonicalize_provider_turn(executed.turn)
 
-        # MiniMax legacy safety rescue is retained, but only after a turn with
-        # no tool call/effect, so it cannot duplicate a committed side effect.
-        if (
-            pid == "minimax_m3"
-            and turn.finish_reason == "length"
-            and not turn.visible_text.strip()
-            and not turn.tool_calls
-        ):
-            rescue_payload = _minimax_empty_length_rescue_payload(payload)
-            # bug-fix: 多次思考路径根治 - rescue 是一次全新模型调用：新建独立过滤器，
-            # 避免沿用上一次可能停留在思考块内的状态把 rescue 正文整段丢掉。
-            rescue_on_chunk, rescue_flush = _baozhuang_liushi_sikao_guolv(on_text_chunk)
-            try:
-                rescue = execute_streaming_turn(
-                    client=self._kehuduan,
-                    endpoint=endpoint,
-                    api_key=miyao,
-                    canonical_payload=rescue_payload,
-                    on_text_chunk=rescue_on_chunk,
-                    on_reasoning_chunk=on_reasoning_chunk,
-                    retry_limit=HTTP_RETRY_LIMIT,
-                    retry_sleep_seconds=HTTP_RETRY_SLEEP_SECONDS,
-                    transient_status_codes=TRANSIENT_STATUS_CODES,
-                    max_wall_clock_seconds=effective_llm_max_seconds,
-                )
-                if rescue_flush:
-                    rescue_flush()
-                turn = _canonicalize_provider_turn(rescue.turn)
-                optimization_trace["empty_length_rescue"] = True
-            except TransportExecutionError:
-                pass
+        optimization_trace["output_repaired"] = bool(executed.output_repaired)
 
         usage = dict(turn.usage or {})
         usage_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
@@ -1322,7 +1416,8 @@ def _jilu_l4_youhua_zhuizong(
 ) -> None:
     if not trace:
         return
-    if not trace.get("l4_profile_consumed") and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1":
+    if (not trace.get("l4_profile_consumed") and not trace.get("dictionary_wire")
+            and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1"):
         return
     row = dict(trace)
     row.update({
@@ -1405,6 +1500,7 @@ def _turn_response_metrics(turn: ProviderTurnEnvelope, pid: str | None = None) -
         "finish_reason": turn.finish_reason or "unknown",
         "protocol_family": turn.protocol_family,
         "provider_continuation_mode": turn.provider_continuation_mode,
+        "stream": dict(turn.stream_metadata or {}),
     }
     # DeepSeek/MiniMax legacy metrics only understand Chat-shaped responses;
     # native generic metrics above remain authoritative for other protocols.
@@ -1516,11 +1612,9 @@ def _zhuanhuan_openai_geshi(gongju_yuanshi: list[dict]) -> list[dict]:
                 "function": {
                     "name": name,
                     "description": miaoshu,
-                    "parameters": {
-                        "type": "object",
-                        "properties": canshu.get("properties") or {},
-                        "required": canshu.get("required") if isinstance(canshu.get("required"), list) else [],
-                    },
+                    # Preserve root union/constraint keywords from the canonical
+                    # dictionary, rather than advertising a weaker wire schema.
+                    "parameters": json.loads(json.dumps(canshu)),
                 },
             }
             if isinstance(canshu.get("additionalProperties"), bool):

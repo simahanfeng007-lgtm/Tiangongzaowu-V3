@@ -519,6 +519,7 @@ def compile_tool_capability_contribution(
     *,
     previous_entities: Mapping[str, WorldEntity] | None = None,
     previous_relations: Mapping[str, WorldRelation] | None = None,
+    action_metadata: Mapping[str, Mapping[str, str]] | None = None,
 ) -> WorldDomainContributionV1:
     if (
         not tool_world.has_valid_sha256()
@@ -568,6 +569,8 @@ def compile_tool_capability_contribution(
                 "source_manifest_sha256": (
                     primitive.action_manifest_sha256
                 ),
+                **{k: str(v)[:1200] for k, v in (action_metadata or {}).get(primitive.action_id, {}).items()
+                   if k in {"semantic_summary", "required_dependencies"}},
             },
             source_ref=descriptor_ref,
             previous_entities=old_entities,

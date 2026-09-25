@@ -260,7 +260,8 @@ def test_tool_contract_import_does_not_eagerly_import_body_runtime() -> None:
             sys.executable,
             "-c",
             (
-                "import sys; import omni_body_skill.tool_contracts; "
+                f"import sys; sys.path.insert(0, {str(ROOT / 'src')!r}); "
+                "import omni_body_skill.tool_contracts; "
                 "assert 'omni_body_skill.tools' not in sys.modules; "
                 "assert 'omni_body_skill.tools.omni_body_tool' not in sys.modules"
             ),
@@ -337,40 +338,17 @@ def test_live_fact_manifest_carries_the_same_schema_authority() -> None:
         )
 
 
-def test_manifest_generator_writes_only_src_authority(tmp_path: Path) -> None:
-    script_path = ROOT / "scripts" / "sync_omni_capability_manifest.py"
+def test_manifest_generator_writes_only_dictionary_authority(tmp_path: Path) -> None:
+    script_path = ROOT / "scripts" / "build-dictionary.py"
     spec = importlib.util.spec_from_file_location("schema_manifest_sync", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    authority_root = tmp_path / "src" / "omni_body_skill"
-    (authority_root / "registry").mkdir(parents=True)
-    (authority_root / "tools").mkdir(parents=True)
-    shutil.copy2(
-        ROOT / "src" / "omni_body_skill" / "tool_contracts.py",
-        authority_root / "tool_contracts.py",
-    )
-    manifest = _manifest()
-    for row in manifest["capabilities"].values():
-        for key in (
-            "argument_schema",
-            "argument_schema_sha256",
-            "argument_schema_kind",
-            "argument_validator_source_sha256",
-            "result_schema",
-            "result_schema_sha256",
-            "result_schema_kind",
-            "result_validator_source_sha256",
-            "value_schemas",
-            "value_schema_kind",
-            "value_validator_source_sha256",
-        ):
-            row.pop(key)
-    manifest["source_hash"] = canonical_sha256(manifest["capabilities"])
-    manifest["validation"]["source_hash"] = manifest["source_hash"]
-    manifest_path = authority_root / "registry" / "capability_manifest.generated.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    shutil.copytree(ROOT / "dictionaries", tmp_path / "dictionaries")
+    authority_root = tmp_path / "dictionaries" / "registry"
+    manifest_path = authority_root / "capability_manifest.generated.json"
+    manifest_path.unlink()
 
     mirror = (
         tmp_path
@@ -382,23 +360,26 @@ def test_manifest_generator_writes_only_src_authority(tmp_path: Path) -> None:
     mirror.parent.mkdir(parents=True)
     mirror.write_text("mirror-sentinel", encoding="utf-8")
 
-    module._sync_manifest(
-        manifest_path,
-        {},
-        tool_contracts=tool_contracts_module,
-    )
+    published = module.build(tmp_path)
     written = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert written["capabilities"]["skill.list"]["argument_schema_kind"] == (
         "EXPLICIT"
     )
     assert mirror.read_text(encoding="utf-8") == "mirror-sentinel"
+    assert not (tmp_path / "src" / "omni_body_skill" / "registry").exists()
+    assert published["views"][manifest_path.name] == hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    assert module.build(tmp_path, check=True) == published
+    manifest_path.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="dictionary_generated_view_stale"):
+        module.build(tmp_path, check=True)
 
 
 def test_model_capability_projection_uses_manifest_schema_hash() -> None:
     path = (
         ROOT
-        / "src"
-        / "omni_body_skill"
+        / "dictionaries"
         / "registry"
         / "capability_manifest.generated.json"
     ).resolve()
@@ -411,16 +392,16 @@ def test_model_capability_projection_uses_manifest_schema_hash() -> None:
         generated_at_ms=1,
     )
     action = next(
-        item for item in loaded.manifest.actions if item.action_id == "skill.list"
+        item for item in loaded.manifest.actions if item.action_id == "file.list"
     )
     assert action.argument_schema_sha256 == document["capabilities"][
-        "skill.list"
+        "file.list"
     ]["argument_schema_sha256"]
     assert loaded.action_authority.schema_catalog.resolve(
-        "skill.list", "omni-registry-v1"
+        "file.list", "omni-registry-v1"
     ).argument_schema_sha256 == action.argument_schema_sha256
     assert action.result_schema_sha256 == document["capabilities"][
-        "skill.list"
+        "file.list"
     ]["result_schema_sha256"]
     assert (
         loaded.action_authority.registry.source_manifest_sha256

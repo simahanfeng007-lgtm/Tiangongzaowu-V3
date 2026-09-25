@@ -230,6 +230,9 @@ class GutongCeng:
     @staticmethod
     def jiexi_diaoyong(huifu: str) -> tuple[str, dict]:
         """解析工具调用"""
+        from ..model_protocol_contract import ProviderTurnEnvelope
+        if isinstance(huifu, ProviderTurnEnvelope) and huifu.tool_calls:
+            return GutongCeng.jiexi_duogongju(huifu)[0]
         # 尝试解析 JSON / OpenAI-style tool_call，支持嵌套 arguments。
         for data in GutongCeng._json_duixiang(huifu):
             name, args = GutongCeng._json_gongju_diaoyong(data)
@@ -257,6 +260,14 @@ class GutongCeng:
     @staticmethod
     def jiexi_duogongju(huifu: str) -> list[tuple[str, dict]]:
         """解析所有工具调用（支持并行执行）"""
+        from ..model_protocol_contract import ProviderTurnEnvelope
+        if isinstance(huifu, ProviderTurnEnvelope) and huifu.tool_calls:
+            # Structured calls already carry provider identity. Scanning their
+            # legacy text again can interpret code/HTML/JSON inside arguments as
+            # extra tool calls, or truncate content at a literal XML delimiter.
+            return [GutongCeng._normalize_tool_call(str(call.get("name") or ""),
+                    GutongCeng._json_arguments(call.get("arguments")))
+                    for call in huifu.tool_calls]
         results: list[tuple[str, dict]] = []
 
         # 1. JSON 对象中的 tool_calls（OpenAI 格式，可能是数组）

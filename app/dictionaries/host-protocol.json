@@ -1,0 +1,251 @@
+{
+  "schema": "tiangong.dictionary.host-protocol.v1",
+  "name": "omni_body",
+  "description": "根据用户语义组合字典原子能力，生成本轮 Tool 与 Skill 并执行。任务动作须放入 composition：Tool 的 actions 顺序执行，Skill 的 steps 组合 Tool。需要未知信息时先生成观察组合，收到结果后再生成后续组合。每次只提交一个组合。仅 system.capabilities、system.action_schema、system.health 可直接发现能力。没有预置业务 Skill。",
+  "parameters": {
+    "type": "object",
+    "oneOf": [
+      {
+        "required": ["composition"],
+        "not": {"anyOf": [{"required": ["action"]}, {"required": ["target"]}, {"required": ["args"]}]}
+      },
+      {
+        "required": ["action"],
+        "not": {"required": ["composition"]}
+      }
+    ],
+    "properties": {
+      "composition": {
+        "type": "object",
+        "description": "执行任务时只提交此字段。外层不能同时出现 action、target 或 args；请把原子动作放到 tools[].actions 中。一次仅调用一次 omni_body，可在该组合内编排多个动作。",
+        "properties": {
+          "experience_refs": {
+            "type": "array",
+            "maxItems": 3,
+            "uniqueItems": true,
+            "description": "采用用户认可的组合经验时填写对应经验 ID；必须重新适配当前输入。经验不是执行权限。",
+            "items": {
+              "type": "string",
+              "pattern": "^cex_[0-9a-f]{64}$"
+            }
+          },
+          "tools": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "args"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "description",
+                "actions"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "skill": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "tool": {
+                      "type": "string"
+                    },
+                    "depends_on": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tool",
+                    "depends_on"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "description",
+              "steps"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "tools",
+          "skill"
+        ],
+        "additionalProperties": false
+      },
+      "action": {
+        "type": "string",
+        "enum": [
+          "system.capabilities",
+          "system.action_schema",
+          "system.health"
+        ]
+      },
+      "target": {
+        "type": "string"
+      },
+      "args": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "_task_profile": {
+        "type": "object",
+        "description": "可选的任务理解建议。轻量任务可省略；Runtime 会在工具执行前移除，并只把用户目标与真实证据作为验收权威。",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "tiangong.v3.task_profile.v2"
+            ]
+          },
+          "proposed_level": {
+            "type": "string",
+            "enum": [
+              "L1",
+              "L2",
+              "L3"
+            ]
+          },
+          "desired_facts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fact_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "observation",
+                    "effect",
+                    "execution",
+                    "delivery"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                },
+                "success_condition": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fact_id",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "plan_hint": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step_id": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "depends_on": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "acceptance": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "step_id",
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "constraints": {
+            "type": "object",
+            "properties": {
+              "forbidden_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "schema",
+          "proposed_level"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  }
+}

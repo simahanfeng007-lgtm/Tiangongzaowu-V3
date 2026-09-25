@@ -23,6 +23,7 @@ CHECKPOINT_SCHEMA_VERSION = "tiangong.gateway.regenerative-checkpoint.v1"
 EXECUTION_EVENT_TYPES = frozenset({
     "chain.started",
     "epoch.started",
+    "composition.registered",
     "step.planned",
     "step.prepared",
     "step.dispatched",

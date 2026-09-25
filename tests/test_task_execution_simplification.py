@@ -79,6 +79,24 @@ def test_unchanged_requires_authoritative_target_witness():
     assert not integrity.obligation_is_satisfied(obligation, [forged])
 
 
+def test_broker_outputs_bind_absolute_requirements_to_actual_commit_workspace():
+    from v3.tool_result_contract import _observed_write_evidence
+    receipt = {"action": "python.run", "execution": {
+        "receipt_role": "execution", "commit_state": "committed",
+        "committed_workspace": r"D:\jobs", "changed_files": ["case/report.csv"],
+        "deleted_files": [], "returncode": 0, "ok": True,
+    }}
+    evidence = _observed_write_evidence("omni_body", receipt, True)
+    payload = observation("python.run", r"D:\jobs\case\worker.py", result=receipt,
+        contract={"ok": True, "write_evidence": evidence})
+    required = integrity.build_action_obligations(r"请保存 D:\jobs\case\report.csv")[0]
+    assert integrity.obligation_is_satisfied(required, [payload])
+    elsewhere = {**required, "target_path": r"E:\unrelated\case\report.csv"}
+    assert not integrity.obligation_is_satisfied(elsewhere, [payload])
+    receipt["execution"]["changed_files"] = ["../escape.csv"]
+    assert _observed_write_evidence("omni_body", receipt, True) is None
+
+
 def test_failure_can_recover_but_later_target_mutation_invalidates_observation():
     goal = integrity.build_action_obligations("请读取 report.json")[0]
     failed = observation("file.read", "report.json", ok=False)

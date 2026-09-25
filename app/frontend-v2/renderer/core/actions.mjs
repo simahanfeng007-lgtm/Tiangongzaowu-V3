@@ -281,26 +281,21 @@ export function inferActiveProjectRoot(message = "", workspace = "", rootGoal = 
   // older task must not silently become the active root of a new task.
   const ignoredSuffixes = /\.(?:js|mjs|cjs|ts|py|html|css|md|bat|ps1|json|txt|vrm|zip|exe|dll|png|jpe?g|gif|mp3|mp4|wav|log|lock)$/i;
   const normalizedEvidence = String(evidenceText || "").replace(/\\\\/g, "\\");
-  const evidenceLower = normalizedEvidence.toLowerCase();
-  const baseLower = base.toLowerCase();
-  const evidenceCandidates = [];
-  let searchAt = 0;
-  while (searchAt < evidenceLower.length) {
-    const offset = evidenceLower.indexOf(baseLower, searchAt);
-    if (offset < 0) break;
-    const tail = normalizedEvidence.slice(offset + base.length).replace(/^[\\/]+/, "");
-    const child = (tail.match(/^([a-z0-9][a-z0-9._-]{1,80})(?=[\\/\s"'`]|$)/i) || [])[1];
-    if (child && !ignoredSuffixes.test(child)) evidenceCandidates.push(child);
-    searchAt = offset + base.length;
-  }
-  if (evidenceCandidates.length) return `${base}\\${evidenceCandidates[evidenceCandidates.length - 1]}`;
+  // Only a previously declared project root is continuation evidence. An
+  // arbitrary artifact path is not authority to change path coordinates.
+  const declaredRoots = [...normalizedEvidence.matchAll(/【本轮活跃项目根】\s*\r?\n([^\r\n]+)/g)];
+  const declared = String(declaredRoots.at(-1)?.[1] || "").trim();
+  if (declared && (declared.toLowerCase().startsWith(`${base.toLowerCase()}\\`)
+      || declared.toLowerCase().startsWith(`${base.toLowerCase()}/`))
+      && !/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(declared)
+      && !ignoredSuffixes.test(declared)) return declared;
   const text = `${String(message || "")}\n${String(rootGoal || "")}`;
   const candidates = [
-    ...text.matchAll(/\b([a-z0-9][a-z0-9._-]{1,80})\b\s*(?=项目|检查点|已存在|目录)/gi),
-    ...text.matchAll(/(?:项目|目录)(?:根)?\s*(?:是|为|[:：])?\s*[`“"']?([a-z0-9][a-z0-9._-]{1,80})\b/gi),
+    ...text.matchAll(/\b([a-z0-9][a-z0-9._-]{1,80})\s+(?=项目|检查点)/gi),
+    ...text.matchAll(/(?:项目根目录|项目根|项目目录)\s*(?:是|为|[:：])\s*[`“"']?([a-z0-9][a-z0-9._-]{1,80})(?=[\s`”"'，。；]|$)/gi),
   ];
   const name = candidates.map((match) => String(match[1] || "").trim())
-    .find((value) => value && !ignoredSuffixes.test(value) && value !== "." && value !== "..");
+    .find((value) => value && !ignoredSuffixes.test(value) && !/^[A-Z]{1,3}\d+$/i.test(value) && value !== "." && value !== "..");
   return name ? `${base}\\${name}` : "";
 }
 
@@ -1292,6 +1287,20 @@ export function createActions({ runtime, state, kernel = null }) {
     };
   }
 
+  async function rememberComposition(item, mode = "accept") {
+    if (!runtime?.compositionFeedback || !item?.meta?.gatewayRequestId) return { ok: false, error: "没有可保存的执行记录" };
+    const sessionId = item.sessionId || state.snapshot().activeSessionId;
+    const request_id = item.meta.gatewayRequestId;
+    const inspected = await runtime.compositionFeedback({ request_id, mode: "inspect" });
+    const result = await runtime.compositionFeedback({ request_id, mode,
+      result_version: inspected.result_version, event_id: `feedback_${crypto.randomUUID()}` });
+    if (result.ok && result.saved) {
+      state.replaceMessageById({ sessionId, messageId: item.id, text: item.content, error: item.error,
+        meta: { ...item.meta, compositionRemembered: result.status === "accepted", compositionExperienceId: result.experience_id } });
+    }
+    return result;
+  }
+
   async function sendMessage(text, attachments = [], runOptions = {}) {
     const cleanAttachments = Array.isArray(attachments) ? attachments.slice() : [];
     const message = String(text || "").trim() || (cleanAttachments.length ? "请阅读我上传的文件。" : "");
@@ -1301,6 +1310,33 @@ export function createActions({ runtime, state, kernel = null }) {
     const isDequeuedTurn = Boolean(runOptions.__dequeuedTurn);
     if (beforeSend.busy && !isAutoContinuation && !isDequeuedTurn) {
       return enqueueUserTurn(message, cleanAttachments, runOptions);
+    }
+    const feedbackTarget = [...(beforeSend.messages || [])].reverse().find(item => item.role === "assistant" && item.meta?.gatewayRequestId);
+    if (!isAutoContinuation && !cleanAttachments.length && feedbackTarget && runtime?.compositionFeedback
+        && /记住|记下|认可|满意|以后|今后|复用|撤销|别再|不要再|remember|reuse|approve/i.test(message)) {
+      state.setBusy(beforeSend.activeSessionId, true);
+      try {
+        const feedback = await runtime.compositionFeedback({ request_id: feedbackTarget.meta.gatewayRequestId,
+          mode: "interpret", user_text: message, event_id: `feedback_${crypto.randomUUID()}` });
+        if (feedback.saved) {
+          state.replaceMessageById({ sessionId: beforeSend.activeSessionId, messageId: feedbackTarget.id, text: feedbackTarget.content, error: feedbackTarget.error,
+            meta: { ...feedbackTarget.meta, compositionRemembered: feedback.status === "accepted", compositionExperienceId: feedback.experience_id } });
+          if (feedback.feedback_only) {
+            if (state.snapshot().activeSessionId === beforeSend.activeSessionId) {
+              if (!isDequeuedTurn) state.addMessage("user", message);
+              state.addMessage("assistant", feedback.message, false, { meta: { origin: "composition_feedback" } });
+            }
+            queueMicrotask(() => { void drainPendingUserTurns(); });
+            return feedback;
+          }
+        }
+      } catch (error) {
+        if (state.snapshot().activeSessionId === beforeSend.activeSessionId)
+          state.addMessage("assistant", "这次做法尚未保存，可以使用结果旁的“认可并记住”重试。", true);
+      } finally {
+        state.setBusy(beforeSend.activeSessionId, false);
+      }
+      if (state.snapshot().activeSessionId !== beforeSend.activeSessionId) return { ok: false, error: "会话已切换，请在目标会话重发指令。" };
     }
     // GF 门（草案 §8）：上一轮结果待对账时，禁止"继续/重发"类操作。
     // 全新指令不受限；续作类输入（含隐藏的自动续作）一律拒绝并提示等待对账。
@@ -1328,7 +1364,8 @@ export function createActions({ runtime, state, kernel = null }) {
       return { ok: false, code: setupRequired ? "life_setup_required" : "runtime_not_ready", stdout: "", stderr: error };
     }
     const { settings } = beforeSend;
-    const selectedSkills = Array.isArray(beforeSend.selectedSkills) ? beforeSend.selectedSkills : [];
+    // Historical fixed-Skill selections cannot constrain task-generated programs.
+    const selectedSkills = [];
     const continuationRequest = isAutoContinuation || isContinuationRequest(message);
     const inheritedRootGoal = String(
       runOptions.rootGoal
@@ -1356,19 +1393,14 @@ export function createActions({ runtime, state, kernel = null }) {
       projectRootEvidence
     );
     const rawExecutionMessage = activeProjectRoot
-      ? `${workspaceExecutionMessage}\n\n【本轮活跃项目根】\n${activeProjectRoot}\n当前任务的所有相对路径都必须以这个目录为基准；调用工具时不得省略最后一级项目目录，不得退回其父级工作区。`
+      ? `${workspaceExecutionMessage}\n\n【本轮活跃项目根】\n${activeProjectRoot}\n这是本轮项目目录。工具的相对路径仍以工作区为基准，必须包含项目的相对路径；也可以使用该目录下的绝对路径。`
       : workspaceExecutionMessage;
     const sendMode = inferSendMode(message, settings, selectedSkills, runOptions);
     const executionContract = sendMode === "work"
       ? "\n\n【连续执行契约】\nA1-A4 工作在平台执行预算内连续执行（轮次、时长、工具数有硬上限）。复用已有 source_text_map 和成功工具证据，不重复副作用；在预算内持续执行到结果检查通过、用户主动停止或命中 A5；达到预算仍未完成时，保留已完成产物并如实给出未完成清单，不得谎报完成。"
       : "";
     const executionMessageBase = normalizeBackendDeliveryIntent(`${rawExecutionMessage}${executionContract}`);
-    // FE-01: the selected skills from the Skills page must reach the execution
-    // chain as an explicit routing hint (the simple chain routes through the
-    // model), not just sit in a payload field the backend drops.
-    const executionMessageWithSkills = selectedSkills.length
-      ? `${executionMessageBase}\n\n【用户指定技能】${selectedSkills.map((item) => item.name || item.id).filter(Boolean).join("、")} —— 请优先按该技能执行；若不适用，请明确说明原因后再改用通用工具。`
-      : executionMessageBase;
+    const executionMessageWithSkills = executionMessageBase;
     // 确认重放：授权标记只附加在传输层执行消息上，用户气泡保持原始指令文本
     const confirmGrantId = String(runOptions.__confirmGrantId || "").trim();
     const executionMessage = confirmGrantId
@@ -1381,7 +1413,12 @@ export function createActions({ runtime, state, kernel = null }) {
     const userMessage = isAutoContinuation
       ? null
       : queuedUserMessage || state.addMessage("user", message, false, { attachments: cleanAttachments });
-    const recordCompletedTurn = (assistantText) => {
+    const recordCompletedTurn = (assistantText, runResult = {}) => {
+      if (runResult.gatewayRequestId && runResult.ok) {
+        // The user may have switched conversations while this task ran.
+        state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: assistantText, error: false,
+          meta: { gatewayRequestId: runResult.gatewayRequestId } });
+      }
       if (isAutoContinuation || typeof runtime?.recordConversationTurn !== "function") return;
       const response = String(assistantText || "").trim();
       if (!response) return;
@@ -1443,6 +1480,12 @@ export function createActions({ runtime, state, kernel = null }) {
         // message so hidden auto-continuations do not lose the root goal,
         // workspace/project boundary, or tool-batch contract at the 7184 edge.
         message: executionMessage,
+        taskContext: {
+          raw_user_text: message,
+          root_goal: inheritedRootGoal,
+          project_root_hint: activeProjectRoot || "",
+          selected_skill_ids: selectedSkills.map((item) => item.id).filter(Boolean),
+        },
         rootGoal: inheritedRootGoal,
         projectRoot: activeProjectRoot,
         continuation: continuationRequest,
@@ -1651,7 +1694,7 @@ export function createActions({ runtime, state, kernel = null }) {
             meta: { origin: String(streamResult?.origin || "model"), runId: requestId }
           });
         }
-        recordCompletedTurn(displayText);
+        recordCompletedTurn(displayText, streamResult);
         // 派发最终渲染事件（独立于进度条状态）
         try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
         if (showRunProgress) state.finishRunProgress(targetSessionId, requestId, Boolean(streamResult.ok));
@@ -1763,7 +1806,7 @@ export function createActions({ runtime, state, kernel = null }) {
       if (!nonStreamAlready) {
         state.replaceMessageById({ sessionId: targetSessionId, messageId: targetMessageId, text: displayText, error: reply.error && !nonStreamExpected, attachments: finalAttachments, meta: { origin: String(result?.origin || "model"), runId: requestId } });
       }
-      recordCompletedTurn(displayText);
+      recordCompletedTurn(displayText, result);
       try { window.dispatchEvent(new CustomEvent("tiangong-chat-final-render", { detail: { sessionId: targetSessionId, messageId: targetMessageId } })); } catch {}
     } catch (error) {
       const message = error.message || String(error);
@@ -1964,6 +2007,7 @@ export function createActions({ runtime, state, kernel = null }) {
     guideRun,
     handleRunInput,
     sendMessage,
+    rememberComposition,
     clearConversation
   };
 }

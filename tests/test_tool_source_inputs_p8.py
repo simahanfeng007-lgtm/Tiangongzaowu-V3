@@ -28,13 +28,14 @@ def snapshot(tmp_path):
     root = tmp_path / "snapshot"
     policy = {
         "schema": "tiangong.source-ownership.v2",
-        "authority_policy": {"editable_roots": ["src"], "frozen_roots": []},
+        "authority_policy": {"editable_roots": ["src", "dictionaries"], "frozen_roots": []},
         "mappings": [{"id": "body", "source": "src/omni_body_skill", "source_role": "authoritative",
-                      "targets": ["mirror/omni_body_skill"]}],
+                      "targets": ["mirror/omni_body_skill"]},
+                     {"id": "dictionary", "source": "dictionaries", "source_role": "authoritative", "targets": []}],
     }
     write(root / "source-ownership.json", json.dumps(policy))
     write(root / "src/omni_body_skill/tools/demo.py", "VALUE = 1\n")
-    write(root / "src/omni_body_skill/registry/capability_manifest.generated.json", "{}\n")
+    write(root / "dictionaries/registry/capability_manifest.generated.json", "{}\n")
     return root
 
 
@@ -56,7 +57,7 @@ def test_input_identity_is_sorted_detached_and_independent_of_checkout_path(snap
 
 def test_generated_manifest_and_mirrors_never_feed_their_own_revision(snapshot):
     before = source_inputs.compile_tool_source_inputs(snapshot)
-    write(snapshot / "src/omni_body_skill/registry/capability_manifest.generated.json",
+    write(snapshot / "dictionaries/registry/capability_manifest.generated.json",
           json.dumps(compiled().to_gateway_dict(source_inputs_sha256=before.source_inputs_sha256)))
     write(snapshot / "mirror/omni_body_skill/tools/demo.py", "UNREVIEWED_MIRROR = True\n")
     write(snapshot / "docs/progress.md", "pending review\n")

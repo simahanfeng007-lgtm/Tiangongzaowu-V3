@@ -384,3 +384,27 @@ __all__ = [
     "ReviewedMethodSeedV1",
     "compile_production_skill_method_world",
 ]
+
+
+def compile_dictionary_skill_method_world(source_files: Mapping[str, bytes], *, observation_sha256: str) -> SkillMethodWorldSnapshotV1:
+    """Compile observed dictionary bytes without pretending they are signed reviews."""
+    import hashlib
+    from dataclasses import replace
+    from .compiler import compile_native_method_source
+    from .models import InstalledMethodSourceBindingV1
+    primitives = []
+    bindings = []
+    for path, raw in sorted(source_files.items()):
+        if not path.startswith("dictionaries/skills/methods/") or not path.endswith(".json"):
+            continue
+        primitive = compile_native_method_source(path, raw, expected_source_sha256=hashlib.sha256(raw).hexdigest())
+        binding = InstalledMethodSourceBindingV1(
+            method_id=primitive.method_id, version=primitive.version,
+            source_path=path, source_sha256=primitive.source_sha256,
+            descriptor_sha256=primitive.descriptor_sha256,
+            observation_sha256=observation_sha256, binding_sha256="0" * 64,
+        )
+        bindings.append(replace(binding, binding_sha256=canonical_sha256(binding.payload())))
+        primitives.append(primitive)
+    return compile_skill_method_world(tuple(primitives), corpus=None, migration_bindings=(),
+                                      installed_source_bindings=tuple(bindings))

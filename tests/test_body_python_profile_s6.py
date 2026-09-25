@@ -27,7 +27,8 @@ def body(tmp_path):
     rt.backup_dir = workspace / '.omni_backups'
     rt.backup_dir.mkdir()
     rt._execution_state = threading.local()
-    rt.sandbox = SandboxRunner(workspace, tmp_path / 'state', tmp_path / 'trash',
+    rt.trash_dir = tmp_path / 'trash'
+    rt.sandbox = SandboxRunner(workspace, tmp_path / 'state', rt.trash_dir,
         SandboxLimits(max_changed_bytes=4*1024*1024))
     return rt
 

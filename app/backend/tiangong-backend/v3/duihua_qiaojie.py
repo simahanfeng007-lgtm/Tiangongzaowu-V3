@@ -1345,6 +1345,8 @@ class DuihuaQiaojie:
                 _stream_queue.put(evt)
         last_error = ""
         last_error_payload: dict | None = None
+        routing = conversation_context.get("skill_routing") if isinstance(conversation_context, dict) else None
+        dictionary_kwargs = {"dictionary_context": routing} if isinstance(routing, dict) and routing else {}
         for attempt in range(1, max(CHAT_RETRY_LIMIT, CHAT_MARKUP_RETRY_LIMIT) + 1):
             try:
                 run_control.step("backend_attempt", "模型运行", "running", f"第 {attempt} 次调用。")
@@ -1361,6 +1363,7 @@ class DuihuaQiaojie:
                                 duihua_shangxiawen=duihua_shangxiawen,
                                 run_control=run_control,
                                 on_event=on_event,
+                                **dictionary_kwargs,
                             )
                         except TypeError as exc:
                             if "run_control" not in str(exc):
@@ -2348,13 +2351,17 @@ class _ChuliQi(BaseHTTPRequestHandler):
 
 
 def _huifu_keyi_zhongshi(huifu: object) -> bool:
+    from .model_protocol_contract import model_turn_failure
+
+    if model_turn_failure(huifu):
+        return True
     # bug-fix: 错误判定只看结构化信号（空回复/内部约定错误前缀/错误 JSON），不再对
     # 自然语言正文做 timeout/connection/http 500 等子串匹配——技术问答正文必然包含
     # 这些词，旧逻辑会把正常回答吞掉当错误重试（2026-08-26，凌霜修 logic 类）
     text = str(huifu or "")
     if not text:
         return True
-    head = text.lstrip()[:40]
+    head = text.lstrip()[:40].casefold()
     if head.startswith(("[backend_error]", "[唤醒异常]", "[terminal_model_error]", "[llm错误")):
         return True
     if text.lstrip().startswith("{"):
@@ -2679,6 +2686,9 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
             "plan_version": data.get("plan_version"),
             "skill_loaded": bool(data.get("skill_loaded")),
             "loaded_skill_ids": list(data.get("loaded_skill_ids") or [])[:8],
+            "dictionary_sha256": data.get("dictionary_sha256"),
+            "dictionary_version": data.get("dictionary_version"),
+            "generated_compositions": list(data.get("generated_compositions") or [])[-16:],
             "artifacts": list(data.get("generated_attachments") or [])[-8:],
             "last_gaps": list(data.get("gaps") or [])[-8:],
             "failures": list(data.get("failures") or [])[-5:],
@@ -2692,7 +2702,12 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
 
 def _is_explicit_recovery_continuation(text: str) -> bool:
     """Only a narrow continuation utterance may inherit a previous failed run."""
-    user_text = str(text or "").split("【连续执行契约】", 1)[0]
+    user_text = str(text or "")
+    for marker in (
+        "【连续执行契约】", "【本轮活跃项目根】",
+        "【必须继承且仍未完成的原始总目标】", "【本轮唯一默认工作区】",
+    ):
+        user_text = user_text.split(marker, 1)[0]
     compact = re.sub(r"[\s，。！？,.!?]+", "", user_text).strip().lower()
     return compact in {
         "继续", "继续执行", "接着", "接着做", "接着执行", "往下做", "恢复", "恢复执行",
@@ -2740,11 +2755,18 @@ def _latest_session_recovery_checkpoint(conversation_context: dict | None, curre
         status = str(data.get("status") or "").strip()
         recovery = data.get("recovery") if isinstance(data.get("recovery"), dict) else {}
         terminal_reason = str(data.get("terminal_reason") or "").strip()
-        if status not in terminal_statuses or (not recovery and "deadline" not in terminal_reason.lower()):
-            continue
+        if status not in terminal_statuses:
+            # A newer completed request supersedes older failed work in this
+            # conversation. Never resurrect an older task behind the user's back.
+            return {}
         return {
             "schema": "tiangong.v3.context.recovery_checkpoint.v1",
             "previous_request_id": request_id,
+            "original_user_goal": str(data.get("original_user_goal") or ""),
+            "loaded_skill_ids": list(data.get("loaded_skill_ids") or []),
+            "dictionary_sha256": data.get("dictionary_sha256"),
+            "dictionary_version": data.get("dictionary_version"),
+            "generated_compositions": list(data.get("generated_compositions") or [])[-16:],
             "session_id": session_id,
             "status": status,
             "stage": data.get("stage"),
@@ -2935,6 +2957,7 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
         ],
         "authoritative_life_soul": authoritative_soul,
         "current_user_text": current,
+        "skill_routing": ctx.get("skill_routing") if isinstance(ctx.get("skill_routing"), dict) else {},
         "current_system_time": _context_system_time(ctx),
         "affective_state": affective_state,
         "current_attachments": _attachment_envelope_items(attachments, limit=32, historical=False),
@@ -2953,6 +2976,7 @@ def _build_context_envelope(conversation_context: dict | None, current_user_text
 
 
 def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> str:
+    envelope = {key: value for key, value in envelope.items() if key != "skill_routing"}
     if not isinstance(envelope, dict):
         return ""
     sections: list[str] = []
@@ -2979,6 +3003,8 @@ def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> s
             "不得据此改变事实、权限、安全边界、工具选择、执行结果或完成状态。"
         )
     sections.append("【本轮用户最新消息】\n" + str(envelope.get("current_user_text") or ""))
+    # Fixed Skill candidates/procedures are retired; historical contexts must
+    # not reinject their bodies into the task-composition protocol.
     current_system_time = envelope.get("current_system_time") if isinstance(envelope.get("current_system_time"), dict) else {}
     if current_system_time:
         sections.append(
@@ -3084,10 +3110,12 @@ def _render_context_envelope(envelope: dict, *, context_limit: int = 12000) -> s
     joined = "\n\n".join(sections)
     if len(joined) <= context_limit:
         return joined
-    keep = [sections[0]]
-    tail_budget = max(3000, context_limit - len(keep[0]) - 4)
-    rest = "\n\n".join(sections[1:])
-    return (keep[0] + "\n\n" + rest[:tail_budget]).strip()
+    keep = [section for index, section in enumerate(sections) if index == 0 or section.startswith((
+        "【本轮用户最新消息】", "【当前字典与技能候选】", "[TIANGONG_RECOVERY_CHECKPOINT_V1]"))]
+    protected = "\n\n".join(keep)
+    tail_budget = max(0, context_limit - len(protected) - 4)
+    rest = "\n\n".join(section for section in sections if section not in keep)
+    return (protected + "\n\n" + rest[:tail_budget]).strip()
 
 
 def _recent_messages_from_context(conversation_context: dict | None) -> list[dict]:

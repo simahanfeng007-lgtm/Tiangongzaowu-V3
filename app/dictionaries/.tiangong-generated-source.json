@@ -1,0 +1,8 @@
+{
+  "file_count": 15,
+  "mapping_id": "capability-dictionaries",
+  "schema": "tiangong.generated-source-marker.v1",
+  "source": "dictionaries",
+  "tree_sha256": "21a561f73b2ba2acf59653db296af3bfc33b8f6b1625c210bd4472e0c69e9d84",
+  "warning": "Generated mirror. Edit the authoritative source and run scripts/sync-generated-sources.py --write."
+}

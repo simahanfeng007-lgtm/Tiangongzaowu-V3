@@ -16,7 +16,7 @@
   {
    "kind": "pass_only_definition",
    "label": "log_message",
-   "line": 2346,
+   "line": 2349,
    "classification": "explicit_feature_use",
    "text": "def log_message(self, *args):",
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py"

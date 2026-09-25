@@ -192,7 +192,10 @@ class OmniBodySkillRouterTests(unittest.TestCase):
     def test_model_contract_and_managed_skill_keep_scope_gate(self) -> None:
         model_contract = MODEL_ADAPTER.read_text(encoding="utf-8")
         managed_skill = MANAGED_NOVEL_SKILL.read_text(encoding="utf-8")
-        self.assertIn("技能选择有双通道", model_contract)
+        from capability_dictionary import load_dictionary
+        from omni_body_skill.model_adapters.core import _tool_description
+        self.assertEqual(_tool_description(), load_dictionary().host_protocol["description"])
+        self.assertNotIn("技能选择有双通道", _tool_description())
         self.assertIn("Never infer `target_words` or `planned_chapters`", managed_skill)
         description_body = model_contract.split("def _tool_description()", 1)[1].split(
             "def render_tool_schema", 1

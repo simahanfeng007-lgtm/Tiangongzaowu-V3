@@ -35,8 +35,7 @@ from tests.test_execution_contracts import execution_ticket
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = (
     ROOT
-    / "readable-python-source"
-    / "omni_body_skill"
+    / "dictionaries"
     / "registry"
     / "capability_manifest.generated.json"
 )

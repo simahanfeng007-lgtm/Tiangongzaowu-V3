@@ -205,21 +205,13 @@ def valid_world_inputs():
     return (acceptance, generate), (acceptance_binding, generate_binding)
 
 
-def test_production_static_skill_catalog_is_valid_migration_material() -> None:
-    repository_root = Path(__file__).resolve().parents[1]
-    skill_root = repository_root / "src" / "omni_body_skill"
-    index_path = skill_root / "registry" / "skill_router_index.json"
-    index_bytes = index_path.read_bytes()
-    index = json.loads(index_bytes.decode("utf-8", errors="strict"))
-    source_bindings: dict[str, str] = {}
-    for raw in index["skills"]:
-        source_path = skill_root.joinpath(*Path(raw["file"]).parts)
-        relative = source_path.relative_to(repository_root).as_posix()
-        source_bindings[relative] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+def test_retained_historical_skill_catalog_is_valid_migration_material() -> None:
+    from tests.test_skill_method_world_p3_production import _production_inputs
+    index, index_sha256, source_bindings = _production_inputs()
 
     observed = observe_legacy_skill_method_corpus(
         index,
-        index_source_sha256=hashlib.sha256(index_bytes).hexdigest(),
+        index_source_sha256=index_sha256,
         skill_source_hashes=source_bindings,
     )
     assert observed.has_valid_sha256()
@@ -227,7 +219,7 @@ def test_production_static_skill_catalog_is_valid_migration_material() -> None:
     assert observed.may_authorize is False
     assert observed.may_execute is False
     assert all(
-        item.source_path.startswith("src/omni_body_skill/deliverable_skills/")
+        item.source_path in source_bindings
         for item in observed.evidence
     )
 

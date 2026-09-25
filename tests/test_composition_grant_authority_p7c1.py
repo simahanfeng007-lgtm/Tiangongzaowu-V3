@@ -72,7 +72,7 @@ from total_gateway.tickets import TicketSigner
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPABILITY_MANIFEST = (
-    ROOT / "src" / "omni_body_skill" / "registry" / "capability_manifest.generated.json"
+    ROOT / "dictionaries" / "registry" / "capability_manifest.generated.json"
 )
 ZERO = "0" * 64
 COMPONENT_MANIFEST_SHA256 = "c" * 64
@@ -139,7 +139,7 @@ def _production_material(
     multi_step = multi_step or with_object_grant
     selected_action_ids = (action_id,)
     if multi_step:
-        selected_action_ids = (action_id, "skill.get")
+        selected_action_ids = (action_id, "file.list")
     selected_permissions = {
         selected_action_id: next(
             item
@@ -217,16 +217,18 @@ def _production_material(
         context_sha256=ZERO,
     ).with_computed_sha256()
 
-    steps = (("step.01", "A01", ()),)
+    candidate_ids = {item.primitive.action_id: item.candidate_id for item in candidates.action_candidates}
+    first_candidate_id = candidate_ids[action_id]
+    steps = (("step.01", first_candidate_id, ()),)
     if multi_step:
         steps = (
-            ("step.01", "A01", ()),
-            ("step.02", "A02", ("step.01",)),
+            ("step.01", first_candidate_id, ()),
+            ("step.02", candidate_ids["file.list"], ("step.01",)),
         )
     document = p4._proposal_document(
         goal_ref="goal.p7c1-authorize-a0",
         methods=("M01",),
-        actions=("A01", "A02") if multi_step else ("A01",),
+        actions=tuple(sorted(candidate_ids.values())),
         steps=steps,
     )
     proposal = p7c0.parse_composition_proposal(document, candidates)
@@ -386,25 +388,29 @@ def _production_material(
         ]
         second_permission = selected_permissions[second_candidate.primitive.action_id]
         second_schema = selected_schemas[second_candidate.primitive.action_id]
-        markdown_schema = next(
+        entries_schema = next(
             item
             for item in second_schema.value_schemas
-            if item.value_schema_id == "markdown"
+            if item.value_schema_id == "entries"
         )
         second_output = p7c0._hashed(
             OutputDeclarationV1(
                 output_binding_id=proposal.steps[1].output_bindings[0],
                 source_kind="RESULT_PAYLOAD",
-                json_pointer=markdown_schema.json_pointer,
-                value_schema_sha256=markdown_schema.value_schema_sha256,
+                json_pointer=entries_schema.json_pointer,
+                value_schema_sha256=entries_schema.value_schema_sha256,
                 sha256=ZERO,
             )
         )
-        second_args = {"skill_id": None}
+        # A state digest is a valid literal glob, so this preserves a genuine
+        # data dependency without loading any retired Skill.
+        second_args = {"pattern": None}
+        read_target = workspace_root / "read-target"
+        read_target.mkdir(exist_ok=True)
         second_slots = [
             p7c0._hashed(
                 ArgumentSlotV1(
-                    destination_json_pointer="/skill_id",
+                    destination_json_pointer="/pattern",
                     value_binding=upstream_ref,
                     sha256=ZERO,
                 )
@@ -442,7 +448,7 @@ def _production_material(
                 permission=second_permission,
                 permission_sha256=second_permission.permission_sha256,
                 depends_on=(first_step.step_id,),
-                target_skeleton="",
+                target_skeleton=str(read_target),
                 args_skeleton=second_args,
                 argument_slots=tuple(second_slots),
                 output_declarations=(second_output,),

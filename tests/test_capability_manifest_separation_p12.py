@@ -1,6 +1,6 @@
 """P12 R1B shared implementation, compatibility and rejection-path regression.
 
-Definition-byte pins bind the six moved definitions to the exact pre-extraction
+Definition-byte pins bind the unchanged moved definitions to the exact pre-extraction
 0354b24 source blob f185e752b4cb3116b8aca547e36d51ac19c026b0. Only CRLF
 normalization is allowed. This avoids Python-version-dependent ast.dump output
 without weakening source identity or installing a second reference implementation.
@@ -30,7 +30,8 @@ DEFINITION_PINS = {
     "LoadedModelCapabilityManifest": "056e9e0c891a431ae506e768c686382333343d24bd1beaf729dbadbedd0c1f4f",
     "_strict_json_pairs": "de98bb1e90f2e039afab29b9860e4116f5f22edc378ff4582e7c45ce6ca7a22a",
     "_routing_side_effects": "e81a62f999be0c22e7cf4f23534c0a17cb4a5b1df574f2935481b3bbace22124",
-    "load_model_capability_manifest": "d82ea06c54ea6aa55195444033f30a11961b42c9ccac3a4ee80891f08eda06fe",
+    # The loader now applies dictionary readiness. Its rejection behavior is
+    # exercised below; the old extraction-only byte pin no longer describes it.
     "compile_composition_execution_manifest": "245915170843aa409d91c78c519f32c13af411224916cbd962e9232fbb86c5ee"
 }
 
@@ -73,13 +74,13 @@ def _definition_bytes(source: bytes, name: str) -> bytes:
 
 @pytest.mark.parametrize("name,digest", DEFINITION_PINS.items())
 def test_moved_definition_bytes_are_unchanged(name, digest):
-    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes()
+    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes().replace(b"\r\n", b"\n")
     assert hashlib.sha256(_definition_bytes(source, name)).hexdigest() == digest
 
 
 @pytest.mark.parametrize("name", DEFINITION_PINS)
 def test_definition_pin_rejects_body_changes(name):
-    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes()
+    source = (ROOT / "src/total_gateway/capability_manifest.py").read_bytes().replace(b"\r\n", b"\n")
     body = _definition_bytes(source, name)
     # A harmless comment still changes the pinned source, so executable edits cannot hide.
     altered = body.replace(b"\n", b"  # changed definition\n", 1)
@@ -127,7 +128,7 @@ for name in ('LoadedModelCapabilityManifest', 'SkillSelectionError',
 
 
 def test_shared_loader_imports_without_loading_or_reading_static_skill_sources(tmp_path):
-    manifest = (ROOT / "src/omni_body_skill/registry/capability_manifest.generated.json").resolve()
+    manifest = (ROOT / "dictionaries/registry/capability_manifest.generated.json").resolve()
     code = """
 import hashlib, sys
 from pathlib import Path

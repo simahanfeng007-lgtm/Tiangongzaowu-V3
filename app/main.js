@@ -3523,13 +3523,12 @@ function totalGatewayEnvironment(entry) {
   const releaseManifestPath = releaseManifestPaths[0] || "";
   const resolvedBackendDir = backendDir();
   const embeddedBackendDir = path.join(entry.cwd, "backend", "tiangong-backend");
-  const skillCandidates = [
-    explicitSkillRoot,
-    resolvedBackendDir ? path.join(resolvedBackendDir, "_internal", "omni_body_skill") : "",
-    path.join(embeddedBackendDir, "_internal", "omni_body_skill"),
-    path.resolve(__dirname, "backend", "tiangong-backend", "_internal", "omni_body_skill"),
+  const skillCandidates = explicitSkillRoot ? [explicitSkillRoot] : [
+    path.join(process.resourcesPath, "dictionaries"),
+    path.join(app.getAppPath(), "dictionaries"),
+    path.resolve(__dirname, "..", "dictionaries"),
   ].filter(Boolean);
-  const skillRoot = skillCandidates.find((candidate) => isDirectory(candidate)) || "";
+  const skillRoot = skillCandidates.find((candidate) => isFile(path.join(candidate, "registry", "release.json"))) || "";
   const executionWorkspace = path.resolve(
     String(process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT || "").trim()
       || path.join(runtimeStateRoot(), "workspaces"),
@@ -3606,7 +3605,10 @@ function totalGatewayEnvironment(entry) {
   }
   if (entry.pythonPath) env.TIANGONG_GATEWAY_RELEASE_SOURCE_ROOT = path.resolve(entry.cwd);
   if (entry.pythonPath) env.TIANGONG_TOTAL_GATEWAY_SOURCE_ROOT = path.resolve(entry.pythonPath);
-  if (skillRoot) env.TIANGONG_GATEWAY_SKILL_ROOT = path.resolve(skillRoot);
+  if (skillRoot) {
+    env.TIANGONG_GATEWAY_SKILL_ROOT = path.resolve(skillRoot);
+    env.TIANGONG_DICTIONARY_ROOT = path.resolve(skillRoot);
+  }
   if (entry.pythonPath) {
     env.PYTHONPATH = [entry.pythonPath, process.env.PYTHONPATH || ""].filter(Boolean).join(path.delimiter);
   }
