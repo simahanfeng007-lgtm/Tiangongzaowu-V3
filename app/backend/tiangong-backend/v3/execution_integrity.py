@@ -671,7 +671,7 @@ def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
         return True
     return bool(
         verb == "交付"
-        and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
+        and re.search(r"(?:创建|新建|生成|保存|检查|读取|阅读|查看|打开|浏览)(?:一[个份套批])?$", left)
         and right.startswith(("文件", "文档", "报告", "产物"))
     )
 
@@ -1081,6 +1081,24 @@ def _agent_observation_surface(text: str) -> str:
     surface = list(text)
     for start, end in _program_read_spans(text):
         surface[start:end] = " " * (end - start)
+    creates_or_changes = (_has_affirmative(_compact(text), _ARTIFACT_VERBS + _MUTATION_VERBS)
+                          or bool(re.search(r"\b(?:create|write|save|edit|modify|copy|move|update)\b", text, re.I)))
+    if creates_or_changes and "effect" in _requested_fact_kinds(text):
+        # Generic output review is a model instruction, not a requirement to
+        # call a particular file reader after a program already self-checked.
+        # Preserve named observations and direct read/open/list instructions.
+        named_observations = {item["source_clause"] for item in request_target_bindings(text)
+                              if item["kind"] == "observation"}
+        cursor = 0
+        for clause in _request_clauses(text):
+            offset = text.find(clause, cursor)
+            cursor = offset + len(clause)
+            if clause in named_observations or not re.search(
+                r"交付|产物|输出|副本|\b(?:deliverables?|artifacts?|outputs?)\b", clause, re.I
+            ):
+                continue
+            for match in re.finditer(r"检查|\bcheck\b", clause, re.I):
+                surface[offset + match.start():offset + match.end()] = " " * len(match.group())
     return "".join(surface)
 
 

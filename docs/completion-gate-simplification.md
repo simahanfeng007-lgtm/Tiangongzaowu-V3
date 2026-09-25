@@ -40,6 +40,13 @@ Full regression then exposed an omitted delivery target: a request to create one
 file and deliver another could accept the first file's receipt. Version 1.37 binds
 the explicit delivery filename as well. Local creation/delivery accepts committed
 evidence for that artifact; external upload still needs a real delivery receipt.
+Version 1.38 removes a further false gate exposed by the complete file organizer:
+generic instructions to check the deliverables no longer manufacture a separate
+file-reader obligation. A generated Python program can perform its own checks.
+The instruction remains in the model's request; named file observations, direct
+read/open/list commands, observation-only tasks and actual output evidence remain.
+Inspecting or reading a "deliverable file" also keeps delivery as a noun modifier,
+so an observation-only request cannot silently acquire an upload/send obligation.
 The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
 instruction to read an input PPT. Capability modifiers now stay attached to the
 output noun. Explicit sequences such as creating a file and then opening it keep

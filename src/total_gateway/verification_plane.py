@@ -13,7 +13,7 @@ from __future__ import annotations
 # 1.33 preserves task-generated composition fencing and records the reviewed
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
-# 1.37 also binds local delivery to the explicitly requested artifact.
-VERIFICATION_PLANE_VERSION = "1.37"
+# 1.38 keeps generic output review from prescribing a separate file reader.
+VERIFICATION_PLANE_VERSION = "1.38"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

@@ -212,3 +212,57 @@ def test_error_log_answer_is_judged_by_actual_read_evidence(read_ok):
         final_reply="日志中的 PermissionError 表示 access denied。",
         task_obligations=integrity.build_action_obligations(prompt))
     assert allowed is read_ok
+
+
+@pytest.mark.parametrize("review", ["检查交付文件", "检查生成产物", "检查输出", "检查副本", "check output files"])
+@pytest.mark.parametrize("separator", ["，然后", "并"])
+def test_generic_output_review_does_not_require_a_separate_reader(review, separator):
+    prompt = f"请生成 result.json{separator}{review}。"
+    goals = integrity.build_action_obligations(prompt)
+    assert any(item["kind"] == "effect" for item in goals)
+    assert not any(item["kind"] == "observation" for item in goals)
+    assert integrity.execution_integrity_blockers(prompt, []), "actual output evidence remains required"
+
+
+@pytest.mark.parametrize("prompt", [
+    "请检查交付文件。",
+    "请检查交付文件。环境已安装 Python。",
+    "请生成 result.json，然后读取交付文件。",
+    "请生成 result.json，然后打开交付文件。",
+    "请检查 input.txt，然后生成 result.json。",
+    "请生成 result.json，然后检查 result.json。",
+])
+def test_explicit_or_observation_only_requests_keep_their_evidence_requirement(prompt):
+    assert any(item["kind"] == "observation" for item in integrity.build_action_obligations(prompt))
+
+
+def test_inline_generation_can_complete_after_generic_output_review(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
+    prompt = "请实际生成 result.json，并检查交付文件。"
+    receipt = inline_output_receipt(tmp_path)
+    allowed, _, reasons = kernel._simple_chain_evidence_check(prompt, [receipt],
+        [{"path": str(tmp_path / "result.json")}], final_reply="已生成并检查 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))
+    assert allowed, reasons
+    receipt["ok"] = False
+    assert not kernel._simple_chain_evidence_check(prompt, [receipt],
+        [{"path": str(tmp_path / "result.json")}], final_reply="已生成并检查 result.json。",
+        task_obligations=integrity.build_action_obligations(prompt))[0]
+
+
+@pytest.mark.parametrize("verb", ["检查", "读取", "查看", "打开", "浏览"])
+def test_reading_a_deliverable_does_not_request_sending_it(verb):
+    prompt = f"请{verb}交付文件 proof.txt。"
+    goals = integrity.build_action_obligations(prompt)
+    assert {item["kind"] for item in goals} == {"observation"}
+    assert {item["target_path"] for item in goals} == {"proof.txt"}
+    receipt = observation("file.read", "proof.txt", result={"content": "verified"},
+        contract={"ok": True, "paths": ["proof.txt"], "write_effect": False})
+    assert integrity.execution_integrity_blockers(prompt, [receipt]) == []
+
+
+def test_unknown_read_synonym_cannot_invent_a_delivery_requirement():
+    # The conservative floor does not cover every synonym. Fall through to the
+    # model rather than turning the deliverable noun into a sending command.
+    goals = integrity.build_action_obligations("请阅读交付文件 proof.txt。")
+    assert not any(item["kind"] == "delivery" for item in goals)
