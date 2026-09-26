@@ -6,12 +6,12 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1604": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1611": {
    "category": "optional_dependency",
    "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
    "reviewed_line": "__import__(mod)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:900": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:907": {
    "category": "tool_handler_dispatch",
    "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"
@@ -81,6 +81,11 @@
    "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
    "reviewed_line": "ts = importlib.import_module(\"tree_sitter_typescript\")"
   },
+  "app/backend/tiangong-backend/v3/review_evidence.py:48": {
+   "category": "structural_field_access",
+   "reason": "Reads only the fixed request, run, generation and optional session fields from the existing typed context or execution ticket to bind reviewer evidence and final delivery. No model-selected attribute or dispatch.",
+   "reviewed_line": "authority = {key: getattr(context, key) for key in (\"request_id\", \"run_id\", \"generation\", \"session_id\")}"
+  },
   "app/backend/tiangong-backend/v3/shangxiawen_xujie.py:62": {
    "category": "model_field_iteration",
    "reason": "conversation-context field access",
@@ -91,20 +96,25 @@
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "fn = getattr(store, name, None)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:1878": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:1904": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "fn = getattr(target, name, None)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2080": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2106": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of logging; no caller-supplied module name.",
    "reviewed_line": "_log = __import__(\"logging\").getLogger(\"tiangong.zongdiaodu\")"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:2259": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2291": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of logging; no caller-supplied module name.",
    "reviewed_line": "_log_warn = __import__(\"logging\").getLogger(\"tiangong.zongdiaodu\")"
+  },
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:2313": {
+   "category": "structural_field_access",
+   "reason": "Reads only the fixed request, run, generation and optional session fields from the existing typed context or execution ticket to bind reviewer evidence and final delivery. No model-selected attribute or dispatch.",
+   "reviewed_line": "run_state[\"review_authority_identity\"] = {key: getattr(review_context, key) for key in (\"request_id\", \"run_id\", \"generation\", \"session_id\")}"
   },
   "app/backend/tiangong-backend/v3/zongdiaodu.py:470": {
    "category": "structural_field_access",
@@ -121,12 +131,12 @@
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:4853": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5053": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "field.name: self._state_to_plain_dict(getattr(value, field.name))"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:5030": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5230": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "current = getattr(target, key)"
@@ -266,12 +276,12 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:1604": {
+  "src/omni_body_skill/tools/omni_body_tool.py:1611": {
    "category": "optional_dependency",
    "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
    "reviewed_line": "__import__(mod)"
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:900": {
+  "src/omni_body_skill/tools/omni_body_tool.py:907": {
    "category": "tool_handler_dispatch",
    "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"
@@ -450,6 +460,11 @@
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of hashlib; no caller-supplied module name.",
    "reviewed_line": "\"model_output_sha256\": __import__(\"hashlib\").sha256(raw.encode(\"utf-8\")).hexdigest(),"
+  },
+  "src/total_gateway/frozen_backend_compat.py:827": {
+   "category": "structural_field_access",
+   "reason": "Reads only the fixed request, run, generation and optional session fields from the existing typed context or execution ticket to bind reviewer evidence and final delivery. No model-selected attribute or dispatch.",
+   "reviewed_line": "identity = {key: getattr(ticket.payload, key) for key in (\"request_id\", \"run_id\", \"generation\")}"
   },
   "src/total_gateway/omni_grant_authority.py:1235": {
    "category": "structural_field_access",

@@ -6,8 +6,8 @@
   "reflective_getattrs": 83,
   "env_branches": 1,
   "explicit_feature_uses": 1,
-  "verified": 118,
-  "needs_review": 12,
+  "verified": 130,
+  "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -24,14 +24,16 @@
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
    "line": 907,
    "target": "handler_name",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "tool_handler_dispatch"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
    "line": 1611,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "optional_dependency"
   },
   {
    "kind": "reflective_getattr",
@@ -142,7 +144,8 @@
    "path": "app/backend/tiangong-backend/v3/review_evidence.py",
    "line": 48,
    "target": "key",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -189,42 +192,48 @@
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 1904,
    "target": "name",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 2106,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "inline_stdlib_import"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 2291,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "inline_stdlib_import"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 2313,
    "target": "key",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 5053,
    "target": "field.name",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
    "line": 5230,
    "target": "key",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -487,14 +496,16 @@
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
    "line": 907,
    "target": "handler_name",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "tool_handler_dispatch"
   },
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
    "line": 1611,
    "target": "<__import__>",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "optional_dependency"
   },
   {
    "kind": "reflective_getattr",
@@ -781,7 +792,8 @@
    "path": "src/total_gateway/frozen_backend_compat.py",
    "line": 827,
    "target": "key",
-   "classification": "needs_review"
+   "classification": "verified",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
