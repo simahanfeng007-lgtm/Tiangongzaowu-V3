@@ -56,5 +56,6 @@
     "reproduction/prepare.py": "e5d62ad59802a958556ce4639daffed6eddb25167b6097aa927faaabebd34e3b",
     "reproduction/source-template.json": "0614f1c7a8d73c784b2f8e09f5d1b0696ef1389d2fd7fc65fa6f0be473b4f0ef",
     "tool-coverage.json": "40dd8e9d440fbed70101a38b4c8ec3f81f90ff40b15a8bf51a3c360c6d15766c"
-  }
+  },
+  "snapshot_phase": "pre_pull_request; final remote CI and merge state are recorded by the corresponding GitHub pull request"
 }
