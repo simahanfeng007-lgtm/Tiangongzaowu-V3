@@ -14,6 +14,7 @@ from .model_transport_contract import (
     extract_native_roundtrip_context,
     extract_native_roundtrip_history,
     json_output,
+    prepare_context_tail,
 )
 from .model_transport_openai_chat import _legacy_wire
 
@@ -84,9 +85,10 @@ class AnthropicMessagesTransport:
         observations_compacted = canonical.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(canonical, endpoint)
         source_messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
+        source_messages, context_tail, cache_ordered = prepare_context_tail(canonical, source_messages, history)
         if history:
             source_messages = drop_last_role_messages(source_messages, role="assistant",
-                count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
+                count=len(history[0].results) if len(history) == 1 and not observations_compacted and not cache_ordered else 0)
         system, messages = self._convert_messages(source_messages)
 
         for native in history:
@@ -107,6 +109,9 @@ class AnthropicMessagesTransport:
                     ],
                 })
 
+        tail_system, tail_messages = self._convert_messages(context_tail)
+        system = "\n\n".join(x for x in (system, tail_system) if x)
+        messages.extend(tail_messages)
         payload: dict[str, Any] = {
             "model": endpoint.model_name or str(canonical.get("model") or ""),
             "messages": messages,

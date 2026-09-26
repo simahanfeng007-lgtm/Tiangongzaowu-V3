@@ -955,6 +955,9 @@ class HttpKehuduan:
                         "当前端点未证明原生 function calling 能力；不得伪装 native tool。"
                     )
 
+            # WU is refreshed for every call, but its packet IDs/timestamps
+            # must not invalidate the stable instruction/seed/history prefix.
+            effective_system_tishi, runtime_context = _split_runtime_context(effective_system_tishi)
             from .model_transport_contract import compact_native_observations, extract_native_roundtrip_history
             history = self._native_history.get(())
             native_observations_compacted = False
@@ -981,6 +984,9 @@ class HttpKehuduan:
                 ]
             if history:
                 payload["__provider_history"] = list(history)
+                payload["__cache_ordered_history"] = True
+            if runtime_context:
+                payload["__runtime_context"] = runtime_context
             if native_observations_compacted:
                 payload["__native_observations_compacted"] = True
             audio_paths = self._native_audio_paths.get(())
@@ -1075,6 +1081,7 @@ class HttpKehuduan:
             from ..run_context import current_run_context
             import hashlib
             release = load_dictionary()
+            optimization_trace.update(_cache_prefix_observation(dict(payload)))
             serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             calls, results = 0, 0
             pending = list(payload.get("messages") or payload.get("input") or [])
@@ -1184,7 +1191,8 @@ class HttpKehuduan:
         usage = dict(turn.usage or {})
         usage_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
         cached_tokens = int(
-            usage.get("cached_input_tokens")
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cached_input_tokens")
             or usage.get("cache_read_input_tokens")
             or usage_details.get("cached_tokens")
             or usage_details.get("cache_read_tokens")
@@ -1440,7 +1448,8 @@ def _jilu_l4_youhua_zhuizong(
         prompt_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
         completion_details = usage.get("completion_tokens_details") if isinstance(usage.get("completion_tokens_details"), dict) else {}
         cached_input_tokens = (
-            usage.get("cached_input_tokens")
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cached_input_tokens")
             or usage.get("cache_read_input_tokens")
             or prompt_details.get("cached_tokens")
             or prompt_details.get("cache_read_tokens")
@@ -1473,9 +1482,24 @@ def _jilu_l4_youhua_zhuizong(
         pass
 
 
+def _split_runtime_context(system_prompt: str) -> tuple[str, str]:
+    """Relocate complete host WU slots only; never rewrite their identities."""
+    slots = []
+    def capture(match):
+        slots.append(match.group(0))
+        return ""
+    stable = re.sub(r"\[WORLD_CONTEXT_SLOT\].*?\[/WORLD_CONTEXT_SLOT\]", capture,
+                    system_prompt, flags=re.DOTALL).rstrip()
+    return (stable, "\n\n".join(slots)) if slots else (system_prompt, "")
+
+
 def _cache_prefix_observation(payload: dict[str, Any]) -> dict[str, Any]:
     """Record the stable provider cache prefix without persisting prompt text."""
     messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+    if isinstance(payload.get("instructions"), str):
+        messages = [{"role": "system", "content": payload["instructions"]}]
+    elif payload.get("system"):
+        messages = [{"role": "system", "content": payload["system"]}]
     stable_messages: list[dict[str, Any]] = []
     prefix_chars = 0
     for message in messages:
@@ -1489,7 +1513,7 @@ def _cache_prefix_observation(payload: dict[str, Any]) -> dict[str, Any]:
         stable_messages.append(message)
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     canonical = json.dumps(
-        {"tools": tools, "messages": stable_messages},
+        {"model": payload.get("model"), "tools": tools, "messages": stable_messages},
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

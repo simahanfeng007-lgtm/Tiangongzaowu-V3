@@ -14,6 +14,7 @@ from .model_transport_contract import (
     extract_native_roundtrip_context,
     extract_native_roundtrip_history,
     json_output,
+    prepare_context_tail,
 )
 
 
@@ -31,8 +32,9 @@ class OpenAIChatTransport:
         observations_compacted = payload.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(payload, endpoint)
         messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+        messages, context_tail, cache_ordered = prepare_context_tail(payload, messages, history)
         messages = drop_last_role_messages(messages, role="assistant",
-            count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
+            count=len(history[0].results) if len(history) == 1 and not observations_compacted and not cache_ordered else 0)
         for native in history:
             opaque = native.turn.provider_continuation_state.opaque_payload
             opaque = opaque if isinstance(opaque, Mapping) else {}
@@ -52,6 +54,7 @@ class OpenAIChatTransport:
                 for binding, result in zip(native.bindings, native.results, strict=True):
                     messages.append(self.encode_tool_result(result, binding.as_dict()))
                 payload["messages"] = messages
+        payload["messages"] = [*messages, *context_tail]
         payload["model"] = endpoint.model_name or str(payload.get("model") or "")
         payload["stream"] = True
         payload.setdefault("stream_options", {"include_usage": True})

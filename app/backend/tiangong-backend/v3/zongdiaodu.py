@@ -1801,6 +1801,32 @@ def _tiqu_biaoxian(huifu: str, yonghu_xiaoxi: str = "") -> tuple[str, dict]:
     return cleaned, biaoxian
 
 
+def _simple_chain_bound_native_history(history, *, window_tokens, fixed_tokens):
+    """Trim complete oldest groups only when the actual context budget needs it.
+
+    The former 96k-character cap evicted reusable prefixes even inside a large
+    model window. Token estimates include private continuation state without
+    logging it. Batch eviction leaves headroom instead of shifting every turn.
+    """
+    budget = max(1, min(96_000, int(window_tokens * 0.60) - int(fixed_tokens)))
+    costs = []
+    for item in history:
+        turn = item["turn"]
+        opaque = getattr(getattr(turn, "provider_continuation_state", None), "opaque_payload", None)
+        costs.append(estimate_tokens(str(turn)) + estimate_tokens(json.dumps(
+            {"results": item["results"], "continuation": opaque}, ensure_ascii=False, default=str)))
+    total = sum(costs)
+    if len(history) <= 32 and total <= budget:
+        return 0
+    target = int(budget * 0.75)
+    removed = 0
+    while len(history) > 1 and (len(history) > 24 or total > target):
+        total -= costs[removed]
+        history.pop(0)
+        removed += 1
+    return removed
+
+
 class Zongdiaodu:
     """总调度：唯一唤醒入口"""
 
@@ -2417,10 +2443,12 @@ class Zongdiaodu:
                     native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
                 # Compact whole call/result groups only. Durable fact receipts
                 # and loaded Skill bodies remain in Gateway/run context.
-                while len(native_history) > 3 and (len(native_history) > 32 or sum(
-                    len(str(item["turn"])) + len(json.dumps(item["results"], ensure_ascii=False, default=str))
-                    for item in native_history) > 96_000):
-                    native_history.pop(0)
+                removed = _simple_chain_bound_native_history(
+                    native_history, window_tokens=DEFAULT_WINDOW_TOKENS,
+                    fixed_tokens=estimate_tokens(system_tishi) + estimate_tokens(cache_stable_user_message),
+                )
+                if removed:
+                    run_state["native_history_dropped_groups"] = int(run_state.get("native_history_dropped_groups") or 0) + removed
             prior_texts: list[str] = []
             for item in quality_history:
                 if not isinstance(item, dict):
@@ -2441,6 +2469,11 @@ class Zongdiaodu:
                             stable_user_message=cache_stable_user_message,
                             provider_turn=provider_turn,
                             provider_tool_results=provider_tool_results,
+                            history_notice=(
+                                f"已因上下文预算移出 {run_state['native_history_dropped_groups']} 组较早原生调用与回执。"
+                                "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
+                                if run_state.get("native_history_dropped_groups") else ""
+                            ),
                             include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                         )
                 return self.gutong.jixu(
@@ -2451,6 +2484,11 @@ class Zongdiaodu:
                     stable_user_message=cache_stable_user_message,
                     provider_turn=provider_turn,
                     provider_tool_results=provider_tool_results,
+                    history_notice=(
+                        f"已因上下文预算移出 {run_state['native_history_dropped_groups']} 组较早原生调用与回执。"
+                        "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
+                        if run_state.get("native_history_dropped_groups") else ""
+                    ),
                     include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                 )
 

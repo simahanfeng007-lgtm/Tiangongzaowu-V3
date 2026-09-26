@@ -14,6 +14,7 @@ from .model_transport_contract import (
     extract_native_roundtrip_context,
     extract_native_roundtrip_history,
     json_output,
+    prepare_context_tail,
 )
 from .model_transport_openai_chat import _legacy_wire
 
@@ -74,12 +75,13 @@ class OpenAIResponsesTransport:
         observations_compacted = canonical.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(canonical, endpoint)
         messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
+        messages, context_tail, cache_ordered = prepare_context_tail(canonical, messages, history)
         if history:
             # Gutong currently records the Runtime result as a legacy assistant
             # observation. Remove only the newest result slots after exact
             # ToolCallBinding verification, then add provider-native items.
             messages = drop_last_role_messages(messages, role="assistant",
-                count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
+                count=len(history[0].results) if len(history) == 1 and not observations_compacted and not cache_ordered else 0)
 
         payload: dict[str, Any] = {
             "model": endpoint.model_name or str(canonical.get("model") or ""),
@@ -105,6 +107,10 @@ class OpenAIResponsesTransport:
             if use_remote and len(history) == 1 and previous_response_id:
                 payload["previous_response_id"] = previous_response_id
 
+        tail_instructions, tail_items = self._convert_input(context_tail)
+        if tail_instructions:
+            payload["instructions"] = "\n\n".join(x for x in (instructions, tail_instructions) if x)
+        input_items.extend(tail_items)
         payload["input"] = input_items
         tools = self._convert_tools(canonical.get("tools"))
         if tools:

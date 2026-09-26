@@ -113,6 +113,7 @@ class GutongCeng:
         provider_turn: Any = None,
         provider_tool_results: list[dict[str, Any]] | None = None,
         include_current_result: bool = False,
+        history_notice: str = "",
     ) -> tuple[ShentiZhuangtai, str]:
         """工具结果回传LLM，继续思考"""
         notice = ""
@@ -196,6 +197,8 @@ class GutongCeng:
         # 不能被压缩流程吞掉；veto 早退路径返回的是引导文本）。
         if notice:
             yonghu_tishi = yonghu_tishi + notice
+        if history_notice:
+            yonghu_tishi += "\n\n[原生历史范围] " + history_notice
         if include_current_result and assistant_messages is not None:
             # This feedback is absent from native tool history. Preserve it in
             # the current user message, without inventing a provider tool call.
