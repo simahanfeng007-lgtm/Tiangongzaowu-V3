@@ -285,6 +285,8 @@ Ask for omitted/truncated evidence before proposing a new check that could dupli
 supplied_coverage gives exact ranges already present in this packet (including evidence_pages).
 An original excerpt can remain marked truncated after its missing pages were supplied. Consult
 missing_ranges before requesting pages; do not request an already supplied range or empty index.
+Each incomplete coverage row supplies a legal next_page request. Use that request as written;
+total_chars and missing-range endpoints are NOT request lengths. Long ranges need separate pages.
 If a required file is missing and no observation exists, return an actionable continue verdict;
 re-reading the candidate or empty index cannot manufacture the missing file. workspace_root is
 the host's current workspace, when available. current_artifact_versions are fresh observations:
@@ -362,7 +364,10 @@ def _supplied_coverage(packet, index, candidate_ranges):
         if cursor < total:
             missing.append([cursor, total])
         result.append({'ref': ref, 'total_chars': total, 'supplied_ranges': merged,
-                       'missing_ranges': missing, 'fully_supplied': not missing})
+                       'missing_ranges': missing, 'fully_supplied': not missing,
+                       'next_page': ({'ref': ref, 'start': missing[0][0],
+                                      'length': min(12000, missing[0][1] - missing[0][0])}
+                                     if missing else None)})
     return result
 
 
@@ -567,6 +572,8 @@ class CompletionSession(ReviewSession):
                             protocol_retry_used = True
                             packet["protocol_feedback"] = {
                                 "error": call["protocol_error"],
+                                "evidence_request_limits": {"max_requests": 3, "min_start": 0, "min_length": 1, "max_length": 12000},
+                                "range_instruction": "Each request must have exactly ref, start and length. Use a known ref and integer offsets. A missing range longer than 12000 characters needs multiple pages: copy supplied_coverage.next_page, then request the remaining page after it is supplied. Do not use total_chars as length when it exceeds 12000.",
                                 "instruction": "Your previous response was invalid and was not applied. Return the required JSON schema. Use continue when requesting evidence or reporting material gaps; only complete with empty findings, coverage_gaps and evidence_requests. Reassess the same unchanged task and evidence."}
                             continue
                         # Do not shop for another judge to accept a rejected

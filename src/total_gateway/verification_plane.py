@@ -21,6 +21,7 @@ from __future__ import annotations
 # 1.42 binds recoverable commits, durable reviewer evidence, v2 completion and pinned model roles.
 # 1.46 scales bounded judge reasoning for large evidence and preserves failed-call usage.
 # 1.47 repairs unexecuted malformed turns at most twice using the current tool schema.
-VERIFICATION_PLANE_VERSION = "1.47"
+# 1.48 supplies bounded page requests and explicit range feedback to the judge.
+VERIFICATION_PLANE_VERSION = "1.48"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

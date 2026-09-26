@@ -180,3 +180,29 @@ def test_corrupt_stored_evidence_cannot_be_replaced_by_a_short_excerpt(tmp_path,
     client = Client(lambda p: verdict())
     result = session(client).judge(state, observations(), 'candidate', remaining_seconds=120)
     assert result['review']['decision'] == 'unavailable' and not client.calls
+
+
+@pytest.mark.parametrize('invalid_length', [12122, 13544, True, 0, -1])
+def test_page_range_repair_exposes_valid_bounded_request(invalid_length):
+    candidate = '候选正文' * 6800
+    def judge(packet):
+        coverage = next(row for row in packet['supplied_coverage'] if row['ref'] == packet['candidate_ref'])
+        if len(client.calls) == 1:
+            return verdict('continue', evidence_requests=[{
+                'ref': packet['candidate_ref'], 'start': 12000, 'length': invalid_length}])
+        feedback = packet['protocol_feedback']
+        assert feedback['error'] == 'completion_evidence_range'
+        assert feedback['evidence_request_limits']['max_length'] == 12000
+        assert 'multiple pages' in feedback['range_instruction']
+        if coverage['next_page']:
+            return verdict('continue', evidence_requests=[coverage['next_page']])
+        assert coverage['fully_supplied'] and not coverage['missing_ranges']
+        return verdict()
+    client, state = Client(judge), run_state()
+    reviewer = session(client)
+    result = reviewer.judge(state, [], candidate, remaining_seconds=180)['review']
+    assert result['decision'] == 'complete' and reviewer.approved(state, [], candidate)
+    assert len(client.calls) == 4
+    assert result['model_calls'][0]['status'] == 'unavailable'
+    pages = client.calls[-1]['evidence_pages']
+    assert [(p['start'], len(p['data_excerpt'])) for p in pages] == [(12000, 12000), (24000, 3200)]

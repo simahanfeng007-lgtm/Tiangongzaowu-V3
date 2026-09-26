@@ -126,12 +126,12 @@
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:5053": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5054": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "field.name: self._state_to_plain_dict(getattr(value, field.name))"
   },
-  "app/backend/tiangong-backend/v3/zongdiaodu.py:5230": {
+  "app/backend/tiangong-backend/v3/zongdiaodu.py:5231": {
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "current = getattr(target, key)"
