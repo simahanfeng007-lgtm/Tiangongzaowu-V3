@@ -31,7 +31,7 @@
    "reason": "1 hit: getattr for dynamic daemon component loading",
    "reviewed_line": "function = getattr(target, name, None)"
   },
-  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4539": {
+  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4548": {
    "category": "structural_field_access",
    "reason": "Explicit opt-in compatibility catalog flag; default is disabled and no module is loaded from this value.",
    "reviewed_line": "include_learned_catalog = str(os.getenv(\"TIANGONG_ENABLE_LEARNED_SKILL_CATALOG\") or \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}"

@@ -5,8 +5,8 @@
   "dynamic_imports": 47,
   "reflective_getattrs": 83,
   "env_branches": 1,
-  "explicit_feature_uses": 1,
-  "verified": 130,
+  "explicit_feature_uses": 0,
+  "verified": 131,
   "needs_review": 0,
   "retire_candidates_as_dynamic_targets": 0
  },
@@ -64,8 +64,9 @@
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
    "line": 4548,
    "target": "'TIANGONG_ENABLE_LEARNED_SKILL_CATALOG'",
-   "classification": "explicit_feature_use",
-   "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG"
+   "classification": "verified",
+   "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG",
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
