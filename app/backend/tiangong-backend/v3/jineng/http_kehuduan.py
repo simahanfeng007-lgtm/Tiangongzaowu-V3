@@ -1185,7 +1185,7 @@ class HttpKehuduan:
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
                 if exc.error_code == "http_error"
-                else "模型输出不完整，已尝试一次拆分修复，本轮未执行不完整的工具调用。"
+                else "模型输出不完整，本轮未执行不完整的工具调用。"
                 if exc.error_code in {"output_truncated", "invalid_tool_arguments"}
                 else "模型响应未正常完成；请结合错误码检查模型服务和连接。"
             )

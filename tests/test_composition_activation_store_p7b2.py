@@ -194,7 +194,7 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # The source execution/containment and actual-evidence surfaces advance to 1.28.
     # State-bound replay, memory corrections and completion-gate simplification
     # advance the frozen plane to 1.35.
-    assert VERIFICATION_PLANE_VERSION == "1.46"
+    assert VERIFICATION_PLANE_VERSION == "1.47"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

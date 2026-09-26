@@ -49,52 +49,62 @@ class TransportExecutionResult:
 
 
 def execute_streaming_turn_with_repair(**kwargs) -> TransportExecutionResult:
-    """One format/output repair, sharing the call deadline and transient budget.
+    """At most two format repairs under one deadline and transient retry budget.
 
-    A rejected envelope has never left this boundary, so its calls cannot have
-    executed. A network retry discards the entire uncommitted turn, never an
-    already executed tool. All attempts share the original deadline/budget.
+    A rejected envelope never left this boundary, so none of its tools ran.
+    Repairs use the current native tool schema; no JSON is salvaged or executed
+    locally, and previously executed turns are never repeated here.
     """
     started = time.perf_counter()
     on_repair = kwargs.pop("on_repair", None)
     allow_output_repair = kwargs.pop("allow_output_repair", True)
     kwargs["retry_uncommitted_stream"] = True
     kwargs["on_attempt_reset"] = on_repair
+    retry_limit = max(1, min(3, int(kwargs.get("retry_limit", 3))))
+    network_retries = 0
+    rejected_attempts = []
+    payload = dict(kwargs["canonical_payload"])
     with model_call_scope(float(kwargs.get("max_wall_clock_seconds", 300.0))) as lifecycle:
-        try:
-            return execute_streaming_turn(**kwargs)
-        except TransportExecutionError as exc:
-            if not allow_output_repair or exc.error_code not in {"output_truncated", "invalid_tool_arguments"}:
-                raise
+        for repair_round in range(3):
             lifecycle.check()
-            if on_repair is not None:
-                on_repair()
-            payload = dict(kwargs["canonical_payload"])
-            # Insert after provider-native history, so this instruction is the
-            # latest user turn rather than being buried before old tool calls.
-            payload["__turn_repair_instruction"] = (
-                "刚才的模型响应被截断或工具参数不是完整 JSON，整轮工具均未执行。"
-                "请只返回下一步的一个完整工具调用；长文件拆成每段不超过 3000 字符，"
-                "先写一个文件或片段，观察回执后继续。args 必须是对象，不能是字符串。"
-                '使用标准 JSON 双引号；字符串中的双引号和换行必须转义。示例：'
-                '{"action":"file.write","target":"out.txt","args":{"content":"一行\\n下一行"}}。'
-                "不要重述整份计划。解析诊断：" + exc.reason
-            )
             try:
-                repaired = execute_streaming_turn(**{**kwargs, "canonical_payload": payload,
-                    "retry_limit": max(1, min(3, int(kwargs.get("retry_limit", 3))) - exc.retry_count),
+                result = execute_streaming_turn(**{**kwargs, "canonical_payload": payload,
+                    "retry_limit": max(1, retry_limit - network_retries),
                     "max_wall_clock_seconds": lifecycle.remaining})
-            except TransportExecutionError as repair_error:
-                repair_error.retry_count += exc.retry_count
-                repair_error.latency_ms = int((time.perf_counter() - started) * 1000)
-                repair_error.response_metrics["rejected_attempts"] = exc.response_metrics.get("attempts", [])
-                repair_error.response_metrics["repair_performed"] = True
-                raise
-            repaired.retry_count += exc.retry_count
-            repaired.latency_ms = int((time.perf_counter() - started) * 1000)
-            repaired.output_repaired = True
-            repaired.turn.stream_metadata["rejected_attempts"] = exc.response_metrics.get("attempts", [])
-            return repaired
+            except TransportExecutionError as exc:
+                if (not allow_output_repair or repair_round == 2
+                        or exc.error_code not in {"output_truncated", "invalid_tool_arguments"}):
+                    if repair_round:
+                        exc.retry_count += network_retries
+                        exc.latency_ms = int((time.perf_counter() - started) * 1000)
+                        exc.response_metrics.update(rejected_attempts=rejected_attempts,
+                                                    repair_performed=True, repair_count=repair_round)
+                    raise
+                network_retries += exc.retry_count
+                rejected_attempts.extend(exc.response_metrics.get("attempts", []))
+                lifecycle.check()
+                if on_repair is not None:
+                    lifecycle.guard(on_repair)()
+                # The old single-action example contradicted the current
+                # composition tool's input schema. Keep the current schema and
+                # native history, with only a bounded format correction added.
+                payload = dict(kwargs["canonical_payload"])
+                payload["__turn_repair_instruction"] = (
+                    "刚才的模型响应被截断或工具参数不是完整 JSON，整轮工具均未执行。"
+                    "请只返回下一步的一个完整工具调用，严格遵循当前 tools 声明的输入 schema，"
+                    "不要改成旧版单动作入口或添加未声明字段。长文件分段，先执行一段并观察回执。"
+                    "参数必须是对象；检查每层大括号和方括号配对，禁止在完整 JSON 后附加任何字符。"
+                    "使用标准 JSON 双引号，字符串中的双引号和换行必须转义。"
+                    "不要重述计划。解析诊断：" + exc.reason
+                )
+                continue
+            result.retry_count += network_retries
+            result.latency_ms = int((time.perf_counter() - started) * 1000)
+            result.output_repaired = repair_round > 0
+            if repair_round:
+                result.turn.stream_metadata.update(rejected_attempts=rejected_attempts,
+                                                   repair_count=repair_round)
+            return result
 
 
 def _response_preview(response: Any) -> str:

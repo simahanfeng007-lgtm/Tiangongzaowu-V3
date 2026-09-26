@@ -199,7 +199,7 @@ def test_complete_double_encoded_tool_arguments_keep_file_content(endpoint, enco
     assert result.turn.tool_calls[0]["arguments"]["args"]["content"] == "real content\n中文"
 
 
-def test_output_repair_runs_once_and_shares_deadline(endpoint):
+def test_output_repair_is_bounded_and_shares_deadline(endpoint):
     client = Client(lambda: iter(()))
     payloads = []
     def build(*a, **k):
@@ -223,7 +223,7 @@ def test_output_repair_runs_once_and_shares_deadline(endpoint):
     with pytest.raises(executor.TransportExecutionError, match="truncated"):
         executor.execute_streaming_turn_with_repair(client=client, endpoint=endpoint, api_key="test",
             canonical_payload={"messages": []}, max_wall_clock_seconds=1)
-    assert client.sent == 2
+    assert client.sent == 3
 
 
 def test_silent_stream_is_closed_on_deadline(endpoint):
@@ -238,6 +238,33 @@ def test_silent_stream_is_closed_on_deadline(endpoint):
     assert caught.value.deadline_exceeded
     assert time.monotonic() - started < 0.6
     assert client.response.closed.is_set()
+
+
+def test_two_format_repairs_keep_current_schema_and_share_network_retry_budget(endpoint, tmp_path):
+    client = Client(lambda: iter(()))
+    payloads, resets = [], []
+    valid = {"composition": {"skill": {"id": "s", "steps": [{"id": "step", "tool": "t", "depends_on": []}]},
+             "tools": [{"id": "t", "actions": [{"action": "file.write", "target": str(tmp_path / "output.txt"), "args": {"content": "ok"}}]}]}}
+    def build(*a, **kw):
+        payloads.append(kw["json"])
+        return object()
+    client.build_request = build
+    def lines():
+        if client.sent <= 2:
+            raise httpx.ReadError("transient fixture")
+        arguments = json.dumps(valid) + "}" if client.sent in (3, 4) else json.dumps(valid)
+        yield event({"tool_calls": [{"index": 0, "id": "c", "function": {"name": "omni_body", "arguments": arguments}}]}, "tool_calls")
+        yield "data: [DONE]"
+    client.response.lines = lines
+    result = executor.execute_streaming_turn_with_repair(client=client, endpoint=endpoint, api_key="test",
+        canonical_payload={"messages": []}, max_wall_clock_seconds=2, retry_sleep_seconds=0,
+        on_repair=lambda: resets.append(True))
+    assert client.sent == 5 and result.retry_count == 2 and len(resets) == 4
+    assert result.turn.tool_calls[0]["arguments"]["composition"] == valid["composition"]
+    assert result.turn.stream_metadata["repair_count"] == 2
+    assert len(result.turn.stream_metadata["rejected_attempts"]) == 4
+    assert "当前 tools" in payloads[-1]["messages"][-1]["content"]
+    assert not (tmp_path / "output.txt").exists()  # Transport cannot execute a rejected or accepted tool.
 
 
 def test_cancel_fences_late_callback_and_result():
