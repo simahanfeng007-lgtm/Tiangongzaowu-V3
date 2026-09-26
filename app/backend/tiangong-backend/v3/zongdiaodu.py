@@ -6,24 +6,19 @@
 # 全程零工具调用且模型已给出通顺最终答复时跳过强插续写，文本问答不再多出 2-3 轮思考。
 from __future__ import annotations
 
-from .simple_chain.kernel import ( 
+from .simple_chain.kernel import (
+    _SUSPECTED_TOOL_CALL_PATTERN,
+    _SIMPLE_CHAIN_TERMINAL_STATUSES,
+
     SIMPLE_CHAIN_READ_ONLY_ACTIONS,
     SIMPLE_CHAIN_TOOL_NAMES,
  # noqa: F401 —— 机械搬移，符号面不变
     _ACTION_REGISTRY_DIR,
     _ACTION_REGISTRY_PATHS,
-    _CONVERSION_OUTPUT_MARKER,
-    _DELIVERABLE_EXTENSION_PATTERN,
     _DELIVERABLE_FORMAT_ALIASES,
-    _DELIVERABLE_SUFFIXES,
-    _DIAGNOSTIC_ONLY_MARKERS,
     _INCOMPLETE_REASON_RENHUA,
-    _MUTATION_COMMAND_MARKERS,
-    _MUTATION_REQUEST_MARKERS,
     _RECOVERY_CHECKPOINT_PATTERN,
     _SENSITIVE_ARG_KEYS,
-    _SIMPLE_CHAIN_ANSWER_CLOSING_MARKERS,
-    _SIMPLE_CHAIN_ANSWER_ERROR_MARKERS,
     _SIMPLE_CHAIN_AUDIO_SUFFIXES,
     _SIMPLE_CHAIN_CALLER_THREAD_ACTIONS,
     _SIMPLE_CHAIN_COMMAND_PATH_TOKEN_RE,
@@ -55,14 +50,12 @@ from .simple_chain.kernel import (
     _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
     _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK,
     _SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
-    _SIMPLE_CHAIN_TERMINAL_STATUSES,
     _SIMPLE_CHAIN_VERIFY_ACTIONS,
     _SIMPLE_CHAIN_WRITE_ACTIONS,
     _SKILL_INDEX_PATH,
     _SOURCE_TEXT_FULL_LIMIT,
     _SOURCE_TEXT_HEAD_LIMIT,
     _SOURCE_TEXT_TAIL_LIMIT,
-    _SUSPECTED_TOOL_CALL_PATTERN,
     _TEXT_EVIDENCE_SUFFIXES,
     _contract_observed_write,
     _count_chinese_chars,
@@ -405,10 +398,6 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
     )
 
 
-
-
-
-
 BIAOXIAN_SYSTEM_PROMPT = """
 [Avatar performance channel - required]
 When replying to the user, append exactly one XML block at the very end
@@ -460,22 +449,8 @@ For file delivery: create a real local file and reply with the absolute path.
 """
 
 
+# ── 情绪状态：按时间衰减，文本不触发关键词评分 ──
 
-# ── 情感分析：关键词 + 衰减 → 更新 QingganZhuangtai ──
-
-_QINGGAN_KEYWORDS: dict[str, tuple[str, float, float]] = {
-    # (主情绪, 主增量, 副情绪, 副增量)
-    "谢谢|感谢|多谢|辛苦了|帮大忙": ("joy", 0.08, "connection", 0.10),
-    "太好了|完美|厉害|很棒|非常好|成功了|完成": ("joy", 0.10, "achievement", 0.08),
-    "哈哈|笑|开心|高兴|快乐|nice|good": ("joy", 0.06, "surprise", 0.03),
-    "烦|气死|垃圾|不行|错了|失败|bug|error|报错": ("anger", 0.06, "worry", 0.05),
-    "担心|怕|危险|不确定|行不行|能不能": ("worry", 0.07, "fear", 0.05),
-    "难过|伤心|悲伤|哭|遗憾": ("sadness", 0.08, "worry", 0.03),
-    "什么|怎么|为什么|如何|查|搜|找|看看": ("curiosity", 0.05, "thoughtfulness", 0.04),
-    "帮我|做|写|生成|创建|画|弄|搞": ("achievement", 0.04, "order", 0.03),
-    "休息|睡|累|疲惫|困": ("rest", 0.06, "worry", 0.03),
-    "哇|真的|居然|没想到|天哪": ("surprise", 0.08, "joy", 0.03),
-}
 
 _EMOTION_NAMES = ["joy", "anger", "worry", "thoughtfulness", "sadness", "fear", "surprise"]
 _DESIRE_NAMES = ["survival", "curiosity", "achievement", "connection", "order", "rest"]
@@ -485,12 +460,6 @@ def _gengxin_qinggan(shenti, xiaoxi: str, huifu: str, gongju_cishu: int):
     """根据用户消息 + 回复 + 工具执行次数，更新情感状态（衰减由心跳处理）"""
     q = shenti.qinggan
     text = str(xiaoxi or "") + " " + str(huifu or "")
-
-    # 1. 关键词匹配 → 增减情绪
-    for pattern, (emo1, d1, emo2, d2) in _QINGGAN_KEYWORDS.items():
-        if re.search(pattern, text):
-            setattr(q, emo1, min(1.0, getattr(q, emo1) + d1))
-            setattr(q, emo2, min(1.0, getattr(q, emo2) + d2))
 
     # 2. 多次工具调用 → 轻微焦虑
     if gongju_cishu >= 6:
@@ -553,8 +522,6 @@ def _first_json_object(text: str) -> str:
             if depth == 0:
                 return value[start:index + 1]
     return ""
-
-
 
 
 def _trim_interim_progress_text(text: str) -> str:
@@ -661,10 +628,6 @@ def _interim_visible_reply_from_tool_message(raw: str) -> str:
     return _trim_interim_progress_text(result)
 
 
-
-
-
-
 CHECKER_REGISTRY: dict[str, dict[str, Any]] = {
     "run.has_tool_observation": {"hard": True},
     "tool.has_success_result": {"hard": True},
@@ -693,18 +656,11 @@ CHECKER_REGISTRY: dict[str, dict[str, Any]] = {
 
 
 def _default_work_intent(user_message: str) -> dict[str, Any]:
-    suffixes = sorted(_simple_chain_expected_suffixes(user_message))
-    expected_format = suffixes[0].lstrip(".") if suffixes else ""
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return {
-        "task_type_hint": "runtime_detected_work",
-        "expected_output_hint": {
-            "type": "file" if suffixes or _requires_real_mutation(user_message) or _has_delivery_intent(user_message) else "result",
-            "format": expected_format,
-            "delivery_required": _has_delivery_intent(user_message),
-        },
-        "need_skill": True,
-        "need_tool": True,
-        "reason": "runtime_detected_work_intent",
+        "task_type_hint": "model_decides",
+        "expected_output_hint": {"type": "result", "format": "", "delivery_required": False},
+        "need_skill": False, "need_tool": False, "reason": "model_decides",
     }
 
 
@@ -737,7 +693,6 @@ def _work_false_positive_payload(request_id: str, user_message: str) -> dict[str
     }
 
 
-
 def _first_json_object_as_dict(raw: str) -> dict[str, Any] | None:
     text = _strip_plan_markers(raw)
     for candidate in (text, _first_json_object(text)):
@@ -750,10 +705,6 @@ def _first_json_object_as_dict(raw: str) -> dict[str, Any] | None:
         if isinstance(data, dict):
             return data
     return None
-
-
-
-
 
 
 def _run_control_session_id(run_control: Any | None) -> str:
@@ -771,25 +722,6 @@ def _run_control_session_id(run_control: Any | None) -> str:
     return ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def set_simple_chain_continuity_checkpoint_provider(
     provider: Callable[[dict[str, Any]], Any] | None,
 ) -> None:
@@ -802,8 +734,6 @@ def set_simple_chain_continuity_checkpoint_provider(
     _sc_kernel._SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER = provider
 
 
-
-
 def set_simple_chain_regenerative_execution_provider(
     provider: Callable[[dict[str, Any]], Any] | None,
 ) -> None:
@@ -814,50 +744,6 @@ def set_simple_chain_regenerative_execution_provider(
     _sc_kernel._SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER = provider
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _fg_gap(checker: str, source_text: str, evidence: str, required_fix: str) -> dict[str, str]:
     return {
         "checker": checker,
@@ -866,7 +752,6 @@ def _fg_gap(checker: str, source_text: str, evidence: str, required_fix: str) ->
         "required_fix": required_fix,
         "message": evidence,
     }
-
 
 
 def _estimated_page_count(text: str) -> int:
@@ -919,9 +804,6 @@ def _xlsx_max_row_count(path: Path) -> int:
     except Exception:
         return 0
     return 0
-
-
-
 
 
 def _omni_body_subskill_paths(user_message: str) -> list[str]:
@@ -1022,7 +904,6 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     release = load_dictionary()
     from capability_dictionary.composition import composition_prompt
     return composition_prompt(release)
-
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -1316,8 +1197,6 @@ def _append_shengcheng_meiti(huifu: str, media_items: list[dict[str, str]]) -> s
     return (text + "\n\n" + "\n\n".join(blocks)).strip()
 
 
-
-
 def _append_delivery_media_tags(huifu: str, attachment_items: list[dict[str, str]], user_text: str = "") -> str:
     text = str(huifu or "").rstrip()
     if not attachment_items:
@@ -1349,22 +1228,6 @@ def _append_delivery_media_tags(huifu: str, attachment_items: list[dict[str, str
     return (text + "\n\n" + "\n".join(tags)).strip()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 _CODE_STAGE_LABEL_BY_ID = {
     "code_macro_plan": "代码工程-总规划",
     "code_stage_plan": "代码工程-阶段规划",
@@ -1377,8 +1240,6 @@ _CODE_STAGE_FOCUS_BY_ID = {
     "code_detail_plan": "执行本轮最小必要修改。",
     "code_verify_delivery": "运行验证并形成交付结论。",
 }
-
-
 
 
 def _tool_args_display_text(tool_args: dict) -> str:
@@ -1460,7 +1321,6 @@ def _tool_dispatch_with_result(meta: dict[str, Any] | None, result: Any) -> dict
     return project_tool_dispatch(meta, result)
 
 
-
 def _tool_result_with_contract(
     tool_name: str,
     result: Any,
@@ -1476,7 +1336,6 @@ def _tool_result_with_contract(
     )
 
 
-
 def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
     if not isinstance(meta, dict):
         return fallback
@@ -1486,239 +1345,28 @@ def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
     return f"{meta.get('userFacingText') or fallback} 工具指令：{instruction}"
 
 
-
-
 def _is_desktop_organize_request(message: str) -> bool:
-    text = str(message or "").lower()
-    if "桌面" not in text and "desktop" not in text:
-        return False
-    return any(mark in text for mark in ("整理", "收拾", "清理", "归档", "分类", "收纳", "摆放", "腾"))
-
-
-_NON_COMPLETION_MARKERS = (
-    "未完成",
-    "没有完成",
-    "没完成",
-    "尚未",
-    "还没",
-    "还没有",
-    "待做",
-    "需要你确认",
-    "需要确认",
-    "请确认",
-    "等待确认",
-    "未执行",
-    "没有执行",
-    "不能直接",
-    "不能发",
-    "不能发送",
-    "无法发送",
-    "没办法",
-    "要不要",
-    "你说一声",
-    "接着做",
-    "手动发",
-    "手动发送",
-    "自行",
-    "自己去微信",
-)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _is_novel_request(user_message: str) -> bool:
-    text = str(user_message or "")
-    markers = ("小说", "网文", "正文", "章节", "第一章", "第1章", "长安未雪", "novel", "chapter")
-    return any(marker in text for marker in markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _tool_is_write_effect(tool_name: str, result: Any) -> bool:
     return tool_result_write_effect(tool_name, result)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _reply_admits_not_completed(reply: str) -> bool:
-    text = str(reply or "")
-    return any(marker in text for marker in _NON_COMPLETION_MARKERS)
-
-
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _reply_blocks_requested_delivery(user_message: str, model_reply: str) -> bool:
-    if not _has_delivery_intent(user_message, model_reply):
-        return False
-    text = str(model_reply or "")
-    blockers = (
-        "不能发",
-        "不能发送",
-        "无法发送",
-        "没办法直接",
-        "没办法",
-        "我这边没有调用",
-        "手动发",
-        "手动发送",
-        "自行",
-        "自己去微信",
-        "请确认",
-        "需要你确认",
-        "要不要",
-        "待做",
-        "还没",
-        "还没有",
-        "压完路径",
-        "路径列出来",
-    )
-    return any(marker in text for marker in blockers)
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _path_looks_absolute(path_text: str) -> bool:
@@ -1750,28 +1398,6 @@ def _message_mentions_path(message: str, path_text: str) -> bool:
     }
     lowered_message = message_text.lower()
     return any(variant and variant.lower() in lowered_message for variant in variants)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class _SimpleChainProgressMonitor:
@@ -1834,24 +1460,6 @@ class _SimpleChainProgressMonitor:
         return False, ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _authorize_user_local_readonly_path(tool_name: str, tool_args: dict, user_message: str) -> dict:
     if not isinstance(tool_args, dict):
         return {}
@@ -1862,106 +1470,8 @@ def _gongju_cuowu_text(result: Any) -> str:
     return tool_result_error("", result)
 
 
-
-
-
-
 def _gongju_jieguo_status(result: Any) -> str:
     return tool_result_status("", result) or ("wancheng" if _gongju_jieguo_chenggong(result) else "cuowu")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _gongju_yichang(tool_name: str, exc: Exception) -> dict:
@@ -2109,8 +1619,6 @@ def _gongju_chongfu_chujing_renhua(repeated_result: dict | None = None) -> str:
     if _gongju_jieguo_shi_mulu_qingdan(last_result):
         return "我刚才已经把目标目录看过了，差点又重复看一遍——我刹住了，没有空转。回复“继续”，我就换个思路接着深入。"
     return "我刚才差点重复做同一个动作，已主动停下来，没有继续空转。回复“继续”，我会换个做法接着执行。"
-
-
 
 
 # ── 确认通道（A3+ 或越界写操作需要用户在场确认）────────────────────────
@@ -4111,7 +3619,7 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
-                if quality_history or _runtime_detects_work_intent(xiaoxi):
+                if quality_history:
                     contract_now, final_allowed_now, final_status_now, final_reasons_now = _simple_chain_life_completion_gate(
                         xiaoxi,
                         quality_history,
@@ -4136,33 +3644,6 @@ class Zongdiaodu:
                         final_chain_status = final_status_now
                         break
                     final_reasons_now = proof_reasons_now
-
-                    # bug-fix: 多次思考路径根治 - 模型已给出通顺最终答复时，跳过 completion
-                    # correction 强插续写：被误判为 work 的文本问答不再被强迫“再思考 N 轮”。
-                    # bug-fix: 条件放宽到“已有工具证据 + 模型本轮已给出收尾语”——只读查询
-                    # （读文件后直接回答）不再被完成门连环打回重答 3-5 遍；仍有交付物
-                    # （generated_attachments）或必读路径义务时不走此捷径（2026-08-26，凌霜修 logic 类）
-                    if (
-                        not generated_attachments
-                        and not required_read_paths
-                        and _simple_chain_fluent_text_reply(huifu)
-                    ):
-                        final_guard_exhausted = True
-                        final_chain_status = "chat_reply"
-                        if isinstance(run_state, dict):
-                            run_state["status"] = "chat_reply"
-                            run_state["stage"] = "chat_reply"
-                            run_state["terminal_reason"] = "fluent_text_reply_no_tool_work"
-                            _simple_chain_save_run_state(run_state)
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_completion_correction",
-                                "Completion evidence correction",
-                                "skipped",
-                                "Model already produced a fluent final reply without any tool call; delivered as-is without forced continuation.",
-                                meta={"skipped_reason": "fluent_text_reply"},
-                            )
-                        break
 
                     correction_state = _simple_chain_completion_correction_state(run_state)
                     current_blockers = [
@@ -5060,21 +4541,6 @@ class Zongdiaodu:
         _user_chain_ended = False
         if is_user_run:
             self._begin_user_run()
-            # v3.7：用户显式表达的边界要尽早进入生命链边界学习器，
-            # 例如“不要主动打扰我”“少分享”“不要自动改代码”。
-            try:
-                if getattr(self, "life_orchestrator", None) is not None:
-                    self.life_orchestrator.boundary_learner.observe_user_text(xiaoxi)
-            except Exception:
-                pass
-            # P15：用户明确"记住/以后记得/我的名字是..."时，由规则层确定性写入
-            # L4 user_asserted，不依赖模型是否自行调用工具。
-            try:
-                remember = getattr(self, "p15_memory_remember_provider", None)
-                if callable(remember):
-                    remember(xiaoxi)
-            except Exception:
-                pass
 
         # ── 确认重放：用户在前端确认卡片批准后，前端重放原指令并附带授权标记 ──
         _confirm_ctx: dict | None = None
@@ -5679,7 +5145,7 @@ class Zongdiaodu:
 
     def tuijin(self, cishu: int = 1):
         """快进：模拟 N 次心跳 tick——身体演化+记忆维护+生命周期推进
-        
+
         不含自主灵感（那是LLM调用），但成长进度、情感变化、生命周期都会推进。
         使用后可通过 shenti.shengming.chengzhang_jindu 查看成长变化。
         """

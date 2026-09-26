@@ -158,6 +158,9 @@ _MEMORY_CONTRACT_PLAINTEXT_KEYS = (
     "confidence_milli",
     "priority",
     "life_id",
+    "explicit_memory",
+    "expiry_kind",
+    "expires_at_ms",
 )
 _CONTRACT_ASSERTION_KINDS = {
     "observation",
@@ -5918,6 +5921,7 @@ class EmbeddedLifeRuntime:
             ),
             valid_from_ms=created_ms or updated_ms,
             created_at_ms=updated_ms,
+            expires_at_ms=record.get("expires_at_ms"),
             )
         )
         return contract_id, change_seq
@@ -6660,15 +6664,38 @@ class EmbeddedLifeRuntime:
             "confidence_milli": confidence_milli,
             "priority": priority,
         }
+        scope = self._scope_state(life_id)
+        self._ensure_memory_contract_synced(life_id)
+        existing = scope["memories"].get(memory_id)
+        now = utc_now()
+        if isinstance(existing, dict):
+            prior_classification = existing.get("classification") or {}
+            # Replaying an immutable historical record must not reclassify it
+            # under the new metadata-only classifier.
+            if prior_classification.get("schema") != classification.get("schema"):
+                if payload.get("causal_role") and payload["causal_role"] != prior_classification.get("causal_role"):
+                    raise EmbeddedLifeError("life.memory.id_conflict", status=409)
+                semantic["classification"] = deepcopy(prior_classification)
+                semantic["memory_type"] = existing.get("memory_type")
+        if any(key in payload for key in ("explicit_memory", "expiry_kind", "expires_at_ms")):
+            from .explicit_memory import EXPIRY_WINDOW_MS, expiry_deadline_ms
+            explicit = payload.get("explicit_memory", False)
+            expiry_kind = payload.get("expiry_kind")
+            deadline = payload.get("expires_at_ms")
+            if (type(explicit) is not bool or
+                    (expiry_kind is not None and (not isinstance(expiry_kind, str) or expiry_kind not in EXPIRY_WINDOW_MS)) or
+                    (deadline is not None and (type(deadline) is not int or deadline < 0))):
+                raise EmbeddedLifeError("life.memory.expiry_invalid")
+            if deadline is None:
+                created_at = existing.get("created_at") if isinstance(existing, dict) else now
+                deadline = expiry_deadline_ms(expiry_kind, self._iso_ms(created_at))
+            semantic.update(explicit_memory=explicit, expiry_kind=expiry_kind, expires_at_ms=deadline)
         try:
             semantic_bytes = canonical_json_bytes(semantic)
         except (TypeError, ValueError) as exc:
             raise EmbeddedLifeError("life.memory.payload_invalid") from exc
         if len(semantic_bytes) > _MAX_MEMORY_PAYLOAD_BYTES:
             raise EmbeddedLifeError("life.memory.payload_too_large")
-        scope = self._scope_state(life_id)
-        self._ensure_memory_contract_synced(life_id)
-        existing = scope["memories"].get(memory_id)
         if isinstance(existing, dict):
             existing_semantic = {key: existing.get(key) for key in semantic}
             if canonical_sha256(existing_semantic) != canonical_sha256(semantic):
@@ -6749,9 +6776,7 @@ class EmbeddedLifeRuntime:
                 if payload.get(key)
             },
         ))
-        # P15: user-explicit spans ("记住/以后记得/我的名字是...") must land as
-        # L4 user_asserted even when the model phrase differs.  The assertion is
-        # already durable above; attaching L4 is idempotent and recoverable.
+        # Explicit memory selection is structured metadata, never prose keywords.
         try:
             explicit_text = (
                 content
@@ -6760,12 +6785,14 @@ class EmbeddedLifeRuntime:
                 if isinstance(content, Mapping)
                 else ""
             )
-            if str(explicit_text).strip():
+            if str(explicit_text).strip() and payload.get("explicit_memory") is True:
                 self._memory_coordinator().attach_explicit_l4(
                     life_id=life_id,
                     memory_id=contract_memory_id,
                     user_text=str(explicit_text),
-                    created_at_ms=time.time_ns() // 1_000_000,
+                    explicit=True,
+                    expires_at_ms=record.get("expires_at_ms"),
+                    created_at_ms=self._iso_ms(record.get("created_at")),
                     principal_ref=life_id,
                 )
         except Exception:
@@ -6820,8 +6847,11 @@ class EmbeddedLifeRuntime:
             raise EmbeddedLifeError("life.memory.search_status_invalid")
         causal_ref = str(payload.get("causal_ref") or "").strip()
         scope = self._scope_state(life_id)
+        now_ms = time.time_ns() // 1_000_000
         records = {key: row for key, row in scope["memories"].items()
-                   if not is_experience_payload(row.get("content") if isinstance(row, Mapping) else None)}
+                   if isinstance(row, Mapping)
+                   and not is_experience_payload(row.get("content"))
+                   and (row.get("expires_at_ms") is None or row["expires_at_ms"] > now_ms)}
         # Retrieval begins with direct lexical/cue matches, then includes one
         # causal hop.  This brings the useful old trigger-recall behavior into
         # the new typed causal graph without inventing new semantic relations.

@@ -38,26 +38,11 @@ def test_renderer_tool_contract_cannot_contaminate_user_intent() -> None:
     assert not _runtime_detects_work_intent(transport)
 
 
-def test_real_work_requests_still_require_evidence() -> None:
-    from v3.zongdiaodu import (
-        _runtime_detects_work_intent,
-        _simple_chain_evidence_check,
-    )
-
+def test_task_wording_does_not_manufacture_execution_requirements() -> None:
+    from v3.zongdiaodu import _runtime_detects_work_intent, _simple_chain_evidence_check
     prompt = "请执行测试并修复失败项"
-    assert _runtime_detects_work_intent(prompt)
-    allowed, status, reasons = _simple_chain_evidence_check(
-        prompt,
-        [],
-        [],
-        final_reply="已经完成",
-    )
-    assert not allowed
-    assert status == "incomplete"
-    assert reasons == [
-        "execution_obligation:execution:missing_evidence",
-        "execution_claim_without_evidence",
-    ]
+    assert not _runtime_detects_work_intent(prompt)
+    assert _simple_chain_evidence_check(prompt, [], [], final_reply="已经完成") == (True, "complete", [])
 
 
 def test_response_only_runtime_disables_tools_at_provider_boundary() -> None:

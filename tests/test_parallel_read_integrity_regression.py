@@ -101,7 +101,8 @@ def test_failed_parallel_read_stays_failed_and_blocks_read_coverage() -> None:
     assert failure["tool_status"] == "failed"
     assert failure["failures"]
     issues = scheduler._simple_chain_read_coverage_issues(prompt, [success, failure])
-    assert issues == ["requested read coverage is incomplete: missing 1 of 2 target paths"]
+    assert issues == []
+    assert scheduler._simple_chain_evidence_check(prompt, [success, failure], [])[0] is False
     assert scheduler._simple_chain_missing_deliverable_paths(prompt, [success, failure], []) == []
     assert scheduler._simple_chain_verbatim_read_reply(prompt, [success, failure]) == ""
 
@@ -153,11 +154,7 @@ def test_exact_parallel_read_can_close_from_complete_source_evidence() -> None:
     ]
 
     reply = scheduler._simple_chain_verbatim_read_reply(prompt, observations)
-    assert alpha in reply
-    assert beta in reply
-    assert "alpha exact\n" in reply
-    assert "beta exact\n" in reply
-    assert reply.count("---BEGIN EXACT CONTENT---") == 2
+    assert reply == ""  # The model receives source evidence and writes its own answer.
 
 
 def test_read_only_missing_target_has_no_platform_write_surface() -> None:

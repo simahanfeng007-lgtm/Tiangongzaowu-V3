@@ -2701,18 +2701,8 @@ def _latest_context_run_state(conversation_context: dict | None, *, limit_observ
 
 
 def _is_explicit_recovery_continuation(text: str) -> bool:
-    """Only a narrow continuation utterance may inherit a previous failed run."""
-    user_text = str(text or "")
-    for marker in (
-        "【连续执行契约】", "【本轮活跃项目根】",
-        "【必须继承且仍未完成的原始总目标】", "【本轮唯一默认工作区】",
-    ):
-        user_text = user_text.split(marker, 1)[0]
-    compact = re.sub(r"[\s，。！？,.!?]+", "", user_text).strip().lower()
-    return compact in {
-        "继续", "继续执行", "接着", "接着做", "接着执行", "往下做", "恢复", "恢复执行",
-        "continue", "continueplease", "resume", "resumeplease",
-    }
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _latest_session_recovery_checkpoint(conversation_context: dict | None, current_user_text: str) -> dict:
@@ -4218,13 +4208,6 @@ def _ability_category(item: dict) -> str:
     category = str(item.get("category") or "").strip()
     if category:
         return category
-    text = " ".join([
-        str(item.get("mingcheng") or item.get("name") or ""),
-        str(item.get("miaoshu") or item.get("description") or ""),
-        " ".join(str(value) for value in item.get("taskIntents", []) or []),
-    ])
-    if any(token in text for token in ("自学习", "学习候选", "生命系统", "经验池", "心跳")):
-        return "learning"
     leixing = str(item.get("leixing") or "").strip()
     return {
         "gongju": "file",

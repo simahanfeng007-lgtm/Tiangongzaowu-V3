@@ -552,22 +552,22 @@ class MatrixPromotionMathTests(unittest.TestCase):
 
 class MatrixExplicitTests(unittest.TestCase):
     def test_explicit_remember_with_prefix(self) -> None:
-        self.assertTrue(detect_explicit_intent("请记住这个。").triggered)
+        self.assertTrue(detect_explicit_intent("请记住这个。", explicit=True).triggered)
 
     def test_explicit_future_remember(self) -> None:
         self.assertTrue(
-            detect_explicit_intent("今后记得归档。").triggered
+            detect_explicit_intent("今后记得归档。", explicit=True).triggered
         )
 
     def test_explicit_permanent_save(self) -> None:
         self.assertTrue(
-            detect_explicit_intent("请永久保存这条规则。").triggered
+            detect_explicit_intent("请永久保存这条规则。", explicit=True).triggered
         )
 
     def test_explicit_alias(self) -> None:
-        result = detect_explicit_intent("请叫我小A。")
+        result = detect_explicit_intent("请叫我小A。", explicit=True)
         self.assertTrue(result.triggered)
-        self.assertIn("address_alias", result.reason_codes)
+        self.assertIn("explicit_memory_request", result.reason_codes)
 
     def test_expiry_today_deadline(self) -> None:
         self.assertEqual(expiry_deadline_ms("today", 86_400_000), 172_800_000)

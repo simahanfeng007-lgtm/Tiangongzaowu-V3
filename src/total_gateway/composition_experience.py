@@ -26,7 +26,8 @@ def terms(text):
 
 
 def feedback_candidate(text):
-    return bool(re.search(r"记住|记下|认可|满意|以后|今后|复用|撤销|别再|不要再|remember|reuse|approve", str(text), re.I))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return bool(str(text or "").strip())
 
 
 def redact(value):

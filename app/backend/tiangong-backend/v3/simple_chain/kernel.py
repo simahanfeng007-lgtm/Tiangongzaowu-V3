@@ -3,12 +3,6 @@
 P17-M2 拆分工程的延续：`_simple_chain_*` 家族与依赖闭包的整体迁出。
 后续新功能应落在本包的分层模块，不再向 zongdiaodu.py 添加顶层符号。
 """
-# 2026-08-25 fix: 多次思考路径根治 - 收紧 _runtime_detects_work_intent 弱信号 markers
-# （帮我查/查资料/写代码/裸扩展名等不再单独判 work），并新增
-# _simple_chain_fluent_text_reply 供 zongdiaodu 跳过 completion correction 强插续写。
-
-from __future__ import annotations
-
 from __future__ import annotations
 import dataclasses
 import contextvars
@@ -56,7 +50,6 @@ from ..duihua_qiaojie import (
 )
 from ..json_guards import error_payload
 from ..permission_settings import build_runtime_context_prompt, check_tool_permission
-# bug-fix: 多次思考路径根治 - has_unknown_internal_markup 用于通顺答复判定
 from ..reply_sanitizer import extract_biaoxian_payload, has_unknown_internal_markup, strip_internal_reply_markers
 from ..run_context import (
     current_run_context,
@@ -140,53 +133,12 @@ _ACTION_REGISTRY_PATHS = tuple(_ACTION_REGISTRY_DIR / name for name in (
 ))
 
 def _simple_chain_explicit_named_skill_ids(user_message: str) -> list[str]:
-    """Return only complete registered Skill IDs/names explicitly present in the request."""
-    text = str(user_message or "")
-    if not text.strip() or not _SKILL_INDEX_PATH.exists():
-        return []
-    try:
-        index = json.loads(_SKILL_INDEX_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    skills = index.get("skills") if isinstance(index, dict) else []
-    if not isinstance(skills, list):
-        return []
-
-    matches: list[str] = []
-    for skill in skills:
-        if not isinstance(skill, dict):
-            continue
-        skill_id = str(skill.get("id") or "").strip()
-        registered_name = str(
-            skill.get("mingcheng") or skill.get("name") or ""
-        ).strip()
-        id_match = bool(
-            skill_id
-            and re.search(
-                rf"(?<![A-Za-z0-9_]){re.escape(skill_id)}(?![A-Za-z0-9_])",
-                text,
-                re.IGNORECASE,
-            )
-        )
-        name_match = bool(registered_name and registered_name in text)
-        if (id_match or name_match) and skill_id not in matches:
-            matches.append(skill_id)
-    return matches[:8]
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_explicit_skill_context(user_message: str) -> str:
-    """Expose an exact user selection without reading or activating Skill content."""
-    exact_ids = _simple_chain_explicit_named_skill_ids(user_message)
-    if not exact_ids:
-        return ""
-    return (
-        "[Explicit registered Skill selection]\n"
-        "The user explicitly named these exact registered Skill IDs: "
-        + ", ".join(exact_ids)
-        + ". If Skill instructions are needed, request only the exact named target through "
-        "the authority-backed Skill interface. Do not substitute a fuzzy, default, learned-local, "
-        "or similarly named Skill. A disabled, missing, incompatible, or integrity-rejected target "
-        "remains unavailable."
-    )
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return ""
 
 def _safe_visible_chat_reply(reply: str, raw: str = "") -> str:
     value = str(reply or "").strip()
@@ -199,15 +151,9 @@ def _safe_visible_chat_reply(reply: str, raw: str = "") -> str:
 
 # bug-fix: 多次思考路径根治 - 明确动作动词：裸出现即构成“请求语境”。
 # 单字“写”、“生成”等泛化动词不在此列（“写代码”“生成是什么意思”只是提到动作词）。
-_WORK_STRONG_MUTATION_MARKERS = (
-    "创建", "新建", "写入", "保存", "修改", "修复", "更新", "追加", "覆盖",
-    "删除", "移动", "搬到", "放到", "复制", "重命名", "改名", "整理", "清理",
-    "打包", "压缩", "解压", "提交", "改成", "替换", "实现", "跑起来", "做完",
-)
 
 # bug-fix: 单字命令 marker（按/将/把/请）单用不构成“请求干活”，须与动作动词共现；
 # 否则中文闲聊（“请问…”“把它当…”“将信将疑”）恒判 work（2026-08-26，凌霜修 logic 类）
-_DANZI_MINGLING_MARKERS = ("请", "按", "把", "将")
 _DANZI_PEI_DONGCI = (
     "查询", "读取", "查找", "搜索", "打开", "发送", "执行", "修改", "删除",
     "写入", "保存", "创建", "新建", "移动", "复制", "重命名", "整理", "清理",
@@ -218,129 +164,20 @@ _DANZI_PEI_DONGCI = (
 )
 
 def _simple_chain_has_explicit_work_frame(user_text: str) -> bool:
-    """bug-fix: 多次思考路径根治 - 区分“请求干活”与“提到某个动作词”。
-
-    有命令语境（帮我/按照/执行/直接/开始…）或明确动作动词
-    （创建/修改/删除/打包…）才算请求干活；“help me with X”与裸提“X”分开。
-    """
-    compact = re.sub(r"\s+", "", str(user_text or "")).lower()
-    if not compact:
-        return False
-    # bug-fix: 单字 marker 改“marker+动作动词”双信号，杜绝闲聊误判（2026-08-26，凌霜修 logic 类）
-    has_dongci = any(marker in compact for marker in _WORK_STRONG_MUTATION_MARKERS) or any(
-        verb in compact for verb in _DANZI_PEI_DONGCI
-    )
-    for marker in _MUTATION_COMMAND_MARKERS:
-        if marker not in compact:
-            continue
-        if marker in _DANZI_MINGLING_MARKERS:
-            if has_dongci:
-                return True
-            continue
-        return True
-    return any(marker in compact for marker in _WORK_STRONG_MUTATION_MARKERS)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _runtime_detects_work_intent(user_text: str) -> bool:
-    text = _simple_chain_user_goal_text(user_text)
-    lower = text.lower()
-    if _simple_chain_is_response_only_without_tools(text):
-        return False
-    if _is_capability_or_meta_question(text):
-        return False
-    # High-confidence read/list requests are work even when no mutation/deliverable exists.
-    if build_action_obligations(text):
-        return True
-    # bug-fix: 多次思考路径根治 - mutation 命中须叠加“请求语境”：
-    # 裸泛化动词（“写代码”“我会写代码”里的单字“写”）不再直接判 work；
-    # “请帮我写代码”“修改这个文件”“把 X 整理成表格”等明确请求仍判 work。
-    if _requires_real_mutation(text) and _simple_chain_has_explicit_work_frame(text):
-        return True
-    if _has_delivery_intent(text):
-        return True
-    # bug-fix: 多次思考路径根治 - 裸提扩展名（“什么是.docx文件”）不算干活；
-    # 扩展名叠加请求语境（“帮我转成 report.pdf”）才是交付契约。
-    if _simple_chain_expected_suffixes(text) and _simple_chain_has_explicit_work_frame(text):
-        return True
-    # bug-fix: 多次思考路径根治 - 收紧弱信号 markers：
-    # “查资料/搜资料/写代码/写小说/长链/多步骤/裸扩展名(docx/.txt/.zip)”
-    # 等泛化词不再单独判 work——纯文本问答被误判为 work 后，完成门必然不通过，
-    # 会触发 completion correction 强插续写（“多思考几轮”的头号来源）。
-    # 其中真命令已被上游判定覆盖：请帮我写代码/打包/修改→_requires_real_mutation
-    # 叠加请求语境判定，发我文档/根据附件→_has_delivery_intent，
-    # docx/.txt/.zip→_simple_chain_expected_suffixes，
-    # 因此“请帮我写代码”“整理成表格”“修改这个文件”等核心用例仍判 work。
-    # 这里只保留明确“干活”信号：具体产物（做成文件/txt）、明确执行（跑一下/运行一下/放桌面）、
-    # 具体查询对象（查这个/搜这个）。
-    markers = (
-        "生成word", "生成 word", "生成ppt", "生成 ppt", "生成excel", "生成 excel",
-        "做成文件", "做成txt", "做成 txt", "跑一下", "运行一下", "放桌面",
-        "查这个", "查一下这", "搜这个", "搜一下这", "看下这个", "看一下这个",
-    )
-    compact = re.sub(r"\s+", "", lower)
-    if any(marker.replace(" ", "").lower() in compact for marker in markers):
-        return True
-    # bug-fix: 多次思考路径根治 - “查/看/读 + 具体 URL”是明确干活信号；
-    # 裸提 URL（无动作词）仍按普通文本处理，避免闲聊被误判。
-    if re.search(r"https?://|www\.", lower) and re.search(
-        r"查|看|读|访问|打开|总结|分析|\b(?:fetch|open|read|check|look|browse|visit|summarize)\b",
-        lower,
-    ):
-        return True
-    english_action = re.search(
-        r"\b(create|write|modify|edit|rename|move|copy|delete|remove|generate|build|run|execute|test|verify|search|find|summarize|analyse|analyze|read|package|compress|export|save|upload|download|send)\b",
-        lower,
-    )
-    english_request_context = re.search(
-        r"(?:^|\b)(please|task(?:_id)?|use\s+tools?|for\s+me|assigned|must|now|directly)\b",
-        lower,
-    )
-    return bool(english_action and english_request_context)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_fluent_text_reply(huifu: Any) -> bool:
-    """bug-fix: 多次思考路径根治 - 判定模型回复是否已是可交付的通顺最终答复。
-
-    门槛刻意宽松（宁放过不误杀）：达到最短答复长度、无疑似工具调用残迹、
-    无未知内部标记、无未闭合代码围栏、无“我来帮你写 / I'll use X”式
-    只承诺未行动的过渡话术。命中即允许上层跳过 completion correction。
-    """
-    text = str(getattr(huifu, "visible_text", "") or huifu or "").strip()
-    if _count_nonspace_chars(text) < 6:
-        return False
-    if _SUSPECTED_TOOL_CALL_PATTERN.search(text):
-        return False
-    if has_unknown_internal_markup(text):
-        return False
-    if text.count("```") % 2 == 1:
-        return False
-    if re.search(
-        r"我来帮你|我来写|我来做|我来处理|我这就|马上给你|让我先"
-        r"|\b(?:i'?ll|let\s+me|i\s+will)\s+(?:use|call|run|invoke|check|read|search|open)\b",
-        text,
-        re.IGNORECASE,
-    ):
-        return False
-    return True
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _is_capability_or_meta_question(user_text: str) -> bool:
-    text = str(user_text or "")
-    compact = re.sub(r"[\s\?\？\!\！\.\。\,\，\;\；\:\：]+", "", text.lower())
-    if not compact:
-        return False
-    meta_markers = (
-        "你会不会", "你会吗", "你能不能", "你能否", "你能吗", "你可以吗", "你可不可以",
-        "她会不会", "她会吗", "她能不能", "她能否", "她能吗", "她可以吗", "她可不可以",
-        "模型会不会", "模型能不能", "工具会不会", "工具能不能", "支持不支持",
-        "能不能做到", "能否做到", "可以做到吗", "能做吗", "会做吗",
-    )
-    if not any(marker in compact for marker in meta_markers):
-        return False
-    explicit_do_markers = (
-        "帮我", "给我", "替我", "帮她", "给她", "替她", "把", "将",
-        "开始", "直接", "现在", "马上", "立刻", "按", "按照", "根据",
-        "发给我", "发我", "发给她", "放桌面", "保存到", "保存为", "覆盖",
-        "跑一下", "查一下", "搜一下",
-    )
-    return not any(marker in compact for marker in explicit_do_markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_run_state_path(run_id: str) -> Path:
     """Return the durable checkpoint path for one simple-chain request."""
@@ -1747,13 +1584,8 @@ def _has_delivery_intent(user_text: str, reply_text: str = "") -> bool:
     # bug-fix: 交付契约判定只扫用户原话——把 reply_text 拼进来会让模型的客套话
     # （“已发送/见附件/打包好了”）反向污染任务契约（2026-08-26，凌霜修 logic 类）。
     # 参数保留以兼容调用点，但不再参与判定。
-    combined = f"{user_text or ''}"
-    markers = (
-        "发给我", "发我", "发送", "传给我", "传我", "给我发", "微信发", "发到微信",
-        "附件", "查收", "交付", "打包发我", "打包发送", "打包发给", "打包发到",
-        "压缩包", "zip", "下载给我", "把文件给我",
-    )
-    return any(marker in combined for marker in markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _gongju_diaoyong_key(tool_name: str, tool_args: dict) -> str:
     normalized_args = tool_args if isinstance(tool_args, dict) else {}
@@ -1804,8 +1636,8 @@ def _simple_chain_recovery_checkpoint_from_context(dynamic_context: str) -> dict
     return payload
 
 def _simple_chain_explicit_retry_authorized(user_message: str) -> bool:
-    compact = re.sub(r"\s+", "", _simple_chain_user_goal_text(user_message)).lower()
-    return bool(re.search(r"(?:重试|再试一次|重新执行|重新运行|再执行一次|再运行一次|retry|rerun|runagain)", compact))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_action_may_have_side_effects(action: str) -> bool:
     normalized = str(action or "").strip().lower()
@@ -1964,205 +1796,18 @@ def _run_state_safe_value(value: Any, *, limit: int = 12000) -> Any:
         return output
     return value
 
-_MUTATION_REQUEST_MARKERS = (
-    "整理",
-    "收拾",
-    "清理",
-    "归档",
-    "分类",
-    "收纳",
-    "移动",
-    "挪到",
-    "复制",
-    "拷贝",
-    "删除",
-    "删掉",
-    "移除",
-    "创建",
-    "新建",
-    "写入",
-    "保存",
-    "修改",
-    "修复",
-    "实现",
-    "继续完成",
-    "完成它",
-    "把它完成",
-    "做完",
-    "跑起来",
-    "可运行",
-    "写代码",
-    "写程序",
-    "写脚本",
-    "改名",
-    "重命名",
-    "替换",
-    "排版",
-    "校对并修复",
-)
-
-_MUTATION_COMMAND_MARKERS = (
-    "帮我",
-    "请",
-    "按照",
-    "按",
-    "把",
-    "将",
-    "进行",
-    "执行",
-    "处理",
-    "直接",
-    "开始",
-    "给我",
-)
-
-_DIAGNOSTIC_ONLY_MARKERS = ("为什么", "为啥", "原因", "怎么回事", "核对", "检查", "排查", "看看啥")
 
 def _is_mutation_status_question(text: str) -> bool:
-    compact = re.sub(r"\s+", "", str(text or "")).lower()
-    if not compact:
-        return False
-    if not any(marker in compact for marker in ("修改完", "改完", "修完", "改好了", "修好了")):
-        return False
-    if not any(marker in compact for marker in ("?", "？", "吗", "是不是", "是否")):
-        return False
-    command_markers = (
-        "修改一下",
-        "修一下",
-        "改一下",
-        "改写",
-        "按照",
-        "按你",
-        "按查到",
-        "查到的问题",
-        "改成",
-        "修复",
-    )
-    return not any(marker in compact for marker in command_markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _is_work_status_question(text: str) -> bool:
-    """纯询问/汇报类消息（“整理什么内容了”“现在到哪了”“做了什么”）不是写操作。
-
-    这类消息即使包含“整理/做/完成”等词，也没有命令式动作。若误判为 mutation，
-    简单链会要求 omni_body 观察，导致零工具调用被按“平台执行预算上限”fail-closed。
-    """
-    compact = re.sub(r"\s+", "", str(text or "")).lower()
-    if not compact:
-        return False
-    question_markers = (
-        "什么", "哪些", "哪", "吗", "如何", "怎么样", "怎样", "怎么",
-        "?", "？", "多少", "进度", "状态", "情况",
-    )
-    topic_markers = (
-        "整理", "做", "完成", "进度", "内容", "结果", "状态", "情况",
-        "到哪", "工作", "产物", "活",
-    )
-    command_markers = (
-        "帮我", "请", "把", "将", "执行", "处理", "继续", "开始", "直接", "给我",
-        "保存", "生成", "创建", "新建", "修改", "修复", "删除", "打包", "压缩",
-        "查", "搜", "跑", "发", "放桌面", "做成", "整理成", "整理一下", "整理好",
-        "重命名", "移动", "复制",
-    )
-    if not any(marker in compact for marker in question_markers):
-        return False
-    if not any(marker in compact for marker in topic_markers):
-        return False
-    return not any(marker in compact for marker in command_markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _requires_real_mutation(message: str) -> bool:
-    text = str(message or "")
-    if _is_mutation_status_question(text):
-        return False
-    if _is_work_status_question(text):
-        return False
-    compact = re.sub(r"\s+", "", text)
-    negated_only_markers = (
-        "不要创建文件",
-        "不要新建文件",
-        "不要生成文件",
-        "不要保存文件",
-        "不用创建文件",
-        "不用新建文件",
-        "无需创建文件",
-        "别创建文件",
-        "别新建文件",
-    )
-    if any(marker in compact for marker in negated_only_markers) and not any(
-        marker in compact for marker in ("写完", "发给我", "保存为", "保存成", "打包", "压缩", "修改", "覆盖", "删除")
-    ):
-        return False
-    mutation_markers = set(_MUTATION_REQUEST_MARKERS) | {
-        "创建",
-        "新建",
-        "建立",
-        "写入",
-        "写",
-        "保存",
-        "生成",
-        "修复",
-        "修改",
-        "更新",
-        "追加",
-        "覆盖",
-        "删除",
-        "移动",
-        "搬到",
-        "放到",
-        "复制",
-        "重命名",
-        "整理",
-        "清理",
-        "打包",
-        "压缩",
-        "解压",
-        "提交",
-        "改成",
-        "create",
-        "write",
-        "save",
-        "modify",
-        "update",
-        "delete",
-        "move",
-        "copy",
-        "rename",
-        "fix",
-        "zip",
-    }
-    diagnostic_markers = set(_DIAGNOSTIC_ONLY_MARKERS) | {
-        "看看",
-        "看一下",
-        "分析",
-        "原因",
-        "为什么",
-        "是不是",
-        "是否",
-        "解释",
-        "评估",
-        "对比",
-        "review",
-        "inspect",
-        "analyze",
-        "why",
-    }
-    command_markers = set(_MUTATION_COMMAND_MARKERS) | mutation_markers
-    # A forbidden action is not a requested side effect. Evaluate intent by
-    # punctuation-delimited clauses so "不要读取或修改文件，运行测试" remains a
-    # verification request while "不要只检查，请修改" still requests mutation.
-    clauses = [item for item in re.split(r"[，。；,;\n]+", text) if item.strip()]
-    negation_markers = ("不要", "不用", "无需", "不许", "禁止", "别", "do not", "don't", "must not")
-    positive_clauses = [
-        clause for clause in clauses
-        if not any(marker in clause.lower() for marker in negation_markers)
-    ]
-    positive_text = "\n".join(positive_clauses)
-    if not any(marker and marker in positive_text for marker in mutation_markers):
-        return False
-    if any(marker and marker in positive_text for marker in diagnostic_markers) and not any(
-        marker and marker in positive_text for marker in command_markers
-    ):
-        return False
-    return True
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_tool_args_content(tool_args: Any) -> str:
     if not isinstance(tool_args, dict):
@@ -2176,15 +1821,6 @@ def _simple_chain_tool_args_content(tool_args: Any) -> str:
 def _count_chinese_chars(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fff]", str(text or "")))
 
-_DELIVERABLE_SUFFIXES = {
-    ".txt", ".md", ".zip", ".docx", ".xlsx", ".pptx", ".pdf", ".csv",
-    ".json", ".html", ".png", ".jpg", ".jpeg", ".webp", ".mp3", ".mp4",
-}
-
-_DELIVERABLE_EXTENSION_PATTERN = "|".join(
-    re.escape(item.lstrip("."))
-    for item in sorted(_DELIVERABLE_SUFFIXES, key=len, reverse=True)
-)
 
 _DELIVERABLE_FORMAT_ALIASES: dict[str, tuple[str, ...]] = {
     ".docx": (
@@ -2359,194 +1995,37 @@ def _simple_chain_source_text_map(
         "entries": entries,
     }
 
-_CONVERSION_OUTPUT_MARKER = re.compile(
-    r"(?:转换(?:成|为)|转成|转为|导出(?:成|为)|另存为|做成"
-    r"|convert(?:ed)?\s+(?:to|into)|export(?:ed)?\s+as|save(?:d)?\s+as)",
-    re.IGNORECASE,
-)
 
 def _simple_chain_conversion_output_clause(user_message: str) -> str | None:
-    """Return only the requested output side of an explicit conversion.
-
-    A filename before the conversion marker is an input source, not a
-    deliverable.  Keeping that role boundary here prevents every downstream
-    preflight/quality/final gate from independently mistaking ``source.md`` for
-    the requested output of "source.md 转成 Word".
-    """
-
-    text = str(user_message or "")
-    matches = list(_CONVERSION_OUTPUT_MARKER.finditer(text))
-    if not matches:
-        return None
-    return text[matches[-1].end():].strip()
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return ""
 
 def _simple_chain_bracketed_deliverable_paths(text: Any) -> list[str]:
-    """提取书名号/引号/括号包裹的产物文件名（支持中文名，B1 根因之一）。
-
-    覆盖《设计桥可用性.md》、“动作参考.md”、“README.md”、（方案.docx）等
-    显式命名形态；只取带交付后缀的路径，避免把普通名词当产物。
-    """
-    value = str(text or "")
-    pattern = re.compile(
-        rf"[《\"“'‘「（(]\s*([^》\"”'’」）)\s，。；;、]+?\.(?:{_DELIVERABLE_EXTENSION_PATTERN}))\s*[》\"”'’」）)]?",
-        re.IGNORECASE,
-    )
-    out: list[str] = []
-    for match in pattern.finditer(value):
-        name = str(match.group(1) or "").strip().strip("。；;，,、")
-        if name and _path_suffix(name) in _DELIVERABLE_SUFFIXES:
-            out.append(name)
-    return _simple_chain_unique_paths(out)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_expected_suffixes(user_message: str) -> set[str]:
-    conversion_output = _simple_chain_conversion_output_clause(user_message)
-    text = (
-        conversion_output
-        if conversion_output is not None
-        else str(user_message or "")
-    ).lower()
-    suffixes: set[str] = set()
-    for suffix in _DELIVERABLE_SUFFIXES:
-        if suffix in text:
-            suffixes.add(suffix)
-    # Natural-language product names are output contracts too.  On a
-    # conversion request this scans only the text after "转成/导出为/save as",
-    # so an input such as source.pdf can never become the expected output.
-    for suffix, patterns in _DELIVERABLE_FORMAT_ALIASES.items():
-        if any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns):
-            suffixes.add(suffix)
-    return suffixes
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return set()
 
 def _simple_chain_requested_target_paths(user_message: str) -> list[str]:
-    source_text = str(user_message or "")
-    conversion_output = _simple_chain_conversion_output_clause(source_text)
-    # For conversion requests, paths named before the marker are inputs.  Only
-    # an explicitly named path on the output side may become an exact target.
-    text = conversion_output if conversion_output is not None else source_text
-    out: list[str] = []
-
-    bindings = request_target_bindings(text)
-    excluded = {_path_key_for_qc(item["target_path"]) for item in bindings
-                if item["role"] in {"input", "preserved", "executable", "workspace"}}
-    required = {_path_key_for_qc(item["target_path"]) for item in bindings
-                if item["role"] in {"output", "existing"}}
-    for binding in bindings:
-        path = binding["target_path"]
-        if (binding["role"] in {"output", "existing"}
-                and re.match(r"[A-Za-z]:[\\/]", path) and _path_suffix(path) in _DELIVERABLE_SUFFIXES):
-            out.append(path)
-
-    filename_pattern = re.compile(
-        r"(?:文件名(?:叫|为|是)?|名叫|保存(?:为|成)?|zip\s*名叫|压缩包(?:名叫|叫)?)"
-        rf"\s*[《\"“']?([^，。；;\s`\"”'》]+?\.(?:{_DELIVERABLE_EXTENSION_PATTERN}))",
-        re.IGNORECASE,
-    )
-    for match in filename_pattern.finditer(text):
-        name = match.group(1).strip().strip("。；;，,")
-        if not name:
-            continue
-        out.append(name)
-    out.extend(_simple_chain_bracketed_deliverable_paths(text))
-
-    seen: set[str] = set()
-    unique: list[str] = []
-    for path in out:
-        key = _path_key_for_qc(path)
-        if key in excluded and key not in required:
-            continue
-        if key and key not in seen:
-            seen.add(key)
-            unique.append(path)
-    return unique
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_explicit_deliverable_paths(user_message: str) -> list[str]:
-    """Return every concrete deliverable path or filename named by the user.
-
-    Target-path parsing is intentionally conservative because it is also used
-    for per-call preflight.  The final delivery gate needs a broader inventory:
-    a request may enumerate several files after words such as "contains"
-    without repeating "filename" before each item.
-    """
-    out = list(_simple_chain_requested_target_paths(user_message))
-    source_text = str(user_message or "")
-    conversion_output = _simple_chain_conversion_output_clause(source_text)
-    text = conversion_output if conversion_output is not None else source_text
-    suffixes = "|".join(
-        re.escape(item.lstrip("."))
-        for item in sorted(_DELIVERABLE_SUFFIXES, key=len, reverse=True)
-    )
-    token_pattern = re.compile(
-        rf"(?<![A-Za-z0-9_.:/\\-])"
-        rf"((?:[A-Za-z0-9_.-]+[\\/])*[A-Za-z0-9_-]+\.(?:{suffixes}))"
-        rf"(?![A-Za-z0-9_]|\.[A-Za-z0-9_])",
-        re.IGNORECASE,
-    )
-    out.extend(_simple_chain_bracketed_deliverable_paths(text))
-    out.extend(match.group(1) for match in token_pattern.finditer(text))
-    bindings = request_target_bindings(text)
-    out.extend(item["target_path"] for item in bindings
-               if item["role"] in {"output", "existing"}
-               and re.search(r"\.[A-Za-z0-9]{1,8}$", item["target_path"]))
-    excluded = {
-        _path_key_for_qc(item["target_path"])
-        for item in bindings if item["role"] in {"input", "preserved", "executable", "workspace"}
-    }
-    required = {
-        _path_key_for_qc(item["target_path"])
-        for item in bindings if item["role"] in {"output", "existing"}
-    }
-    return _simple_chain_unique_paths([
-        path for path in out
-        if _path_key_for_qc(path) not in excluded or _path_key_for_qc(path) in required
-    ])
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_is_read_only_request(user_message: str) -> bool:
-    """Return whether the user asks for observation without a write effect.
-
-    File-shaped tokens are role-neutral until the surrounding intent is known.
-    A path in "read a.txt" is an input target, not a missing deliverable.  Keep
-    this boundary independent from model output so a later hallucinated write
-    cannot retroactively turn a read-only request into a write task.
-    """
-
-    text = str(user_message or "")
-    compact = re.sub(r"\s+", "", text.lower())
-    read_markers = (
-        "读取", "读一下", "阅读", "查看", "看一下", "核对", "检查",
-        "read", "inspect", "view", "showthecontent", "returntheexactcontent",
-    )
-    return bool(
-        any(marker in compact for marker in read_markers)
-        and not _requires_real_mutation(text)
-    )
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_explicit_read_paths(user_message: str) -> list[str]:
-    """Extract concrete file targets while preserving their read-only role."""
-
-    paths = [item["target_path"] for item in request_target_bindings(user_message)
-             if item["role"] == "input"]
-    if _simple_chain_is_read_only_request(user_message):
-        # The broad token parser is appropriate here only because the request
-        # has already been classified as read-only.  The same tokens must not
-        # be registered as output deliverables downstream.
-        paths.extend(_simple_chain_explicit_deliverable_paths(user_message))
-    return _simple_chain_unique_paths(paths)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_project_dir(user_message: str) -> str:
-    """从任务文案提取“工作区 xxx/ 目录”里的项目目录名。
-
-    例如“全部产物放工作区 md-tools/ 目录”返回 md-tools；未指定返回空串。
-    只用于完成门磁盘兜底的搜索范围，避免在无关/备份目录里误命中同名旧产物。
-    """
-    text = str(user_message or "")
-    patterns = (
-        r"(?:到|放|保存到|创建(?:到|在)?|输出到|生成到|全部产物放)\s*"
-        r"工作区\s*([A-Za-z0-9_.-]+)\s*[\\/]?\s*(?:目录|文件夹|下)",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match and not re.search(r"(?:不要|不得|不许|禁止|无需|不用|别)\s*$", text[:match.start()]):
-            return str(match.group(1) or "").strip().strip("/\\")
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return ""
 
 def _simple_chain_unique_paths(paths: list[str]) -> list[str]:
@@ -2614,15 +2093,8 @@ def _simple_chain_audio_attachment_paths(paths: list[str] | None) -> list[str]:
     ]
 
 def _simple_chain_requests_audio_semantics(user_message: str, attachment_paths: list[str] | None) -> bool:
-    if not _simple_chain_audio_attachment_paths(attachment_paths):
-        return False
-    compact = re.sub(r"\s+", "", str(user_message or "").lower())
-    semantic_markers = (
-        "总结", "摘要", "萃取", "讲了什么", "说了什么", "内容", "分析", "听一下", "听听",
-        "转写", "转录", "识别", "提取文字", "字幕", "transcribe", "transcript", "summarize",
-        "summary", "whatdoesitsay", "whatisbeingsaid",
-    )
-    return any(marker in compact for marker in semantic_markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_native_audio_payload(
     evidence: dict[str, Any],
@@ -2695,15 +2167,8 @@ def _simple_chain_has_native_audio_evidence(
     return False
 
 def _simple_chain_safe_audio_unavailable_reply(candidate: Any) -> str:
-    text = _safe_visible_chat_reply(str(candidate or ""), "").strip()
-    compact = re.sub(r"\s+", "", text.lower())
-    honest_markers = (
-        "没有可用的音频识别功能", "无法识别音频", "不能识别音频", "不支持音频识别",
-        "cannotrecognizeaudio", "audioisnotsupported", "noaudiorecognition",
-    )
-    if text and len(text) <= 600 and any(marker in compact for marker in honest_markers):
-        return text
-    return "当前没有可用的音频识别功能，所以我无法可靠分析这个音频的内容，也不会根据文件名或上下文猜测。"
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return str(candidate or "").strip()
 
 def _simple_chain_with_current_image_observations(dynamic_context: str, user_message: str) -> str:
     """Make current image attachments semantically visible to the main turn."""
@@ -2755,95 +2220,12 @@ def _simple_chain_with_current_image_observations(dynamic_context: str, user_mes
     )
 
 def _simple_chain_min_required_chars(user_message: str) -> tuple[int, str]:
-    text = str(user_message or "")
-    patterns = (
-        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)", "cjk"),
-        (r"(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)\s*(?:以上|起|才)", "cjk"),
-        (r"不到\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)", "cjk"),
-        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*字", "nonspace"),
-        (r"(\d{2,6})\s*字\s*(?:以上|起|才)", "nonspace"),
-        (r"不到\s*(\d{2,6})\s*字", "nonspace"),
-    )
-    for pattern, metric in patterns:
-        match = re.search(pattern, text)
-        if match:
-            try:
-                return int(match.group(1)), metric
-            except Exception:
-                return 0, ""
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return 0, ""
 
 def _simple_chain_parse_requirements(user_message: str) -> list[dict]:
-    """把交付要求解析成结构化集合（≤16 条），路径绑定的要求只对匹配目标生效。
-
-    解析一次、全链共用：预检/质量门/完成门/模型载荷都读这份集合，避免
-    “全局最小值套到所有写入”的误判（如 300 字被套到清单.txt）。
-    """
-    text = str(user_message or "")
-    patterns = (
-        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)", "cjk"),
-        (r"(\d{2,6})\s*(?:个)?(?:中文汉字|汉字)\s*(?:以上|起|才)", "cjk"),
-        (r"(?:不少于|至少|不低于|超过|大于)\s*(\d{2,6})\s*字", "nonspace"),
-        (r"(\d{2,6})\s*字\s*(?:以上|起|才)", "nonspace"),
-    )
-    requirements: list[dict] = []
-    global_req: dict | None = None
-    for segment in re.split(r"[\n，。；、；]+", text):
-        found = None
-        for pattern, metric in patterns:
-            match = re.search(pattern, segment)
-            if match:
-                try:
-                    found = (int(match.group(1)), metric)
-                except Exception:
-                    found = None
-                break
-        if not found:
-            continue
-        min_chars, metric = found
-        path_match = re.search(
-            r"([A-Za-z0-9_\u4e00-\u9fff./\\:\- ]+?\.(?:md|txt|docx|pptx|pdf|xlsx|csv|json|py|html))",
-            segment,
-            re.IGNORECASE,
-        )
-        if not path_match:
-            path_match = re.search(
-                r"([A-Za-z0-9_\u4e00-\u9fff.\-]{1,60}?)(?=\s*[（(]\s*(?:不少于|至少|不低于|超过|大于))",
-                segment,
-            )
-        if not path_match:
-            path_match = re.search(r'"([^"]+)"|\'([^\']+)\'', segment)
-        if path_match:
-            raw = str(path_match.group(1) or path_match.group(2) or "").strip().strip('"').strip("'")
-            parts = re.split(r"\s+", raw)
-            if parts and "." in parts[-1]:
-                raw = parts[-1]
-            if raw:
-                try:
-                    suffix = Path(raw).suffix.lower().lstrip(".")
-                except Exception:
-                    suffix = ""
-                req = {
-                    "path_pattern": raw,
-                    "suffix": suffix,
-                    "min_chars": min_chars,
-                    "metric": metric,
-                }
-                if len(requirements) < 16 and not any(
-                    str(item.get("path_pattern") or "") == raw for item in requirements
-                ):
-                    requirements.append(req)
-                continue
-        if global_req is None:
-            global_req = {
-                "path_pattern": "",
-                "suffix": "",
-                "min_chars": min_chars,
-                "metric": metric,
-            }
-    if global_req is not None and len(requirements) < 16:
-        requirements.append(global_req)
-    return requirements
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_target_stem(text: str) -> str:
     try:
@@ -2856,50 +2238,11 @@ def _simple_chain_content_requirement_for(
     user_message: str,
     requirements: list[dict] | None = None,
 ) -> tuple[int, str]:
-    """按目标路径解析字数要求；命中绑定要求返回其值，否则回退全局/旧逻辑。"""
-    reqs = requirements if isinstance(requirements, list) else _simple_chain_parse_requirements(user_message)
-    if not reqs:
-        return _simple_chain_min_required_chars(user_message)
-    target_text = str(target or "")
-    target_stem = _simple_chain_target_stem(target_text)
-    try:
-        target_suffix = Path(target_text).suffix.lower().lstrip(".")
-    except Exception:
-        target_suffix = ""
-    for req in reqs:
-        pattern = str(req.get("path_pattern") or "")
-        if not pattern:
-            continue
-        bound_stem = _simple_chain_target_stem(pattern)
-        bound_suffix = str(req.get("suffix") or "")
-        if bound_stem and (bound_stem == target_stem or (bound_suffix and bound_suffix == target_suffix)):
-            return int(req.get("min_chars") or 0), str(req.get("metric") or "nonspace")
-    for req in reqs:
-        if not str(req.get("path_pattern") or ""):
-            return int(req.get("min_chars") or 0), str(req.get("metric") or "nonspace")
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return 0, ""
 
 def _novel_chapter_min_chars(user_message: str, action: str, tool_args: Any) -> int:
-    if action not in {"file.write", "file.append", "code.write"}:
-        return 0
-    text = str(user_message or "")
-    target = str((tool_args or {}).get("target") or "") if isinstance(tool_args, dict) else ""
-    combined = text + "\n" + target
-    novel_markers = ("小说", "网文", "第一章", "第1章", "novel", "chapter")
-    if not any(marker in combined for marker in novel_markers):
-        return 0
-    short_markers = ("短章", "片段", "梗概", "概要", "摘要", "几百字", "500字", "五百字")
-    if any(marker in text for marker in short_markers):
-        return 0
-    # A procedure may recommend a length, but only the user's explicit request
-    # creates a hard minimum. "正文至少16pt" is typography, not a novel request.
-    explicit = re.search(
-        r"(?:不少于|至少|不低于|超过|大于|≥|>)\s*(\d{2,6})\s*(?:个)?(?:中文汉字|汉字|字)",
-        text,
-        re.IGNORECASE,
-    )
-    if explicit:
-        return max(1, int(explicit.group(1)))
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return 0
 
 def _contract_observed_write(contract: dict[str, Any] | None) -> bool:
@@ -3295,24 +2638,8 @@ def _simple_chain_paths_match_desktop(
     *,
     verify_format: bool = True,
 ) -> bool:
-    text = str(user_message or "")
-    # A topic, source location or prohibition is not a delivery destination.
-    # Exact output paths remain checked by the final artifact evidence gate.
-    destinations = re.finditer(
-        r"(?:保存(?:到|在|至)|放(?:到|在)|输出到|生成到|写到|存到)\s*(?:我的)?(?:桌面|desktop)"
-        r"|(?:在|on\s+(?:the\s+)?)\s*(?:桌面|desktop)(?:上)?\s*(?:创建|生成|保存|写|制作|create|save)", text, re.I,
-    )
-    if not any(not re.search(r"(?:不要|不得|不许|禁止|无需|不用|别|do not|never)\s*$",
-                             text[:match.start()], re.I) for match in destinations):
-        return True
-    suffixes = _simple_chain_expected_suffixes(user_message)
-    if suffixes:
-        for path in actual_paths:
-            suffix = _path_suffix(path)
-            if suffix in suffixes and _path_under_desktop(path):
-                return not verify_format or _simple_chain_desktop_file_format_ok(path, suffix)
-        return False
-    return any(_path_under_desktop(path) for path in actual_paths)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return True
 
 def _simple_chain_mutation_payload_satisfies_request(
     user_message: str,
@@ -3420,45 +2747,14 @@ def _simple_chain_task_kind(
             saw_other = True
     if saw_write:
         return "write"
-    if _requires_real_mutation(user_message) and not saw_other:
-        return "write"
     if saw_read and not saw_other:
         return "read"
     return "mixed"
 
-_SIMPLE_CHAIN_ANSWER_ERROR_MARKERS = (
-    "invalid_tool_arguments",
-    "invalidtoolarguments",
-    "outside_workspace",
-    "path escapes workspace",
-    "exact signed a4",
-    "no write_effect",
-    "tool result has no",
-    "access denied",
-    "permissionerror",
-    '"success": false',
-    '"ok": false',
-    "这个任务还没有完成",
-    "这个任务做到一半出错了",
-    "我没有编造结果",
-)
-
-_SIMPLE_CHAIN_ANSWER_CLOSING_MARKERS = (
-    "总结如下",
-    "综上",
-    "总的来说",
-    "以上是",
-    "以上就是",
-    "结论如下",
-    "回答如下",
-    "in summary",
-    "to summarize",
-    "in conclusion",
-)
 
 def _simple_chain_reply_restates_tool_error(text: Any) -> bool:
-    lowered = str(text or "").lower()
-    return any(marker in lowered for marker in _SIMPLE_CHAIN_ANSWER_ERROR_MARKERS)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_strip_tool_markup(text: Any) -> str:
     """去掉模型回复里的工具调用标记，保留自然语言正文。"""
@@ -3524,107 +2820,22 @@ def _simple_chain_substantive_answer(
     quality_history: list[dict[str, Any]] | None,
     final_reply: Any,
 ) -> tuple[bool, str]:
-    """读/问答任务的完成判据：实质答案 = 非空、不是工具错误复述、且引用了
-    读取到的内容；模型显式结束语优先；链上没有可对照的读取正文时按宽松
-    方向放行（答案已非空且非错误复述）。"""
-    text = str(final_reply or "").strip()
-    if not text:
-        return False, "final_reply_empty"
-    if _simple_chain_reply_restates_tool_error(text):
-        return False, "final_reply_restates_tool_error"
-    lowered = text.lower()
-    if any(marker in lowered for marker in _SIMPLE_CHAIN_ANSWER_CLOSING_MARKERS):
-        return True, "explicit_closing"
-    corpus = _simple_chain_read_corpus(quality_history)
-    if not corpus:
-        return True, "answer_nonempty_no_read_corpus"
-    if _simple_chain_reply_references_corpus(text, corpus):
-        return True, "references_read_content"
-    return False, "final_reply_does_not_reference_read_content"
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return bool(str(final_reply or "").strip()), ""
 
 def _simple_chain_verbatim_read_reply(
     user_message: str,
     quality_history: list[dict[str, Any]],
 ) -> str:
-    """Render exact successful reads when the model drops tool-result text.
-
-    This is deliberately narrower than a general summarizer: it is enabled
-    only for an explicit read-only request for exact/original content, after
-    the normal coverage gate proves that every named target was successfully
-    read.  A partial or failed batch therefore remains incomplete.
-    """
-
-    if not _simple_chain_is_read_only_request(user_message):
-        return ""
-    compact = re.sub(r"\s+", "", str(user_message or "").lower())
-    exact_markers = (
-        "原文", "原始内容", "完整内容", "精确内容", "逐字", "一字不差",
-        "exactcontent", "verbatim", "wordforword",
-    )
-    if not any(marker in compact for marker in exact_markers):
-        return ""
-    if _simple_chain_read_coverage_issues(user_message, quality_history):
-        return ""
-
-    rows: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for payload in quality_history or []:
-        if (
-            not isinstance(payload, dict)
-            or not bool(payload.get("ok"))
-            or str(payload.get("tool_action") or "").strip().lower() != "file.read"
-        ):
-            continue
-        content = _simple_chain_payload_read_content(payload)
-        if content == "":
-            continue
-        args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
-        path = str(args.get("target") or "").strip()
-        if not path:
-            paths = _simple_chain_payload_paths(payload)
-            path = str(paths[0] if paths else "").strip()
-        key = _path_key_for_qc(path) or _safe_text_sha256(content)
-        if key in seen:
-            continue
-        seen.add(key)
-        rows.append((path or f"read_{len(rows) + 1}", content))
-
-    expected = _simple_chain_explicit_read_paths(user_message)
-    if expected and any(
-        not any(_simple_chain_paths_match_expected([row_path], [path]) for row_path, _ in rows)
-        for path in expected
-    ):
-        return ""
-    if not rows:
-        return ""
-    blocks = []
-    for path, content in rows:
-        blocks.append(
-            f"文件：{path}\n"
-            "---BEGIN EXACT CONTENT---\n"
-            f"{content}"
-            + ("" if content.endswith("\n") else "\n")
-            + "---END EXACT CONTENT---"
-        )
-    return "\n\n".join(blocks)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return ""
 
 def _simple_chain_latest_read_count(
     user_message: str,
     quality_history: list[dict[str, Any]],
 ) -> tuple[int, str]:
-    expected_paths = _simple_chain_requested_target_paths(user_message)
-    metric = _simple_chain_min_required_chars(user_message)[1] or "nonspace"
-    for payload in reversed(quality_history or []):
-        if str(payload.get("tool_action") or "").lower() != "file.read" or not payload.get("ok"):
-            continue
-        paths = _simple_chain_payload_paths(payload)
-        if expected_paths and not _simple_chain_paths_match_expected(paths, expected_paths):
-            continue
-        content = _simple_chain_payload_read_content(payload)
-        if not content:
-            continue
-        return (_count_chinese_chars(content) if metric == "cjk" else _count_nonspace_chars(content), metric)
-    return 0, metric
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return 0, "nonspace"
 
 def _simple_chain_delivery_has_attachment(
     user_message: str,
@@ -3651,36 +2862,12 @@ def _simple_chain_delivery_has_attachment(
     return False
 
 def _simple_chain_strict_single_deliverable(user_message: str) -> bool:
-    """单交付物任务才启用逐写路径/后缀严格匹配。
-
-    多文件工程任务（项目脚手架、文档站、代码仓库）里 pyproject.toml、
-    tests/*.py 等中间文件不属于任何单一交付物；若把任务级期望路径/后缀
-    套到每一次写操作上，会把合法写入全部标成 gap 并诱发卡死误停。
-    交付物存在性由终局 missing_deliverables 门统一校验。
-    """
-    text = str(user_message or "")
-    project_markers = (
-        "项目", "工程", "脚手架", "包", "库", "目录",
-        "src/", "tests/", "__init__.py", "pyproject",
-        "package", "project", "module", "多个文件",
-    )
-    if any(marker in text for marker in project_markers):
-        return False
-    return (
-        len(_simple_chain_requested_target_paths(user_message)) <= 1
-        and len(_simple_chain_expected_suffixes(user_message)) <= 1
-    )
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_allows_empty_scaffold(user_message: str, tool_args: dict[str, Any]) -> bool:
-    """多文件工程允许空占位文件（__init__.py / 脚手架占位），
-    单交付物任务仍要求非空内容。"""
-    if not _simple_chain_strict_single_deliverable(user_message):
-        return True
-    target = str((tool_args or {}).get("target") or "")
-    try:
-        return Path(target).name.lower() == "__init__.py"
-    except Exception:
-        return False
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return True
 
 def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: dict[str, Any]) -> list[str]:
     """Compatibility hook: task quality must not reject intermediate actions.
@@ -3691,9 +2878,8 @@ def _simple_chain_preflight_issues(user_message: str, action: str, tool_args: di
     return []
 
 def _requests_zip_delivery(user_message: str) -> bool:
-    text = str(user_message or "")
-    zip_markers = ("zip", ".zip", "压缩包", "打包", "压缩", "归档")
-    return _has_delivery_intent(text) and any(marker in text for marker in zip_markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _has_generated_attachment_suffix(attachment_items: list[dict[str, str]], suffixes: set[str]) -> bool:
     for item in attachment_items or []:
@@ -3751,10 +2937,6 @@ _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
 )
 
 # 疑似工具调用的文本特征：解析失败时据此触发一次格式纠错回传。
-_SUSPECTED_TOOL_CALL_PATTERN = re.compile(
-    r"<invoke\b|<tool_call\b|<function_?calls?\b|\"tool_calls\"\s*:|\"function\"\s*:\s*\{|omni[_-]?body\s*[<\[{]",
-    re.IGNORECASE,
-)
 
 # bug-fix: 完成门 correction 上限 3→1：连环 correction 让模型重新回答 3-5 遍，
 # 一次修正机会足够给出增量证据，再不行就走确定性模板（2026-08-26，凌霜修 logic 类）
@@ -3818,19 +3000,6 @@ _SIMPLE_CHAIN_RUN_STATE_RETAIN_DAYS = float(
 )
 
 # 终态/泊车态白名单：启动对账只把这些视为“已经结束”；其余一律转 interrupted。
-_SIMPLE_CHAIN_TERMINAL_STATUSES = frozenset({
-    "complete",
-    "failed",
-    "incomplete",
-    "force_stopped",
-    "chat_reply",
-    "awaiting_user",
-    "confirm_pending",
-    "interrupted",
-    "orphaned",
-    "canceled",
-    "cancelled",
-})
 
 def _simple_chain_natural_reply_text(text: Any) -> str:
     """提取模型回复里的自然语言部分（剥掉工具调用 XML，只留“说的”内容）。"""
@@ -3855,55 +3024,16 @@ def _simple_chain_intent_is_near_duplicate(
     b: Any,
     threshold: float = 0.66,
 ) -> bool:
-    """意图文本语义近似判定：归一化后的序列相似度（difflib，无额外依赖）。"""
-    na = _simple_chain_normalize_intent_text(a)
-    nb = _simple_chain_normalize_intent_text(b)
-    if not na or not nb:
-        return na == nb
-    from difflib import SequenceMatcher
-
-    return SequenceMatcher(None, na, nb).ratio() >= threshold
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return bool(a and b and str(a).strip() == str(b).strip())
 
 def _simple_chain_progress_blocking_reasons(
     user_message: str,
     quality_history: list[dict[str, Any]],
     generated_attachments: list[dict[str, str]],
 ) -> list[str]:
-    """生命契约的可观察证据缺口（不含终态语义判断）。
-
-    缺显式动作、缺交付物和缺验证等事实可作为进展标尺，但它们不能
-    独立解释用户意图或决定任务终态。
-    """
-    if not _runtime_detects_work_intent(user_message):
-        return []
-    reasons: list[str] = []
-    reasons.extend(execution_integrity_blockers(user_message, quality_history, final_reply=None))
-    completed_actions = {
-        str(payload.get("tool_action") or "").strip().lower()
-        for payload in (quality_history or [])
-        if isinstance(payload, dict) and bool(payload.get("ok"))
-    }
-    missing_actions = [
-        action
-        for action in _simple_chain_explicit_action_sequence(user_message)
-        if action not in {"skill.route", "skill.get", "skill.read"}
-        and action not in completed_actions
-    ]
-    if missing_actions:
-        reasons.append("missing_actions:" + ",".join(sorted(missing_actions)[:8]))
-    missing_deliverables = _simple_chain_missing_deliverable_paths(
-        user_message,
-        quality_history,
-        generated_attachments,
-    )
-    if missing_deliverables:
-        reasons.append("missing_deliverables:" + ",".join(sorted(missing_deliverables)[:8]))
-    if (
-        _simple_chain_requires_verification(user_message)
-        and not _simple_chain_has_post_mutation_verification(quality_history, user_message)
-    ):
-        reasons.append("missing_verification")
-    return reasons
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 # 进展指纹去噪（实验证据 2026-08-06，隔离目录真实载荷）：
 # 现状对完整载荷哈希，而载荷每轮必含 run_state.round、repeat_count、时间戳，
@@ -4159,62 +3289,12 @@ def _simple_chain_allowed_tool_names(available_tool_names: set[str] | None) -> s
     return {"omni_body"} if "omni_body" in available else set()
 
 def _simple_chain_has_explicit_learning_intent(user_message: str) -> bool:
-    text = re.sub(r"\s+", " ", str(user_message or "")).strip().lower()
-    compact = text.replace(" ", "")
-    chinese_markers = (
-        "学一下这个",
-        "学习这个",
-        "学习这段",
-        "帮我学习",
-        "请学习",
-        "做成能力",
-        "沉淀成skill",
-        "沉淀成技能",
-        "生成学习卡",
-        "创建学习卡",
-        "记录学习卡",
-        "学习卡片",
-        "显式学习内容",
-    )
-    if any(marker in compact for marker in chinese_markers):
-        return True
-    if "learning.ingest" in text and re.search(
-        r"(?:调用|执行|使用|invoke|call).{0,40}learning\.ingest|"
-        r"learning\.ingest.{0,80}(?:待确认|学习卡|awaiting_user|pending)",
-        text,
-        flags=re.IGNORECASE,
-    ):
-        return True
-    return bool(
-        re.search(
-            r"\b(?:learn this|learn the following|create (?:a )?learning card|"
-            r"turn .{0,80} into (?:a )?skill)\b",
-            text,
-        )
-    )
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_is_learning_only_request(user_message: str) -> bool:
-    if not _simple_chain_has_explicit_learning_intent(user_message):
-        return False
-    if _simple_chain_expected_suffixes(user_message) or _has_delivery_intent(user_message):
-        return False
-    text = re.sub(r"\s+", " ", str(user_message or "")).strip().lower()
-    compact = text.replace(" ", "")
-    return any(
-        marker in compact
-        for marker in (
-            "只创建",
-            "仅创建",
-            "只生成",
-            "仅生成",
-            "立即报告",
-            "立刻报告",
-            "onlycreate",
-            "createonly",
-            "immediatelyreport",
-            "reportthecard_id",
-        )
-    )
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_learning_receipt(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(payload, dict) or not bool(payload.get("ok")):
@@ -4255,12 +3335,8 @@ def _simple_chain_learning_completion_reply(payload: dict[str, Any]) -> str:
     )
 
 def _simple_chain_learning_material_text(user_message: str) -> str:
-    text = str(user_message or "").strip()
-    for pattern in (r"“([^”]+)”", r'"([^"]+)"', r"'([^']+)'"):
-        matches = [item.strip() for item in re.findall(pattern, text) if item.strip()]
-        if matches:
-            return max(matches, key=len)
-    return text
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return str(user_message or "").strip()
 
 _SIMPLE_CHAIN_DECLARED_ACTION_NAMES: frozenset[str] | None = None
 
@@ -4301,20 +3377,8 @@ def _simple_chain_user_goal_text(user_message: str) -> str:
     return text[:min(offsets)].strip() if offsets else text
 
 def _simple_chain_is_response_only_without_tools(user_message: str) -> bool:
-    """Honor a narrow user contract that explicitly forbids tools and asks only for text."""
-    text = _simple_chain_user_goal_text(user_message)
-    compact = re.sub(r"\s+", "", text).lower()
-    if not compact:
-        return False
-    forbids_tools = bool(
-        re.search(r"(?:不要|不许|禁止|无需|不用|别)(?:调用|使用|执行)?任何?(?:工具|tool)", compact)
-        or re.search(r"(?:donot|don't|without|no)(?:use|call|invoke)?(?:any)?tools?", compact)
-    )
-    response_only = bool(
-        re.search(r"(?:只|仅)(?:需要|要|需)?(?:回复|回答|输出|说)", compact)
-        or re.search(r"(?:only|just)(?:reply|respond|answer|output|say)", compact)
-    )
-    return forbids_tools and response_only
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_declared_action_names() -> frozenset[str]:
     global _SIMPLE_CHAIN_DECLARED_ACTION_NAMES
@@ -4371,53 +3435,8 @@ def _simple_chain_declared_action_names() -> frozenset[str]:
     return _SIMPLE_CHAIN_DECLARED_ACTION_NAMES
 
 def _simple_chain_explicit_action_sequence(user_message: str, *, require_order: bool = True) -> list[str]:
-    text = _simple_chain_user_goal_text(user_message).lower()
-    strict_order_markers = (
-        r"严格(?:地)?按(?:照)?(?:以下|下列|上述|这个)?顺序",
-        r"严格按序",
-        r"按顺序",
-        r"按(?:以下|下列|上述|这个)顺序",
-        r"依次(?:调用|执行|使用|运行)",
-        r"(?:first|firstly)\b.{0,160}\b(?:then|next|after that)\b",
-        r"(?:strictly|exactly)\s+in\s+(?:this\s+)?order",
-    )
-    if require_order and not any(re.search(marker, text, re.IGNORECASE | re.DOTALL) for marker in strict_order_markers):
-        return []
-    declared = _simple_chain_declared_action_names()
-    positioned: list[tuple[int, str]] = []
-    for match in re.finditer(r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)", text):
-        action = match.group(1)
-        if action in declared:
-            before = text[max(0, match.start() - 40):match.start()]
-            if not require_order:
-                # Only a direct affirmative instruction can opt into a named
-                # quality review. Merely mentioning a checker is advisory.
-                if not re.search(r"(?:调用|执行|使用|通过|运行|\bcall|\brun|\buse|\bpass)\s*[`\"']?\s*$", before):
-                    continue
-                if re.search(r"(?:不要|不得|不许|禁止|无需|不用|不需要|不要求|别|do not|never)[^，。；;\n]{0,24}$", before):
-                    continue
-            if re.search(r"(说明|介绍|解释|描述|列出|参数|用法|什么是|如何|是什么)", before):
-                # 说明/介绍语境里的工具名只是名词提及，不是要求执行的动作（B7）。
-                continue
-            positioned.append((match.start(), action))
-    sequence: list[str] = []
-    for _position, action in sorted(positioned):
-        if action not in sequence:
-            sequence.append(action)
-    if _simple_chain_is_verification_compensation(user_message):
-        # A checkpoint may start a new backend request after mutations have
-        # already succeeded.  Preserve the original goal for acceptance, while
-        # preventing the explicit-action guard from forcing production actions
-        # to run again during the renderer's verification-only compensation.
-        sequence = [
-            action for action in sequence
-            if action not in _SIMPLE_CHAIN_MUTATING_ACTIONS
-            and action not in {
-                "skill.get", "skill.read", "skill.route",
-                "file.list", "system.capabilities", "system.action_schema",
-            }
-        ]
-    return sequence
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_tool_block_payload(request_id: str, tool_name: str, tool_args: dict) -> dict[str, Any]:
     return {
@@ -4465,14 +3484,12 @@ def _simple_chain_prepare_tool_call(
     if action == "learning.ingest":
         nested = args.get("args") if isinstance(args.get("args"), dict) else {}
         nested = dict(nested)
-        # A model-proposed token is never authority.  The backend verifies the
-        # original user message and conveys only a ContextVar boolean to the
-        # in-process tool runtime, so no reusable secret enters prompts,
-        # grants, run-state files, or tool observations.
+        # Model text cannot create learning authority. Preserve an existing
+        # typed host grant and bind its content to the actual user message.
         nested.pop("host_verified_intent_token", None)
-        if _simple_chain_has_explicit_learning_intent(user_message):
+        from v3.run_context import current_run_context
+        if current_run_context().learning_intent_verified:
             nested["user_text"] = str(user_message or "")
-            update_run_context(learning_intent_verified=True)
         args = {**args, "args": nested}
     return name, args, action, _simple_chain_preflight_issues(user_message, action, args), None
 
@@ -4639,8 +3656,7 @@ def _simple_chain_quality_gate_payload(
     if action.startswith("qc."):
         acceptance, score = _simple_chain_qc_acceptance(tool_result)
         if acceptance is False:
-            destination = (final_requirement_gaps if action in _simple_chain_explicit_action_sequence(user_message, require_order=False)
-                           else quality_advisories)
+            destination = quality_advisories
             suffix = f": score={score}" if score is not None else ""
             destination.append(f"quality acceptance failed{suffix}")
             issue_summary = _simple_chain_qc_issue_summary(tool_result)
@@ -4798,169 +3814,50 @@ def _simple_chain_failure_text(payload: dict[str, Any] | None) -> list[str]:
     return failures
 
 def _simple_chain_requires_verification(user_message: str) -> bool:
-    text = str(user_message or "")
-    compact = re.sub(r"\s+", "", text.lower())
-    markers = (
-        "测试", "跑测试", "运行测试", "测一下", "验证", "校验", "回归",
-        "pytest", "unittest", "npmtest", "npmruntest", "pnpmtest", "yarntest",
-        "test", "verify", "validate", "regression",
-    )
-    return any(marker in compact for marker in markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_requires_command_verification(user_message: str) -> bool:
-    """用户明确要求“运行测试/确保测试通过”时，写回读证据不能冒充验证。"""
-    text = str(user_message or "")
-    return bool(re.search(
-        r"运行\s+(?:python|py)\s+[A-Za-z0-9_./\\-]+\.py|"
-        r"运行\s*(?:python\s*-m\s*)?pytest|unittest|pytest\s+tests|"
-        r"确保.{0,12}测试.{0,8}通过|测试.{0,8}全部通过|运行测试|跑测试",
-        text,
-        re.IGNORECASE,
-    ))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_has_post_mutation_verification(
-    quality_history: list[dict[str, Any]],
-    user_message: str = "",
+    quality_history: list[dict[str, Any]], user_message: str = "",
 ) -> bool:
-    test_goals = [item for item in build_action_obligations(user_message)
-                  if item.get("evidence_predicate") == "tests_passed"]
-    if test_goals:
-        # The shared evidence view owns test attempt and dependency freshness.
-        # A README write after passing tests is not a new code verification debt.
-        return all(obligation_is_satisfied(item, quality_history) for item in test_goals)
-    verification_actions = {"run", "python.run", "quality.run_tests", "shell.run", "command.run"}
-    test_markers = (
-        "pytest", "unittest", "npm test", "npm run test", "pnpm test", "yarn test",
-        "测试", "验证", "校验", "回归",
-        "sha256", "get-filehash", "zipfile", "test-path",
-    )
-
-    def args_text(payload: dict[str, Any]) -> str:
-        try:
-            return json.dumps(payload.get("tool_args") or {}, ensure_ascii=False).lower()
-        except Exception:
-            return str(payload.get("tool_args") or "").lower()
-
-    def is_command_verification(payload: dict[str, Any]) -> bool:
-        action = str(payload.get("tool_action") or "").lower()
-        if action == "quality.run_tests":
-            return True
-        if action not in verification_actions:
-            return False
-        contract = payload.get("tool_result_contract") if isinstance(payload.get("tool_result_contract"), dict) else {}
-        if not _contract_observed_write(contract):
-            return True
-        # Test runners commonly create __pycache__, coverage data, or similar
-        # incidental files. An explicit verification command remains an
-        # observation; those by-products must not recursively create a new
-        # mutation that itself requires another verification.
-        command_text = args_text(payload)
-        return (
-            any(marker in command_text for marker in test_markers)
-            or re.search(r"(?<![a-z])(?:tests?|verify|validate|regression)(?![a-z])", command_text) is not None
-        )
-
-    def is_verification_document_write(payload: dict[str, Any]) -> bool:
-        """验证报告类文档（测试报告/report/verification）是验证输出的记录，
-        不是需要再次验证的代码变更；把它当作最后一次变更会把“先跑测试、
-        再写报告”的正确顺序误判成缺验证。"""
-        if not isinstance(payload, dict) or not bool(payload.get("ok")):
-            return False
-        paths = _simple_chain_payload_paths(payload)
-        names = {str(Path(item).name).lower() for item in paths if item}
-        report_names = {
-            "report.md", "test_report.md", "testing_report.md",
-            "测试报告.md", "测试结果.md", "验证结果.md", "verification.md",
-        }
-        if not any(
-            name in report_names
-            or re.match(r"^(测试报告|测试结果|验证结果|report|verification)[._\-]", name)
-            for name in names
-        ):
-            return False
-        try:
-            args_text = json.dumps(payload.get("tool_args") or {}, ensure_ascii=False).lower()
-        except Exception:
-            args_text = ""
-        return any(
-            marker in args_text
-            for marker in ("passed", "failed", "pytest", "unittest", "测试", "验证", "ran ")
-        )
-
-    last_mutation_index = -1
-    mutation_paths: list[str] = []
+    """Recognize actual write/read evidence without interpreting task or command text."""
+    last_write = -1
+    paths = []
     for index, payload in enumerate(quality_history or []):
-        if not isinstance(payload, dict):
+        contract = payload.get("tool_result_contract") if isinstance(payload, dict) else None
+        if isinstance(contract, dict) and _contract_observed_write(contract):
+            last_write = index
+            paths = _simple_chain_payload_paths(payload)
+    if last_write >= 0:
+        payload = quality_history[last_write]
+        contract = payload.get("tool_result_contract") or {}
+        evidence = contract.get("write_evidence") or {}
+        if payload.get("ok") is True and evidence.get("authoritative") is True:
+            if any(isinstance(row, dict) and row.get("exists") is True
+                   and (row.get("sha256") or row.get("size_bytes") is not None)
+                   for row in evidence.get("post", [])):
+                return True
+    for payload in (quality_history or [])[last_write + 1:]:
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
             continue
-        action = str(payload.get("tool_action") or "").lower()
-        if action in {"skill.route", "skill.get", "skill.read"}:
-            continue
-        contract = payload.get("tool_result_contract") if isinstance(payload.get("tool_result_contract"), dict) else {}
-        if _contract_observed_write(contract) and not is_command_verification(payload):
-            if is_verification_document_write(payload):
-                continue
-            last_mutation_index = index
-            mutation_paths = _simple_chain_payload_paths(payload)
-    # With no mutation, a verification-only request is satisfied by a
-    # successful verification action. With a mutation, verification must be a
-    # later observation so success cannot be inferred from the write itself.
-    for payload in (quality_history or [])[last_mutation_index + 1:]:
-        if not isinstance(payload, dict) or not bool(payload.get("ok")):
-            continue
-        action = str(payload.get("tool_action") or "").lower()
-        if is_command_verification(payload):
+        action = str(payload.get("tool_action") or "")
+        if last_write < 0 and action in {"quality.run_tests", "python.run", "shell.run", "command.run"}:
             return True
-        if action == "file.read" or action == "file.hash" or action.startswith("qc."):
-            verification_paths = _simple_chain_payload_paths(payload)
-            if last_mutation_index < 0 and (verification_paths or action.startswith("qc.")):
+        if action in {"file.read", "file.hash"} or action.startswith("qc."):
+            observed_paths = _simple_chain_payload_paths(payload)
+            if last_write < 0 and observed_paths:
                 return True
-            if any(
-                _simple_chain_paths_match_expected(verification_paths, [mutation_path])
-                for mutation_path in mutation_paths
-            ):
-                return True
-    # B4 延伸：最后一次写工具的权威回读证据（exists + sha256/size，来自沙箱
-    # broker 的确定性 post 状态）本身就是机器验证，不应要求模型再多读一次。
-    # 但用户明确要求“运行测试/确保通过”时，必须真实执行验证命令（自修复链）。
-    if (
-        last_mutation_index >= 0
-        and last_mutation_index < len(quality_history or [])
-        and not _simple_chain_requires_command_verification(user_message)
-    ):
-        last_payload = quality_history[last_mutation_index]
-        contract = last_payload.get("tool_result_contract") if isinstance(last_payload.get("tool_result_contract"), dict) else {}
-        evidence = contract.get("write_evidence")
-        if isinstance(evidence, dict) and evidence.get("authoritative") is True:
-            post = evidence.get("post") if isinstance(evidence.get("post"), list) else []
-            if any(
-                isinstance(row, dict)
-                and row.get("exists") is True
-                and (row.get("sha256") or row.get("size_bytes") is not None)
-                for row in post
-            ):
-                return True
-            changed_files = evidence.get("changed_files") if isinstance(evidence.get("changed_files"), list) else []
-            if changed_files:
+            if any(_simple_chain_paths_match_expected(observed_paths, [target]) for target in paths):
                 return True
     return False
 
 def _simple_chain_requires_read_coverage(user_message: str, required_paths: list[str] | None = None) -> bool:
-    text = str(user_message or "")
-    compact = re.sub(r"\s+", "", text.lower())
-    read_markers = (
-        "读取", "读一下", "看一下", "查看", "总结", "整理", "分析", "对比", "汇总",
-        "基于", "根据", "依据", "参考", "利用", "使用", "依照", "按附件", "按文件", "写一份", "生成",
-        "read", "summarize", "summary", "analyze", "compare", "basedon", "using", "fromattachments", "fromfiles",
-    )
-    plurality_markers = ("全部", "所有", "这些", "每个", "逐个", "批量", "all", "each")
-    attachment_markers = ("附件", "文件", "上传", "资料", "文档", "attachment", "attachments", "file", "files")
-    paths = _simple_chain_explicit_read_paths(user_message)
-    if required_paths and any(marker in compact for marker in read_markers):
-        if any(marker in compact for marker in attachment_markers) or len(required_paths) >= 1:
-            return True
-    if len(paths) >= 2 and any(marker in compact for marker in read_markers):
-        return True
-    return bool(paths and any(marker in compact for marker in read_markers) and any(marker in compact for marker in plurality_markers))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 def _simple_chain_read_coverage_issues(
     user_message: str,
@@ -4968,57 +3865,8 @@ def _simple_chain_read_coverage_issues(
     required_paths: list[str] | None = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> list[str]:
-    expected_paths = _simple_chain_unique_paths(
-        _simple_chain_explicit_read_paths(user_message) + list(required_paths or [])
-    )
-    # 交付产物（显式要求生成/保存、且不是“参考/读取”输入）不能同时被当作
-    # 待读输入：否则“生成《报告.md》”会被误判为必须先读取报告.md（B1 边界）。
-    deliverable_outputs = (
-        set()
-        if _simple_chain_is_read_only_request(user_message)
-        else {
-            path
-            for path in _simple_chain_explicit_deliverable_paths(user_message)
-            if not _simple_chain_path_is_reference_mention(user_message, path)
-        }
-    )
-    expected_paths = [path for path in expected_paths if path not in deliverable_outputs]
-    if not _simple_chain_requires_read_coverage(user_message, required_paths=expected_paths):
-        return []
-    if not expected_paths:
-        return []
-    read_paths: list[str] = []
-    for payload in quality_history or []:
-        if not isinstance(payload, dict) or not bool(payload.get("ok")):
-            continue
-        if str(payload.get("tool_action") or "").lower() not in {
-            "file.read",
-            "model.native_audio_understand",
-        }:
-            continue
-        read_paths.extend(_simple_chain_payload_paths(payload))
-    resolved_existence_paths = [
-        str(obligation.get("target_path") or "")
-        for obligation in (task_obligations or [])
-        if isinstance(obligation, dict)
-        and str(obligation.get("kind") or "").strip().lower() == "observation"
-        and str(obligation.get("evidence_predicate") or "").strip() == "existence_resolved"
-        and obligation_is_satisfied(obligation, quality_history)
-    ]
-    missing = [
-        path for path in expected_paths
-        if not _simple_chain_paths_match_expected(read_paths, [path])
-        and not _simple_chain_paths_match_expected(resolved_existence_paths, [path])
-    ]
-    issues: list[str] = []
-    if missing:
-        issues.append(f"requested read coverage is incomplete: missing {len(missing)} of {len(expected_paths)} target paths")
-    min_chars, metric = _simple_chain_min_required_chars(user_message)
-    if min_chars:
-        count, actual_metric = _simple_chain_latest_read_count(user_message, quality_history)
-        if count < min_chars:
-            issues.append(f"read content {actual_metric or metric}_chars={count} < required {min_chars}")
-    return issues
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_missing_deliverable_paths(
     user_message: str,
@@ -5028,206 +3876,24 @@ def _simple_chain_missing_deliverable_paths(
     # Read targets are never output obligations.  In particular, a failed read
     # of missing.txt must remain a failed observation and must never trigger the
     # platform's report-writing fallback for that same path.
-    if _simple_chain_is_read_only_request(user_message):
-        return []
-    expected = _simple_chain_explicit_deliverable_paths(user_message)
-    if not expected:
-        return []
-    retained = { _path_key_for_qc(item["target_path"]) for item in request_target_bindings(user_message)
-                if item["role"] == "existing" }
-    observed: list[str] = []
-    for payload in quality_history or []:
-        if execution_result_ok(payload):
-            observed.extend(path for path in _simple_chain_payload_paths(payload)
-                            if not any(_simple_chain_paths_match_expected([path], [target])
-                                       for target in expected if _path_key_for_qc(target) in retained))
-    for item in generated_attachments or []:
-        if isinstance(item, dict) and item.get("path"):
-            path = str(item.get("path"))
-            if not any(_simple_chain_paths_match_expected([path], [target])
-                       for target in expected if _path_key_for_qc(target) in retained):
-                observed.append(path)
-    observed = _simple_chain_unique_paths(observed)
-    base = _delivery_workspace_root()
-    project_dir = _simple_chain_project_dir(user_message)
-    if project_dir and base:
-        # 任务指定了项目目录（如 markdown-wiki/）时，只有位于该目录下的
-        # 产物才算数；模型把项目写到别的目录（如历史会话里的 CLI/xxx/）
-        # 不得按“文件名后缀相同”误判为已交付。
-        try:
-            project_root = (Path(base) / project_dir).resolve(strict=False)
-            filtered: list[str] = []
-            for item in observed:
-                try:
-                    resolved_item = Path(_delivery_resolve_path(item, base)).resolve(strict=False)
-                    resolved_item.relative_to(project_root)
-                    filtered.append(item)
-                except Exception:
-                    continue
-            observed = _simple_chain_unique_paths(filtered)
-        except Exception:
-            pass
-    for path in expected:
-        # A deliverable that already exists on disk is real evidence.  A fresh
-        # run must not delete/rebuild it just because this run has no new
-        # tool observation yet; the completion gate reads the filesystem.
-        resolved = _delivery_resolve_path(
-            path,
-            str(Path(base) / project_dir) if project_dir else base,
-        )
-        try:
-            candidate = Path(resolved)
-            if candidate.is_file():
-                observed.append(path)
-                continue
-        except Exception:
-            pass
-        # 用户把产物放在项目子目录（如 md-tools/）时，裸文件名产物会在
-        # 子目录里而非工作区根。与 _simple_chain_paths_match_expected 的
-        # “/basename 后缀匹配”一致：有界搜索工作区内同名文件，避免把
-        # 已真实落盘的产物误判为缺失。
-        bare = "/" not in str(path).replace("\\", "/")
-        name = Path(path).name
-        if bare and name and base:
-            try:
-                root = Path(base)
-                # 任务指定了项目目录（如 md-tools/）时，只在那个目录内搜索；
-                # 目录尚未创建说明产物还没落盘，不跨目录猜测。
-                search_roots: list[Path] = []
-                if project_dir:
-                    project_path = (root / project_dir).resolve(strict=False)
-                    if project_path.is_dir():
-                        search_roots = [project_path]
-                else:
-                    search_roots = [root]
-                found = False
-                for search_root in search_roots:
-                    for candidate in search_root.rglob(name):
-                        if not candidate.is_file():
-                            continue
-                        if search_root != root:
-                            found = True
-                            break
-                        try:
-                            rel_segments = candidate.relative_to(root).as_posix().lower().split("/")
-                        except Exception:
-                            rel_segments = []
-                        # 无项目目录约束时，排除备份/归档/临时目录里的旧产物。
-                        if any(
-                            segment.startswith((".", "_"))
-                            or any(
-                                marker in segment
-                                for marker in ("bak", "backup", "old", "stale", "trash", "temp", "tmp")
-                            )
-                            for segment in rel_segments[:-1]
-                        ):
-                            continue
-                        found = True
-                        break
-                    if found:
-                        break
-                if found:
-                    observed.append(path)
-            except Exception:
-                pass
-    return [
-        path
-        for path in expected
-        if not _simple_chain_paths_match_expected(observed, [path])
-    ]
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_no_deliverable_gap(
     user_message: str,
     quality_history: list[dict[str, Any]],
     generated_attachments: list[dict[str, str]],
 ) -> list[str]:
-    """B1/B3：请求了可交付产物，但没有成功写动作、也没有附件 → 硬 gap。
-
-    只对“显式命名了产物路径”或“带交付意图（发我/发送/交付/附件/打包）”的
-    任务生效；纯问答/说明任务（B7 语境，例如“说明 file.read 的参数”）不在此列。
-    """
-    if not _runtime_detects_work_intent(user_message):
-        return []
-    # 书名号/引号包裹的路径（《设计桥可用性.md》）是明确的输出契约；
-    # 裸路径（README.md、docs/guide.md）只有在真实变更请求里、且不是
-    # “参考/阅读”输入提及时才算交付物。
-    explicit = list(_simple_chain_bracketed_deliverable_paths(user_message))
-    if _requires_real_mutation(user_message):
-        explicit.extend(
-            path
-            for path in _simple_chain_explicit_deliverable_paths(user_message)
-            if path not in explicit
-            and not _simple_chain_path_is_reference_mention(user_message, path)
-        )
-    explicit = _simple_chain_unique_paths(explicit)
-    format_request = (
-        bool(_simple_chain_expected_suffixes(user_message))
-        and _requires_real_mutation(user_message)
-    )
-    if not explicit and not _has_delivery_intent(user_message) and not format_request:
-        return []
-    if generated_attachments:
-        return []
-    successful_write = any(
-        isinstance(payload, dict)
-        and bool(payload.get("ok"))
-        and _contract_observed_write(
-            payload.get("tool_result_contract")
-            if isinstance(payload.get("tool_result_contract"), dict)
-            else {}
-        )
-        for payload in quality_history or []
-    )
-    if successful_write:
-        return []
-    detail = ":" + ",".join(explicit[:4]) if explicit else ""
-    return [f"no successful write action or generated attachment for requested deliverable{detail}"]
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 def _simple_chain_path_is_reference_mention(user_message: str, path: str) -> bool:
-    """判断路径在任务文本里是否只是“参考/阅读”类输入提及，而非交付产物。"""
-    text = str(user_message or "")
-    position = text.find(path)
-    if position < 0:
-        # 路径可能以目录前缀形式出现在别处；用规范化匹配再试一次。
-        key = _simple_chain_target_stem(path)
-        position = -1
-        for match in re.finditer(re.escape(key), text, re.IGNORECASE):
-            position = match.start()
-            break
-    if position < 0:
-        return False
-    before = text[max(0, position - 12):position]
-    after = text[position + len(path):position + len(path) + 24]
-    reference_markers = (
-        "参考", "参见", "根据", "阅读", "读取", "基于",
-        "refer", "see", "based on", "read",
-    )
-    if re.search("|".join(re.escape(marker) for marker in reference_markers), before, re.IGNORECASE):
-        return True
-    # 紧跟其后是“并总结/并回答/并介绍”等收尾动词时，前面的文件明显是输入。
-    if re.search(r"^\s*(并|然后|再)?\s*(总结|回答|介绍|说明|概括|分析)", after, re.IGNORECASE):
-        return True
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return False
 
 def _simple_chain_is_clarification_question(text: Any) -> bool:
-    """判定模型回复是否是一条澄清问题（而非实质回答或失败复述）。
-
-    草案 §4.3：指代/target/recipient/来源不明时应保留 NEEDS_CLARIFICATION，
-    澄清发生在 effect 前，不得被"零工具调用"误判为任务失败。
-    """
-    value = str(text or "").strip()
-    if not value or len(value) < 4:
-        return False
-    if re.search(r"<omni[_-]?body|<invoke\b|<tool_call\b", value, re.IGNORECASE):
-        return False
-    if value.rstrip().endswith(("？", "?")):
-        return True
-    markers = (
-        "请问", "您指的是", "你指的是", "哪一个", "哪位", "哪一种", "哪个文件",
-        "澄清", "我不太确定你指的是", "能具体说说", "可以告诉我",
-        "能告诉我具体", "是哪一个", "是哪一位",
-    )
-    return any(marker in value for marker in markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS = frozenset({
     "run_state",
@@ -5252,17 +3918,17 @@ from .content_preflight import _office_content_gaps  # noqa: F401
 def _simple_chain_artifact_integrity_gaps(
     user_message: str, quality_history: list[dict[str, Any]], generated_attachments: list[dict[str, str]],
 ) -> list[str]:
-    """Check real output bytes, without guessing style or business quality."""
-    expected = _simple_chain_explicit_deliverable_paths(user_message)
-    paths = _simple_chain_collect_paths(quality_history, generated_attachments)
-    root = _delivery_workspace_root()
-    paths.extend(_delivery_resolve_path(path, root) for path in expected)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    paths = [str(item.get("path") or "") for item in generated_attachments if isinstance(item, dict)]
+    for payload in quality_history:
+        for container in (payload, payload.get("tool_result_contract") or {}):
+            paths.extend(str(item.get("path") or "") for item in container.get("generated_attachments") or [] if isinstance(item, dict))
     issues = []
     for path in _simple_chain_unique_paths(paths):
-        if expected and not any(_simple_chain_paths_match_expected([path], [target]) for target in expected):
-            continue
-        resolved = _delivery_resolve_path(path, root)
-        if Path(resolved).is_file() and not _simple_chain_desktop_file_format_ok(resolved, _path_suffix(resolved)):
+        resolved = _delivery_resolve_path(path, _delivery_workspace_root())
+        if not Path(resolved).is_file():
+            issues.append(f"delivery attachment does not exist: {path}")
+        elif not _simple_chain_desktop_file_format_ok(resolved, _path_suffix(resolved)):
             issues.append(f"deliverable bytes do not match the file format: {path}")
     return issues
 
@@ -5275,165 +3941,21 @@ def _simple_chain_evidence_check(
     final_reply: Any = None,
     task_obligations: list[dict[str, Any]] | None = None,
 ) -> tuple[bool, str, list[str]]:
-    """Inspect recorded evidence without deciding whether the task is done.
-
-    This deliberately contains no write/read/mixed task classifier and no
-    keyword-derived mutation verdict.  It reports only missing or contradictory
-    observations to the authoritative life-task state machine.
-    """
-    reasons: list[str] = []
-    audio_semantic_request = _simple_chain_requests_audio_semantics(
-        user_message,
-        required_read_paths,
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    reasons = execution_integrity_blockers(
+        user_message, quality_history, obligations=task_obligations,
     )
-    if (
-        audio_semantic_request
-        and not _simple_chain_has_native_audio_evidence(quality_history, required_read_paths)
-    ):
-        reasons.append("audio_semantic_evidence_missing")
-    integrity_reasons = execution_integrity_blockers(
-        user_message,
-        quality_history,
-        final_reply=final_reply,
-        obligations=task_obligations,
-    )
-    if integrity_reasons:
-        reasons.extend(reason for reason in integrity_reasons if reason not in reasons)
-    # Office style/content heuristics are advisory. They must not turn a short
-    # valid document, repeated business rows or uncached formulas into failure.
-    reasons.extend(_simple_chain_artifact_integrity_gaps(user_message, quality_history, generated_attachments))
-    if not quality_history:
-        if _simple_chain_is_clarification_question(final_reply):
-            return True, "clarify", []
-        return (not reasons, "incomplete" if reasons else "complete", reasons)
-
-    last_payload = quality_history[-1]
-    if not execution_result_ok(last_payload):
-        contract = last_payload.get("tool_result_contract") or {}
-        result = (last_payload.get("tool_result") or {}).get("result") or {}
-        execution = result.get("execution") or {}
-        no_effect = (contract.get("may_mutate") is False
-                     or (execution.get("commit_state") == "discarded"
-                         and execution.get("execution_state") == "completed"))
-        # Task obligations and artifact checks determine completion. A failed
-        # optional read/check whose effects were absent or discarded must not
-        # veto already-verified deliverables. Uncertain effects still block.
-        if not no_effect:
-            reasons.extend(_simple_chain_failure_text(last_payload) or ["last tool effect remains unverified"])
-            return False, "failed", reasons
-    else:
+    reasons.extend(_simple_chain_artifact_integrity_gaps(
+        user_message, quality_history, generated_attachments,
+    ))
+    if quality_history:
+        last_payload = quality_history[-1]
+        if not execution_result_ok(last_payload):
+            reasons.extend(_simple_chain_failure_text(last_payload) or ["last tool execution failed"])
+            return False, "failed", list(dict.fromkeys(reasons))
         reasons.extend(_simple_chain_failure_text(last_payload))
-    completed_actions = {
-        str(payload.get("tool_action") or "").strip().lower()
-        for payload in quality_history
-        if isinstance(payload, dict)
-        and execution_result_ok(payload)
-        and (
-            not str(payload.get("tool_action") or "").strip().lower().startswith("qc.")
-            or _simple_chain_qc_acceptance(payload)[0] is True
-        )
-    }
-    strict_action_sequence = [
-        action
-        for action in _simple_chain_explicit_action_sequence(user_message)
-        if action not in {"skill.route", "skill.get", "skill.read"}
-    ]
-    missing_explicit_actions = [
-        action for action in strict_action_sequence if action not in completed_actions
-    ]
-    if missing_explicit_actions:
-        reasons.append(
-            "explicitly requested actions are missing: "
-            + ", ".join(missing_explicit_actions[:8])
-        )
-    elif strict_action_sequence:
-        observed_actions = [
-            str(payload.get("tool_action") or "").strip().lower()
-            for payload in quality_history
-            if execution_result_ok(payload)
-        ]
-        cursor = -1
-        order_ok = True
-        for required_action in strict_action_sequence:
-            try:
-                cursor = observed_actions.index(required_action, cursor + 1)
-            except ValueError:
-                order_ok = False
-                break
-        if not order_ok:
-            reasons.append(
-                "explicitly requested strict action order was not observed: "
-                + " -> ".join(strict_action_sequence[:8])
-            )
-    for qc_action in [
-        action
-        for action in _simple_chain_explicit_action_sequence(user_message, require_order=False)
-        if action.startswith("qc.")
-    ]:
-        latest_qc = next(
-            (
-                payload
-                for payload in reversed(quality_history)
-                if isinstance(payload, dict)
-                and str(payload.get("tool_action") or "").strip().lower() == qc_action
-            ),
-            None,
-        )
-        if latest_qc is None:
-            reasons.append(f"{qc_action} has no acceptance evidence")
-            continue
-        acceptance, score = _simple_chain_qc_acceptance(latest_qc)
-        if not bool(latest_qc.get("ok")):
-            reasons.append(f"{qc_action} execution failed and has no passing acceptance evidence")
-        elif acceptance is not True:
-            suffix = f" (score={score})" if score is not None else ""
-            reasons.append(
-                f"{qc_action} did not meet its acceptance gate{suffix}"
-                if acceptance is False
-                else f"{qc_action} returned no explicit passing acceptance verdict{suffix}"
-            )
-            issue_summary = _simple_chain_qc_issue_summary(latest_qc)
-            if issue_summary:
-                reasons.append(f"{qc_action} repair evidence: {issue_summary}")
-    missing_deliverables = _simple_chain_missing_deliverable_paths(
-        user_message,
-        quality_history,
-        generated_attachments,
-    )
-    if missing_deliverables:
-        reasons.append(
-            "explicitly named deliverables are missing: "
-            + ", ".join(missing_deliverables[:8])
-        )
-    observation_required = any(
-        isinstance(item, dict) and str(item.get("kind") or "").strip().lower() == "observation"
-        for item in task_obligations or []
-    )
-    if observation_required and final_reply is not None:
-        answer_ok, answer_code = _simple_chain_substantive_answer(quality_history, final_reply)
-        if not answer_ok:
-            reasons.append(f"observed facts were not delivered in the final reply: {answer_code}")
-    if _simple_chain_requires_verification(user_message) and not _simple_chain_has_post_mutation_verification(quality_history, user_message):
-        reasons.append("requested verification/test step is missing after the latest mutation")
-    reasons.extend(
-        _simple_chain_read_coverage_issues(
-            user_message,
-            quality_history,
-            required_paths=required_read_paths,
-            task_obligations=task_obligations,
-        )
-    )
-    if _has_delivery_intent(user_message):
-        suffixes = {".zip"} if _requests_zip_delivery(user_message) else _simple_chain_expected_suffixes(user_message)
-        if suffixes and not _has_generated_attachment_suffix(generated_attachments, suffixes):
-            reasons.append(f"requested delivery attachment is missing: expected suffixes={sorted(suffixes)}")
-
-    deduped: list[str] = []
-    for reason in reasons:
-        text = str(reason).strip()
-        if text and text not in deduped:
-            deduped.append(text)
-    return (not deduped, "incomplete" if deduped else "complete", deduped)
+    reasons = list(dict.fromkeys(reasons))
+    return not reasons, "incomplete" if reasons else "complete", reasons
 
 def _simple_chain_life_completion_gate(
     user_message: str,
@@ -5717,3 +4239,24 @@ SIMPLE_CHAIN_READ_ONLY_ACTIONS = {
     "file.list", "file.read", "file.search", "file.hash",
     "code.read", "sheet.read", "pdf.extract_text", "image.info", "video.info",
 }
+
+
+_SUSPECTED_TOOL_CALL_PATTERN = re.compile(
+    r"<invoke\b|<tool_call\b|<function_?calls?\b|\"tool_calls\"\s*:|\"function\"\s*:\s*\{|omni[_-]?body\s*[<\[{]",
+    re.IGNORECASE,
+)
+
+
+_SIMPLE_CHAIN_TERMINAL_STATUSES = frozenset({
+    "complete",
+    "failed",
+    "incomplete",
+    "force_stopped",
+    "chat_reply",
+    "awaiting_user",
+    "confirm_pending",
+    "interrupted",
+    "orphaned",
+    "canceled",
+    "cancelled",
+})

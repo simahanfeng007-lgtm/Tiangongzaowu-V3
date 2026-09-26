@@ -62,16 +62,16 @@ DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "template.list": {"risk": "A0", "implemented": True, "summary": "List delivery templates and rubrics shipped with the package."},
     "template.apply": {"risk": "A2", "implemented": True, "summary": "Apply a template skeleton and create a structured draft markdown/json file."},
     "preview.generate": {"risk": "A0", "implemented": True, "summary": "Generate lightweight preview/summary evidence for docx/pptx/xlsx/image/video/text deliverables."},
-    "rubric.evaluate": {"risk": "A0", "implemented": True, "summary": "Evaluate supplied content or target file against a named delivery rubric."},
+    "rubric.evaluate": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
 
-    "qc.docx.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check business-grade Word/document deliverables for structure, clarity, evidence, actionability, and openability."},
+    "qc.docx.delivery_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality. Explicit managed-long-document manifests still receive structural checks."},
     "qc.ppt.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check executive-grade PPT deliverables for storyline, slide density, title quality, structure, evidence, and CTA."},
     "qc.sheet.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check spreadsheets for headers, empty cells, duplicate rows, numeric consistency, formulas, and delivery readiness."},
     "qc.code.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check code deliverables for syntax, tests, README, structure, security smells, and maintainability evidence."},
-    "qc.research.evidence_check": {"risk": "A0", "implemented": True, "summary": "Check research/literature deliverables for search strategy, inclusion/exclusion, citations, evidence table, limitations, and uncertainty."},
+    "qc.research.evidence_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
     "qc.video.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check short-video deliverables for playability, duration, aspect ratio, audio/subtitle evidence, hook/CTA metadata, and package readiness."},
     "qc.image.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check image/poster deliverables for dimensions, readability, text overflow risk, contrast proxy, and export readiness."},
-    "qc.writing.ai_tone_check": {"risk": "A0", "implemented": True, "summary": "Heuristically check writing for generic AI tone, repetition, vague claims, and weak specificity."},
+    "qc.writing.ai_tone_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
 
     "writing.outline.create": {"risk": "A2", "implemented": True, "summary": "Create a structured outline markdown for proposal, deck, research, novel, or video script workflows."},
     "research.evidence_table.create": {"risk": "A2", "implemented": True, "summary": "Create a structured research evidence table CSV/Markdown from supplied sources."},
@@ -137,10 +137,6 @@ RUBRIC_WEIGHTS = {
     },
 }
 
-GENERIC_AI_PHRASES = [
-    "在当今快速发展的", "赋能", "闭环", "抓手", "生态", "降本增效", "全方位", "多维度",
-    "显著提升", "深度融合", "未来可期", "以用户为中心", "打造", "助力", "全面提升",
-]
 
 
 def handle_delivery_action(runtime: Any, op_id: str, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -452,93 +448,30 @@ def _preview_generate(runtime: Any, target: str | None, args: Dict[str, Any]) ->
     return {"success": True, "result": preview, "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
 
 
+def _semantic_assessment(runtime: Any, target: str | None, args: Dict[str, Any], assessment_type: str) -> Dict[str, Any]:
+    """Read real input metadata; leave content quality judgment to the model."""
+    path = _resolve(runtime, target, must_exist=True) if target else None
+    content = str(args.get("content") or args.get("brief") or "")
+    evidence = {"path": _rel(runtime, path) if path else "content", "exists": bool(path),
+                "bytes": path.stat().st_size if path else len(content.encode("utf-8"))}
+    return {"success": True, "result": {"type": assessment_type, "assessment_mode": "model_required",
+            "score": None, "grade": "not_assessed", "acceptance": None, "issues": [], "warnings": []},
+            "evidence": evidence}
+
+
 def _rubric_evaluate(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    rubric = str(args.get("rubric") or args.get("rubric_id") or "business_proposal")
-    content = str(args.get("content") or "")
-    if target:
-        p = _resolve(runtime, target, must_exist=True)
-        content += "\n" + _read_text_any(p)
-    weights = RUBRIC_WEIGHTS.get(rubric, RUBRIC_WEIGHTS["business_proposal"])
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    lower = content.lower()
-    for key, weight in weights.items():
-        cn_key = key.replace("_", " ")
-        # Minimal deterministic proxy: require evidence markers or equivalent section words.
-        has_signal = key in lower or cn_key in lower or _cn_signal(key, content)
-        if not has_signal and weight >= 14:
-            issues.append(_issue(f"missing_{key}", f"缺少高权重评分项：{key}", "high", f"补充 {key} 对应内容并给出证据。"))
-        elif not has_signal:
-            warnings.append(_issue(f"weak_{key}", f"评分项不明显：{key}", "low", f"强化 {key}。"))
-    ai = _ai_tone_issues(content)
-    warnings.extend(ai[:5])
-    score = _score_from_issues(100, issues, warnings)
-    return {"success": True, "result": {"rubric": rubric, "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "weights": weights}, "evidence": {"path": target or "content", "exists": bool(target), "bytes": len(content.encode('utf-8'))}}
+    return _semantic_assessment(runtime, target, args, "content_rubric")
 
 
 def _cn_signal(key: str, text: str) -> bool:
-    signals = {
-        "customer_focus": ["客户", "受众", "决策", "痛点"],
-        "executive_summary": ["执行摘要", "核心结论", "摘要"],
-        "problem_solution_fit": ["问题", "解决方案", "匹配"],
-        "evidence_and_proof": ["证据", "案例", "数据", "来源"],
-        "implementation_plan": ["实施", "里程碑", "计划"],
-        "risk_and_assumptions": ["风险", "假设", "边界"],
-        "commercial_actionability": ["行动", "报价", "预算", "ROI", "收益"],
-        "single_big_idea": ["Big Idea", "大观点", "核心主张"],
-        "storyline": ["故事线", "SCQA", "金字塔", "逻辑"],
-        "slide_titles": ["标题", "结论句"],
-        "visual_density": ["留白", "视觉", "版式"],
-        "audience_transformation": ["受众转变", "当前", "未来"],
-        "correctness": ["正确", "运行", "验证"],
-        "tests": ["测试", "pytest", "unittest"],
-        "readability": ["可读", "命名", "注释"],
-        "maintainability": ["维护", "模块", "架构"],
-        "security": ["安全", "注入", "权限"],
-        "documentation": ["README", "文档"],
-        "search_strategy": ["搜索策略", "关键词", "数据库"],
-        "screening": ["纳入", "排除", "筛选"],
-        "evidence_table": ["证据表", "研究", "样本"],
-        "citation_traceability": ["引用", "来源", "doi", "url"],
-        "synthesis": ["综合", "共识", "分歧"],
-        "limitations": ["局限", "限制"],
-        "uncertainty": ["不确定", "置信", "可能"],
-        "hook": ["钩子", "前3秒", "开头"],
-        "narrative": ["脚本", "镜头", "叙事"],
-        "vertical_mobile_fit": ["9:16", "竖屏", "移动端"],
-        "caption_sound": ["字幕", "配乐", "声音"],
-        "pace": ["节奏", "剪辑点"],
-        "brand_message": ["品牌", "卖点"],
-        "cta": ["CTA", "行动", "转化"],
-        "technical_export": ["导出", "mp4", "分辨率"],
-    }
-    return any(s.lower() in text.lower() for s in signals.get(key, []))
+    return False
 
 
 def _qc_docx(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    text = _read_text_any(path)
-    document_type = str(args.get("document_type") or args.get("mode") or "").strip().lower()
-    if document_type in {"long_document", "managed_long_document", "longform"}:
-        return _qc_managed_long_document(runtime, path, text, args)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    if path.suffix.lower() not in {".docx", ".md", ".txt", ".pdf"}:
-        issues.append(_issue("wrong_format", "交付文件不是常见文档格式。", "high", "导出为 docx/pdf/md。"))
-    required = ["执行摘要", "问题", "解决方案", "实施", "风险", "行动"]
-    for word in required:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"缺少关键章节或内容：{word}", "medium", f"补充“{word}”相关章节。"))
-    stats = _sentence_stats(text)
-    if len(text) < 1200:
-        issues.append(_issue("too_short", "方案正文过短，难以达到可交付级。", "high", "补充背景、分析、路径、风险、收益与证据。"))
-    if stats["long_sentence_count"] > 6:
-        warnings.append(_issue("dense_sentences", "长句过多，阅读负担偏高。", "low", "拆分长句，优先主谓宾短句。"))
-    generic = _ai_tone_issues(text)
-    warnings.extend(generic[:8])
-    score = _score_from_issues(100, issues, warnings)
-    report = {"type": "docx_business_delivery", "score": score, "grade": _grade(score), "stats": stats, "issues": issues, "warnings": warnings, "acceptance": score >= 80}
-    return {"success": True, "result": report, "evidence": {"path": _rel(runtime, path), "exists": path.exists(), "bytes": path.stat().st_size, "score": score, "grade": report["grade"]}}
+    if str(args.get("document_type") or args.get("mode") or "").lower() in {"long_document", "managed_long_document", "longform"}:
+        return _qc_managed_long_document(runtime, path, _read_text_any(path), args)
+    return _semantic_assessment(runtime, target, args, "docx_business_delivery")
 
 
 def _qc_managed_long_document(runtime: Any, path: Path, text: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -599,9 +532,6 @@ def _qc_managed_long_document(runtime: Any, path: Path, text: str, args: Dict[st
     heading_count = len(re.findall(r"(?m)^(?:第\s*[0-9一二三四五六七八九十百千万]+\s*[章节篇部]|[^\n]{1,80}\n[-=]{3,})", text))
     if len(chapter_files) >= 2 and heading_count < 2:
         warnings.append(_issue("weak_section_structure", "正文中可识别的章节结构偏少。", "medium", "保留清晰章节标题后重新生成。"))
-    placeholders = len(re.findall(r"待补充|占位|TODO|TBD|lorem ipsum", text, flags=re.I))
-    if placeholders:
-        issues.append(_issue("placeholder_content", f"正文仍含 {placeholders} 处占位内容。", "high", "删除占位符并写入最终内容。"))
     paragraphs = [re.sub(r"\s+", "", item) for item in re.split(r"\n+", text) if len(re.sub(r"\s+", "", item)) >= 40]
     duplicate_ratio = (len(paragraphs) - len(set(paragraphs))) / max(1, len(paragraphs))
     if duplicate_ratio > 0.08:
@@ -652,16 +582,13 @@ def _qc_ppt(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str,
     conclusion_titles = dense = weak_titles = low_content = placeholder_slides = visual_slides = 0
     placeholder_layout_slides = 0
     signatures: List[str] = []
-    placeholder_pattern = re.compile(r"(待补充|占位|placeholder|lorem ipsum|(?:目标|证据|验收|下一步)\s*(?:编号|项)?\s*[：:]\s*\d+)", re.I)
     for slide in slides:
         title = str(slide.get("title", "")).strip()
         body = str(slide.get("content_text") or slide.get("text", ""))
         content_only = body[len(title):].strip() if title and body.startswith(title) else body.strip()
         weak_titles += int(len(title) < 6)
-        conclusion_titles += int(any(word in title for word in ["结论", "建议", "必须", "预计", "应", "可", "将", "需要"]))
         dense += int(len(body) > 650 or body.count("\n") > 12)
         low_content += int(len(re.sub(r"\s+", "", content_only)) < 24 and int(slide.get("visual_count") or 0) == 0)
-        placeholder_slides += int(bool(placeholder_pattern.search(body)))
         visual_slides += int(int(slide.get("visual_count") or 0) > 0)
         placeholder_layout_slides += int(int(slide.get("placeholder_count") or 0) > 0)
         signature = re.sub(r"\d+", "#", re.sub(r"\s+", "", body.lower()))
@@ -670,16 +597,12 @@ def _qc_ppt(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str,
             signatures.append(signature)
 
     duplicate_ratio = (len(signatures) - len(set(signatures))) / max(1, len(signatures))
-    if slides and conclusion_titles < max(1, len(slides) // 3):
-        issues.append(_issue("weak_conclusion_titles", "结论句标题比例低，偏资料堆砌。", "high", "将页面标题改成可独立阅读的结论句。"))
     if weak_titles:
         warnings.append(_issue("weak_titles", f"有 {weak_titles} 页标题过短或不明确。", "low", "补充标题中的判断/结论。"))
     if dense:
         issues.append(_issue("dense_slides", f"有 {dense} 页信息密度过高。", "medium", "拆页、压缩文字、用图表替代段落。"))
     if slides and low_content > max(1, len(slides) // 2):
         issues.append(_issue("mostly_empty_slides", f"有 {low_content}/{len(slides)} 页有效内容过少。", "critical", "补充真实结论、证据、数据或删除空泛页面。"))
-    if placeholder_slides:
-        issues.append(_issue("placeholder_content", f"有 {placeholder_slides} 页仍包含占位或机械编号内容。", "critical", "清除占位词并替换为真实内容。"))
     if duplicate_ratio >= 0.60 and len(slides) >= 6:
         issues.append(_issue("highly_repetitive_slides", f"页面结构化文本重复率为 {duplicate_ratio:.0%}。", "critical", "重写重复页面并建立不同证据与叙事角色。"))
     elif duplicate_ratio >= 0.30:
@@ -710,8 +633,8 @@ def _qc_ppt(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str,
     acceptance = hard_gate_passed and score >= 80
     report = {
         "type": "executive_ppt_delivery", "score": score, "grade": _grade(score), "slides": len(slides),
-        "conclusion_title_count": conclusion_titles, "dense_slide_count": dense, "low_content_slide_count": low_content,
-        "placeholder_slide_count": placeholder_slides, "layout_placeholder_slide_count": placeholder_layout_slides,
+        "conclusion_title_count": None, "dense_slide_count": dense, "low_content_slide_count": low_content,
+        "placeholder_slide_count": None, "layout_placeholder_slide_count": placeholder_layout_slides,
         "duplicate_ratio": round(duplicate_ratio, 4), "visual_slide_count": visual_slides,
         "visual_coverage": round(visual_coverage, 4), "native_visual_count": native_visual_count,
         "designed_visual_count": int(inspection.get("designed_visual_count") or 0), "aspect_ratio": inspection.get("aspect_ratio"),
@@ -894,27 +817,7 @@ def _miniapp_project_issues(runtime: Any, root: Path, candidates: List[Path]) ->
 
 
 def _qc_research(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = (str(args.get("content") or "") + "\n" + (_read_text_any(path) if path else "")).strip()
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    required = {
-        "research_question": ["研究问题", "问题", "PICO", "RQ"],
-        "search_strategy": ["搜索策略", "关键词", "数据库", "检索"],
-        "screening": ["纳入", "排除", "筛选"],
-        "evidence_table": ["证据表", "样本", "研究", "作者", "年份"],
-        "limitations": ["局限", "限制", "偏倚", "不确定"],
-    }
-    for code, keys in required.items():
-        if not any(k.lower() in text.lower() for k in keys):
-            issues.append(_issue(f"missing_{code}", f"缺少研究交付关键模块：{code}", "high", f"补充 {code}。"))
-    citation_like = len(re.findall(r"(doi\.org|https?://|\[\d+\]|（\d{4}）|\(\d{4}\))", text, flags=re.I))
-    if citation_like < 3:
-        issues.append(_issue("weak_citations", "引用/来源线索不足。", "high", "补充可追溯来源链接、DOI、年份或引用编号。"))
-    if "PRISMA" not in text and "系统综述" in text:
-        warnings.append(_issue("prisma_not_named", "系统综述类任务未显式使用 PRISMA 检查项。", "low", "按 PRISMA 2020 核查标题、摘要、方法、结果和流程图。"))
-    score = _score_from_issues(100, issues, warnings)
-    return {"success": True, "result": {"type": "research_review_delivery", "score": score, "grade": _grade(score), "citation_like_count": citation_like, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": len(text.encode('utf-8')), "score": score}}
+    return _semantic_assessment(runtime, target, args, "research_review_delivery")
 
 
 def _qc_video(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -984,29 +887,11 @@ def _qc_image(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[st
 
 
 def _qc_writing(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    text = str(args.get("content") or "")
-    path = None
-    if target:
-        path = _resolve(runtime, target, must_exist=True)
-        text += "\n" + _read_text_any(path)
-    issues = _ai_tone_issues(text)
-    stats = _sentence_stats(text)
-    if stats["avg_sentence_chars"] > 80:
-        issues.append(_issue("avg_sentence_too_long", "平均句长偏长，像AI堆叠。", "medium", "拆分长句，减少复合从句。"))
-    score = _score_from_issues(100, issues, [])
-    return {"success": True, "result": {"type": "writing_ai_tone", "score": score, "grade": _grade(score), "stats": stats, "issues": issues, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": len(text.encode('utf-8')), "score": score}}
+    return _semantic_assessment(runtime, target, args, "writing_ai_tone")
 
 
 def _ai_tone_issues(text: str) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
-    for phrase in GENERIC_AI_PHRASES:
-        count = text.count(phrase)
-        if count >= 2:
-            issues.append(_issue("generic_phrase", f"泛化表达重复：{phrase} ×{count}", "low", f"替换“{phrase}”为具体事实、数据或动作。"))
-    vague_claims = len(re.findall(r"(显著|大幅|全面|有效|深度|极大|明显).{0,6}(提升|优化|改善|增强)", text))
-    if vague_claims > 5:
-        issues.append(_issue("vague_claims", "模糊效果词过多。", "medium", "为每个效果词补充量化口径或删掉。"))
-    return issues[:20]
+    return []
 
 
 def _writing_outline_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
