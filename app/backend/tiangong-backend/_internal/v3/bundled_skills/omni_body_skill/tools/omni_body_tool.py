@@ -1379,6 +1379,15 @@ class BodyRuntime:
         profile_id = row["budget"]["profile"]
         profile = DICTIONARY.execution_profiles[profile_id]
         timeout = min(timeout, profile["timeout_seconds"])
+        if (isinstance(cmd, list) and len(cmd) > 1 and self.ffmpeg
+                and str(cmd[0]) == str(self.ffmpeg)
+                and str(action or "").startswith(("audio.", "video.", "jianying.", "ffmpeg."))):
+            # FFmpeg otherwise sizes codec/filter thread pools from host CPU
+            # count. Those pools can exhaust the sandbox process/address-space
+            # budget before the first frame. Bound generated media commands;
+            # keep user-authored shell argv and the OS limits unchanged.
+            cmd = [cmd[0], "-threads", "2", "-filter_threads", "1", "-filter_complex_threads", "1",
+                   *cmd[1:-1], "-threads", "2", cmd[-1]]
         run_cwd = Path(cwd) if cwd is not None else self.workspace
         if not self.config.sandbox_enabled and not require_os_containment:
             before_files = (

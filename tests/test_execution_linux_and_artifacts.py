@@ -161,3 +161,27 @@ data=json.loads((root/'input.json').read_text())
     (runner.workspace / 'output.json').unlink()
     result = runner.run(['/usr/bin/python3', str(runner.workspace / 'script.py')], require_os_containment=True)
     assert result['returncode'] == 7 and not (runner.workspace / 'output.json').exists()
+
+
+def test_media_encoder_fits_real_sandbox_and_produces_decodable_frames(runner):
+    import shutil
+    import subprocess
+    from PIL import Image
+    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+        pytest.skip('requires installed FFmpeg and FFprobe')
+    for name, color in [('first.png', 'red'), ('second.png', 'blue')]:
+        Image.new('RGB', (160, 80), color).save(runner.workspace / name)
+    runtime = BodyRuntime(BodyRuntimeConfig(workspace=str(runner.workspace),
+        sandbox_enabled=True, sandbox_require_os_containment=True))
+    result = runtime.run('video.slideshow', 'movie.mp4',
+        {'images':['first.png','second.png'], 'frame_rate': 5, 'size':'160x80'})
+    assert result['success'], result
+    assert result['ffmpeg']['containment'] == 'linux-bubblewrap'
+    decoded = subprocess.run([shutil.which('ffmpeg'), '-v', 'error', '-threads', '1',
+        '-i', str(runner.workspace/'movie.mp4'), '-f', 'null', '-'], capture_output=True)
+    assert decoded.returncode == 0, decoded.stderr
+    probe = subprocess.run([shutil.which('ffprobe'), '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height,nb_frames', '-of', 'json', str(runner.workspace/'movie.mp4')],
+        capture_output=True, text=True, check=True)
+    info = json.loads(probe.stdout)['streams'][0]
+    assert (info['width'], info['height'], int(info['nb_frames'])) == (160, 80, 2)

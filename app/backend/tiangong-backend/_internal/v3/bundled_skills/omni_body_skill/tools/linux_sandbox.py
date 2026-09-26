@@ -66,7 +66,7 @@ def run_linux_sandbox(command, cwd, env, limits, workspace, *, workspace_aliases
         args += ['--bind', str(workspace), alias]
     child_env = {k: v for k, v in env.items() if k in {'LANG', 'LC_ALL', 'PYTHONUTF8', 'PYTHONIOENCODING'}}
     child_env.update(PATH='/usr/bin:/bin', HOME='/tmp', TMPDIR='/tmp', TEMP='/tmp', TMP='/tmp',
-                     PYTHONDONTWRITEBYTECODE='1')
+                     PYTHONDONTWRITEBYTECODE='1', OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1')
     for key, value in sorted(child_env.items()):
         args += ['--setenv', key, value]
     # Apply irreversible limits INSIDE the user namespace, where the process
