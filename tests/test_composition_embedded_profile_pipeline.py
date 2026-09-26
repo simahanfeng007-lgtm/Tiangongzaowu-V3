@@ -159,8 +159,16 @@ def test_actual_signed_private_entry_writes_runs_and_finalizes(tmp_path,monkeypa
         assert 'Ran 3 tests' in runs[0]['result']['execution']['stderr']
         assert 'OK' in runs[0]['result']['execution']['stderr']
         final=coordinator.finalize_plan(harness.plan)
-        assert final.execution_requirements_attestation['execution_requirements_verified'] is True
-        assert final.execution_requirements_attestation['business_outcome_verified'] is False
+        proof=final.execution_requirements_attestation
+        # The retired prose floor cannot issue semantic approval. Actual signed
+        # steps, process results, files and Fact lineage remain required above.
+        assert proof['execution_requirements_verified'] is False
+        assert proof['business_outcome_verified'] is False
+        assert proof['obligations_count']==0
+        assert proof['required_outputs']==proof['output_witnesses']==[]
+        assert proof['supporting_fact_ids']==list(final.fact_ids)
+        assert proof['request_id']==harness.plan.request_id
+        assert proof['executable_plan_id']==harness.plan.executable_plan_id
         assert len(final.fact_ids)==7 and set(final.final_output_aliases)=={f'final.{i:02}' for i in range(1,8)}
         assert harness.store.get_composition_continuation_delegation(delegation)==original_delegation
         from total_gateway.store import StoreConflictError

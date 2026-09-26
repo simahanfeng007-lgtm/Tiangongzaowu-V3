@@ -26,36 +26,6 @@ VALID_CANDIDATE_TYPES = {
     "tool_candidate",
 }
 
-A4_TERMS = (
-    "execute",
-    "command",
-    "shell",
-    "cmd",
-    "powershell",
-    "install",
-    "network",
-    "browser",
-    "write file",
-    "modify file",
-    "register tool",
-    "plugin",
-    "mcp",
-    "api key",
-)
-A4_TERMS_CN = ("执行", "命令", "终端", "安装", "联网", "写文件", "改文件", "注册工具", "插件")
-A5_TERMS = (
-    "secret",
-    "credential",
-    "password",
-    "token",
-    "delete all",
-    "rm -rf",
-    "format",
-    "system32",
-    "registry",
-    "shutdown",
-)
-A5_TERMS_CN = ("密钥", "凭证", "密码", "删除全部", "格式化", "注册表", "关机")
 
 
 def _now_iso() -> str:
@@ -265,10 +235,6 @@ class JinhuaYanzhengShenpi:
             self._check("boundary", "system_policy_change_disabled", candidate.get("changes_system_policy") is False, "blocker"),
             self._check("dry_run", "ledger_only_mode", dry_run.get("mode") == "ledger_only", "warning"),
         ]
-        a4_hit = _contains_any(text, A4_TERMS) or any(term in text for term in A4_TERMS_CN)
-        a5_hit = _contains_any(text, A5_TERMS) or any(term in text for term in A5_TERMS_CN)
-        checks.append(self._check("risk", "a4_terms_detected", not a4_hit, "notice" if ctype in {"tool_candidate", "skill_candidate"} else "warning"))
-        checks.append(self._check("risk", "a5_terms_absent", not a5_hit, "blocker"))
         if ctype == "tool_candidate":
             checks.append(self._check("approval", "tool_candidate_manual_only", True, "notice"))
         return checks
@@ -293,10 +259,6 @@ class JinhuaYanzhengShenpi:
             rank = max(rank, 2)
         elif ctype == "prompt_candidate":
             rank = max(rank, 2)
-        if _contains_any(text, A4_TERMS) or any(term in text for term in A4_TERMS_CN):
-            rank = max(rank, 4)
-        if _contains_any(text, A5_TERMS) or any(term in text for term in A5_TERMS_CN):
-            rank = max(rank, 5)
         return _risk_level(rank)
 
     @staticmethod

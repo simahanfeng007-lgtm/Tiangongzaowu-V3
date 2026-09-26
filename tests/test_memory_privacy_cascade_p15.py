@@ -36,6 +36,7 @@ class MemoryPrivacyCascadeTests(unittest.TestCase):
         plaintext: bytes,
         claim_key: str,
         semantic_domain: str = "USER_PREFERENCE",
+        expiry_kind: str | None = None,
         created_at_ms: int = 2_000,
     ):
         value = event(1, None, life_id=LIFE, suffix=suffix)
@@ -49,6 +50,7 @@ class MemoryPrivacyCascadeTests(unittest.TestCase):
             user_text=text,
             plaintext=plaintext,
             created_at_ms=created_at_ms,
+            expiry_kind=expiry_kind,
             claim_key=claim_key,
             semantic_domain=semantic_domain,
         )
@@ -109,6 +111,7 @@ class MemoryPrivacyCascadeTests(unittest.TestCase):
         _value, l4 = self._explicit(
             suffix="25" * 32,
             text="今天先叫我C。",
+            expiry_kind="today",
             plaintext=b"call me C today",
             claim_key="claim:alias-c",
             created_at_ms=2_000,

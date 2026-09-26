@@ -52,6 +52,7 @@ class P15MemoryQARepairTests(unittest.TestCase):
         _assertion, l1, _created = self.coordinator.commit_life_event_l1(value)
         created_at_ms = 86_400_000 + 1_000
         l4 = self.coordinator.attach_explicit_l4(
+            explicit=True, expiry_kind="today",
             life_id=LIFE,
             memory_id=l1.memory_id,
             user_text="今天先记住，我叫临时名。",
@@ -248,6 +249,7 @@ class GatewayExpiryRepairTests(unittest.TestCase):
         rows = [
             {
                 "content": {"text": "暂时记住，我叫临时名。"},
+                "expires_at_ms": 1_000,
                 "created_at": "2026-08-01T00:00:00Z",
             },
             {
@@ -270,6 +272,7 @@ class GatewayExpiryRepairTests(unittest.TestCase):
         rows = [
             {
                 "content": {"text": "这次记住，我叫会话名。"},
+                "expires_at_ms": "invalid",
                 "created_at": "",
             }
         ]

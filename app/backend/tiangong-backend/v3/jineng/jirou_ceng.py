@@ -45,27 +45,6 @@ _SEARCH_HEADERS = {
 
 _DYNAMIC_TOOL_IMPORT_LOCK = threading.RLock()
 
-_NEWS_QUERY_MARKERS = (
-    "新闻",
-    "最新",
-    "今天",
-    "今日",
-    "昨天",
-    "刚刚",
-    "实时",
-    "快讯",
-    "近况",
-    "发布",
-    "宣布",
-    "发生",
-    "进展",
-    "热点",
-    "today",
-    "latest",
-    "news",
-    "breaking",
-    "current",
-)
 
 TERMINAL_DANGEROUS_COMMAND_PATTERNS = (
     r"\brm\s+-rf\b",
@@ -2599,15 +2578,10 @@ class JirouCeng:
 
     @staticmethod
     def _is_news_query(text: str) -> bool:
-        lowered = str(text or "").lower()
-        return any(marker in lowered for marker in _NEWS_QUERY_MARKERS)
+        return False
 
     @staticmethod
     def _news_window(text: str) -> str:
-        lowered = str(text or "").lower()
-        fresh_markers = ("今天", "今日", "刚刚", "实时", "快讯", "today", "breaking", "current")
-        if any(marker in lowered for marker in fresh_markers):
-            return "1d"
         return "7d"
 
     @staticmethod

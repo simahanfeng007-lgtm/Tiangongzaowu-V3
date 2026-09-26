@@ -48,6 +48,7 @@ from ._stub_actions import _stub_action_result
 from .sandbox_runtime import (
     WINDOWS_UTF8_SHELL_MARKER,
     SandboxLimits,
+    SandboxError,
     SandboxRunner,
     _prepare_windows_utf8_shell_command,
     _snapshot as _sandbox_workspace_snapshot,
@@ -636,6 +637,12 @@ def _resolve_python_interpreter(*, controlled: bool = False) -> str:
     configured = str(os.environ.get("TIANGONG_PYTHON_EXECUTABLE") or "").strip()
     if configured and not controlled:
         candidates.append(Path(configured))
+
+    # The Linux namespace deliberately exposes system runtimes, never the
+    # host home or a credential-bearing user venv. Use its trusted interpreter
+    # by default; an explicit unsupported runtime still fails closed.
+    if sys.platform.startswith("linux"):
+        candidates.append(Path("/usr/bin/python3"))
 
     executable = Path(sys.executable)
     candidates.append(executable)
@@ -1372,6 +1379,15 @@ class BodyRuntime:
         profile_id = row["budget"]["profile"]
         profile = DICTIONARY.execution_profiles[profile_id]
         timeout = min(timeout, profile["timeout_seconds"])
+        if (isinstance(cmd, list) and len(cmd) > 1
+                and str(action or "").startswith(("audio.", "video.", "jianying.", "ffmpeg."))
+                and self.ffmpeg and str(cmd[0]) == str(self.ffmpeg)):
+            # FFmpeg otherwise sizes codec/filter thread pools from host CPU
+            # count. Those pools can exhaust the sandbox process/address-space
+            # budget before the first frame. Bound generated media commands;
+            # keep user-authored shell argv and the OS limits unchanged.
+            cmd = [cmd[0], "-threads", "2", "-filter_threads", "1", "-filter_complex_threads", "1",
+                   *cmd[1:-1], "-threads", "2", cmd[-1]]
         run_cwd = Path(cwd) if cwd is not None else self.workspace
         if not self.config.sandbox_enabled and not require_os_containment:
             before_files = (
@@ -1617,6 +1633,8 @@ class BodyRuntime:
             "backup_dir": str(self.backup_dir),
             "trash_dir": str(self.trash_dir),
             "config": config,
+            "config_scope": "current_action_grant_only",
+            "execution_authority_note": "allow_python/allow_shell describe this call's grant, not global availability; execution actions require their own Gateway grant and a working OS sandbox.",
             "cancellation_enabled": callable(self.config.cancel_check),
             "dependencies": deps,
             "ffmpeg": self.ffmpeg,
@@ -2062,13 +2080,23 @@ class BodyRuntime:
         dest.mkdir(parents=True, exist_ok=True)
         extracted = []
         with zipfile.ZipFile(zpath, "r") as zf:
+            before_files = {}
             for member in zf.infolist():
                 out_path = (dest / member.filename).resolve()
                 if not self._is_inside(out_path, dest):
                     raise OmniBodyError(f"Unsafe zip member path: {member.filename}")
+                if not member.is_dir():
+                    before_files[str(out_path)] = self._write_observation(out_path)
             zf.extractall(dest)
             extracted = [str((dest / m.filename).resolve()) for m in zf.infolist() if not m.is_dir()]
-        return {"snapshots": snapshots, "destination": str(dest), "extracted_count": len(extracted), "extracted_preview": extracted[:100]}
+        changed, unchanged = [], []
+        for name, pre in before_files.items():
+            post = self._write_observation(Path(name))
+            (changed if pre != post else unchanged).append(name)
+        return {"snapshots": snapshots, "destination": str(dest), "extracted_count": len(extracted),
+                "extracted_preview": extracted[:100], "evidence": self._file_evidence(dest),
+                "write_evidence": {"changed_files": changed, "deleted_files": [],
+                                   "verified_unchanged_files": unchanged}}
 
     # ---------- code / quality / execution ----------
 
@@ -2225,6 +2253,11 @@ class BodyRuntime:
             if snapshot_sha256(state) != self.config.target_snapshot_sha256:
                 raise OmniBodyError("workspace-write signed target snapshot changed")
             expected_workspace_files = {script.relative_to(self.workspace).as_posix(): state["content_sha256"]}
+            # This existing signed v1 profile names Windows AppContainer.
+            # Ordinary dictionary execution can use Linux, but an old signed
+            # authority must not silently acquire another execution profile.
+            if os.name != "nt":
+                raise SandboxError("sandbox_os_containment_unavailable")
         timeout = int(args.get("timeout", self.config.default_timeout_seconds))
         python_executable = _resolve_python_interpreter(controlled=controlled)
         if target:
@@ -3089,9 +3122,16 @@ class BodyRuntime:
         snapshots = self._snapshot(op_id, [output])
         with Image.open(src) as im:
             width = args.get("width"); height = args.get("height")
+            if any(value is not None and (isinstance(value, bool) or int(value) <= 0) for value in (width, height)):
+                raise OmniBodyError("image.resize dimensions must be positive integers")
             if args.get("keep_ratio", True):
-                im.thumbnail((int(width or im.width), int(height or im.height)))
-                out = im.copy()
+                # Fit inside the requested box, including enlargement. A
+                # single dimension determines the scale without constraining
+                # the other dimension to its original size.
+                scales = ([int(width) / im.width] if width is not None else []) + ([int(height) / im.height] if height is not None else [])
+                scale = min(scales) if scales else 1
+                size = (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
+                out = im.resize(size, Image.Resampling.LANCZOS)
             else:
                 out = im.resize((int(width or im.width), int(height or im.height)))
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -3637,10 +3677,12 @@ class BodyRuntime:
 
     def _action_browser_chrome_screenshot(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         Image, ImageDraw, _ = self._pil()
-        extracted = self._action_browser_chrome_extract_text(op_id, target, args)
-        # MM-FE-05: honor the target path contract like every other action;
-        # args.output is only a fallback for callers that pass it explicitly.
-        output = self._resolve(target or args.get("output") or "browser_snapshot.png")
+        source = args.get("url") or args.get("source") or target
+        extracted = self._action_browser_chrome_extract_text(op_id, source, args)
+        # An explicit source separates the input page from the output target.
+        # Legacy callers may still put the page in target and use args.output.
+        output_target = target if (args.get("url") or args.get("source")) and target else args.get("output")
+        output = self._resolve(output_target or "browser_snapshot.png")
         snapshots = self._snapshot(op_id, [output])
         w, h = int(args.get("width", 1280)), int(args.get("height", 1600))
         im = Image.new("RGB", (w, h), color=args.get("background", "white"))

@@ -6,24 +6,19 @@
 # 全程零工具调用且模型已给出通顺最终答复时跳过强插续写，文本问答不再多出 2-3 轮思考。
 from __future__ import annotations
 
-from .simple_chain.kernel import ( 
+from .simple_chain.kernel import (
+    _SUSPECTED_TOOL_CALL_PATTERN,
+    _SIMPLE_CHAIN_TERMINAL_STATUSES,
+
     SIMPLE_CHAIN_READ_ONLY_ACTIONS,
     SIMPLE_CHAIN_TOOL_NAMES,
  # noqa: F401 —— 机械搬移，符号面不变
     _ACTION_REGISTRY_DIR,
     _ACTION_REGISTRY_PATHS,
-    _CONVERSION_OUTPUT_MARKER,
-    _DELIVERABLE_EXTENSION_PATTERN,
     _DELIVERABLE_FORMAT_ALIASES,
-    _DELIVERABLE_SUFFIXES,
-    _DIAGNOSTIC_ONLY_MARKERS,
     _INCOMPLETE_REASON_RENHUA,
-    _MUTATION_COMMAND_MARKERS,
-    _MUTATION_REQUEST_MARKERS,
     _RECOVERY_CHECKPOINT_PATTERN,
     _SENSITIVE_ARG_KEYS,
-    _SIMPLE_CHAIN_ANSWER_CLOSING_MARKERS,
-    _SIMPLE_CHAIN_ANSWER_ERROR_MARKERS,
     _SIMPLE_CHAIN_AUDIO_SUFFIXES,
     _SIMPLE_CHAIN_CALLER_THREAD_ACTIONS,
     _SIMPLE_CHAIN_COMMAND_PATH_TOKEN_RE,
@@ -55,14 +50,12 @@ from .simple_chain.kernel import (
     _SIMPLE_CHAIN_STUCK_MAX_CYCLE_HITS,
     _SIMPLE_CHAIN_STUCK_MAX_DUPLICATE_INTENT_STREAK,
     _SIMPLE_CHAIN_STUCK_MAX_NO_PROGRESS_STEPS,
-    _SIMPLE_CHAIN_TERMINAL_STATUSES,
     _SIMPLE_CHAIN_VERIFY_ACTIONS,
     _SIMPLE_CHAIN_WRITE_ACTIONS,
     _SKILL_INDEX_PATH,
     _SOURCE_TEXT_FULL_LIMIT,
     _SOURCE_TEXT_HEAD_LIMIT,
     _SOURCE_TEXT_TAIL_LIMIT,
-    _SUSPECTED_TOOL_CALL_PATTERN,
     _TEXT_EVIDENCE_SUFFIXES,
     _contract_observed_write,
     _count_chinese_chars,
@@ -405,10 +398,6 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
     )
 
 
-
-
-
-
 BIAOXIAN_SYSTEM_PROMPT = """
 [Avatar performance channel - required]
 When replying to the user, append exactly one XML block at the very end
@@ -460,22 +449,8 @@ For file delivery: create a real local file and reply with the absolute path.
 """
 
 
+# ── 情绪状态：按时间衰减，文本不触发关键词评分 ──
 
-# ── 情感分析：关键词 + 衰减 → 更新 QingganZhuangtai ──
-
-_QINGGAN_KEYWORDS: dict[str, tuple[str, float, float]] = {
-    # (主情绪, 主增量, 副情绪, 副增量)
-    "谢谢|感谢|多谢|辛苦了|帮大忙": ("joy", 0.08, "connection", 0.10),
-    "太好了|完美|厉害|很棒|非常好|成功了|完成": ("joy", 0.10, "achievement", 0.08),
-    "哈哈|笑|开心|高兴|快乐|nice|good": ("joy", 0.06, "surprise", 0.03),
-    "烦|气死|垃圾|不行|错了|失败|bug|error|报错": ("anger", 0.06, "worry", 0.05),
-    "担心|怕|危险|不确定|行不行|能不能": ("worry", 0.07, "fear", 0.05),
-    "难过|伤心|悲伤|哭|遗憾": ("sadness", 0.08, "worry", 0.03),
-    "什么|怎么|为什么|如何|查|搜|找|看看": ("curiosity", 0.05, "thoughtfulness", 0.04),
-    "帮我|做|写|生成|创建|画|弄|搞": ("achievement", 0.04, "order", 0.03),
-    "休息|睡|累|疲惫|困": ("rest", 0.06, "worry", 0.03),
-    "哇|真的|居然|没想到|天哪": ("surprise", 0.08, "joy", 0.03),
-}
 
 _EMOTION_NAMES = ["joy", "anger", "worry", "thoughtfulness", "sadness", "fear", "surprise"]
 _DESIRE_NAMES = ["survival", "curiosity", "achievement", "connection", "order", "rest"]
@@ -485,12 +460,6 @@ def _gengxin_qinggan(shenti, xiaoxi: str, huifu: str, gongju_cishu: int):
     """根据用户消息 + 回复 + 工具执行次数，更新情感状态（衰减由心跳处理）"""
     q = shenti.qinggan
     text = str(xiaoxi or "") + " " + str(huifu or "")
-
-    # 1. 关键词匹配 → 增减情绪
-    for pattern, (emo1, d1, emo2, d2) in _QINGGAN_KEYWORDS.items():
-        if re.search(pattern, text):
-            setattr(q, emo1, min(1.0, getattr(q, emo1) + d1))
-            setattr(q, emo2, min(1.0, getattr(q, emo2) + d2))
 
     # 2. 多次工具调用 → 轻微焦虑
     if gongju_cishu >= 6:
@@ -553,8 +522,6 @@ def _first_json_object(text: str) -> str:
             if depth == 0:
                 return value[start:index + 1]
     return ""
-
-
 
 
 def _trim_interim_progress_text(text: str) -> str:
@@ -661,10 +628,6 @@ def _interim_visible_reply_from_tool_message(raw: str) -> str:
     return _trim_interim_progress_text(result)
 
 
-
-
-
-
 CHECKER_REGISTRY: dict[str, dict[str, Any]] = {
     "run.has_tool_observation": {"hard": True},
     "tool.has_success_result": {"hard": True},
@@ -693,18 +656,11 @@ CHECKER_REGISTRY: dict[str, dict[str, Any]] = {
 
 
 def _default_work_intent(user_message: str) -> dict[str, Any]:
-    suffixes = sorted(_simple_chain_expected_suffixes(user_message))
-    expected_format = suffixes[0].lstrip(".") if suffixes else ""
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return {
-        "task_type_hint": "runtime_detected_work",
-        "expected_output_hint": {
-            "type": "file" if suffixes or _requires_real_mutation(user_message) or _has_delivery_intent(user_message) else "result",
-            "format": expected_format,
-            "delivery_required": _has_delivery_intent(user_message),
-        },
-        "need_skill": True,
-        "need_tool": True,
-        "reason": "runtime_detected_work_intent",
+        "task_type_hint": "model_decides",
+        "expected_output_hint": {"type": "result", "format": "", "delivery_required": False},
+        "need_skill": False, "need_tool": False, "reason": "model_decides",
     }
 
 
@@ -737,7 +693,6 @@ def _work_false_positive_payload(request_id: str, user_message: str) -> dict[str
     }
 
 
-
 def _first_json_object_as_dict(raw: str) -> dict[str, Any] | None:
     text = _strip_plan_markers(raw)
     for candidate in (text, _first_json_object(text)):
@@ -750,10 +705,6 @@ def _first_json_object_as_dict(raw: str) -> dict[str, Any] | None:
         if isinstance(data, dict):
             return data
     return None
-
-
-
-
 
 
 def _run_control_session_id(run_control: Any | None) -> str:
@@ -771,25 +722,6 @@ def _run_control_session_id(run_control: Any | None) -> str:
     return ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def set_simple_chain_continuity_checkpoint_provider(
     provider: Callable[[dict[str, Any]], Any] | None,
 ) -> None:
@@ -802,8 +734,6 @@ def set_simple_chain_continuity_checkpoint_provider(
     _sc_kernel._SIMPLE_CHAIN_CONTINUITY_CHECKPOINT_PROVIDER = provider
 
 
-
-
 def set_simple_chain_regenerative_execution_provider(
     provider: Callable[[dict[str, Any]], Any] | None,
 ) -> None:
@@ -814,50 +744,6 @@ def set_simple_chain_regenerative_execution_provider(
     _sc_kernel._SIMPLE_CHAIN_REGENERATIVE_EXECUTION_PROVIDER = provider
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _fg_gap(checker: str, source_text: str, evidence: str, required_fix: str) -> dict[str, str]:
     return {
         "checker": checker,
@@ -866,7 +752,6 @@ def _fg_gap(checker: str, source_text: str, evidence: str, required_fix: str) ->
         "required_fix": required_fix,
         "message": evidence,
     }
-
 
 
 def _estimated_page_count(text: str) -> int:
@@ -919,9 +804,6 @@ def _xlsx_max_row_count(path: Path) -> int:
     except Exception:
         return 0
     return 0
-
-
-
 
 
 def _omni_body_subskill_paths(user_message: str) -> list[str]:
@@ -1022,7 +904,6 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     release = load_dictionary()
     from capability_dictionary.composition import composition_prompt
     return composition_prompt(release)
-
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -1316,8 +1197,6 @@ def _append_shengcheng_meiti(huifu: str, media_items: list[dict[str, str]]) -> s
     return (text + "\n\n" + "\n\n".join(blocks)).strip()
 
 
-
-
 def _append_delivery_media_tags(huifu: str, attachment_items: list[dict[str, str]], user_text: str = "") -> str:
     text = str(huifu or "").rstrip()
     if not attachment_items:
@@ -1349,22 +1228,6 @@ def _append_delivery_media_tags(huifu: str, attachment_items: list[dict[str, str
     return (text + "\n\n" + "\n".join(tags)).strip()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 _CODE_STAGE_LABEL_BY_ID = {
     "code_macro_plan": "代码工程-总规划",
     "code_stage_plan": "代码工程-阶段规划",
@@ -1377,8 +1240,6 @@ _CODE_STAGE_FOCUS_BY_ID = {
     "code_detail_plan": "执行本轮最小必要修改。",
     "code_verify_delivery": "运行验证并形成交付结论。",
 }
-
-
 
 
 def _tool_args_display_text(tool_args: dict) -> str:
@@ -1460,7 +1321,6 @@ def _tool_dispatch_with_result(meta: dict[str, Any] | None, result: Any) -> dict
     return project_tool_dispatch(meta, result)
 
 
-
 def _tool_result_with_contract(
     tool_name: str,
     result: Any,
@@ -1476,7 +1336,6 @@ def _tool_result_with_contract(
     )
 
 
-
 def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
     if not isinstance(meta, dict):
         return fallback
@@ -1486,239 +1345,28 @@ def _tool_dispatch_summary(meta: dict[str, Any] | None, fallback: str) -> str:
     return f"{meta.get('userFacingText') or fallback} 工具指令：{instruction}"
 
 
-
-
 def _is_desktop_organize_request(message: str) -> bool:
-    text = str(message or "").lower()
-    if "桌面" not in text and "desktop" not in text:
-        return False
-    return any(mark in text for mark in ("整理", "收拾", "清理", "归档", "分类", "收纳", "摆放", "腾"))
-
-
-_NON_COMPLETION_MARKERS = (
-    "未完成",
-    "没有完成",
-    "没完成",
-    "尚未",
-    "还没",
-    "还没有",
-    "待做",
-    "需要你确认",
-    "需要确认",
-    "请确认",
-    "等待确认",
-    "未执行",
-    "没有执行",
-    "不能直接",
-    "不能发",
-    "不能发送",
-    "无法发送",
-    "没办法",
-    "要不要",
-    "你说一声",
-    "接着做",
-    "手动发",
-    "手动发送",
-    "自行",
-    "自己去微信",
-)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _is_novel_request(user_message: str) -> bool:
-    text = str(user_message or "")
-    markers = ("小说", "网文", "正文", "章节", "第一章", "第1章", "长安未雪", "novel", "chapter")
-    return any(marker in text for marker in markers)
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _tool_is_write_effect(tool_name: str, result: Any) -> bool:
     return tool_result_write_effect(tool_name, result)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _reply_admits_not_completed(reply: str) -> bool:
-    text = str(reply or "")
-    return any(marker in text for marker in _NON_COMPLETION_MARKERS)
-
-
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _reply_blocks_requested_delivery(user_message: str, model_reply: str) -> bool:
-    if not _has_delivery_intent(user_message, model_reply):
-        return False
-    text = str(model_reply or "")
-    blockers = (
-        "不能发",
-        "不能发送",
-        "无法发送",
-        "没办法直接",
-        "没办法",
-        "我这边没有调用",
-        "手动发",
-        "手动发送",
-        "自行",
-        "自己去微信",
-        "请确认",
-        "需要你确认",
-        "要不要",
-        "待做",
-        "还没",
-        "还没有",
-        "压完路径",
-        "路径列出来",
-    )
-    return any(marker in text for marker in blockers)
-
-
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def _path_looks_absolute(path_text: str) -> bool:
@@ -1750,28 +1398,6 @@ def _message_mentions_path(message: str, path_text: str) -> bool:
     }
     lowered_message = message_text.lower()
     return any(variant and variant.lower() in lowered_message for variant in variants)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class _SimpleChainProgressMonitor:
@@ -1834,24 +1460,6 @@ class _SimpleChainProgressMonitor:
         return False, ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _authorize_user_local_readonly_path(tool_name: str, tool_args: dict, user_message: str) -> dict:
     if not isinstance(tool_args, dict):
         return {}
@@ -1862,106 +1470,8 @@ def _gongju_cuowu_text(result: Any) -> str:
     return tool_result_error("", result)
 
 
-
-
-
-
 def _gongju_jieguo_status(result: Any) -> str:
     return tool_result_status("", result) or ("wancheng" if _gongju_jieguo_chenggong(result) else "cuowu")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _gongju_yichang(tool_name: str, exc: Exception) -> dict:
@@ -2109,8 +1619,6 @@ def _gongju_chongfu_chujing_renhua(repeated_result: dict | None = None) -> str:
     if _gongju_jieguo_shi_mulu_qingdan(last_result):
         return "我刚才已经把目标目录看过了，差点又重复看一遍——我刹住了，没有空转。回复“继续”，我就换个思路接着深入。"
     return "我刚才差点重复做同一个动作，已主动停下来，没有继续空转。回复“继续”，我会换个做法接着执行。"
-
-
 
 
 # ── 确认通道（A3+ 或越界写操作需要用户在场确认）────────────────────────
@@ -2291,6 +1799,32 @@ def _tiqu_biaoxian(huifu: str, yonghu_xiaoxi: str = "") -> tuple[str, dict]:
         biaoxian["gesture"] = "co_speech"
         biaoxian["duration"] = max(float(biaoxian.get("duration", 0.0)), 2.0)
     return cleaned, biaoxian
+
+
+def _simple_chain_bound_native_history(history, *, window_tokens, fixed_tokens):
+    """Trim complete oldest groups only when the actual context budget needs it.
+
+    The former 96k-character cap evicted reusable prefixes even inside a large
+    model window. Token estimates include private continuation state without
+    logging it. Batch eviction leaves headroom instead of shifting every turn.
+    """
+    budget = max(1, min(96_000, int(window_tokens * 0.60) - int(fixed_tokens)))
+    costs = []
+    for item in history:
+        turn = item["turn"]
+        opaque = getattr(getattr(turn, "provider_continuation_state", None), "opaque_payload", None)
+        costs.append(estimate_tokens(str(turn)) + estimate_tokens(json.dumps(
+            {"results": item["results"], "continuation": opaque}, ensure_ascii=False, default=str)))
+    total = sum(costs)
+    if len(history) <= 32 and total <= budget:
+        return 0
+    target = int(budget * 0.75)
+    removed = 0
+    while len(history) > 1 and (len(history) > 24 or total > target):
+        total -= costs[removed]
+        history.pop(0)
+        removed += 1
+    return removed
 
 
 class Zongdiaodu:
@@ -2651,6 +2185,9 @@ class Zongdiaodu:
         dictionary_context: dict | None = None,
     ) -> str:
         request_id = getattr(run_control, "request_id", "") if run_control else zhuizong_id
+        from .adversarial_review import CompletionSession, COMPLETION_SCHEMA, review_mode
+        judge_completion = review_mode() == "judge"
+        completion_session = CompletionSession(self.http_kehuduan)
         recovery_checkpoint = _simple_chain_recovery_checkpoint_from_context(dynamic_context)
         recovery = recovery_checkpoint.get("recovery") if isinstance(recovery_checkpoint.get("recovery"), dict) else {}
         blocked_recovery_call_keys = set(recovery.get("blocked_call_keys") or [])
@@ -2673,11 +2210,11 @@ class Zongdiaodu:
         # 用新快照替换气泡，恢复“字往外蹦”的流式体验。
         _on_text_chunk = None
         _interim_emitter = None
-        if run_control is not None and getattr(run_control, "interim_reply", None) is not None:
+        if not judge_completion and run_control is not None and getattr(run_control, "interim_reply", None) is not None:
             _interim_emitter = self._InterimTextEmitter(
                 lambda text: run_control.interim_reply(text)
             )
-        if on_event or _interim_emitter is not None:
+        if not judge_completion and (on_event or _interim_emitter is not None):
             def _on_text_chunk(chunk_text: str) -> None:
                 cleaned = strip_internal_reply_markers(chunk_text)
                 if not cleaned:
@@ -2746,7 +2283,10 @@ class Zongdiaodu:
 
         # ── 系统提示词压缩 ──
         sys_tok = estimate_tokens(system_tishi)
-        sys_budget = int(DEFAULT_WINDOW_TOKENS * SYSTEM_BUDGET_PCT)
+        from .model_roles import input_budget
+        endpoint_budget = (input_budget(completion_session._roles["executor"]) if completion_session._roles
+                           else int(DEFAULT_WINDOW_TOKENS * 0.75))
+        sys_budget = int(endpoint_budget * SYSTEM_BUDGET_PCT)
         if sys_tok > sys_budget * 0.80:
             _log_warn = __import__("logging").getLogger("tiangong.zongdiaodu")
             _log_warn.warning("system_tishi 超预算 (est %d / %d tokens)，压缩中", sys_tok, sys_budget)
@@ -2768,6 +2308,9 @@ class Zongdiaodu:
             run_control.step("build_context", "build context", "done", "Context is ready.")
 
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
+        from .run_context import current_run_context
+        review_context = current_run_context()
+        run_state["review_authority_identity"] = {key: getattr(review_context, key) for key in ("request_id", "run_id", "generation", "session_id")}
         from capability_dictionary import load_dictionary
         dictionary_release = load_dictionary()
         if recovery_checkpoint.get("dictionary_sha256") not in {None, "", dictionary_release.sha256}:
@@ -2782,6 +2325,8 @@ class Zongdiaodu:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
+        if judge_completion:
+            run_state["completion_authority"] = "adversarial_agent"
         run_state["task_contract"] = initialize_task_contract(
             xiaoxi,
             chat_mode=response_only_without_tools,
@@ -2807,8 +2352,15 @@ class Zongdiaodu:
         run_state["stage"] = "composing"
         _simple_chain_save_run_state(run_state)
 
+        from .jineng.model_context_cache import AppendOnlyContext
+        # Read once per run so a comparison/configuration change cannot alter
+        # an active provider continuation. OFF retains canonical full history.
+        append_context = (AppendOnlyContext(token_budget=endpoint_budget)
+                          if os.environ.get("TIANGONG_MODEL_CONTEXT_REUSE", "1") == "1" else None)
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
+        from .adversarial_review import ReviewSession
+        review_session = ReviewSession(self.http_kehuduan)
 
         def _dictionary_system_prompt():
             from capability_dictionary import load_dictionary
@@ -2820,7 +2372,7 @@ class Zongdiaodu:
             from .run_context import current_run_context
             return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
 
-        def _run_scoped_model(call):
+        def _run_scoped_model(call, *, review_closeout=False):
             from .jineng.http_kehuduan import _effective_llm_deadline_seconds
             from .jineng.model_call_lifecycle import ModelCallStopped, run_model_call
             from .model_protocol_contract import ProviderTurnEnvelope
@@ -2828,11 +2380,16 @@ class Zongdiaodu:
             try:
                 def invoke(lifecycle):
                     if self.http_kehuduan is not None:
-                        with self.http_kehuduan.scoped_native_history(native_history, observations=quality_history):
+                        from contextlib import nullcontext
+                        call_scope = (self.http_kehuduan.scoped_call_context("executor", endpoint=completion_session._roles["executor"])
+                                      if completion_session._roles and callable(getattr(self.http_kehuduan, "scoped_call_context", None)) else nullcontext())
+                        with call_scope, self.http_kehuduan.scoped_native_history(
+                            native_history, observations=quality_history, append_context=append_context):
                             return call(lifecycle)
                     return call(lifecycle)
                 result = run_model_call(
-                    invoke, seconds=_effective_llm_deadline_seconds(),
+                    invoke, seconds=min(_effective_llm_deadline_seconds(),
+                        20.0 if review_closeout else max(0.1, _execution_seconds_left())),
                     cancel_check=getattr(run_control, "should_stop", None),
                 )
             except ModelCallStopped as exc:
@@ -2902,10 +2459,12 @@ class Zongdiaodu:
                     native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
                 # Compact whole call/result groups only. Durable fact receipts
                 # and loaded Skill bodies remain in Gateway/run context.
-                while len(native_history) > 3 and (len(native_history) > 32 or sum(
-                    len(str(item["turn"])) + len(json.dumps(item["results"], ensure_ascii=False, default=str))
-                    for item in native_history) > 96_000):
-                    native_history.pop(0)
+                removed = _simple_chain_bound_native_history(
+                    native_history, window_tokens=endpoint_budget,
+                    fixed_tokens=estimate_tokens(system_tishi) + estimate_tokens(cache_stable_user_message),
+                )
+                if removed:
+                    run_state["native_history_dropped_groups"] = int(run_state.get("native_history_dropped_groups") or 0) + removed
             prior_texts: list[str] = []
             for item in quality_history:
                 if not isinstance(item, dict):
@@ -2926,6 +2485,12 @@ class Zongdiaodu:
                             stable_user_message=cache_stable_user_message,
                             provider_turn=provider_turn,
                             provider_tool_results=provider_tool_results,
+                            history_notice=(
+                                f"已因上下文预算移出 {run_state['native_history_dropped_groups']} 组较早原生调用与回执。"
+                                "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
+                                if run_state.get("native_history_dropped_groups") else ""
+                            ),
+                            include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                         )
                 return self.gutong.jixu(
                     _dictionary_system_prompt(), payload, shenti, xiaoxi,
@@ -2935,6 +2500,12 @@ class Zongdiaodu:
                     stable_user_message=cache_stable_user_message,
                     provider_turn=provider_turn,
                     provider_tool_results=provider_tool_results,
+                    history_notice=(
+                        f"已因上下文预算移出 {run_state['native_history_dropped_groups']} 组较早原生调用与回执。"
+                        "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
+                        if run_state.get("native_history_dropped_groups") else ""
+                    ),
+                    include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                 )
 
             return _run_scoped_model(_call_jixu)
@@ -2967,7 +2538,7 @@ class Zongdiaodu:
                     on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                 )
 
-            return _run_scoped_model(_call_closeout)
+            return _run_scoped_model(_call_closeout, review_closeout=judge_completion)
 
         turn_loop = TurnLoopState()
         _simple_chain_regenerative_restore_turn_loop(run_state, turn_loop)
@@ -3020,6 +2591,13 @@ class Zongdiaodu:
                     )
         except Exception:
             pass
+
+        review_reserve_seconds = min(120.0, max(95.0, effective_wall_clock_seconds * 0.2),
+                                     effective_wall_clock_seconds * 0.5) if judge_completion else 0.0
+        run_state.setdefault("budget", {})["review_reserved_seconds"] = review_reserve_seconds
+
+        def _execution_seconds_left():
+            return max(0.0, effective_wall_clock_seconds - review_reserve_seconds - (time.monotonic() - loop_started_at))
 
         def _natural_closeout(
             status: str,
@@ -3096,6 +2674,51 @@ class Zongdiaodu:
             )
             return next_body, final_reply
 
+        def _render_delivery(reply: str, *, approved: bool) -> str:
+            reply = re.sub(r'<tool_call\b[^>]*>.*?</tool_call>', '', str(reply), flags=re.DOTALL | re.IGNORECASE).strip()
+            reply = re.sub(r'<function_?calls?\b[^>]*>.*?(?:</function_?calls?>|$)', '', reply, flags=re.DOTALL | re.IGNORECASE).strip()
+            reply = re.sub(r'<invoke\b[^>]*>.*?</invoke>', '', reply, flags=re.DOTALL | re.IGNORECASE).strip()
+            reply, self.zuihou_biaoxian = _tiqu_biaoxian(reply, xiaoxi)
+            reply = strip_internal_reply_markers(reply)
+            if approved:
+                reply = _append_shengcheng_meiti(reply, generated_media)
+                reply = _append_delivery_media_tags(reply, generated_attachments, xiaoxi)
+            return reply
+
+        def _judge_candidate():
+            run_state["status"] = "reviewing"
+            run_state["stage"] = "adversarial_completion"
+            run_state["review_phase"] = "candidate_awaiting_review"
+            run_state["generated_attachments"] = list(generated_attachments)
+            _simple_chain_save_run_state(run_state)
+            if run_control:
+                run_control.step("adversarial_completion", "对抗智能体判断是否完成", "running", "正在核对候选结果与原任务。")
+            feedback = completion_session.judge(
+                run_state, quality_history, _render_delivery(huifu, approved=True),
+                remaining_seconds=max(0.0, effective_wall_clock_seconds - (time.monotonic() - loop_started_at)),
+                cancel_check=getattr(run_control, "should_stop", None),
+            )
+            _simple_chain_save_run_state(run_state)
+            if run_control:
+                run_control.step("adversarial_completion", "对抗智能体判断是否完成", "done",
+                                 feedback["review"]["decision"], meta=feedback)
+            return feedback
+
+        def _unapproved_reply(record):
+            reason = record.get("reason") or "未取得有效完成裁决。"
+            if record.get("decision") == "unavailable":
+                reason += " " + "; ".join(record.get("coverage_gaps") or [])
+            run_state["review_phase"] = "review_blocked"
+            run_state["terminal_reason"] = "adversarial_completion_" + record["decision"]
+            run_state["final_reasons"] = [reason]
+            run_state["last_transition"] = {
+                "type": "incomplete", "reason": reason,
+                "source": "adversarial_agent" if record["decision"] == "blocked" else "system",
+                "round": int(run_state.get("round") or 0),
+                "at": datetime.now().isoformat(timespec="seconds"),
+            }
+            return "任务尚未完成，最终结果未提交。\n" + reason
+
         def _check_stop(summary: str = "") -> None:
             """停止检查前先投影预算，保证中断点上的时长/轮次精确落盘。"""
             turn_loop.project_live(run_state, loop_started_at)
@@ -3141,10 +2764,10 @@ class Zongdiaodu:
             )
             if semantic_visibility == "visible":
                 native_payload = _simple_chain_native_audio_payload(native_audio_evidence, huifu)
+                _simple_chain_record_observation(run_state, native_payload)
                 quality_history.append(native_payload)
                 _simple_chain_bound_history(quality_history, limit=24)
                 last_quality_payload = native_payload
-                _simple_chain_record_observation(run_state, native_payload)
                 if run_control:
                     run_control.step(
                         "native_audio_understanding",
@@ -3188,7 +2811,7 @@ class Zongdiaodu:
                         meta={"terminal_reason": "audio_recognition_unavailable"},
                     )
         if run_control and not initial_llm_failed:
-            run_control.step("llm_call", "model thinking", "done", _llm_reply_progress_summary(huifu))
+            run_control.step("llm_call", "model thinking", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
             _check_stop("stopped after model reply")
 
         while True:
@@ -3269,6 +2892,15 @@ class Zongdiaodu:
                         )
                     break
 
+            if judge_completion and _execution_seconds_left() <= 0:
+                run_state["review_phase"] = "candidate_awaiting_review"
+                shenti, huifu = _llm_closeout_scoped({
+                    "schema": "tiangong.review-reserve.v1",
+                    "instruction": "执行预算结束。仅依据已有事实给出候选最终结果，明确未完成项，不再调用工具。候选须经对抗智能体裁决后提交。",
+                    "observations": quality_history,
+                })
+                break
+
             # Wall clock remains an absolute platform/Authority deadline. Epoch
             # rollover must never extend or bypass it.
             wall_clock_decision = evaluate_turn_budget(
@@ -3302,6 +2934,7 @@ class Zongdiaodu:
             if run_control:
                 guidance = run_control.consume_guidance()
                 if guidance:
+                    run_state.setdefault("review_user_guidance", []).append(guidance)
                     guidance_payload = {
                         "schema": "tiangong.v3.user_guidance.v1",
                         "request_id": request_id,
@@ -3420,7 +3053,7 @@ class Zongdiaodu:
                 # —— 并行执行多个工具 ——
                 if run_control:
                     structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
-                    visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
+                    visible_interim = "" if judge_completion else (structured_visible or _interim_visible_reply_from_tool_message(huifu))
                     if not visible_interim:
                         visible_interim = f"我会并行处理这 {len(tools)} 项操作。"
                     already_streamed = bool(
@@ -3797,6 +3430,7 @@ class Zongdiaodu:
                         item_deadline_seconds = min(
                             _simple_chain_remaining_deadline_seconds(),
                             _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                            _execution_seconds_left(),
                         )
                         try:
                             parallel_results.append(
@@ -3827,6 +3461,7 @@ class Zongdiaodu:
                     batch_deadline_seconds = min(
                         _simple_chain_remaining_deadline_seconds(),
                         _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                        _execution_seconds_left(),
                     )
                     executor = ThreadPoolExecutor(max_workers=min(len(tools), 8))
                     pending: list[tuple[Any, str, dict, int, str]] = [
@@ -3977,6 +3612,7 @@ class Zongdiaodu:
                         qp["observation_gaps"] = merged_gaps
                         qp["final_requirements_satisfied_by_this_step"] = bool(qp.get("ok")) and not merged_gaps
                     last_quality_payload = qp
+                    _simple_chain_record_observation(run_state, qp)
                     quality_history.append(qp)
                     _simple_chain_bound_history(quality_history, limit=24)
                     _simple_chain_protect_paths(protected_path_keys, tn, ta, qp, raw)
@@ -3988,7 +3624,6 @@ class Zongdiaodu:
                     generated_attachments.extend(_shengcheng_fujian_from_result(raw))
                     if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
                         run_state["_live"]["tool_rounds"] = gongju_cishu
-                    _simple_chain_record_observation(run_state, qp)
                     qp["run_state"] = _simple_chain_run_state_view(run_state)
                     tool_results_block.append({
                         "call_id": call_id,
@@ -4072,7 +3707,7 @@ class Zongdiaodu:
 
             if tool_name and run_control:
                 structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
-                visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
+                visible_interim = "" if judge_completion else (structured_visible or _interim_visible_reply_from_tool_message(huifu))
                 if visible_interim:
                     already_streamed = bool(
                         _interim_emitter is not None
@@ -4111,7 +3746,49 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
-                if quality_history or _runtime_detects_work_intent(xiaoxi):
+                if judge_completion:
+                    feedback = _judge_candidate()
+                    decision = feedback["review"]["decision"]
+                    if decision == "complete":
+                        guidance = run_control.consume_guidance() if run_control else ""
+                        if guidance:
+                            run_state.setdefault("review_user_guidance", []).append(guidance)
+                            shenti, huifu = _llm_jixu_scoped({
+                                "schema": "tiangong.v3.user_guidance.v1",
+                                "current_user_guidance": guidance,
+                                "instruction": "复核期间用户追加了要求。请按最新要求继续，旧候选须重新复核。",
+                            }, on_chunk=None, on_reasoning_chunk=None)
+                            continue
+                        final_chain_status = "complete"
+                        break
+                    if decision == "continue":
+                        shenti, huifu = _llm_jixu_scoped(
+                            feedback, on_chunk=None, on_reasoning_chunk=None,
+                        )
+                        continue
+                    final_guard_exhausted = True
+                    final_chain_status = "incomplete"
+                    huifu = _unapproved_reply(feedback["review"])
+                    break
+                if quality_history and not response_only_without_tools:
+                    review_feedback = review_session.review(
+                        run_state, quality_history, huifu,
+                        remaining_seconds=max(0.0, effective_wall_clock_seconds - loop_elapsed),
+                        cancel_check=getattr(run_control, "should_stop", None),
+                    )
+                    _simple_chain_save_run_state(run_state)
+                    if review_feedback is not None:
+                        if run_control:
+                            run_control.step(
+                                "adversarial_review", "对抗式复核建议", "done",
+                                review_feedback["review"]["status"], meta=review_feedback,
+                            )
+                        shenti, huifu = _llm_jixu_scoped(
+                            review_feedback, on_chunk=_on_text_chunk,
+                            on_reasoning_chunk=_on_reasoning_chunk,
+                        )
+                        continue
+                if quality_history:
                     contract_now, final_allowed_now, final_status_now, final_reasons_now = _simple_chain_life_completion_gate(
                         xiaoxi,
                         quality_history,
@@ -4136,33 +3813,6 @@ class Zongdiaodu:
                         final_chain_status = final_status_now
                         break
                     final_reasons_now = proof_reasons_now
-
-                    # bug-fix: 多次思考路径根治 - 模型已给出通顺最终答复时，跳过 completion
-                    # correction 强插续写：被误判为 work 的文本问答不再被强迫“再思考 N 轮”。
-                    # bug-fix: 条件放宽到“已有工具证据 + 模型本轮已给出收尾语”——只读查询
-                    # （读文件后直接回答）不再被完成门连环打回重答 3-5 遍；仍有交付物
-                    # （generated_attachments）或必读路径义务时不走此捷径（2026-08-26，凌霜修 logic 类）
-                    if (
-                        not generated_attachments
-                        and not required_read_paths
-                        and _simple_chain_fluent_text_reply(huifu)
-                    ):
-                        final_guard_exhausted = True
-                        final_chain_status = "chat_reply"
-                        if isinstance(run_state, dict):
-                            run_state["status"] = "chat_reply"
-                            run_state["stage"] = "chat_reply"
-                            run_state["terminal_reason"] = "fluent_text_reply_no_tool_work"
-                            _simple_chain_save_run_state(run_state)
-                        if run_control:
-                            run_control.step(
-                                "simple_chain_completion_correction",
-                                "Completion evidence correction",
-                                "skipped",
-                                "Model already produced a fluent final reply without any tool call; delivered as-is without forced continuation.",
-                                meta={"skipped_reason": "fluent_text_reply"},
-                            )
-                        break
 
                     correction_state = _simple_chain_completion_correction_state(run_state)
                     current_blockers = [
@@ -4529,13 +4179,15 @@ class Zongdiaodu:
                                 "simple_chain_repeat_limit",
                                 "Repeat observation budget",
                                 "done",
-                                "Read-only verification repeated after a verified write; delivery accepted.",
+                                "Read-only verification repeated; candidate ready for completion review." if judge_completion else "Read-only verification repeated after a verified write; delivery accepted.",
                                 meta={
                                     "repeat_key": tool_call_key,
                                     "repeat_count": repeat_count,
-                                    "delivery_accepted": True,
+                                    "delivery_accepted": not judge_completion,
                                 },
                             )
+                        if judge_completion:
+                            continue
                         break
                     # 单工具重复不再作为卡死判据（误伤合法重跑/校验）；
                     # 只记录诊断，卡死统一由状态级监视器判定。
@@ -4647,6 +4299,7 @@ class Zongdiaodu:
             _tool_timeout_seconds = min(
                 _simple_chain_remaining_deadline_seconds(),
                 _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                _execution_seconds_left(),
             )
             try:
                 gongju_jieguo = _simple_chain_execute_tool_with_timeout(
@@ -4788,6 +4441,7 @@ class Zongdiaodu:
                 quality_payload["observation_gaps"] = merged_gaps
                 quality_payload["final_requirements_satisfied_by_this_step"] = bool(quality_payload.get("ok")) and not merged_gaps
             last_quality_payload = quality_payload
+            _simple_chain_record_observation(run_state, quality_payload)
             quality_history.append(quality_payload)
             _simple_chain_bound_history(quality_history, limit=24)
             _simple_chain_protect_paths(protected_path_keys, tool_name, tool_args, quality_payload, gongju_jieguo)
@@ -4800,7 +4454,6 @@ class Zongdiaodu:
             generated_attachments.extend(_shengcheng_fujian_from_result(gongju_jieguo))
             if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
                 run_state["_live"]["tool_rounds"] = gongju_cishu
-            _simple_chain_record_observation(run_state, quality_payload)
             quality_payload["run_state"] = _simple_chain_run_state_view(run_state)
             if run_control:
                 run_control.step(
@@ -4840,6 +4493,8 @@ class Zongdiaodu:
                         "Returned the authoritative Life receipt without another model or tool call.",
                         meta=_simple_chain_learning_receipt(quality_payload),
                     )
+                if judge_completion:
+                    continue
                 break
             model_quality_payload = _simple_chain_model_payload(quality_payload)
             try:
@@ -4909,9 +4564,41 @@ class Zongdiaodu:
                 run_state["stage"] = "model_deciding"
                 _simple_chain_save_run_state(run_state)
             if run_control:
-                run_control.step("llm_continue", "model integrates tool result", "done", _llm_reply_progress_summary(huifu))
+                run_control.step("llm_continue", "model integrates tool result", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
 
-        if not final_guard_exhausted:
+        if judge_completion:
+            cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
+            if not final_guard_exhausted and not cancelled:
+                candidate = _render_delivery(huifu, approved=True)
+                if not completion_session.approved(run_state, quality_history, candidate):
+                    # Includes any future automatic closeout added outside the
+                    # normal no-tool branch: it must never bypass the judge.
+                    feedback = _judge_candidate()
+                    if feedback["review"]["decision"] != "complete":
+                        final_guard_exhausted = True
+                        final_chain_status = "incomplete"
+                        huifu = _unapproved_reply(feedback["review"])
+                if not final_guard_exhausted:
+                    final_chain_status = "complete"
+                    report = run_state["adversarial_completion"]["reports"][-1]
+                    run_state["review_phase"] = "approved_delivery"
+                    run_state["terminal_reason"] = report["reason"]
+                    run_state["last_transition"] = {
+                        "type": "complete", "source": "adversarial_agent", "reason": report["reason"],
+                        "round": int(run_state.get("round") or 0),
+                        "at": datetime.now().isoformat(timespec="seconds"),
+                    }
+                    _simple_chain_emit_event(run_state, "chain_completed", report["reason"],
+                                             "adversarial_agent", extra={"status": "complete"})
+            if cancelled:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                run_state["review_phase"] = "cancelled"
+                huifu = "任务已停止，最终结果未提交。"
+            elif final_guard_exhausted and final_chain_status == "complete":
+                final_chain_status = "incomplete"
+                huifu = "任务尚未取得对抗智能体的完成确认，最终结果未提交。"
+        elif not final_guard_exhausted:
             contract_now, final_allowed, final_chain_status, final_reasons = _simple_chain_life_completion_gate(
                 xiaoxi,
                 quality_history,
@@ -4958,12 +4645,7 @@ class Zongdiaodu:
         QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "wancheng", f"simple_chain_tools={gongju_cishu};status={final_chain_status}")
         if run_control:
             run_control.step("finalize_reply", "finalize reply", "running", "Simple chain is cleaning the final reply.")
-        huifu = re.sub(r'<tool_call\b[^>]*>.*?</tool_call>', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu = re.sub(r'<function_?calls?\b[^>]*>.*?(?:</function_?calls?>|$)', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu = re.sub(r'<invoke\b[^>]*>.*?</invoke>', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu, self.zuihou_biaoxian = _tiqu_biaoxian(huifu, xiaoxi)
-        huifu = _append_shengcheng_meiti(huifu, generated_media)
-        huifu = _append_delivery_media_tags(huifu, [] if final_guard_exhausted else generated_attachments, xiaoxi)
+        huifu = _render_delivery(huifu, approved=not final_guard_exhausted)
         if isinstance(run_state, dict) and final_chain_status != "clarify":
             run_state["status"] = final_chain_status
             if final_chain_status == "failed":
@@ -5060,21 +4742,6 @@ class Zongdiaodu:
         _user_chain_ended = False
         if is_user_run:
             self._begin_user_run()
-            # v3.7：用户显式表达的边界要尽早进入生命链边界学习器，
-            # 例如“不要主动打扰我”“少分享”“不要自动改代码”。
-            try:
-                if getattr(self, "life_orchestrator", None) is not None:
-                    self.life_orchestrator.boundary_learner.observe_user_text(xiaoxi)
-            except Exception:
-                pass
-            # P15：用户明确"记住/以后记得/我的名字是..."时，由规则层确定性写入
-            # L4 user_asserted，不依赖模型是否自行调用工具。
-            try:
-                remember = getattr(self, "p15_memory_remember_provider", None)
-                if callable(remember):
-                    remember(xiaoxi)
-            except Exception:
-                pass
 
         # ── 确认重放：用户在前端确认卡片批准后，前端重放原指令并附带授权标记 ──
         _confirm_ctx: dict | None = None
@@ -5679,7 +5346,7 @@ class Zongdiaodu:
 
     def tuijin(self, cishu: int = 1):
         """快进：模拟 N 次心跳 tick——身体演化+记忆维护+生命周期推进
-        
+
         不含自主灵感（那是LLM调用），但成长进度、情感变化、生命周期都会推进。
         使用后可通过 shenti.shengming.chengzhang_jindu 查看成长变化。
         """

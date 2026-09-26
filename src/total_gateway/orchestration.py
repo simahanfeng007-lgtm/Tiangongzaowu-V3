@@ -219,8 +219,6 @@ from .docx_qc import (
     DOCX_QC_CHECK_ID,
     DOCX_QC_CHECK_VERSION,
     DocxQcError,
-    DocxQcPolicy,
-    DocxQcService,
 )
 from .effects import EffectClaim, EffectResult
 from .fact_ledger import FactLedger
@@ -3946,7 +3944,6 @@ class GatewayOrchestrationWorker:
         if not isinstance(raw_artifacts, list):
             return 0
         gate = ArtifactGate(self._objects, self._facts)
-        docx_qc = DocxQcService(self._objects, self._facts)
         integrity_qc = ArtifactIntegrityQcService(self._objects, self._facts)
         producer_fact_id = (
             getattr(getattr(response, "result", None), "fact_ids", None)
@@ -3976,30 +3973,11 @@ class GatewayOrchestrationWorker:
                         created_at_ms=observed_at_ms,
                     )
                 )
-                if accepted.manifest.format_id == "docx":
-                    docx_minimum_words = 30
-                    docx_items_hint = re.search(
-                        r"各?(\d+)\s*[条点项]", envelope.text or ""
-                    )
-                    if docx_items_hint:
-                        docx_minimum_words = max(
-                            30, int(docx_items_hint.group(1)) * 12
-                        )
-                    outcome = docx_qc.evaluate(
-                        accepted,
-                        run_sequence=run_sequence,
-                        policy=DocxQcPolicy(
-                            minimum_word_count=docx_minimum_words,
-                            maximum_word_count=10_000_000,
-                        ),
-                        checked_at_ms=observed_at_ms,
-                    )
-                else:
-                    outcome = integrity_qc.evaluate(
-                        accepted,
-                        run_sequence=run_sequence,
-                        checked_at_ms=observed_at_ms,
-                    )
+                outcome = integrity_qc.evaluate(
+                    accepted,
+                    run_sequence=run_sequence,
+                    checked_at_ms=observed_at_ms,
+                )
                 if outcome.passed:
                     manifest = outcome.registration.record.manifest
                     artifact_manifests.append(manifest)
@@ -5417,7 +5395,6 @@ class GatewayOrchestrationWorker:
                 already_reached=frozenset({"DELIVERING", "COMPLETED"}),
             )
         gate = ArtifactGate(self._objects, self._facts)
-        docx_qc = DocxQcService(self._objects, self._facts)
         integrity_qc = ArtifactIntegrityQcService(self._objects, self._facts)
 
         def evaluate_artifact_candidate(candidate, artifact_snapshot):
@@ -5427,33 +5404,11 @@ class GatewayOrchestrationWorker:
                 or artifact_snapshot.state in {"PENDING", "CREATED", "QC_PENDING"}
             ):
                 accepted = gate.accept(candidate)
-                if accepted.manifest.format_id == "docx":
-                    # 内容兜底：docx 质检的最小字数按请求推导。固定 1 词的
-                    # 下限曾放过"只有标题的空壳文档"（真机 2026-08-29 复现）。
-                    docx_minimum_words = 30
-                    docx_items_hint = re.search(
-                        r"各?(\d+)\s*[条点项]", envelope.text or ""
-                    )
-                    if docx_items_hint:
-                        docx_minimum_words = max(
-                            30,
-                            int(docx_items_hint.group(1)) * 12,
-                        )
-                    outcome = docx_qc.evaluate(
-                        accepted,
-                        run_sequence=run_sequence,
-                        policy=DocxQcPolicy(
-                            minimum_word_count=docx_minimum_words,
-                            maximum_word_count=10_000_000,
-                        ),
-                        checked_at_ms=observed_at,
-                    )
-                else:
-                    outcome = integrity_qc.evaluate(
-                        accepted,
-                        run_sequence=run_sequence,
-                        checked_at_ms=observed_at,
-                    )
+                outcome = integrity_qc.evaluate(
+                    accepted,
+                    run_sequence=run_sequence,
+                    checked_at_ms=observed_at,
+                )
                 return accepted, outcome
             raise OrchestrationError(
                 "orchestration.artifact.resume_state_invalid"
@@ -5521,20 +5476,20 @@ class GatewayOrchestrationWorker:
                             "orchestration.artifact.validation_failed"
                         )
                         continue
-                    check_id, check_version = (
-                        (DOCX_QC_CHECK_ID, DOCX_QC_CHECK_VERSION)
-                        if candidate.format_id == "docx"
-                        else (
-                            ARTIFACT_INTEGRITY_QC_CHECK_ID,
-                            ARTIFACT_INTEGRITY_QC_CHECK_VERSION,
-                        )
-                    )
                     qc_record = self._facts.get_artifact_qc(
                         artifact_identity.artifact_revision_id,
-                        check_id=check_id,
-                        check_version=check_version,
+                        check_id=ARTIFACT_INTEGRITY_QC_CHECK_ID,
+                        check_version=ARTIFACT_INTEGRITY_QC_CHECK_VERSION,
                         verify_payload=True,
                     )
+                    # Historical DOCX runs retain their original recorded verdict.
+                    if qc_record is None and candidate.format_id == "docx":
+                        qc_record = self._facts.get_artifact_qc(
+                            artifact_identity.artifact_revision_id,
+                            check_id=DOCX_QC_CHECK_ID,
+                            check_version=DOCX_QC_CHECK_VERSION,
+                            verify_payload=True,
+                        )
                     expected_status = (
                         "PASSED"
                         if durable_artifact_snapshot.state == "QC_PASSED"

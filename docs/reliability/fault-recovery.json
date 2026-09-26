@@ -1,0 +1,80 @@
+{
+  "scope": "Controlled synthetic Gateway tasks; no production trust or full active-task recovery claim. Original failed test-key and wrapper probes retained separately.",
+  "audits": [
+    {
+      "kind": "crash",
+      "source_commit": "3abc3e7d02bb8f230e0d700df79ea3e2c203d3e3",
+      "request_status": "FAILED",
+      "completion_records": 0,
+      "successful_completion_records": 0,
+      "effect_states": [
+        [
+          "AMBIGUOUS",
+          1
+        ],
+        [
+          "FAILED_FINAL",
+          1
+        ],
+        [
+          "SUCCEEDED",
+          13
+        ]
+      ],
+      "sqlite_db_and_wal_unchanged": true,
+      "manifest_retained": true,
+      "all_recorded_files_unchanged": true,
+      "fault": {
+        "mode": "crash",
+        "status_before": "EXECUTING",
+        "seconds": 36.556,
+        "manifest_sha256": "d49a67dd7599633908e330bc07c6f9167af9e9d288d1b41b320abd5e77c8dc25"
+      },
+      "final_run_status": {
+        "status": "FAILED",
+        "execution_status": null,
+        "terminal_reason": null,
+        "review_phase": null,
+        "completion_authority": null,
+        "error": "orchestration.restart.before_outbox"
+      },
+      "crashed_process_exit": -9,
+      "graceful_second_shutdown": true
+    },
+    {
+      "kind": "cancel",
+      "source_commit": "3abc3e7d02bb8f230e0d700df79ea3e2c203d3e3",
+      "request_status": "FAILED",
+      "completion_records": 0,
+      "successful_completion_records": 0,
+      "effect_states": [
+        [
+          "FAILED_FINAL",
+          1
+        ],
+        [
+          "SUCCEEDED",
+          6
+        ]
+      ],
+      "sqlite_db_and_wal_unchanged": true,
+      "manifest_retained": true,
+      "all_recorded_files_unchanged": true,
+      "fault": {
+        "mode": "cancel",
+        "status_before": "EXECUTING",
+        "seconds": 24.36,
+        "manifest_sha256": "d49a67dd7599633908e330bc07c6f9167af9e9d288d1b41b320abd5e77c8dc25"
+      },
+      "final_run_status": {
+        "status": "FAILED",
+        "execution_status": null,
+        "terminal_reason": "[terminal_model_error] [backend_error] 服务暂时不可用：请稍后重试；若持续出现，请检查网络与模型配置。\n刚才处理你的请求时出了内部问题，我已经停下来，没有继续执行。\n你可以换个说法再发一次；如果反复出现，请打开设置查看运行状态，或把情况反馈给开发者。",
+        "review_phase": null,
+        "completion_authority": null,
+        "error": "compat.backend.terminal_failure"
+      },
+      "generation_fenced": true
+    }
+  ]
+}

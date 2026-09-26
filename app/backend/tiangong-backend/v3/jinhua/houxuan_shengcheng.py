@@ -25,38 +25,6 @@ from .yuanyu_yingshe import (
 HOUXUAN_LEDGER_LUJING = JINHUA_BIHUAN_ROOT / "jinhua_houxuan.json"
 MAX_CANDIDATES = 80
 
-PROMPT_TERMS = ("memory", "context", "preference", "prompt", "knowledge")
-WORKFLOW_TERMS = ("workflow", "route", "process", "step", "review", "pipeline", "flow")
-SKILL_TERMS = ("skill", "capability", "procedural", "habit", "method", "pattern")
-TOOL_TERMS = (
-    "tool",
-    "plugin",
-    "mcp",
-    "api",
-    "shell",
-    "cmd",
-    "powershell",
-    "terminal",
-    "network",
-    "browser",
-    "install",
-    "write file",
-    "modify file",
-)
-TOOL_TERMS_CN = ("工具", "插件", "接口", "命令", "终端", "联网", "安装", "写文件", "改文件", "执行")
-A5_TERMS = (
-    "secret",
-    "credential",
-    "password",
-    "token",
-    "delete all",
-    "rm -rf",
-    "format",
-    "system32",
-    "registry",
-    "shutdown",
-)
-A5_TERMS_CN = ("密钥", "凭证", "密码", "删除全部", "格式化", "注册表", "关机")
 
 
 def _now_iso() -> str:
@@ -151,13 +119,9 @@ def _candidate_type(item: dict[str, Any], text: str) -> str:
         return "tool_candidate"
     if target == "procedural_hint" or "skill_evolution" in evolution:
         return "skill_candidate"
-    if _contains_any(text, TOOL_TERMS) or any(term in text for term in TOOL_TERMS_CN):
-        return "tool_candidate"
-    if _contains_any(text, SKILL_TERMS) or "procedural" in learning:
+    if learning == "procedural":
         return "skill_candidate"
-    if _contains_any(text, WORKFLOW_TERMS) or any(term in text for term in ("流程", "步骤", "审查", "路由")):
-        return "workflow_candidate"
-    if target in {"memory", "context", "preference"} or _contains_any(text, PROMPT_TERMS):
+    if target in {"memory", "context", "preference"}:
         return "prompt_candidate"
     return "workflow_candidate"
 
@@ -172,8 +136,6 @@ def _candidate_risk(candidate_type: str, item: dict[str, Any], text: str) -> str
         rank = max(rank, 2)
     elif candidate_type == "prompt_candidate":
         rank = max(rank, 2)
-    if _contains_any(text, A5_TERMS) or any(term in text for term in A5_TERMS_CN):
-        rank = max(rank, 5)
     return _risk_level(rank)
 
 

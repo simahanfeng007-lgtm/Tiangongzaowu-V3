@@ -233,7 +233,16 @@ def test_scheduler_resume_narrative_is_idempotent(
         monkeypatch.setattr(
             EmbeddedLifeRuntime, "_iso_ms", staticmethod(lambda value: 1)
         )
+        # Exercise a later retry deterministically. Two calls in the same
+        # millisecond return the same existing journal event without conflict.
+        from types import SimpleNamespace
+        from life_service import embedded_runtime as module
+        now_ns = time.time_ns()
+        clock = SimpleNamespace(**{name: getattr(time, name) for name in dir(time) if not name.startswith("__")})
+        clock.time_ns = lambda: now_ns
+        monkeypatch.setattr(module, "time", clock)
         assert life._emit_scheduler_resume_narrative(life_id) is True
+        now_ns += 10_000_000
         assert life._emit_scheduler_resume_narrative(life_id) is False, "同一缺口幂等"
         events = [
             e for e in life.system.journal.events(life_id)

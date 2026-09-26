@@ -540,6 +540,12 @@ def _launch_playwright_chromium(playwright: Any) -> Tuple[Any, str, List[str]]:
         packaged = Path(packaged_root)
         if packaged.is_dir():
             candidates.extend(sorted(packaged.glob("chromium-*/chrome-win64/chrome.exe"), reverse=True))
+            candidates.extend(sorted(packaged.glob("chromium-*/chrome-linux64/chrome"), reverse=True))
+    if sys.platform.startswith("linux"):
+        for name in ("google-chrome", "chromium", "chromium-browser"):
+            executable = shutil.which(name)
+            if executable:
+                candidates.append(Path(executable))
     local_app_data = str(os.environ.get("LOCALAPPDATA") or "").strip()
     if local_app_data:
         cache_root = Path(local_app_data) / "ms-playwright"

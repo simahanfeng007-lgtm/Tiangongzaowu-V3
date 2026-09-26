@@ -37,6 +37,19 @@ def bind(rt, path):
     rt.config.target_snapshot_sha256 = canonical_sha256(probe_composition_write_target(str(path), rt.workspace))
 
 
+def test_python_profile_does_not_require_media_runtime(tmp_path, monkeypatch):
+    rt = body(tmp_path)
+    launched = []
+    def run(_runner, command, **kwargs):
+        launched.append((command, kwargs))
+        return {"ok": True, "stdout": "5", "stderr": "", "returncode": 0}
+    monkeypatch.setattr(SandboxRunner, "run", run)
+    result = rt._run_subprocess(["python", "-c", "print(2+3)"], require_os_containment=True)
+    assert result["ok"] and len(launched) == 1
+    assert launched[0][0] == ["python", "-c", "print(2+3)"]
+    assert launched[0][1]["require_os_containment"] is True
+
+
 @pytest.mark.skipif(os.name != 'nt', reason='requires actual AppContainer execution')
 def test_write_failed_run_fix_success_and_identical_output(tmp_path):
     rt = body(tmp_path)

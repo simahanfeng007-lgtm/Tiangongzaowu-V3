@@ -1,22 +1,15 @@
 {
  "schema": "tiangong.p17.obligation-scan.v1",
  "summary": {
-  "total_hits": 6,
-  "explicit_feature_uses": 6,
+  "total_hits": 3,
+  "explicit_feature_uses": 3,
   "needs_review": 0
  },
  "hits": [
   {
-   "kind": "marker",
-   "path": "app/backend/tiangong-backend/omni_body_skill/tools/delivery_kernel.py",
-   "line": 602,
-   "text": "placeholders = len(re.findall(r\"待补充|占位|TODO|TBD|lorem ipsum\", text, flags=re.I))",
-   "classification": "explicit_feature_use"
-  },
-  {
    "kind": "pass_only_definition",
    "label": "log_message",
-   "line": 2349,
+   "line": 2358,
    "classification": "explicit_feature_use",
    "text": "def log_message(self, *args):",
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py"
@@ -32,22 +25,8 @@
   {
    "kind": "not_implemented",
    "path": "app/backend/tiangong-backend/v3/jineng/jirou_ceng.py",
-   "line": 333,
+   "line": 312,
    "text": "except NotImplementedError:",
-   "classification": "explicit_feature_use"
-  },
-  {
-   "kind": "marker",
-   "path": "app/backend/tiangong-backend/v3/novel_system.py",
-   "line": 76,
-   "text": "_PLACEHOLDER_RE = re.compile(r\"(?:TODO|TBD|待补|占位|这里写|未完待续\\s*$)\", re.IGNORECASE)",
-   "classification": "explicit_feature_use"
-  },
-  {
-   "kind": "marker",
-   "path": "src/omni_body_skill/tools/delivery_kernel.py",
-   "line": 602,
-   "text": "placeholders = len(re.findall(r\"待补充|占位|TODO|TBD|lorem ipsum\", text, flags=re.I))",
    "classification": "explicit_feature_use"
   }
  ],

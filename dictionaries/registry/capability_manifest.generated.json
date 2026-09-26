@@ -26504,7 +26504,7 @@
       "handler": "dynamic",
       "id": "qc.content.calendar_check",
       "implemented": true,
-      "metadata_sha256": "5e689d1a80f9d53e3b181b3c1d6c2ad75edddf2fa0ecc8f2357e267cf67d052f",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.content.calendar_check",
@@ -26515,7 +26515,7 @@
       "result_schema_sha256": "bb609331f450de74a97093e1ca0e08650d1b3e81650ca053d0b5a1670bc42435",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check content calendar for cadence, channel fit, objective alignment, owner/date clarity, asset requirements, and measurement.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26537,7 +26537,7 @@
       "handler": "dynamic",
       "id": "qc.course.plan_check",
       "implemented": true,
-      "metadata_sha256": "03736d716291c67764a8fe56ebf8c2a8d9e78b6ca54307b56c9d214268efcd75",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.course.plan_check",
@@ -26548,7 +26548,7 @@
       "result_schema_sha256": "d05446a24e9a48b1f56c8db2413ac0468dd2cefe227bee12f0688faaa0f0dd7b",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check lesson/course plan for measurable objectives, sequence, practice, assessment, timing, materials, and learner fit.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26570,7 +26570,7 @@
       "handler": "dynamic",
       "id": "qc.docx.delivery_check",
       "implemented": true,
-      "metadata_sha256": "86f4841e4598a0b9633c3508a370da7dd6304fa12b3c3a96bfb6547ed0344a23",
+      "metadata_sha256": "74a5c75f3565d8ecf9171c3efcfa2015ebf9eb29d21052b30159b9b254b86df6",
       "reason": "",
       "result_schema": {
         "action": "qc.docx.delivery_check",
@@ -26581,7 +26581,7 @@
       "result_schema_sha256": "53bbae9882205cb28d25c285d265bd750c93eeac175e946c58cbc11b011ef1a5",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check business-grade Word/document deliverables for structure, clarity, evidence, actionability, and openability.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality. Explicit managed-long-document manifests still receive structural checks.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26636,7 +26636,7 @@
       "handler": "dynamic",
       "id": "qc.kb.ingestion_check",
       "implemented": true,
-      "metadata_sha256": "d3fbbf1fbf20b0bfa1efc70705c21855b3083b456814daa1da82299e48771758",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.kb.ingestion_check",
@@ -26647,7 +26647,7 @@
       "result_schema_sha256": "e3ac7103ee0238302488fcd7a612c9babaa34e8703310ba612565c5ea6bc3b53",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check knowledge-base ingestion plan for source traceability, chunking, metadata, permissions, QA coverage, and retrieval validation.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26669,7 +26669,7 @@
       "handler": "dynamic",
       "id": "qc.meeting.minutes_check",
       "implemented": true,
-      "metadata_sha256": "e84abbe56a6ee02a977cd1823b9a8af59716ddefc3365698da56d03929687904",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.meeting.minutes_check",
@@ -26680,7 +26680,7 @@
       "result_schema_sha256": "c65aee92d4d930eb693289b53f461c95893cffd6f42158139fe7b021ee22c4dc",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check meeting minutes for agenda, decisions, action items, owners, deadlines, risks, and follow-up readiness.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26702,7 +26702,7 @@
       "handler": "dynamic",
       "id": "qc.novel.chapter_check",
       "implemented": true,
-      "metadata_sha256": "a8899adaa0ec02131a771349be3e781eb10dc4e2b9ba8a0770197a8b36c171cf",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.novel.chapter_check",
@@ -26713,7 +26713,7 @@
       "result_schema_sha256": "e67c8a0c59aa5ce29d4ca2105d175998eb03d558432a4ac21509702b1c5a706e",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check web-novel chapter delivery for hook, POV, conflict, scene beats, emotional escalation, payoff, cliffhanger, and AI tone.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -26997,7 +26997,7 @@
       "handler": "dynamic",
       "id": "qc.research.evidence_check",
       "implemented": true,
-      "metadata_sha256": "ca0992bb9e8a9ccafd9c75e3f6b465a223d7d15525be6a97b6c121f81c40ad8b",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.research.evidence_check",
@@ -27008,7 +27008,7 @@
       "result_schema_sha256": "937c334d50ae745423034124b766eadf3064f83b6a0e08c0c4db3e4e3d45b13b",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check research/literature deliverables for search strategy, inclusion/exclusion, citations, evidence table, limitations, and uncertainty.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27030,7 +27030,7 @@
       "handler": "dynamic",
       "id": "qc.sales.script_check",
       "implemented": true,
-      "metadata_sha256": "2db04e08fe6fbb980816ac19fc813b44bf1e52d74e7e7f8e7e81c740c8fae9ef",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.sales.script_check",
@@ -27041,7 +27041,7 @@
       "result_schema_sha256": "9328ad18e1b1bda1c8277b809cd312880910b02f6759ff9c72cfe4c39218ea3f",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check sales script for ICP fit, pain diagnosis, consultative flow, proof, objections, next step, and compliance.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27063,7 +27063,7 @@
       "handler": "dynamic",
       "id": "qc.seo.people_first_check",
       "implemented": true,
-      "metadata_sha256": "d615f4419f5f7f6a2020640e10874a3236e0a3eac6e75a7e10ae2507a094d180",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.seo.people_first_check",
@@ -27074,7 +27074,7 @@
       "result_schema_sha256": "a52e2960aaa7b8f7089d57c27933601e30943d4d20f19cb9a0a2143de07a109d",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check SEO/web content for people-first helpfulness, scannability, evidence, credibility, originality, and anti-fluff.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27096,7 +27096,7 @@
       "handler": "dynamic",
       "id": "qc.sheet.analysis_report_check",
       "implemented": true,
-      "metadata_sha256": "9f7631e41420ad9bb80ea402f322cb15e937c08e0c3e2d43bf5540e6ee64ac80",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.sheet.analysis_report_check",
@@ -27107,7 +27107,7 @@
       "result_schema_sha256": "20802a7fed67a06dfc782dd2d51ea373fb5e769cb09b07cedb5f60162987936f",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check spreadsheet analysis deliverables for data dictionary, cleaning log, formulas, summary, insights, and decisions.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27195,7 +27195,7 @@
       "handler": "dynamic",
       "id": "qc.voice_authorized.delivery_check",
       "implemented": true,
-      "metadata_sha256": "e47513be8734ce94e2758245c45f76072ce6871ebc9b911ab8eb10ca90a4f251",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.voice_authorized.delivery_check",
@@ -27206,7 +27206,7 @@
       "result_schema_sha256": "99295297a17063aae2e54bb0eeae33b581f6968230f829784de100218c2fac4d",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Check authorized voice/audio delivery for consent, speaker identity, usage scope, transcript, quality, watermark/disclosure, and risk controls.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27228,7 +27228,7 @@
       "handler": "dynamic",
       "id": "qc.writing.ai_tone_check",
       "implemented": true,
-      "metadata_sha256": "61b58e696179c8a2d4433c155eb367139ef52d5eade9e13e87987037b0f5bb5f",
+      "metadata_sha256": "1a53c8224a128bf17a3492c914080e7ecdecd252eca1b4ea8ce670c07a444e88",
       "reason": "",
       "result_schema": {
         "action": "qc.writing.ai_tone_check",
@@ -27239,7 +27239,7 @@
       "result_schema_sha256": "99afb50476079125b066299cc54a3f86a1b9409aeaaa188aca449f0cdcbd2a45",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Heuristically check writing for generic AI tone, repetition, vague claims, and weak specificity.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -27890,7 +27890,7 @@
       "handler": "dynamic",
       "id": "rubric.evaluate",
       "implemented": true,
-      "metadata_sha256": "283670ce4c2d96f463adce330a3a897008c643de55a1d4905f5e73be5646b561",
+      "metadata_sha256": "3e763aa670d95d68f2ccf424815bf819e06b4025d63e71bab2cab1d1881bd6cd",
       "reason": "",
       "result_schema": {
         "action": "rubric.evaluate",
@@ -27901,7 +27901,7 @@
       "result_schema_sha256": "c0c171e2720fbcb9cbde9fea91c6fb596669f03bd70b3a4698bd86e21f7b9305",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A0",
-      "summary": "Evaluate supplied content or target file against a named delivery rubric.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -33541,12 +33541,12 @@
   },
   "executable": 285,
   "schema": "tiangong.v3.capability_manifest.v1",
-  "source_hash": "5a5dec418e1119e1041f6a0be3067403b14ccc31d67ddafa9ac6d329023dc028",
+  "source_hash": "fb8e7c8f7a5512fc2a5afc1e0957700a335a99048221d1b2d23e8a7d69c7cbfd",
   "total": 791,
   "unavailable": 506,
   "validation": {
     "executable_without_route": [],
     "ok": true,
-    "source_hash": "5a5dec418e1119e1041f6a0be3067403b14ccc31d67ddafa9ac6d329023dc028"
+    "source_hash": "fb8e7c8f7a5512fc2a5afc1e0957700a335a99048221d1b2d23e8a7d69c7cbfd"
   }
 }

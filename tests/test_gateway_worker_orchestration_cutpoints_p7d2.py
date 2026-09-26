@@ -402,13 +402,11 @@ def test_shared_success_tail_guards_artifact_and_delivery_reentry_structure() ->
         and dotted(node)
         in {
             "gate.accept",
-            "docx_qc.evaluate",
             "integrity_qc.evaluate",
         }
     ]
     assert {dotted(node) for node in external_artifact_calls} == {
         "gate.accept",
-        "docx_qc.evaluate",
         "integrity_qc.evaluate",
     }
     assert all(has_durable_guard(node) for node in external_artifact_calls)
@@ -587,7 +585,6 @@ def test_durable_qc_passed_artifact_reuses_manifest_without_gate_or_qc(
 
     for symbol in (
         "ArtifactGate",
-        "DocxQcService",
         "ArtifactIntegrityQcService",
     ):
         monkeypatch.setattr(

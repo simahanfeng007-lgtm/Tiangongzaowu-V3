@@ -142,6 +142,9 @@ jobs:
               print(mapping["id"], "file_count", len(rows), "tree_sha256", module["tree_hash"](rows))
           PY
 
+      - name: Prepare and verify Linux containment and media runtimes
+        run: bash scripts/setup-linux-ci-sandbox.sh
+
       - name: Verify generated-source mirrors
         run: python scripts/sync-generated-sources.py --check-committed
 

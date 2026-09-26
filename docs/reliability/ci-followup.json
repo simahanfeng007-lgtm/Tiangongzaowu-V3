@@ -1,0 +1,51 @@
+{
+  "schema": "v3.reliability-ci-followup.v1",
+  "initial_published_head": "19dc0e9cd55bf8dfa0adb1ab7b195abb32f177b3",
+  "tested_durable_copy_head": "b9cd57b8ba5e9a8809d126e7bd4f66434e40aa0c",
+  "target_verification_plane": "1.51",
+  "local_tests": {
+    "runtime_authority_isolation": {
+      "passed": 80,
+      "skipped": 3
+    },
+    "freeze_and_version": {
+      "passed": 18
+    },
+    "dynamic_surface": {
+      "passed": 8
+    },
+    "linux_loader_and_containment": {
+      "passed": 24,
+      "verification_plane": "1.51"
+    }
+  },
+  "live_recheck": {
+    "planned": 16,
+    "passed": 16,
+    "document": "post-ci-live-check.json",
+    "sha256": "a142c38b7eebd08523f0d4d85b657dcbb0c0276b19af28cdaefddd2a2ba8b834"
+  },
+  "regressions": {
+    "readonly_fsync": "Replayed old implementation: failed. Writable descriptor copy: passed locally and Windows native runtime capability shard.",
+    "non_media_dependency": "Replayed old implementation: failed. Media branch isolation: passed locally.",
+    "private_fact_ledger": "Old sandbox policy exposed the reserved directory; new copy/snapshot/merge counterexamples passed. Windows video original failed reading a locked Fact execute.lock.",
+    "retired_prose_attestation": "Seven native signed steps completed; stale Windows-only terminal assertion expected semantic approval from the retired prose floor. Corrected to false with explicit zero-obligation, no-inferred-output and Fact/plan identity checks; retained native execution assertions.",
+    "linux_loader": "Ubuntu 24.04 system FFmpeg failed to load libblas.so.3 through /etc/alternatives. Scoped selectors to read-only same-owner system libraries restore actual encoding and decoding; entire host /etc remains unmounted. Independent diagnostic failure run 36260875117, successful fixed probe run 36261179283."
+  },
+  "remote_final_status": "Pending checks on the containing PR final head; this document is not a CI success assertion.",
+  "candidate_1_50": {
+    "head": "45d7f906e0bf0c4e2234f7323a7b223bd24d1b86",
+    "local_full": {
+      "passed": 6426,
+      "skipped": 93,
+      "subtests_passed": 1152,
+      "failed": 0
+    },
+    "real_adversarial_judge": {
+      "passed": 24,
+      "total": 24
+    },
+    "windows_shards_and_union": "passed; run 36259807037",
+    "linux_full": "Full run pending at this evidence snapshot. Exact-product isolated Ubuntu 24.04 media probe reproduced the loader failure; fixed separately."
+  }
+}

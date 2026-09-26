@@ -1,10 +1,7 @@
-"""Deterministic memory classification for the embedded LifeKernel.
+"""Replay-stable memory metadata from explicit fields and typed relations.
 
-The classifier is deliberately rule based.  It never asks the model to decide
-what becomes authoritative memory and it records the exact reason codes used
-for every classification.  Explicit caller hints are accepted only as hints;
-causal roles, retention and assertion kind are derived from the payload,
-provenance and relations so replay produces the same result.
+Natural-language content is preserved and validated as data. It never creates
+causal relations, user preferences, rules, goals or retention decisions.
 """
 from __future__ import annotations
 
@@ -17,7 +14,7 @@ from typing import Any
 
 from contracts import canonical_sha256
 
-CLASSIFIER_VERSION = "tiangong.life.memory-classifier.v1"
+CLASSIFIER_VERSION = "tiangong.life.memory-classifier.v2"
 
 MEMORY_TYPES = {
     "working",
@@ -70,90 +67,6 @@ NONCAUSAL_RELATION_KINDS = {
 }
 ALLOWED_RELATION_KINDS = CAUSAL_RELATION_KINDS | NONCAUSAL_RELATION_KINDS
 
-_CAUSE_PATTERNS = (
-    r"\bbecause\b",
-    r"\bdue to\b",
-    r"\bcaused by\b",
-    r"\breason\b",
-    r"\bcause\b",
-    r"因为",
-    r"由于",
-    r"原因",
-    r"导致",
-)
-_EFFECT_PATTERNS = (
-    r"\btherefore\b",
-    r"\bresult(?:ed|s)? in\b",
-    r"\bconsequence\b",
-    r"\boutcome\b",
-    r"\beffect\b",
-    r"因此",
-    r"所以",
-    r"结果",
-    r"后果",
-)
-_PROCEDURE_PATTERNS = (
-    r"\bstep\s*\d+\b",
-    r"\bhow to\b",
-    r"\bprocedure\b",
-    r"\bworkflow\b",
-    r"步骤",
-    r"流程",
-    r"操作方法",
-)
-_RULE_PATTERNS = (
-    r"\bmust\b",
-    r"\bnever\b",
-    r"\balways\b",
-    r"\bforbidden\b",
-    r"必须",
-    r"禁止",
-    r"永远",
-    r"不得",
-)
-_PREFERENCE_PATTERNS = (
-    r"\bprefer\b",
-    r"\blike\b",
-    r"\bdislike\b",
-    r"偏好",
-    r"喜欢",
-    r"不喜欢",
-)
-_GOAL_PATTERNS = (
-    r"\bgoal\b",
-    r"\bobjective\b",
-    r"\btarget\b",
-    r"目标",
-    r"目的",
-)
-_RELATIONSHIP_PATTERNS = (
-    r"\bcustomer\b",
-    r"\bcolleague\b",
-    r"\bmanager\b",
-    r"\brelationship\b",
-    r"客户",
-    r"同事",
-    r"关系",
-)
-_SKILL_PATTERNS = (
-    r"\bskill\b",
-    r"\bcapability\b",
-    r"\blearned how\b",
-    r"技能",
-    r"能力",
-)
-_EPISODIC_PATTERNS = (
-    r"\btoday\b",
-    r"\byesterday\b",
-    r"\bhappened\b",
-    r"\bmeeting\b",
-    r"今天",
-    r"昨天",
-    r"发生",
-    r"会议",
-)
-
-
 def _nfc_text(value: str) -> str:
     text = unicodedata.normalize("NFC", value)
     if "\x00" in text:
@@ -190,10 +103,6 @@ def _flatten(value: Any, *, depth: int = 0) -> list[str]:
             rows.extend(_flatten(item, depth=depth + 1))
         return rows
     raise ValueError("memory payload contains a non-canonical value")
-
-
-def _matches(text: str, patterns: tuple[str, ...]) -> bool:
-    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
 def normalize_relations(relations: Any) -> list[dict[str, Any]]:
@@ -256,8 +165,7 @@ def classify_memory(
 
     normalized_relations = normalize_relations(relations)
     provenance_value = dict(provenance or {})
-    flattened = _flatten({"content": content, "provenance": provenance_value})
-    text = " ".join(flattened).casefold()
+    _flatten({"content": content, "provenance": provenance_value})
     keys = {
         str(key).casefold()
         for value in (content, provenance_value)
@@ -273,18 +181,18 @@ def classify_memory(
     causal_relation = cause_relation or effect_relation
     has_cause = cause_relation or bool(
         keys & {"cause", "cause_ref", "cause_memory_id", "reason", "because"}
-    ) or _matches(text, _CAUSE_PATTERNS)
+    )
     has_effect = effect_relation or bool(
         keys & {"effect", "effect_ref", "effect_memory_id", "result", "outcome", "consequence"}
-    ) or _matches(text, _EFFECT_PATTERNS)
+    )
     has_action = bool(keys & {"action", "decision", "intervention", "tool_action"})
-    has_goal = bool(keys & {"goal", "objective", "target"}) or _matches(text, _GOAL_PATTERNS)
-    has_constraint = bool(keys & {"constraint", "rule", "policy", "forbidden"}) or _matches(text, _RULE_PATTERNS)
-    has_preference = bool(keys & {"preference", "likes", "dislikes"}) or _matches(text, _PREFERENCE_PATTERNS)
-    has_skill = bool(keys & {"skill", "capability", "procedure", "steps"}) or _matches(text, _SKILL_PATTERNS)
-    has_procedure = bool(keys & {"steps", "procedure", "workflow", "instructions"}) or _matches(text, _PROCEDURE_PATTERNS)
-    has_relationship = bool(keys & {"relationship_id", "person_id", "customer_id", "contact_id"}) or _matches(text, _RELATIONSHIP_PATTERNS)
-    has_episode = bool(keys & {"event_id", "request_id", "run_id", "timestamp", "occurred_at"}) or _matches(text, _EPISODIC_PATTERNS)
+    has_goal = bool(keys & {"goal", "objective", "target"})
+    has_constraint = bool(keys & {"constraint", "rule", "policy", "forbidden"})
+    has_preference = bool(keys & {"preference", "likes", "dislikes"})
+    has_skill = bool(keys & {"skill", "capability", "procedure", "steps"})
+    has_procedure = bool(keys & {"steps", "procedure", "workflow", "instructions"})
+    has_relationship = bool(keys & {"relationship_id", "person_id", "customer_id", "contact_id"})
+    has_episode = bool(keys & {"event_id", "request_id", "run_id", "timestamp", "occurred_at"})
 
     explicit = _explicit_type(requested_memory_type)
     reason_codes: list[str] = []

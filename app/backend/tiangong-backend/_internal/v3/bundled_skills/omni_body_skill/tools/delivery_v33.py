@@ -31,7 +31,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.novel.chapter_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check web-novel chapter delivery for hook, POV, conflict, scene beats, emotional escalation, payoff, cliffhanger, and AI tone."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "poster.brief.create": {
         "risk": "A2",
@@ -51,7 +51,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.sheet.analysis_report_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check spreadsheet analysis deliverables for data dictionary, cleaning log, formulas, summary, insights, and decisions."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "meeting.minutes.create": {
         "risk": "A2",
@@ -61,7 +61,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.meeting.minutes_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check meeting minutes for agenda, decisions, action items, owners, deadlines, risks, and follow-up readiness."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "sales.script.create": {
         "risk": "A2",
@@ -71,7 +71,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.sales.script_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check sales script for ICP fit, pain diagnosis, consultative flow, proof, objections, next step, and compliance."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "course.lesson_plan.create": {
         "risk": "A2",
@@ -81,7 +81,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.course.plan_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check lesson/course plan for measurable objectives, sequence, practice, assessment, timing, materials, and learner fit."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "kb.ingestion_manifest.create": {
         "risk": "A2",
@@ -91,7 +91,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.kb.ingestion_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check knowledge-base ingestion plan for source traceability, chunking, metadata, permissions, QA coverage, and retrieval validation."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "voice.consent_pack.create": {
         "risk": "A2",
@@ -101,7 +101,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.voice_authorized.delivery_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check authorized voice/audio delivery for consent, speaker identity, usage scope, transcript, quality, watermark/disclosure, and risk controls."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "seo.content.brief.create": {
         "risk": "A2",
@@ -111,7 +111,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.seo.people_first_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check SEO/web content for people-first helpfulness, scannability, evidence, credibility, originality, and anti-fluff."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "content.calendar.create": {
         "risk": "A2",
@@ -121,7 +121,7 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.content.calendar_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check content calendar for cadence, channel fit, objective alignment, owner/date clarity, asset requirements, and measurement."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     }
 }
 
@@ -178,10 +178,6 @@ RUBRIC_WEIGHTS_V33: Dict[str, Dict[str, int]] = {
     },
 }
 
-GENERIC_AI_PHRASES_V33 = [
-    "在当今", "赋能", "闭环", "抓手", "生态", "降本增效", "全方位", "多维度",
-    "显著提升", "深度融合", "未来可期", "打造", "助力", "全面提升", "强势来袭",
-]
 
 
 def handle_v33_action(runtime: Any, op_id: str, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,15 +327,7 @@ def _has_any(text: str, words: List[str]) -> bool:
 
 
 def _generic_ai_issues(text: str) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
-    for phrase in GENERIC_AI_PHRASES_V33:
-        count = text.count(phrase)
-        if count >= 2:
-            issues.append(_issue("generic_phrase", f"泛化表达重复：{phrase} ×{count}", "low", "替换为具体事实、场景、动作或可验证证据。"))
-    vague = len(re.findall(r"(显著|全面|大幅|有效|深度|极大|明显).{0,8}(提升|优化|改善|增强|赋能)", text))
-    if vague > 4:
-        issues.append(_issue("vague_claims", "模糊效果词过多，缺少具体证据。", "medium", "补充量化口径、案例、限制条件或删去泛化效果词。"))
-    return issues[:15]
+    return []
 
 
 def _section_markdown(title: str, sections: List[Tuple[str, Any]]) -> str:
@@ -391,27 +379,8 @@ def _writing_chapter_plan_create(runtime: Any, target: str | None, args: Dict[st
 
 
 def _qc_novel_chapter(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    text = str(args.get("content") or "")
-    path = None
-    if target:
-        path = _resolve(runtime, target, must_exist=True)
-        text += "\n" + _read_text_any(path)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    if len(text) < int(args.get("min_chars", 1800)):
-        issues.append(_issue("too_short", "章节长度不足，难形成完整阅读节奏。", "high", "补足至少两个场景节拍和一次情绪升级。"))
-    first = text[:600]
-    if not _has_any(first, ["突然", "血", "死", "危", "门", "响", "秘密", "系统", "选择", "不对", "疯", "杀", "跪", "醒来", "倒计时"]):
-        issues.append(_issue("weak_opening_hook", "前600字缺少强钩子/异常/危机/选择。", "high", "把冲突、危险、诱惑或异变前置到开头。"))
-    if not _has_any(text, ["冲突", "阻止", "代价", "威胁", "敌", "逼", "选择", "失败", "赌"]):
-        issues.append(_issue("weak_conflict", "场景目标与阻碍不明显。", "high", "明确主角目标、阻碍者和失败代价。"))
-    if not _has_any(text[-800:], ["可是", "然而", "没想到", "下一刻", "真正", "背后", "来不及", "门外", "声音", "名单", "真相"]):
-        warnings.append(_issue("weak_cliffhanger", "结尾悬念或翻页动力不足。", "low", "用信息差、反转或未解决危险收束。"))
-    if text.count("我") > 20 and text.count("他") > 20:
-        warnings.append(_issue("pov_mixed", "人称/视角可能混杂。", "low", "统一第一人称或第三人称有限视角。"))
-    warnings.extend(_generic_ai_issues(text))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "webnovel_chapter", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "novel_chapter")
 
 
 def _poster_brief_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -460,9 +429,6 @@ def _qc_poster(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[s
             except Exception as exc:
                 issues.append(_issue("image_unreadable", f"图片不可读：{exc}", "critical", "重新导出 PNG/JPG。"))
     combined = text
-    for word, sev in [("受众", "high"), ("主标题", "medium"), ("CTA", "high"), ("信任", "medium"), ("尺寸", "low")]:
-        if word not in combined:
-            issues.append(_issue(f"missing_{word}", f"缺少海报交付要素：{word}", sev, f"补充 {word}。"))
     warnings.extend(_generic_ai_issues(combined))
     score = _score(issues, warnings)
     return {"success": True, "result": {"type": "poster_campaign", "score": score, "grade": _grade(score), "image_info": image_info, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(combined.encode('utf-8')), "score": score}}
@@ -484,19 +450,8 @@ def _spreadsheet_analysis_plan_create(runtime: Any, target: str | None, args: Di
 
 
 def _qc_sheet_analysis(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    for word, sev in [("数据字典", "medium"), ("清洗", "high"), ("结论", "high"), ("建议", "high"), ("口径", "medium")]:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"缺少表格分析要素：{word}", sev, f"补充 {word}。"))
-    if path and path.suffix.lower() == ".xlsx":
-        preview = text.splitlines()
-        if len(preview) < 5:
-            warnings.append(_issue("few_rows", "表格可读行数较少，可能不是完整分析交付。", "low", "确认是否包含数据、透视/汇总或结论表。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "spreadsheet_analysis", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "sheet_analysis")
 
 
 def _meeting_minutes_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -517,18 +472,8 @@ def _meeting_minutes_create(runtime: Any, target: str | None, args: Dict[str, An
 
 
 def _qc_meeting_minutes(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    required = [("议程", "medium"), ("决策", "high"), ("行动项", "high"), ("负责人", "high"), ("截止", "high"), ("风险", "medium"), ("跟进", "medium")]
-    for word, sev in required:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"纪要缺少：{word}", sev, f"补充 {word}，避免会后无法执行。"))
-    if not re.search(r"\d{4}[-/.年]\d{1,2}|明天|下周|月底|周[一二三四五六日天]", text):
-        warnings.append(_issue("no_deadline_signal", "行动项缺少明确时间信号。", "low", "为每个行动项补截止时间。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "meeting_minutes", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "meeting_minutes")
 
 
 def _sales_script_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -547,19 +492,8 @@ def _sales_script_create(runtime: Any, target: str | None, args: Dict[str, Any])
 
 
 def _qc_sales_script(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    required = [("ICP", "medium"), ("开场", "medium"), ("诊断", "high"), ("价值", "high"), ("案例", "medium"), ("异议", "high"), ("下一步", "high"), ("合规", "medium")]
-    for word, sev in required:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"销售话术缺少：{word}", sev, f"补充 {word} 模块。"))
-    if text.count("我们") > 20 and text.count("你") < 8 and text.count("您") < 8:
-        warnings.append(_issue("seller_centered", "话术偏自说自话，客户诊断不足。", "low", "增加客户问题、确认句和复述句。"))
-    warnings.extend(_generic_ai_issues(text))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "sales_script", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "sales_script")
 
 
 def _course_lesson_plan_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -578,18 +512,8 @@ def _course_lesson_plan_create(runtime: Any, target: str | None, args: Dict[str,
 
 
 def _qc_course_plan(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    required = [("学习目标", "high"), ("对象", "medium"), ("流程", "medium"), ("练习", "high"), ("评价", "high"), ("材料", "medium"), ("时长", "medium"), ("分层", "low")]
-    for word, sev in required:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"课程方案缺少：{word}", sev, f"补充 {word}。"))
-    if not re.search(r"\d+\s*(分钟|min|课时|小时)", text):
-        warnings.append(_issue("no_timing_detail", "缺少具体时间分配。", "low", "给每个环节标注分钟数。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "course_plan", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "course_plan")
 
 
 def _kb_ingestion_manifest_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -611,18 +535,8 @@ def _kb_ingestion_manifest_create(runtime: Any, target: str | None, args: Dict[s
 
 
 def _qc_kb_ingestion(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else json.dumps(args, ensure_ascii=False)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    required = [("source_inventory", "high"), ("permissions", "high"), ("chunking", "high"), ("metadata", "medium"), ("qa_pairs", "medium"), ("retrieval", "high"), ("update", "medium")]
-    for word, sev in required:
-        if word.lower() not in text.lower():
-            issues.append(_issue(f"missing_{word}", f"知识库入库缺少：{word}", sev, f"补充 {word}。"))
-    if "confidentiality" not in text.lower() and "敏感" not in text:
-        warnings.append(_issue("weak_confidentiality", "缺少资料密级/敏感信息处理字段。", "low", "给每份资料标注密级和可用范围。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "kb_ingestion", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "kb_ingestion")
 
 
 def _voice_consent_pack_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -639,17 +553,8 @@ def _voice_consent_pack_create(runtime: Any, target: str | None, args: Dict[str,
 
 
 def _qc_voice_authorized(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    for word, sev in [("授权", "critical"), ("用途", "high"), ("期限", "medium"), ("脚本", "medium"), ("水印", "medium"), ("撤回", "medium")]:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"授权声音交付缺少：{word}", sev, f"补充 {word} 证据。"))
-    if _has_any(text, ["无授权", "冒充", "绕过"]) and "禁用" not in text and "禁止" not in text:
-        issues.append(_issue("unsafe_voice_use", "文本中出现无授权/冒充/绕过等高风险用途。", "critical", "停止交付，改为授权 TTS 或本人声音流程。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "authorized_voice_audio", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "voice_authorized")
 
 
 def _seo_content_brief_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -666,18 +571,8 @@ def _seo_content_brief_create(runtime: Any, target: str | None, args: Dict[str, 
 
 
 def _qc_seo_people_first(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    for word, sev in [("用户", "high"), ("问题", "medium"), ("经验", "medium"), ("来源", "high"), ("步骤", "medium"), ("限制", "medium"), ("下一步", "medium")]:
-        if word not in text:
-            issues.append(_issue(f"missing_{word}", f"People-first内容缺少：{word}", sev, f"补充 {word}。"))
-    if len(text) > 0 and len(re.findall(r"https?://|doi:|来源|参考|引用", text, flags=re.I)) < 2:
-        warnings.append(_issue("weak_trust_signals", "可信度信号不足。", "low", "补充来源、案例、作者经验或更新日期。"))
-    warnings.extend(_generic_ai_issues(text))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "seo_people_first", "score": score, "grade": _grade(score), "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "seo_people_first")
 
 
 def _content_calendar_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -699,15 +594,5 @@ def _content_calendar_create(runtime: Any, target: str | None, args: Dict[str, A
 
 
 def _qc_content_calendar(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    text = _read_text_any(path) if path else str(args.get("content") or "")
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    for word, sev in [("date", "high"), ("channel", "medium"), ("audience", "medium"), ("objective", "high"), ("owner", "high"), ("asset", "medium"), ("metric", "high")]:
-        if word.lower() not in text.lower():
-            issues.append(_issue(f"missing_{word}", f"内容日历缺少字段：{word}", sev, f"补充 {word} 列或内容。"))
-    rows = max(0, len(text.splitlines()) - 1)
-    if rows < 4:
-        warnings.append(_issue("too_few_calendar_items", "内容日历条目偏少。", "low", "至少规划4周或10条以上内容。"))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "content_calendar", "score": score, "grade": _grade(score), "rows_estimate": rows, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(text.encode('utf-8')), "score": score}}
+    from .delivery_kernel import _semantic_assessment
+    return _semantic_assessment(runtime, target, args, "content_calendar")

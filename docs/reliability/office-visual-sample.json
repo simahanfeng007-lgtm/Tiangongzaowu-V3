@@ -1,0 +1,24 @@
+{
+  "scope": "Three first-page previews from actual final-candidate Office files; all six outputs opened and rendered, but no claim of manual visual review of every page.",
+  "reviewer": "current coding assistant",
+  "samples": [
+    {
+      "page": "reuse-docx/preview.png",
+      "sha256": "e44e93a42b393dc12f9ac383b2c7e964a626a4b967591c024f6eabf30bcf4d91",
+      "inspected": true,
+      "finding": "Text is readable; sampled content fits the page without visible clipping or overlap."
+    },
+    {
+      "page": "reuse-xlsx/preview.png",
+      "sha256": "744515ea1c8fda72aed1a2666ffa86af9356c15d4d93908e66e5eed31cb83a94",
+      "inspected": true,
+      "finding": "Text is readable; sampled content fits the page without visible clipping or overlap."
+    },
+    {
+      "page": "reuse-pptx/preview.png",
+      "sha256": "7c21f8dc572e5bcb434c30cc4717b387c9453d17854431df384a9552355a4a43",
+      "inspected": true,
+      "finding": "Text is readable; sampled content fits the page without visible clipping or overlap."
+    }
+  ]
+}

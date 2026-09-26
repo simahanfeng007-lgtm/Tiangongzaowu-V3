@@ -5,7 +5,7 @@ from life_service.learning_executor import execute_learning_preview
 
 def _learning() -> dict[str, object]:
     return {
-        "learning_id": "learn_preview", "target": "skill", "title": "Current API research",
+        "requires_network": True, "learning_id": "learn_preview", "target": "skill", "title": "Current API research",
         "summary": "Research current API behavior.", "risk_level": "A3",
         "draft_artifact": {
             "content": "# API research", "required_actions": ["omni_body"],

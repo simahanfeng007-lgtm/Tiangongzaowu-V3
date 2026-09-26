@@ -28,6 +28,53 @@ The full-dictionary code representation is still an external experiment, not the
 production default. Verification uses regression failures reproduced from the real
 eight-family comparison, including negative cases for missing or corrupt outputs.
 
+The follow-up A/C comparison exposed another delivery mismatch: inline Python
+successfully committed a playable video, but its contract had no `paths` because
+the invocation had no script target. Local delivery now reads the authoritative
+sandbox `changed_files`/verified output receipt as well. Removed files, discarded
+executions, program text, stdout claims and external delivery are not substitutes
+for a committed local artifact. The local/external delivery mode also survives
+projection between Runtime obligations and Life desired facts. Verification Plane
+1.36 records this correction; the original failed task remains in the benchmark.
+Full regression then exposed an omitted delivery target: a request to create one
+file and deliver another could accept the first file's receipt. Version 1.37 binds
+the explicit delivery filename as well. Local creation/delivery accepts committed
+evidence for that artifact; external upload still needs a real delivery receipt.
+Version 1.38 removes a further false gate exposed by the complete file organizer:
+generic instructions to check the deliverables no longer manufacture a separate
+file-reader obligation. A generated Python program can perform its own checks.
+The instruction remains in the model's request; named file observations, direct
+read/open/list commands, observation-only tasks and actual output evidence remain.
+Inspecting or reading a "deliverable file" also keeps delivery as a noun modifier,
+so an observation-only request cannot silently acquire an upload/send obligation.
+Version 1.39 fixes the same distinction for an available runtime: a request to use
+the installed `运行环境` does not require running a program. A real novel was written
+and read back but rejected by that invented execution obligation. Explicit run
+commands, including environment-check scripts, still require successful receipts.
+The failed comparison is retained; receipt replay and a separate A/C retest verify
+the correction without replacing its original result.
+Version 1.40 resolves tool-receipt action aliases using the dictionary's own
+registered binding chain. A `core.filesystem.file.write` receipt now carries the
+same observed write and generated attachment as `file.write`; a result's
+`routed_to` string or an unregistered suffix cannot grant those semantics.
+Missing, failed and unchanged execution-only receipts do not invent output.
+The file-organizer comparison exposed this mismatch even though its actual files
+were correct: an ordinary-chat fallback bypassed the rejected completion proof.
+That fallback now requires ordinary chat without work intent or task obligations;
+real work completes through its verified evidence instead of fluent prose.
+The same batch exposed `生成可正常打开的 weekly.pptx` being parsed as an
+instruction to read an input PPT. Capability modifiers now stay attached to the
+output noun. Explicit sequences such as creating a file and then opening it keep
+their independent observation requirement.
+Finally, error-name keywords in the final reply no longer veto an otherwise
+verified task. A repair report or an error-log explanation may legitimately say
+`PermissionError`; unsuccessful reads/executions still fail through their actual
+receipts and unsatisfied obligations.
+Input-reading steps in creation or repair tasks also no longer require the final
+summary to repeat the input text. Substantive-answer checks remain scoped to tasks
+whose requested result is an observation, while write/delivery tasks rely on their
+actual effects and artifact evidence.
+
 DeepSeek V4's auxiliary world-semantic request now uses non-thinking mode within
 its existing 2048-token/15-second budget. A real pilot otherwise exhausted the
 short budget before returning valid semantic JSON. Main task thinking settings

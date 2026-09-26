@@ -12,6 +12,8 @@ from omni_body_skill.tools.sandbox_runtime import _copy_workspace, _merge_change
     ".OMNI_WORKSPACE.LOCK",
     "project/.OMNI_AUDIT/secret.txt",
     "project/.TIANGONG_SANDBOXES/secret.txt",
+    ".TiAnGoNg/fact_ledger/execute.lock",
+    "project/.TiAnGoNg/fact_ledger/operations/forged.json",
 ])
 def test_runtime_files_are_not_exposed_or_committed_under_case_variants(tmp_path, relative):
     host, private, trash = (tmp_path / name for name in ("host", "private", "trash"))

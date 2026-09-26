@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.35"
+- the single Verification Plane version source exists and is "1.51"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.35")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.51")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.35"' in (
+            if '"1.51"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -225,6 +225,10 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/world_understanding/inquiry/observation.py",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py",
         "app/backend/tiangong-backend/v3/world_semantic_binding.py",
+        "app/backend/tiangong-backend/v3/adversarial_review.py",
+        "app/backend/tiangong-backend/v3/review_evidence.py",
+        "app/backend/tiangong-backend/v3/model_roles.py",
+        "app/backend/tiangong-backend/v3/gutong/gutong_ceng.py",
         "src/capability_dictionary/__init__.py",
         "src/capability_dictionary/composition.py",
         "src/total_gateway/regenerative_provider.py",
@@ -384,10 +388,18 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/tool_source_launch.py",
         "src/total_gateway/tool_source_publication.py",
         "app/backend/tiangong-backend/v3/jineng/http_kehuduan.py",
+        "app/backend/tiangong-backend/v3/jineng/model_transport_anthropic.py",
+        "app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py",
+        "app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py",
+        "app/backend/tiangong-backend/v3/jineng/model_transport_contract.py",
+        "app/backend/tiangong-backend/v3/jineng/model_transport_executor.py",
+        "app/backend/tiangong-backend/v3/jineng/model_context_cache.py",
         "src/total_gateway/tool_source_world.py",
         "src/total_gateway/tool_manifest_evolution.py",
         "src/source_authority/validator.py",
         "src/omni_body_skill/tools/sandbox_runtime.py",
+        "src/omni_body_skill/tools/workspace_commit.py",
+        "src/omni_body_skill/tools/linux_sandbox.py",
         "scripts/_tool_source_build_worker.py",
         "scripts/build-tool-source.py",
         "scripts/stage-tool-source.py",

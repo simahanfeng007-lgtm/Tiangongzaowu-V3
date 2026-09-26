@@ -21020,9 +21020,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check content calendar for cadence, channel fit, objective alignment, owner/date clarity, asset requirements, and measurement."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check content calendar for cadence, channel fit, objective alignment, owner/date clarity, asset requirements, and measurement.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.course.plan_check": {
@@ -21041,9 +21041,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check lesson/course plan for measurable objectives, sequence, practice, assessment, timing, materials, and learner fit."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check lesson/course plan for measurable objectives, sequence, practice, assessment, timing, materials, and learner fit.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.docx.delivery_check": {
@@ -21062,9 +21062,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check business-grade Word/document deliverables for structure, clarity, evidence, actionability, and openability."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality. Explicit managed-long-document manifests still receive structural checks."
       },
-      "summary": "Check business-grade Word/document deliverables for structure, clarity, evidence, actionability, and openability.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality. Explicit managed-long-document manifests still receive structural checks.",
       "version": "1.0.0"
     },
     "qc.image.delivery_check": {
@@ -21104,9 +21104,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check knowledge-base ingestion plan for source traceability, chunking, metadata, permissions, QA coverage, and retrieval validation."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check knowledge-base ingestion plan for source traceability, chunking, metadata, permissions, QA coverage, and retrieval validation.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.meeting.minutes_check": {
@@ -21125,9 +21125,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check meeting minutes for agenda, decisions, action items, owners, deadlines, risks, and follow-up readiness."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check meeting minutes for agenda, decisions, action items, owners, deadlines, risks, and follow-up readiness.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.novel.chapter_check": {
@@ -21146,9 +21146,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check web-novel chapter delivery for hook, POV, conflict, scene beats, emotional escalation, payoff, cliffhanger, and AI tone."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check web-novel chapter delivery for hook, POV, conflict, scene beats, emotional escalation, payoff, cliffhanger, and AI tone.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.poster.commercial_check": {
@@ -21209,9 +21209,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check research/literature deliverables for search strategy, inclusion/exclusion, citations, evidence table, limitations, and uncertainty."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check research/literature deliverables for search strategy, inclusion/exclusion, citations, evidence table, limitations, and uncertainty.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.sales.script_check": {
@@ -21230,9 +21230,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check sales script for ICP fit, pain diagnosis, consultative flow, proof, objections, next step, and compliance."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check sales script for ICP fit, pain diagnosis, consultative flow, proof, objections, next step, and compliance.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.seo.people_first_check": {
@@ -21251,9 +21251,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check SEO/web content for people-first helpfulness, scannability, evidence, credibility, originality, and anti-fluff."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check SEO/web content for people-first helpfulness, scannability, evidence, credibility, originality, and anti-fluff.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.sheet.analysis_report_check": {
@@ -21272,9 +21272,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check spreadsheet analysis deliverables for data dictionary, cleaning log, formulas, summary, insights, and decisions."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check spreadsheet analysis deliverables for data dictionary, cleaning log, formulas, summary, insights, and decisions.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.sheet.delivery_check": {
@@ -21335,9 +21335,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Check authorized voice/audio delivery for consent, speaker identity, usage scope, transcript, quality, watermark/disclosure, and risk controls."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Check authorized voice/audio delivery for consent, speaker identity, usage scope, transcript, quality, watermark/disclosure, and risk controls.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "qc.writing.ai_tone_check": {
@@ -21356,9 +21356,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Heuristically check writing for generic AI tone, repetition, vague claims, and weak specificity."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Heuristically check writing for generic AI tone, repetition, vague claims, and weak specificity.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "quality.javascript_syntax": {
@@ -21980,9 +21980,9 @@
       "runtime": {
         "implemented": true,
         "risk": "A0",
-        "summary": "Evaluate supplied content or target file against a named delivery rubric."
+        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
       },
-      "summary": "Evaluate supplied content or target file against a named delivery rubric.",
+      "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality.",
       "version": "1.0.0"
     },
     "sales.script.create": {
@@ -22964,8 +22964,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "Resolve and activate one exact Skill through the Gateway authority.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "Resolve and activate one exact Skill through the Gateway authority."
       },
       "summary": "Resolve and activate one exact Skill through the Gateway authority.",
       "version": "1.0.0"
@@ -22986,8 +22986,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "List the Gateway authority's pinned Skill catalog.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "List the Gateway authority's pinned Skill catalog."
       },
       "summary": "List the Gateway authority's pinned Skill catalog.",
       "version": "1.0.0"
@@ -23008,8 +23008,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "Alias of fact-derived Skill step status; model claims are ignored.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "Alias of fact-derived Skill step status; model claims are ignored."
       },
       "summary": "Alias of fact-derived Skill step status; model claims are ignored.",
       "version": "1.0.0"
@@ -23030,8 +23030,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "Resolve and activate one exact Skill through the Gateway authority.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "Resolve and activate one exact Skill through the Gateway authority."
       },
       "summary": "Resolve and activate one exact Skill through the Gateway authority.",
       "version": "1.0.0"
@@ -23052,8 +23052,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog."
       },
       "summary": "Ask the Gateway authority to route a task against its pinned Skill catalog.",
       "version": "1.0.0"
@@ -23074,8 +23074,8 @@
       "runtime": {
         "implemented": false,
         "risk": "A0",
-        "summary": "Read workflow progress computed by Gateway from machine facts.",
-        "status": "retired_fixed_skill"
+        "status": "retired_fixed_skill",
+        "summary": "Read workflow progress computed by Gateway from machine facts."
       },
       "summary": "Read workflow progress computed by Gateway from machine facts.",
       "version": "1.0.0"
@@ -26958,5 +26958,5 @@
       "version": "1.0.0"
     }
   },
-  "version": "2026.09.25.3"
+  "version": "2026.09.26.1"
 }

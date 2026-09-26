@@ -17,11 +17,8 @@ export function classifyRunInput(value) {
 }
 
 export function shouldUseDirectLearning(message) {
-  const text = String(message || "").trim();
-  const explicitLearning = /(?:帮我|请|你)?(?:学习一下|学习下|学一下|学下)|\blearn(?:\s+about)?\b/i.test(text);
-  if (!explicitLearning) return false;
-  const governedPendingPreview = /learning\.ingest|awaiting_user|pending\s*(?:学习卡|learning)|只创建.{0,24}(?:待确认|学习卡)|(?:禁止|绝不|不得).{0,24}(?:确认|激活|注册|发布)/i.test(text);
-  return !governedPendingPreview;
+  // Ordinary chat always reaches the model; learning has an explicit UI action.
+  return false;
 }
 
 function parseReplyPayload(value) {
@@ -48,14 +45,7 @@ export function claimsCompleted(result, displayText) {
 }
 
 export function requiresDeterministicWebQa(rootGoal, projectRoot) {
-  const goal = String(rootGoal || "");
-  if (!projectRoot) return false;
-  // Route the verifier by the requested product, not by incidental channel
-  // words such as "前端运行标识" or a request to operate a browser.
-  const explicitWebProduct = /(?:\b(?:web(?:site|page|app)?|html)\b|网页|网站|落地页|index\.html)/i.test(goal)
-    || /(?:创建|构建|开发|制作|修复|优化|修改|交付).{0,24}前端|前端.{0,24}(?:项目|页面|应用|网站|界面)/i.test(goal);
-  const asksProductValidation = /(?:测试|验收|运行|启动|交付|上线|验证)/.test(goal);
-  return explicitWebProduct && asksProductValidation;
+  return false;
 }
 
 function webQaSummary(result) {
@@ -72,189 +62,21 @@ function webQaSummary(result) {
 
 export function autoContinuationDecision({ result, displayText, sendMode, runOptions }) {
   const payload = parseReplyPayload(result?.stdout);
-  const simpleChainMeta = (
-    result?.simple_chain_meta
-    || payload?.simple_chain_meta
-    || {}
-  );
-  const structuredRunState = simpleChainMeta?.run_state && typeof simpleChainMeta.run_state === "object"
-    ? simpleChainMeta.run_state
-    : {};
-  const structuredDelivery = structuredRunState?.delivery && typeof structuredRunState.delivery === "object"
-    ? structuredRunState.delivery
-    : {};
-  const status = String(
-    result?.simple_chain_status
-    || result?.zhuangtai
-    || payload?.simple_chain_status
-    || payload?.zhuangtai
-    || ""
-  ).trim().toLowerCase();
-  // FE-07 regression: normal terminal states (casual chat reply or successful
-  // task completion) are "done", not "continuation forbidden".  They must never
-  // surface the stop notice; that notice is only meaningful when a work run
-  // ended without a normal terminal (failed/stuck/stopped).  An empty status is
-  // the backend's "direct_reply_no_simple_chain_status" terminal: a successful
-  // plain chat that did not enter the simple chain at all.
-  const normalSuccessStatus = ["", "chat_reply", "complete", "wancheng", "success", "finished", "done", "ok"].includes(status);
-  const text = String(displayText || "");
-  const lowerText = text.toLowerCase();
-  const state = runOptions?.autoContinueState && typeof runOptions.autoContinueState === "object"
-    ? runOptions.autoContinueState
-    : {};
-  const count = Math.max(0, Number(state.count || 0));
-  const startedAt = Number(state.startedAt || Date.now());
-  const signature = `${status}:${lowerText.replace(/\d+/g, "#").replace(/\s+/g, " ").slice(0, 500)}`;
-  const identicalStalls = signature && signature === state.lastSignature
-    ? Math.max(0, Number(state.identicalStalls || 0)) + 1
-    : 1;
-  const requiresUser = status === "awaiting_user"
-    || status === "blocked"
-    || /(?:\ba5\b|awaiting[_ -]?user|需要用户决定|等待用户|付款|购买|公开部署|注册账号)/i.test(lowerText);
-  const rootGoal = String(runOptions?.rootGoal || "");
-  const declaredToolCount = Number((text.match(/已执行工具步数[：:]\s*(\d+)/) || [])[1] || 0);
-  const generatedAttachments = [result?.attachments, result?.generated_attachments, payload?.attachments, payload?.generated_attachments]
-    .some((items) => Array.isArray(items) && items.length > 0);
-  const completedActionCount = Array.isArray(structuredRunState.completed_actions)
-    ? structuredRunState.completed_actions.length
-    : 0;
-  const previousCompletedActionCount = Math.max(0, Number(state.lastCompletedActionCount || 0));
-  const previousDeclaredToolCount = Math.max(0, Number(state.lastDeclaredToolCount || 0));
-  const complexGoal = rootGoal.length >= 500
-    && /(?:至少|完整|真实启动|验收|测试|主线|支线|部署)/.test(rootGoal);
-  const claimedComplete = claimsCompleted(result, text);
-  const productVerification = runOptions?.productVerification && typeof runOptions.productVerification === "object"
-    ? runOptions.productVerification
-    : null;
-  const deterministicVerificationFailure = claimedComplete && productVerification && productVerification.ok === false;
-  const thinCompletion = complexGoal
-    && claimedComplete
-    && declaredToolCount > 0
-    && declaredToolCount < 8
-    && !generatedAttachments;
-  const recoverableFailure = complexGoal
-    && ["failed", "shibai", "cuowu"].includes(status)
-    && /(?:PostconditionFailed|工具链执行失败|tool execution failed)/i.test(`${text}\n${String(result?.stderr || "")}`);
-  const responseRequestsContinue = /(?:没有达到可交付完成标准|未完成原因|这次检查没有真正完成|下一步[：:].*下一轮应|可以回复[“\"']?继续|沿着当前运行状态接着执行)/s.test(text);
-  const leaseBatchMismatch = /(?:model requested\s+\d+\s+tool calls but current lease only allows\s+\d+|simple_chain_tool_batch_rewrite|模型未能把工具批次拆到当前租约额度内)/i
-    .test(`${text}\n${String(result?.stderr || "")}`);
-  const structuredBlockingLines = [
-    ...(Array.isArray(structuredDelivery.active_failures) ? structuredDelivery.active_failures : []),
-    ...(Array.isArray(structuredDelivery.active_gaps) ? structuredDelivery.active_gaps : []),
-    ...(Array.isArray(structuredRunState.failures) ? structuredRunState.failures : []),
-    ...(Array.isArray(structuredRunState.gaps) ? structuredRunState.gaps : []),
-  ]
-    .map((line) => String(line || "").trim())
-    .filter((line) => /(?:qc\.|acceptance|score|quality|verification|failed|failure|error)/i.test(line))
-    .filter((line) => !/mutation suffix does not match/i.test(line))
-    .slice(-16);
-  const verificationDebt = /requested verification\/test step is missing after the latest mutation|(?:修改|变更).*缺少.*(?:验证|测试)|缺少.*(?:验证|测试).*(?:修改|变更)/i
-    .test(`${text}\n${String(result?.stderr || "")}\n${structuredBlockingLines.join("\n")}`);
-  // budget 类中断（平台预算/时长上限收口）是"段落结束"而非失败：
-  // 进度已保留、回复「继续」即可续跑——必须按 recoverable 分类，
-  // 否则 stopReason 误报 not_recoverable，UI 提示会把可续跑当成终局失败。
-  const budgetInterrupted = status === "force_stopped"
-    && /(?:预算|budget|继续.*进度|进度接着做)/i.test(`${text}\n${String(result?.stderr || "")}`);
-  const recoverable = status === "incomplete"
-    || status === "needs_continue"
-    || budgetInterrupted
-    || /simple_chain_incomplete|needs_continue/i.test(String(result?.stderr || ""))
-    || leaseBatchMismatch
-    || deterministicVerificationFailure
-    || thinCompletion
-    || recoverableFailure
-    || responseRequestsContinue;
-  const verificationDebtAttempts = Math.max(0, Number(state.verificationDebtAttempts || 0));
-  // Only structured/backend-observed facts count as machine progress. A model
-  // saying "已执行工具步数：N" is useful narration, but it is not execution
-  // evidence and must not reset the no-progress failure guard.
-  const machineProgress = generatedAttachments
-    || completedActionCount > previousCompletedActionCount;
-  const failedWithoutProgress = recoverable
-    && !requiresUser
-    && !claimedComplete
-    && !machineProgress;
-  const consecutiveNoProgressFailures = failedWithoutProgress
-    ? Math.max(0, Number(state.consecutiveNoProgressFailures || 0)) + 1
-    : 0;
-  const currentCheckpointEvidence = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /(?:未完成原因|missing|failed|failure|score|acceptance|verification|quality|gap|error)/i.test(line))
-    .concat(structuredBlockingLines)
-    .filter((line, index, lines) => line && lines.indexOf(line) === index)
-    .slice(-16)
-    .join("\n");
-  const checkpointEvidence = [
-    ...String(state.checkpointEvidence || "").split(/\r?\n/),
-    ...currentCheckpointEvidence.split(/\r?\n/),
-  ]
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index, lines) => lines.indexOf(line) === index)
-    .slice(-16)
-    .join("\n")
-    .slice(0, 2000);
+  const status = String(result?.simple_chain_status || payload?.simple_chain_status || result?.phase || "").toLowerCase();
+  const requiresUser = ["awaiting_user", "confirm_pending", "blocked"].includes(status);
+  const recoverable = ["incomplete", "needs_continue", "force_stopped", "interrupted"].includes(status);
   return {
-    // 前端自动续作全部停用：是否继续由后端模型自主判断（继续决策回合），
-    // 或由用户重新发起；前端不再代替模型或用户决定续作。
-    shouldContinue: false,
-    requiresUser,
-    recoverable,
-    thinCompletion,
-    recoverableFailure,
-    deterministicVerificationFailure,
-    productVerification,
-    leaseBatchMismatch,
-    verificationDebt,
-    responseRequestsContinue,
-    checkpointEvidence,
-    reason: deterministicVerificationFailure ? "deterministic_web_qa_failed" : verificationDebt ? "verification_debt" : leaseBatchMismatch ? "tool_batch_lease_mismatch" : thinCompletion ? "thin_completion" : recoverableFailure ? "recoverable_failure" : budgetInterrupted ? "budget_interrupted" : responseRequestsContinue ? "explicit_checkpoint" : recoverable ? "checkpoint" : "",
-    nextState: {
-      count: count + 1,
-      startedAt,
-      lastSignature: signature,
-      identicalStalls,
-      lastReason: verificationDebt ? "verification_debt" : "",
-      checkpointEvidence,
-      consecutiveNoProgressFailures,
-      lastCompletedActionCount: Math.max(previousCompletedActionCount, completedActionCount),
-      lastDeclaredToolCount: Math.max(previousDeclaredToolCount, declaredToolCount),
-      verificationDebtAttempts: verificationDebt
-        ? verificationDebtAttempts + 1
-        : verificationDebtAttempts
-    },
-    stopReason: requiresUser ? "requires_user" : (normalSuccessStatus ? "" : (!recoverable ? "not_recoverable" : ""))
+    shouldContinue: false, requiresUser, recoverable,
+    thinCompletion: false, recoverableFailure: false, deterministicVerificationFailure: false,
+    leaseBatchMismatch: false, verificationDebt: false, responseRequestsContinue: false,
+    checkpointEvidence: "", reason: recoverable ? "checkpoint" : "",
+    nextState: { ...(runOptions?.autoContinueState || {}) },
+    stopReason: requiresUser ? "requires_user" : ""
   };
 }
 
 export function autoContinuationPrompt(decision) {
-  if (decision?.deterministicVerificationFailure) {
-    const issues = Array.isArray(decision.productVerification?.issues) && decision.productVerification.issues.length
-      ? decision.productVerification.issues.slice(0, 8).join("；")
-      : (decision.productVerification?.error || "Web 验收失败");
-    return `上一轮虽然宣称完成，但桌面端确定性 Web 验收未通过：${issues}。不要重做内容，也不要复述计划；在本轮活跃项目根内做最小定向修复，然后运行已有测试。修复前不得再次宣称完成。`;
-  }
-  if (decision?.verificationDebt) {
-    return "上一轮的产物修改已经完成，完成门只缺少修改后的验证证据。本轮是验证补偿，不是重做任务：禁止新建、写入、追加、移动、删除、打包或覆盖任何产物；不要再次调用 file.write、file.append、file.mkdir、file.move、file.delete 或 zip.create。只对现有产物执行一个有明确通过/失败结果的验证动作：优先运行已有 unittest、pytest、npm test 等测试；没有测试时，用 shell.run 或 python.run 做只读解析、哈希、格式或压缩包完整性检查。验证成功后直接收口，不得再次修改。";
-  }
-  if (decision?.leaseBatchMismatch) {
-    return "上一轮遇到了旧工具租约不匹配。当前执行不再限制单轮工具数量；请复用已有 source_text_map 和真实工具证据，从检查点继续完成剩余工作并验证，不要重复已经成功的副作用。";
-  }
-  if (decision?.thinCompletion) {
-    return "上一轮只是少量目录或状态检查，不能证明原始总目标已经完成。请从检查点立即继续：对照原始目标创建或修改真实产物，执行真实启动与功能测试；不要复述计划，不要把路径存在当成产品完成。";
-  }
-  if (decision?.recoverableFailure) {
-    return "上一轮工具链失败，但不需要用户决定。请从检查点先分析最近一次真实错误的根因，改用不会重复失败的工具或路径继续执行；不要原样重试，不要复述计划，也不要要求确认。";
-  }
-  const checkpointEvidence = String(decision?.checkpointEvidence || "").trim();
-  const qcRepairInstruction = /(?:qc\.|acceptance|score|quality)/i.test(checkpointEvidence)
-    ? "这是质量门返工：不要只重复读取或检查；必须先修改产生该 QC 输入的源产物，按证据补齐缺口，重新生成交付物，再重跑同一 QC 与最终验证。\n"
-    : "";
-  const evidenceBlock = checkpointEvidence
-    ? `上一轮的真实阻塞证据如下，请先按证据做最小修复：\n${checkpointEvidence}\n\n${qcRepairInstruction}`
-    : "";
-  return `${evidenceBlock}请从刚才保存的检查点继续当前任务。不要复述计划，直接执行尚未完成的下一项，并在真实验证通过前不要宣布完成。`;
+  return "请结合保存的检查点和实际工具结果继续当前任务。";
 }
 
 export function autoContinuationStopNotice(decision) {
@@ -273,30 +95,11 @@ export function autoContinuationStopNotice(decision) {
 export function inferActiveProjectRoot(message = "", workspace = "", rootGoal = "", explicitRoot = "", evidenceText = "") {
   const base = String(workspace || "").trim().replace(/[\\/]+$/, "");
   const explicit = String(explicitRoot || "").trim();
-  if (explicit && (!base || explicit.toLowerCase().startsWith(`${base.toLowerCase()}\\`) || explicit.toLowerCase().startsWith(`${base.toLowerCase()}/`))) {
-    return explicit;
-  }
-  if (!base) return "";
-  // A project root is a directory. File paths mentioned in evidence from an
-  // older task must not silently become the active root of a new task.
-  const ignoredSuffixes = /\.(?:js|mjs|cjs|ts|py|html|css|md|bat|ps1|json|txt|vrm|zip|exe|dll|png|jpe?g|gif|mp3|mp4|wav|log|lock)$/i;
-  const normalizedEvidence = String(evidenceText || "").replace(/\\\\/g, "\\");
-  // Only a previously declared project root is continuation evidence. An
-  // arbitrary artifact path is not authority to change path coordinates.
-  const declaredRoots = [...normalizedEvidence.matchAll(/【本轮活跃项目根】\s*\r?\n([^\r\n]+)/g)];
-  const declared = String(declaredRoots.at(-1)?.[1] || "").trim();
-  if (declared && (declared.toLowerCase().startsWith(`${base.toLowerCase()}\\`)
-      || declared.toLowerCase().startsWith(`${base.toLowerCase()}/`))
-      && !/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(declared)
-      && !ignoredSuffixes.test(declared)) return declared;
-  const text = `${String(message || "")}\n${String(rootGoal || "")}`;
-  const candidates = [
-    ...text.matchAll(/\b([a-z0-9][a-z0-9._-]{1,80})\s+(?=项目|检查点)/gi),
-    ...text.matchAll(/(?:项目根目录|项目根|项目目录)\s*(?:是|为|[:：])\s*[`“"']?([a-z0-9][a-z0-9._-]{1,80})(?=[\s`”"'，。；]|$)/gi),
-  ];
-  const name = candidates.map((match) => String(match[1] || "").trim())
-    .find((value) => value && !ignoredSuffixes.test(value) && !/^[A-Z]{1,3}\d+$/i.test(value) && value !== "." && value !== "..");
-  return name ? `${base}\\${name}` : "";
+  if (!explicit) return "";
+  if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(explicit)) return "";
+  const normalized = explicit.replace(/\\/g, "/").toLowerCase();
+  const root = base.replace(/\\/g, "/").toLowerCase();
+  return !root || normalized === root || normalized.startsWith(`${root}/`) ? explicit : "";
 }
 
 function makeRequestId() {
@@ -348,107 +151,32 @@ function extractFinalReplyText(value) {
     || "";
 }
 
-const WORK_INTENT_MARKERS = [
-  "来修", "修复", "修一下", "改一下", "改掉", "处理", "开始干活", "干活", "工作啊", "工作",
-  "继续", "别停", "不要停", "执行", "运行", "测试", "扫描", "读取", "写入", "保存",
-  "下载", "上网", "搜索", "学习", "安装", "打包", "排查", "诊断", "审查", "审计", "迁移",
-  "分析", "报告", "检查", "优化", "调研", "整理", "生成", "制作",
-  "fix", "repair", "work", "continue", "run", "test", "scan", "read", "write",
-  "download", "search", "learn", "install", "package", "diagnose"
-];
 
 function normalizeModeValue(value) {
   const mode = String(value || "").trim().toLowerCase();
   return mode === "chat" || mode === "work" || mode === "auto" ? mode : "";
 }
 
-function looksLikeWorkIntent(text, selectedSkills = []) {
-  if (Array.isArray(selectedSkills) && selectedSkills.length) return true;
-  const compact = String(text || "").replace(/\s+/g, "").toLowerCase();
-  if (!compact) return false;
-  if (/https?:\/\//i.test(text) && /下载|保存|download|save/i.test(text)) return true;
-  return WORK_INTENT_MARKERS.some((marker) => compact.includes(String(marker).replace(/\s+/g, "").toLowerCase()));
-}
 
-function requestsResponseOnlyWithoutTools(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  const compact = text.replace(/\s+/g, "").toLowerCase();
-  const forbidsTools = (
-    /(?:不要|不许|禁止|无需|不用|别)(?:调用|使用|执行)?任何?(?:工具|tool)/i.test(compact)
-    || /(?:do\s*not|don't|without|no)(?:use|call|invoke)?(?:any)?tools?/i.test(compact)
-  );
-  const responseOnly = (
-    /(?:只|仅)(?:需要|要|需)?(?:回复|回答|输出|说)/.test(compact)
-    || /(?:only|just)(?:reply|respond|answer|output|say)/i.test(compact)
-  );
-  return forbidsTools && responseOnly;
-}
 
 export function inferSendMode(message, settings = {}, selectedSkills = [], runOptions = {}) {
   const explicit = normalizeModeValue(runOptions.mode || runOptions.workMode);
   if (explicit) return explicit;
-  if (runOptions.forceSelectedSkills && Array.isArray(selectedSkills) && selectedSkills.length) return "work";
-  // A narrow, explicit response-only contract must outrank keyword heuristics
-  // such as “执行/测试”.  Otherwise the renderer appends its internal tool
-  // batch contract and turns the user's “不要调用工具” into a work request.
-  if (requestsResponseOnlyWithoutTools(message)) return "chat";
-  if (looksLikeWorkIntent(message, selectedSkills)) return "work";
-  const configured = normalizeModeValue(settings.mode);
-  if (configured === "work" || configured === "chat") return configured;
-  return "auto";
+  return normalizeModeValue(settings.mode) || "auto";
 }
 
 function isContinuationRequest(value) {
-  const text = String(value || "").trim();
-  if (!text || text.length > 320) return false;
-  return /^(?:继续|接着|续作|恢复|从检查点|continue|resume)/i.test(text)
-    || /(?:继续当前任务|从当前检查点|沿着当前运行状态|不要再要求我确认继续)/i.test(text);
+  return false;
 }
 
 function findParentGoal(messages) {
   const rows = Array.isArray(messages) ? messages : [];
-  let latestFallback = "";
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const item = rows[index];
-    if (item?.role !== "user") continue;
-    const content = String(item?.content || item?.text || "").trim();
-    if (content.length < 40 || isContinuationRequest(content)) continue;
-    if (!latestFallback) latestFallback = content;
-    if (content.length >= 500 && /(?:目标|验收|测试|交付|必须|不得|至少)/.test(content)) {
-      return content;
-    }
-  }
-  return latestFallback;
+  const latest = [...rows].reverse().find(item => item?.role === "user");
+  return String(latest?.content || latest?.text || "").trim();
 }
 
-// The backend delivery-contract extractor treats any literal "桌面" as an
-// affirmative Desktop delivery request. Preserve explicit positive requests,
-// but translate negated Desktop clauses into the equivalent workspace boundary
-// before they reach the backend. The UI and saved conversation keep the user's
-// original wording.
 export function normalizeBackendDeliveryIntent(value) {
-  const text = String(value || "");
-  return text.replace(/桌面(?:上|内|中)?/g, (match, offset) => {
-    const prefix = text.slice(0, offset);
-    const clauseStart = Math.max(
-      prefix.lastIndexOf("，"), prefix.lastIndexOf(","),
-      prefix.lastIndexOf("；"), prefix.lastIndexOf(";"),
-      prefix.lastIndexOf("。"), prefix.lastIndexOf("！"),
-      prefix.lastIndexOf("？"), prefix.lastIndexOf("\n")
-    );
-    const suffix = text.slice(offset);
-    const clauseEndOffsets = ["，", ",", "；", ";", "。", "！", "？", "\n"]
-      .map((separator) => suffix.indexOf(separator))
-      .filter((index) => index >= 0);
-    const clauseEnd = clauseEndOffsets.length
-      ? offset + Math.min(...clauseEndOffsets)
-      : text.length;
-    const clause = text.slice(clauseStart + 1, clauseEnd);
-    return /(?:不要|禁止|不得|不允许|不能|不可|切勿|避免|无需|不应)/.test(clause)
-      ? "默认工作区之外"
-      : match;
-  });
+  return String(value || "");
 }
 
 let terminalRunListenerInstalled = false;
@@ -1375,7 +1103,7 @@ export function createActions({ runtime, state, kernel = null }) {
     const baseExecutionMessage = continuationRequest && inheritedRootGoal
       ? `${message}\n\n【必须继承且仍未完成的原始总目标】\n${inheritedRootGoal}\n\n本轮不得只按“继续”验收；必须按上述原始总目标检查真实产物、运行和验证证据。`
       : message;
-    const workspaceBound = /默认(?:隔离)?工作区/.test(`${message}\n${inheritedRootGoal}`);
+    const workspaceBound = Boolean(runOptions.workspaceBound);
     const workspaceExecutionMessage = workspaceBound && settings.workspace
       ? `${baseExecutionMessage}\n\n【本轮唯一默认工作区】\n${settings.workspace}\n所有新建、修改、运行和验收的项目文件必须位于这个目录的独立子目录内；不得把其父目录、应用数据目录或其他旧项目当成项目根目录。`
       : baseExecutionMessage;

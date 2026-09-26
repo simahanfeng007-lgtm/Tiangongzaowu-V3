@@ -1,0 +1,20 @@
+[
+  {
+    "qty": 2,
+    "unit_cents": 1250,
+    "discount_cents": 100,
+    "cancelled": false
+  },
+  {
+    "qty": 3,
+    "unit_cents": 99,
+    "discount_cents": 0,
+    "cancelled": true
+  },
+  {
+    "qty": 1,
+    "unit_cents": 650,
+    "discount_cents": 50,
+    "cancelled": false
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "source_revision": "e29bb9bafc213bd8b473ba7a9da014962a17e6d1",
+  "source_path": "tests/test_office_content_gate.py",
+  "archive_path": "tests/fixtures/p19_verification/historical/office_content_gate.e29bb9ba.py.txt",
+  "sha256": "762794f3c7e272a5e50d1d9ce40f0883e0fe8cb3dd95944fef2942f7f0786fc7",
+  "status": "HISTORICAL_SOURCE_NOT_CURRENT_ACCEPTANCE"
+}

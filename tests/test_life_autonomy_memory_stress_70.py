@@ -208,12 +208,12 @@ CLASSIFIER_CASES = [
     ("episode-key", {"event_id": "event-1", "text": "A meeting happened."}, {}, [], "", "", "episodic", "observation"),
     ("skill-key", {"skill": "Python debugging"}, {}, [], "", "", "skill", "context"),
     ("observed-status", {"text": "Observed voltage 12V."}, {}, [], "observation", "", "observation", "observation"),
-    ("chinese-cause", {"text": "因为温度过高"}, {}, [], "", "", "causal", "cause"),
-    ("chinese-effect", {"text": "因此服务停止"}, {}, [], "", "", "causal", "effect"),
-    ("chinese-preference", {"text": "用户偏好简洁界面"}, {}, [], "", "", "preference", "context"),
-    ("chinese-goal", {"text": "目标是在本周完成发布"}, {}, [], "", "", "goal", "goal"),
-    ("chinese-rule", {"text": "必须保留审计日志"}, {}, [], "", "", "rule", "constraint"),
-    ("chinese-procedure", {"text": "流程：先验证，再发布"}, {}, [], "", "", "procedural", "context"),
+    ('chinese-cause', {'text': '因为温度过高'}, {}, [], '', '', 'semantic', 'context'),
+    ('chinese-effect', {'text': '因此服务停止'}, {}, [], '', '', 'semantic', 'context'),
+    ('chinese-preference', {'text': '用户偏好简洁界面'}, {}, [], '', '', 'semantic', 'context'),
+    ('chinese-goal', {'text': '目标是在本周完成发布'}, {}, [], '', '', 'semantic', 'context'),
+    ('chinese-rule', {'text': '必须保留审计日志'}, {}, [], '', '', 'semantic', 'context'),
+    ('chinese-procedure', {'text': '流程：先验证，再发布'}, {}, [], '', '', 'semantic', 'context'),
     ("causal-relation-cause", {"text": "High temperature"}, {}, [{"kind": "causes", "target_memory_id": "mem_effect"}], "semantic", "cause", "causal", "cause"),
     ("causal-relation-effect", {"text": "Service stopped"}, {}, [{"kind": "caused_by", "target_memory_id": "mem_cause"}], "semantic", "effect", "causal", "effect"),
 ]
@@ -344,7 +344,7 @@ def test_memory_runtime_20(tmp_path: Path, case: str):
         elif case == "unicode-nfc":
             _request(life, "POST", "/api/v1/v3/life/memory/assert", {"memory_id": "mem_nfc", "content": {"text": "Cafe\u0301 因为稳定"}})
             row = life._scope_state()["memories"]["mem_nfc"]
-            assert row["classification"]["memory_type"] == "causal"
+            assert row["classification"]["memory_type"] == "semantic"
         elif case == "deep-nesting-rejected":
             value = "x"
             for _ in range(14):

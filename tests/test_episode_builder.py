@@ -134,11 +134,15 @@ def test_b4_failure_categories_map_from_errors_and_steps():
     assert failure_category_from_error(PermissionError("denied")) == "insufficient_permission"
     assert failure_category_from_error(TimeoutError("too slow")) == "environment_error"
     assert failure_category_from_error(ValueError("bad input schema")) == "input_error"
-    assert failure_category_from_error(RuntimeError("action policy blocked by gate")) == "policy_block"
-    assert failure_category_from_error(RuntimeError("stale context conflict")) == "stale_context"
+    assert failure_category_from_error(RuntimeError("action policy blocked by gate")) == "unknown"
+    assert failure_category_from_error(RuntimeError("stale context conflict")) == "unknown"
     assert failure_category_from_error(RuntimeError("完全未知的怪错")) == "unknown"
     assert failure_category_from_step_error({"error_code": "artifact.executor.tool_error"}) == "tool_error"
+    assert failure_category_from_step_error({"failure_category": "insufficient_permission"}) == "insufficient_permission"
     assert failure_category_from_step_error({"error_code": "permission.denied"}) == "insufficient_permission"
+    assert failure_category_from_step_error({"error": "permission.denied"}) == "tool_error"
+    assert failure_category_from_step_error({"error_code": "permission.denied in prose"}) == "tool_error"
+    assert failure_category_from_step_error({"failure_category": []}) == "tool_error"
     assert failure_category_from_step_error({}) == "tool_error"
     assert observed_quality_from_steps([]) == 800
     assert observed_quality_from_steps([{"ok": True}, {"ok": True}, {"ok": False}, {"ok": True}]) == 750

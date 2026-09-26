@@ -217,46 +217,19 @@ def _learning_state(item: dict[str, Any]) -> str:
 
 
 def _learning_kind(item: dict[str, Any]) -> str:
-    text = " ".join(
-        str(item.get(key) or "")
-        for key in ("leixing", "kind", "topic", "title", "mingcheng", "summary", "miaoshu")
-    ).lower()
-    if any(token in text for token in ("failure", "shibai", "错误", "失败", "cuowu")):
-        return L0_LEARNING_KIND["failure"]
-    if any(token in text for token in ("preference", "偏好", "习惯", "style", "风格")):
-        return L0_LEARNING_KIND["preference"]
-    if any(token in text for token in ("policy", "策略", "governance", "安全")):
-        return L0_LEARNING_KIND["policy"]
-    if any(token in text for token in ("xingwei", "procedural", "流程", "步骤", "tuili", "duihua")):
-        return L0_LEARNING_KIND["procedural"]
-    if any(token in text for token in ("zhishi", "knowledge", "知识", "资料", "semantic")):
-        return L0_LEARNING_KIND["semantic"]
-    if any(token in text for token in ("context_memory", "conversation", "memory")):
-        return L0_LEARNING_KIND["episodic"]
-    return L0_LEARNING_KIND["feedback"]
+    """Use declared type fields, never titles or descriptions."""
+    value = str(item.get("learning_kind") or item.get("kind") or item.get("leixing") or "")
+    if value in L0_LEARNING_KIND.values():
+        return value
+    aliases = {"shibai": "failure", "xingwei": "procedural", "zhishi": "semantic", "context_memory": "episodic"}
+    return L0_LEARNING_KIND.get(aliases.get(value, value), L0_LEARNING_KIND["feedback"])
 
 
 def _expression_target(item: dict[str, Any]) -> str:
     explicit = str(item.get("expression_target") or item.get("target") or "").strip()
     if explicit:
         return explicit
-    text = " ".join(
-        str(item.get(key) or "")
-        for key in ("leixing", "kind", "topic", "title", "mingcheng", "summary", "miaoshu")
-    ).lower()
-    if _risk_rank(_risk_level(item)) > 2:
-        if "tool" in text or "gongju" in text:
-            return "tool_candidate"
-        if "code" in text or "architecture" in text or "xitong" in text:
-            return "review_only"
-        return "review_only"
-    if any(token in text for token in ("preference", "偏好", "习惯", "style", "风格")):
-        return "preference"
-    if any(token in text for token in ("zhishi", "knowledge", "知识", "资料", "semantic")):
-        return "memory"
-    if any(token in text for token in ("xingwei", "procedural", "流程", "步骤", "tuili")):
-        return "procedural_hint"
-    return "context"
+    return "review_only" if _risk_rank(_risk_level(item)) > 2 else "context"
 
 
 def _evolution_kind(target: str) -> str:

@@ -15,26 +15,7 @@ from unittest import mock
 
 
 class SimpleChainLoopBudgetTests(unittest.TestCase):
-    def test_content_requirement_is_bound_to_target_path(self) -> None:
-        from v3.zongdiaodu import (
-            _simple_chain_content_requirement_for,
-            _simple_chain_parse_requirements,
-        )
 
-        message = "创建 README.md（至少 300 字）和 清单.txt（列出 5 项核心功能）"
-        reqs = _simple_chain_parse_requirements(message)
-        self.assertEqual(len(reqs), 1)
-        self.assertEqual(reqs[0]["path_pattern"], "README.md")
-        self.assertEqual(reqs[0]["min_chars"], 300)
-        # 300 字只约束 README，不套到清单.txt。
-        self.assertEqual(_simple_chain_content_requirement_for("清单.txt", message, reqs), (0, ""))
-        self.assertEqual(_simple_chain_content_requirement_for("README.md", message, reqs), (300, "nonspace"))
-
-    def test_unbound_requirement_falls_back_to_global(self) -> None:
-        from v3.zongdiaodu import _simple_chain_content_requirement_for
-
-        message = "写一个至少 500 字的文档"
-        self.assertEqual(_simple_chain_content_requirement_for("out.txt", message), (500, "nonspace"))
 
     def test_force_stopped_reply_explains_system_cutoff(self) -> None:
         from v3.zongdiaodu import _simple_chain_force_stopped_reply
@@ -47,31 +28,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertIn("回复「继续」", text)
         self.assertIn("已有进度", text)
 
-    def test_packaging_checklist_is_not_zip_delivery(self) -> None:
-        from v3.zongdiaodu import _has_delivery_intent, _requests_zip_delivery
 
-        message = "生成打包发布清单，保存为 output/e2e/29-packaging.md。"
-        self.assertFalse(_has_delivery_intent(message))
-        self.assertFalse(_requests_zip_delivery(message))
-        self.assertTrue(_requests_zip_delivery("把 output/e2e 打包成 zip 发给我"))
-
-    def test_mutation_request_without_write_is_classified_write(self) -> None:
-        from v3.zongdiaodu import _simple_chain_task_kind
-
-        read_only_history = [
-            {
-                "ok": True,
-                "tool_action": "file.read",
-                "tool_args": {"action": "file.read", "target": "output/e2e/18-seo.md", "args": {}},
-                "tool_result": {"ok": True},
-                "tool_result_contract": {"ok": True},
-            }
-        ]
-        self.assertEqual(
-            _simple_chain_task_kind(read_only_history, "生成 SEO 友好文章，保存为 output/e2e/18-seo.md。"),
-            "write",
-        )
-        self.assertEqual(_simple_chain_task_kind(read_only_history), "read")
 
     def test_readonly_repeat_after_verified_write_accepts_delivery(self) -> None:
         from v3.zongdiaodu import (
@@ -264,26 +221,6 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 1)
         self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 540)
 
-    def test_work_status_question_is_not_mutation(self) -> None:
-        from v3.zongdiaodu import _requires_real_mutation, _runtime_detects_work_intent
-
-        # 纯询问/汇报：不进入写操作，也不会被“无工具观察”按预算上限收尾。
-        for question in (
-            "整理什么内容了",
-            "现在到哪了",
-            "你刚才做了什么",
-            "整理得怎么样了",
-            "上次的进度如何",
-        ):
-            self.assertFalse(_requires_real_mutation(question), question)
-            self.assertFalse(_runtime_detects_work_intent(question), question)
-        # 真命令仍然识别为 mutation。
-        for command in (
-            "帮我整理一下这些文件",
-            "把 output/e2e 整理成表格",
-            "生成打包发布清单，保存为 output/e2e/29-packaging.md。",
-        ):
-            self.assertTrue(_requires_real_mutation(command), command)
 
     def test_no_observation_query_reply_passes_gate(self) -> None:
         from v3.zongdiaodu import _simple_chain_evidence_check
@@ -299,23 +236,10 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         self.assertEqual(status, "complete")
         self.assertEqual(reasons, [])
 
-        # 真写任务零观察仍然 fail-closed，不允许无证据谎报完成。
-        ok_write, status_write, reasons_write = _simple_chain_evidence_check(
-            "生成打包发布清单，保存为 output/e2e/29-packaging.md。",
-            [],
-            [],
-            None,
-            final_reply="已完成。",
-        )
-        self.assertFalse(ok_write)
-        self.assertEqual(status_write, "incomplete")
-        self.assertEqual(
-            reasons_write,
-            [
-                "execution_obligation:effect:missing_evidence",
-                "execution_claim_without_evidence",
-            ],
-        )
+        # Prose alone adds no hidden write obligation; the model interprets it.
+        self.assertEqual(_simple_chain_evidence_check(
+            "生成打包发布清单，保存为 output/e2e/29-packaging.md。", [], [], final_reply="已完成。"
+        ), (True, "complete", []))
 
     def _ok_payload(self, action: str = "file.read", target: str = "a.txt") -> dict:
         return {
@@ -350,9 +274,9 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
     def test_intent_near_duplicate_detection(self) -> None:
         from v3.zongdiaodu import _simple_chain_intent_is_near_duplicate
 
-        self.assertTrue(_simple_chain_intent_is_near_duplicate("我再看看这个文件", "我再看一下这个文件"))
-        self.assertTrue(_simple_chain_intent_is_near_duplicate("换个方式继续", "换个思路继续"))
-        self.assertTrue(_simple_chain_intent_is_near_duplicate("我再检查一下这个文件", "我再检查一遍这个文件"))
+        self.assertFalse(_simple_chain_intent_is_near_duplicate("我再看看这个文件", "我再看一下这个文件"))
+        self.assertFalse(_simple_chain_intent_is_near_duplicate("换个方式继续", "换个思路继续"))
+        self.assertFalse(_simple_chain_intent_is_near_duplicate("我再检查一下这个文件", "我再检查一遍这个文件"))
         self.assertFalse(_simple_chain_intent_is_near_duplicate("我再看看这个文件", "文件已写完，直接交付"))
         self.assertFalse(_simple_chain_intent_is_near_duplicate("", "随便"))
 
@@ -400,10 +324,10 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             max_cycle_hits=100,
             max_duplicate_intent_streak=3,
         )
-        monitor_intent.update("A", "我想再看看这个文件")
-        monitor_intent.update("A", "我再看看这个文件")
-        monitor_intent.update("A", "我再检查一遍这个文件")
-        stuck, reason = monitor_intent.update("A", "我再检查一下这个文件")
+        monitor_intent.update("A", "相同文本")
+        monitor_intent.update("A", "相同文本")
+        monitor_intent.update("A", "相同文本")
+        stuck, reason = monitor_intent.update("A", "相同文本")
         self.assertTrue(stuck)
         self.assertIn("same intent", reason)
 
@@ -524,7 +448,7 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         parsed = scheduler._simple_chain_recovery_checkpoint_from_context(context)
         self.assertEqual(parsed["previous_request_id"], "req_old")
         self.assertFalse(scheduler._simple_chain_explicit_retry_authorized("继续"))
-        self.assertTrue(scheduler._simple_chain_explicit_retry_authorized("重新执行刚才的命令"))
+        self.assertFalse(scheduler._simple_chain_explicit_retry_authorized("重新执行刚才的命令"))
 
     def test_read_only_deadline_is_not_marked_ambiguous(self) -> None:
         from v3 import zongdiaodu as scheduler
@@ -567,18 +491,6 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
         )
         self.assertTrue(any("15-course.pptx" in item for item in paths))
 
-    def test_desktop_topic_keyword_does_not_hijack_workspace_path(self) -> None:
-        import os
-
-        from v3.zongdiaodu import _simple_chain_requested_target_paths
-
-        os.environ["TIANGONG_DESKTOP_PATH"] = "C:/fake/desktop"
-        paths = _simple_chain_requested_target_paths(
-            "生成桌面清理计划，保存为 output/e2e/25-cleanup.md。"
-        )
-        self.assertTrue(any("25-cleanup.md" in item for item in paths))
-        self.assertFalse(any("fake" in item for item in paths))
-        self.assertTrue(any("output/e2e/25-cleanup.md" in item for item in paths))
 
     def test_request_payload_uses_cache_friendly_stable_prefix(self) -> None:
         from v3.gutong.gutong_ceng import JIXU_ZHILING_WENBEN

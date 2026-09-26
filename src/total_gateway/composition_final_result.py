@@ -83,7 +83,6 @@ def decode_composition_requirements_attestation(result: dict[str, Any], *, expec
     """Called only after Completion/capsule bind the exact final-result bytes."""
     from contracts import canonical_sha256
     from .composition_task_floor import validate_execution_requirements_attestation_shape
-    from v3.execution_integrity import build_action_obligations, required_request_outputs
     # Validate the enclosing result as well; unattached attestations are not a
     # standalone authority channel.
     decode_composition_final_aliases(result)
@@ -91,14 +90,10 @@ def decode_composition_requirements_attestation(result: dict[str, Any], *, expec
     if value is None:
         return None
     validate_execution_requirements_attestation_shape(value)
-    obligations = build_action_obligations(expected_request_text)
     if (value["request_id"] != expected_request_id
             or value["request_text_sha256"] != hashlib.sha256(expected_request_text.encode("utf-8")).hexdigest()
             or value["executable_plan_id"] != expected_plan_id
             or value["executable_plan_sha256"] != expected_plan_sha256
-            or not set(value["supporting_fact_ids"]).issubset(set(allowed_fact_ids))
-            or value["obligations_count"] != len(obligations)
-            or value["obligations_sha256"] != canonical_sha256(obligations)
-            or value["required_outputs"] != required_request_outputs(expected_request_text)):
+            or not set(value["supporting_fact_ids"]).issubset(set(allowed_fact_ids))):
         raise ValueError("composition requirements request/plan/fact binding mismatch")
     return value

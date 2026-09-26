@@ -5,10 +5,9 @@ from __future__ import annotations
 This module is intentionally thin. It does not choose tools, execute actions,
 or judge task quality. It only:
 
-1. establishes a conservative Runtime execution floor from the current user text;
-2. treats the LLM's real tool call/result as its execution submission; and
-3. blocks terminal completion when an explicit tool-required request has no
-   matching successful tool evidence.
+1. records real tool submissions and their structured results;
+2. reconciles explicitly registered facts with those results; and
+3. preserves factual failures without deriving requirements from prose.
 
 Runtime owns factual execution integrity. The LLM still owns semantic
 understanding, planning, tool choice, replanning and answer quality.
@@ -33,97 +32,22 @@ TASK_PROFILE_ARG_KEY = "_task_profile"
 _TASK_CONTRACT_SCHEMA = "tiangong.v3.life_task_state.v1"
 _TASK_PROFILE_SCHEMA = "tiangong.v3.task_profile.v2"
 
-_HARD_TOOL_BAN_MARKERS = (
-    "不要使用工具", "不要调用工具", "无需使用工具", "无需调用工具",
-)
-_TEXT_ONLY_MARKERS = ("只告诉我", "只解释", "只分析", "只讨论")
-_GLOBAL_NO_ACTION_PATTERNS = (
-    r"^(?:先|暂时)?(?:不要|别|不用|无需)(?:执行|操作|动|处理|修改|改|运行|调用工具|使用工具)(?:任何)?(?:操作|动作|工具)?$",
-    r"^(?:先|暂时)?(?:不要|别)(?:做|干|动)(?:任何)?(?:东西|事情|操作)?$",
-)
-
-_REQUEST_CUES = (
-    "请", "帮我", "帮忙", "给我", "替我", "直接", "一下", "现在", "马上", "立刻",
-    "开始", "先", "只", "再", "接着", "然后", "然后再", "那就", "那么就", "把", "将", "不就行了",
-)
-_STRONG_REQUEST_CUES = ("请", "帮我", "帮忙", "替我", "直接", "现在", "马上", "立刻", "开始", "不就行了")
-_SEQUENCE_MARKERS = ("然后", "然后再", "再帮我", "并且", "同时", "接着", "那就", "那么就")
-_EXPLANATION_MARKERS = ("解释", "说明", "讲讲", "告诉我怎么", "告诉我如何", "分析怎么", "分析如何")
-_STATUS_MARKERS = ("结果", "状态", "情况", "是否", "是什么", "什么意思", "怎么样", "为什么", "怎么回事")
 
 _AMBIGUOUS_TARGETS = (
     "那个目录", "某个目录", "一个目录", "那个文件夹", "某个文件夹",
     "那个文件", "某个文件", "那个附件", "某个附件",
-)
-_DIRECTORY_TERMS = ("目录", "文件夹", "workspace", "工作区", "当前路径")
-_FILE_TERMS = ("文件", "文档", "附件", "压缩包", "pdf", "表格")
-_STRICT_FILE_TERMS = ("文件", "文档", "压缩包", "pdf", "表格")
-_OBSERVATION_ANCHORS = _DIRECTORY_TERMS + _FILE_TERMS + (
-    "日志", "配置", "数据库", "系统", "环境", "服务", "进程", "端口", "仓库", "repository", "repo",
-    "网页", "网站", "浏览器", "链接",
-)
-_MUTATION_ANCHORS = (
-    "文件", "目录", "文件夹", "代码", "源码", "项目", "仓库", "repository", "repo", "配置", "脚本",
-    "错误", "bug", "故障",
-)
-_ARTIFACT_ANCHORS = (
-    "word", "docx", "excel", "xlsx", "ppt", "pptx", "pdf", "zip", "报告", "文档", "文件", "表格", "压缩包", "桌面",
-)
-_DELIVERY_ANCHORS = _ARTIFACT_ANCHORS + ("邮件", "email", "附件", "消息", "微信")
-_EXECUTION_ANCHORS = (
-    "代码", "源码", "项目", "程序", "脚本", "接口", "api", "数据库", "服务", "环境", "命令", "语法",
-    "构建", "编译", "单元测试", "测试用例", "测试集", "文件",
 )
 
 # Four factual classes only. These are not task taxonomies and never prescribe
 # a concrete capability. High precision is more important than recall: an
 # uncertain instruction remains UNKNOWN and falls through to the existing V3
 # chain/LLM instead of becoming a new hard blocker.
-_LOCAL_OBSERVE_VERBS = (
-    "读取", "读一下", "读下", "查看", "看一下", "看下", "看看", "列出", "列一下",
-    "检查", "扫描", "浏览", "打开",
-)
-_SEARCH_VERBS = ("搜索", "搜一下", "查询", "查一下", "帮我查", "帮我搜")
-_MUTATION_VERBS = ("修改", "改一下", "改下", "修复", "更新", "修补", "重写", "删除", "移除", "复制", "移动", "重命名")
-_ARTIFACT_VERBS = ("写入", "创建", "新建", "生成", "保存", "编写")
-_EXTERNAL_EFFECT_VERBS = ("下载", "克隆", "拉取", "安装", "部署", "打包", "压缩", "解压", "导出")
-_RUN_EXECUTION_VERBS = ("运行", "跑一下", "执行", "启动", "编译", "构建")
-_VERIFY_EXECUTION_VERBS = ("测试", "验证")
-_EXECUTION_VERBS = _RUN_EXECUTION_VERBS + _VERIFY_EXECUTION_VERBS
-_DELIVERY_STRONG_VERBS = ("上传", "提交", "交付", "发邮件", "发消息", "发微信", "发布", "分享")
-_DELIVERY_ARTIFACT_VERBS = ("发送", "发给我", "发我", "传给我")
 
-_COMPLETION_CLAIM_RE = re.compile(
-    r"(?:已经|已)(?:完成|读取|读完|查看|检查|执行|下载|修改|写入|生成|发送|处理|打开|运行|测试|上传|部署)"
-    r"|(?:完成了|办妥了?|搞定了?|读完了|读取完毕|查看完毕|检查完毕|执行完毕|下载完成|处理完成|运行完成|测试完成)",
-    re.IGNORECASE,
-)
-_DEVIATION_SIGNAL_RE = re.compile(r"^[?？]{1,4}$")
-_LOCAL_PATH_RE = re.compile(
-    r'''(?:[A-Za-z]:[\\/]|(?:^|\s)(?:\.{0,2}[\\/]))[^\s`"'，。；、,;！？!?）)\]》]+'''
-)
-_QUOTED_LOCAL_PATH_RE = re.compile(
-    r'''(?P<quote>[`"'])(?P<path>(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])[^\n]+?)(?P=quote)'''
-)
 _RELATIVE_FILE_PATH_RE = re.compile(
     r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 )
-_BARE_ASCII_FILE_RE = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
-_URL_RE = re.compile(r"https?://", re.IGNORECASE)
-_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,8}(?:$|[》〉」』】）)\]}'\"，。；：,.;:！!？?])", re.IGNORECASE)
-_COMMON_FILE_SUFFIXES = frozenset({
-    "bash", "bat", "c", "cc", "cfg", "conf", "cpp", "cs", "css", "csv",
-    "doc", "docx", "env", "go", "h", "hh", "hpp", "html", "ini", "java",
-    "js", "json", "jsx", "kt", "kts", "less", "lock", "md", "mjs", "pdf",
-    "php", "ps1", "py", "rb", "rs", "scss", "sh", "sql", "swift", "toml",
-    "ts", "tsx", "txt", "xml", "yaml", "yml", "zip", "xlsx", "pptx",
-})
 
 _PREPARATION_ACTIONS = frozenset({"skill.route", "skill.get", "skill.read"})
-_NEGATION_PREFIXES = (
-    "不要", "不得", "不许", "别", "先别", "先不要", "不用", "无需", "禁止", "严禁", "绝不", "暂不", "暂时不要",
-    "别再", "不要再", "不是让你", "不是叫你", "不需要",
-)
 _EXTERNAL_EFFECT_TOKENS = frozenset({
     "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "fix", "export",
 })
@@ -208,27 +132,8 @@ def action_minimum_task_level(action: Any, metadata: dict[str, Any] | None = Non
 
 
 def extract_forbidden_actions(user_text: Any) -> list[str]:
-    """Extract only scoped negative tool constraints from registered action names."""
-
-    text = str(user_text or "")
-    lowered = text.lower()
-    forbidden: list[str] = []
-    for action in declared_action_metadata():
-        for match in re.finditer(re.escape(action), lowered):
-            left = lowered[max(0, match.start() - 96):match.start()]
-            # A period is part of every registered action identifier, so it
-            # cannot also be treated as a clause boundary here.
-            clause_left = re.split(r"[，。；：,;:！!？?\n]", left)[-1]
-            if re.search(
-                r"(?:不得|不要|不许|禁止|严禁|别|无需|不用|do\s+not|don't|must\s+not|never)"
-                r"[^，。；：,;:！!？?\n]{0,64}$",
-                clause_left,
-                re.IGNORECASE,
-            ):
-                if action not in forbidden:
-                    forbidden.append(action)
-                break
-    return forbidden
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 
 def extract_model_task_profile(tool_args: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -312,17 +217,15 @@ def _goal_fact_from_obligation(value: Any, index: int) -> dict[str, Any] | None:
     for key in ("requirement_version", "minimum_test_count"):
         if type(value.get(key)) is int:
             fact[key] = value[key]
-    for key in ("target_state", "evidence_dependency_paths"):
+    for key in ("target_state", "evidence_dependency_paths", "delivery_mode"):
         if key in value:
             fact[key] = value[key]
     return fact
 
 
 def _required_stability(level: Any) -> int:
-    # L0 has no work intention. L1 closes on one factual signal; L2/L3 need
-    # two independent factual signals.  The life contract owns this decision;
-    # external evidence checks may raise uncertainty but are not another judge.
-    return {"L0": 0, "L1": 1, "L2": 2, "L3": 2}[normalize_task_level(level)]
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return 0
 
 
 def _completion_percentage(
@@ -417,9 +320,7 @@ def initialize_task_contract(user_text: Any, *, chat_mode: bool = False) -> dict
         "advisory_constraints": {},
         "validation_issues": [],
         "acceptance_status": "not_applicable" if chat_mode else "pending",
-        "clarification_required": bool(
-            not chat_mode and any(term in _compact(user_value) for term in _AMBIGUOUS_TARGETS)
-        ),
+        "clarification_required": False,
         "profile_status": "not_applicable" if chat_mode else "optional_not_received",
         "profile_retry_count": 0,
         "profile_required_pending": False,
@@ -563,625 +464,33 @@ def _intent_compact(text: object) -> str:
 
 
 def is_deviation_signal(text: Any) -> bool:
-    return bool(_DEVIATION_SIGNAL_RE.fullmatch(_compact(text)))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return False
 
 
 def has_execution_completion_claim(text: Any) -> bool:
-    return bool(_COMPLETION_CLAIM_RE.search(str(text or "")))
-
-
-def _response_only(text: str) -> bool:
-    compact = _compact(text)
-    if any(marker.replace(" ", "").lower() in compact for marker in _HARD_TOOL_BAN_MARKERS):
-        return True
-    if any(marker.replace(" ", "").lower() in compact for marker in _TEXT_ONLY_MARKERS):
-        if not any(marker in compact for marker in _SEQUENCE_MARKERS):
-            return True
-    normalized = _intent_compact(text)
-    return any(re.fullmatch(pattern, normalized) for pattern in _GLOBAL_NO_ACTION_PATTERNS)
-
-
-def _meta_or_hypothetical(text: str) -> bool:
-    """Keep the pre-existing narrow V3 discussion boundary stable."""
-    compact = _compact(text)
-    if not compact:
-        return True
-    if compact.startswith(("如果", "假如", "假设", "要是")) and any(word in compact for word in ("怎么", "如何", "会怎样", "会怎么")):
-        return True
-    request_cued = any(cue in compact for cue in _REQUEST_CUES)
-    if not request_cued and any(word in compact for word in ("怎么读", "如何读", "怎么查看", "如何查看", "为什么", "原理", "是什么意思")):
-        return True
-    if not request_cued and re.search(r"(?:你会|会不会|你能|是否|能否).*(?:吗|么|\?|？)$", compact):
-        return True
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return False
-
-
-def _is_high_confidence_capability_question(user_text: object) -> bool:
-    compact = _intent_compact(user_text)
-    if not compact:
-        return False
-    request_hints = ("帮我", "一下", "现在", "直接", "请", "给我", "替我", "马上")
-    if any(marker in compact for marker in request_hints):
-        return False
-    if re.fullmatch(r"(?:你|模型|系统|工具)(?:会|是否会).+(?:吗|么)", compact):
-        return True
-    if re.fullmatch(r"(?:你|模型|系统|工具)会不会.+", compact):
-        return True
-    return False
-
-
-def _is_hypothetical_action_discussion(user_text: object) -> bool:
-    text = str(user_text or "")
-    compact = _intent_compact(text)
-    if not compact:
-        return False
-    if re.search(
-        r"(?:那么就|那就|就)(?:帮我)?(?:读|读取|看|查看|列|修改|改|修复|删除|运行|执行|下载|创建|生成|写|搜索|查)",
-        compact,
-    ):
-        return False
-    chinese_conditions = ("如果", "假如", "假设", "要是", "倘若", "若是")
-    chinese_planning = (
-        "你会怎么做", "你会如何做", "你会怎么处理", "你会如何处理",
-        "你准备怎么做", "你打算怎么做", "会怎么做", "会如何做",
-        "会怎么处理", "会如何处理", "你的方案是什么", "方案是什么",
-        "你会怎么分析", "你会如何分析",
-    )
-    if any(marker in compact for marker in chinese_conditions) and any(marker in compact for marker in chinese_planning):
-        return True
-    english = re.sub(r"\s+", " ", text.strip().lower())
-    english_condition = any(marker in english for marker in ("if ", "suppose ", "assuming ", "were to "))
-    english_planning = any(
-        marker in english
-        for marker in ("what would you do", "how would you", "what is your approach", "what's your approach")
-    )
-    return bool(english_condition and english_planning)
-
-
-def _is_deferred_action_explanation(user_text: object) -> bool:
-    compact = _intent_compact(user_text)
-    if not compact:
-        return False
-    defer_markers = ("先别", "先不要", "暂时别", "暂时不要", "先不用")
-    explanation_markers = (
-        "只告诉我", "只跟我说", "只说", "只解释", "只分析",
-        "先告诉我", "先跟我说", "先说说", "告诉我你准备", "告诉我怎么", "告诉我如何",
-    )
-    return bool(
-        any(marker in compact for marker in defer_markers)
-        and any(marker in compact for marker in explanation_markers)
-    )
 
 
 def is_execution_discussion_only(user_text: object) -> bool:
-    return bool(
-        _is_high_confidence_capability_question(user_text)
-        or _is_hypothetical_action_discussion(user_text)
-        or _is_deferred_action_explanation(user_text)
-    )
-
-
-def _verb_is_object_modifier(verb: str, left: str, right: str) -> bool:
-    """Keep a deliverable noun from becoming the object's nearest action."""
-    return bool(
-        verb == "交付"
-        and re.search(r"(?:创建|新建|生成|保存)(?:一[个份套批])?$", left)
-        and right.startswith(("文件", "文档", "报告", "产物"))
-    )
-
-
-def _verb_occurs_affirmatively(compact: str, verb: str) -> bool:
-    action_verbs = tuple(sorted(set(
-        _LOCAL_OBSERVE_VERBS
-        + _SEARCH_VERBS
-        + _MUTATION_VERBS
-        + _ARTIFACT_VERBS
-        + _EXTERNAL_EFFECT_VERBS
-        + _EXECUTION_VERBS
-        + _DELIVERY_STRONG_VERBS
-        + _DELIVERY_ARTIFACT_VERBS
-    ), key=len, reverse=True))
-    for match in re.finditer(re.escape(verb), compact):
-        left = compact[max(0, match.start() - 14):match.start()]
-        if _verb_is_object_modifier(verb, left, compact[match.end():]):
-            # The object of "create a deliverable file" is a noun, not a
-            # second delivery command. A later explicit delivery still counts.
-            continue
-        clause_left = re.split(r"[，。；：,.;:！!？?]", left)[-1]
-        if any(left.endswith(prefix) for prefix in _NEGATION_PREFIXES):
-            continue
-        if any(re.search(re.escape(prefix) + r"[^，。；：,.;:！!？?]{0,8}$", clause_left) for prefix in _NEGATION_PREFIXES):
-            continue
-        # A prohibition commonly scopes over a coordinated verb list:
-        # "不得创建、修改或删除".  Commas alone cannot terminate that scope,
-        # while a new object/cue ("不要运行测试，只修改代码") does.
-        coordinated_left = compact[max(0, match.start() - 32):match.start()]
-        negated = False
-        for prefix in _NEGATION_PREFIXES:
-            prefix_at = coordinated_left.rfind(prefix)
-            if prefix_at < 0:
-                continue
-            tail = coordinated_left[prefix_at + len(prefix):]
-            for action_verb in action_verbs:
-                tail = tail.replace(action_verb, "")
-            tail = re.sub(r"[\s、，,/和或及与并且同时]+", "", tail)
-            if not tail:
-                negated = True
-                break
-        if negated:
-            continue
-        return True
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return False
 
 
-def _has_affirmative(compact: str, verbs: tuple[str, ...]) -> bool:
-    return any(_verb_occurs_affirmatively(compact, verb) for verb in verbs)
-
-
-def _has_request_cue(compact: str) -> bool:
-    return any(cue in compact for cue in _REQUEST_CUES)
-
-
-def _has_strong_request_cue(compact: str) -> bool:
-    return any(cue in compact for cue in _STRONG_REQUEST_CUES)
-
-
-def _leading_verb(compact: str, verbs: tuple[str, ...]) -> bool:
-    lead = compact.lstrip("，。；：,.;:！!？?")
-    return any(lead.startswith(verb) for verb in verbs)
-
-
-def _sequenced_verb(compact: str, verbs: tuple[str, ...]) -> bool:
-    prefixes = ("先", "再", "然后", "然后再", "接着", "那就", "那么就", "就")
-    return any(prefix + verb in compact for prefix in prefixes for verb in verbs)
-
-
-def _has_anchor(text: str, compact: str, anchors: tuple[str, ...]) -> bool:
-    return bool(
-        any(anchor.lower() in compact for anchor in anchors)
-        or _LOCAL_PATH_RE.search(text)
-        or _BARE_ASCII_FILE_RE.search(text)
-        or _URL_RE.search(text)
-        or _SUFFIX_RE.search(compact)
-    )
-
-
-def _looks_like_status_or_question(text: str, compact: str) -> bool:
-    if any(marker in compact for marker in _STATUS_MARKERS):
-        return True
-    stripped = str(text or "").strip()
-    return stripped.endswith(("?", "？", "吗", "么"))
-
-
-def _explanation_only(compact: str) -> bool:
-    explanation_positions = [
-        compact.find(marker)
-        for marker in _EXPLANATION_MARKERS
-        if marker in compact
-    ]
-    if not explanation_positions or any(marker in compact for marker in _SEQUENCE_MARKERS):
-        return False
-    action_positions = [
-        compact.find(verb)
-        for verb in (
-            _LOCAL_OBSERVE_VERBS
-            + _SEARCH_VERBS
-            + _MUTATION_VERBS
-            + _ARTIFACT_VERBS
-            + _EXTERNAL_EFFECT_VERBS
-            + _EXECUTION_VERBS
-            + _DELIVERY_STRONG_VERBS
-            + _DELIVERY_ARTIFACT_VERBS
-        )
-        if verb in compact and _has_affirmative(compact, (verb,))
-    ]
-    # "说明如何创建" is discussion; "生成…失败就说明原因" is work with
-    # a fallback explanation.  Relative order is more reliable than the mere
-    # presence of an explanation word.
-    return not action_positions or min(explanation_positions) <= min(action_positions)
-
-
-def _chinese_requested_fact_kinds(text: str) -> list[str]:
-    # 动词/锚点匹配面剥离引号内片段（文件名等数据不该触发请求动词）；
-    # 显式目标提取（_extract_explicit_targets）继续用原文。
-    verb_surface = _strip_quoted_spans(text)
-    compact = _compact(verb_surface)
-    if not compact or _explanation_only(compact):
-        return []
-
-    kinds: list[str] = []
-    cue = _has_request_cue(compact)
-    strong_cue = _has_strong_request_cue(compact)
-    questionish = _looks_like_status_or_question(text, compact)
-
-    local_observe = _has_affirmative(compact, _LOCAL_OBSERVE_VERBS)
-    search_observe = _has_affirmative(compact, _SEARCH_VERBS)
-    if (
-        local_observe
-        and _has_anchor(text, compact, _OBSERVATION_ANCHORS)
-        and (cue or _leading_verb(compact, _LOCAL_OBSERVE_VERBS))
-    ) or (
-        search_observe
-        and (strong_cue or _leading_verb(compact, _SEARCH_VERBS))
-        and not (questionish and not strong_cue)
-    ):
-        kinds.append("observation")
-
-    mutation = _has_affirmative(compact, _MUTATION_VERBS)
-    artifact_effect = _has_affirmative(compact, _ARTIFACT_VERBS)
-    external_effect = _has_affirmative(compact, _EXTERNAL_EFFECT_VERBS)
-    if (
-        mutation
-        and _has_anchor(text, compact, _MUTATION_ANCHORS)
-        and (cue or _leading_verb(compact, _MUTATION_VERBS))
-    ) or (
-        artifact_effect
-        and _has_anchor(text, compact, _ARTIFACT_ANCHORS)
-        and (cue or _leading_verb(compact, _ARTIFACT_VERBS))
-    ) or (
-        external_effect
-        and (cue or _leading_verb(compact, _EXTERNAL_EFFECT_VERBS))
-    ):
-        kinds.append("effect")
-
-    run_execution = _has_affirmative(compact, _RUN_EXECUTION_VERBS)
-    verify_execution = (
-        _has_affirmative(compact, _VERIFY_EXECUTION_VERBS)
-        and _has_anchor(text, compact, _EXECUTION_ANCHORS)
-    )
-    if (
-        (run_execution or verify_execution)
-        and (
-            strong_cue
-            or _leading_verb(compact, _EXECUTION_VERBS)
-            or _sequenced_verb(compact, _EXECUTION_VERBS)
-        )
-        and not (questionish and not strong_cue)
-    ):
-        kinds.append("execution")
-
-    strong_delivery = _has_affirmative(compact, _DELIVERY_STRONG_VERBS)
-    artifact_delivery = _has_affirmative(compact, _DELIVERY_ARTIFACT_VERBS)
-    if (
-        strong_delivery
-        and (
-            strong_cue
-            or _leading_verb(compact, _DELIVERY_STRONG_VERBS)
-            or _sequenced_verb(compact, _DELIVERY_STRONG_VERBS)
-        )
-        and not (questionish and not strong_cue)
-    ) or (
-        artifact_delivery
-        and _has_anchor(text, compact, _DELIVERY_ANCHORS)
-        and (cue or _leading_verb(compact, _DELIVERY_ARTIFACT_VERBS))
-    ):
-        kinds.append("delivery")
-
-    return kinds
-
-
-def _english_requested_fact_kinds(text: str) -> list[str]:
-    english = re.sub(r"\s+", " ", str(text or "").strip().lower())
-    if not english:
-        return []
-    if any(marker in english for marker in ("explain how", "tell me how", "what would you do", "how would you")) and not any(
-        marker in english for marker in (" then ", " and then ", " go ahead ")
-    ):
-        return []
-    explicit = bool(re.search(r"(?:^|\b)(please|for me|must|now|directly|go ahead|do it|can you|could you)\b", english))
-    tokens = re.findall(r"[a-z]+", english)
-    if not tokens:
-        return []
-    first = tokens[0]
-    anchors = set(tokens)
-    fact_kinds: list[str] = []
-    observation_words = {"read", "list", "inspect", "check", "scan", "browse", "open", "search", "query", "find"}
-    effect_words = {"create", "write", "save", "update", "modify", "edit", "fix", "delete", "remove", "copy", "move", "rename", "download", "clone", "pull", "install", "deploy", "package", "compress", "extract", "export"}
-    execution_words = {"run", "execute", "test", "verify", "start", "compile", "build"}
-    delivery_words = {"send", "upload", "submit", "deliver", "publish", "share"}
-    artifact_words = {"file", "directory", "folder", "workspace", "attachment", "repo", "repository", "project", "report", "document", "pdf", "zip"}
-
-    def has_standalone_action(words: set[str]) -> bool:
-        for word in words:
-            for match in re.finditer(rf"(?<![a-z0-9_.-]){re.escape(word)}(?![a-z0-9_.-])", english):
-                prefix = re.split(r"[,;.!?]", english[:match.start()])[-1]
-                if not re.search(r"(?:do\s+not|don't|must\s+not|never|without|no\s+need\s+to)\s+(?:\w+\s+){0,3}$", prefix):
-                    return True
-        return False
-
-    if has_standalone_action(observation_words) and (
-        explicit or first in observation_words
-    ) and (
-        bool(anchors.intersection(artifact_words)) or bool(anchors.intersection({"search", "query", "find"}))
-        or bool(_LOCAL_PATH_RE.search(text) or _BARE_ASCII_FILE_RE.search(text))
-    ):
-        fact_kinds.append("observation")
-    if has_standalone_action(effect_words) and (explicit or first in effect_words):
-        fact_kinds.append("effect")
-    if has_standalone_action(execution_words) and (explicit or first in execution_words):
-        fact_kinds.append("execution")
-    if has_standalone_action(delivery_words) and (explicit or first in delivery_words):
-        fact_kinds.append("delivery")
-    return fact_kinds
-
-
-def _requested_fact_kinds(user_text: object) -> list[str]:
-    text = str(user_text or "")
-    kinds = _chinese_requested_fact_kinds(text)
-    for kind in _english_requested_fact_kinds(text):
-        if kind not in kinds:
-            kinds.append(kind)
-    return kinds
-
-
-def _local_artifact_delivery(text: str) -> bool:
-    """Local handoff is distinct from sending/uploading to an outside party."""
-    external = r"上传|发布到|发邮件|发微信|发消息|提交到|(?:发送|分享|发给).{0,12}(?:客户|同事|群|邮箱|平台|https?://)|\b(?:upload|publish|email|slack|webhook|submit)\b"
-    return not bool(re.search(external, text, re.I))
-
-
 def runtime_execution_floor(user_text: object) -> str:
-    """Conservative pre-LLM execution floor.
-
-    ACT_REQUIRED means a real external/tool action is unambiguously required.
-    UNKNOWN intentionally preserves the existing V3/LLM decision path.
-    """
-    text = _user_request_surface(user_text)
-    if not text:
-        return ACT_UNKNOWN
-    if _response_only(text) or is_execution_discussion_only(text):
-        return ACT_FORBIDDEN
-    if _requested_fact_kinds(text):
-        return ACT_REQUIRED
+    """Compatibility API: natural-language interpretation belongs to the model."""
     return ACT_UNKNOWN
 
 
-def _requested_object_kind(user_text: object, fact_kind: str, target: Any = "") -> str:
-    compact = _compact(user_text)
-    text = str(user_text or "")
-    if fact_kind == "observation":
-        target_text = str(target or "").strip()
-        if target_text:
-            normalized = _normalize_path(target_text)
-            if normalized.endswith("/"):
-                return "directory"
-            if _BARE_ASCII_FILE_RE.fullmatch(target_text) or re.search(r"\.[A-Za-z0-9]{1,8}$", normalized):
-                return "file"
-        if any(term in compact for term in _DIRECTORY_TERMS):
-            return "directory"
-        if (
-            any(term in compact for term in _STRICT_FILE_TERMS)
-            or _LOCAL_PATH_RE.search(text)
-            or _BARE_ASCII_FILE_RE.search(text)
-        ):
-            return "file"
-    return ""
-
-
-def _extract_explicit_targets(user_text: object) -> list[str]:
-    text = str(user_text or "")
-    declared_actions = declared_action_metadata()
-    candidates: list[tuple[int, str]] = []
-    path_spans: list[tuple[int, int]] = []
-    # Quoting preserves literal spaces/punctuation within a filename. Outside
-    # quotes, prose punctuation terminates a path rather than becoming its tail.
-    for match in _QUOTED_LOCAL_PATH_RE.finditer(text):
-        candidates.append((match.start("path"), match.group("path")))
-        path_spans.append(match.span())
-    for match in _LOCAL_PATH_RE.finditer(text):
-        if any(start <= match.start() < end for start, end in path_spans):
-            continue
-        value = match.group(0).strip().rstrip(".")
-        if value:
-            candidates.append((match.start(), value))
-            path_spans.append(match.span())
-    for match in _RELATIVE_FILE_PATH_RE.finditer(text):
-        if any(start <= match.start(1) and match.end(1) <= end for start, end in path_spans):
-            continue
-        value = match.group(1).strip()
-        if value:
-            candidates.append((match.start(1), value))
-            path_spans.append(match.span(1))
-    for match in _BARE_ASCII_FILE_RE.finditer(text):
-        if any(start <= match.start() and match.end() <= end for start, end in path_spans):
-            continue
-        candidate = match.group(1).strip()
-        stem, suffix = candidate.rsplit(".", 1)
-        if stem == "args" and suffix.lower() not in _COMMON_FILE_SUFFIXES:
-            # Structured tool argument references (args.content, args.limit)
-            # are not unqualified filenames. Explicit paths were handled above.
-            continue
-        if suffix.lower() not in _COMMON_FILE_SUFFIXES and any(char.isupper() for char in stem):
-            # Dotted code symbols such as WorldModel.summary are semantic
-            # subjects, not filesystem paths. Slash-qualified paths are
-            # already captured by _RELATIVE_FILE_PATH_RE above.
-            continue
-        if candidate.lower() in declared_actions:
-            continue
-        prefix = text[max(0, match.start(1) - 24):match.start(1)]
-        if suffix.lower() not in _COMMON_FILE_SUFFIXES and re.search(
-            r"(?:(?:不得|不要|不许|禁止|严禁|别|无需|不用)\s*)?"
-            r"(?:调用|执行|运行|使用|改用|call|invoke|execute|use)\s*$",
-            prefix,
-            re.IGNORECASE,
-        ):
-            continue
-        candidates.append((match.start(1), candidate))
-
-    targets: list[str] = []
-    seen: set[str] = set()
-    for _, value in sorted(candidates, key=lambda item: item[0]):
-        normalized = _normalize_path(value)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            targets.append(value)
-    return targets
-
-
-def _request_clauses(text: str) -> list[str]:
-    """Split prose, preserving punctuation inside explicitly quoted paths."""
-    surface = list(text)
-    for match in re.finditer(r'`[^`\n]+`|"[^"\n]+"|\'[^\'\n]+\'|《[^》\n]+》|“[^”\n]+”', text):
-        surface[match.start():match.end()] = " " * (match.end() - match.start())
-    cuts = [0]
-    for match in re.finditer(r"[，,；;。\n\r！？!?]+", "".join(surface)):
-        cuts.extend((match.start(), match.end()))
-    cuts.append(len(text))
-    return [text[cuts[i]:cuts[i + 1]].strip() for i in range(0, len(cuts) - 1, 2)
-            if text[cuts[i]:cuts[i + 1]].strip()]
-
-
-def _program_read_spans(text: str) -> set[tuple[int, int]]:
-    """Identify explicit program behavior, not an agent's independent read.
-
-    Keep the original paths and input roles. Only the scoped read verb loses
-    its independent observation meaning; a successful run is not read proof.
-    Unclear continuation clauses remain ordinary observation requirements.
-    """
-    declaration = re.compile(
-        r"(?:创建|新建|编写|开发|实现|修改|更新|写(?:一个|个)?)"
-        r"[^，,；;。\n]{0,80}?(?:程序|脚本|函数|代码|[\w./\\-]+\.(?:py|js|mjs|ts|go|rs|java|cpp)(?![A-Za-z0-9_]))", re.I)
-    subject = re.compile(
-        r"(?:程序|脚本|函数|代码)(?:\s|需(?:要)?|应(?:当|该)?|必须|负责|会|能(?:够)?|用于|将|要|只|先|自动|"
-        r"(?:用|使用|采用)[^，,；;。\n]{0,40})*$")
-    result: set[tuple[int, int]] = set()
-    cursor, previous_end = 0, 0
-    previous_program = False
-    for clause in _request_clauses(text):
-        offset = text.find(clause, cursor)
-        cursor = offset + len(clause)
-        continued = previous_program and not re.search(r"[；;。\n\r！？!?]", text[previous_end:offset])
-        definitions = list(declaration.finditer(clause))
-        internal = False
-        for match in re.finditer(r"读取|\bread\b", clause, re.I):
-            prefix = clause[:match.start()]
-            preceding = [item for item in definitions if item.end() <= match.start()]
-            tail = prefix[preceding[-1].end():] if preceding else prefix
-            # Agent sequencing/cues reset the subject even after code creation.
-            direct = re.search(r"(?:请|先|再|然后|接着|另外|你|帮我|替我|并且?|之后|随后|后)\s*(?:(?:用|使用)[^，,；;。\n]{0,40})?$", tail)
-            explicit_subject = subject.search(prefix)
-            relative_program = (re.search(r"(?:编写|开发|实现|创建|写)(?:一个|个)?(?:仅|只)?(?:用于)?\s*$", prefix)
-                                and re.search(r"^[^，,；;。\n]{0,60}的(?:程序|脚本|函数)", clause[match.end():]))
-            implementation = continued and re.search(r"^(?:仅|只)?(?:用|使用|采用|通过)[^，,；;。\n]{0,60}$", prefix.strip())
-            if explicit_subject or relative_program or (not direct and (preceding or implementation)):
-                result.add((offset + match.start(), offset + match.end()))
-                internal = True
-        previous_program = bool(definitions or internal)
-        previous_end = cursor
-    return result
-
-
-def _agent_observation_surface(text: str) -> str:
-    surface = list(text)
-    for start, end in _program_read_spans(text):
-        surface[start:end] = " " * (end - start)
-    return "".join(surface)
-
-
 def request_target_bindings(user_text: Any) -> list[dict[str, str]]:
-    """Bind local actions to objects once; a workspace/input is not an output.
-
-    These conservative factual requirements are not a tool plan. Unknown prose
-    retains the generic execution floor instead of distributing every verb to
-    every filename. The original clause is retained for review and diagnostics.
-    """
-    text = _user_request_surface(user_text)
-    groups = {
-        "observation": _LOCAL_OBSERVE_VERBS + _SEARCH_VERBS + ("阅读", "核对", "read", "inspect", "list", "check"),
-        "effect": _MUTATION_VERBS + _ARTIFACT_VERBS + _EXTERNAL_EFFECT_VERBS + ("create", "write", "save", "edit", "modify", "delete", "copy", "move", "update"),
-        "execution": _EXECUTION_VERBS + ("run", "execute", "test", "verify", "计算", "hash"),
-        "delivery": _DELIVERY_STRONG_VERBS + _DELIVERY_ARTIFACT_VERBS + ("send", "deliver", "upload"),
-    }
-    verbs = {verb: kind for kind, values in groups.items() for verb in values}
-    pattern = re.compile("|".join(re.escape(verb) for verb in sorted(verbs, key=len, reverse=True)), re.I)
-    bindings: list[dict[str, str]] = []
-    program_reads = _program_read_spans(text)
-    cursor = 0
-    for clause in _request_clauses(text):
-        offset = text.find(clause, cursor)
-        cursor = offset + len(clause)
-        targets = _extract_explicit_targets(clause)
-        # Bracketed Chinese filenames are data, not verbs in the request.
-        targets.extend(match.group(1) for match in re.finditer(r"[《“]([^》”\n]+\.[A-Za-z0-9]{1,8})[》”]", clause))
-        spans = [(clause.find(target), target) for target in dict.fromkeys(targets)]
-        surface = list(clause)
-        for start, target in spans:
-            if start >= 0:
-                surface[start:start + len(target)] = " " * len(target)
-        surface_text = "".join(surface)
-        hits = []
-        for match in pattern.finditer(surface_text):
-            verb = match.group().lower()
-            if verb.isascii() and ((match.start() and surface_text[match.start() - 1].isalnum())
-                                   or (match.end() < len(surface_text) and surface_text[match.end()].isalnum())):
-                continue
-            prefix = surface_text[:match.start()]
-            if _verb_is_object_modifier(verb, _compact(prefix), _compact(surface_text[match.end():])):
-                # Use both sides of this occurrence, just as the request floor
-                # does. A prefix truncated at "交付" loses its following noun
-                # and would steal the target from "创建", leaving a wildcard.
-                continue
-            negated = bool(re.search(r"(?:不要|不得|不许|别|不用|无需|禁止|严禁|不需要|暂不)[^，；。\n]{0,12}$", prefix)
-                           or re.search(r"(?:do\s+not|don't|must\s+not|never|without)\s+(?:\w+\s+){0,2}$", prefix, re.I))
-            # Preserve coordinated prohibitions, but an intervening object
-            # ends their scope ("do not delete a; read b").
-            if not verb.isascii() and not _verb_occurs_affirmatively(_compact(surface_text[:match.end()]), verb):
-                negated = True
-            kind = "program_input" if (offset + match.start(), offset + match.end()) in program_reads else verbs[verb]
-            hits.append((match.start(), match.end(), kind, negated))
-        for start, target in spans:
-            if start < 0:
-                continue
-            before = [hit for hit in hits if hit[1] <= start]
-            after = [hit for hit in hits if hit[0] >= start + len(target)]
-            hit = before[-1] if before else (after[0] if after else None)
-            prefix = clause[:start]
-            file_target = bool(re.search(r"\.[A-Za-z0-9]{1,8}$", target))
-            role, kind = "mentioned", ""
-            if not file_target and re.search(r"(?:工作目录|工作区|目录(?:是|为)?|\bworkspace|\bin)\s*[：:]?\s*$", prefix, re.I):
-                role = "workspace"
-            elif hit is not None:
-                _, _, action_kind, negated = hit
-                # "notes.txt 逐页列出演讲要点" specifies output contents in a
-                # creation request. It does not ask us to read an existing file.
-                # Keep explicit "读取 notes.txt" and read-only lists unchanged.
-                creates_document = any(_verb_occurs_affirmatively(_compact(text), verb)
-                                       for verb in _MUTATION_VERBS + _ARTIFACT_VERBS)
-                describes_output = (not before and action_kind == "observation"
-                    and creates_document and bool(re.match(
-                        r"\s*(?:逐页|按页|分别)?\s*(?:列出|列明|写出|记录)",
-                        clause[start + len(target):])))
-                if describes_output:
-                    action_kind = "effect"
-                if negated:
-                    role = "preserved" if action_kind == "effect" else "mentioned"
-                elif action_kind == "program_input":
-                    role = "input"
-                else:
-                    kind = action_kind
-                    role = {"observation": "input", "effect": "output", "execution": "executable", "delivery": "output"}[kind]
-            elif re.search(r"(?:已有|现有|产物|保留|保持|existing|preserve)", clause, re.I):
-                role = "existing" if re.search(r"产物|输出|结果|deliverable|output", clause, re.I) else "input"
-            bindings.append({"target_path": target, "kind": kind, "role": role, "source_clause": clause})
-    return bindings
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 
 def required_request_outputs(user_text: Any) -> list[str]:
-    """Explicit new or retained deliverables; never infer semantic acceptance."""
-    return list(dict.fromkeys(item["target_path"] for item in request_target_bindings(user_text)
-                             if item["role"] in {"output", "existing"}
-                             and re.search(r"\.[A-Za-z0-9]{1,8}$", item["target_path"])))
-
-
-def _extract_explicit_target(user_text: object) -> str:
-    targets = _extract_explicit_targets(user_text)
-    return targets[0] if targets else ""
-
-
-def _requests_existence_resolution(user_text: object) -> bool:
-    """Whether absence is an explicitly acceptable observation outcome."""
-
-    return bool(_NEGATIVE_EXISTENCE_RE.search(str(user_text or "")))
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 
 # 前端在用户消息后附加的呈现层契约横幅：是给模型的执行纪律说明，
@@ -1191,125 +500,9 @@ def _requests_existence_resolution(user_text: object) -> bool:
 _FRONTEND_CONTRACT_BANNER = "【连续执行契约】"
 
 
-def _user_request_surface(user_text: Any) -> str:
-    """Return only the user's own request, free of injected banners."""
-    text = str(user_text or "")
-    idx = text.find(_FRONTEND_CONTRACT_BANNER)
-    if idx >= 0:
-        text = text[:idx]
-    return text.strip()
-
-
 def build_action_obligations(user_text: Any) -> list[dict[str, Any]]:
-    """Build factual obligations, never a concrete tool plan.
-
-    The Runtime floor is the anti-escape fallback.  The LLM's actual tool call
-    and ToolResult are its execution submission; a self-declared "work" mode is
-    never accepted as proof that anything happened.
-    """
-    text = _user_request_surface(user_text)
-    if runtime_execution_floor(text) != ACT_REQUIRED:
-        return []
-    compact = _compact(text)
-    ambiguous = any(term in compact for term in _AMBIGUOUS_TARGETS)
-    explicit_targets = _extract_explicit_targets(text)
-    bindings = request_target_bindings(text)
-    # A CSV column named sha256 is not an instruction to hash the CSV itself.
-    # Unbound verification stays a generic factual action, not a made-up target.
-    requires_sha256 = bool(re.search(
-        r"(?:计算|给出|返回|提供|compute|calculate|return)[^。；;\n]{0,80}(?:sha\s*[-_]?\s*256|哈希|hash)"
-        r"|(?:sha\s*[-_]?\s*256|哈希|hash)[^。；;\n]{0,12}计算", text, re.I))
-    obligations: list[dict[str, Any]] = []
-    obligation_index = 0
-    fact_kinds = _requested_fact_kinds(text)
-    observation_surface = _agent_observation_surface(text)
-    if "observation" in fact_kinds and "observation" not in _requested_fact_kinds(observation_surface):
-        fact_kinds.remove("observation")
-    if requires_sha256 and "execution" not in fact_kinds:
-        fact_kinds.append("execution")
-    for fact_kind in fact_kinds:
-        use_explicit_target = fact_kind in {"observation", "effect"} or (fact_kind == "execution" and requires_sha256)
-        targets = list(dict.fromkeys(
-            item["target_path"] for item in bindings if item["kind"] == fact_kind
-        )) if use_explicit_target else []
-        # An explicit singular referent may carry into "read it back / hash
-        # it". Never broadcast an unbound action to an inventory of files.
-        if (not targets and use_explicit_target and len(explicit_targets) == 1
-                and fact_kind != "effect"
-                and (re.search(r"读回|重新读取|该文件|这个文件|其|\bit\b", text, re.I)
-                     or (fact_kind == "execution" and requires_sha256))):
-            targets = explicit_targets
-        if not targets:
-            # The existing execution floor remains authoritative when the
-            # object is implicit (including conditional repair instructions).
-            targets = [""]
-        for target in targets:
-            local_request = " ".join(clause for clause in _request_clauses(observation_surface if fact_kind == "observation" else text)
-                                     if fact_kind in _requested_fact_kinds(clause))
-            object_kind = _requested_object_kind(local_request, fact_kind, target)
-            obligation_index += 1
-            obligation = {
-                "id": f"execution:{fact_kind}:{obligation_index}",
-                "kind": fact_kind,
-                "object_kind": object_kind,
-                "floor": ACT_REQUIRED,
-                "status": "needs_clarification" if ambiguous else "pending",
-                "actionable": not ambiguous,
-                "target_path": target,
-                "evidence_policy": "successful_real_tool_result",
-                "source": "current_user_message",
-                "requirement_version": 2,
-            }
-            if fact_kind == "effect" and target:
-                clauses = [item["source_clause"] for item in bindings
-                           if item["target_path"] == target and item["kind"] == "effect"]
-                obligation["target_state"] = "absent" if any(re.search(r"删除|移除|\bdelete\b|\bremove\b", clause, re.I) for clause in clauses) else "present"
-            if fact_kind == "execution" and requires_sha256:
-                obligation["evidence_predicate"] = "sha256_digest"
-                if "effect" in fact_kinds:
-                    obligation["requires_prior_kind"] = "effect"
-            elif fact_kind == "execution" and re.search(r"单元测试|\bpytest\b|\bunittest\b", text, re.I):
-                obligation["evidence_predicate"] = "tests_passed"
-                obligation["evidence_dependency_paths"] = list(dict.fromkeys(
-                    item["target_path"] for item in bindings
-                    if item["role"] == "input" or re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", item["target_path"], re.I)
-                ))
-                count_match = re.search(r"([一二三四五六七八九十\d]+)\s*(?:项|个)?\s*(?:单元)?测试", text)
-                if count_match:
-                    count = count_match.group(1)
-                    obligation["minimum_test_count"] = int(count) if count.isdigit() else {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}.get(count, 1)
-            elif fact_kind == "execution" and (
-                _has_affirmative(_compact(text), _RUN_EXECUTION_VERBS)
-                or re.search(r"\b(?:run|execute|start|compile|build)\b", text, re.I)
-            ):
-                obligation["evidence_predicate"] = "command_execution"
-            elif (
-                fact_kind == "observation"
-                and object_kind == "file"
-                and _requests_existence_resolution(text)
-            ):
-                # A verified absence is a real observation, not a failed read.
-                # The predicate binds the query pattern and directory to the
-                # requested file before accepting either exists=True or False.
-                obligation["evidence_predicate"] = "existence_resolved"
-            obligations.append(obligation)
-    if any(item.get("evidence_predicate") == "tests_passed" for item in obligations) and re.search(
-        r"测试.{0,8}(?:和|及|与|并).{0,5}(?:脚本|程序)|(?:脚本|程序).{0,8}(?:和|及|与).{0,5}(?:单元)?测试", text,
-    ):
-        obligation_index += 1
-        obligations.append({
-            "id": f"execution:execution:{obligation_index}", "kind": "execution", "object_kind": "",
-            "floor": ACT_REQUIRED, "status": "pending", "actionable": True, "target_path": "",
-            "evidence_policy": "successful_real_tool_result", "source": "current_user_message",
-            "requirement_version": 2, "evidence_predicate": "program_execution",
-            "evidence_dependency_paths": list(dict.fromkeys(item["target_path"] for item in bindings
-                if item["role"] == "input" or (re.search(r"\.(?:py|js|mjs|ts|tsx|jsx|java|c|cc|cpp|h|go|rs|cs)$", item["target_path"], re.I)
-                    and not _is_test_script_path(item["target_path"])))),
-        })
-    for obligation in obligations:
-        if obligation.get("kind") == "delivery":
-            obligation["delivery_mode"] = "local_artifact" if _local_artifact_delivery(text) else "external"
-    return obligations
+    """Compatibility API: natural-language interpretation belongs to the model."""
+    return []
 
 
 def _normalize_path(value: Any) -> str:
@@ -1816,15 +1009,40 @@ def _payload_has_evidence_predicate(
     return False
 
 
+def _local_delivery_artifact_paths(payload: dict[str, Any]) -> list[str]:
+    """Read output locations from the host receipt, never from code or stdout."""
+    contract = _contract(payload)
+    evidence = contract.get("write_evidence")
+    if not isinstance(evidence, dict) or evidence.get("authoritative") is not True:
+        return [path for path in contract.get("paths") or [] if isinstance(path, str) and path.strip()]
+    candidates = list(evidence.get("changed_files") or []) + list(evidence.get("verified_unchanged_files") or [])
+    removed = {_normalize_path(path) for path in evidence.get("deleted_files") or [] if isinstance(path, str)}
+    for row in evidence.get("post") or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("exists") is False:
+            removed.add(_normalize_path(row.get("path")))
+        elif row.get("exists") is True:
+            candidates.append(row)
+    paths = [item.get("path") if isinstance(item, dict) else item for item in candidates]
+    return [path for path in paths if isinstance(path, str) and path.strip() and _normalize_path(path) not in removed]
+
+
 def _successful_fact(payload: Any, obligation: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
     required_kind = str(obligation.get("kind") or "action").strip().lower() or "action"
     if (required_kind == "delivery" and obligation.get("delivery_mode") == "local_artifact"
             and "delivery" not in _payload_fact_kinds(payload)):
-        # A successful local mutation must still carry artifact paths. The
-        # final delivery gate reopens/checks those artifacts before completion.
-        if not _contract(payload).get("paths"):
+        # Inline execution may have no tool target/contract.paths while the
+        # sandbox receipt proves which output files were committed. The final
+        # delivery gate still reopens/checks the requested artifacts.
+        paths = _local_delivery_artifact_paths(payload)
+        expected = _normalize_path(obligation.get("target_path"))
+        if not paths or (expected and not any(
+            _normalize_path(path) == expected or _normalize_path(path).endswith("/" + expected)
+            for path in paths
+        )):
             return False
         required_kind = "effect"
     required_action = str(obligation.get("required_action") or "").strip().lower()
@@ -1872,7 +1090,19 @@ def _bind_submission_evidence(obligation: dict[str, Any], payload: dict[str, Any
             values = value if isinstance(value, list) else [value]
             for item in values:
                 if isinstance(item, str):
-                    dependencies.extend(_extract_explicit_targets(item))
+                    # argv elements are structured arguments; command text uses
+                    # shell token syntax, never the deleted prose path classifier.
+                    if isinstance(value, list):
+                        tokens = [item]
+                    else:
+                        try:
+                            tokens = shlex.split(item, posix=False)
+                        except ValueError:
+                            tokens = []
+                    for token in tokens:
+                        token = token.strip('"\'')
+                        if token and not token.startswith("-") and ("/" in token or "\\" in token or Path(token).suffix):
+                            dependencies.append(token)
     obligation["evidence_submission_paths"] = list(dict.fromkeys(dependencies))
 
 
@@ -2045,8 +1275,6 @@ def execution_integrity_blockers(
     for obligation in active_obligations:
         if not obligation_is_satisfied(obligation, quality_history):
             blockers.append(f"execution_obligation:{obligation.get('kind')}:missing_evidence")
-    if blockers and has_execution_completion_claim(final_reply):
-        blockers.append("execution_claim_without_evidence")
     return blockers
 
 
@@ -2157,7 +1385,7 @@ def build_task_contract_obligations(contract: Any) -> list[dict[str, Any]]:
         for key in ("requirement_version", "minimum_test_count"):
             if type(fact.get(key)) is int:
                 obligation[key] = fact[key]
-        for key in ("target_state", "evidence_dependency_paths"):
+        for key in ("target_state", "evidence_dependency_paths", "delivery_mode"):
             if key in fact:
                 obligation[key] = fact[key]
         obligations.append(obligation)
@@ -2239,6 +1467,7 @@ def update_task_contract_evidence(
                 "target_path": fact.get("target_path"),
                 "actionable": fact.get("actionable", True),
                 "evidence_predicate": fact.get("evidence_predicate"),
+                "delivery_mode": fact.get("delivery_mode"),
             }
             prior_kind = str(fact.get("requires_prior_kind") or "").strip().lower()
             prior_round_ok = not prior_kind or any(
@@ -2391,7 +1620,7 @@ def decide_task_contract_completion(
     satisfied = [item for item in desired if item.get("status") == "satisfied"]
     pending = [item for item in desired if item.get("status") != "satisfied"]
     signals = [str(item) for item in updated.get("stability_signals") or [] if str(item).strip()]
-    required_stability = int(updated.get("required_stability") or _required_stability(updated.get("effective_level")))
+    required_stability = 0
     reply_text = str(final_reply or "").strip()
 
     if reasons:
@@ -2504,3 +1733,8 @@ def transition_task_contract_terminal(contract: Any, status: Any, reasons: Any =
         _transition_task_phase(updated, "BLOCKED", reason_text or terminal)
     _refresh_task_contract_hash(updated)
     return updated
+
+
+def _local_artifact_delivery(text: str) -> bool:
+    """Retired prose classifier; the model selects deliveries."""
+    return False

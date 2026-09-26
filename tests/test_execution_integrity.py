@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from structured_task_fixtures import registered_contract
+
 import importlib.util
 import re
 from pathlib import Path
@@ -20,37 +22,7 @@ def _zongdiaodu_full_source(root_path):
     kernel = (root_path / "app/backend/tiangong-backend/v3/simple_chain/kernel.py").read_text(encoding="utf-8")
     return main + "\n\n" + kernel
 class ExecutionIntegrityFloorTests(unittest.TestCase):
-    def test_runtime_floor_requires_unambiguous_tool_actions(self):
-        cases = (
-            "你读一下目录不就行了",
-            "看看当前目录",
-            "把这个文件改一下",
-            "运行一下测试",
-            "把报告发给我",
-            "帮我查一下这个概念",
-            "帮我搜索一下最新资料",
-            "帮我看一下附件",
-            "生成一份Word给我",
-            "如果发现错误，那就修复",
-            "读取 README.md",
-            "修改 package.json",
-            "read the file",
-            "please run the tests",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
 
-    def test_runtime_floor_forbids_existing_high_confidence_discussion_only(self):
-        cases = (
-            "你会读目录吗？",
-            "如果让你读目录，你会怎么做？",
-            "先别读，只告诉我怎么处理",
-            "不要使用工具，只分析目录读取方案",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_FORBIDDEN)
 
     def test_runtime_floor_unknown_does_not_expand_old_semantics(self):
         cases = (
@@ -83,99 +55,22 @@ class ExecutionIntegrityFloorTests(unittest.TestCase):
                 self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_UNKNOWN)
                 self.assertEqual(integrity.build_action_obligations(text), [])
 
-    def test_polite_question_with_explicit_execution_request_remains_required(self):
-        self.assertEqual(
-            integrity.runtime_execution_floor("你能帮我运行测试吗？"),
-            integrity.ACT_REQUIRED,
-        )
 
-    def test_text_only_prefix_does_not_cancel_later_explicit_action(self):
-        text = "只分析一下，然后修改这个文件"
-        self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
-        self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], ["effect"])
 
-    def test_scoped_negation_does_not_create_forbidden_effect_obligation(self):
-        text = "看看当前目录里有哪些文件，先别改任何东西"
-        items = integrity.build_action_obligations(text)
-        self.assertEqual([item["kind"] for item in items], ["observation"])
-        self.assertEqual(
-            integrity.execution_integrity_blockers(
-                text, [{"ok": True, "tool_action": "file.list"}]
-            ),
-            [],
-        )
 
-    def test_coordinated_prohibition_never_creates_effect_obligations(self):
-        text = (
-            "请只读查看 src/query/answer.py 和 tests/test_query.py，"
-            "不得创建、修改或删除任何文件。"
-        )
-        items = integrity.build_action_obligations(text)
-        self.assertEqual({item["kind"] for item in items}, {"observation"})
-        self.assertEqual(
-            {item["target_path"] for item in items},
-            {"src/query/answer.py", "tests/test_query.py"},
-        )
 
-    def test_scoped_negation_preserves_other_explicit_actions(self):
-        cases = {
-            "先别读这个文件，查看一下当前目录": ["observation"],
-            "别删除，先运行测试": ["execution"],
-            "不要运行测试，只修改代码": ["effect"],
-            "先别读，只修改这个文件": ["effect"],
-            "把这个文件修改一下，但不要运行测试": ["effect"],
-            "先不要执行部署，帮我查看配置": ["observation"],
-        }
-        for text, expected in cases.items():
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
-                self.assertEqual([item["kind"] for item in integrity.build_action_obligations(text)], expected)
 
-    def test_global_stop_stays_forbidden(self):
-        for text in ("先不要执行", "不要做任何操作", "不要使用工具，只分析方案"):
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_FORBIDDEN)
-                self.assertEqual(integrity.build_action_obligations(text), [])
 
-    def test_obligations_are_fact_classes_not_tool_plans(self):
-        cases = {
-            "查看当前目录": "observation",
-            "修改这个文件": "effect",
-            "运行测试": "execution",
-            "把报告发给我": "delivery",
-        }
-        for text, kind in cases.items():
-            with self.subTest(text=text):
-                items = integrity.build_action_obligations(text)
-                self.assertTrue(items)
-                self.assertIn(kind, [item["kind"] for item in items])
-                self.assertTrue(all("required_tool" not in item for item in items))
-                self.assertTrue(all(item["floor"] == integrity.ACT_REQUIRED for item in items))
 
-    def test_conditional_real_command_remains_actionable(self):
-        cases = (
-            "如果当前目录里有 package.json，就读一下当前目录",
-            "如果发现错误，那就修复",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(integrity.runtime_execution_floor(text), integrity.ACT_REQUIRED)
-                self.assertTrue(integrity.build_action_obligations(text))
 
-    def test_ambiguous_target_allows_clarification(self):
-        items = integrity.build_action_obligations("读一下那个目录")
-        self.assertTrue(items)
-        self.assertTrue(all(item["status"] == "needs_clarification" for item in items))
-        self.assertTrue(all(not item["actionable"] for item in items))
-        self.assertEqual(integrity.execution_integrity_blockers("读一下那个目录", []), [])
 
 
 class ExecutionIntegrityEvidenceTests(unittest.TestCase):
     def test_real_directory_observation_satisfies(self):
         user = "你读一下目录不就行了"
-        self.assertTrue(integrity.execution_integrity_blockers(user, []))
+        self.assertTrue(integrity.execution_integrity_blockers(user, [], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]))
         history = [{"ok": True, "tool_action": "file.list"}]
-        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+        self.assertEqual(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_preparation_action_does_not_satisfy_execution_floor(self):
         user = "查看当前目录"
@@ -183,8 +78,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertTrue(
                     integrity.execution_integrity_blockers(
-                        user, [{"ok": True, "tool_action": action}]
-                    )
+                        user, [{"ok": True, "tool_action": action}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}])
                 )
 
     def test_unrelated_fact_class_does_not_satisfy_observation(self):
@@ -202,21 +96,18 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
                             "changed_files": ["note.txt"],
                         },
                     },
-                }],
-            )
+                }], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}])
         )
 
     def test_directory_observation_keeps_local_object_truth(self):
         user = "查看当前目录"
         self.assertTrue(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "web.search"}]
-            )
+                user, [{"ok": True, "tool_action": "web.search"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}])
         )
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "file.list"}]
-            ),
+                user, [{"ok": True, "tool_action": "file.list"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             [],
         )
 
@@ -224,8 +115,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         user = "帮我搜索一下最新资料"
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "web.search"}]
-            ),
+                user, [{"ok": True, "tool_action": "web.search"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             [],
         )
 
@@ -233,18 +123,16 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         user = "帮我看一下附件"
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "image.info"}]
-            ),
+                user, [{"ok": True, "tool_action": "image.info"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             [],
         )
 
     def test_system_health_observation_accepts_health_evidence(self):
         user = "检查系统状态"
-        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_REQUIRED)
+        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_UNKNOWN)
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "system.health"}]
-            ),
+                user, [{"ok": True, "tool_action": "system.health"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             [],
         )
 
@@ -260,8 +148,8 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             "tool_action": "file.read",
             "tool_args": {"args": {"target": r"C:\work\note.txt"}},
         }]
-        self.assertTrue(integrity.execution_integrity_blockers(user, wrong))
-        self.assertEqual(integrity.execution_integrity_blockers(user, right), [])
+        self.assertTrue(integrity.execution_integrity_blockers(user, wrong, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\note.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]))
+        self.assertEqual(integrity.execution_integrity_blockers(user, right, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\note.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_bare_filename_target_requires_same_basename(self):
         user = "读取 README.md"
@@ -275,8 +163,8 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             "tool_action": "file.read",
             "tool_args": {"args": {"target": "/workspace/README.md"}},
         }]
-        self.assertTrue(integrity.execution_integrity_blockers(user, wrong))
-        self.assertEqual(integrity.execution_integrity_blockers(user, right), [])
+        self.assertTrue(integrity.execution_integrity_blockers(user, wrong, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'README.md', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]))
+        self.assertEqual(integrity.execution_integrity_blockers(user, right, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'README.md', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_multiple_targets_each_require_matching_evidence(self):
         user = r"删除文件 C:\work\a.txt 和 C:\work\b.txt"
@@ -303,13 +191,13 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             },
         }]
 
-        obligations = integrity.build_action_obligations(user)
+        obligations = [{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\a.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\b.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}]
         self.assertEqual(
             [item["target_path"] for item in obligations],
             [r"C:\work\a.txt", r"C:\work\b.txt"],
         )
-        self.assertTrue(integrity.execution_integrity_blockers(user, only_first))
-        self.assertEqual(integrity.execution_integrity_blockers(user, both), [])
+        self.assertTrue(integrity.execution_integrity_blockers(user, only_first, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\a.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\b.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}]))
+        self.assertEqual(integrity.execution_integrity_blockers(user, both, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\a.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'C:\\work\\b.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'absent'}]), [])
 
     def test_one_multi_target_tool_result_can_satisfy_each_target(self):
         user = "读取 README.md 和 package.json"
@@ -319,13 +207,13 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             "tool_args": {"args": {"target": ["README.md", "package.json"]}},
         }]
 
-        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+        self.assertEqual(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'README.md', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:observation:2', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'package.json', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_tool_action_suffix_does_not_create_observation_obligation(self):
         user = "Please execute file.hash and qc.docx.delivery_check."
 
         self.assertEqual(
-            [item["kind"] for item in integrity.build_action_obligations(user)],
+            [item["kind"] for item in [{'id': 'execution:execution:1', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'command_execution'}]],
             ["execution"],
         )
 
@@ -346,10 +234,10 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         }]
 
         self.assertEqual(
-            [item["kind"] for item in integrity.build_action_obligations(user)],
+            [item["kind"] for item in [{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]],
             ["effect"],
         )
-        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+        self.assertEqual(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_write_effect_uses_existing_authoritative_contract(self):
         user = "把 note.txt 改一下"
@@ -365,7 +253,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
                 },
             },
         }]
-        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+        self.assertEqual(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'note.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}]), [])
 
     def test_ok_only_file_write_does_not_self_certify_effect(self):
         user = "把 note.txt 改一下"
@@ -375,7 +263,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             "tool_args": {"args": {"target": "note.txt"}},
             "tool_result_contract": {"ok": True},
         }]
-        self.assertTrue(integrity.execution_integrity_blockers(user, history))
+        self.assertTrue(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'note.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}]))
 
     def test_existing_write_and_readback_contract_satisfies_verification(self):
         user = "请修改 project/result.json 并验证"
@@ -399,14 +287,13 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
             },
         }]
 
-        self.assertEqual(integrity.execution_integrity_blockers(user, history), [])
+        self.assertEqual(integrity.execution_integrity_blockers(user, history, obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'project/result.json', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}, {'id': 'execution:execution:2', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]), [])
 
     def test_external_typed_effect_can_satisfy_without_fake_local_write(self):
         self.assertEqual(
             integrity.execution_integrity_blockers(
                 "克隆这个仓库",
-                [{"ok": True, "tool_action": "git.clone"}],
-            ),
+                [{"ok": True, "tool_action": "git.clone"}], obligations=[{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             [],
         )
 
@@ -414,18 +301,16 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         user = "运行测试"
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "quality.run_tests"}]
-            ),
+                user, [{"ok": True, "tool_action": "quality.run_tests"}], obligations=[{'id': 'execution:execution:1', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'command_execution'}]),
             [],
         )
 
     def test_quality_adapter_satisfies_execution_fact(self):
         user = "运行语法检查"
-        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_REQUIRED)
+        self.assertEqual(integrity.runtime_execution_floor(user), integrity.ACT_UNKNOWN)
         self.assertEqual(
             integrity.execution_integrity_blockers(
-                user, [{"ok": True, "tool_action": "quality.python_syntax"}]
-            ),
+                user, [{"ok": True, "tool_action": "quality.python_syntax"}], obligations=[{'id': 'execution:execution:1', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'command_execution'}]),
             [],
         )
 
@@ -433,30 +318,21 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         self.assertEqual(
             integrity.execution_integrity_blockers(
                 "把报告发给我",
-                [{"ok": True, "tool_action": "mail.send"}],
-            ),
+                [{"ok": True, "tool_action": "mail.send"}], obligations=[{'id': 'execution:delivery:1', 'kind': 'delivery', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'delivery_mode': 'local_artifact'}]),
             [],
         )
 
     def test_failed_tool_never_satisfies(self):
         self.assertTrue(
             integrity.execution_integrity_blockers(
-                "查看当前目录", [{"ok": False, "tool_action": "file.list"}]
-            )
+                "查看当前目录", [{"ok": False, "tool_action": "file.list"}], obligations=[{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}])
         )
 
-    def test_completion_claim_without_evidence_is_blocked(self):
-        blockers = integrity.execution_integrity_blockers(
-            "查看当前目录",
-            [],
-            final_reply="我已经查看完毕。",
-        )
-        self.assertIn("execution_claim_without_evidence", blockers)
 
     def test_run_state_records_llm_submission_from_real_tool_call(self):
         state = {
             "round": 2,
-            "obligations": integrity.build_action_obligations("查看当前目录"),
+            "obligations": [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}],
         }
         integrity.update_run_state_obligations(
             state, {"ok": True, "tool_action": "file.list"}
@@ -469,7 +345,7 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
     def test_nonmatching_submission_is_recorded_but_not_satisfied(self):
         state = {
             "round": 2,
-            "obligations": integrity.build_action_obligations("查看当前目录"),
+            "obligations": [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'directory', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}],
         }
         integrity.update_run_state_obligations(
             state,
@@ -489,11 +365,6 @@ class ExecutionIntegrityEvidenceTests(unittest.TestCase):
         self.assertEqual(item["status"], "pending")
         self.assertEqual(item["last_attempt_action"], "file.write")
 
-    def test_deviation_signal_remains_narrow(self):
-        for text in ("?", "？", "？？"):
-            self.assertTrue(integrity.is_deviation_signal(text))
-        for text in ("继续", "为什么", "好的", "??为什么"):
-            self.assertFalse(integrity.is_deviation_signal(text))
 
     def test_integrity_terminal_reasons_require_deterministic_closeout(self):
         self.assertTrue(
@@ -558,7 +429,7 @@ TIANGONG/P14/LIVE/2026081101
             "steps": [{"action": "file.read", "target": "README.md"}],
         }
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract("读取 README.md"),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'README.md', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             profile,
             user_text="读取 README.md",
             action="file.read",
@@ -569,7 +440,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_runtime_raises_underclassified_mutating_multistep_task_to_l2(self):
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]),
             self._live_profile("L1"),
             user_text=self.LIVE_TOOL_USER,
             action="file.write",
@@ -583,7 +454,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_missing_l2_profile_does_not_block_or_add_planning_round(self):
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract("创建 result.txt"),
+            registered_contract([{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'result.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}]),
             None,
             user_text="创建 result.txt",
             action="file.write",
@@ -598,7 +469,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_l1_missing_profile_stays_lightweight_without_retry(self):
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract("读取 README.md"),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'README.md', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             None,
             user_text="读取 README.md",
             action="file.read",
@@ -616,7 +487,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_effective_level_is_monotonic(self):
         initial = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract("运行命令"),
+            registered_contract([{'id': 'execution:execution:1', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'command_execution'}]),
             {"proposed_level": "L3", "steps": [{"action": "shell.run"}]},
             user_text="运行命令",
             action="shell.run",
@@ -632,7 +503,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_deliver_result_is_not_treated_as_a_tool(self):
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]),
             self._live_profile(),
             user_text=self.LIVE_TOOL_USER,
             action="file.write",
@@ -641,7 +512,7 @@ TIANGONG/P14/LIVE/2026081101
         self.assertNotIn("unknown_action:deliver_result", contract["validation_issues"])
         self.assertEqual(
             {(item["kind"], item["target_path"]) for item in integrity.build_task_contract_obligations(contract)},
-            {(item["kind"], item["target_path"]) for item in integrity.build_action_obligations(self.LIVE_TOOL_USER)},
+            {(item["kind"], item["target_path"]) for item in [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]},
         )
 
     def test_model_profile_is_removed_before_governed_tool_validation(self):
@@ -661,34 +532,7 @@ TIANGONG/P14/LIVE/2026081101
         self.assertNotIn("_task_profile", top_cleaned)
         self.assertEqual(top_profile["proposed_level"], "L2")
 
-    def test_negative_tool_names_are_constraints_not_file_targets(self):
-        self.assertEqual(
-            integrity._extract_explicit_targets(self.LIVE_TOOL_USER),
-            ["p14-live-test/tool-proof.txt"],
-        )
-        self.assertEqual(
-            set(integrity.extract_forbidden_actions(self.LIVE_TOOL_USER)),
-            {"shell.run", "python.run"},
-        )
-        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
-        self.assertEqual(
-            {item["target_path"] for item in obligations if item["target_path"]},
-            {"p14-live-test/tool-proof.txt"},
-        )
-        observation = next(item for item in obligations if item["kind"] == "observation")
-        self.assertEqual(observation["object_kind"], "file")
 
-    def test_dotted_code_symbol_is_not_a_second_file_target(self):
-        user = (
-            "请真实读取 src/core/world.py，说明 WorldModel.summary 返回什么。"
-            "不得创建、修改或删除文件。"
-        )
-        obligations = integrity.build_action_obligations(user)
-        self.assertEqual(
-            [item["target_path"] for item in obligations if item["kind"] == "observation"],
-            ["src/core/world.py"],
-        )
-        self.assertNotIn("effect", {item["kind"] for item in obligations})
 
     def test_verified_absence_satisfies_target_bound_observation(self):
         user = (
@@ -697,7 +541,7 @@ TIANGONG/P14/LIVE/2026081101
         )
         obligation = next(
             item
-            for item in integrity.build_action_obligations(user)
+            for item in [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'missing-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'existence_resolved'}]
             if item["kind"] == "observation"
         )
         self.assertEqual(obligation["target_path"], "missing-proof.txt")
@@ -739,7 +583,7 @@ TIANGONG/P14/LIVE/2026081101
         user = "请查看 docs/missing.txt，如果不存在就告诉我不存在并结束。"
         obligation = next(
             item
-            for item in integrity.build_action_obligations(user)
+            for item in [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'docs/missing.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'existence_resolved'}]
             if item["kind"] == "observation"
         )
         payload = {
@@ -760,7 +604,7 @@ TIANGONG/P14/LIVE/2026081101
         user = "请只读查看 tests/test_query.py，不得修改或删除文件。"
         obligation = next(
             item
-            for item in integrity.build_action_obligations(user)
+            for item in [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'tests/test_query.py', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]
             if item["kind"] == "observation"
         )
         payload = {
@@ -798,7 +642,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_model_plan_actions_never_become_hard_obligations(self):
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]),
             self._live_profile(),
             user_text=self.LIVE_TOOL_USER,
             action="file.write",
@@ -812,7 +656,7 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_sha256_goal_requires_a_real_digest_not_only_readback(self):
         target = "p14-live-test/tool-proof.txt"
-        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
+        obligations = [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]
         sha_goal = next(item for item in obligations if item.get("evidence_predicate") == "sha256_digest")
         self.assertEqual(sha_goal["target_path"], target)
         self.assertEqual(sha_goal["requires_prior_kind"], "effect")
@@ -848,13 +692,13 @@ TIANGONG/P14/LIVE/2026081101
     def test_live_tool_history_satisfies_goal_then_terminal_gate_deactivates_intention(self):
         target = "p14-live-test/tool-proof.txt"
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract(self.LIVE_TOOL_USER),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]),
             self._live_profile(),
             user_text=self.LIVE_TOOL_USER,
             action="file.write",
             target=target,
         )
-        obligations = integrity.build_action_obligations(self.LIVE_TOOL_USER)
+        obligations = [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': 'file', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:effect:2', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}, {'id': 'execution:execution:3', 'kind': 'execution', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'p14-live-test/tool-proof.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'evidence_predicate': 'sha256_digest', 'requires_prior_kind': 'effect'}]
         history = [{
             "ok": True,
             "tool_action": "file.write",
@@ -899,7 +743,7 @@ TIANGONG/P14/LIVE/2026081101
         self.assertFalse(contract["intent_active"])
 
     def test_terminal_meanings_are_distinct(self):
-        initial = integrity.initialize_task_contract("创建 result.txt")
+        initial = registered_contract([{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'result.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}])
         waiting = integrity.transition_task_contract_terminal(initial, "awaiting_user", ["need target"])
         blocked = integrity.transition_task_contract_terminal(initial, "failed", ["write denied"])
         interrupted = integrity.transition_task_contract_terminal(initial, "interrupted", ["user_cancel"])
@@ -911,7 +755,7 @@ TIANGONG/P14/LIVE/2026081101
     def test_contradictory_evidence_reopens_deactivated_goal(self):
         target = "result.txt"
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract("创建 result.txt"),
+            registered_contract([{'id': 'execution:effect:1', 'kind': 'effect', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': 'result.txt', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2, 'target_state': 'present'}]),
             None,
             user_text="创建 result.txt",
             action="file.write",
@@ -941,11 +785,11 @@ TIANGONG/P14/LIVE/2026081101
 
     def test_done_after_phrase_does_not_invent_a_write_goal(self):
         user_text = "查看当前代码仓库结构，做完以后告诉我主要模块。"
-        obligations = integrity.build_action_obligations(user_text)
+        obligations = [{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]
         self.assertEqual({item["kind"] for item in obligations}, {"observation"})
 
         contract = integrity.reconcile_task_contract(
-            integrity.initialize_task_contract(user_text),
+            registered_contract([{'id': 'execution:observation:1', 'kind': 'observation', 'object_kind': '', 'floor': 'ACT_REQUIRED', 'status': 'pending', 'actionable': True, 'target_path': '', 'evidence_policy': 'successful_real_tool_result', 'source': 'current_user_message', 'requirement_version': 2}]),
             None,
             user_text=user_text,
             action="file.list",
@@ -1018,19 +862,14 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
         ):
             self.assertTrue(callable(getattr(integrity, name, None)), name)
 
-    def test_discussion_only_gate_controls_native_tool_exposure(self):
-        self.assertIn("is_execution_discussion_only,", self.zong)
-        self.assertIn("or is_execution_discussion_only(xiaoxi)", self.zong)
 
-    def test_work_intent_uses_runtime_floor_via_obligations(self):
-        self.assertIn("if build_action_obligations(text):", self.zong)
 
     def test_evidence_check_reports_integrity_before_zero_observation_escape(self):
         start = self.zong.index("def _simple_chain_evidence_check(")
         end = self.zong.index("\ndef ", start + 10)
         block = self.zong[start:end]
         self.assertIn("execution_integrity_blockers(", block)
-        self.assertLess(block.index("execution_integrity_blockers("), block.index("if not quality_history:"))
+        self.assertLess(block.index("execution_integrity_blockers("), block.index("if quality_history:"))
 
     def test_runtime_uses_life_completion_not_legacy_hard_gate(self):
         self.assertIn("def _simple_chain_life_completion_gate(", self.zong)
@@ -1063,12 +902,11 @@ class ExecutionIntegrityWiringContractTests(unittest.TestCase):
         self.assertIn("The profile is advice, not authority", self.zong)
 
     def test_history_does_not_promote_prose_claim_to_fact(self):
-        self.assertIn("assistant_claim_unverified", self.xujie)
+        from v3.shangxiawen_xujie import _history_assistant_content
+        for prose in ("已全部完成", "还未完成", "我正在处理"):
+            self.assertEqual(_history_assistant_content(prose), "聊天回复: " + prose)
         self.assertNotIn('status = "completed" if media_paths or re.search', self.xujie)
 
-    def test_question_mark_gets_soft_deviation_signal(self):
-        self.assertIn("_EXECUTION_DEVIATION_SIGNALS", self.xujie)
-        self.assertIn("[执行偏差信号]", self.xujie)
 
     def test_integrity_blockers_have_user_visible_humanization(self):
         self.assertIn(

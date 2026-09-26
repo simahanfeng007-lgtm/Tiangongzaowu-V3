@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
+from .model_context_cache import apply_append_context
 from .model_transport_contract import (
     StreamState,
     TransportRequest,
@@ -14,6 +15,7 @@ from .model_transport_contract import (
     extract_native_roundtrip_context,
     extract_native_roundtrip_history,
     json_output,
+    prepare_context_tail,
 )
 from .model_transport_openai_chat import _legacy_wire
 
@@ -81,15 +83,19 @@ class AnthropicMessagesTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         canonical = dict(canonical_payload)
+        transaction = canonical.pop("__append_context", None)
         observations_compacted = canonical.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(canonical, endpoint)
         source_messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
+        source_messages, context_tail, cache_ordered = prepare_context_tail(canonical, source_messages, history)
         if history:
             source_messages = drop_last_role_messages(source_messages, role="assistant",
-                count=len(history[0].results) if len(history) == 1 and not observations_compacted else 0)
+                count=len(history[0].results) if len(history) == 1 and not observations_compacted and not cache_ordered else 0)
         system, messages = self._convert_messages(source_messages)
 
+        prefix, groups = list(messages), []
         for native in history:
+            group_start = len(messages)
             opaque = native.turn.provider_continuation_state.opaque_payload
             opaque = opaque if isinstance(opaque, Mapping) else {}
             replay_blocks = opaque.get("assistant_content_blocks") if isinstance(opaque.get("assistant_content_blocks"), list) else []
@@ -107,6 +113,11 @@ class AnthropicMessagesTransport:
                     ],
                 })
 
+            groups.append(messages[group_start:])
+
+        tail_system, tail_messages = self._convert_messages(context_tail)
+        system = "\n\n".join(x for x in (system, tail_system) if x)
+        messages.extend(tail_messages)
         payload: dict[str, Any] = {
             "model": endpoint.model_name or str(canonical.get("model") or ""),
             "messages": messages,
@@ -133,6 +144,7 @@ class AnthropicMessagesTransport:
             # Only provider-native looking controls are forwarded. Private
             # reasoning text is never converted into an Anthropic content block.
             payload["thinking"] = dict(thinking)
+        apply_append_context(transaction, endpoint, payload, "messages", prefix, groups, tail_messages)
         return TransportRequest(self.build_url(endpoint), self.build_headers(endpoint, api_key), payload, self.protocol_family)
 
     def consume_stream_event(self, state: StreamState, event: Mapping[str, Any]) -> tuple[str, str]:

@@ -76,10 +76,10 @@ class ContextAttachmentRegressionTests(unittest.TestCase):
                 envelope = bridge._build_context_envelope(context, context["current_user_message"])
             self.assertEqual(envelope["run_state"], {})
             checkpoint = envelope["recovery_checkpoint"]
-            self.assertEqual(checkpoint["previous_request_id"], "req_previous")
+            self.assertEqual(checkpoint, {})
             rendered = bridge._render_context_envelope(envelope)
-            self.assertIn("[TIANGONG_RECOVERY_CHECKPOINT_V1]", rendered)
-            self.assertIn("omni_body:abc", rendered)
+            self.assertNotIn("[TIANGONG_RECOVERY_CHECKPOINT_V1]", rendered)
+            self.assertNotIn("omni_body:abc", rendered)
 
     def test_unrelated_new_request_does_not_inherit_failed_recovery(self) -> None:
         bridge = importlib.import_module("v3.duihua_qiaojie")

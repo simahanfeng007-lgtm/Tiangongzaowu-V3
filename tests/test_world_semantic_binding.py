@@ -26,6 +26,34 @@ def endpoint(model="mimo-v2.6-pro"):
         optimization_family="mimo", config_fingerprint=model)
 
 
+def test_truncated_judge_response_keeps_usage_and_bounded_budget(monkeypatch):
+    from v3.jineng import http_kehuduan as http
+    from v3.jineng.model_transport_executor import TransportExecutionError
+    from v3.endpoint_security import EndpointBinding
+    pinned, traces, sent = endpoint(), [], []
+    usage = {"prompt_tokens": 20000, "completion_tokens": 16384, "prompt_cache_hit_tokens": 512}
+    monkeypatch.setattr(http, "duqu_endpoint_api_miyao", lambda *a: "fixture")
+    monkeypatch.setattr(http, "_jilu_l4_youhua_zhuizong", lambda *a, **kw: traces.append(kw))
+    monkeypatch.setattr(http, "validate_model_endpoint", lambda *a, **kw: EndpointBinding(
+        provider_id="mimo", base_url=pinned.base_url, origin="https://example.test", host="example.test",
+        port=443, official=False, custom_scope="test", resolved_ips=("203.0.113.10",)))
+    def execute(**kw):
+        sent.append(kw["canonical_payload"])
+        raise TransportExecutionError("model_output_truncated", "https://example.test/v1",
+            error_code="output_truncated", response_metrics={"attempts": [{"usage": usage}]})
+    monkeypatch.setattr(http, "execute_streaming_turn", execute)
+    client = http.HttpKehuduan()
+    try:
+        with client.scoped_call_context("judge"), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=16384):
+            result = client.llm_diaoyong("judge", "evidence")
+    finally:
+        client.guanbi()
+    assert sent[0]["max_tokens"] == 16384
+    assert result.stop_semantics == "output_truncated" and result.usage == usage
+    assert result.stream_metadata["attempts"][0]["usage"] == usage
+    assert traces[-1]["usage"] == usage and traces[-1]["api_status"] == "output_truncated"
+
+
 def bundle():
     return build_semantic_input(scope=scope(), known_records=(known("GIT_OBSERVED", "repo", "source", native="one"),))
 
@@ -202,12 +230,17 @@ def test_dispatcher_auto_binds_production_and_fact_commit_survives_model_failure
     assert bool(snapshots[0].active_hypotheses) == (expected_status == "COMPLETED")
 
 
-@pytest.mark.parametrize("provider", ["mimo", "deepseek", "deepseek_v4"])
+@pytest.mark.parametrize("provider,model_name", [
+    ("mimo", "mimo-v2.6-pro"), ("deepseek", "deepseek-flash"),
+    ("deepseek_v4", "deepseek-flash"), ("deepseek_v4", "deepseek-chat"),
+    ("deepseek", "deepseek-reasoner"),
+])
 @pytest.mark.parametrize("protocol_family,output_limit", [
     ("openai_chat_completions", 768), ("openai_responses", 768),
     ("anthropic_messages", 2048), ("anthropic_messages", 768),
 ])
-def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider):
+@pytest.mark.parametrize('review_role', ['auxiliary', 'judge', 'challenger'])
+def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider, model_name, review_role):
     from v3.jineng import http_kehuduan as http
     from v3.model_protocol_contract import ProviderTurnEnvelope
     from v3.endpoint_security import EndpointBinding
@@ -215,7 +248,7 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
     pinned = replace(endpoint(), protocol_family=protocol_family)
     if provider.startswith("deepseek"):
         pinned = replace(pinned, provider_identity="deepseek", service_preset="deepseek",
-                         optimization_family=provider, model_name="deepseek-flash")
+                         optimization_family=provider, model_name=model_name)
     monkeypatch.setattr(http, "duqu_model_endpoint_config", lambda *args: (_ for _ in ()).throw(AssertionError("must use snapshot")))
     monkeypatch.setattr(http, "duqu_endpoint_api_miyao", lambda *args: "fixture")
     monkeypatch.setattr(http, "_learned_skill_context", lambda: (_ for _ in ()).throw(AssertionError("task context leaked")))
@@ -241,7 +274,7 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
     client = http.HttpKehuduan()
     try:
         with client.scoped_native_history(({"private_history": True},)), client.scoped_native_audio(("private.wav",)):
-            with client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=output_limit):
+            with client.scoped_call_context(review_role), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=output_limit):
                 result = client.llm_diaoyong("interpret records", "records")
             assert client._native_history.get() == ({"private_history": True},)
             assert client._native_audio_paths.get() == ("private.wav",)
@@ -263,5 +296,9 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
         assert (wire["thinking"] == {"type": "enabled", "budget_tokens": 2047}
             if output_limit == 2048 else wire["thinking"] == {"type": "disabled"})
     if provider.startswith("deepseek") and protocol_family == "openai_chat_completions":
-        assert payload["thinking"] == {"type": "disabled"}
-        assert "reasoning_effort" not in payload
+        if model_name == "deepseek-reasoner" or review_role in {'judge', 'challenger'}:
+            assert payload["thinking"] == {"type": "enabled"}
+            assert payload["reasoning_effort"] == "high"
+        else:
+            assert payload["thinking"] == {"type": "disabled"}
+            assert "reasoning_effort" not in payload

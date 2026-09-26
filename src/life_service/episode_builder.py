@@ -332,16 +332,6 @@ def build_action_impact(
 
 # 异常类型 → 九类失败映射。运行时错误码（EmbeddedLifeError.reason 等）优先，
 # 此表兜底。
-_ERROR_CATEGORY_PATTERNS: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("policy", "forbidden", "blocked", "not_allowed"), "policy_block"),
-    (("permission", "unauthorized", "forbidden_resource"), "insufficient_permission"),
-    (("timeout", "connection", "network", "unreachable", "oserror"), "environment_error"),
-    (("input", "argument", "schema", "invalid_json", "decode"), "input_error"),
-    (("stale", "expired", "conflict", "discontinuous"), "stale_context"),
-    (("preference",), "user_preference_mismatch"),
-    (("reasoning", "model", "generation"), "model_reasoning_error"),
-    (("tool", "action", "executor"), "tool_error"),
-)
 
 _EXCEPTION_CATEGORIES: tuple[tuple[tuple[type[BaseException], ...], str], ...] = (
     ((PermissionError,), "insufficient_permission"),
@@ -351,28 +341,22 @@ _EXCEPTION_CATEGORIES: tuple[tuple[tuple[type[BaseException], ...], str], ...] =
 
 
 def failure_category_from_error(error: BaseException | None) -> str:
-    """按异常类型与错误文本映射九类失败；兜底 unknown。"""
-    if error is None:
-        return "unknown"
+    """Categorize actual exception types without interpreting their messages."""
     for types, category in _EXCEPTION_CATEGORIES:
         if isinstance(error, types):
-            return category
-    text = f"{type(error).__name__} {error}".casefold()
-    for needles, category in _ERROR_CATEGORY_PATTERNS:
-        if any(needle in text for needle in needles):
             return category
     return "unknown"
 
 
 def failure_category_from_step_error(step: Mapping[str, Any]) -> str:
-    """能力步骤失败的九类映射；缺错误信息时按工具失败处理。"""
-    for key in ("error_code", "reason_code", "error"):
-        text = str(step.get(key) or "").casefold()
-        if not text:
-            continue
-        for needles, category in _ERROR_CATEGORY_PATTERNS:
-            if any(needle in text for needle in needles):
-                return category
+    """Honor typed categories and exact protocol codes, never error prose."""
+    allowed = {"policy_block", "insufficient_permission", "environment_error", "input_error", "stale_context",
+               "user_preference_mismatch", "model_reasoning_error", "tool_error", "unknown"}
+    value = step.get("failure_category")
+    if isinstance(value, str) and value in allowed:
+        return value
+    if step.get("error_code") == "permission.denied":
+        return "insufficient_permission"
     return "tool_error"
 
 

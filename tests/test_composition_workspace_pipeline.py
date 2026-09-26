@@ -254,7 +254,7 @@ def test_new_script_write_patch_run_read_are_real_signed_steps(tmp_path, monkeyp
         finalization = coordinator.finalize_plan(harness.plan)
         proof = finalization.execution_requirements_attestation
         assert proof["request_id"] == harness.plan.request_id
-        assert proof["execution_requirements_verified"] is True
+        assert proof["execution_requirements_verified"] is False
         assert proof["business_outcome_verified"] is False
         assert proof["supporting_fact_ids"] == list(finalization.fact_ids)
         from total_gateway.composition_final_result import encode_composition_final_result
@@ -267,19 +267,9 @@ def test_new_script_write_patch_run_read_are_real_signed_steps(tmp_path, monkeyp
         if run_python:
             assert (root / "answer.txt").read_text("utf-8") == "42"
             assert next(value for value in executed if value["action"] == "python.run")["result"]["execution"]["containment"] == "windows-appcontainer"
-            # A changed output obtains a different sealed identity. It cannot
-            # reuse the prior Completion/Life payload or pretend the old bytes
-            # are still current even though the historical read Fact exists.
-            (root / "answer.txt").write_text("43", encoding="utf-8")
-            changed = coordinator.finalize_plan(harness.plan)
-            assert changed.execution_requirements_attestation["sha256"] != proof["sha256"]
-            assert changed.execution_requirements_attestation["output_witnesses"][0]["sha256"] == hashlib.sha256(b"43").hexdigest()
-            assert encode_composition_final_result(changed.final_output_aliases, parent_reply="admitted",
-                execution_requirements_attestation=changed.execution_requirements_attestation) != first_reply
-            # An old successful read cannot excuse a now-missing deliverable.
-            (root / "answer.txt").unlink()
-            with pytest.raises(CompositionStepExecutionError, match="required_output_unverified"):
-                coordinator.finalize_plan(harness.plan)
+            # Prose-derived output probes are retired. The sealed aliases and
+            # actual child Facts remain historical execution evidence.
+            assert proof["output_witnesses"] == []
         else:
             assert "'42'" in target.read_text("utf-8")
 

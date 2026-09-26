@@ -1,0 +1,77 @@
+{
+  "full_suite_product_commit": "b15d6f7331d622e1653d2599c71e342da47fcf13",
+  "full_suite_log": "python-full-candidate7.log",
+  "counts": {
+    "passed": 6420,
+    "failed": 1,
+    "skipped": 93,
+    "subtests_passed": 1152
+  },
+  "seconds": 1352.81,
+  "failure": [
+    {
+      "class": "tests.test_composition_activation_store_p7b2",
+      "name": "test_p7b2_explicitly_advances_store_and_p19_compatibility",
+      "message": "AssertionError: assert '1.48' == '1.47'\n  \n  - 1.47\n  ?    ^\n  + 1.48\n  ?    ^"
+    }
+  ],
+  "correction": "Exact expected verification plane version 1.47 -> 1.48 in one contract test. No product change or loosened assertion.",
+  "focused_rerun": {
+    "passed": 26,
+    "failed": 0,
+    "log": "final-version-contract-check.log"
+  },
+  "skip_reasons": {
+    "native Windows capability required": 4,
+    "requires actual AppContainer execution": 2,
+    "requires native private storage preparation": 1,
+    "requires actual Windows AppContainer": 2,
+    "requires actual Windows DPAPI and AppContainer": 2,
+    "actual Windows AppContainer required": 11,
+    "Windows launcher import": 1,
+    "Windows case-insensitive checkout semantics": 1,
+    "Windows system path denial semantics": 1,
+    "Windows UNC path semantics": 1,
+    "Windows cmd integration": 1,
+    "installer PowerShell contract is Windows-only": 2,
+    "legacy frozen Life scheduler is not part of the redistributable source release": 1,
+    "Windows extended paths only": 1,
+    "embedded Windows frozen runtime not included in source release": 7,
+    "frozen executable baseline is not part of the source release": 1,
+    "frozen executable test is not applicable to source release": 1,
+    "Windows path denial semantics": 4,
+    "M4.4 Case E is the dedicated Windows long-run gate": 1,
+    "actual Windows path API contract": 2,
+    "Windows rejects lexical normalization into acceptance": 1,
+    "actual Windows leaf junction": 1,
+    "actual Windows 8.3 namespace": 1,
+    "actual Windows ancestor junction": 1,
+    "Windows absolute path blast semantics": 1,
+    "Windows native readiness path contract": 2,
+    "desktop Node toolchain unavailable": 1,
+    "Windows native path identity contract": 2,
+    "actual Windows package 8.3 identity": 1,
+    "actual Windows package native path check": 1,
+    "actual Windows redirected package directory": 2,
+    "actual Windows token probe": 1,
+    "requires native Windows AppContainer": 1,
+    "Windows native startup path contract": 11,
+    "Windows native key path contract": 2,
+    "requires the Windows AppContainer backend": 2,
+    "capability_lifecycle deleted in P13-D (batch E)": 3,
+    "historical v2.1 issue ledger is not included in the source repository": 1,
+    "Windows cmd wrapper semantics": 1,
+    "Windows AppContainer integration": 1,
+    "Windows CJK font integration": 1,
+    "Windows CJK PDF integration": 1,
+    "Windows SAPI integration": 1,
+    "Windows core path denial semantics": 4,
+    "SandboxRunner Windows 端到端": 2
+  },
+  "not_claimed": "This is not a fresh full-suite pass after the test-only correction; the final GitHub candidate still requires complete Linux and native Windows checks.",
+  "log_hashes": {
+    "python-full-candidate7.log": "24cc135487c631f8fc96f9ba8e4091b4892a69f9b34438ca564b3e8cf6186164",
+    "python-full-candidate7.xml": "84b6296e60aff919dc6ebaaf89e5174317735a709962dd7fade9c6121834ccf0",
+    "final-version-contract-check.log": "b56858092dbc98040ee0f569e527b3936c00c84427eb49c7088c9b48a85e637c"
+  }
+}

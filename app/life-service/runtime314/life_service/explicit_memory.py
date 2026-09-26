@@ -1,41 +1,20 @@
-"""Deterministic P15 L4 explicit-memory intent detection.
+"""Structured explicit-memory selection and expiry metadata.
 
-Explicit authority must come from a real ``user_message`` LifeEvent; this
-detector never fabricates intent.  It only classifies the exact user text
-span into deterministic reason codes and an optional expiry window, so the
-coordinator can persist an L4_EXPLICIT derivation bound to that event.
+Text is preserved as evidence, never classified by keywords. Persistence is
+selected by a typed memory operation; an ordinary message implies no consent.
 """
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import dataclass
 
 from contracts import canonical_sha256
 
 
-EXPLICIT_PATTERNS = (
-    (re.compile(r"(?:请|帮我)?(?:记住|记下)(?:[:：]?\s*)?"), "explicit_remember"),
-    (re.compile(r"(?:以后|今后|将来)(?:请|要|都)?记得"), "future_remember"),
-    (re.compile(r"(?:请)?长期(?:记住|保存)"), "long_term_remember"),
-    (re.compile(r"(?:请)?永久(?:记住|保存)"), "long_term_remember"),
-    (re.compile(r"不要忘记"), "do_not_forget"),
-    (re.compile(r"我的长期偏好是"), "long_term_preference"),
-    (re.compile(r"以后一直"), "ongoing_behavior"),
-    (re.compile(r"请一直"), "ongoing_behavior"),
-    (re.compile(r"(?:请)?(?:叫我|称呼我|喊我)"), "address_alias"),
-    (re.compile(r"我(?:的)?名字(?:是|叫)"), "identity_introduction"),
-    (re.compile(r"我叫"), "identity_introduction"),
-    (re.compile(r"名字叫"), "identity_introduction"),
-)
-
-EXPIRY_PATTERNS = (
-    (re.compile(r"今天(?:先|之内|以前)"), "today"),
-    (re.compile(r"这次(?:先)?"), "this_session"),
-    (re.compile(r"暂时(?:先)?"), "temporary"),
-    (re.compile(r"(?:仅)?(?:这一次|本轮)"), "this_turn"),
-)
+# Kept as empty exports for integrations using the old detector API.
+EXPLICIT_PATTERNS = ()
+EXPIRY_PATTERNS = ()
 
 EXPIRY_WINDOW_MS = {
     "today": None,  # end of the UTC calendar day, computed by the coordinator
@@ -63,21 +42,17 @@ def _normalize(value: str) -> str:
     return text
 
 
-def detect_explicit_intent(user_text: str) -> ExplicitIntentResult:
-    """Return deterministic explicit-intent metadata for one user span."""
+def detect_explicit_intent(
+    user_text: str, *, explicit: bool = False, expiry_kind: str | None = None,
+) -> ExplicitIntentResult:
+    """Validate an explicitly selected memory operation, without interpreting text."""
 
     if not isinstance(user_text, str) or not user_text.strip():
         raise ValueError("explicit memory user text is empty")
     text = _normalize(user_text)
-    reason_codes: list[str] = []
-    for pattern, code in EXPLICIT_PATTERNS:
-        if pattern.search(text):
-            reason_codes.append(code)
-    expiry_kind: str | None = None
-    for pattern, kind in EXPIRY_PATTERNS:
-        if pattern.search(text):
-            expiry_kind = kind
-            break
+    if expiry_kind is not None and expiry_kind not in EXPIRY_WINDOW_MS:
+        raise ValueError("unknown explicit memory expiry kind")
+    reason_codes = ("explicit_memory_request",) if explicit else ()
     return ExplicitIntentResult(
         triggered=bool(reason_codes),
         reason_codes=tuple(sorted(set(reason_codes))),

@@ -1,7 +1,6 @@
-"""Conservative request requirements independent of model-selected steps.
+"""Structured step-order and historical attestation validation.
 
-This prevents obviously incomplete plans. It is a minimum evidence floor,
-not a proof of arbitrary business correctness or full natural-language intent.
+Task prose creates no plan floor or output requirement.
 """
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ import os
 import hashlib
 import re
 from contracts import canonical_sha256
-from runtime_security.composition_path import resolve_composition_path
 from pathlib import Path
 
 from contracts.composition_profile import WORKSPACE_WRITE_ACTIONS
@@ -24,30 +22,8 @@ def _path(value: str, root: Path) -> str:
 
 
 def validate_request_plan_floor(user_text: str, steps, *, workspace_root: Path) -> None:
-    from v3.execution_integrity import action_has_observation_semantics, build_action_obligations
-    obligations = build_action_obligations(user_text)
-    actions = {step.action_id for step in steps}
-    writer_targets = {_path(step.target_skeleton, workspace_root) for step in steps
-                      if step.action_id in WORKSPACE_WRITE_ACTIONS and step.target_skeleton}
-    for item in obligations:
-        kind = item.get("kind")
-        target = item.get("target_path")
-        if kind == "observation" and not any(action_has_observation_semantics(action) for action in actions):
-            raise ValueError("composition.task_floor.observation_missing")
-        if kind == "effect":
-            if item.get("target_state") == "absent":
-                raise ValueError("composition.task_floor.deletion_unsupported")
-            if not actions.intersection(WORKSPACE_WRITE_ACTIONS | {"python.run"}):
-                raise ValueError("composition.task_floor.write_missing")
-            if target and _path(target, workspace_root) not in writer_targets and "python.run" not in actions:
-                raise ValueError("composition.task_floor.output_missing")
-        if kind == "execution":
-            predicate = item.get("evidence_predicate")
-            if predicate == "sha256_digest":
-                if "file.hash" not in actions:
-                    raise ValueError("composition.task_floor.hash_missing")
-            elif "python.run" not in actions:
-                raise ValueError("composition.task_floor.execution_missing")
+    """Compatibility API: task prose does not create mandatory plan steps."""
+    return None
 
 
 def validate_workspace_step_order(steps, *, workspace_root: Path) -> None:
@@ -73,54 +49,20 @@ def validate_workspace_step_order(steps, *, workspace_root: Path) -> None:
 
 
 def _required_output_witnesses(user_text: str, workspace_root: Path | None) -> tuple[list[str], list[dict]]:
-    from v3.execution_integrity import required_request_outputs
-    required = required_request_outputs(user_text)
-    if required and workspace_root is None:
-        raise ValueError("composition.task_floor.output_workspace_missing")
-    witnesses = []
-    for target in required:
-        try:
-            path = resolve_composition_path(workspace_root, target)
-            before = path.stat()
-            if not path.is_file() or before.st_size > 4194304:
-                raise ValueError("output must be a bounded regular file")
-            with path.open("rb") as stream:
-                content = stream.read(4194305)
-            after = path.stat()
-            if (len(content) > 4194304 or len(content) != after.st_size
-                    or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-                    != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-                    or resolve_composition_path(workspace_root, target) != path):
-                raise ValueError("output changed during verification")
-        except (OSError, ValueError) as exc:
-            raise ValueError("composition.task_floor.required_output_unverified:" + target) from exc
-        witnesses.append({"requested_path": target, "native_path": str(path), "exists": True,
-            "size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest(),
-            "source": "gateway.native-final-output-probe"})
-    return required, witnesses
+    """No file obligation is inferred from a path mentioned in prose."""
+    return [], []
 
 
 def validate_request_execution_floor(user_text: str, receipts, *, workspace_root: Path | None = None) -> dict:
-    """Use authenticated child Facts plus current system-observed output files.
+    """Do not manufacture task acceptance requirements from user prose.
 
-    Native output probes establish existence/content identity at closeout;
-    they do not assert semantic business correctness or create execution Facts.
+    Actual child execution, artifacts and plan-bound verification are checked
+    by their existing structured pipelines. This retired prose floor cannot
+    claim that it verified a user's business outcome.
     """
-    from v3.execution_integrity import build_action_obligations, obligation_is_satisfied
-    from v3.tool_result_contract import normalize_tool_result
-    history = []
-    for request, raw in receipts:
-        history.append({"ok": raw.get("ok") is True, "tool_action": request.action_id,
-            "tool_args": {"target": request.target, "args": request.materialized_arguments},
-            "tool_result": raw, "tool_result_contract": normalize_tool_result("omni_body", raw)})
-    obligations = build_action_obligations(user_text)
-    pending = [item["id"] for item in obligations if not obligation_is_satisfied(item, history)]
-    if pending:
-        raise ValueError("composition.task_floor.required_evidence_missing:" + ",".join(pending))
-    required, witnesses = _required_output_witnesses(user_text, workspace_root)
-    return {"obligations_count": len(obligations), "obligations_sha256": canonical_sha256(obligations),
-        "required_outputs": required, "output_witnesses": witnesses,
-        "execution_requirements_verified": bool(obligations or required), "business_outcome_verified": False}
+    return {"obligations_count": 0, "obligations_sha256": canonical_sha256([]),
+        "required_outputs": [], "output_witnesses": [],
+        "execution_requirements_verified": False, "business_outcome_verified": False}
 
 
 _ATTESTATION_SCHEMA = "tiangong.composition-execution-requirements.v1"

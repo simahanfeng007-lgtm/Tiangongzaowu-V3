@@ -1,0 +1,7 @@
+region,quantity,unit_price_cents,status
+East,3,1299,paid
+West,2,850,paid
+East,4,99,paid
+North,1,5000,refunded
+West,0,777,paid
+North,2,1250,paid

@@ -61,20 +61,6 @@ class DeliveryOutputFormatContractTests(unittest.TestCase):
         ("MP4", ".mp4", ".mp3"),
     )
 
-    def test_conversion_contract_uses_requested_output_not_input_format(self) -> None:
-        from v3.zongdiaodu import (
-            _simple_chain_expected_suffixes,
-            _simple_chain_requested_target_paths,
-        )
-
-        for product_name, expected_suffix, input_suffix in self.FORMAT_CASES:
-            prompt = f"桌面上的输入文件{input_suffix}请转换成{product_name}"
-            with self.subTest(product_name=product_name):
-                self.assertEqual(
-                    _simple_chain_expected_suffixes(prompt),
-                    {expected_suffix},
-                )
-                self.assertEqual(_simple_chain_requested_target_paths(prompt), [])
 
     def test_each_supported_output_format_validates_its_own_bytes(self) -> None:
         from v3.zongdiaodu import _simple_chain_paths_match_requested_formats

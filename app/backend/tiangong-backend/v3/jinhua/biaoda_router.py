@@ -84,34 +84,15 @@ def _expression_kind_label(target: str) -> str:
 
 # bug-fix: 学习表达注入前按当前消息做相关性过滤——不再每条消息都塞 6-8 条可能
 # 毫不相干的“学习成果”（2026-08-26，凌霜修 logic 类）
-_BIAODA_TONGYONG_CI = frozenset({
-    "一个", "我们", "你们", "他们", "这个", "那个", "可以", "什么", "没有",
-    "就是", "如果", "但是", "然后", "已经", "现在", "可能", "需要", "进行",
-    "时候", "问题", "情况", "内容", "一些", "一下", "自己", "这样", "怎样",
-})
 
 
 def _biaoda_guanjianci(text: Any) -> set[str]:
-    """提取关键词集合：英文/数字词（≥3 字符）+ 中文相邻二元词，去掉通用填充词。"""
-    raw = str(text or "").lower()
-    if not raw:
-        return set()
-    tokens = set(re.findall(r"[a-z0-9_]{3,}", raw))
-    hanzi_runs = re.findall(r"[一-鿿]+", raw)
-    for run in hanzi_runs:
-        for a, b in zip(run, run[1:]):
-            tokens.add(a + b)
-    return tokens - _BIAODA_TONGYONG_CI
+    return set()
 
 
 def _biaoda_xiangguan(xiaoxi: str, item: dict[str, Any]) -> bool:
-    """当前消息与学习表达是否相关：偏好类天然相关，其余按关键词交集判定。"""
-    if str(item.get("target") or "") == "preference":
-        return True
-    query = _biaoda_guanjianci(xiaoxi)
-    if not query:
-        return False
-    return bool(query & _biaoda_guanjianci(item.get("text")))
+    """The model decides relevance among approved structured expressions."""
+    return True
 
 
 class JinhuaBiaodaRouter:

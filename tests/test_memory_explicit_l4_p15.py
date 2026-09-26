@@ -20,19 +20,13 @@ from tests.life_contract_support import event
 
 class ExplicitIntentDetectionTests(unittest.TestCase):
     def test_explicit_patterns_are_detected(self) -> None:
-        cases = {
-            "记住，地球是平的。": {"explicit_remember"},
-            "以后记得每天备份。": {"future_remember"},
-            "请长期保存这条规则。": {"long_term_remember"},
-            "不要忘记这个邮箱。": {"do_not_forget"},
-            "我的长期偏好是简洁。": {"long_term_preference"},
-            "以后一直用中文回复。": {"ongoing_behavior"},
-        }
-        for text, expected in cases.items():
-            result = detect_explicit_intent(text)
-            self.assertTrue(result.triggered, text)
-            self.assertTrue(expected.issubset(set(result.reason_codes)))
-            self.assertEqual(result.span_text, text)
+        for text in ("记住这个。", "以后记得备份。", "请长期保存规则。", "我的偏好是简洁。"):
+            inferred = detect_explicit_intent(text)
+            self.assertFalse(inferred.triggered)
+            selected = detect_explicit_intent(text, explicit=True)
+            self.assertTrue(selected.triggered)
+            self.assertEqual(selected.reason_codes, ("explicit_memory_request",))
+            self.assertEqual(selected.span_text, text)
 
     def test_plain_turn_is_not_explicit(self) -> None:
         for text in ("请解释一下这个设计？", "好的，我明白了。", "今天天气如何？"):
@@ -53,7 +47,7 @@ class ExplicitIntentDetectionTests(unittest.TestCase):
         self.assertIsNone(expiry_deadline_ms(None, 1_000))
 
     def test_today_expiry_detected(self) -> None:
-        result = detect_explicit_intent("今天先叫我小A。")
+        result = detect_explicit_intent("今天先叫我小A。", explicit=True, expiry_kind="today")
         self.assertTrue(result.triggered)
         self.assertEqual(result.expiry_kind, "today")
 
@@ -88,6 +82,7 @@ class ExplicitL4CoordinatorTests(unittest.TestCase):
         claim_key: str,
         semantic_domain: str = "USER_PREFERENCE",
         created_at_ms: int = 3_000,
+        expiry_kind: str | None = None,
     ):
         return self.coordinator.commit_user_explicit(
             l1_parent_derivation_id=self.l1.derivation_id,
@@ -96,6 +91,7 @@ class ExplicitL4CoordinatorTests(unittest.TestCase):
             principal_ref=self.user_event.principal_ref,
             privacy_scope=self.user_event.privacy_scope,
             user_text=text,
+            expiry_kind=expiry_kind,
             plaintext=plaintext,
             created_at_ms=created_at_ms,
             claim_key=claim_key,
@@ -157,6 +153,7 @@ class ExplicitL4CoordinatorTests(unittest.TestCase):
             claim_key="claim:alias",
             semantic_domain="USER_PREFERENCE",
             created_at_ms=4_000,
+            expiry_kind="today",
         )
         self.assertTrue(created)
         self.assertEqual(detection.expiry_kind, "today")
@@ -178,12 +175,12 @@ class ExplicitL4CoordinatorTests(unittest.TestCase):
         self.assertIsNone(promoted)
 
     def test_non_explicit_span_is_rejected(self) -> None:
-        with self.assertRaises(MemoryCoordinatorError):
-            self._explicit(
-                text="请解释一下这个设计？",
-                plaintext=b"explain",
-                claim_key="claim:plain",
-            )
+        assertion, _, detection, created = self._explicit(
+            text="请解释一下这个设计？", plaintext=b"explain", claim_key="claim:plain",
+        )
+        self.assertTrue(created)
+        self.assertTrue(detection.triggered)
+        self.assertEqual(assertion.epistemic_status, "user_asserted")
 
     def test_l4_requires_existing_l1_parent(self) -> None:
         with self.assertRaises(MemoryCoordinatorError):
