@@ -2346,6 +2346,8 @@ class Zongdiaodu:
         run_state["stage"] = "composing"
         _simple_chain_save_run_state(run_state)
 
+        from .jineng.model_context_cache import AppendOnlyContext
+        append_context = AppendOnlyContext(token_budget=int(DEFAULT_WINDOW_TOKENS * 0.75))
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
         from .adversarial_review import ReviewSession
@@ -2369,7 +2371,8 @@ class Zongdiaodu:
             try:
                 def invoke(lifecycle):
                     if self.http_kehuduan is not None:
-                        with self.http_kehuduan.scoped_native_history(native_history, observations=quality_history):
+                        with self.http_kehuduan.scoped_native_history(
+                            native_history, observations=quality_history, append_context=append_context):
                             return call(lifecycle)
                     return call(lifecycle)
                 result = run_model_call(

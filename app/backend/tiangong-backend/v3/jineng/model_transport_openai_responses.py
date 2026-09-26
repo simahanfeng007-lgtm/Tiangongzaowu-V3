@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
+from .model_context_cache import apply_append_context
 from .model_transport_contract import (
     StreamState,
     TransportRequest,
@@ -72,6 +73,7 @@ class OpenAIResponsesTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         canonical = dict(canonical_payload)
+        transaction = canonical.pop("__append_context", None)
         observations_compacted = canonical.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(canonical, endpoint)
         messages = canonical.get("messages") if isinstance(canonical.get("messages"), list) else []
@@ -91,7 +93,9 @@ class OpenAIResponsesTransport:
         if instructions:
             payload["instructions"] = instructions
 
+        prefix, groups = list(input_items), []
         for native in history:
+            group_start = len(input_items)
             continuation = native.turn.provider_continuation_state
             opaque = continuation.opaque_payload if isinstance(continuation.opaque_payload, Mapping) else {}
             replay_items = opaque.get("output_items") if isinstance(opaque.get("output_items"), list) else []
@@ -106,6 +110,8 @@ class OpenAIResponsesTransport:
             previous_response_id = str(opaque.get("previous_response_id") or "").strip()
             if use_remote and len(history) == 1 and previous_response_id:
                 payload["previous_response_id"] = previous_response_id
+
+            groups.append(input_items[group_start:])
 
         tail_instructions, tail_items = self._convert_input(context_tail)
         if tail_instructions:
@@ -131,6 +137,7 @@ class OpenAIResponsesTransport:
         # default false; endpoint override may only enable provider storage as
         # soft continuation state.
         payload["store"] = bool(endpoint.endpoint_overrides.get("responses_store", False))
+        apply_append_context(transaction, endpoint, payload, "input", prefix, groups, tail_items)
         return TransportRequest(self.build_url(endpoint), self.build_headers(endpoint, api_key), payload, self.protocol_family)
 
     @staticmethod

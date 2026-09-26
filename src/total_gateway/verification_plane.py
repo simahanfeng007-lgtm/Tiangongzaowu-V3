@@ -14,7 +14,7 @@ from __future__ import annotations
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.36 removes prose-derived task gates; structured evidence and authority remain.
-# 1.39 keeps fresh runtime context after stable native history and deduplicates exact composition receipts.
-VERIFICATION_PLANE_VERSION = "1.39"
+# 1.40 adds Linux workspace OS containment and corrects image/archive execution receipts.
+VERIFICATION_PLANE_VERSION = "1.40"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

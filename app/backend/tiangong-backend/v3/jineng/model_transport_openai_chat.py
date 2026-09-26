@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
+from .model_context_cache import apply_append_context
 from .model_transport_contract import (
     StreamState,
     TransportRequest,
@@ -29,13 +30,16 @@ class OpenAIChatTransport:
 
     def build_request(self, endpoint: ModelEndpointConfig, api_key: str, canonical_payload: Mapping[str, Any]) -> TransportRequest:
         payload = dict(canonical_payload)
+        transaction = payload.pop("__append_context", None)
         observations_compacted = payload.pop("__native_observations_compacted", False)
         history = extract_native_roundtrip_history(payload, endpoint)
         messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
         messages, context_tail, cache_ordered = prepare_context_tail(payload, messages, history)
         messages = drop_last_role_messages(messages, role="assistant",
             count=len(history[0].results) if len(history) == 1 and not observations_compacted and not cache_ordered else 0)
+        prefix, groups = list(messages), []
         for native in history:
+            group_start = len(messages)
             opaque = native.turn.provider_continuation_state.opaque_payload
             opaque = opaque if isinstance(opaque, Mapping) else {}
             replay_calls = opaque.get("assistant_tool_calls") if isinstance(opaque.get("assistant_tool_calls"), list) else []
@@ -54,10 +58,13 @@ class OpenAIChatTransport:
                 for binding, result in zip(native.bindings, native.results, strict=True):
                     messages.append(self.encode_tool_result(result, binding.as_dict()))
                 payload["messages"] = messages
+            groups.append(messages[group_start:])
+
         payload["messages"] = [*messages, *context_tail]
         payload["model"] = endpoint.model_name or str(payload.get("model") or "")
         payload["stream"] = True
         payload.setdefault("stream_options", {"include_usage": True})
+        apply_append_context(transaction, endpoint, payload, "messages", prefix, groups, context_tail)
         return TransportRequest(
             url=self.build_url(endpoint),
             headers=self.build_headers(endpoint, api_key),

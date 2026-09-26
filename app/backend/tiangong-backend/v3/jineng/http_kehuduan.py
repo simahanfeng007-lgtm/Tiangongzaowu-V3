@@ -777,6 +777,7 @@ class HttpKehuduan:
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
+        self._append_context = contextvars.ContextVar("tiangong_append_context", default=None)
         self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
         self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
         self._semantic_inference = contextvars.ContextVar("tiangong_semantic_inference", default=None)
@@ -792,14 +793,16 @@ class HttpKehuduan:
             self._semantic_inference.reset(token)
 
     @contextmanager
-    def scoped_native_history(self, history, observations=()):
+    def scoped_native_history(self, history, observations=(), append_context=None):
         token = self._native_history.set(history)
         observation_token = self._native_observations.set(observations)
+        append_token = self._append_context.set(append_context)
         try:
             yield
         finally:
             self._native_history.reset(token)
             self._native_observations.reset(observation_token)
+            self._append_context.reset(append_token)
 
     @contextmanager
     def scoped_tools(self, allowed_tool_names: list[str] | set[str] | tuple[str, ...] | None = None, disable_tools: bool = False):
@@ -1116,6 +1119,12 @@ class HttpKehuduan:
             if liushi_on_chunk is not None:
                 liushi_on_chunk(chunk)
 
+        context = self._append_context.get()
+        transaction = context.begin() if context is not None else None
+        if transaction is not None:
+            payload["__append_context"] = transaction
+            payload["__cache_ordered_history"] = True
+
         try:
             executed = execute_streaming_turn(
                 client=self._kehuduan,
@@ -1185,6 +1194,9 @@ class HttpKehuduan:
         if liushi_flush:
             liushi_flush()
         turn = _canonicalize_provider_turn(executed.turn)
+        if transaction is not None:
+            transaction.commit(turn)
+            optimization_trace["append_context"] = dict(transaction.metrics)
 
         optimization_trace["output_repaired"] = bool(executed.output_repaired)
 

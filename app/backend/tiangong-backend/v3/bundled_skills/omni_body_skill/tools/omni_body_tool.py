@@ -48,6 +48,7 @@ from ._stub_actions import _stub_action_result
 from .sandbox_runtime import (
     WINDOWS_UTF8_SHELL_MARKER,
     SandboxLimits,
+    SandboxError,
     SandboxRunner,
     _prepare_windows_utf8_shell_command,
     _snapshot as _sandbox_workspace_snapshot,
@@ -1617,6 +1618,8 @@ class BodyRuntime:
             "backup_dir": str(self.backup_dir),
             "trash_dir": str(self.trash_dir),
             "config": config,
+            "config_scope": "current_action_grant_only",
+            "execution_authority_note": "allow_python/allow_shell describe this call's grant, not global availability; execution actions require their own Gateway grant and a working OS sandbox.",
             "cancellation_enabled": callable(self.config.cancel_check),
             "dependencies": deps,
             "ffmpeg": self.ffmpeg,
@@ -2062,13 +2065,23 @@ class BodyRuntime:
         dest.mkdir(parents=True, exist_ok=True)
         extracted = []
         with zipfile.ZipFile(zpath, "r") as zf:
+            before_files = {}
             for member in zf.infolist():
                 out_path = (dest / member.filename).resolve()
                 if not self._is_inside(out_path, dest):
                     raise OmniBodyError(f"Unsafe zip member path: {member.filename}")
+                if not member.is_dir():
+                    before_files[str(out_path)] = self._write_observation(out_path)
             zf.extractall(dest)
             extracted = [str((dest / m.filename).resolve()) for m in zf.infolist() if not m.is_dir()]
-        return {"snapshots": snapshots, "destination": str(dest), "extracted_count": len(extracted), "extracted_preview": extracted[:100]}
+        changed, unchanged = [], []
+        for name, pre in before_files.items():
+            post = self._write_observation(Path(name))
+            (changed if pre != post else unchanged).append(name)
+        return {"snapshots": snapshots, "destination": str(dest), "extracted_count": len(extracted),
+                "extracted_preview": extracted[:100], "evidence": self._file_evidence(dest),
+                "write_evidence": {"changed_files": changed, "deleted_files": [],
+                                   "verified_unchanged_files": unchanged}}
 
     # ---------- code / quality / execution ----------
 
@@ -2225,6 +2238,11 @@ class BodyRuntime:
             if snapshot_sha256(state) != self.config.target_snapshot_sha256:
                 raise OmniBodyError("workspace-write signed target snapshot changed")
             expected_workspace_files = {script.relative_to(self.workspace).as_posix(): state["content_sha256"]}
+            # This existing signed v1 profile names Windows AppContainer.
+            # Ordinary dictionary execution can use Linux, but an old signed
+            # authority must not silently acquire another execution profile.
+            if os.name != "nt":
+                raise SandboxError("sandbox_os_containment_unavailable")
         timeout = int(args.get("timeout", self.config.default_timeout_seconds))
         python_executable = _resolve_python_interpreter(controlled=controlled)
         if target:
@@ -3089,9 +3107,16 @@ class BodyRuntime:
         snapshots = self._snapshot(op_id, [output])
         with Image.open(src) as im:
             width = args.get("width"); height = args.get("height")
+            if any(value is not None and (isinstance(value, bool) or int(value) <= 0) for value in (width, height)):
+                raise OmniBodyError("image.resize dimensions must be positive integers")
             if args.get("keep_ratio", True):
-                im.thumbnail((int(width or im.width), int(height or im.height)))
-                out = im.copy()
+                # Fit inside the requested box, including enlargement. A
+                # single dimension determines the scale without constraining
+                # the other dimension to its original size.
+                scales = ([int(width) / im.width] if width is not None else []) + ([int(height) / im.height] if height is not None else [])
+                scale = min(scales) if scales else 1
+                size = (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
+                out = im.resize(size, Image.Resampling.LANCZOS)
             else:
                 out = im.resize((int(width or im.width), int(height or im.height)))
             output.parent.mkdir(parents=True, exist_ok=True)

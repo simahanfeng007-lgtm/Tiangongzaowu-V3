@@ -189,6 +189,9 @@ def execute_streaming_turn(
         field_name = "input" if endpoint.protocol_family == "openai_responses" else "messages"
         request.payload[field_name] = [*request.payload.get(field_name, []),
             {"role": "user", "content": str(repair_instruction)}]
+    transaction = canonical.get("__append_context")
+    if transaction is not None:
+        transaction.observe_wire(request.payload)
     transient = transient_status_codes or {408, 409, 425, 429, 500, 502, 503, 504}
     attempts = max(1, min(3, int(retry_limit)))
     call_started = time.perf_counter()

@@ -5,8 +5,10 @@ long-running work. Each invocation receives a private workspace copy, a
 secret-free environment, process-tree lifetime controls, bounded output, and a
 brokered atomic merge back into the real workspace. On Windows the process is
 created inside an AppContainer with no capabilities (therefore no network) and
-is attached to a kill-on-close Job Object. Other platforms retain the same
-workspace broker and resource limits for deterministic tests/development.
+is attached to a kill-on-close Job Object. Linux strict execution uses bubblewrap
+with private process/network namespaces and only system runtimes plus the copied
+workspace mounted. Missing OS containment fails closed; the portable supervisor
+alone is retained only for callers explicitly allowing development execution.
 """
 from __future__ import annotations
 
@@ -593,7 +595,8 @@ class SandboxRunner:
         if type(allow_deletions) is not bool:
             raise SandboxError("sandbox_commit_policy_invalid")
         if require_os_containment and os.name != "nt":
-            raise SandboxError("sandbox_os_containment_unavailable")
+            from .linux_sandbox import bubblewrap_executable
+            bubblewrap_executable()
         if cancel_check is not None and (not callable(cancel_check) or cancel_check()):
             raise SandboxError("sandbox_cancelled")
         if not command:
@@ -702,6 +705,11 @@ class SandboxRunner:
                     require_os_containment=require_os_containment,
                     moniker=moniker, cancel_check=cancel_check,
                 )
+            elif require_os_containment:
+                from .linux_sandbox import run_linux_sandbox
+                code, stdout, stderr, containment = run_linux_sandbox(
+                    rewritten, sandbox_cwd, env, limits, sandbox_workspace,
+                    workspace_aliases=(self.workspace, self._workspace_input), cancel_check=cancel_check)
             else:
                 code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits, cancel_check=cancel_check)
             if len(stdout) + len(stderr) > limits.max_output_bytes:
@@ -735,7 +743,7 @@ class SandboxRunner:
                 "committed_workspace": str(self.workspace),
                 "outputs_truncated": False,
                 "containment": containment,
-                "network": "denied" if containment == "windows-appcontainer" else "not_os_enforced",
+                "network": "denied" if containment in {"windows-appcontainer", "linux-bubblewrap"} else "not_os_enforced",
                 "sandbox_root": str(run_root),
                 "elapsed_seconds": round(time.monotonic() - started, 3),
                 **merge,
