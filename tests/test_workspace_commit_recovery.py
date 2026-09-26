@@ -129,12 +129,33 @@ def test_fact_record_loss_reuses_the_committed_operation(tmp_path, monkeypatch):
         return runner.run(command, op_id=operation)
     original = kernel._atomic_json
     with monkeypatch.context() as patch:
-        patch.setattr(kernel, '_atomic_json', lambda *args: (_ for _ in ()).throw(OSError('fact disk error')))
+        def fail_receipt(path, payload):
+            if path.parent == kernel._operations:
+                raise OSError('fact disk error')
+            return original(path, payload)
+        patch.setattr(kernel, '_atomic_json', fail_receipt)
         with pytest.raises(OSError):
             kernel.execute('python.run', '', {'code': 'counter'}, execute, idempotency_key='same-request')
     assert (host / 'count').read_text() == '1'
+    with pytest.raises(ValueError, match='binding_changed'):
+        kernel.execute('python.run', '', {'code': 'counter'}, execute,
+                       expected_version='different', idempotency_key='same-request')
     result = kernel.execute('python.run', '', {'code': 'counter'}, execute, idempotency_key='same-request')
     assert result['ok'] and result['transaction_replayed']
     assert (host / 'count').read_text() == '1'
     with pytest.raises(ValueError, match='binding_changed'):
         kernel.execute('python.run', '', {'code': 'different'}, execute, idempotency_key='same-request')
+
+
+def test_two_workspaces_can_share_state_and_operation_name_concurrently(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    def work(name):
+        host = tmp_path / name; host.mkdir()
+        runner = s.SandboxRunner(host, tmp_path / 'state', tmp_path / 'trash')
+        command = [sys.executable, '-c', "import time; from pathlib import Path; time.sleep(0.2); Path('out').write_text('"+name+"')"]
+        first = runner.run(command, op_id='same-name')
+        replay = runner.run(command, op_id='same-name')
+        assert first['ok'] and replay['transaction_replayed']
+        return (host / 'out').read_text()
+    with ThreadPoolExecutor(2) as pool:
+        assert sorted(pool.map(work, ['one','two'])) == ['one','two']

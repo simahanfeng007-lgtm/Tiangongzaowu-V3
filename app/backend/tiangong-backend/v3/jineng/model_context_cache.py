@@ -7,7 +7,7 @@ from copy import deepcopy
 import json
 import hashlib
 
-from ..context_compactor import estimate_tokens
+from ..context_compactor import ContextAssemblyError, estimate_tokens
 from ..model_protocol_contract import stable_hash
 
 
@@ -106,15 +106,23 @@ class ContextTransaction:
             if estimate_tokens(encoded) > budget:
                 compatible, reason = False, "budget_reset"
         if not compatible:
-            # Canonical history was already bounded by Runtime in complete
-            # call/result groups. Reset the presentation epoch, never truncate a
-            # tool pair, current feedback, or the current World snapshot here.
+            # Wire encoding and a full World snapshot can exceed the earlier
+            # runtime estimate. Remove only whole old call/result groups. The
+            # newest pair, current instructions and World remain indivisible.
             full_tail, world = encode_world_view(tail)
-            messages = [*prefix, *(m for g in groups for m in g), *full_tail]
+            retained = list(groups)
+            suffix = list(full_tail)
             if reason == "budget_reset":
-                messages.append({"role": "user", "content":
+                suffix.append({"role": "user", "content":
                     "[上下文整理] 早期逐轮状态快照已移出；上下文已按保留的工具历史和本轮最新状态重建。"
                     "缺少的历史事实需要重新读取，不得视为已验证。"})
+            while True:
+                messages = [*prefix, *(m for g in retained for m in g), *suffix]
+                if estimate_tokens(json.dumps({**payload, field: messages}, ensure_ascii=False)) <= budget:
+                    break
+                if len(retained) <= 1:
+                    raise ContextAssemblyError("current_context_exceeds_endpoint_input_budget")
+                retained.pop(0)
         observations = (set(old["observations"]) if compatible else set())
         observations.update(stable_hash(m) for m in tail if m.get("role") == "assistant")
         self.staged = {"identity": identity, "groups": digests,
@@ -122,6 +130,7 @@ class ContextTransaction:
                        "observations": observations, "reply": [], "world": world}
         self.metrics = {"mode": reason, "reused_messages": len(old["messages"]) if compatible else 0,
                         "message_count": len(messages), "input_budget": budget,
+                        "dropped_history_groups": 0 if compatible else len(groups) - len(retained),
                         "world_delta_depth": world.get("delta_depth", 0) if world else 0}
         payload[field] = messages
 

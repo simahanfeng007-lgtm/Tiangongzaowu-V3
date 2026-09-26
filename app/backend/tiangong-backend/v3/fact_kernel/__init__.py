@@ -613,6 +613,12 @@ class FactExecutionKernel:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temp, path)
+            if os.name != "nt":
+                directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         finally:
             temp.unlink(missing_ok=True)
 
@@ -639,10 +645,21 @@ class FactExecutionKernel:
             transaction = record.get("fact_transaction")
             if not isinstance(result, dict) or not isinstance(transaction, dict):
                 raise ValueError("fact_replay_record_invalid")
-            if (transaction.get("input_sha256") != input_sha256
+            # v1 receipts omitted expected_version from the digest. Validate
+            # their stored input and version together rather than invalidating
+            # a legitimate completed operation after upgrading.
+            stored_input = record.get("input")
+            if not isinstance(stored_input, dict):
+                raise ValueError("fact_replay_record_invalid")
+            bound_input = {**stored_input, "expected_version": str(transaction.get("expected_version") or "")}
+            if (transaction.get("input_sha256") not in {_sha256(stored_input), _sha256(bound_input)}
+                    or _sha256(bound_input) != input_sha256
                     or transaction.get("request_id") != self.request_id
                     or transaction.get("run_id") != self.run_id):
                 raise ValueError("fact_idempotency_binding_changed")
+            content = {key: value for key, value in result.items() if key != "fact_transaction"}
+            if transaction.get("result_sha256") != _sha256(content):
+                raise ValueError("fact_replay_result_corrupted")
             replayed = _jsonable(result)
             replay_tx = dict(transaction)
             replay_tx["idempotent_replay"] = True
@@ -673,11 +690,24 @@ class FactExecutionKernel:
         normalized_args = _jsonable(dict(args or {}))
         normalized_key = str(idempotency_key or "").strip()
 
-        with self._lock:
-            input_sha256 = _sha256({"action": action_name, "target": normalized_target, "args": normalized_args})
+        from ..duihua_qiaojie import _exclusive_file_lock
+        with self._lock, _exclusive_file_lock(self.ledger_root / "execute.lock", timeout=300):
+            input_sha256 = _sha256({"action": action_name, "target": normalized_target, "args": normalized_args, "expected_version": str(expected_version or "")})
             replay = self._replay(normalized_key, input_sha256)
             if replay is not None:
                 return replay
+
+            # Reserve the key before any effect. A process death between the
+            # workspace commit and its Fact receipt must not allow the same key
+            # to be reused for changed inputs or another request/version.
+            if normalized_key:
+                binding_path = self._idempotency_path(normalized_key).with_suffix(".binding.json")
+                binding = {"input_sha256": input_sha256, "run_id": self.run_id, "request_id": self.request_id}
+                if binding_path.exists():
+                    if json.loads(binding_path.read_text(encoding="utf-8")) != binding:
+                        raise ValueError("fact_idempotency_binding_changed")
+                else:
+                    self._atomic_json(binding_path, binding)
 
             started_at_ms = int(time.time() * 1000)
             operation_seed = {
@@ -735,7 +765,7 @@ class FactExecutionKernel:
                 "started_at_ms": started_at_ms,
                 "completed_at_ms": completed_at_ms,
                 "duration_ms": max(0, completed_at_ms - started_at_ms),
-                "input_sha256": _sha256({"action": action_name, "target": normalized_target, "args": normalized_args}),
+                "input_sha256": input_sha256,
                 "result_sha256": _sha256(result),
             }
             returned = _jsonable(result)

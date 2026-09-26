@@ -2308,6 +2308,9 @@ class Zongdiaodu:
             run_control.step("build_context", "build context", "done", "Context is ready.")
 
         run_state = _simple_chain_new_run_state(request_id, _run_control_session_id(run_control), None)
+        from .run_context import current_run_context
+        review_context = current_run_context()
+        run_state["review_authority_identity"] = {key: getattr(review_context, key) for key in ("request_id", "run_id", "generation", "session_id")}
         from capability_dictionary import load_dictionary
         dictionary_release = load_dictionary()
         if recovery_checkpoint.get("dictionary_sha256") not in {None, "", dictionary_release.sha256}:
@@ -2350,7 +2353,10 @@ class Zongdiaodu:
         _simple_chain_save_run_state(run_state)
 
         from .jineng.model_context_cache import AppendOnlyContext
-        append_context = AppendOnlyContext(token_budget=endpoint_budget)
+        # Read once per run so a comparison/configuration change cannot alter
+        # an active provider continuation. OFF retains canonical full history.
+        append_context = (AppendOnlyContext(token_budget=endpoint_budget)
+                          if os.environ.get("TIANGONG_MODEL_CONTEXT_REUSE", "1") == "1" else None)
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
         from .adversarial_review import ReviewSession

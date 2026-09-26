@@ -423,6 +423,8 @@ class CompletionSession(ReviewSession):
                   "origin": "adversarial_agent", "reason": "未取得有效完成裁决。",
                   "findings": [], "coverage_gaps": [], "evidence_requests": [], "input_sha256": _sha(packet),
                   "candidate_sha256": _sha(str(candidate_reply or "")),
+                  "artifact_versions": packet["current_artifact_versions"],
+                  "identity": {key: run_state.get("review_authority_identity", {}).get(key) for key in ("request_id", "run_id", "generation")},
                   "evidence_refs": [r["ref"] for r in packet["observations"]],
                   "omitted_observations": packet["omitted_observations"], "model_calls": []}
         started = time.monotonic()

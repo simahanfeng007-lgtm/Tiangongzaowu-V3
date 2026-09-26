@@ -9,6 +9,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import json
+import os
+import stat
 import time
 
 from total_gateway.object_store import ContentAddressedObjectStore
@@ -126,10 +128,17 @@ def artifact_versions(state):
                     raise ValueError("artifact_link")
                 digest = hashlib.sha256()
                 size = 0
-                with path.open("rb") as stream:
+                fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+                with os.fdopen(fd, "rb") as stream:
+                    before = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(before.st_mode):
+                        raise ValueError("artifact_not_regular")
                     for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                         digest.update(chunk)
                         size += len(chunk)
+                    after = os.fstat(stream.fileno())
+                    if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
+                        raise ValueError("artifact_changed_while_reading")
                 row.update(state="observed", sha256=digest.hexdigest(), size_bytes=size)
             except (OSError, ValueError):
                 row["state"] = "unavailable"

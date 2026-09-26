@@ -15,7 +15,7 @@ from __future__ import annotations
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.36 removes prose-derived task gates; structured evidence and authority remain.
 # 1.40 adds Linux workspace OS containment and corrects image/archive execution receipts.
-# 1.41 binds recoverable commits, durable reviewer evidence, v2 completion and pinned model roles.
-VERIFICATION_PLANE_VERSION = "1.41"
+# 1.42 binds recoverable commits, durable reviewer evidence, v2 completion and pinned model roles.
+VERIFICATION_PLANE_VERSION = "1.42"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

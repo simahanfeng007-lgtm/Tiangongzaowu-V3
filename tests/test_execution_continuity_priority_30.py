@@ -509,7 +509,7 @@ def test_python_encoding_platform_requires_real_containment(
     with mock.patch.object(sandbox_runtime, "_run_portable", side_effect=AssertionError("production must not use portable execution")) as portable:
         result = runtime.run("python.run", "", {"code": code})
     portable.assert_not_called()
-    if os.name != "nt":
+    if os.name != "nt" and (not sys.platform.startswith("linux") or not Path("/usr/bin/bwrap").exists()):
         assert result["success"] is False, result
         assert result["error_type"] == "SandboxError"
         assert "sandbox_os_containment_unavailable" in result["message"]
@@ -521,7 +521,7 @@ def test_python_encoding_platform_requires_real_containment(
     assert execution["legacy_output_encoding"] is legacy
     assert execution["returncode"] == 0
     assert execution["receipt_role"] == "execution"
-    assert execution["containment"] == "windows-appcontainer"
+    assert execution["containment"] == ("windows-appcontainer" if os.name == "nt" else "linux-bubblewrap")
     assert execution["network"] == "denied"
 
 

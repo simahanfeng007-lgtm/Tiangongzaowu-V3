@@ -104,8 +104,8 @@ def test_budget_reset_retains_complete_pairs_current_feedback_and_world(endpoint
     ep = dataclasses.replace(endpoint, protocol_family=protocol)
     session = AppendOnlyContext(token_budget=100000)
     history = [pair(get_model_transport(protocol), ep, 1, {'content': 'UNIQUE_RECEIPT'})]
-    tx, _ = build(ep, session, history, 0); commit(tx)
-    session.token_budget = 1
+    tx, _ = build(ep, session, history, 0); commit(tx, 'old presentation ' * 10000, tools=False)
+    session.token_budget = 4000
     tx, wire = build(ep, session, history, 1)
     serialized = json.dumps(wire, ensure_ascii=False)
     assert tx.metrics['mode'] == 'budget_reset'
@@ -166,8 +166,23 @@ def test_budget_reset_uses_full_world_instead_of_orphan_delta(endpoint):
     commit(tx)
     tx, wire = build(endpoint, session, [], 1, __runtime_context='NEW\n\n'+stable)
     assert '[WORLD_VIEW_DELTA]' in wire['messages'][-1]['content']
-    commit(tx)
-    session.token_budget = 1
+    commit(tx, 'old presentation ' * 10000, tools=False)
+    session.token_budget = 6000
     tx, wire = build(endpoint, session, [], 2, __runtime_context='CURRENT\n\n'+stable)
     assert 'WORLD_VIEW_FULL' in json.dumps(wire) and 'WORLD_VIEW_DELTA' not in json.dumps(wire)
     assert 'CURRENT' in json.dumps(wire) and 'OLD' not in json.dumps(wire)
+
+
+def test_wire_budget_rejects_oversized_fixed_context_and_never_splits_latest_pair(endpoint):
+    from v3.context_compactor import ContextAssemblyError, estimate_tokens
+    from v3.jineng.model_context_cache import ContextTransaction
+    session = AppendOnlyContext(token_budget=2500)
+    groups = [[{'role': 'assistant', 'content': 'call_'+str(n)}, {'role':'user','content': str(n)*3000}] for n in range(4)]
+    payload = {}
+    tx = session.begin()
+    tx.render(endpoint, payload, 'messages', [{'role': 'system', 'content':'fixed'}], groups, [{'role':'user','content':'current'}])
+    assert tx.metrics['dropped_history_groups'] > 0
+    assert payload['messages'][-3:-1] == groups[-1]
+    assert estimate_tokens(json.dumps(payload, ensure_ascii=False)) <= 2500
+    with pytest.raises(ContextAssemblyError, match='current_context_exceeds'):
+        session.begin().render(endpoint, {}, 'messages', [{'role':'system','content':'x'*20000}], groups, [])

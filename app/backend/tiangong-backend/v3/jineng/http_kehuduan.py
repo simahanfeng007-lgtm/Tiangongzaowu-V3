@@ -1488,7 +1488,9 @@ def _jilu_l4_youhua_zhuizong(
             or completion_details.get("reasoning_tokens")
             or 0
         )
+        cache_usage_available = any(key in usage for key in ("prompt_cache_hit_tokens", "cached_input_tokens", "cache_read_input_tokens")) or any(key in prompt_details for key in ("cached_tokens", "cache_read_tokens"))
         row["usage"] = {
+            "cache_usage_available": cache_usage_available,
             "prompt_tokens": usage.get("prompt_tokens") or usage.get("input_tokens"),
             "completion_tokens": usage.get("completion_tokens") or usage.get("output_tokens"),
             "total_tokens": usage.get("total_tokens"),

@@ -1,13 +1,13 @@
 {
  "schema": "tiangong.p17.dynamic-surface.v1",
  "summary": {
-  "total_hits": 128,
+  "total_hits": 131,
   "dynamic_imports": 47,
-  "reflective_getattrs": 80,
+  "reflective_getattrs": 83,
   "env_branches": 1,
-  "explicit_feature_uses": 0,
-  "verified": 128,
-  "needs_review": 0,
+  "explicit_feature_uses": 1,
+  "verified": 118,
+  "needs_review": 12,
   "retire_candidates_as_dynamic_targets": 0
  },
  "hits": [
@@ -22,18 +22,16 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 900,
+   "line": 907,
    "target": "handler_name",
-   "classification": "verified",
-   "verified_category": "tool_handler_dispatch"
+   "classification": "needs_review"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1604,
+   "line": 1611,
    "target": "<__import__>",
-   "classification": "verified",
-   "verified_category": "optional_dependency"
+   "classification": "needs_review"
   },
   {
    "kind": "reflective_getattr",
@@ -62,11 +60,10 @@
   {
    "kind": "env_get",
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
-   "line": 4539,
+   "line": 4548,
    "target": "'TIANGONG_ENABLE_LEARNED_SKILL_CATALOG'",
-   "classification": "verified",
-   "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG",
-   "verified_category": "structural_field_access"
+   "classification": "explicit_feature_use",
+   "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG"
   },
   {
    "kind": "reflective_getattr",
@@ -142,6 +139,13 @@
   },
   {
    "kind": "reflective_getattr",
+   "path": "app/backend/tiangong-backend/v3/review_evidence.py",
+   "line": 48,
+   "target": "key",
+   "classification": "needs_review"
+  },
+  {
+   "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/shangxiawen_xujie.py",
    "line": 62,
    "target": "name",
@@ -183,42 +187,44 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 1878,
+   "line": 1904,
    "target": "name",
-   "classification": "verified",
-   "verified_category": "structural_field_access"
+   "classification": "needs_review"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2080,
+   "line": 2106,
    "target": "<__import__>",
-   "classification": "verified",
-   "verified_category": "inline_stdlib_import"
+   "classification": "needs_review"
   },
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2259,
+   "line": 2291,
    "target": "<__import__>",
-   "classification": "verified",
-   "verified_category": "inline_stdlib_import"
+   "classification": "needs_review"
   },
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 4853,
-   "target": "field.name",
-   "classification": "verified",
-   "verified_category": "structural_field_access"
-  },
-  {
-   "kind": "reflective_getattr",
-   "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5030,
+   "line": 2313,
    "target": "key",
-   "classification": "verified",
-   "verified_category": "structural_field_access"
+   "classification": "needs_review"
+  },
+  {
+   "kind": "reflective_getattr",
+   "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
+   "line": 5053,
+   "target": "field.name",
+   "classification": "needs_review"
+  },
+  {
+   "kind": "reflective_getattr",
+   "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
+   "line": 5230,
+   "target": "key",
+   "classification": "needs_review"
   },
   {
    "kind": "reflective_getattr",
@@ -479,18 +485,16 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 900,
+   "line": 907,
    "target": "handler_name",
-   "classification": "verified",
-   "verified_category": "tool_handler_dispatch"
+   "classification": "needs_review"
   },
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1604,
+   "line": 1611,
    "target": "<__import__>",
-   "classification": "verified",
-   "verified_category": "optional_dependency"
+   "classification": "needs_review"
   },
   {
    "kind": "reflective_getattr",
@@ -771,6 +775,13 @@
    "target": "'v3.knowledge_store'",
    "classification": "verified",
    "verified_category": "lazy_module_import"
+  },
+  {
+   "kind": "reflective_getattr",
+   "path": "src/total_gateway/frozen_backend_compat.py",
+   "line": 827,
+   "target": "key",
+   "classification": "needs_review"
   },
   {
    "kind": "reflective_getattr",

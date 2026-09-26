@@ -29,7 +29,7 @@ def bubblewrap_executable() -> str:
 
 
 def run_linux_sandbox(command, cwd, env, limits, workspace, *, workspace_aliases=(), cancel_check=None):
-    from .sandbox_runtime import SandboxError, _rewrite_workspace_paths, _run_portable
+    from .sandbox_runtime import SandboxError, _rewrite_workspace_paths, _run_captured_process
     executable = bubblewrap_executable()
     if isinstance(command, str):
         raise SandboxError('sandbox_linux_requires_argv')
@@ -86,7 +86,7 @@ def run_linux_sandbox(command, cwd, env, limits, workspace, *, workspace_aliases
         args += ['--bind', status_dir, '/run/tiangong',
                  '--remount-ro', '/',
                  '--', '/usr/bin/python3', '-I', '-c', bootstrap, *argv]
-        code, stdout, stderr, _ = _run_portable(args, cwd, env, limits, cancel_check=cancel_check)
+        code, stdout, stderr, _ = _run_captured_process(args, cwd, env, limits, cancel_check=cancel_check)
         if not (Path(status_dir) / 'started').exists():
             raise SandboxError('sandbox_linux_start_failed:' + stderr.decode('utf-8', errors='replace')[:600])
     return code, stdout, stderr, 'linux-bubblewrap'

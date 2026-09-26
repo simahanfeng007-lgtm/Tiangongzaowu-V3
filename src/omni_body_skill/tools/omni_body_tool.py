@@ -638,6 +638,12 @@ def _resolve_python_interpreter(*, controlled: bool = False) -> str:
     if configured and not controlled:
         candidates.append(Path(configured))
 
+    # The Linux namespace deliberately exposes system runtimes, never the
+    # host home or a credential-bearing user venv. Use its trusted interpreter
+    # by default; an explicit unsupported runtime still fails closed.
+    if sys.platform.startswith("linux"):
+        candidates.append(Path("/usr/bin/python3"))
+
     executable = Path(sys.executable)
     candidates.append(executable)
 

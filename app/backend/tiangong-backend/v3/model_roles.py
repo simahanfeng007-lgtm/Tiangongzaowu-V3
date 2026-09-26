@@ -45,16 +45,12 @@ def input_budget(endpoint, *, output_reserve=8192):
     """Endpoint-specific context budget; unknown models use a conservative cap."""
     overrides = getattr(endpoint, "endpoint_overrides", {}) or {}
     configured = overrides.get("context_window_tokens")
-    if type(configured) is int and configured > output_reserve:
+    if type(configured) is int and configured > 0:
         window = configured
     else:
-        window = 32768
-        try:
-            from tiangong_kernel.l4_action_grounding.model_provider_adapter import all_provider_factsheets
-            for factsheet in all_provider_factsheets().values():
-                if factsheet.default_model_id == endpoint.model_name:
-                    window = int(factsheet.context_window_tokens)
-                    break
-        except Exception:
-            pass
+        from .model_stream_config import resolve_model_capability
+        capability = resolve_model_capability(
+            endpoint.model_name, getattr(endpoint, "optimization_family", ""), endpoint.protocol_family,
+            getattr(endpoint, "service_preset", "custom"), overrides)
+        window = capability.max_context
     return max(1, window - output_reserve)

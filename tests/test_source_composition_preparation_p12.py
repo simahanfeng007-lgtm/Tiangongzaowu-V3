@@ -425,8 +425,10 @@ def test_real_existing_http_payload_and_model_text_roundtrip_into_original_p4(pl
         assert len(captured)==1
         sent=captured[0]['messages']
         system=next(m['content'] for m in sent if m['role']=='system')
-        assert system.count('[WORLD_CONTEXT_SLOT]')==1 and 'DISPLAY_ONLY' not in system
-        assert 'candidate_snapshot='+p.candidates.candidate_snapshot_sha256 in system
+        world=[m['content'] for m in sent if m['role']=='user' and '[WORLD_CONTEXT_SLOT]' in m['content']]
+        assert len(world)==1 and world[0].count('[WORLD_CONTEXT_SLOT]')==1 and 'DISPLAY_ONLY' not in world[0]
+        assert '[WORLD_CONTEXT_SLOT]' not in system
+        assert 'candidate_snapshot='+p.candidates.candidate_snapshot_sha256 in world[0]
         assert next(m['content'] for m in sent if m['role']=='user')==c['user']
         result=compile_reply(c,p,str(reply))
         assert result.parse_outcome.proposal==parse_composition_proposal(answer,p.candidates)

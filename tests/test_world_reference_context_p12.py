@@ -386,9 +386,11 @@ def test_provider_wire_payload_keeps_one_typed_slot_and_unchanged_explicit_user(
         assert len(captured)==1, str(reply)
         payload=captured[0]
         systems=[m['content'] for m in payload['messages'] if m['role']=='system']
-        assert len(systems)==1 and systems[0].count('[WORLD_CONTEXT_SLOT]')==1
-        assert '[ACTION_CANDIDATES]' in systems[0] and '[METHOD_CANDIDATES]' in systems[0]
-        assert 'candidate_ids=DISPLAY_ONLY' in systems[0] and 'LEGACY_REMAINS' in systems[0]
+        worlds=[m['content'] for m in payload['messages'] if m['role']=='user' and '[WORLD_CONTEXT_SLOT]' in m['content']]
+        assert len(systems)==1 and '[WORLD_CONTEXT_SLOT]' not in systems[0]
+        assert len(worlds)==1 and worlds[0].count('[WORLD_CONTEXT_SLOT]')==1
+        assert '[ACTION_CANDIDATES]' in worlds[0] and '[METHOD_CANDIDATES]' in worlds[0]
+        assert 'candidate_ids=DISPLAY_ONLY' in worlds[0] and 'LEGACY_REMAINS' in systems[0]
         assert next(m['content'] for m in payload['messages'] if m['role']=='user')==user
         assert 'fixture reply' in str(reply)
     finally:

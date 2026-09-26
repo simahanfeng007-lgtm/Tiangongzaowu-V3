@@ -188,6 +188,7 @@ def _first_text(data: Mapping[str, Any]) -> str:
         run.get("final_response"),
         run.get("reply_text"),
         run.get("reply"),
+        data.get("reply_text"),
         data.get("huifu"),
         nested.get("huifu"),
         nested.get("text"),
@@ -818,6 +819,22 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         if (backend_payload.get("completion_authority") == "adversarial_agent"
                 and backend_payload.get("simple_chain_status") != "complete"):
             return [], ()
+        approved_versions = None
+        if backend_payload.get("completion_authority") == "adversarial_agent":
+            verdict = backend_payload.get("adversarial_completion") or {}
+            reports = verdict.get("reports") or []
+            record = reports[-1] if reports else {}
+            identity = {key: getattr(ticket.payload, key) for key in ("request_id", "run_id", "generation")}
+            reply = _first_text(backend_payload)
+            reply_digest = hashlib.sha256(json.dumps(reply, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+            if (verdict.get("schema") != "tiangong.adversarial-completion.v2"
+                    or verdict.get("decision") != "complete" or record.get("decision") != "complete"
+                    or record.get("call_status") != "completed" or record.get("identity") != identity
+                    or record.get("candidate_sha256") != reply_digest):
+                raise FrozenBackendCompatibilityError("compat.review.approval_binding_invalid")
+            approved_versions = {row["path"]: row for row in record.get("artifact_versions") or []
+                                 if isinstance(row, dict) and row.get("path") and row.get("state") == "observed"}
         nested = backend_payload.get("data") if isinstance(backend_payload.get("data"), Mapping) else {}
         run = backend_payload.get("run") if isinstance(backend_payload.get("run"), Mapping) else {}
         raw_items = backend_payload.get("attachments")
@@ -844,12 +861,25 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 resolved = source.resolve(strict=True)
                 resolved.relative_to(self._workspace_root)
             except (OSError, ValueError):
+                if approved_versions is not None:
+                    raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
                 continue
-            if resolved.is_symlink() or not resolved.is_file():
+            if source.is_symlink() or not resolved.is_file():
+                if approved_versions is not None:
+                    raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
                 continue
             data = resolved.read_bytes()
-            if not data or len(data) > ticket.payload.max_output_bytes:
+            if len(data) > ticket.payload.max_output_bytes:
+                if approved_versions is not None:
+                    raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
                 continue
+            if not data and approved_versions is None:
+                continue
+            if approved_versions is not None:
+                approved = approved_versions.get(str(source))
+                if (approved is None or approved.get("size_bytes") != len(data)
+                        or approved.get("sha256") != hashlib.sha256(data).hexdigest()):
+                    raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
             reference = self._objects.put_bytes(
                 data,
                 kind="artifact",
@@ -1118,7 +1148,7 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 }
             if isinstance(backend_payload, dict):
                 for _structured_key in ("simple_chain_status", "terminal_reason", "last_transition", "origin",
-                                        "completion_authority", "adversarial_completion"):
+                                        "completion_authority", "adversarial_completion", "review_phase"):
                     _structured_value = backend_payload.get(_structured_key)
                     if _structured_value not in (None, ""):
                         result_payload[_structured_key] = _structured_value

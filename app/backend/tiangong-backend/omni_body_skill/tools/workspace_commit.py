@@ -22,6 +22,18 @@ def sync_directory(path: Path) -> None:
             os.close(fd)
 
 
+def make_directory(path: Path) -> None:
+    missing = []
+    current = path
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    path.mkdir(parents=True, exist_ok=True)
+    for created in reversed(missing):
+        sync_directory(created)
+        sync_directory(created.parent)
+
+
 def write_journal(path: Path, value: dict) -> None:
     temporary = path.with_name("~" + uuid.uuid4().hex + ".tmp")
     try:
@@ -38,7 +50,7 @@ def write_journal(path: Path, value: dict) -> None:
 def _target(root: Path, relative: str) -> Path:
     from .sandbox_runtime import SandboxError, _is_link_or_reparse, _SKIP_NAMES
     path = Path(relative)
-    if (not relative or path.is_absolute() or path.as_posix() != relative
+    if (not relative or path.is_absolute() or path.drive or path.as_posix() != relative
             or any(part in {".", ".."} or part.casefold() in _SKIP_NAMES for part in path.parts)):
         raise SandboxError("sandbox_transaction_path_invalid")
     target = root / path
@@ -102,6 +114,9 @@ def rollback(directory: Path, workspace: Path, record: dict) -> None:
 
 def recover(root: Path, workspace: Path) -> None:
     """Must run before copying a new workspace, with its mutation lock held."""
+    from .sandbox_runtime import SandboxError, _is_link_or_reparse
+    if _is_link_or_reparse(root):
+        raise SandboxError("sandbox_transaction_link_forbidden")
     if not root.exists():
         return
     for directory in sorted(root.iterdir()):
@@ -133,9 +148,9 @@ def commit(*, source: Path, workspace: Path, before: dict, after: dict,
            changed: list, deleted: list, root: Path, operation: str,
            input_digest: str, receipt: dict, cancel_check=None) -> dict:
     from .sandbox_runtime import SandboxError, _atomic_copy
-    root.mkdir(parents=True, exist_ok=True)
+    make_directory(root)
     directory = root / ("tx_" + hashlib.sha256(operation.encode()).hexdigest()[:32])
-    directory.mkdir(exist_ok=True)
+    make_directory(directory)
     rows = [{"path": rel, "before": list(before[rel]) if rel in before else None,
              "after": list(after[rel]) if rel in after else None} for rel in sorted(set(changed + deleted))]
     # Prepare and verify every previous version and output BEFORE PREPARED.

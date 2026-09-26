@@ -296,7 +296,8 @@ def _snapshot(root: Path) -> dict[str, tuple[int, str]]:
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    from .workspace_commit import make_directory
+    make_directory(destination.parent)
     fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".sandbox", dir=str(destination.parent))
     os.close(fd)
     temp = Path(temp_name)
@@ -484,7 +485,7 @@ def _posix_preexec(limits: SandboxLimits):
     return apply
 
 
-def _run_portable(
+def _run_captured_process(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits,
     *, cancel_check=None,
 ) -> tuple[int, bytes, bytes, str]:
@@ -528,6 +529,11 @@ def _run_portable(
         if len(stdout) + len(stderr) > limits.max_output_bytes:
             raise SandboxError("sandbox_process_output_limit")
         return process.returncode, stdout, stderr, "portable-resource-sandbox"
+
+
+def _run_portable(command, cwd, env, limits, *, cancel_check=None):
+    """Explicit resource-only compatibility path, without OS containment."""
+    return _run_captured_process(command, cwd, env, limits, cancel_check=cancel_check)
 
 
 # Windows AppContainer launcher is isolated here so importing on other platforms
@@ -616,9 +622,10 @@ class SandboxRunner:
         # component. A content-addressed short name preserves uniqueness and
         # audit correlation without consuming roughly 100 path characters.
         run_id = "r_" + hashlib.sha256(raw_run_id.encode("utf-8", errors="surrogatepass")).hexdigest()[:16]
-        run_root = self.state_root / (run_id or f"run_{time.time_ns()}")
+        workspace_key = hashlib.sha256(str(self.workspace).encode()).hexdigest()[:32]
+        run_root = self.state_root / "runs" / workspace_key / run_id
         from .workspace_commit import recover, replay
-        transactions = self.state_root / "commits"
+        transactions = self.state_root / "commits" / workspace_key
         recover(transactions, self.workspace)
         input_digest = hashlib.sha256(json.dumps({"command": command,
             "cwd": str(cwd or self.workspace), "allow_deletions": allow_deletions,
